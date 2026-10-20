@@ -212,7 +212,9 @@ struct RNLogBoxDismiss: AsyncParsableCommand {
         } else if outcome.isClear {
             console.show(InputPersonView.receipt(Self.personLine(outcome, index: index), details: Self.personMethod(outcome), agent: line + "\n"))
         } else {
-            InputPersonView.failed(line, person: Self.personFailure(outcome), try: outcome.emptyDialog ? [] : ["offsider rn logbox status --device \(device)"], console: console)
+            var failure = Self.personFailure(outcome)
+            failure.commands = outcome.emptyDialog ? [] : ["offsider rn logbox status --device \(device)"]
+            console.line(line, person: failure)
         }
         if !outcome.isClear {
             throw ExitCode(OffsiderExitCode.unverified.rawValue)

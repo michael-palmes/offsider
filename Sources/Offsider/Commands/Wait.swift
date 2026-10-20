@@ -270,7 +270,7 @@ struct Wait: AsyncParsableCommand {
         }
         let parts = successParts(shown)
         let timing = [parts.after, parts.selectors].compactMap { $0 }.joined(separator: " · ")
-        return .done(parts.headline, details: (timing.isEmpty ? [] : [timing]) + (note.map { [$0] } ?? []))
+        return .done(parts.headline, aside: timing.isEmpty ? nil : timing, details: note.map { [$0] } ?? [])
     }
 
     /// `✗ Timed out after 10 s waiting for --id 'save' (last: off screen at (20, 10700) 350x44).`

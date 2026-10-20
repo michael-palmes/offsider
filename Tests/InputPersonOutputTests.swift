@@ -58,10 +58,10 @@ struct InputPersonOutputTests {
              "✅  Swiped (100, 600) to (100, 200)\n"),
             (InputPersonView.receipt(try Drag.parse(["--start-x", "100", "--start-y", "300", "--end-x", "100", "--end-y", "600", "--device", "x"]).receiptHeadline),
              "✅  Dragged (100, 300) to (100, 600)\n"),
-            (InputPersonView.receipt(touch.receiptHeadline, details: touch.receiptDetails), "✅  Touched (200, 400)\n    Held 1 s\n"),
+            (InputPersonView.receipt(touch.receiptHeadline, aside: touch.receiptAside), "✅  Touched (200, 400)  held 1 s\n"),
             (InputPersonView.receipt(try Touch.parse(["-x", "200", "-y", "400", "--down", "--device", "x"]).receiptHeadline), "✅  Touch down at (200, 400)\n"),
-            (InputPersonView.receipt("Sent \(gesture.preset.rawValue)", details: gesture.receiptDetails), "✅  Sent long-press-drag\n    (200, 300) to (200, 600)\n"),
-            (InputPersonView.receipt(key.receiptHeadline, details: key.receiptDetails), "✅  Pressed Return\n    Key 40, held 1.5 s\n"),
+            (InputPersonView.receipt("Sent \(gesture.preset.rawValue)", aside: gesture.receiptAside), "✅  Sent long-press-drag  (200, 300) to (200, 600)\n"),
+            (InputPersonView.receipt(key.receiptHeadline, aside: key.receiptAside), "✅  Pressed Return  key 40, held 1.5 s\n"),
             (InputPersonView.receipt("Sent " + InputPersonView.combo(modifiers: [227], key: 4, android: false)), "✅  Sent Cmd+A\n"),
         ]
         for (page, expected) in pages {
@@ -84,7 +84,7 @@ struct InputPersonOutputTests {
         let agent = try await tap(person: false)
         #expect(agent.out == Tap.completionLine(selector: "id=save", at: (x: 120, y: 622)) + "\n")
         #expect(agent.err.isEmpty)
-        #expect(try await tap(person: true).out == "✅  Tapped id=save\n    (120, 622)\n")
+        #expect(try await tap(person: true).out == "✅  Tapped id=save  (120, 622)\n")
     }
 
     @Test("an off-screen tap warns an agent once, in the words it always read, and a person with a warning mark")
@@ -199,9 +199,9 @@ struct InputPersonOutputTests {
         let node = FakeUI.node(.switch, id: "alerts", label: "Alerts", value: "0")
         let request = try Self.request(subject: "Tap on id=alerts", target: "id=alerts", styles: [.physical], node: node)
         let failure = VerifyOutput.personUnverified(Verifier.Outcome(verified: false, attempts: 1, change: .none, style: .physical, summary: nil), for: request)
-        #expect(failure.outcome.headline == "Tap on id=alerts changed nothing yet")
+        #expect(failure.headline == "Tap on id=alerts changed nothing yet")
         #expect(failure.commands == ["offsider wait --id alerts --has-value 1 --timeout 10 --device fake-device"])
-        #expect(failure.outcome.details.allSatisfy { !$0.contains("offsider wait") })
+        #expect(failure.details.allSatisfy { !$0.contains("offsider wait") })
     }
 
     @Test("a person's verify lines for type never count the characters an agent's line does")
@@ -213,7 +213,7 @@ struct InputPersonOutputTests {
         #expect(person.out.hasPrefix("✅  Typed text verified\n"))
         #expect(!person.out.contains("11") && !person.out.contains("character"))
         let failed = VerifyOutput.personUnverified(Verifier.Outcome(verified: false, attempts: 1, change: .none, style: nil, summary: nil), for: request)
-        #expect(!([failed.outcome.headline] + failed.outcome.details).joined().contains("11"))
+        #expect(!([failed.headline] + failed.details).joined().contains("11"))
         let agent = try await Self.run(person: false) { try VerifyOutput.report(outcome, for: request) }
         #expect(agent.out.hasPrefix("✓ Typing text (11 characters) verified: "))
     }

@@ -159,7 +159,7 @@ struct RunnerStop: AsyncParsableCommand {
             text += RunnerSessions.cleanText(cleaned)
             let view = DevicePersonView.cleaned(cleaned)
             person += view.blocks
-            notices = DevicePersonView.personOnly(view.notices, json: json, console: console)
+            notices = view.notices.map(\.forPersonOnly)
         }
         console.show(Page([.person(person), .agent(text)], notices: notices))
     }

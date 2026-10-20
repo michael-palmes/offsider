@@ -62,34 +62,30 @@ struct RunStart: AsyncParsableCommand {
         let started = try RunRegistry.start(dir, label: label, masks: masks, explicit: explicit, in: environment)
         let path = started.folder.path
         let console = Console.current
-        var lines = StartPersonView.Lines(console: console)
         if !started.state.masks.secure {
-            lines.add(
+            console.hold(
                 "Warning: this run does not mask password fields, so a capture with --no-mask-secure or OFFSIDER_MASK_SECURE=0 shows them.",
                 person: .warning("This run does not mask password fields; a capture with --no-mask-secure shows them")
             )
         }
         if started.writableByOthers {
-            lines.add("Warning: other users can write to \(path), so they could add or change files in the run.", person: .warning("Other users can write to this run's folder"))
+            console.hold("Warning: other users can write to \(path), so they could add or change files in the run.", person: .warning("Other users can write to this run's folder"))
         }
         let start: StartPersonView.RunStart
         if started.unchanged {
             start = .active(added: started.addedMasks)
-            lines.add(Self.activeRunLine(path: path, masks: started.state.masks, added: started.addedMasks), person: nil)
+            console.hold(Self.activeRunLine(path: path, masks: started.state.masks, added: started.addedMasks), person: nil)
         } else if started.continued {
             start = .continued(next: started.state.next)
-            lines.add("Continuing the run in \(path) from \(String(format: "%03d", started.state.next)).", person: nil)
+            console.hold("Continuing the run in \(path) from \(String(format: "%03d", started.state.next)).", person: nil)
         } else {
             start = .started
-            lines.add("Started a run in \(path); screenshots and logs from this session are numbered into it. Run `offsider run stop --summary` when done.", person: nil)
+            console.hold("Started a run in \(path); screenshots and logs from this session are numbered into it. Run `offsider run stop --summary` when done.", person: nil)
         }
         if json {
-            lines.flush()
             return console.data(started.state.startJSONLine(dir: path, continued: started.continued, timeZone: environment.timeZone) + "\n")
         }
-        var page = StartPersonView.runStarted(path: path, state: started.state, start: start)
-        page.notices = lines.notices + page.notices
-        console.show(page)
+        console.show(StartPersonView.runStarted(path: path, state: started.state, start: start))
     }
 
     /// What `run start` says when this session's run already writes to the folder.

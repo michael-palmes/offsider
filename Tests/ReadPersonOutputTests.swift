@@ -72,7 +72,7 @@ struct ReadPersonOutputTests {
         let wait = try Self.wait(["--id", "save"])
         let (met, metConsole) = Self.person()
         try Self.report(wait, Self.met, console: metConsole)
-        #expect(met.out == "✅  --id 'save' is on screen\n    after 1.2 s\n")
+        #expect(met.out == "✅  --id 'save' is on screen  after 1.2 s\n")
         #expect(met.err.isEmpty)
 
         let (missed, missedConsole) = Self.person(50, style: Self.ascii)
@@ -132,7 +132,7 @@ struct ReadPersonOutputTests {
         let matched = WaitOutcome(met: true, elapsed: 0.4, reason: "found", matched: WaitMatch(by: "label", text: "Retry", position: 2, of: 2))
         #expect(any.successLine(matched) == "✓ --label 'Retry' is on screen after 0.4 s (2 of 2 selectors)")
         let receipt = any.personOutcome(matched, note: nil)
-        #expect(receipt.headline == "--label 'Retry' is on screen" && receipt.details == ["after 0.4 s · 2 of 2 selectors"])
+        #expect(receipt.headline == "--label 'Retry' is on screen" && receipt.aside == "after 0.4 s · 2 of 2 selectors" && receipt.details.isEmpty)
 
         let pause = try Self.wait(["--seconds", "2"])
         let waited = WaitOutcome(met: true, elapsed: 2, reason: "waited")
@@ -374,8 +374,7 @@ struct ReadPersonOutputTests {
           ✗ 3  assert --id state --has-value Open  Assertion failed: --id 'state' has …
           - 4  describe-ui --summary  not run
 
-        ❌  Batch stopped at step 3
-            2 of 4 steps passed · <t>
+        ❌  Batch stopped at step 3  2 of 4 steps passed · <t>
 
         """)
         #expect(person.err == "⚠️  Input may have reached the device; check before resending\n")
@@ -433,7 +432,7 @@ struct ReadPersonOutputTests {
     func batchCompleted() {
         let (person, console) = Self.person()
         BatchOutput(json: false, write: { _ in }, writeError: { _ in }, person: console).completed(steps: 5, elapsed: 2.34)
-        #expect(person.out == "\n✅  Batch done\n    5 steps · 2.3 s\n")
+        #expect(person.out == "\n✅  Batch done  5 steps · 2.3 s\n")
 
         let streams = Streams()
         BatchOutput(json: false, write: { streams.out += $0 }, writeError: { streams.err += $0 }).completed(steps: 5, elapsed: 2.34)
@@ -453,20 +452,20 @@ struct ReadPersonOutputTests {
     @Test("the closing names the step that stopped the batch, the one that failed, or how many did")
     func batchClosing() {
         #expect(ReadPersonView.batchClosing(steps: 5, failed: [], ran: 5, elapsed: 2.34).headline == "Batch done")
-        #expect(ReadPersonView.batchClosing(steps: 1, failed: [], ran: 1, elapsed: 0.02).details == ["1 step · 20 ms"])
+        #expect(ReadPersonView.batchClosing(steps: 1, failed: [], ran: 1, elapsed: 0.02).aside == "1 step · 20 ms")
         #expect(ReadPersonView.batchClosing(steps: 5, failed: [3], ran: 3, elapsed: 1).headline == "Batch stopped at step 3")
         #expect(ReadPersonView.batchClosing(steps: 5, failed: [5], ran: 5, elapsed: 1).headline == "Step 5 failed")
         let several = ReadPersonView.batchClosing(steps: 5, failed: [2, 4], ran: 5, elapsed: 1)
-        #expect(several.headline == "2 of 5 steps failed" && several.details == ["3 of 5 steps passed · 1 s"] && !several.ok)
+        #expect(several.headline == "2 of 5 steps failed" && several.aside == "3 of 5 steps passed · 1 s" && !several.ok)
     }
 
     @Test("a step row never passes the edge: the detail is cut, then moves under the line, and a skipped step's is left out", arguments: [24, 40, 50, 80, 120])
-    func stepRowFits(columns: Int) {
+    func streamRowFits(columns: Int) {
         let canvas = Canvas(columns: columns, style: .plain)
         let rows = [
-            ReadPersonView.stepRow(number: 3, of: 12, line: "assert --id state --has-value Open", status: .fail, detail: "Assertion failed: --id 'state' has value 'Closed', expected 'Open'.", canvas: canvas),
-            ReadPersonView.stepRow(number: 12, of: 12, line: "describe-ui --summary", status: .skip, detail: "not run", canvas: canvas),
-            ReadPersonView.stepRow(number: 1, of: 12, line: "tap --id open", status: .ok, detail: "8 ms", canvas: canvas),
+            PersonRenderer.streamRow(status: .fail, key: "3", keyWidth: 2, text: "assert --id state --has-value Open", detail: "Assertion failed: --id 'state' has value 'Closed', expected 'Open'.", canvas: canvas),
+            PersonRenderer.streamRow(status: .skip, key: "12", keyWidth: 2, text: "describe-ui --summary", detail: "not run", canvas: canvas),
+            PersonRenderer.streamRow(status: .ok, key: "1", keyWidth: 2, text: "tap --id open", detail: "8 ms", canvas: canvas),
         ]
         for line in rows.joined().split(separator: "\n").map(String.init) {
             #expect(TerminalText.width(line) <= columns - 1, "\(line)")
@@ -479,8 +478,8 @@ struct ReadPersonOutputTests {
     @Test("ASCII rows use + and x, and a time under a second reads in ms")
     func asciiRowsAndTimes() {
         let canvas = Canvas(columns: 80, style: Self.ascii)
-        #expect(ReadPersonView.stepRow(number: 1, of: 2, line: "tap --id open", status: .ok, detail: "8 ms", canvas: canvas) == "  + 1  tap --id open  8 ms\n")
-        #expect(ReadPersonView.stepRow(number: 2, of: 2, line: "wait --id home", status: .fail, detail: "Timed out", canvas: canvas) == "  x 2  wait --id home  Timed out\n")
+        #expect(PersonRenderer.streamRow(status: .ok, key: "1", keyWidth: 1, text: "tap --id open", detail: "8 ms", canvas: canvas) == "  + 1  tap --id open  8 ms\n")
+        #expect(PersonRenderer.streamRow(status: .fail, key: "2", keyWidth: 1, text: "wait --id home", detail: "Timed out", canvas: canvas) == "  x 2  wait --id home  Timed out\n")
         #expect(ReadPersonView.elapsed(0.012) == "12 ms")
         #expect(ReadPersonView.elapsed(1.23) == "1.2 s")
         #expect(ReadPersonView.elapsed(0.96) == "1 s")

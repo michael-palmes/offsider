@@ -49,8 +49,8 @@ struct BatchOutput {
     func finished(_ record: BatchStepRecord, result: BatchReadResult?, of total: Int) {
         guard let person else { return }
         let status: RowStatus = record.ok ? .ok : .fail
-        let row = ReadPersonView.stepRow(
-            number: record.step, of: total, line: ReadPersonView.stepLine(record.line), status: status,
+        let row = PersonRenderer.streamRow(
+            status: status, key: String(record.step), keyWidth: String(total).count, text: ReadPersonView.stepLine(record.line),
             detail: ReadPersonView.stepDetail(record, note: result?.note), canvas: person.out.canvas
         )
         person.data(row)
@@ -61,8 +61,8 @@ struct BatchOutput {
     func notRun(_ lines: ArraySlice<String>, of total: Int) {
         guard let person else { return }
         for (number, line) in zip(lines.indices, lines) {
-            person.data(ReadPersonView.stepRow(
-                number: number + 1, of: total, line: ReadPersonView.plannedLine(line), status: .skip, detail: "not run", canvas: person.out.canvas
+            person.data(PersonRenderer.streamRow(
+                status: .skip, key: String(number + 1), keyWidth: String(total).count, text: ReadPersonView.plannedLine(line), detail: "not run", canvas: person.out.canvas
             ))
         }
     }

@@ -54,14 +54,14 @@ struct StayAwakeCommand: AsyncParsableCommand {
             }
             return (try await Self.result(target, json: json, booted: booted, backend: backend), booted.id)
         }
-        DevicePersonView.emit(result.text, json: json, person: result.person, notices: Self.notices(target, on: id, json: json, console: console), console: console)
+        DevicePersonView.emit(result.text, json: json, person: result.person, notices: Self.notices(target, on: id), console: console)
     }
 
     /// After turning it on, how a person turns it off; an agent reads only the phone's note, as it always did.
-    static func notices(_ target: Bool?, on device: DeviceID, json: Bool, console: Console = .current) -> [Notice] {
+    static func notices(_ target: Bool?, on device: DeviceID) -> [Notice] {
         guard target == true else { return [] }
         let undo = "offsider stay-awake off --device \(device.rawValue)"
-        return DevicePersonView.lasting("Stays on across reboots", undo: undo, agent: phoneNote(target, on: device), json: json, console: console)
+        return [DevicePersonView.lasting("Stays on across reboots", undo: undo, agent: phoneNote(target, on: device))]
     }
 
     /// One stderr line after turning stay awake on for a USB phone: the setting outlives the command and reboots.

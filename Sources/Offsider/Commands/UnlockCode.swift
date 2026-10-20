@@ -77,7 +77,7 @@ struct UnlockCodeCommand: AsyncParsableCommand {
                 throw CLIError(errorDescription: "Only set reads a code.", reason: .usage)
             }
         }
-        let notices = DevicePersonView.personOnly(report.person.notices, json: json, console: console)
+        let notices = report.person.notices.map(\.forPersonOnly)
         DevicePersonView.emit(report.text, json: json, person: report.person.blocks, notices: notices, console: console)
     }
 

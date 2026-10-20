@@ -93,42 +93,14 @@ enum ReadPersonView {
         return (parts + [elapsed(record.elapsed)]).joined(separator: " · ")
     }
 
-    /// `  ✓ 2  wait --id home  1.2 s`, cut to the canvas: a detail with no room drops under the line, or is left out for a skipped step.
-    static func stepRow(number: Int, of total: Int, line: String, status: RowStatus, detail: String, canvas: Canvas) -> String {
-        let style = canvas.style
-        let digits = String(max(total, number)).count
-        let place = String(repeating: " ", count: digits - String(number).count) + String(number)
-        let lead = "  " + style.status(status) + " " + place + "  "
-        let leadWidth = 4 + digits + 2
-        let room = max(canvas.usable - leadWidth, 1)
-        let text = TerminalText.line(line, cap: TerminalText.maxErrorCharacters, keepsTab: false)
-        let detail = TerminalText.line(detail, cap: TerminalText.maxErrorCharacters, keepsTab: false)
-        let tone: (String) -> String = status == .skip ? style.dim : { $0 }
-        func cut(_ text: String, _ width: Int) -> String { TerminalText.truncate(text, to: max(width, 1), ellipsis: style.ellipsis) }
-        let textWidth = TerminalText.width(text)
-        guard !detail.isEmpty else { return lead + tone(cut(text, room)) + "\n" }
-        if textWidth + 2 + TerminalText.width(detail) <= room {
-            return lead + tone(text) + "  " + style.dim(detail) + "\n"
-        }
-        if status == .skip { return lead + tone(cut(text, room)) + "\n" }
-        if textWidth + 2 + minimumDetail <= room {
-            return lead + tone(text) + "  " + style.dim(cut(detail, room - textWidth - 2)) + "\n"
-        }
-        let indent = String(repeating: " ", count: leadWidth)
-        return lead + tone(cut(text, room)) + "\n" + indent + style.dim(cut(detail, room)) + "\n"
-    }
-
-    /// Fewer columns than this left beside a step's line move its detail onto a row of its own.
-    static let minimumDetail = 16
-
     /// The closing: ✅ with the count and time, or ❌ naming the step that stopped the batch, the one that failed, or how many did.
     static func batchClosing(steps: Int, failed: [Int], ran: Int, elapsed: TimeInterval) -> Outcome {
         let time = self.elapsed(elapsed)
         let count = steps == 1 ? "1 step" : "\(steps) steps"
-        guard let first = failed.first else { return .done("Batch done", details: ["\(count) · \(time)"]) }
-        let details = ["\(ran - failed.count) of \(count) passed · \(time)"]
-        if ran < steps { return .failed("Batch stopped at step \(first)", details: details) }
-        return .failed(failed.count == 1 ? "Step \(first) failed" : "\(failed.count) of \(count) failed", details: details)
+        guard let first = failed.first else { return .done("Batch done", aside: "\(count) · \(time)") }
+        let tally = "\(ran - failed.count) of \(count) passed · \(time)"
+        if ran < steps { return .failed("Batch stopped at step \(first)", aside: tally) }
+        return .failed(failed.count == 1 ? "Step \(first) failed" : "\(failed.count) of \(count) failed", aside: tally)
     }
 
     /// The warning a person reads when a batch failed after a step may have sent input.

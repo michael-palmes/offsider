@@ -258,7 +258,7 @@ struct Tap: AsyncParsableCommand, VerifiableCommand {
         let selector = pointX == nil ? verifyTarget : nil
         Console.current.show(InputPersonView.receipt(
             Self.receiptHeadline(selector: selector, at: resolution.point),
-            details: selector == nil ? [] : [VerifyOutput.pointDescription(x: resolution.point.x, y: resolution.point.y)],
+            aside: selector == nil ? nil : VerifyOutput.pointDescription(x: resolution.point.x, y: resolution.point.y),
             agent: Self.completionLine(selector: selector, at: resolution.point) + "\n"
         ))
     }

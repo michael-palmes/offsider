@@ -207,7 +207,7 @@ struct Button: AsyncParsableCommand, VerifiableCommand {
         }
         guard verification.verify else {
             try await execute(progress: nil)
-            Console.current.show(InputPersonView.receipt("Pressed \(buttonType.personName)", details: duration.map { [InputPersonView.held($0)] } ?? []))
+            Console.current.show(InputPersonView.receipt("Pressed \(buttonType.personName)", aside: duration.map(InputPersonView.held)))
             return
         }
         try await VerifyOutput.reportingFailures(command: "button", target: buttonType.rawValue, options: verification) { progress in
@@ -268,7 +268,9 @@ struct Button: AsyncParsableCommand, VerifiableCommand {
         }
         func failed(_ line: String, person: Outcome) {
             if let writeError { return writeError(line) }
-            InputPersonView.failed(line, person: person, try: ["offsider describe-ui --summary --device \(device.rawValue)"], console: console)
+            var person = person
+            person.commands = ["offsider describe-ui --summary --device \(device.rawValue)"]
+            console.line(line, person: person)
         }
         func receipt(_ details: [String] = []) {
             if writeOutput == nil { console.show(InputPersonView.receipt("Pressed Home", details: details)) }

@@ -154,7 +154,7 @@ struct Touch: AsyncParsableCommand {
             logger.info().log("Two-finger touch at (\(pointX), \(pointY)) for \(hold ?? 0) ms")
             let event = try await twoFingerEvent(backend: backend, device: device)
             try await Console.current.progress("Touching") { try await backend.performTracked(event, on: device) }
-            Console.current.show(InputPersonView.receipt(receiptHeadline, details: receiptDetails))
+            Console.current.show(InputPersonView.receipt(receiptHeadline, aside: receiptAside))
             return
         }
 
@@ -195,7 +195,7 @@ struct Touch: AsyncParsableCommand {
         await DeviceActivityLedger.current.recordInput(on: device)
 
         logger.info().log("Touch events completed successfully")
-        Console.current.show(InputPersonView.receipt(receiptHeadline, details: receiptDetails))
+        Console.current.show(InputPersonView.receipt(receiptHeadline, aside: receiptAside))
     }
 
     /// `Touch down at (100, 200)`, `Touch up at …`, `Touched …` for both, or `Two fingers at …`.
@@ -210,10 +210,10 @@ struct Touch: AsyncParsableCommand {
     }
 
     /// How long the finger stayed down, and how far apart two were.
-    var receiptDetails: [String] {
+    var receiptAside: String? {
         if fingers == 2 {
-            return [InputPersonView.held(Double(hold ?? 0) / 1000) + ", \(VerifyOutput.number(spread ?? Self.defaultSpread)) points apart"]
+            return InputPersonView.held(Double(hold ?? 0) / 1000) + ", \(VerifyOutput.number(spread ?? Self.defaultSpread)) points apart"
         }
-        return touchDown && touchUp ? [InputPersonView.held(delay ?? TapTiming.defaultHoldDuration)] : []
+        return touchDown && touchUp ? InputPersonView.held(delay ?? TapTiming.defaultHoldDuration) : nil
     }
 }

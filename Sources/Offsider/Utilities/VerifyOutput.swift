@@ -126,8 +126,7 @@ enum VerifyOutput {
                 console.show(Page([.person([.outcome(personVerified(outcome, for: request))]), .agent(line + "\n")]))
             }
         } else {
-            let failure = personUnverified(outcome, for: request)
-            InputPersonView.failed(unverifiedLine(outcome, for: request), person: failure.outcome, try: failure.commands, console: console)
+            console.line(unverifiedLine(outcome, for: request), person: personUnverified(outcome, for: request))
         }
         let result = VerifyReport(
             command: request.command,
@@ -311,28 +310,28 @@ enum VerifyOutput {
         return .done("\(request.personSubject ?? request.subject) verified", details: details)
     }
 
-    /// The ❌ a person reads when nothing changed, and the commands worth trying next.
-    static func personUnverified(_ outcome: Verifier.Outcome, for request: VerifyRequest) -> (outcome: Outcome, commands: [String]) {
+    /// The ❌ a person reads when nothing changed, with the commands worth trying next.
+    static func personUnverified(_ outcome: Verifier.Outcome, for request: VerifyRequest) -> Outcome {
         let subject = request.personSubject ?? request.subject
         let device = request.device.rawValue
         let look = "offsider describe-ui --summary --device \(device)"
         let plural = outcome.attempts == 1 ? "attempt" : "attempts"
         if outcome.note == .logBoxOpened {
-            return (.failed("LogBox opened over the app", details: ["\(subject) was sent, but its effect is hidden. Read the log, then close it."]), ["offsider rn logbox dismiss --device \(device)"])
+            return .failed("LogBox opened over the app", details: ["\(subject) was sent, but its effect is hidden. Read the log, then close it."], try: ["offsider rn logbox dismiss --device \(device)"])
         }
         if let id = request.options.verifyID {
             let waited = "\(subject) was sent; waited \(WaitLoop.seconds(request.options.resolvedTimeout)) after \(outcome.attempts) \(plural)"
-            return (.failed("--verify-id '\(id)' did not come on screen", details: [waited]), [look])
+            return .failed("--verify-id '\(id)' did not come on screen", details: [waited], try: [look])
         }
         let ignored = ignoredText(outcome.ignored).trimmingCharacters(in: .whitespaces)
         if request.command == "tap", VerificationOptions.retriesUndo(request.targetNode), let node = request.targetNode {
             let details = [lateStateHint(node, selector: request.target, device: request.device, retried: outcome.attempts > 1, includingWait: false)] + (ignored.isEmpty ? [] : [ignored])
-            return (.failed("\(subject) changed nothing yet", details: details), [waitCommand(node, selector: request.target, device: request.device) ?? look])
+            return .failed("\(subject) changed nothing yet", details: details, try: [waitCommand(node, selector: request.target, device: request.device) ?? look])
         }
         let styles = request.styles.prefix(outcome.attempts).compactMap { $0?.rawValue }
         let sent = "Sent \(outcome.attempts == 1 ? "once" : "\(outcome.attempts) times")" + (styles.isEmpty ? "" : " (\(styles.joined(separator: ", then ")) style)")
         let doctor = request.device.platform == .ios ? ["offsider doctor --device \(device)"] : []
-        return (.failed("\(subject) changed nothing", details: [sent] + (ignored.isEmpty ? [] : [ignored])), [look] + doctor)
+        return .failed("\(subject) changed nothing", details: [sent] + (ignored.isEmpty ? [] : [ignored]), try: [look] + doctor)
     }
 
     /// `settle 0.4 s, tap 0.1 s, verify 1.2 s`: the agent's timing suffix without its brackets.

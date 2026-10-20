@@ -11,22 +11,16 @@ enum DevicePersonView {
     static func emit(_ agent: String, json: Bool, person: [Block], notices: [Notice] = [], console: Console = .current) {
         guard !json else {
             console.data(agent + "\n")
-            notices.forEach(console.notice)
+            notices.filter { !$0.personOnly }.forEach(console.notice)
             return
         }
         console.show(Page([.person(person), .agent(agent + "\n")], notices: notices))
     }
 
-    /// Notices only a person reads: an agent already has their words on stdout, or never had them.
-    static func personOnly(_ notices: [Notice], json: Bool, console: Console = .current) -> [Notice] {
-        !json && console.out.profile == .person ? notices : []
-    }
-
     /// State that outlives the command and the command that undoes it; an agent reads only `agent`, when given, as it always did.
-    static func lasting(_ text: String, undo: String, label: String = "Undo", agent: String? = nil, json: Bool, console: Console = .current) -> [Notice] {
+    static func lasting(_ text: String, undo: String, label: String = "Undo", agent: String? = nil) -> Notice {
         let sentence = agent.map { $0.hasPrefix("Note: ") ? String($0.dropFirst("Note: ".count)) : $0 }
-        let notice = Notice(kind: .note, text: text, agentText: sentence, mark: .keep, command: undo, label: label)
-        return sentence == nil ? personOnly([notice], json: json, console: console) : [notice]
+        return .note(text, agent: sentence, mark: .keep, see: undo, label: label, personOnly: sentence == nil)
     }
 
     // MARK: Device state
@@ -36,9 +30,9 @@ enum DevicePersonView {
         [.fields([Field(label, Table.Cell(value, untrusted: untrusted, tag: detail))])]
     }
 
-    /// `✅  Appearance dark` and its dim details.
-    static func receipt(_ headline: String, _ details: [String?] = []) -> [Block] {
-        [.outcome(.done(headline, details: details.compactMap { $0 }))]
+    /// `✅  Appearance dark  was light` and its dim details.
+    static func receipt(_ headline: String, aside: String? = nil, _ details: [String?] = []) -> [Block] {
+        [.outcome(.done(headline, aside: aside, details: details.compactMap { $0 }))]
     }
 
     /// `was light`, `unchanged`, or nil when the earlier value is unknown.
@@ -61,20 +55,20 @@ enum DevicePersonView {
     }
 
     static func appearanceSet(_ target: Appearance, before: AppearanceReading?) -> [Block] {
-        receipt("Appearance \(target.rawValue)", [change(from: before?.name, to: target.rawValue)])
+        receipt("Appearance \(target.rawValue)", aside: change(from: before?.name, to: target.rawValue))
     }
 
     static func contentSize(_ current: ContentSizeReading, previous: ContentSizeReading?, setting: Bool) -> [Block] {
         let scale = current.fontScale.map { "font scale \(DeviceSettingsReport.number($0))" }
         guard setting else { return reading("Content size", current.category.rawValue, detail: scale) }
-        return receipt("Content size \(current.category.rawValue)", [change(from: previous?.category.rawValue, to: current.category.rawValue), scale])
+        return receipt("Content size \(current.category.rawValue)", aside: change(from: previous?.category.rawValue, to: current.category.rawValue), [scale])
     }
 
     static func orientation(_ current: DeviceOrientation, previous: DeviceOrientation?, screen: UIScreenInfo?, platform: DevicePlatform, rotation: RotationReport? = nil, setting: Bool) -> [Block] {
         let size = size(screen, platform: platform)
         guard setting else { return reading("Orientation", current.rawValue, detail: size) }
         let restored = rotation?.restored == true ? "auto-rotate back \(rotation?.now?.autoRotate == false ? "off" : "on")" : nil
-        return receipt("Orientation \(current.rawValue)", [change(from: previous?.rawValue, to: current.rawValue), size, restored])
+        return receipt("Orientation \(current.rawValue)", aside: change(from: previous?.rawValue, to: current.rawValue), [size, restored])
     }
 
     static func posture(_ current: Posture, previous: Posture?, screen: UIScreenInfo?, platform: DevicePlatform, state: String?, angle: Int?, setting: Bool) -> [Block] {
@@ -86,7 +80,7 @@ enum DevicePersonView {
             let detail = [note, display].compactMap { $0 }.joined(separator: ", ")
             return reading("Posture", current.rawValue, detail: detail.isEmpty ? nil : detail)
         }
-        return receipt("Posture \(current.rawValue)", [change(from: previous?.rawValue, to: current.rawValue), angle.map { "hinge at \($0) degrees" }, display, note])
+        return receipt("Posture \(current.rawValue)", aside: change(from: previous?.rawValue, to: current.rawValue), [angle.map { "hinge at \($0) degrees" }, display, note])
     }
 
     /// `One UI TENT` or `state X` for a device state that is not the posture's own name, as the agent's line has it.
@@ -147,7 +141,7 @@ enum DevicePersonView {
         }
         let was = previous.map { $0.stayAwake.isEmpty ? "off" : "on" }
         let timeout = reading.screenTimeoutSummary.map { "screen timeout \($0)" }
-        return receipt("Stay awake \(on ? "on" : "off")", [change(from: was, to: on ? "on" : "off"), on ? sources : timeout, caveat])
+        return receipt("Stay awake \(on ? "on" : "off")", aside: change(from: was, to: on ? "on" : "off"), [on ? sources : timeout, caveat])
     }
 
     /// Why stay awake on has no effect, or nil when the screen stays on.

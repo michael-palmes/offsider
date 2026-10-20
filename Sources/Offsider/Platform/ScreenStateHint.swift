@@ -64,7 +64,7 @@ enum ScreenStateHint {
         let command = sentence.range(of: run, options: .backwards).flatMap { start in
             sentence[start.upperBound...].firstIndex(of: "`").map { String(sentence[start.upperBound..<$0]) }
         }
-        return Notice(kind: .note, text: command == nil ? sentence : cause, agentText: sentence, mark: .lock, command: command, label: "Try")
+        return .note(command == nil ? sentence : cause, agent: sentence, mark: .lock, see: command, label: "Try")
     }
 }
 

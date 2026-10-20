@@ -1,31 +1,11 @@
 import Foundation
 
-/// What the input commands show a person: a ✅ receipt for what was sent, a ❌ with its `Try` line on stderr and plain key names.
+/// What the input commands show a person: a ✅ receipt for what was sent and plain key names.
 /// An agent reads the lines each command always printed, or nothing for one that was silent; typed text and its length never show.
 public enum InputPersonView {
     /// A person's receipt on stdout; an agent reads `agent` as it is, so a silent command stays silent.
-    public static func receipt(_ headline: String, details: [String] = [], agent: String = "") -> Page {
-        Page([.person([.outcome(.done(headline, details: details))]), .agent(agent)])
-    }
-
-    /// A person's ❌, its dim details, then `Try` and `Or` lines with the commands, ready for stderr.
-    public static func failure(_ outcome: Outcome, try commands: [String] = [], canvas: Canvas) -> String {
-        let body = PersonRenderer.body([.outcome(outcome)], canvas: canvas)
-        let lines = commands.filter { !$0.isEmpty }.enumerated().map { index, command in
-            (index == 0 ? "Try" : "Or", TerminalText.line(command, cap: TerminalText.maxErrorCharacters, keepsTab: false))
-        }
-        guard !lines.isEmpty else { return body }
-        return body + TerminalUI.commands(lines, indent: "    ", style: canvas.style).joined(separator: "\n") + "\n"
-    }
-
-    /// A failure on stderr: an agent reads `agentLine`, a person the ❌ and its `Try` lines.
-    public static func failed(_ agentLine: String, person outcome: Outcome, try commands: [String] = [], console: Console = .current) {
-        let err = console.err
-        if err.profile == .person {
-            console.data(failure(outcome, try: commands, canvas: err.canvas), to: .err)
-        } else {
-            console.data(agentLine + "\n", to: .err)
-        }
+    public static func receipt(_ headline: String, aside: String? = nil, details: [String] = [], agent: String = "") -> Page {
+        Page([.person([.outcome(.done(headline, aside: aside, details: details))]), .agent(agent)])
     }
 
     /// `text` with its first letter capitalised, so words an agent reads mid-sentence can open a person's line.
@@ -34,9 +14,9 @@ public enum InputPersonView {
         return first.uppercased() + text.dropFirst()
     }
 
-    /// `Held 1.5 s`, for a press or touch held longer than a tap.
+    /// `held 1.5 s`, for a press or touch held longer than a tap.
     public static func held(_ seconds: TimeInterval) -> String {
-        "Held " + WaitLoop.seconds(seconds)
+        "held " + WaitLoop.seconds(seconds)
     }
 
     // MARK: Keys

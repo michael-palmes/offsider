@@ -110,7 +110,7 @@ struct PermissionCommand: AsyncParsableCommand {
         let console = Console.current
         if case .services(let platform) = plan {
             let text = json ? DeviceStateReport.services(Self.services(platform)) : Self.servicesTable(platform)
-            let notices = platform == .ios ? [] : DevicePersonView.personOnly([DevicePersonView.literalNote], json: json, console: console)
+            let notices = platform == .ios ? [] : [DevicePersonView.literalNote.forPersonOnly]
             DevicePersonView.emit(text, json: json, person: DevicePersonView.services(Self.services(platform), platform: platform), notices: notices, console: console)
             return
         }
@@ -128,18 +128,18 @@ struct PermissionCommand: AsyncParsableCommand {
         }
         var notices: [Notice] = []
         if let change = result.change, case .change(_, _, let app, _) = plan {
-            notices = Self.notices(change, app: app, on: id, json: json, console: console)
+            notices = Self.notices(change, app: app, on: id)
         }
         DevicePersonView.emit(result.text, json: json, person: result.person, notices: notices, console: console)
     }
 
     /// The change's notes, which an agent reads on stdout, and how a person resets a grant or revoke, which outlives the command.
-    static func notices(_ change: PermissionChange, app: String, on device: DeviceID, json: Bool, console: Console = .current) -> [Notice] {
-        var notices = DevicePersonView.personOnly(change.notes.map { Notice.note($0) }, json: json, console: console)
+    static func notices(_ change: PermissionChange, app: String, on device: DeviceID) -> [Notice] {
+        var notices = change.notes.map { Notice.note($0, personOnly: true) }
         let changed = DevicePersonView.changed(change)
         guard change.action != .reset, !changed.isEmpty else { return notices }
         let undo = "offsider permission reset \(changed.joined(separator: " ")) --app \(app) --device \(device.rawValue)"
-        notices += DevicePersonView.lasting("Stays after this command", undo: undo, label: "Reset", json: json, console: console)
+        notices.append(DevicePersonView.lasting("Stays after this command", undo: undo, label: "Reset"))
         return notices
     }
 

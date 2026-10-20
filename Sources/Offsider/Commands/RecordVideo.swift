@@ -81,8 +81,8 @@ struct RecordVideo: AsyncParsableCommand {
         var outputURL = target.url
         let console = Console.current
         let recording = StartPersonView.recordingLabel(device: device.rawValue, elapsed: 0)
-        StartPersonView.step("Recording \(device.platform.videoSourceNoun) \(device.rawValue) to \(outputURL.path)", label: recording)
-        StartPersonView.step("Press Ctrl+C to stop recording", label: recording)
+        Console.current.step("Recording \(device.platform.videoSourceNoun) \(device.rawValue) to \(outputURL.path)", label: recording)
+        Console.current.step("Press Ctrl+C to stop recording", label: recording)
 
         let cancellationFlag = CancellationFlag()
         let signalObserver = SignalObserver(signals: [SIGINT, SIGTERM]) {
@@ -116,7 +116,7 @@ struct RecordVideo: AsyncParsableCommand {
             throw CLIError(errorDescription: error.message, reason: .videoFailed)
         }
         let held = written.held > 0 ? ", \(written.held) of \(written.frames) frames held" : ""
-        StartPersonView.clearLine()
+        Console.current.clearLine()
         Console.current.line("Recording saved to \(outputURL.path)\(held)", person: nil)
         if json {
             console.data(VideoRecordingReport(path: outputURL.path, frames: written.frames, heldFrames: written.held, regions: source.painted, unmasked: masks.unmasked).jsonLine() + "\n")
@@ -185,7 +185,7 @@ struct RecordVideo: AsyncParsableCommand {
                     lastLogFrame = frameCount
                     let elapsed = Date().timeIntervalSince(startTime)
                     let actualFPS = Double(frameCount) / max(elapsed, 0.0001)
-                    StartPersonView.step(
+                    Console.current.step(
                         String(format: "Captured %lld frames (%.1f FPS actual)", frameCount, actualFPS),
                         label: StartPersonView.recordingLabel(device: source.device.rawValue, elapsed: elapsed)
                     )

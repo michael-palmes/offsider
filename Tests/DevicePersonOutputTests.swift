@@ -36,7 +36,7 @@ struct DevicePersonOutputTests {
     func setterReceipt() {
         let (shown, console) = Self.person()
         DevicePersonView.emit("Appearance: dark (was light)", json: false, person: DevicePersonView.appearanceSet(.dark, before: .fixed(.light)), console: console)
-        #expect(shown.out == "✅  Appearance dark\n    was light\n")
+        #expect(shown.out == "✅  Appearance dark  was light\n")
         #expect(shown.err.isEmpty)
         let (read, agent) = Self.agent()
         DevicePersonView.emit("Appearance: dark (was light)", json: false, person: DevicePersonView.appearanceSet(.dark, before: .fixed(.light)), console: agent)
@@ -50,18 +50,18 @@ struct DevicePersonOutputTests {
             console.show(Page(blocks))
             return shown.out
         }
-        #expect(render(DevicePersonView.appearanceSet(.dark, before: .fixed(.dark))) == "✅  Appearance dark\n    unchanged\n")
-        #expect(render(DevicePersonView.appearanceSet(.light, before: .scheduled("auto"))) == "✅  Appearance light\n    was auto\n")
+        #expect(render(DevicePersonView.appearanceSet(.dark, before: .fixed(.dark))) == "✅  Appearance dark  unchanged\n")
+        #expect(render(DevicePersonView.appearanceSet(.light, before: .scheduled("auto"))) == "✅  Appearance light  was auto\n")
         #expect(render(DevicePersonView.appearanceSet(.light, before: nil)) == "✅  Appearance light\n")
         let size = DevicePersonView.contentSize(
             ContentSizeReading(category: .extraLarge, fontScale: 1.15), previous: ContentSizeReading(category: .large, fontScale: 1), setting: true
         )
-        #expect(render(size) == "✅  Content size extra-large\n    was large\n    font scale 1.15\n")
+        #expect(render(size) == "✅  Content size extra-large  was large\n    font scale 1.15\n")
         let turned = DevicePersonView.orientation(
             .landscapeLeft, previous: .portrait, screen: UIScreenInfo(width: 914.29, height: 411.43), platform: .android,
             rotation: RotationReport(before: nil, now: nil, restored: false), setting: true
         )
-        #expect(render(turned) == "✅  Orientation landscape-left\n    was portrait\n    914.29 x 411.43 dp\n")
+        #expect(render(turned) == "✅  Orientation landscape-left  was portrait\n    914.29 x 411.43 dp\n")
     }
 
     @Test("a read is one key-value line, its detail after the value")
@@ -88,37 +88,35 @@ struct DevicePersonOutputTests {
         #expect(read.out == "  Posture  half-opened One UI TENT, inner display, 884 x 1104 dp\n")
         let (set, other) = Self.person()
         other.show(Page(DevicePersonView.posture(.open, previous: .closed, screen: screen, platform: .android, state: "OPENED", angle: nil, setting: true)))
-        #expect(set.out == "✅  Posture open\n    was closed\n    inner display, 884 x 1104 dp\n")
+        #expect(set.out == "✅  Posture open  was closed\n    inner display, 884 x 1104 dp\n")
     }
 
     @Test("--json prints only the JSON, for a person too, with the notices an agent always read")
     func jsonStaysJSON() {
         let (shown, console) = Self.person()
-        let notices = StatusBarCommand.notices(.override, on: Self.emulator, json: true, console: console)
+        let notices = StatusBarCommand.notices(.override, on: Self.emulator)
         DevicePersonView.emit(#"{"version":1}"#, json: true, person: DevicePersonView.statusBarCleared(platform: .android), notices: notices, console: console)
         #expect(shown.out == "{\"version\":1}\n")
         #expect(shown.err.isEmpty)
         let (phone, agentConsole) = Self.agent()
-        DevicePersonView.emit(#"{"version":1}"#, json: true, person: [], notices: StatusBarCommand.notices(.override, on: Self.phone, json: true, console: agentConsole), console: agentConsole)
+        DevicePersonView.emit(#"{"version":1}"#, json: true, person: [], notices: StatusBarCommand.notices(.override, on: Self.phone), console: agentConsole)
         #expect(phone.err == "Note: demo mode stays on for R58M123ABC after this command; `offsider status-bar clear --device R58M123ABC` turns it off.\n")
     }
 
     @Test("state that outlives the command: a person reads how to undo it on any device; an agent only on a phone, in the words it always had")
     func lastingNotes() {
         let (emulator, console) = Self.person()
-        DevicePersonView.emit("Status bar: 9:41", json: false, person: DevicePersonView.statusBarOverride(StatusBarOverride()), notices: StatusBarCommand.notices(.override, on: Self.emulator, json: false, console: console), console: console)
+        DevicePersonView.emit("Status bar: 9:41", json: false, person: DevicePersonView.statusBarOverride(StatusBarOverride()), notices: StatusBarCommand.notices(.override, on: Self.emulator), console: console)
         #expect(emulator.out == "✅  Status bar overridden\n    9:41, battery 100 % not charging, Wi-Fi 3 bars, cellular 4 bars\n")
         #expect(emulator.err == "\n📌  Demo mode stays on after this command\n    Undo  offsider status-bar clear --device emulator-5554\n")
 
         let (quiet, agent) = Self.agent()
-        #expect(StatusBarCommand.notices(.override, on: Self.emulator, json: false, console: agent).isEmpty)
-        #expect(StayAwakeCommand.notices(true, on: Self.emulator, json: false, console: agent).isEmpty)
-        #expect(BiometricCommand.notices(.enrol, on: Self.simulator, json: false, console: agent).isEmpty)
+        agent.show(Page(notices: StatusBarCommand.notices(.override, on: Self.emulator) + StayAwakeCommand.notices(true, on: Self.emulator) + BiometricCommand.notices(.enrol, on: Self.simulator)))
         #expect(quiet.all.isEmpty)
 
         for (notices, note) in [
-            (StatusBarCommand.notices(.override, on: Self.phone, json: false, console: agent), StatusBarCommand.phoneNote(.override, on: Self.phone)),
-            (StayAwakeCommand.notices(true, on: Self.phone, json: false, console: agent), StayAwakeCommand.phoneNote(true, on: Self.phone)),
+            (StatusBarCommand.notices(.override, on: Self.phone), StatusBarCommand.phoneNote(.override, on: Self.phone)),
+            (StayAwakeCommand.notices(true, on: Self.phone), StayAwakeCommand.phoneNote(true, on: Self.phone)),
         ] {
             let (read, console) = Self.agent()
             console.show(Page(notices: notices))
@@ -126,10 +124,10 @@ struct DevicePersonOutputTests {
         }
 
         let (stays, other) = Self.person()
-        other.show(Page(notices: StayAwakeCommand.notices(true, on: Self.phone, json: false, console: other)))
+        other.show(Page(notices: StayAwakeCommand.notices(true, on: Self.phone)))
         #expect(stays.err == "📌  Stays on across reboots\n    Undo  offsider stay-awake off --device R58M123ABC\n")
         let (enrolled, third) = Self.person()
-        third.show(Page(notices: BiometricCommand.notices(.unenrol, on: Self.simulator, json: false, console: third)))
+        third.show(Page(notices: BiometricCommand.notices(.unenrol, on: Self.simulator)))
         #expect(enrolled.err.hasSuffix("Undo  offsider biometric enrol --device \(Self.simulator.rawValue)\n"))
     }
 
@@ -138,10 +136,10 @@ struct DevicePersonOutputTests {
         let (_, console) = Self.person()
         let on = AutoRotateState(accelerometerRotation: 1, userRotation: 0)
         let off = AutoRotateState(accelerometerRotation: 0, userRotation: 1)
-        #expect(OrientationCommand.notices(.landscapeLeft, rotation: RotationReport(before: on, now: off, restored: false), on: Self.emulator, json: false, console: console).map(\.command)
+        #expect(OrientationCommand.notices(.landscapeLeft, rotation: RotationReport(before: on, now: off, restored: false), on: Self.emulator).map(\.command)
             == ["offsider orientation portrait --device emulator-5554"])
-        #expect(OrientationCommand.notices(.landscapeLeft, rotation: RotationReport(before: off, now: off, restored: false), on: Self.emulator, json: false, console: console).isEmpty)
-        #expect(OrientationCommand.notices(.portrait, rotation: RotationReport(before: on, now: on, restored: true), on: Self.emulator, json: false, console: console).isEmpty)
+        #expect(OrientationCommand.notices(.landscapeLeft, rotation: RotationReport(before: off, now: off, restored: false), on: Self.emulator).isEmpty)
+        #expect(OrientationCommand.notices(.portrait, rotation: RotationReport(before: on, now: on, restored: true), on: Self.emulator).isEmpty)
     }
 
     @Test("warnings raised mid-command read to an agent exactly as the raw lines they replace")
@@ -171,7 +169,7 @@ struct DevicePersonOutputTests {
         var notCharging = AwakeReading(screen: .on, lockScreen: .hidden, screenTimeoutMilliseconds: 600_000)
         notCharging.stayAwake = [.ac, .usb, .wireless]
         let set = render(DevicePersonView.stayAwake(notCharging, previous: AwakeReading(screen: .on, lockScreen: .hidden), setting: true))
-        #expect(set == "✅  Stay awake on\n    was off\n    while charging\n    It is not charging, so the screen still turns off after 10 min\n")
+        #expect(set == "✅  Stay awake on  was off\n    while charging\n    It is not charging, so the screen still turns off after 10 min\n")
         let read = render(DevicePersonView.stayAwake(AwakeReading(screen: .on, lockScreen: .hidden, screenTimeoutMilliseconds: 1_800_000), previous: nil, setting: false))
         #expect(read == "  Stay awake      off\n  Screen timeout  30 min\n")
 
@@ -198,7 +196,7 @@ struct DevicePersonOutputTests {
     func permissionChange() {
         let text = PermissionCommand.changeLines(Self.change, app: "com.example.app", platform: .android)
         let (shown, console) = Self.person()
-        let notices = PermissionCommand.notices(Self.change, app: "com.example.app", on: Self.emulator, json: false, console: console)
+        let notices = PermissionCommand.notices(Self.change, app: "com.example.app", on: Self.emulator)
         DevicePersonView.emit(text, json: false, person: DevicePersonView.permissionChange(Self.change, app: "com.example.app"), notices: notices, console: console)
         #expect(shown.out == "✅  Granted camera to com.example.app\n    location already granted\n")
         #expect(shown.err.contains("💡  com.example.app does not request android.permission.READ_CONTACTS;\n    grant applied to the rest.\n"))
@@ -206,7 +204,7 @@ struct DevicePersonOutputTests {
         #expect(!shown.out.contains("Note:"))
 
         let (read, agent) = Self.agent()
-        DevicePersonView.emit(text, json: false, person: [], notices: PermissionCommand.notices(Self.change, app: "com.example.app", on: Self.emulator, json: false, console: agent), console: agent)
+        DevicePersonView.emit(text, json: false, person: [], notices: PermissionCommand.notices(Self.change, app: "com.example.app", on: Self.emulator), console: agent)
         #expect(read.out == text + "\n")
         #expect(read.out.hasSuffix("Note: com.example.app does not request android.permission.READ_CONTACTS; grant applied to the rest.\n"))
         #expect(read.err.isEmpty)
@@ -427,15 +425,5 @@ struct DevicePersonOutputTests {
         third.show(removed.person)
         third.show(gone.person)
         #expect(both.out == "✅  Removed the unlock code for Pixel_9\n✅  Nothing to remove\n    no unlock code saved for Pixel_9\n")
-    }
-
-    @Test("an agent never reads a notice meant only for a person")
-    func personOnlyNotices() {
-        let note = Notice.note("only for people")
-        let (_, agent) = Self.agent()
-        #expect(DevicePersonView.personOnly([note], json: false, console: agent).isEmpty)
-        let (_, person) = Self.person()
-        #expect(DevicePersonView.personOnly([note], json: false, console: person) == [note])
-        #expect(DevicePersonView.personOnly([note], json: true, console: person).isEmpty)
     }
 }

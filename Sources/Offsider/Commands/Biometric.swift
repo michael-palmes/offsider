@@ -76,7 +76,7 @@ struct BiometricCommand: AsyncParsableCommand {
         if let warning = report.warning {
             console.notice(Self.unenrolled(warning, name: report.name, on: id))
         }
-        DevicePersonView.emit(report.output, json: json, person: report.person, notices: Self.notices(action, on: id, json: json, console: console), console: console)
+        DevicePersonView.emit(report.output, json: json, person: report.person, notices: Self.notices(action, on: id), console: console)
     }
 
     /// The warning before a match on a simulator with nothing enrolled, its words unchanged for an agent.
@@ -85,10 +85,10 @@ struct BiometricCommand: AsyncParsableCommand {
     }
 
     /// Enrolment outlives the command, so a person reads how to undo it.
-    static func notices(_ action: BiometricAction, on device: DeviceID, json: Bool, console: Console = .current) -> [Notice] {
+    static func notices(_ action: BiometricAction, on device: DeviceID) -> [Notice] {
         guard action == .enrol || action == .unenrol else { return [] }
         let undo = "offsider biometric \(action == .enrol ? "unenrol" : "enrol") --device \(device.rawValue)"
-        return DevicePersonView.lasting("Stays \(action == .enrol ? "enrolled" : "unenrolled") after this command", undo: undo, json: json, console: console)
+        return [DevicePersonView.lasting("Stays \(action == .enrol ? "enrolled" : "unenrolled") after this command", undo: undo)]
     }
 
     @MainActor

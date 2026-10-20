@@ -61,7 +61,7 @@ struct Key: AsyncParsableCommand, VerifiableCommand {
     func run() async throws {
         guard verification.verify else {
             try await execute(progress: nil)
-            Console.current.show(InputPersonView.receipt(receiptHeadline, details: receiptDetails))
+            Console.current.show(InputPersonView.receipt(receiptHeadline, aside: receiptAside))
             return
         }
         try await VerifyOutput.reportingFailures(command: "key", target: "keycode \(keycode)", options: verification) { progress in
@@ -121,10 +121,10 @@ struct Key: AsyncParsableCommand, VerifiableCommand {
         "Pressed " + (InputPersonView.keyName(keycode) ?? "key \(keycode)")
     }
 
-    var receiptDetails: [String] {
+    var receiptAside: String? {
         var parts: [String] = []
         if InputPersonView.keyName(keycode) != nil { parts.append("key \(keycode)") }
-        if let duration { parts.append("held " + WaitLoop.seconds(duration)) }
-        return parts.isEmpty ? [] : [InputPersonView.sentence(parts.joined(separator: ", "))]
+        if let duration { parts.append(InputPersonView.held(duration)) }
+        return parts.isEmpty ? nil : parts.joined(separator: ", ")
     }
 }

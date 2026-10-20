@@ -213,13 +213,13 @@ struct Gesture: AsyncParsableCommand {
         try await Console.current.progress("Sending \(preset.rawValue)") { try await backend.performTracked(finalEvent, on: device) }
 
         logger.info().log("Gesture completed successfully")
-        Console.current.show(InputPersonView.receipt("Sent \(preset.rawValue)", details: receiptDetails))
+        Console.current.show(InputPersonView.receipt("Sent \(preset.rawValue)", aside: receiptAside))
     }
 
     /// long-press-drag names its two points; a swipe preset sizes itself, so it needs none.
-    var receiptDetails: [String] {
-        guard preset.kind == .longPressDrag, let startX, let startY, let endX, let endY else { return [] }
-        return ["\(VerifyOutput.pointDescription(x: startX, y: startY)) to \(VerifyOutput.pointDescription(x: endX, y: endY))"]
+    var receiptAside: String? {
+        guard preset.kind == .longPressDrag, let startX, let startY, let endX, let endY else { return nil }
+        return "\(VerifyOutput.pointDescription(x: startX, y: startY)) to \(VerifyOutput.pointDescription(x: endX, y: endY))"
     }
 
     /// The preset as a swipe in the backend's input space: top and bottom swipes sized to the screen, the rest to the app frame in `tree`.

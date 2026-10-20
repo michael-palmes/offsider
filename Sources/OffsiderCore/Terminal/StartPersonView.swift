@@ -3,69 +3,6 @@ import Foundation
 /// What a person sees from `boot`, `run`, `lease`, `guide` and the video commands: receipts, tables and a spinner over each
 /// pause. An agent keeps every line these commands always printed, byte for byte.
 public enum StartPersonView {
-    // MARK: Stderr
-
-    /// Stderr lines an agent reads as they happen; a person's notices wait for the page, after its body.
-    public struct Lines {
-        public let console: Console
-        public private(set) var notices: [Notice] = []
-
-        public init(console: Console = .current) {
-            self.console = console
-        }
-
-        /// `line` as it always read for an agent; `person`, if any, joins a person's notices.
-        public mutating func add(_ line: String, person: Notice?) {
-            if console.err.profile == .agent {
-                console.data(line + "\n", to: .err)
-            } else if let person {
-                notices.append(person)
-            }
-        }
-
-        /// A notice an agent reads now, as `Warning:` or `Note:`, and a person after the page's body.
-        public mutating func add(_ notice: Notice) {
-            if console.err.profile == .agent {
-                console.notice(notice)
-            } else {
-                notices.append(notice)
-            }
-        }
-
-        /// Shows a person's waiting notices now, for a run that ends without a page.
-        public mutating func flush() {
-            notices.forEach(console.notice)
-            notices = []
-        }
-    }
-
-    /// One step of a pause: the spinner's label on a person's terminal, else `line` as it always read.
-    public static func step(_ line: String, label: String, console: Console = .current) {
-        let err = console.err
-        if err.profile == .person, err.animates {
-            console.relabel(label)
-        } else {
-            console.data(line + "\n", to: .err)
-        }
-    }
-
-    /// A dim stderr line for a person; an agent gets `line` as it always read, or nothing when it is nil.
-    public static func aside(_ line: String?, person: String?, console: Console = .current) {
-        let err = console.err
-        if err.profile == .agent {
-            if let line { console.data(line + "\n", to: .err) }
-        } else if let person {
-            console.data(err.canvas.style.dim(TerminalText.line(person, cap: TerminalText.maxErrorCharacters, keepsTab: false)) + "\n", to: .err)
-        }
-    }
-
-    /// Wipes the line a person's Ctrl+C echoed `^C` on, so what follows starts clean; nothing for an agent or a still terminal.
-    public static func clearLine(console: Console = .current) {
-        let err = console.err
-        guard err.profile == .person, err.animates else { return }
-        console.data("\r" + String(repeating: " ", count: err.canvas.usable) + "\r", to: .err)
-    }
-
     // MARK: Boot
 
     /// What a booter's progress line is to a person: a spinner step, a note worth keeping, or nothing because the receipt says it.
@@ -84,12 +21,12 @@ public enum StartPersonView {
         return .note(text)
     }
 
-    /// A booter's line: a spinner step now, or a note for the page; an agent reads the line itself.
-    public static func bootProgress(_ line: String, lines: inout Lines) {
+    /// A booter's line: a spinner step now, or a note held for the page; an agent reads the line itself.
+    public static func bootProgress(_ line: String, console: Console = .current) {
         switch bootLine(line) {
-        case .step(let label): step(line, label: label, console: lines.console)
-        case .note(let text): lines.add(line, person: .note(text))
-        case .running: lines.add(line, person: nil)
+        case .step(let label): console.step(line, label: label)
+        case .note(let text): console.hold(line, person: .note(text))
+        case .running: console.hold(line, person: nil)
         }
     }
 
@@ -97,7 +34,7 @@ public enum StartPersonView {
     public static func booted(name: String, id: String, alreadyRunning: Bool, notices: [Notice] = []) -> Page {
         let shown = TerminalText.field(name, profile: .person)
         return Page(
-            [.person([.outcome(.done(alreadyRunning ? "\(shown) was already running" : "\(shown) is running", details: [id]))]), .agent(id + "\n")],
+            [.person([.outcome(.done(alreadyRunning ? "\(shown) was already running" : "\(shown) is running", aside: id))]), .agent(id + "\n")],
             notices: notices + [.next("offsider describe-ui --device \(id)")]
         )
     }
@@ -211,7 +148,7 @@ public enum StartPersonView {
     /// `lease set`: a person's receipt; an agent's sentence as `perform` wrote it.
     public static func leased(_ key: String, lease: DeviceLease, renewed: Bool, agentText: String, clock: (Date) -> String = DeviceLeaseRules.clock) -> Page {
         let label = TerminalText.field(lease.label, profile: .person)
-        var details = ["until \(clock(lease.expires))"]
+        var details: [String] = []
         var notices: [Notice] = []
         if let owner = lease.owner {
             details.append("for this session (\(owner.name), pid \(owner.pid))")
@@ -219,7 +156,7 @@ public enum StartPersonView {
             notices.append(.next("export \(DeviceLeaseRules.sessionVariable)=\(DeviceLeaseRules.shellQuoted(lease.label))"))
         }
         let headline = renewed ? "Lease on \(key) renewed for \(label)" : "\(key) leased to \(label)"
-        return Page([.person([.outcome(.done(headline, details: details))]), .agent(agentText + "\n")], notices: notices)
+        return Page([.person([.outcome(.done(headline, aside: "until \(clock(lease.expires))", details: details))]), .agent(agentText + "\n")], notices: notices)
     }
 
     /// `lease release`: a receipt when a lease went, the same words as an agent's when there was none.

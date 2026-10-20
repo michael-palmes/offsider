@@ -243,20 +243,21 @@ struct StartPersonOutputTests {
     @Test("an agent reads every booter line on stderr as it comes; a person's spinner takes the steps and the notes wait for the receipt")
     func bootProgress() {
         let agent = ConsoleCapture()
-        var agentLines = StartPersonView.Lines(console: agent.console(out: .agent, err: .agent))
+        let agentConsole = agent.console(out: .agent, err: .agent)
         for line in ["Starting Pixel_9...", "-memory ignored: Pixel_9 is already running.", "Pixel_9 is already running as emulator-5554."] {
-            StartPersonView.bootProgress(line, lines: &agentLines)
+            StartPersonView.bootProgress(line, console: agentConsole)
         }
+        agentConsole.release()
         #expect(agent.err == "Starting Pixel_9...\n-memory ignored: Pixel_9 is already running.\nPixel_9 is already running as emulator-5554.\n")
-        #expect(agentLines.notices.isEmpty)
 
         let person = ConsoleCapture()
-        var personLines = StartPersonView.Lines(console: person.console(out: .person(), err: .person()))
+        let personConsole = person.console(out: .person(), err: .person())
         for line in ["Starting Pixel_9...", "-memory ignored: Pixel_9 is already running."] {
-            StartPersonView.bootProgress(line, lines: &personLines)
+            StartPersonView.bootProgress(line, console: personConsole)
         }
         #expect(person.all.isEmpty)
-        #expect(personLines.notices == [.note("-memory ignored: Pixel_9 is already running")])
+        personConsole.show(StartPersonView.booted(name: "Pixel_9", id: "emulator-5554", alreadyRunning: false))
+        #expect(person.err.contains("-memory ignored: Pixel_9 is already running\n"))
     }
 
     @Test("boot leaves an agent the serial alone and a person a receipt, the warning and the next command")
@@ -268,7 +269,7 @@ struct StartPersonOutputTests {
         #expect(agent.out == "emulator-5554\n")
         #expect(agent.err == "Warning: Pixel_9 has 1.9 GB of RAM, which is tight for a React Native debug build. Close it, then run `offsider boot Pixel_9 --memory 4096`.\n")
         let person = StartFixtures.capture(page)
-        #expect(person.out == "✅  Pixel_9 is running\n    emulator-5554\n")
+        #expect(person.out == "✅  Pixel_9 is running  emulator-5554\n")
         #expect(person.err.contains("Try  offsider boot Pixel_9 --memory 4096"))
         #expect(person.err.hasSuffix("\nNext  offsider describe-ui --device emulator-5554\n"))
         let again = StartFixtures.capture(StartPersonView.booted(name: "iPhone 17 Pro", id: "00000000-0000-4000-8000-000000000001", alreadyRunning: true))
@@ -293,19 +294,16 @@ struct StartPersonOutputTests {
     @Test("the run start lines an agent reads stay on stderr word for word, and a person's warning follows the receipt")
     func runStartLines() {
         let agent = ConsoleCapture()
-        var lines = StartPersonView.Lines(console: agent.console(out: .agent, err: .agent))
-        lines.add("Warning: other users can write to /tmp/run, so they could add or change files in the run.", person: .warning("Other users can write to this run's folder"))
-        lines.add("Started a run in /tmp/run; screenshots and logs from this session are numbered into it. Run `offsider run stop --summary` when done.", person: nil)
+        let agentConsole = agent.console(out: .agent, err: .agent)
+        agentConsole.hold("Warning: other users can write to /tmp/run, so they could add or change files in the run.", person: .warning("Other users can write to this run's folder"))
+        agentConsole.hold("Started a run in /tmp/run; screenshots and logs from this session are numbered into it. Run `offsider run stop --summary` when done.", person: nil)
+        agentConsole.release()
         #expect(agent.err == "Warning: other users can write to /tmp/run, so they could add or change files in the run.\nStarted a run in /tmp/run; screenshots and logs from this session are numbered into it. Run `offsider run stop --summary` when done.\n")
-        #expect(lines.notices.isEmpty)
 
         let person = ConsoleCapture()
         let console = person.console(out: .person(), err: .person())
-        var personLines = StartPersonView.Lines(console: console)
-        personLines.add("Warning: other users can write to /tmp/run.", person: .warning("Other users can write to this run's folder"))
-        var page = StartPersonView.runStarted(path: "/tmp/run", state: RunState(label: nil, startedAt: StartFixtures.now, masks: .defaults), start: .started)
-        page.notices = personLines.notices + page.notices
-        console.show(page)
+        console.hold("Warning: other users can write to /tmp/run.", person: .warning("Other users can write to this run's folder"))
+        console.show(StartPersonView.runStarted(path: "/tmp/run", state: RunState(label: nil, startedAt: StartFixtures.now, masks: .defaults), start: .started))
         #expect(person.all.map(\.stream) == [.out, .err])
         #expect(person.err.hasPrefix("\n⚠️  Other users can write to this run's folder\n"))
     }
@@ -350,7 +348,7 @@ struct StartPersonOutputTests {
         let agent = StartFixtures.capture(page, out: .agent, err: .agent)
         #expect(agent.out == "agent words\n" && agent.err.isEmpty)
         let person = StartFixtures.capture(page)
-        #expect(person.out == "✅  Pixel_9 leased to PR 123\n    until 15:13\n")
+        #expect(person.out == "✅  Pixel_9 leased to PR 123  until 15:13\n")
         #expect(person.err == "\nNext  export OFFSIDER_LEASE='PR 123'\n")
         let owned = DeviceLease(label: "PR 123", created: StartFixtures.now, expires: StartFixtures.now, pid: 77, owner: ProcessIdentity(pid: 812, startTime: 1, name: "node"))
         let mine = StartFixtures.capture(StartPersonView.leased("Pixel_9", lease: owned, renewed: true, agentText: "x", clock: StartFixtures.clock))
@@ -408,9 +406,9 @@ struct StartPersonOutputTests {
         let agent = ConsoleCapture()
         let agentConsole = agent.console(out: .agent, err: .agent)
         agentConsole.line("Project guide: /tmp/OFFSIDER.md", person: .note("From /tmp/OFFSIDER.md"))
-        StartPersonView.step("Waiting for dtuhidd to answer (up to 45 s)...", label: "Waiting for dtuhidd", console: agentConsole)
-        StartPersonView.aside("Press Ctrl+C to stop streaming", person: "Streaming", console: agentConsole)
-        StartPersonView.aside(nil, person: "Streaming now", console: agentConsole)
+        agentConsole.step("Waiting for dtuhidd to answer (up to 45 s)...", label: "Waiting for dtuhidd")
+        agentConsole.aside("Press Ctrl+C to stop streaming", person: "Streaming")
+        agentConsole.aside(nil, person: "Streaming now")
         #expect(agent.err == "Project guide: /tmp/OFFSIDER.md\nWaiting for dtuhidd to answer (up to 45 s)...\nPress Ctrl+C to stop streaming\n")
         #expect(agent.out.isEmpty)
 
@@ -418,13 +416,13 @@ struct StartPersonOutputTests {
         let personConsole = person.console(out: .person(), err: .person(style: Self.colour))
         personConsole.line("Project guide: /tmp/OFFSIDER.md", person: .note("From /tmp/OFFSIDER.md", mark: .guide))
         personConsole.line("Press Ctrl+C to stop recording", person: nil)
-        StartPersonView.step("Waiting for dtuhidd to answer (up to 45 s)...", label: "Waiting for dtuhidd", console: personConsole)
-        StartPersonView.aside("Press Ctrl+C to stop streaming", person: "Streaming", console: personConsole)
+        personConsole.step("Waiting for dtuhidd to answer (up to 45 s)...", label: "Waiting for dtuhidd")
+        personConsole.aside("Press Ctrl+C to stop streaming", person: "Streaming")
         #expect(person.err == "📖  From /tmp/OFFSIDER.md\n\u{1B}[2mStreaming\u{1B}[0m\n")
 
         let dumb = ConsoleCapture()
         let still = Console.Channel(profile: .person, canvas: Canvas(columns: 80, style: .plain), isTerminal: true, animates: false)
-        StartPersonView.step("Starting Pixel_9...", label: "Starting Pixel_9", console: dumb.console(out: still, err: still))
+        dumb.console(out: still, err: still).step("Starting Pixel_9...", label: "Starting Pixel_9")
         #expect(dumb.err == "Starting Pixel_9...\n")
     }
 }

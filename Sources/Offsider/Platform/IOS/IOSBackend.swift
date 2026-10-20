@@ -342,7 +342,7 @@ extension IOSBackend: RawVideoStreaming {
             try await stream.startStreamingAsync(stdoutConsumer)
             isStreaming = true
             try await Task.sleep(nanoseconds: 1_000_000_000)
-            StartPersonView.aside("BGRA stream is now running...", person: nil)
+            Console.current.aside("BGRA stream is now running...", person: nil)
 
             while true {
                 if Task.isCancelled {
@@ -354,11 +354,11 @@ extension IOSBackend: RawVideoStreaming {
                 try? await Task.sleep(nanoseconds: 100_000_000)
             }
 
-            StartPersonView.aside("\nStopping BGRA stream...", person: nil)
+            Console.current.aside("\nStopping BGRA stream...", person: nil)
             isStreaming = false
             try await stream.stopStreamingAsync()
-            StartPersonView.clearLine()
-            StartPersonView.aside("BGRA stream stopped", person: "Stream stopped")
+            Console.current.clearLine()
+            Console.current.aside("BGRA stream stopped", person: "Stream stopped")
         } catch {
             if isStreaming, let videoStream {
                 isStreaming = false

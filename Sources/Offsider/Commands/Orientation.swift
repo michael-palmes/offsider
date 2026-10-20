@@ -209,13 +209,13 @@ struct OrientationCommand: AsyncParsableCommand {
         let screen = try? await backend.screenInfo(for: device)
         let text = json ? DeviceSettingsReport.orientation(current, previous: previous, screen: screen, rotation: rotation) : Self.line(current, screen: screen, platform: device.platform)
         let person = DevicePersonView.orientation(current, previous: previous, screen: screen, platform: device.platform, rotation: rotation, setting: setting)
-        DevicePersonView.emit(text, json: json, person: person, notices: Self.notices(current, rotation: rotation, on: device, json: json))
+        DevicePersonView.emit(text, json: json, person: person, notices: Self.notices(current, rotation: rotation, on: device))
     }
 
     /// When this turn switched Android's auto-rotate off, how a person gets it back.
-    static func notices(_ current: DeviceOrientation, rotation: RotationReport?, on device: DeviceID, json: Bool, console: Console = .current) -> [Notice] {
+    static func notices(_ current: DeviceOrientation, rotation: RotationReport?, on device: DeviceID) -> [Notice] {
         guard let rotation, current != .portrait, rotation.before?.autoRotate == true, rotation.now?.autoRotate == false else { return [] }
-        return DevicePersonView.lasting("Auto-rotate stays off until portrait", undo: "offsider orientation portrait --device \(device.rawValue)", json: json, console: console)
+        return [DevicePersonView.lasting("Auto-rotate stays off until portrait", undo: "offsider orientation portrait --device \(device.rawValue)")]
     }
 
     static func line(_ current: DeviceOrientation, screen: UIScreenInfo?, platform: DevicePlatform) -> String {

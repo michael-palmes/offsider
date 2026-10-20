@@ -120,15 +120,15 @@ struct StatusBarCommand: AsyncParsableCommand {
             let (text, person) = try await Self.result(action, override: override, json: json, on: id, backend: backend)
             return (text, person, id)
         }
-        DevicePersonView.emit(text, json: json, person: person, notices: Self.notices(action, on: id, json: json, console: console), console: console)
+        DevicePersonView.emit(text, json: json, person: person, notices: Self.notices(action, on: id), console: console)
     }
 
     /// After an override, how a person clears it; an agent reads only the phone's note, as it always did.
-    static func notices(_ action: Action, on device: DeviceID, json: Bool, console: Console = .current) -> [Notice] {
+    static func notices(_ action: Action, on device: DeviceID) -> [Notice] {
         guard action == .override else { return [] }
         let what = device.platform == .android ? "Demo mode stays on" : "The override stays"
         let undo = "offsider status-bar clear --device \(device.rawValue)"
-        return DevicePersonView.lasting("\(what) after this command", undo: undo, agent: phoneNote(action, on: device), json: json, console: console)
+        return [DevicePersonView.lasting("\(what) after this command", undo: undo, agent: phoneNote(action, on: device))]
     }
 
     /// One stderr line after an override on a USB phone: demo mode stays until it is cleared.

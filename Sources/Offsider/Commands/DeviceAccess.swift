@@ -691,7 +691,7 @@ struct DeviceAccessRemove: AsyncParsableCommand {
     func run() async throws {
         let console = Console.current
         let removal = try await remove(context: DeviceAccessContext.current, person: !json && console.out.profile == .person)
-        let notices = DevicePersonView.personOnly(removal.notices, json: json, console: console)
+        let notices = removal.notices.map(\.forPersonOnly)
         DevicePersonView.emit(removal.text, json: json, person: removal.person, notices: notices, console: console)
     }
 
@@ -737,7 +737,7 @@ struct DeviceAccessRemove: AsyncParsableCommand {
         guard hadRunner else { return Removal(text: text, person: receipt, notices: dropped) }
         let clean = Self.cleanCommand(target.key)
         guard context.interactive() else {
-            let installed = Notice(kind: .note, text: "Its runner is still installed", mark: .clean, command: clean, label: "Remove")
+            let installed = Notice.note("Its runner is still installed", mark: .clean, see: clean, label: "Remove")
             return Removal(text: text + " Uninstall Offsider's runner from it with `\(clean)`.", person: receipt, notices: dropped + [installed])
         }
         let answer = try TerminalPrompt.run(cancelled: "Kept the runner; `\(clean)` removes it later.", descriptor: context.promptDescriptor, keeps: true) { prompt in
