@@ -77,7 +77,7 @@ struct AndroidDisplayCacheTests {
         return AndroidBackend(host: host) { _, _ in }
     }
 
-    /// One command: routes by serial, as the CLI does, then captures; returns the PNG and the services it sent, bar the foreground check.
+    /// One command: routes by serial, as the CLI does, then captures; returns the PNG and the `commands` it sent.
     static func command(_ server: FakeAdbServer, cache: String?) async throws -> (png: Data, services: [String]) {
         let backend = try Self.backend(server, cache: cache)
         let before = server.services.count
@@ -128,7 +128,7 @@ struct AndroidDisplayCacheTests {
     }
 
     static func execs(_ server: FakeAdbServer, after count: Int) -> [String] {
-        server.services.dropFirst(count).filter { $0.hasPrefix("exec:") }
+        commands(server, after: count).filter { $0.hasPrefix("exec:") }
     }
 
     @Test("on a phone whose screencap follows the active panel, a cached command takes plain captures, which follow a fold partway through")

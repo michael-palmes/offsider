@@ -502,7 +502,7 @@ struct HIDBrokerAttachTests {
         defer { [liveLock, olderLock].forEach { Darwin.close($0) } }
         let staleLock = try HIDBroker.acquireLifetimeLock(endpoint: stale)
         // A child another test is spawning can share the descriptor until its exec, so only an unlock frees it at once.
-        flock(staleLock, LOCK_UN)
+        _ = flock(staleLock, LOCK_UN)
         Darwin.close(staleLock)
         #expect(HIDBroker.liveEndpoints(root: root) == [live])
     }

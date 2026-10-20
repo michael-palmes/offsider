@@ -384,10 +384,7 @@ struct HelperBrokerTests {
                 let fixture = BrokerFixture(maxClients: 1)
                 try await fixture.start()
                 // The start's probe must have gone before the one client allowed attaches; a status that answers shows the slot free.
-                let free = ContinuousClock.now + .seconds(5)
-                while await HelperBrokerClient.status(at: fixture.socket) == nil, ContinuousClock.now < free {
-                    try await Task.sleep(for: .milliseconds(20))
-                }
+                _ = try await fixture.status(showing: "a free client slot") { _ in true }
                 let session = try await HelperSession.attach(try fixture.client(), log: { _, _ in })
 
                 let stream = try #require(await HelperBrokerClient.open(fixture.socket))
@@ -807,10 +804,7 @@ struct HelperBrokerTests {
             await recordingErrors {
                 let fixture = BrokerFixture(maxClients: 1)
                 try await fixture.start()
-                let free = ContinuousClock.now + .seconds(5)
-                while await HelperBrokerClient.status(at: fixture.socket) == nil, ContinuousClock.now < free {
-                    try await Task.sleep(for: .milliseconds(20))
-                }
+                _ = try await fixture.status(showing: "a free client slot") { _ in true }
                 let session = try await HelperSession.attach(try fixture.client(), log: { _, _ in })
                 // Refused but silent, it holds the one refusal slot while the broker waits for its request.
                 let silent = try #require(await HelperBrokerClient.open(fixture.socket))
