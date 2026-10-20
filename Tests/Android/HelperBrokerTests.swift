@@ -562,22 +562,26 @@ struct HelperBrokerTests {
     }
 
     @Test("a broker that closes before a byte, as another build's does, is looked up by its arguments before the command starts its own")
-    func refusingBrokerIsLookedUp() async throws {
-        let fixture = BrokerFixture()
-        // No hello reply: the scripted broker closes the connection unread, as a broker of another build does.
-        let broker = try ScriptedBroker(path: fixture.socket)
-        var client = try fixture.client()
-        let asked = Asked()
-        let socket = fixture.socket
-        client.stopOtherBuilds = { arguments, path in
-            asked.record(arguments + [path])
-            return []
+    func refusingBrokerIsLookedUp() async {
+        await #expect(processExitsWith: .success) { @MainActor in
+            await recordingErrors {
+                let fixture = BrokerFixture()
+                // No hello reply: the scripted broker closes the connection unread, as a broker of another build does.
+                let broker = try ScriptedBroker(path: fixture.socket)
+                var client = try fixture.client()
+                let asked = Asked()
+                let socket = fixture.socket
+                client.stopOtherBuilds = { arguments, path in
+                    asked.record(arguments + [path])
+                    return []
+                }
+                let connection = try await client.existing(helloID: 1)
+                #expect(connection == nil)
+                #expect(asked.all == [["android-session", "serve", "--device", FakeHelperDevice.serial, socket]])
+                broker.cancel()
+                try? FileManager.default.removeItem(at: fixture.root)
+            }
         }
-        let connection = try await client.existing(helloID: 1)
-        #expect(connection == nil)
-        #expect(asked.all == [["android-session", "serve", "--device", FakeHelperDevice.serial, socket]])
-        broker.cancel()
-        try? FileManager.default.removeItem(at: fixture.root)
     }
 
     @Test("a stop while the helper is still starting returns once the start has ended and the slot is free, never before")
