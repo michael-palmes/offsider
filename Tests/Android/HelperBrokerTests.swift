@@ -431,7 +431,7 @@ struct HelperBrokerTests {
                 try await fixture.untilReady()
                 let inject = try HelperWire.frame(try HelperRequest.inject([], sync: true).payload(id: 7))
                 // Sent and shut for writing without yielding, so the broker, on this actor too, reaches the input's turn only once its command has gone.
-                let client = socket(AF_UNIX, SOCK_STREAM, 0)
+                let client = CloseOnExecSocket.make(AF_UNIX, SOCK_STREAM)
                 try #require(client >= 0)
                 var address = try UnixSocket.address(fixture.socket)
                 let connected = withUnsafePointer(to: &address) {
