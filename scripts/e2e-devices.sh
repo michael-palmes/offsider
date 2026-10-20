@@ -19,15 +19,22 @@ EOF
 
 command -v jq >/dev/null 2>&1 || die "jq is not installed." "brew install jq"
 
+# A header with how many are ready, then a row per device.
 show_status() {
-    local status="$1" name kind profile exists emoji
+    local status="$1" name kind profile exists what width ready total names=() avd="Android emulator" simulator="iOS simulator"
+    while IFS= read -r name; do names+=("$name"); done < <(jq -r '.devices[].name' <<<"$status")
+    width="$(ui_widest "${names[@]}")"
+    total="$(jq '.devices | length' <<<"$status")"
+    ready="$(jq '[.devices[] | select(.exists)] | length' <<<"$status")"
+    if [[ "$(ui_breakpoint)" == narrow ]]; then avd="AVD" simulator="simulator"; fi
+    ui_header "🧪" "E2E devices" "$ready of $total ready"
     while IFS=$'\t' read -r name kind profile exists; do
-        emoji="📱"
-        [[ "$kind" == avd ]] && emoji="🤖"
+        what="$avd"
+        [[ "$kind" == avd ]] || what="$simulator"
         if [[ "$exists" == true ]]; then
-            print_success "$(_ui_glyph "$emoji")$name ${DIM}($profile)${NC}"
+            UI_ROW_LABEL_WIDTH="$width" ui_row ok "$name" "$what ${UI_DOT} $profile"
         else
-            print_warning "$(_ui_glyph "$emoji")$name is missing ${DIM}($profile)${NC}"
+            UI_ROW_LABEL_WIDTH="$width" ui_row warn "$name" "missing ${UI_DOT} $what ${UI_DOT} $profile"
         fi
     done < <(jq -r '.devices[] | [.name, .kind, .profile, (.exists | tostring)] | @tsv' <<<"$status")
 }
@@ -35,13 +42,13 @@ show_status() {
 create_missing() {
     local result rc errors
     errors="$(mktemp "${TMPDIR:-/tmp}/offsider-e2e-devices.XXXXXX")"
-    spinner_start "Creating missing devices"
+    spinner_start "Creating the missing devices"
     result="$("$CORE" create 2>"$errors")"
     rc=$?
     spinner_stop
     if [[ -n "$result" ]]; then
-        while IFS= read -r name; do print_success "Created $name"; done < <(jq -r '.created[]' <<<"$result")
-        while IFS=$'\t' read -r name error; do print_error "$name: $error"; done < <(jq -r '.failed[] | [.name, .error] | @tsv' <<<"$result")
+        while IFS= read -r name; do ui_row ok "$name" "created"; done < <(jq -r '.created[]' <<<"$result")
+        while IFS=$'\t' read -r name error; do ui_row fail "$name" "$error" >&2; done < <(jq -r '.failed[] | [.name, .error] | @tsv' <<<"$result")
     fi
     if [[ "$rc" -ne 0 ]]; then
         log "$(cat "$errors")"
@@ -61,11 +68,10 @@ case "${1:-}" in
         create_missing
         ;;
     "")
-        ui_banner "🧪" "Offsider E2E devices"
         show_status "$status"
         echo ""
         if [[ "$(jq '.missing | length' <<<"$status")" == 0 ]]; then
-            print_success "All set."
+            ui_receipt "All set"
             ui_next "./test-runner.sh"
             exit 0
         fi
@@ -73,6 +79,7 @@ case "${1:-}" in
             create_missing
         else
             log "Nothing created."
+            ui_try "$0 create"
         fi
         ;;
     -h|--help|help)

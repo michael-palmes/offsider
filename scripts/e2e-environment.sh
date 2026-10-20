@@ -186,14 +186,26 @@ allowance_team() {
     "$OFFSIDER_BIN_PATH" device-access status --device "$1" --json 2>/dev/null | plutil -extract devices.0.team raw -o - - 2>/dev/null || true
 }
 
+# A command only a person may run, on its own line under the error that asks for it, then what to do in it.
+# Never a Try line: an agent hands it to the user rather than running it.
+print_person_command() {
+    if [[ "$UI_AGENT" == 1 ]]; then
+        printf '  %s\n' "$1" >&2
+        [[ -z "${2:-}" ]] || printf '  %s\n' "$2" >&2
+    else
+        printf '    %s%s%s\n' "$CYAN" "$1" "$NC" >&2
+        [[ -z "${2:-}" ]] || printf '    %s%s%s\n' "$DIM" "$2" "$NC" >&2
+    fi
+    return 0
+}
+
 # The command a person runs to allow a device, with what to choose in its menus.
 print_device_allow() {
     local name="$1"
     local app="${2:-}"
-    print_error "  $(offsider_command) device-access allow"
     if [[ -n "$app" ]]; then
-        print_error "  Then choose $name, pin $app, and allow at least 2 hours."
+        print_person_command "$(offsider_command) device-access allow" "Then choose $name, pin $app, and allow at least 2 hours."
     else
-        print_error "  Then choose $name and allow at least 2 hours."
+        print_person_command "$(offsider_command) device-access allow" "Then choose $name and allow at least 2 hours."
     fi
 }
