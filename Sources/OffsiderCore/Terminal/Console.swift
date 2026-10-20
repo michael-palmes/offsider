@@ -41,6 +41,8 @@ public final class Console: @unchecked Sendable {
     private let lock = NSLock()
     private let queue = DispatchQueue(label: "offsider.console.spinner")
     private var seen: Set<Notice> = []
+    /// The lines an agent has read, so one sentence from two places prints once.
+    private var said: Set<String> = []
     private var counts: [Notice.Kind: Int] = [:]
     private var labels: [String] = []
     private var timer: DispatchSourceTimer?
@@ -68,13 +70,14 @@ public final class Console: @unchecked Sendable {
         let out = self.out
         let body = out.profile == .person ? PersonRenderer.body(page.blocks, canvas: out.canvas) : AgentRenderer.body(page.blocks)
         if !body.isEmpty { emit(.out, body) }
-        let fresh = lock.withLock { page.notices.filter { seen.insert($0).inserted } }
-        guard !fresh.isEmpty else { return }
         let err = self.err
         if err.profile == .agent {
-            emit(.err, AgentRenderer.notices(fresh))
+            let lines = lock.withLock { page.notices.map(AgentRenderer.notice).filter { !$0.isEmpty && said.insert($0).inserted } }
+            emit(.err, lines.joined())
             return
         }
+        let fresh = lock.withLock { page.notices.filter { seen.insert($0).inserted } }
+        guard !fresh.isEmpty else { return }
         lock.withLock { for notice in fresh { counts[notice.kind, default: 0] += 1 } }
         emit(.err, PersonRenderer.notices(fresh, canvas: err.canvas, afterBody: !body.isEmpty && out.isTerminal && err.isTerminal))
     }
@@ -93,12 +96,13 @@ public final class Console: @unchecked Sendable {
 
     /// One notice on stderr, once per process; a person sees at most five of a kind.
     public func notice(_ notice: Notice) {
-        guard lock.withLock({ seen.insert(notice).inserted }) else { return }
         let err = self.err
         guard err.profile == .person else {
-            emit(.err, AgentRenderer.notice(notice))
+            let line = AgentRenderer.notice(notice)
+            if !line.isEmpty, lock.withLock({ said.insert(line).inserted }) { emit(.err, line) }
             return
         }
+        guard lock.withLock({ seen.insert(notice).inserted }) else { return }
         let shown = lock.withLock { () -> Int in
             defer { counts[notice.kind, default: 0] += 1 }
             return counts[notice.kind, default: 0]

@@ -17,6 +17,15 @@ struct ConsoleTests {
         #expect(capture.out == "body\n")
     }
 
+    @Test("an agent reads one line once, even when two notices word it differently for a person")
+    func agentDedupeByLine() {
+        let capture = ConsoleCapture()
+        let console = capture.console(out: .agent, err: .agent)
+        console.notice(.warning("adb is old", agent: "adb 34.0.0 is older than 35.0.0."))
+        console.show(Page(notices: [.warning("Update adb", agent: "adb 34.0.0 is older than 35.0.0.")]))
+        #expect(capture.err == "Warning: adb 34.0.0 is older than 35.0.0.\n")
+    }
+
     @Test("the body goes to stdout before its notices go to stderr")
     func ordering() {
         let capture = ConsoleCapture()
