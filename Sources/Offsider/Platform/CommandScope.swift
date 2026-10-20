@@ -54,7 +54,8 @@ final class CommandScope {
     nonisolated static func banner(for allowance: DeviceAllowance, managed: Bool) -> String {
         let kind = allowance.platform == .ios ? "iPhone or iPad" : "Android phone"
         let until = allowance.expires.map { "allowed until \(ProcessStamp.timestamp($0))" } ?? "allowed until removed"
-        let apps = allowance.apps.isEmpty ? "" : " for \(allowance.apps.joined(separator: ", "))"
+        let named = allowance.apps.map { $0 == DeviceAllowance.wholeDevicePin ? "any app and all logs" : $0 }
+        let apps = named.isEmpty ? "" : " for \(named.joined(separator: ", "))"
         return "Offsider: driving physical \(kind) \"\(allowance.name)\" (\(allowance.key)), \(until)\(apps) (managed policy: \(managed ? "applies" : "none")). "
             + "offsider device-access remove --device \(allowance.key) withdraws it."
     }

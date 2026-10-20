@@ -3,7 +3,7 @@ import OffsiderCore
 import Testing
 @testable import Offsider
 
-@Suite("Tap command")
+@Suite("Tap command", .personOutput)
 @MainActor
 struct TapCommandTests {
     static let device = DeviceID(rawValue: "fake-device", platform: .ios)
@@ -96,7 +96,7 @@ struct TapCommandTests {
 
         let label = AccessibilityTargetResolverTests.bannerLabel
         #expect(error?.reason == .targetCovered)
-        #expect(error?.userFacingDescription.hasPrefix("--id 'tab-search' at (201, 814.5) is covered by other '\(label)' (0, 767) 402x107 (a hit-test at the point found it), so the tap would land on it. Nothing was sent.") == true)
+        #expect(error?.userFacingDescription.hasPrefix("--id 'tab-search' at (201, 814.5) is covered by other \"\(label)\" (0, 767) 402x107 (a hit-test at the point found it), so the tap would land on it. Nothing was sent.") == true)
         #expect(error?.coveredBy == CoverReport(role: "other", id: "banner", label: label, frame: FakeUI.frame(0, 767, 402, 107), screen: nil, evidence: .hitTest))
         #expect(backend.hitTests == 1)
         #expect(backend.session.calls.isEmpty)
@@ -137,7 +137,7 @@ struct TapCommandTests {
         }
 
         let label = AccessibilityTargetResolverTests.bannerLabel
-        #expect(error?.userFacingDescription == "--id 'tab-search' at (201, 814.5) may be covered by other '\(label)' (0, 767) 402x107; the tap may land on it.")
+        #expect(error?.userFacingDescription == "--id 'tab-search' at (201, 814.5) may be covered by other \"\(label)\" (0, 767) 402x107; the tap may land on it.")
         #expect(error?.coveredBy?.evidence == .treeOrder)
         #expect(backend.openedSessions.isEmpty)
         #expect(backend.session.calls.isEmpty)
@@ -250,7 +250,7 @@ struct TapCommandTests {
         let error = await #expect(throws: CLIError.self) {
             try await Self.tap(["--id", "tab-search", "--fail-if-covered"], on: covered)
         }
-        #expect(error?.userFacingDescription.contains("may be covered by group '\(AccessibilityTargetResolverTests.bannerLabel)'") == true)
+        #expect(error?.userFacingDescription.contains("may be covered by group \"\(AccessibilityTargetResolverTests.bannerLabel)\"") == true)
         #expect(covered.treeReads == 1)
         #expect(covered.session.calls.isEmpty)
 
@@ -425,7 +425,7 @@ struct TapCommandTests {
 
         let message = TapCover.describe(CoverVerdict(cover: cover, evidence: .hitTest, isConfident: true))
 
-        #expect(message == "other '\(String(repeating: "a", count: 59))…' (0, 0) 10x10")
+        #expect(message == "other \"\(String(repeating: "a", count: 59))…\" (0, 0) 10x10")
     }
 
     @Test("a slider drag on iOS converts its points with the tree it resolved from")

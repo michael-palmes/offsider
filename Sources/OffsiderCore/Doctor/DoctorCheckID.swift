@@ -7,6 +7,7 @@ public enum DoctorCheckID: String, Codable, Sendable, CaseIterable {
     case xcodeVersion = "xcode.version"
     case frameworks = "xcode.frameworks"
     case coreSimulator = "coresimulator.version"
+    case privateAPI = "xcode.private-api"
     case simulatorApp = "host.simulator-app"
     case deviceHub = "host.device-hub"
     case stabilization = "hid.stabilization"
@@ -61,6 +62,7 @@ public enum DoctorCheckID: String, Codable, Sendable, CaseIterable {
     case hostSessions = "host.sessions"
     case installBundle = "install.bundle"
     case installSkill = "install.skill"
+    case installRules = "install.rules"
 
     public var isPerSimulator: Bool {
         rawValue.hasPrefix("simulator.")
@@ -85,6 +87,7 @@ public enum DoctorCheckID: String, Codable, Sendable, CaseIterable {
         case .xcodeVersion: return "Xcode version"
         case .frameworks: return "Simulator frameworks"
         case .coreSimulator: return "CoreSimulator version"
+        case .privateAPI: return "Private API types"
         case .simulatorApp: return "Simulator.app"
         case .deviceHub: return "Device Hub"
         case .stabilization: return "HID stabilisation delay"
@@ -139,6 +142,7 @@ public enum DoctorCheckID: String, Codable, Sendable, CaseIterable {
         case .hostSessions: return "Offsider commands"
         case .installBundle: return "Bundled resources"
         case .installSkill: return "Agent skill"
+        case .installRules: return "Agent permission rules"
         }
     }
 }

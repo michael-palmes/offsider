@@ -41,7 +41,7 @@ struct HostDoctorRulesTests {
     func withHost() throws {
         let base = DoctorReport(offsiderVersion: "0.8.0", udid: nil, xcode: XcodeSummary(developerDir: nil, version: nil, build: nil, coreSimulator: nil), booted: [], checks: [])
         let report = Doctor.withHost(base, Self.facts())
-        #expect(report.checks.map(\.id) == [.hostLoad, .hostDisk, .hostSessions, .installBundle, .installSkill])
+        #expect(report.checks.map(\.id) == [.hostLoad, .hostDisk, .hostSessions, .installBundle, .installSkill, .installRules])
         let object = try #require(try JSONSerialization.jsonObject(with: try report.jsonData()) as? [String: Any])
         let host = try #require(object["host"] as? [String: Any])
         #expect(Set(host.keys) == ["loadAverage", "cpuCount", "memoryGB", "diskFreeGB", "diskPath", "sessions"])
@@ -102,7 +102,7 @@ struct HostProbeTests {
 
     @Test("the live probe reads this process's own arguments buffer and the Mac's load")
     func live() {
-        let buffer = HostProbe.procargs(getpid())
+        let buffer = BrokerProcess.procargs(getpid())
         #expect((buffer?.count ?? 0) > 4)
         #expect(HostProbe.live.facts().loadAverage.count == 3)
     }

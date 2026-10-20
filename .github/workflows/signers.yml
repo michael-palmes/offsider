@@ -9,7 +9,7 @@ on:
 permissions: {}
 
 jobs:
-  protected-paths:
+  signed-head:
     name: Protected paths signed
     runs-on: ubuntu-24.04
     timeout-minutes: 5
@@ -31,21 +31,18 @@ jobs:
           git fetch --no-tags origin "+refs/pull/${PR}/head:refs/remotes/pr/head"
           [ "$(git rev-parse refs/remotes/pr/head)" = "$HEAD_SHA" ] || { echo "::error::the fetched head is not the event's head"; exit 1; }
 
-      # A change to the signer list, the release path or the entitlements must be vouched for by a key
-      # the base branch already lists; the head commit's signature covers the whole tree.
-      - name: Require an allowed signature when protected paths change
+      # Every pull request's head commit must be vouched for by a key the base branch already lists;
+      # the head commit's signature covers the whole tree, so one check guards every path.
+      - name: Require an allowed signature on the head commit
         env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: |
           set -euo pipefail
           git show "${BASE_SHA}:.github/allowed_signers" > "$RUNNER_TEMP/allowed_signers"
-          protected='^(\.github/allowed_signers|\.github/CODEOWNERS|\.github/workflows/(release|signers)\.yml|scripts/release\.sh|entitlements(-adhoc)?\.plist)$'
-          mb="$(git merge-base "$BASE_SHA" "$HEAD_SHA")"
-          if git diff --name-only "$mb" "$HEAD_SHA" | grep -Eq "$protected"; then
-            echo "Protected paths changed; checking the head commit's signature against the base branch's allowed_signers"
-            git -c gpg.ssh.allowedSignersFile="$RUNNER_TEMP/allowed_signers" -c gpg.minTrustLevel=fully verify-commit --verbose "$HEAD_SHA" \
-              || { echo "::error::this pull request changes a protected path, so its head commit must be signed by a key listed in the base branch's .github/allowed_signers"; exit 1; }
+          if git -c gpg.ssh.allowedSignersFile="$RUNNER_TEMP/allowed_signers" -c gpg.minTrustLevel=fully verify-commit --verbose "$HEAD_SHA"; then
+            echo "The head commit is signed by an allowed key"
           else
-            echo "No protected path changed"
+            echo "::error::the head commit must be signed by a key in the base branch's .github/allowed_signers. Fix: git commit --amend --no-edit -S with that key, then push (for Dependabot, check out its branch, re-sign the head the same way and push)"
+            exit 1
           fi

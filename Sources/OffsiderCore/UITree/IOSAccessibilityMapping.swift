@@ -60,10 +60,15 @@ public enum IOSAccessibilityMapping {
         } else {
             throw MappingError.notAnAccessibilityTree
         }
-        return (dictionaries.map(node(from:)), dictionaries.contains { $0["truncated"] as? Bool == true })
+        return (dictionaries.map { node(from: $0) }, dictionaries.contains { $0["truncated"] as? Bool == true })
     }
 
     public static func node(from dictionary: [String: Any]) -> UINode {
+        UITreeLimits.map(dictionary, shallow: { element, _ in shallowNode(from: element) }, children: { $0["children"] as? [[String: Any]] ?? [] })
+    }
+
+    /// One element without its children.
+    private static func shallowNode(from dictionary: [String: Any]) -> UINode {
         let type = text(dictionary["type"])
         let nativeRole = text(dictionary["role"])
         let subrole = text(dictionary["subrole"])
@@ -105,8 +110,7 @@ public enum IOSAccessibilityMapping {
                 contentRequired: dictionary["content_required"] as? Bool,
                 pid: (dictionary["pid"] as? NSNumber)?.intValue,
                 axFrame: text(dictionary["AXFrame"])
-            )),
-            children: (dictionary["children"] as? [[String: Any]] ?? []).map(node(from:))
+            ))
         )
     }
 

@@ -29,6 +29,7 @@ final class HelperBroker {
     let dexSha256: String
     let limits: Limits
     private let startHelper: @MainActor () async throws -> HelperSession
+    private let admits: @Sendable (Int32) -> Bool
     private let log: AndroidLog
     private var state: State = .starting
     private var waiters: [CheckedContinuation<Void, Never>] = []
@@ -49,13 +50,14 @@ final class HelperBroker {
 
     init(
         serial: String, socketPath: String, dexSha256: String, limits: Limits,
-        startHelper: @escaping @MainActor () async throws -> HelperSession, log: @escaping AndroidLog
+        startHelper: @escaping @MainActor () async throws -> HelperSession, admits: @escaping @Sendable (Int32) -> Bool, log: @escaping AndroidLog
     ) {
         self.serial = serial
         self.socketPath = socketPath
         self.dexSha256 = dexSha256
         self.limits = limits
         self.startHelper = startHelper
+        self.admits = admits
         self.log = log
     }
 
@@ -65,7 +67,7 @@ final class HelperBroker {
 
     /// Listens first, so the starting command can wait on `hello`, then starts the helper and serves until a reason to stop.
     func run() async throws {
-        let listener = try UnixSocketListener(path: socketPath)
+        let listener = try UnixSocketListener(path: socketPath, admits: admits)
         log(.info, "Serving \(serial) on \(socketPath)")
         let started = ContinuousClock.now
         let accepting = Task { await acceptLoop(listener) }

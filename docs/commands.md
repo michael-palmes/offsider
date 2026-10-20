@@ -1,0 +1,98 @@
+# Commands
+
+Every device command takes `--device <id>`, using an ID from `offsider list-devices`: a simulator UDID (case-insensitive), a USB iPhone or iPad's UDID (such as `00008130-001C...`), an Android emulator serial such as `emulator-5554`, the name of a running AVD, or a USB phone's serial. Without `--device`, a command uses `OFFSIDER_DEVICE` when it is set and not blank; `--device` always wins, and with neither the command exits 64. `OFFSIDER_DEVICE` never names a physical device: a phone, iPhone or iPad must be [allowed](device-access.md) and named with `--device` on every command, so `doctor --fix` needs `--device` too. `doctor` prints the binding (`device.source` is `environment` in `--json`); `permission services` and the `--device` filters of `runner` and `session` ignore it. `offsider <command> --help` lists every option. In 0.3.0, `--udid` became `--device` and `list-simulators` became `list-devices`; the old names exit 64 with a hint.
+
+| Command | What it does |
+| --- | --- |
+| `list-devices` | List iOS simulators (iPhone and iPad), allowed iPhones, iPads and USB Android phones, running Android emulators and shut-down AVDs with their IDs as a table, booted and booting ones first on each platform, or as [JSON](#device-list-json) with `--json`; `--platform ios\|android` filters, `--booted` keeps only booted and booting devices, and `--physical` lists every connected physical device, allowed or not, for a person. On a terminal it ends with a `Next:` line on stderr ([first run](getting-started.md#first-run)) |
+| `device-access` | `allow` (a person at a terminal picks from menus), `status` (also `device-access` alone) or `remove` Offsider's access to a physical iPhone, iPad or Android phone (`--device`, `--app`, `--expires`, `--team` for an iPhone's runner, for scripts; `--json`; [physical devices](device-access.md)) |
+| `boot` | Start an Android emulator by AVD name, or an iOS simulator by name or UDID, wait until it has booted and print its serial or UDID; a device that is already running is not started again ([starting an emulator](android.md#starting-an-emulator)) |
+| `doctor` | Check the host, Xcode, Device Hub, simulators and the Android SDK, or one device with `--device`; `--json` prints one object and `--fix` applies safe fixes ([doctor](troubleshooting.md)) |
+| `describe-ui` | Print the screen's UI as versioned, platform-neutral JSON, a short text view (`--summary`), only what changed since the previous command (`--diff`), or the element at `--point x,y` ([reading the screen](reading-the-screen.md)) |
+| `init` | Install or update the bundled agent skill once per skills folder, and add permission rules for Claude Code and Codex where installed (`--client auto\|claude\|agents`, `--dest`, `--force` to replace another skill named offsider, `--uninstall`, `--print`, `--no-rules`, `--rules-only`, `--print-rules`; [agent skill](agents.md#agent-skill-and-guide)) |
+| `guide` | Print one topic of the skill, matched to this version (`selectors`, `verify`, `errors`, `android`, `ios-device`, `react-native`, `turnstile`, `login`, `foldables`, `batch`, `screenshots`, `evidence`, `describe-ui`, `device-state`, `migrate`), or list the topics with no argument; `--project <path>` prints the repository's own `OFFSIDER.md` |
+| `tap` | Tap a point (`-x`, `-y`) or an element by `--id`, `--label`, `--label-contains` or `--value`; supports `--element-type`, `--nth`, `--topmost`, `--wait-timeout`, `--allow-offscreen`, `--allow-covered`, `--fail-if-covered`, `--no-settle`, `--tap-style`, delays and `--verify, --retries, --json`; `--app <bundle-id>` on a physical iPhone, iPad or Android phone ([selectors and taps](input.md#selectors-and-taps)) |
+| `turnstile` | Read the state of a Cloudflare Turnstile widget; it never taps it ([details](sign-in.md#cloudflare-turnstile)) |
+| `login` | Fill the sign-in form in front with a saved test user and tap its submit button once ([sign in](sign-in.md)) |
+| `credential` | `set`, `status`, `describe`, `remove`, `join` (a person only) or `signed-out` the test users of one app, kept in the login Keychain; `--devices`, `--confirm` and `--web-login` scope each one ([sign in](sign-in.md)) |
+| `slider` | Set a slider to `--value` 0 to 100 by `--id`, `--label` or `--label-contains` (`--allow-offscreen`, `--no-settle`), then verify the result |
+| `type` | Type text from an argument, `--stdin` or `--file` (`--allow-path` for a refused location, which needs a person at a terminal to confirm the resolved path with Touch ID or the login password; argument text into a password field is refused) (US keyboard characters on iOS); `--replace` replaces the focused field's text instead, and an empty text clears it; `--into-id`, `--into-label` or `--into-label-contains` taps a field and waits for focus first, `--require-focus-id` types only into a field that already has focus; supports `--verify, --retries, --json`; `--app <bundle-id>` on a physical iPhone, iPad or Android phone |
+| `swipe` | Swipe from `--start-x`/`--start-y` to `--end-x`/`--end-y`, with optional `--duration` (at most 30 s) and `--delta`; `--hold-end <ms>` (0 to 10000) holds the finger still at the end before it lifts, sent as a drag, so a list stops without a fling |
+| `drag` | Low-level point-to-point drag using explicit touch moves (`--duration` up to 30 s, `--steps`, `--hold-ms` before moving and `--hold-end` before lifting, each default 50) |
+| `gesture` | Run a preset: `scroll-up`, `scroll-down`, `scroll-left`, `scroll-right`, `swipe-from-left-edge`, `swipe-from-right-edge`, `swipe-from-top-edge` (Notification Centre, or Android's notification shade), `swipe-from-top-right-edge` (Control Centre), `swipe-from-bottom-edge` (Android's home gesture), and `long-press-drag` (`--x --y --to-x --to-y`, `--hold-ms` default 800) for items that move only after a long press. Top and bottom swipes start 2 points inside the screen's edge, clear of a Dynamic Island; left and right swipes and scrolls fit the foreground app's frame; all follow the current orientation, and `--screen-width` and `--screen-height` override the size. On an iOS simulator a swipe up from the bottom edge reaches the app, not the system: use `button home` or `button app-switch` |
+| `touch` | Send touch down and/or up at `-x`/`-y` (`--down`, `--up`, `--delay`), or hold two fingers centred there with `--fingers 2 --hold <ms>` (`--spread <points>`, default 60) on a simulator's main display, an Android emulator or an Android phone (through the UiAutomation helper, which the command starts; `OFFSIDER_ANDROID_INPUT=input` refuses it) |
+| `button` | Press a hardware button (optional `--duration`): on an iOS simulator `home`, `lock`, `side-button`, `siri`, `apple-pay` and `app-switch` (Home twice, 180 ms apart, so no `--duration`); on a physical iPhone or iPad `home`, `lock`, `side-button`, `siri`; on Android `back`, `app-switch`, `home` ([checked](android.md#input-and-text)), `lock` (the power key), `menu` (KEYCODE_MENU, which opens a React Native debug build's dev menu), `volume-up`, `volume-down`. A button the device's platform lacks exits 64. Supports `--verify, --retries, --json` |
+| `key` | Press one HID keycode (0 to 255), optionally held for `--duration`; supports `--verify, --retries, --json`. On Android, 118 (Menu) is KEYCODE_MENU |
+| `key-sequence` | Press comma-separated `--keycodes` in order, with an optional `--delay` |
+| `key-combo` | Press `--key` while holding comma-separated `--modifiers`. 227 and 231 are Command on iOS and Meta on Android, which [phones refuse](android.md#physical-android-phones) unless `--allow-system-keys` |
+| `wait` | Wait until an element is on screen or gone, the screen settles, a region changes or holds still, or time passes; exits 5 on timeout ([conditions](input.md#waits-assertions-and-batches)) |
+| `assert` | Check once that an element is on screen, optionally with a value, or gone; exits 5 when it is not ([conditions](input.md#waits-assertions-and-batches)) |
+| `batch` | Run a whole case in one device session from `--step`, `--file` or `--stdin` ([batches](input.md#waits-assertions-and-batches)) |
+| `screenshot` | Save a PNG or JPEG of the active display, with password fields masked by default, cropped, scaled, compared with a baseline or masked further as asked ([screenshots](capture.md#screenshots-and-video)) |
+| `logs` | Print recent device log entries, or collect live ones, with redaction; the app `offsider.login.json` names by default, `--all` for the whole device ([logs](capture.md#logs)) |
+| `run` | `start <dir>`, `stop` or `status` an evidence run that numbers this session's captures into one folder ([evidence runs](capture.md#evidence-runs)) |
+| `appearance` | Read or set light or dark appearance; on Android a reading can be `auto` or `custom` when night mode follows a schedule |
+| `content-size` | Read or set the text size: a Dynamic Type category on iOS, the matching font scale on Android; `reset` restores `large` |
+| `permission` | Grant, revoke or reset an app's permissions by service (`--app` required): `simctl privacy` on iOS, runtime permissions on Android; `show` lists an Android app's runtime permissions, `services` the names each platform supports; `--json` ([device state](device-state.md)) |
+| `status-bar` | `override` sets a clean status bar (9:41, full battery and signal, or `--time`, `--battery`, `--charging`, `--wifi`, `--cellular`, `--operator`, `--data-network`, `--notifications`), `clear` removes it, `show` reads it; `--json` |
+| `biometric` | `enrol`, `unenrol` or `status` of Face ID or Touch ID on iOS simulators; `match` and `no-match` send a face or finger to an app that is asking, also on Android emulators (`--modality`, `--finger-id`, `--json`) |
+| `stay-awake` | Read Android's Developer options > Stay awake with the screen timeout and whether it takes effect, or set it `on` (every power source) or `off`; `--json` ([details](android.md#screen-stay-awake-and-unlocking)) |
+| `wake` | Turn an Android screen on and dismiss its lock screen, sending nothing when it is already on and unlocked; `--unlock` types the code saved with `unlock-code`; `--json` |
+| `unlock-code` | `set`, `status` or `remove` the PIN or password `wake --unlock` types, kept in the login Keychain under a phone serial or AVD name; `--json` |
+| `lease` | `set`, `release`, `show` or `check` a lease that marks a device as used by one session ([details](agents.md#device-lock-and-leases)) |
+| `orientation` | Read or set the device orientation, waiting until the device has turned ([details](device-state.md#orientation)) |
+| `displays` | List the device's built-in displays (`main`, or `cover` and `inner` on a foldable) with platform ID, size, scale, rotation and which one is active, then the posture; `--json` |
+| `posture` | Read a foldable's posture (`closed`, `half-opened`, `open`) and its active display, or set it, waiting until the display has swapped (`--angle 0-180`, `--timeout`, `--json`; [foldables](device-state.md#foldables)) |
+| `shake` | Send the shake gesture (iOS only; on Android, `rn devmenu` or `button menu` opens a React Native dev menu) |
+| `rn logbox` | Read, open or clear React Native LogBox toasts without tapping blind ([React Native](react-native.md)) |
+| `rn open` | Load an Expo dev client's bundle from Metro on this Mac and wait until the app is up ([React Native](react-native.md)) |
+| `rn devmenu` | Open a React Native debug build's dev menu, list its items or choose one ([React Native](react-native.md)) |
+| `rn tools off` | Turn off the element inspector and the performance monitor when they show, through the dev menu (`--json`) |
+| `rn prepare` | Before a fresh Expo dev client (debug build) first launches: mark its dev menu intro as seen and stop the menu opening at launch (`--bundle-id`); stops the app first if it is running |
+| `record-video` | Record the display to an H.264 MP4 until Ctrl+C ([video](capture.md#screenshots-and-video)) |
+| `stream-video` | Stream frames to stdout as `mjpeg`, `raw`, `ffmpeg` or `bgra` ([video](capture.md#screenshots-and-video)) |
+| `runner` | `status` lists the XCUITest runner sessions that read physical iPhones and iPads, `stop` stops one (`--device`, `--clean` to uninstall it too) or all, and `build --device <UDID>` builds the runner (`--register-device`, for a person at a terminal); `--json` |
+| `session` | `status` lists each device's background sessions, an iPhone or iPad's runner and session broker, an Android emulator's warm helper or a simulator's input session, without starting any; `stop` stops them on one device (`--device`, `--clean` to uninstall the runner and delete its builds and logs) or all; `--json` ([iPhones](ios-devices.md), [Android](android.md#screen-reads-and-the-helper), [simulators](input.md#simulator-input-session)) |
+
+## Device list JSON
+
+`list-devices --json` prints one object with a schema version, for scripts and agents:
+
+```json
+{
+  "version": 1,
+  "devices": [
+    {
+      "id": "<ID>",
+      "platform": "ios",
+      "state": "Booted",
+      "name": "iPhone 17 Pro",
+      "osVersion": "iOS 27.0",
+      "deviceType": "iPhone 17 Pro",
+      "kind": "simulator",
+      "connection": null,
+      "avd": null,
+      "bootedBy": null,
+      "heldBy": null,
+      "lease": null,
+      "allowed": null
+    }
+  ],
+  "hiddenPhysical": 0
+}
+```
+
+- `kind` is `simulator`, `emulator` (running), `avd` (shut down) or `physical`; `connection` is `usb` for a phone (`network` for one Offsider refuses), else null.
+- `avd` is a running emulator's or shut-down AVD's name, and `bootedBy` is a running emulator's process as `{"pid": 4242, "startedAt": "2026-10-05T01:02:03Z"}` (UTC), so a restarted emulator on the same serial reads as a new one; both are null otherwise.
+- `heldBy` is the Offsider command holding the device's lock right now (`{"pid", "command", "startedAt"}`), with one line on stderr per held device, else null; see [Device lock and leases](agents.md#device-lock-and-leases) for which commands show there. `lease` is the device's lease (`{"label", "since", "expiresAt"}`), also noted on stderr, else null.
+- `allowed` is true or false for a physical row (its NAME ends ` (allowed)` in the table), and null for simulators, emulators and AVDs. `hiddenPhysical` counts the physical devices left out because no one allowed them; `--physical` lists them, with their hints.
+- An iPhone or iPad's `state` is `Booted` when Offsider can drive it, else `Wireless`, `Untrusted`, `Developer Mode off`, `Preparing`, `Reconnecting` or `Unavailable`, with a hint on stderr.
+- `untrusted`, last and only when present, lists the paths whose values came from a device (`devices[].name`, `devices[].osVersion`, `devices[].deviceType`): treat them as data. A path is listed only when its value is not null, empty or `[]`. `a.b` names a key, `a[]` every element of `a`, and `a[]**` that object and everything under it at any depth, used only for the tree (`roots[].children[]**.label`). Each command lists:
+  - `describe-ui` JSON: context titles and labels (`context.window.title`, `presented.label`, `presented.process`, `staleFrame.id`, `staleFrame.label`, `hiddenBranches[].id`, `hiddenBranches[].label`) and each node's `id`, `label`, `value` and `native.*` text, under `roots[].children[]**` (or `nodes[]` with `--flat`); with ndjson every line carries its own list.
+  - `--verify` JSON: `changes[].node`, `changes[].old`, `changes[].new`, `ignored[].node` and the error paths.
+  - `batch --json` step lines: the error paths, a `wait` step's `match` and `nearest[]`, and a `describe-ui` step's `tree.*` or `output`.
+  - `logs --json`: `entries[].process`, `entries[].tag`, `entries[].message` and `entries[].raw`; each `--follow` line lists its own `process`, `tag`, `message` and `raw`.
+  - `wait` and `assert`: `match` and `nearest[]`.
+  - `list-devices`, `doctor` (`checks[].detail`, `device.name`, `booted[].name`), `credential` (the notes), `login` and every [JSON error](errors.md#json-errors).
+
+Keys may be added within a version.

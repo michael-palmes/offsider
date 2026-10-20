@@ -237,3 +237,74 @@ jobs:
       # and a Homebrew install that byte-compares the keg against the payload. No secrets.
       - name: Release pipeline rehearsal (ad-hoc)
         run: scripts/release.sh rehearse --version 0.0.0-ci --adhoc
+
+  # Not a required check. SwiftPM's --sanitize=address (not -Xswiftc) also injects the runtime into its test helpers.
+  asan-unit-tests:
+    name: Unit tests (AddressSanitizer)
+    runs-on: ${{ vars.MACOS_RUNNER || 'xcode-27' }}
+    timeout-minutes: 60
+    env:
+      XCODE_APP: ${{ vars.XCODE_APP || '/Applications/Xcode_27.0.app' }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Select Xcode
+        id: xcode
+        run: |
+          set -euo pipefail
+          [ -d "$XCODE_APP" ] || { echo "::error::$XCODE_APP not found"; exit 1; }
+          sudo xcode-select --switch "$XCODE_APP"
+          echo "DEVELOPER_DIR=$XCODE_APP/Contents/Developer" >> "$GITHUB_ENV"
+          echo "build=$(xcodebuild -version | awk '/Build version/ { print $3 }')" >> "$GITHUB_OUTPUT"
+
+      - name: Install XcodeGen (pinned)
+        run: |
+          set -euo pipefail
+          zip="$RUNNER_TEMP/xcodegen.zip"
+          curl -fsSLo "$zip" "https://github.com/yonaskolb/XcodeGen/releases/download/${XCODEGEN_VERSION}/xcodegen.zip"
+          echo "${XCODEGEN_SHA256}  $zip" | shasum -a 256 -c -
+          unzip -q "$zip" -d "$RUNNER_TEMP/xcodegen"
+          dirname "$(find "$RUNNER_TEMP/xcodegen" -type f -name xcodegen -perm -u+x | head -1)" >> "$GITHUB_PATH"
+
+      - name: Resolve idb pin
+        id: idb
+        run: |
+          set -euo pipefail
+          ref="$(sed -nE 's/^DEFAULT_IDB_GIT_REF="([0-9a-f]{40})"$/\1/p' scripts/build.sh)"
+          [ -n "$ref" ] || { echo "::error::DEFAULT_IDB_GIT_REF not found in scripts/build.sh"; exit 1; }
+          echo "ref=$ref" >> "$GITHUB_OUTPUT"
+
+      - name: Cache idb checkout and frameworks
+        id: cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            idb_checkout
+            build_products/Frameworks
+            build_products/XCFrameworks
+          key: idb-arm64-xcode-${{ steps.xcode.outputs.build }}-${{ steps.idb.outputs.ref }}-xcodegen-${{ env.XCODEGEN_VERSION }}-${{ hashFiles('scripts/build.sh', 'Package.swift') }}
+
+      - name: Build idb frameworks
+        env:
+          CACHE_HIT: ${{ steps.cache.outputs.cache-hit }}
+        run: |
+          set -euo pipefail
+          scripts/build.sh setup
+          if [ "$CACHE_HIT" = true ] && scripts/build.sh verify-xcframeworks; then
+            echo "Reusing cached idb frameworks"
+          else
+            for step in clean frameworks install strip xcframeworks verify-xcframeworks; do
+              scripts/build.sh "$step"
+            done
+          fi
+
+      - name: Build with AddressSanitizer
+        run: swift build --build-tests --sanitize=address
+
+      - name: Unit tests with AddressSanitizer
+        env:
+          OFFSIDER_E2E: "0"
+          OFFSIDER_LANDSCAPE_E2E: "0"
+        run: swift test --skip-build --sanitize=address --no-parallel

@@ -37,6 +37,8 @@ public struct IOSDeviceError: LocalizedError, CustomStringConvertible, Equatable
         case appNotAllowed
         /// A physical iPhone or iPad needs a pinned app and none was named.
         case appRequired
+        /// The device's allowance lapsed while a session broker ran (expired, removed or its seal broken).
+        case notAllowed
         /// An Offsider environment variable holds a value it cannot use.
         case invalidSetting
     }
@@ -193,6 +195,7 @@ extension IOSDeviceError: OffsiderFailure {
         case .sessionFailed: return .hidBrokerFailed
         case .sessionLost: return .inputOutcomeUnknown
         case .appNotAllowed: return .appNotAllowed
+        case .notAllowed: return .deviceNotAllowed
         case .appRequired, .invalidSetting: return .usage
         }
     }

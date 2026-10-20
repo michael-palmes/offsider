@@ -230,7 +230,7 @@ struct DeviceAccessCommandTests {
         let home = try makePolicyHome()
         defer { try? FileManager.default.removeItem(atPath: home) }
         let terminal = try AccessTerminal()
-        terminal.type(["\r", "\r", "0ABC\r"])
+        terminal.type(["\r", "\r", "\r", "0ABC\r"])
         let seal = MemorySeal()
         let command = try DeviceAccessAllow.parse(["--device", PolicyFixtures.phone, "--team", "ABCDE12345"])
         let output = try await PersonPresence.$terminal.withValue({ true }) {
@@ -256,7 +256,7 @@ struct DeviceAccessCommandTests {
         let home = try makePolicyHome()
         defer { try? FileManager.default.removeItem(atPath: home) }
         let terminal = try AccessTerminal()
-        terminal.type(["\r", "\r", "\r", "0abc\r"])
+        terminal.type(["\r", "\r", "\r", "\r", "0abc\r"])
         let command = try DeviceAccessAllow.parse(["--device", PolicyFixtures.phone])
         let error = await #expect(throws: CLIError.self) {
             try await PersonPresence.$terminal.withValue({ true }) {
@@ -352,7 +352,7 @@ struct DeviceAccessCommandTests {
             InstalledApp(id: "com.apple.mobilesafari", name: "Safari"),
             InstalledApp(id: "com.mpalmes.offsider.playground", name: "Offsider Playground"),
         ]
-        let (output, transcript) = try await Self.allow([], answers: ["1", "\r", "2", "\r"], context: { terminal in
+        let (output, transcript) = try await Self.allow([], answers: ["1", "\r", "1", "\r"], context: { terminal in
             Self.context(home: home, seal: seal, terminal: terminal, devices: { [Self.row, Self.wifiRow] }, teams: { [SigningTeam(id: "ABCDE12345", name: "Example Team")] }, apps: { _ in apps })
         }, presence: presence)
         let entry = try #require(try Self.entries(home).first)
@@ -380,7 +380,7 @@ struct DeviceAccessCommandTests {
     func fullIDOnlyAtTheEnd() async throws {
         let home = try makePolicyHome()
         defer { try? FileManager.default.removeItem(atPath: home) }
-        let (_, transcript) = try await Self.allow([], answers: ["1", "\r", "\r", "\r", "2"], context: { terminal in
+        let (_, transcript) = try await Self.allow([], answers: ["1", "\r", "\r", "\r", "\r", "2"], context: { terminal in
             Self.context(home: home, seal: MemorySeal(), terminal: terminal, devices: { [Self.row, Self.androidRow] }, teams: { [SigningTeam(id: "ABCDE12345", name: "Example Team")] })
         })
         let shown = transcript.components(separatedBy: CharacterSet(charactersIn: "\r\n")).filter { $0.contains(PolicyFixtures.phone) || $0.contains(PolicyFixtures.serial) }
@@ -476,7 +476,7 @@ struct DeviceAccessCommandTests {
         let phone = DeviceSummary(
             id: PolicyFixtures.serial, platform: .android, state: "device", name: "Test\u{1B}[2J\nPixel", osVersion: "Android 16", deviceType: "Pixel 9", kind: .physical, connection: "usb"
         )
-        let (output, transcript) = try await Self.allow([], answers: ["1", "2", "\r"], context: { terminal in
+        let (output, transcript) = try await Self.allow([], answers: ["1", "1", "\r"], context: { terminal in
             Self.context(home: home, seal: MemorySeal(), terminal: terminal, devices: { [phone] }, apps: { _ in [InstalledApp(id: "com.example.evil", name: "Evil\u{1B}]0;title\u{07}\nApp\u{202E}")] })
         })
         let lines = transcript.components(separatedBy: CharacterSet(charactersIn: "\r\n"))
@@ -615,7 +615,7 @@ struct DeviceAccessCommandTests {
         defer { try? FileManager.default.removeItem(atPath: home) }
         let seal = MemorySeal()
         try Self.seed(home, seal: seal, [PolicyFixtures.entry()])
-        let (output, transcript) = try await Self.allow(["--expires", "2h"], answers: ["1", "\r"], context: { terminal in
+        let (output, transcript) = try await Self.allow(["--expires", "2h"], answers: ["1", "\r", "\r"], context: { terminal in
             Self.context(home: home, seal: seal, terminal: terminal, devices: { [Self.row, Self.androidRow] })
         })
         #expect(transcript.contains("Test iPhone  allowed · any app · until 15:13") || transcript.contains("Test iPhone  allowed - any app - until 15:13"))
@@ -653,5 +653,94 @@ struct DeviceAccessCommandTests {
     func virtualRefused() {
         #expect(throws: CLIError.self) { try DeviceAccessCommand.physicalKey("ABCDEF00-0000-4000-8000-00000000ABCD") }
         #expect(throws: CLIError.self) { try DeviceAccessCommand.physicalKey("emulator-5554") }
+    }
+
+    // MARK: Pinned app by default
+
+    static let apps = [
+        InstalledApp(id: "com.example.bank", name: "Bank"),
+        InstalledApp(id: "com.mpalmes.offsider.playground.rn", name: "Playground"),
+        InstalledApp(id: "com.android.chrome", name: "Chrome"),
+    ]
+
+    @Test("the app step recommends offsider.login.json's app, else the one in front, first; Any app comes after the apps, dim with its warning")
+    func appMenuOrder() {
+        let policy = PhysicalDevicePolicy(managed: .none, list: .empty)
+        let front = DeviceAccessAllow.appMenu(Self.apps, platform: .android, policy: policy, profile: nil, front: "com.mpalmes.offsider.playground.rn")
+        #expect(front.choices == [.app(Self.apps[1]), .app(Self.apps[0]), .any, .wholeDevice, .type])
+        #expect(front.recommended == 0)
+        #expect(front.selected == 0)
+        let rows = front.rows()
+        #expect(rows[0].recommended && !rows[2].recommended && !rows[3].recommended)
+        #expect(rows[2].columns == [AllowScreen.anyApp, "every app on the phone, banking and messages included"])
+        #expect(rows[3].columns == ["Any app and all logs", "the phone's whole log too"])
+
+        let profile = LoginProfile(package: "com.example.bank")
+        #expect(DeviceAccessAllow.appMenu(Self.apps, platform: .android, policy: policy, profile: profile, front: "com.mpalmes.offsider.playground.rn").choices.first == .app(Self.apps[0]))
+
+        let none = DeviceAccessAllow.appMenu(Array(Self.apps.prefix(2)), platform: .ios, policy: policy, profile: nil, front: "com.example.missing")
+        #expect(none.recommended == nil)
+        #expect(none.choices == [.app(Self.apps[0]), .app(Self.apps[1]), .any, .type])
+        #expect(none.selected == 0)
+
+        let empty = DeviceAccessAllow.appMenu([], platform: .ios, policy: policy, profile: nil, front: nil)
+        #expect(empty.choices == [.any, .type])
+        #expect(empty.selected == 1)
+    }
+
+    @Test("Return on a phone's app step pins the app in front; choosing the whole-device row saves the * pin")
+    func pinnedByDefault() async throws {
+        let home = try makePolicyHome()
+        defer { try? FileManager.default.removeItem(atPath: home) }
+        _ = try await Self.allow(["--expires", "2h"], answers: ["1", "\r"], context: { terminal in
+            var context = Self.context(home: home, seal: MemorySeal(), terminal: terminal, devices: { [Self.androidRow] }, apps: { _ in Self.apps })
+            context.frontApp = { _ in "com.mpalmes.offsider.playground.rn" }
+            return context
+        })
+        #expect(try Self.entries(home).map(\.apps) == [["com.mpalmes.offsider.playground.rn"]])
+
+        let other = try makePolicyHome()
+        defer { try? FileManager.default.removeItem(atPath: other) }
+        _ = try await Self.allow(["--expires", "2h"], answers: ["1", "4"], context: { terminal in
+            Self.context(home: other, seal: MemorySeal(), terminal: terminal, devices: { [Self.androidRow] }, apps: { _ in Self.apps })
+        })
+        #expect(try Self.entries(other).map(\.apps) == [[DeviceAllowance.wholeDevicePin]])
+    }
+
+    @Test("remove off a terminal names the exact clean command for an iPhone whose runner this Mac built")
+    func removeNamesClean() async throws {
+        let home = try makePolicyHome()
+        defer { try? FileManager.default.removeItem(atPath: home) }
+        let seal = MemorySeal()
+        try DeviceAllowListStore(directory: UserConfigDirectory(home: home)).update({ $0.list.adding(PolicyFixtures.entry()) }, commit: { try seal.seal($0) })
+        var context = Self.context(home: home, seal: seal)
+        context.hasRunner = { _ in true }
+        context.cleanRunner = { _ in Issue.record("cleaned without asking"); return "" }
+        let output = try await DeviceAccessRemove.parse(["--device", PolicyFixtures.phone]).perform(context: context)
+        #expect(output.hasSuffix("Uninstall Offsider's runner from it with `offsider session stop --device \(PolicyFixtures.phone) --clean`."))
+
+        context.hasRunner = { _ in false }
+        #expect(!(try await DeviceAccessRemove.parse(["--device", PolicyFixtures.phone]).perform(context: context)).contains("--clean"))
+    }
+
+    @Test("remove on a terminal asks once and cleans on Return; n keeps the runner and names the command")
+    func removeAsksToClean() async throws {
+        for (answer, cleans) in [("\r", true), ("n\r", false)] {
+            let home = try makePolicyHome()
+            defer { try? FileManager.default.removeItem(atPath: home) }
+            let seal = MemorySeal()
+            try DeviceAllowListStore(directory: UserConfigDirectory(home: home)).update({ $0.list.adding(PolicyFixtures.entry()) }, commit: { try seal.seal($0) })
+            let terminal = try AccessTerminal()
+            terminal.type([answer])
+            let cleaned = CallCounter()
+            var context = Self.context(home: home, seal: seal, terminal: terminal)
+            context.hasRunner = { _ in true }
+            context.interactive = { true }
+            context.cleanRunner = { _ in _ = cleaned.tick(); return "Uninstalled the runner.\n" }
+            let output = try await DeviceAccessRemove.parse(["--device", PolicyFixtures.phone]).perform(context: context)
+            #expect(cleaned.count == (cleans ? 1 : 0))
+            #expect(output == (cleans ? "Uninstalled the runner." : "Kept the runner; `offsider session stop --device \(PolicyFixtures.phone) --clean` removes it later."))
+            #expect(terminal.transcript.contains("Also uninstall its runner? (Y/n)"))
+        }
     }
 }

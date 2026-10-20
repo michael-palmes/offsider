@@ -310,7 +310,7 @@ struct AccessibilityPollerTests {
                 clock: clock.poll
             ) { Self.nearMiss }
         }
-        #expect(error?.userFacingDescription.contains("Did you mean 'gon'?") == true)
+        #expect(error?.userFacingDescription.contains(#"Did you mean "gon"?"#) == true)
         #expect(error?.candidates.map(\.id) == ["gon"])
     }
 }

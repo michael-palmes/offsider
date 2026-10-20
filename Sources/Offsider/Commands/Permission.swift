@@ -9,7 +9,7 @@ struct PermissionCommand: AsyncParsableCommand {
         discussion: """
         Services are one vocabulary for both platforms: `simctl privacy` on iOS simulators, runtime permissions on \
         Android (also by literal android.permission.NAME). On a physical Android phone, name the services: `all` \
-        exits 64. Granting a permission already granted changes nothing. \
+        exits 64, and --app must be an app the phone's allowance permits (exit 1, app_not_allowed, otherwise). Granting a permission already granted changes nothing. \
         reset makes the app ask again on next use. Android stops the app when one of its permissions is revoked. \
         `show` lists an Android app's runtime permissions; iOS simulators offer no read. `services` needs no device.
 
@@ -114,6 +114,7 @@ struct PermissionCommand: AsyncParsableCommand {
         let logger = OffsiderLogger()
         let isChange = if case .change = plan { true } else { false }
         let route = try await DeviceRouter.routeForInput(device ?? "", logger: logger, locking: isChange)
+        try Self.requireAppScope(plan, allowance: route.allowance)
         try await route.backend.prepare()
         let id = try await route.backend.requireBootedDevice(route.device).id
         guard let backend = route.backend as? any PermissionControlling else {
@@ -134,6 +135,15 @@ struct PermissionCommand: AsyncParsableCommand {
             try refuseAllOnPhone(action, targets, app: app, on: device)
             let change = try await backend.applyPermission(action, targets, app: app, on: device)
             return json ? DeviceStateReport.permissionChange(change, app: app, on: device) : changeLines(change, app: app, platform: device.platform)
+        }
+    }
+
+    /// On an allowed phone the app must be one it pins (or any app, when none is pinned) and never a deny-listed one, so a grant cannot reach another app.
+    static func requireAppScope(_ plan: Plan, allowance: DeviceAllowance?, gate: DevicePolicyGate = .current) throws {
+        guard let allowance else { return }
+        switch plan {
+        case .change(_, _, let app, _), .show(let app, _): try gate.requireApp(app, on: allowance)
+        case .services: return
         }
     }
 

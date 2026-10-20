@@ -121,3 +121,36 @@ enum OrderedJSON {
         output += "\""
     }
 }
+
+/// The nesting depth and object count of raw JSON, read in one pass over the bytes without building it.
+public enum JSONShape {
+    /// Container levels a raw tree may nest: each tree level takes about two (the node and its children), plus the envelope.
+    public static let maxDepth = UITreeLimits.maxDepth * 2 + 8
+    /// Objects a raw tree may hold: a node with its frame and a few attribute objects.
+    public static let maxObjects = UITreeLimits.maxNodes * 4
+
+    /// Why `data` is too deep or too large, or nil when it fits.
+    public static func refusal(_ data: Data, maxDepth: Int = maxDepth, maxObjects: Int = maxObjects) -> String? {
+        var depth = 0
+        var objects = 0
+        var inString = false
+        var escaped = false
+        for byte in data {
+            if inString {
+                if escaped { escaped = false } else if byte == 0x5C { escaped = true } else if byte == 0x22 { inString = false }
+                continue
+            }
+            switch byte {
+            case 0x22: inString = true
+            case 0x7B, 0x5B:
+                depth += 1
+                if byte == 0x7B { objects += 1 }
+                if depth > maxDepth { return "it nests deeper than \(maxDepth) levels" }
+                if objects > maxObjects { return "it holds more than \(maxObjects.formatted()) objects" }
+            case 0x7D, 0x5D: depth -= 1
+            default: break
+            }
+        }
+        return nil
+    }
+}

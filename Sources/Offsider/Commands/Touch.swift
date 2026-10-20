@@ -58,7 +58,9 @@ struct Touch: AsyncParsableCommand {
     static let spreadRange: ClosedRange<Double> = 20...300
 
     func validate() throws {
-        // Validate coordinates are non-negative
+        if let problem = Coordinates.problem([("-x", pointX), ("-y", pointY), ("--spread", spread)]) {
+            throw ValidationError(problem)
+        }
         guard pointX >= 0, pointY >= 0 else {
             throw ValidationError("Coordinates must be non-negative values.")
         }

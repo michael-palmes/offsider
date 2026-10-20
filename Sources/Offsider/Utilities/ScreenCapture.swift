@@ -128,16 +128,17 @@ enum ScreenCapture {
         var beneath: [MaskKind: Int] = [:]
         /// Nil unless `--mask-skip-beneath` was given; then every skippable kind asked for, zeros included.
         var skipped: [MaskKind: Int]?
-        let unmatched: [String]
+        var unmatched: [String]
     }
 
     /// Paints every mask in `plan` black; a capture that is not upright cannot be mapped, so it is withheld.
-    nonisolated static func masking(_ capture: CapturedScreen, plan: MaskPlan, tree: UITree?) throws -> MaskResult {
+    /// `revealed` adds the plain text fields that show a password field the device had earlier, painted as password fields.
+    nonisolated static func masking(_ capture: CapturedScreen, plan: MaskPlan, tree: UITree?, revealed: RevealedSecrets? = nil) throws -> MaskResult {
         var targets = MaskTargets()
         if let tree {
             targets = try plan.textTargets(in: tree)
             if plan.secure {
-                targets.add(tree.roots.flatMap { $0.flattened() }.filter(\.isSecure), as: .secure)
+                targets.add(tree.roots.flatMap { $0.flattened() }.filter { $0.isSecure || revealed?.matches($0) == true }, as: .secure)
             }
             let selectors = plan.ids.map { (MaskKind.id, AccessibilityQuery.id($0)) } + plan.labels.map { (MaskKind.label, AccessibilityQuery.label($0)) }
                 + plan.labelsContaining.map { (MaskKind.labelContains, AccessibilityQuery.labelContains($0)) }
@@ -287,7 +288,8 @@ enum ScreenCapture {
     /// Reads a baseline image, naming the path when it cannot.
     nonisolated static func readBaseline(at path: String) throws -> Data {
         let expanded = (path as NSString).expandingTildeInPath
-        guard let data = FileManager.default.contents(atPath: expanded) else {
+        let resolved = URL(fileURLWithPath: expanded).resolvingSymlinksInPath().path
+        guard let data = UntrustedRead.contents(atPath: resolved, maxBytes: 256 << 20) else {
             throw CLIError(errorDescription: "Could not read the baseline image at \(expanded). Check the path, or capture one first with offsider screenshot --output \(path).", reason: .baselineUnreadable)
         }
         return data

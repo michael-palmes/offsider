@@ -4,7 +4,7 @@ import Foundation
 public enum SimulatorDisplayProfile {
     /// From the plist file's data; nil when it is not a property list or declares no integrated display.
     public static func displays(plist data: Data) -> [DisplayDescriptor]? {
-        guard let root = try? PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any] else {
+        guard let root = unsafe try? PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any] else {
             return nil
         }
         return displays(capabilities: root)

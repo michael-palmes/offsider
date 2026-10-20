@@ -1,0 +1,21 @@
+# Offsider docs
+
+- [Install](install.md): setting up a Mac, or checking a release tarball by hand.
+- [Getting started](getting-started.md): your first device, and what bare `offsider` and the device picker do.
+- [Commands](commands.md): every command, `--device`, `OFFSIDER_DEVICE` and the device list JSON.
+- [Reading the screen](reading-the-screen.md): reading `describe-ui` output, its summary or its changes.
+- [Input](input.md): tapping, typing, waiting and checking that input worked.
+- [Screenshots, video and logs](capture.md): capturing evidence, with masks and redaction.
+- [Agents](agents.md): setting up an agent, sharing devices between agents, or moving from another tool.
+- [Physical devices](device-access.md): allowing a phone, iPhone or iPad, and managed policy.
+- [Privacy and security](privacy.md): what Offsider shows, keeps and refuses.
+- [Device state](device-state.md): appearance, permissions, status bar, orientation and foldables.
+- [Sign in](sign-in.md): saving test users, `login` and Cloudflare Turnstile.
+- [React Native](react-native.md): testing a React Native app, LogBox and debug builds.
+- [Android](android.md): emulators, the helper, transports and USB phones.
+- [Physical iPhones and iPads](ios-devices.md): driving a wired iPhone or iPad.
+- [Doctor and troubleshooting](troubleshooting.md): when input is ignored or a read fails.
+- [Exit codes and errors](errors.md): handling a failure in a script or an agent.
+- [Building from source](building.md): building, testing or benchmarking Offsider itself.
+- [Security policy](../SECURITY.md): reporting a vulnerability, and everything Offsider touches.
+- [Contributing](../CONTRIBUTING.md): before you open an issue or a pull request.

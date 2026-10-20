@@ -17,6 +17,8 @@ struct Verifier {
         var cachedRecord: @MainActor () async -> TreeCacheRecord? = { nil }
         /// Wall time, to date the first read against the cached tree.
         var date: @MainActor () -> Date = { Date() }
+        /// What hides values in the change list, as `describe-ui` hides them, and in the cached tree.
+        var valueMask: @MainActor () async -> TreeValueMask = { .none }
     }
 
     /// What proves the input worked: a settled change (text and frames optional), or one element coming on screen.
@@ -131,9 +133,12 @@ struct Verifier {
         // Without a tree to catch the change, a second before-shot lets motion the input starts count.
         let firstShot = capturesBaseline && !first.isKnown ? try? await dependencies.screenshot() : nil
         let firstShotTime = dependencies.now()
+        let valueMask = await dependencies.valueMask()
         var live: Set<String> = []
         if !ignoringText, let tree = firstRead.tree {
-            live = LiveText.learn(cached: await dependencies.cachedRecord(), first: tree, readAt: firstReadAt, detector: detector)
+            // The cached tree's masked values are compared with this read masked alike, so they never count as live text.
+            let masked = tree.redacted(valueMask, scope: .cache)
+            live = LiveText.learn(cached: await dependencies.cachedRecord(), first: masked, readAt: firstReadAt, detector: detector)
         }
         try await dependencies.sleep(pollInterval)
         var baselineRead = Read(try? await dependencies.tree())
@@ -192,8 +197,8 @@ struct Verifier {
             finish(
                 Outcome(verified: true, attempts: attempt.number, change: .accessibilityTree, style: attempt.style, summary: summary)
                     .listing(
-                        from: baselineRead.compared.map { detector.maskingLive($0, live: live) },
-                        to: current.compared.map { detector.maskingLive($0, live: live) },
+                        from: baselineRead.compared.map { detector.maskingLive($0, live: live).redacted(valueMask) },
+                        to: current.compared.map { detector.maskingLive($0, live: live).redacted(valueMask) },
                         skipping: volatileIdentities
                     ),
                 attemptStart: attemptStart
@@ -442,7 +447,8 @@ extension Verifier.Dependencies {
             sleep: { duration in try await Task.sleep(for: duration) },
             now: { ProcessInfo.processInfo.systemUptime },
             bands: { await backend.volatileScreenBands(for: device) },
-            cachedRecord: { await TreeCache.load(for: device, backend: backend) }
+            cachedRecord: { await TreeCache.load(for: device, backend: backend) },
+            valueMask: { (try? AmbientMasks.treeMask(revealed: await TreeCache.revealedSecrets(for: device, backend: backend))) ?? .none }
         )
         if let waiting = backend as? any AccessibilityChangeWaiting {
             dependencies.waitForChange = { duration in

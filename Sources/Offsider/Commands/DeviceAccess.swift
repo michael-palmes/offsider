@@ -55,6 +55,16 @@ struct DeviceAccessContext: Sendable {
     var promptDescriptor: Int32?
     /// Where the receipt's expiry time is read.
     var timeZone: TimeZone = .current
+    /// The app in front of the chosen device, offered first in the app step; nil when it cannot be read cheaply (an iPhone or iPad).
+    var frontApp: @Sendable @MainActor (DeviceSummary) async -> String? = { _ in nil }
+    /// offsider.login.json in this folder or above, whose app is offered first when present.
+    var profile: @Sendable () -> LoginProfile? = { nil }
+    /// Uninstalls the runner from an iPhone or iPad and deletes its builds and logs; returns the report's text.
+    var cleanRunner: @Sendable @MainActor (String) async -> String = { _ in "" }
+    /// A runner build or session this Mac holds for an iPhone or iPad, which `remove` offers to clean.
+    var hasRunner: @Sendable (String) -> Bool = { _ in false }
+    /// Whether `remove` may ask a question: standard input and output are both a terminal.
+    var interactive: @Sendable () -> Bool = { false }
 
     static let live = DeviceAccessContext(
         store: { DevicePolicySources.store() },
@@ -77,7 +87,16 @@ struct DeviceAccessContext: Sendable {
                 return try await AndroidBackend(log: { _, _ in }).thirdPartyPackages(serial: row.id).map { InstalledApp(id: $0, name: nil) }
             }
         },
-        promptDescriptor: nil
+        promptDescriptor: nil,
+        frontApp: { row in
+            guard row.platform == .android else { return nil }
+            let top = try? await AndroidBackend(log: { _, _ in }).foreground(on: DeviceID(rawValue: row.id, platform: .android)).top
+            return top?.split(separator: "/").first.map(String.init)
+        },
+        profile: { (try? LoginProfiles.load(project: nil, warn: { _ in })) ?? nil },
+        cleanRunner: { udid in RunnerSessions.cleanText(await RunnerSessions.clean(udid: udid)) },
+        hasRunner: { RunnerSessions.hasRecord(udid: $0) },
+        interactive: { isatty(STDIN_FILENO) != 0 && isatty(STDOUT_FILENO) != 0 }
     )
 
     func policy() -> PhysicalDevicePolicy {
@@ -140,7 +159,10 @@ extension DeviceAccessCommand {
             store: RunnerSessions.store, builder: UnusedRunnerBuilder(), environment: ProcessInfo.processInfo.environment,
             developerDirectory: nil, log: { _, _ in }
         )
-        for record in runners { await runnerManager.stop(record) }
+        for record in runners {
+            await runnerManager.stop(record)
+            RunnerSessions.removeLog(udid: record.udid)
+        }
         if !runners.isEmpty { stopped.append("runner") }
         return stopped
     }
@@ -479,22 +501,70 @@ struct DeviceAccessAllow: AsyncParsableCommand {
     @MainActor
     private func pickApp(on prompt: TerminalPrompt, row: DeviceSummary, context: DeviceAccessContext, policy: PhysicalDevicePolicy, step: String?) async throws -> (value: [String], shown: String) {
         let listed: [InstalledApp]
+        let front: String?
         do {
-            listed = try await TerminalSpinner.run("Reading its apps", terminal: prompt.terminalDescriptor) { try await context.installedApps(row) }
+            (listed, front) = try await TerminalSpinner.run("Reading its apps", terminal: prompt.terminalDescriptor) {
+                (try await context.installedApps(row), await context.frontApp(row))
+            }
         } catch {
             prompt.lines(TerminalUI.warning("Could not read its apps (\(Self.reason(error))). Unlock it, or type an app ID.", width: prompt.width, style: prompt.style))
             return try typeApp(on: prompt, platform: row.platform, policy: policy, label: (step.map { "\($0) " } ?? "  ") + "App ID (Return for any app): ")
         }
+        let menu = Self.appMenu(listed, platform: row.platform, policy: policy, profile: context.profile(), front: front)
+        let index = try prompt.choose(AllowScreen.appQuestion, step: step, rows: menu.rows(), selected: menu.selected, keepsChoice: false)
+        switch menu.choices[index] {
+        case .app(let app): return ([app.id], PromptScreen.label(app.name ?? app.id))
+        case .any: return ([], AllowScreen.apps([]))
+        case .wholeDevice: return ([DeviceAllowance.wholeDevicePin], Self.wholeDeviceLabel.lowercased())
+        case .type: return try typeApp(on: prompt, platform: row.platform, policy: policy, label: "  App ID: ")
+        }
+    }
+
+    static let anyAppWarning = "every app on the phone, banking and messages included"
+    static let wholeDeviceLabel = "Any app and all logs"
+    static let wholeDeviceWarning = "the phone's whole log too"
+
+    /// The app step's rows: the recommended app first (offsider.login.json's, else the one in front), the other apps, then the broad choices, dim, and typing.
+    struct AppMenu: Equatable {
+        enum Choice: Equatable {
+            case app(InstalledApp)
+            case any
+            case wholeDevice
+            case type
+        }
+
+        let choices: [Choice]
+        let recommended: Int?
+
+        /// The recommended app, else the first app, else typing; never a broad choice.
+        var selected: Int {
+            recommended ?? choices.firstIndex { if case .app = $0 { return true } else { return false } } ?? choices.count - 1
+        }
+
+        func rows() -> [MenuRow] {
+            choices.enumerated().map { index, choice in
+                switch choice {
+                case .app(let app): return MenuRow(.app, (app.name.map { [PromptScreen.label($0)] } ?? []) + [PromptScreen.label(app.id)], recommended: index == recommended)
+                case .any: return MenuRow(.anyApp, [AllowScreen.anyApp, DeviceAccessAllow.anyAppWarning])
+                case .wholeDevice: return MenuRow(.anyApp, [DeviceAccessAllow.wholeDeviceLabel, DeviceAccessAllow.wholeDeviceWarning])
+                case .type: return MenuRow(.type, [AllowScreen.typeApp])
+                }
+            }
+        }
+    }
+
+    static func appMenu(_ listed: [InstalledApp], platform: DevicePlatform, policy: PhysicalDevicePolicy, profile: LoginProfile?, front: String?) -> AppMenu {
         let offered = listed
-            .filter { DeviceAllowance.isAppID($0.id) && Self.appProblem($0.id, platform: row.platform, policy: policy) == nil }
+            .filter { DeviceAllowance.isAppID($0.id) && appProblem($0.id, platform: platform, policy: policy) == nil }
             .sorted { $0.label.localizedCaseInsensitiveCompare($1.label) == .orderedAscending }
-        let rows = [MenuRow(.anyApp, [AllowScreen.anyApp], recommended: true)]
-            + offered.map { MenuRow(.app, ($0.name.map { [PromptScreen.label($0)] } ?? []) + [PromptScreen.label($0.id)]) }
-            + [MenuRow(.type, [AllowScreen.typeApp])]
-        let index = try prompt.choose(AllowScreen.appQuestion, step: step, rows: rows, keepsChoice: false)
-        if index == 0 { return ([], AllowScreen.apps([])) }
-        if index <= offered.count { return ([offered[index - 1].id], PromptScreen.label(offered[index - 1].name ?? offered[index - 1].id)) }
-        return try typeApp(on: prompt, platform: row.platform, policy: policy, label: "  App ID: ")
+        let profileApp = platform == .ios ? profile?.bundleID : profile?.package
+        let pick = [profileApp, front].compactMap { $0 }.first { id in offered.contains { $0.id == id } }
+        let first = offered.filter { $0.id == pick }
+        var choices: [AppMenu.Choice] = (first + offered.filter { $0.id != pick }).map { .app($0) }
+        choices.append(.any)
+        if platform == .android { choices.append(.wholeDevice) }
+        choices.append(.type)
+        return AppMenu(choices: choices, recommended: first.isEmpty ? nil : 0)
     }
 
     @MainActor
@@ -533,7 +603,7 @@ struct DeviceAccessAllow: AsyncParsableCommand {
     /// Why Offsider may not drive `app` on the device, or nil.
     static func appProblem(_ app: String, platform: DevicePlatform, policy: PhysicalDevicePolicy) -> String? {
         if let why = SystemAppDenyList.refusal(app, platform: platform) {
-            return "\(app) is \(why); Offsider never drives it on a physical device."
+            return "\(why)."
         }
         if let ceiling = policy.managed.allowedBundleIDs, !ceiling.contains(app) {
             return "Managed policy on this Mac does not list \(app), and the allow-list cannot override it."
@@ -601,7 +671,7 @@ struct DeviceAccessStatus: AsyncParsableCommand {
 struct DeviceAccessRemove: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "remove",
-        abstract: "Withdraw a physical device's allowance and stop its runner and session broker. Needs no terminal."
+        abstract: "Withdraw a physical device's allowance and stop its runner and session broker; on a terminal, offer to uninstall the runner. Needs no terminal."
     )
 
     @Option(name: .customLong("device"), help: ArgumentHelp("The physical device's ID. OFFSIDER_DEVICE is never read.", valueName: "id"))
@@ -630,12 +700,36 @@ struct DeviceAccessRemove: AsyncParsableCommand {
                 return base.pruned(now: context.now()).removing(platform: target.platform, key: target.key)
             }, commit: { try context.seal.seal($0) })
         }
+        let hadRunner = target.platform == .ios && context.hasRunner(target.key)
         let stopped = await context.stopSessions(target.key)
         if json { return DeviceAccessReport.changeJSON(action: "remove", platform: target.platform, key: target.key, allowance: removed, stopped: stopped) }
         var text = removed.map { "Removed \($0.name) (\(target.key)) from the allow-list; Offsider will not drive it again until a person allows it." }
             ?? "\(target.key) was not on the allow-list."
         if tampered, existing != nil { text += " The allow-list had been changed outside Offsider, so every entry was dropped." }
         if !stopped.isEmpty { text += " Stopped its \(stopped.joined(separator: " and "))." }
-        return text
+        guard hadRunner else { return text }
+        let clean = Self.cleanCommand(target.key)
+        guard context.interactive() else { return text + " Uninstall Offsider's runner from it with `\(clean)`." }
+        let answer = try TerminalPrompt.run(cancelled: "Kept the runner; `\(clean)` removes it later.", descriptor: context.promptDescriptor, keeps: true) { prompt in
+            prompt.lines([text])
+            return try prompt.ask(Self.cleanQuestion) { Self.yesOrNo($0) == nil ? "Type y or n." : nil }
+        }
+        guard Self.yesOrNo(answer) == true else { return "Kept the runner; `\(clean)` removes it later." }
+        return await context.cleanRunner(target.key).trimmingCharacters(in: .newlines)
+    }
+
+    static let cleanQuestion = "Also uninstall its runner? (Y/n) "
+
+    static func cleanCommand(_ udid: String) -> String {
+        "offsider session stop --device \(udid) --clean"
+    }
+
+    /// Return or y means yes, n means no; nil for anything else.
+    static func yesOrNo(_ answer: String) -> Bool? {
+        switch answer.trimmingCharacters(in: .whitespaces).lowercased() {
+        case "", "y", "yes": return true
+        case "n", "no": return false
+        default: return nil
+        }
     }
 }

@@ -389,8 +389,8 @@ struct TypeSecureFieldTests {
         #expect(throws: (any Error).self) { try Type.parse(["--allow-path", "abc", "--device", Self.android.rawValue]) }
     }
 
-    @Test("--file reads through the file checks and refuses a secret's file name with exit 64")
-    func fileRefused() throws {
+    @Test("--file reads through the file checks and refuses a secret's file name; --allow-path reads it only once a person confirms")
+    func fileRefused() async throws {
         let folder = (NSTemporaryDirectory() as NSString).appendingPathComponent("offsider-type-file-\(UUID().uuidString)")
         try FileManager.default.createDirectory(atPath: folder, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(atPath: folder) }
@@ -398,7 +398,40 @@ struct TypeSecureFieldTests {
         try Data("hello".utf8).write(to: URL(fileURLWithPath: folder + "/text.txt"))
 
         #expect(throws: TextFileInput.Refused.self) { try Type.parse(["--file", folder + "/.env", "--device", Self.android.rawValue]).resolvedText() }
-        #expect(try Type.parse(["--file", folder + "/.env", "--allow-path", "--device", Self.android.rawValue]).resolvedText() == "TOKEN=x")
+        let allowing = try Type.parse(["--file", folder + "/.env", "--allow-path", "--device", Self.android.rawValue])
+        AllowPathConsent.confirmed = nil
+        #expect(throws: TextFileInput.Refused.self) { try allowing.resolvedText() }
+
+        let nobody = FakePresence()
+        let piped = await #expect(throws: CLIError.self) {
+            try await PersonPresence.$terminal.withValue({ false }) {
+                try await PersonPresence.$current.withValue(nobody) { try await AllowPathConsent.confirm(path: folder + "/.env", allowPath: true, command: "type") }
+            }
+        }
+        #expect(piped?.reason == .personRequired)
+        #expect(nobody.reasons.isEmpty)
+
+        let noSession = FakePresence(failure: PersonPresence.error(for: .notInteractive))
+        let refused = await #expect(throws: CLIError.self) {
+            try await PersonPresence.$terminal.withValue({ true }) {
+                try await PersonPresence.$current.withValue(noSession) { try await AllowPathConsent.confirm(path: folder + "/.env", allowPath: true, command: "type") }
+            }
+        }
+        #expect(refused?.reason == .personRequired)
+        #expect(throws: TextFileInput.Refused.self) { try allowing.resolvedText() }
+
+        let person = FakePresence()
+        try await PersonPresence.$terminal.withValue({ true }) {
+            try await PersonPresence.$current.withValue(person) { try await AllowPathConsent.confirm(path: folder + "/.env", allowPath: true, command: "type") }
+        }
+        defer { AllowPathConsent.confirmed = nil }
+        let resolved = try #require(TextFileInput.sensitive(folder + "/.env")?.resolvedPath)
+        #expect(person.reasons == ["let type read \(resolved)"])
+        #expect(try allowing.resolvedText() == "TOKEN=x")
+
+        let plain = FakePresence()
+        try await PersonPresence.$current.withValue(plain) { try await AllowPathConsent.confirm(path: folder + "/text.txt", allowPath: true, command: "type") }
+        #expect(plain.reasons.isEmpty)
         #expect(try Type.parse(["--file", folder + "/text.txt", "--device", Self.android.rawValue]).resolvedText() == "hello")
     }
 }

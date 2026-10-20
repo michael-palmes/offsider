@@ -45,4 +45,53 @@ struct SystemAppDenyListTests {
         #expect(SystemAppDenyList.refusal("com.example.app", platform: .ios) == nil)
         #expect(!SystemAppDenyList.isDenied("com.android.chrome", platform: .ios))
     }
+
+    @Test("browser channels, Samsung's apps, mail, password and authenticator apps are denied by id or prefix", arguments: [
+        ("com.chrome.beta", DevicePlatform.android), ("com.chrome.dev", .android), ("com.chrome.canary", .android),
+        ("org.mozilla.fenix", .android), ("org.mozilla.focus", .android), ("org.mozilla.klar", .android),
+        ("com.samsung.android.messaging", .android), ("com.sec.android.app.sbrowser.beta", .android),
+        ("com.microsoft.office.outlook", .android), ("com.onepassword.android", .android), ("com.1password.1password", .android),
+        ("com.x8bit.bitwarden", .android), ("com.authy.authy", .android), ("com.azure.authenticator", .android),
+        ("org.mozilla.ios.Focus", .ios), ("org.mozilla.ios.Klar", .ios), ("com.google.Gmail", .ios), ("com.microsoft.Office.Outlook", .ios),
+        ("com.agilebits.onepassword-ios", .ios), ("com.1password.1password", .ios), ("com.8bit.bitwarden", .ios), ("com.authy", .ios),
+        ("com.microsoft.azureauthenticator", .ios), ("com.google.Authenticator", .ios), ("com.apple.findmy", .ios), ("com.apple.Passwords", .ios),
+    ])
+    func additions(app: String, platform: DevicePlatform) {
+        #expect(SystemAppDenyList.isDenied(app, platform: platform))
+        #expect(SystemAppDenyList.refusal(app, platform: platform)?.hasPrefix("\(app) is ") == true)
+    }
+
+    @Test("a prefix rule never catches an app that only shares a word with it", arguments: [
+        ("com.chromecast.example", DevicePlatform.android), ("org.mozillafan.app", .android), ("com.example.app", .android),
+        ("com.samsung.android.example", .android), ("com.example.chrome", .ios),
+    ])
+    func prefixesStayNarrow(app: String, platform: DevicePlatform) {
+        #expect(!SystemAppDenyList.isDenied(app, platform: platform))
+    }
+
+    @Test("the managed deniedBundleIDs list adds exact ids and prefixes, and iOS ids compare without case")
+    func managedList() {
+        SystemAppDenyList.$managedOverride.withValue(["com.example.bank", "com.example.vault."]) {
+            #expect(SystemAppDenyList.category(of: "com.example.bank", platform: .android) == .managed)
+            #expect(SystemAppDenyList.category(of: "com.example.vault.beta", platform: .android) == .managed)
+            #expect(SystemAppDenyList.category(of: "COM.EXAMPLE.BANK", platform: .ios) == .managed)
+            #expect(!SystemAppDenyList.isDenied("com.example.bankapp", platform: .android))
+            #expect(!SystemAppDenyList.isDenied("com.example.app", platform: .android))
+            #expect(SystemAppDenyList.refusal("com.example.bank", platform: .android) == "com.example.bank is on your organisation's denied list, which Offsider never signs in to or drives")
+        }
+        #expect(!SystemAppDenyList.isDenied("com.example.bank", platform: .android))
+    }
+
+    @Test("deniedBundleIDs is read only when forced, and a value of the wrong type refuses every physical device")
+    func managedKey() {
+        let listed = ManagedDevicePolicy.read(from: FakeManagedPreferences(values: [ManagedDevicePolicy.deniedBundleIDsKey: .strings(["com.example.bank"])]))
+        #expect(listed.deniedBundleIDs == ["com.example.bank"])
+        #expect(listed.present && !listed.unreadable)
+        #expect(ManagedDevicePolicy.read(from: FakeManagedPreferences()).deniedBundleIDs == nil)
+
+        let wrong = ManagedDevicePolicy.read(from: FakeManagedPreferences(values: [ManagedDevicePolicy.deniedBundleIDsKey: .bool(true)]))
+        #expect(wrong.unreadable)
+        let decision = PhysicalDevicePolicy(managed: wrong, list: PhysicalDevicePolicyTests.allowed).decision(platform: .ios, key: PolicyFixtures.phone, now: PolicyFixtures.now)
+        #expect(decision == .refused(.managedUnreadable))
+    }
 }

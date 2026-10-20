@@ -107,7 +107,7 @@ struct StreamVideo: AsyncParsableCommand {
         FileHandle.standardError.write(Data("Press Ctrl+C to stop streaming\n".utf8))
 
         var pending = try await source.firstFrame { error in
-            FileHandle.standardError.write(Data("Error capturing frame: \(error.localizedDescription)\n".utf8))
+            FileHandle.standardError.write(Data("Error capturing frame: \(TerminalText.line(error.localizedDescription))\n".utf8))
         }
         let frameInterval = 1.0 / Double(fps)
         let mjpegBoundary = "--mjpegstream"
@@ -169,7 +169,7 @@ struct StreamVideo: AsyncParsableCommand {
                     }
                 }
             } catch {
-                FileHandle.standardError.write(Data("Error capturing frame: \(error.localizedDescription)\n".utf8))
+                FileHandle.standardError.write(Data("Error capturing frame: \(TerminalText.line(error.localizedDescription))\n".utf8))
             }
 
             let elapsed = Date().timeIntervalSince(frameStartTime)

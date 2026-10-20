@@ -43,6 +43,25 @@ extension RunnerBuilding {
 /// Runs `xcrun xcodebuild` with these arguments, environment and timeout; tests replace it.
 public typealias XcodebuildRunning = @Sendable (_ arguments: [String], _ environment: [String: String], _ timeout: TimeInterval) async throws -> ProcessCaptureResult
 
+/// The first device build under a new `OFFSIDER_IOS_RUNNER_PREFIX` outside `runner build`: only a person approves a prefix.
+public struct RunnerPrefixNeedsPerson: OffsiderFailure, LocalizedError, Equatable, Sendable {
+    public let prefix: String
+    public let udid: String
+
+    public var reason: FailureReason { .personRequired }
+    public var failureMessage: String {
+        "\(XcodeRunnerBuilder.prefixVariable) names \(prefix), a bundle prefix this Mac has not built the runner under, and that first build creates App IDs in your team, so a person confirms it once. Nothing was built. Run `\(command)` in your own terminal."
+    }
+    public var hint: String? { command }
+    public var errorDescription: String? { failureMessage }
+    private var command: String { "offsider runner build --device \(udid)" }
+}
+
+/// Carries a refusal from the prefix approval past the build's catch-all, unchanged.
+struct PrefixApproval: Error {
+    let underlying: any Error
+}
+
 /// `xcodebuild build-for-testing` from the bundled source into `~/Library/Caches/offsider/runner/<key>/`.
 public struct XcodeRunnerBuilder: RunnerBuilding {
     public static let teamVariable = "OFFSIDER_IOS_TEAM_ID"
@@ -102,11 +121,18 @@ public struct XcodeRunnerBuilder: RunnerBuilding {
         home.appendingPathComponent("Library/Caches/offsider/runner", isDirectory: true)
     }
 
-    /// `OFFSIDER_IOS_TEAM_ID`, else the team the device's allowance names; never a team picked from Xcode's accounts.
+    /// The team the device's allowance names, else `OFFSIDER_IOS_TEAM_ID`; a variable naming another team than the person chose is refused. Never a team picked from Xcode's accounts.
     public static func resolveTeam(environment: [String: String], allowanceTeam: String?, signedInTeams: [String], audience: ErrorAudience = .current) throws -> String {
         if let team = environment[teamVariable]?.trimmingCharacters(in: .whitespaces), !team.isEmpty {
             guard DeviceAllowance.isTeamID(team) else {
                 throw IOSDeviceError(.teamMissing, "\(teamVariable) must be a 10-character team ID such as ABCDE12345, not \(team).")
+            }
+            if let allowanceTeam, DeviceAllowance.isTeamID(allowanceTeam), allowanceTeam.caseInsensitiveCompare(team) != .orderedSame {
+                throw IOSDeviceError(
+                    .invalidSetting,
+                    "\(teamVariable) is \(team), but this device's allowance names team \(allowanceTeam), and the team a person chose wins. Unset \(teamVariable), or choose that team again in `offsider device-access allow`.",
+                    hint: "offsider device-access allow"
+                )
             }
             return team
         }
@@ -267,16 +293,41 @@ public struct XcodeRunnerBuilder: RunnerBuilding {
                 if let xctestrun = Self.xctestrun(in: directory) {
                     return RunnerBuild(key: key, xctestrun: xctestrun, directory: directory)
                 }
+                if case .device(let udid) = destination { try await approvePrefix(signing.prefix, udid: udid) }
                 return try await runBuild(key: key, directory: directory, destination: destination, signing: signing, deviceName: deviceName)
             }
         } catch let error as IOSDeviceError {
             throw error
+        } catch let approval as PrefixApproval {
+            throw approval.underlying
         } catch {
             throw IOSDeviceError(
                 .runnerBuildFailed,
                 "Offsider could not prepare its runner build in \(cacheRoot.path): \(error.localizedDescription). Check that folder's permissions, or delete it and retry."
             )
         }
+    }
+
+    /// Asks a person before the first device build under a bundle prefix of `OFFSIDER_IOS_RUNNER_PREFIX`, which creates App IDs in their team.
+    /// Only `runner build` sets it; unset, such a build is refused with the command that asks.
+    @TaskLocal public static var confirmNewPrefix: (@Sendable (String) async throws -> Void)?
+    static let approvedPrefixesFile = "approved-prefixes"
+
+    /// Offsider's own prefix needs no approval; another is approved once and recorded beside the cached builds.
+    func approvePrefix(_ prefix: String, udid: String) async throws {
+        guard prefix != Self.defaultPrefix else { return }
+        let directory = cacheRoot.path
+        let recorded = (try? OffsiderPrivateDirectory.readOwnedFile(named: Self.approvedPrefixesFile, in: directory, maxBytes: 64 * 1024)) ?? nil
+        var approved = recorded.map { String(decoding: $0, as: UTF8.self).split(separator: "\n").map(String.init) } ?? []
+        if approved.contains(prefix) { return }
+        guard let confirm = Self.confirmNewPrefix else { throw PrefixApproval(underlying: RunnerPrefixNeedsPerson(prefix: prefix, udid: udid)) }
+        do {
+            try await confirm(prefix)
+        } catch {
+            throw PrefixApproval(underlying: error)
+        }
+        approved.append(prefix)
+        try OffsiderPrivateDirectory.writeAtomically(Data(approved.joined(separator: "\n").utf8), named: Self.approvedPrefixesFile, in: directory)
     }
 
     /// `flock` on `<key>.lock`, polled so the task stays cancellable; the kernel drops it if this process dies.

@@ -75,6 +75,17 @@ struct AdbClientTests {
         #expect(try await AdbClient(endpoint: .defaultAdbServer, connector: exact, maxOutputBytes: 1_000).exec("screencap -p", on: "emulator-5556").count == 1_000)
     }
 
+    @Test("a shell packet announcing more than the cap fails at its header, without waiting for the bytes")
+    func packetHeaderCap() async {
+        let server = FakeAdbServer(handler: FakeAdbServer.devices(["emulator-5556"]) { _, _ in
+            .bytes(Data("OKAY".utf8) + Data([1, 0xFF, 0xFF, 0xFF, 0xFF]), thenClose: false)
+        })
+        let error = await #expect(throws: AndroidError.self) {
+            try await Self.client(server).shell("cat big", on: "emulator-5556", timeout: .seconds(5))
+        }
+        #expect(error?.message == "`cat big` failed on emulator-5556: it printed more than 64 MB, so Offsider stopped reading.")
+    }
+
     @Test("an unknown serial is reported as not running")
     func unknownSerial() async {
         let server = FakeAdbServer(handler: FakeAdbServer.devices(["emulator-5556"]) { _, _ in FakeAdbServer.shell() })

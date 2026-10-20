@@ -46,7 +46,10 @@ extension IOSDeviceBackend {
                 // The runner checks the pinned app on each call it is sent with; this checks the cable and the policy once.
                 try await requireWired(id)
                 try await requirePinnedAppInFront(id)
-                return try await fallback(id)
+                forgetPinConfirmation(id)
+                let session = try await fallback(id)
+                guard state.pinPolicy != nil else { return session }
+                return PinForgettingSession.wrap(session) { [unowned self] in self.forgetPinConfirmation(id) }
             }
             throw IOSDeviceError.xcodeTooOld(try await displayName(id), version: input.coreDeviceVersion())
         }
@@ -59,6 +62,7 @@ extension IOSDeviceBackend {
             preflight: { [unowned self] in
                 try await self.requireWired(id)
                 try await self.requirePinnedAppInFront(id)
+                self.forgetPinConfirmation(id)
             }
         )
     }
@@ -151,5 +155,59 @@ extension IOSDeviceBackend {
         )
         state.sessionConnector = manager
         return manager
+    }
+}
+
+/// The runner's input session, clearing the pin confirmation after each call so a screenshot that follows asks the runner again.
+@MainActor
+class PinForgettingSession: InputSession {
+    let inner: any InputSession
+    let forget: @MainActor () -> Void
+
+    init(_ inner: any InputSession, forget: @escaping @MainActor () -> Void) {
+        self.inner = inner
+        self.forget = forget
+    }
+
+    /// Keeps a text session a text session, so callers that look for one still find it.
+    static func wrap(_ inner: any InputSession, forget: @escaping @MainActor () -> Void) -> any InputSession {
+        if let text = inner as? any TextInputSession { return PinForgettingTextSession(text: text, forget: forget) }
+        return PinForgettingSession(inner, forget: forget)
+    }
+
+    var device: DeviceID { inner.device }
+
+    func perform(_ event: InputEvent) async throws {
+        defer { forget() }
+        try await inner.perform(event)
+    }
+
+    func performPhysicalTap(at point: (x: Double, y: Double), preDelay: Double?, postDelay: Double?) async throws {
+        defer { forget() }
+        try await inner.performPhysicalTap(at: point, preDelay: preDelay, postDelay: postDelay)
+    }
+
+    func close() async {
+        await inner.close()
+    }
+}
+
+@MainActor
+final class PinForgettingTextSession: PinForgettingSession, TextInputSession {
+    let text: any TextInputSession
+
+    init(text: any TextInputSession, forget: @escaping @MainActor () -> Void) {
+        self.text = text
+        super.init(text, forget: forget)
+    }
+
+    func typeText(_ text: String) async throws {
+        defer { forget() }
+        try await self.text.typeText(text)
+    }
+
+    func replaceText(_ text: String) async throws {
+        defer { forget() }
+        try await self.text.replaceText(text)
     }
 }

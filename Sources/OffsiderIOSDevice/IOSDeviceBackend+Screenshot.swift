@@ -14,6 +14,8 @@ final class IOSDeviceState {
     var streamNoticeShown = false
     var pinPolicy: (@MainActor (String) -> String?)?
     var pinConfirmed: [String: Date] = [:]
+    /// Devices sent input since their pinned app was last confirmed in front; their next check is timed as `foreground-recheck`.
+    var inputSincePinCheck: Set<String> = []
     var runnerTeam: String?
 }
 
@@ -21,7 +23,7 @@ extension IOSDeviceBackend {
     /// The broker's latest frame on an Xcode 27 host; `devicectl device capture screenshot` when its stream cannot serve one.
     public func screenshotPNG(for id: DeviceID) async throws -> Data {
         _ = try await requireBootedDevice(id)
-        // Video asks for a frame many times a second, so the check is repeated at most every two seconds.
+        // Video asks for a frame many times a second, so the check is repeated at most every two seconds; any input clears it.
         try await requirePinnedAppInFront(id, maxAge: 2)
         if hostHasHID, sessionsAvailable {
             do {

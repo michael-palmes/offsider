@@ -72,7 +72,7 @@ struct SwipeHoldEndTests {
         let error = #expect(throws: (any Error).self) {
             try Swipe.parse(["--start-x", "inf", "--start-y", "800", "--end-x", "200", "--end-y", "400", "--device", "emulator-5554"])
         }
-        #expect(error.map { Swipe.message(for: $0).contains("Coordinates must be finite numbers.") } == true)
+        #expect(error.map { Swipe.message(for: $0).contains("--start-x must be a number from -100000 to 100000; got inf.") } == true)
     }
 
     @Test("a batch swipe step sends the command's event, with and without --hold-end", arguments: [[], ["--hold-end", "300"]])

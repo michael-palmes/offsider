@@ -10,17 +10,18 @@ extension TerminalText {
     public static let graphemeOverrun = 100
 
     /// C0, DEL, C1, the soft hyphen, bidi controls and isolates, zero-width and invisible operators and format characters,
-    /// line and paragraph separators, variation selectors, the byte-order mark, interlinear annotation and tag characters.
+    /// line and paragraph separators, variation selectors, the byte-order mark, interlinear annotation and tag characters,
+    /// and the blank-looking fillers (combining grapheme joiner, Hangul and Khmer fillers, Mongolian selectors, braille blank).
     /// Joiners (U+200C, U+200D) are not hazards, nor are the presentation selectors U+FE0E and U+FE0F on their own: see `isHazard(_:after:)`.
     @inline(__always)
     public static func isHazard(_ scalar: Unicode.Scalar) -> Bool {
         let value = scalar.value
         if value < 0x20 || value == 0x7F { return true }
         if value < 0x80 { return false }
-        if value < 0xA0 || value == 0xAD { return true }
+        if value < 0xA0 || value == 0xAD || value == 0x034F { return true }
         if value < 0x061C { return false }
         switch value {
-        case 0x061C, 0x180E, 0x200B, 0x200E, 0x200F, 0x2028, 0x2029, 0x202A...0x202E, 0x2060...0x2064, 0x2066...0x206F,
+        case 0x061C, 0x115F, 0x1160, 0x17B4, 0x17B5, 0x180B...0x180E, 0x2800, 0x3164, 0xFFA0, 0x200B, 0x200E, 0x200F, 0x2028, 0x2029, 0x202A...0x202E, 0x2060...0x2064, 0x2066...0x206F,
              0xFE00...0xFE0D, 0xFEFF, 0xFFF9...0xFFFB, 0xE0000...0xE007F, 0xE0100...0xE01EF:
             return true
         default:
@@ -84,7 +85,7 @@ extension TerminalText {
         while index < scalars.endIndex {
             let scalar = scalars[index]
             if keepsSGR, scalar == "\u{1B}", let end = sgrEnd(scalars, from: index) {
-                output.unicodeScalars.append(contentsOf: scalars[index..<end])
+                output += withoutConceal(String(String.UnicodeScalarView(scalars[index..<end])))
                 index = end
                 previous = nil
                 continue
@@ -111,6 +112,55 @@ extension TerminalText {
             guard index > 0, !shown.isEmpty, !shown.hasPrefix(" "), !shown.hasPrefix("\t") else { return shown }
             return indent + shown
         }.joined(separator: "\n")
+    }
+
+    /// The most characters one error block (message or hint) shows: adb FAIL text and runner messages can be long.
+    public static let maxErrorCharacters = 4096
+
+    /// An untrusted name or label in running text: bare when clean for a person at a terminal, always JSON-quoted for an agent.
+    public static func field(_ text: String, cap: Int? = maxCharacters, profile: OutputProfile = .current) -> String {
+        profile == .agent ? quoted(text, cap: cap) : bareOrQuoted(text, cap: cap)
+    }
+
+    /// JSON text from an encoder that escapes C0 only, with every other hazard (DEL, C1, bidi, invisible and tag characters)
+    /// written as `\uXXXX`. Hazards can only sit inside strings, so the whitespace between tokens is kept.
+    public static func escapingJSONHazards(_ json: String) -> String {
+        if isClean(json, keepsTab: true, keepsNewline: true) { return json }
+        var output = ""
+        output.reserveCapacity(json.utf8.count + 16)
+        var previous: Unicode.Scalar?
+        for scalar in json.unicodeScalars {
+            defer { previous = scalar }
+            if scalar == "\n" || scalar == "\t" || scalar == "\r" || !isHazard(scalar, after: previous) {
+                output.unicodeScalars.append(scalar)
+            } else {
+                appendEscape(scalar, to: &output)
+            }
+        }
+        return output
+    }
+
+    /// An SGR sequence with conceal (parameter 8) removed, colour arguments (`38;5;8`, `48;2;…`) left alone; empty when only conceal was left.
+    static func withoutConceal(_ sequence: String) -> String {
+        guard sequence.hasPrefix("\u{1B}["), sequence.hasSuffix("m") else { return sequence }
+        let body = sequence.dropFirst(2).dropLast()
+        let parameters = body.split(separator: ";", omittingEmptySubsequences: false).map(String.init)
+        guard parameters.contains(where: { Int($0) == 8 }) else { return sequence }
+        var kept: [String] = []
+        var index = 0
+        while index < parameters.count {
+            let parameter = parameters[index]
+            if ["38", "48", "58"].contains(parameter), index + 1 < parameters.count {
+                let width = parameters[index + 1] == "5" ? 2 : parameters[index + 1] == "2" ? 4 : 1
+                let end = min(parameters.count, index + 1 + width)
+                kept += parameters[index..<end]
+                index = end
+                continue
+            }
+            if Int(parameter) != 8 { kept.append(parameter) }
+            index += 1
+        }
+        return kept.isEmpty ? "" : "\u{1B}[" + kept.joined(separator: ";") + "m"
     }
 
     /// JSON-quoted and capped: `"Sign in"`.

@@ -115,7 +115,7 @@ struct ScrollFoldTests {
 
         #expect(backend.hitTests == 1)
         #expect(error?.reason == .targetCovered)
-        #expect(error?.userFacingDescription == "--id 'menu-row-12' at (201, 810) may be covered by button 'Continue' (16, 790) 370x56; the tap may land on it.")
+        #expect(error?.userFacingDescription == "--id 'menu-row-12' at (201, 810) may be covered by button \"Continue\" (16, 790) 370x56; the tap may land on it.")
         #expect(error?.coveredBy?.evidence == .treeOrder)
         #expect(backend.session.calls.isEmpty)
     }

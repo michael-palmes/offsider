@@ -143,7 +143,7 @@ public enum RunClock {
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = timeZone
         let parts = calendar.dateComponents([.hour, .minute, .second], from: date)
-        return [parts.hour ?? 0, parts.minute ?? 0, parts.second ?? 0].map { String(format: "%02d", $0) }.joined(separator: separator)
+        return [parts.hour ?? 0, parts.minute ?? 0, parts.second ?? 0].map { unsafe String(format: "%02d", $0) }.joined(separator: separator)
     }
 
     /// `43 s`, `31 min 43 s` or `2 h 5 min`.

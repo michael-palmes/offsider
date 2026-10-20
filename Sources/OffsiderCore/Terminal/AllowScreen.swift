@@ -58,7 +58,8 @@ public enum AllowScreen {
     }
 
     public static func apps(_ apps: [String]) -> String {
-        apps.isEmpty ? "any app" : apps.map { PromptScreen.label($0) }.joined(separator: ", ") + " only"
+        if apps == [DeviceAllowance.wholeDevicePin] { return "any app and all logs" }
+        return apps.isEmpty ? "any app" : apps.map { PromptScreen.label($0) }.joined(separator: ", ") + " only"
     }
 
     /// The bold line above the Touch ID request: what is about to be allowed. `team` is the name shown, or `team <id>` when only the ID is known.

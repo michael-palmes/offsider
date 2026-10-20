@@ -4,7 +4,7 @@ import Foundation
 public struct LogCollector {
     public let maxLines: Int
     public let keepsANSI: Bool
-    /// Masks sensitive values in `message` and `raw` after `--grep` and `--exclude` have matched the unredacted text.
+    /// Masks sensitive values in `message` and `raw` before `--grep` and `--exclude` match.
     public let redacts: Bool
     /// False for `--follow`, which prints entries as they arrive and never reads them back.
     public let retainsEntries: Bool
@@ -20,7 +20,7 @@ public struct LogCollector {
     /// Entries that passed `--grep` and `--exclude`, kept or not, whose message the device's log cut short.
     public private(set) var cut = 0
 
-    /// `maxLines` 0 keeps everything; `grep` and each `exclude` are case-insensitive regular expressions matched against the stripped message.
+    /// `maxLines` 0 keeps everything; `grep` and each `exclude` are case-insensitive regular expressions matched against the stripped, redacted message.
     public init(maxLines: Int, grep: String?, exclude: [String] = [], keepsANSI: Bool, redacts: Bool = false, retainsEntries: Bool = true) throws {
         guard maxLines >= 0 else {
             throw LogOptionError("--max-lines must be 0 (no limit) or more; got \(maxLines).")
@@ -54,27 +54,31 @@ public struct LogCollector {
         case shown(LogEntry, redacted: Int)
     }
 
+    /// Redaction runs first, so `--grep` and `--exclude` see only what is shown and never answer yes or no about a redacted value.
     func verdict(_ entry: LogEntry) -> Verdict {
         let stripped = LogText.stripANSI(entry.message)
-        let range = NSRange(stripped.startIndex..., in: stripped)
-        if let grep, grep.firstMatch(in: stripped, range: range) == nil {
-            return .unmatched
-        }
-        if excludes.contains(where: { $0.firstMatch(in: stripped, range: range) != nil }) {
-            return .excluded
-        }
+        var count = 0
+        var matched = stripped
         var shown = entry
-        if !keepsANSI {
+        if redacts {
+            let message = LogRedactor.redact(stripped)
+            matched = message.text
+            count = message.count
+            shown.message = keepsANSI ? LogRedactor.redact(entry.message).text : message.text
+            if let raw = shown.raw {
+                let redactedRaw = LogRedactor.redact(raw)
+                shown.raw = redactedRaw.text
+                count = max(count, redactedRaw.count)
+            }
+        } else if !keepsANSI {
             shown.message = stripped
         }
-        guard redacts else { return .shown(shown, redacted: 0) }
-        let message = LogRedactor.redact(shown.message)
-        shown.message = message.text
-        var count = message.count
-        if let raw = shown.raw {
-            let redactedRaw = LogRedactor.redact(raw)
-            shown.raw = redactedRaw.text
-            count = max(count, redactedRaw.count)
+        let range = NSRange(matched.startIndex..., in: matched)
+        if let grep, grep.firstMatch(in: matched, range: range) == nil {
+            return .unmatched
+        }
+        if excludes.contains(where: { $0.firstMatch(in: matched, range: range) != nil }) {
+            return .excluded
         }
         return .shown(shown, redacted: count)
     }

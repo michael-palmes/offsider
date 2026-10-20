@@ -16,7 +16,7 @@ public enum AccessStatusScreen {
     /// `any app · until 22:14`, `com.example.app · until removed`, with `· team ABCDE12345` when `team` is on and the entry has one.
     public static func detail(_ entry: DeviceAllowance, now: Date, timeZone: TimeZone, team: Bool, style: TerminalStyle) -> String {
         let until = entry.expires == nil ? "until removed" : AllowScreen.until(entry.expires, now: now, timeZone: timeZone)
-        let apps = entry.apps.isEmpty ? "any app" : entry.apps.map { PromptScreen.label($0) }.joined(separator: ", ")
+        let apps = entry.apps.isEmpty ? "any app" : entry.allowsWholeDevice ? "any app and all logs" : entry.apps.map { PromptScreen.label($0) }.joined(separator: ", ")
         return ([apps, until] + (team ? entry.team.map { ["team \(PromptScreen.visible($0))"] } ?? [] : [])).joined(separator: " \(style.dot) ")
     }
 

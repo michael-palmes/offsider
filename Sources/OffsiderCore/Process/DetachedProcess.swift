@@ -25,43 +25,43 @@ public struct DetachedProcess: Sendable {
         let log = try Self.openLog(logPath)
         defer { Darwin.close(log) }
 
-        var attributes = posix_spawnattr_t(nil as OpaquePointer?)
-        posix_spawnattr_init(&attributes)
-        defer { posix_spawnattr_destroy(&attributes) }
-        posix_spawnattr_setflags(&attributes, Int16(POSIX_SPAWN_SETSID | POSIX_SPAWN_CLOEXEC_DEFAULT))
+        var attributes = unsafe posix_spawnattr_t(nil as OpaquePointer?)
+        unsafe posix_spawnattr_init(&attributes)
+        defer { unsafe posix_spawnattr_destroy(&attributes) }
+        unsafe posix_spawnattr_setflags(&attributes, Int16(POSIX_SPAWN_SETSID | POSIX_SPAWN_CLOEXEC_DEFAULT))
 
-        var actions = posix_spawn_file_actions_t(nil as OpaquePointer?)
-        posix_spawn_file_actions_init(&actions)
-        defer { posix_spawn_file_actions_destroy(&actions) }
-        posix_spawn_file_actions_addopen(&actions, STDIN_FILENO, "/dev/null", O_RDONLY, 0)
-        posix_spawn_file_actions_adddup2(&actions, log, STDOUT_FILENO)
-        posix_spawn_file_actions_adddup2(&actions, log, STDERR_FILENO)
+        var actions = unsafe posix_spawn_file_actions_t(nil as OpaquePointer?)
+        unsafe posix_spawn_file_actions_init(&actions)
+        defer { unsafe posix_spawn_file_actions_destroy(&actions) }
+        unsafe posix_spawn_file_actions_addopen(&actions, STDIN_FILENO, "/dev/null", O_RDONLY, 0)
+        unsafe posix_spawn_file_actions_adddup2(&actions, log, STDOUT_FILENO)
+        unsafe posix_spawn_file_actions_adddup2(&actions, log, STDERR_FILENO)
 
-        let argv = ([executable.path] + arguments).map { strdup($0) } + [nil]
-        let envp = environment.map { strdup("\($0.key)=\($0.value)") } + [nil]
+        let argv = unsafe ([executable.path] + arguments).map { unsafe strdup($0) } + [nil]
+        let envp = unsafe environment.map { unsafe strdup("\($0.key)=\($0.value)") } + [nil]
         defer {
-            argv.forEach { free($0) }
-            envp.forEach { free($0) }
+            unsafe argv.forEach { unsafe free($0) }
+            unsafe envp.forEach { unsafe free($0) }
         }
 
         var pid: pid_t = 0
-        let status = posix_spawn(&pid, executable.path, &actions, &attributes, argv, envp)
+        let status = unsafe posix_spawn(&pid, executable.path, &actions, &attributes, argv, envp)
         guard status == 0 else {
-            throw DetachedProcessError(path: executable.path, detail: String(cString: strerror(status)))
+            throw unsafe DetachedProcessError(path: executable.path, detail: String(cString: strerror(status)))
         }
         return pid
     }
 
     /// Opens `path` to append, creating it 0600; refuses a link, a non-regular file, another user's file, or one with other hard links, and empties one over 5 MB.
     public static func openLog(_ path: String, uid: uid_t = getuid(), maxBytes: off_t = maxLogBytes) throws -> Int32 {
-        let descriptor = Darwin.open(path, O_WRONLY | O_CREAT | O_APPEND | O_NOFOLLOW | O_CLOEXEC | O_NONBLOCK, S_IRUSR | S_IWUSR)
+        let descriptor = unsafe Darwin.open(path, O_WRONLY | O_CREAT | O_APPEND | O_NOFOLLOW | O_CLOEXEC | O_NONBLOCK, S_IRUSR | S_IWUSR)
         guard descriptor >= 0 else {
-            let detail = errno == ELOOP ? "the log path is a symbolic link" : "the log could not be opened: \(String(cString: strerror(errno)))"
+            let detail = errno == ELOOP ? "the log path is a symbolic link" : unsafe "the log could not be opened: \(String(cString: strerror(errno)))"
             throw DetachedProcessError(path: path, detail: detail)
         }
         var info = stat()
-        guard fstat(descriptor, &info) == 0 else {
-            let detail = String(cString: strerror(errno))
+        guard unsafe fstat(descriptor, &info) == 0 else {
+            let detail = unsafe String(cString: strerror(errno))
             Darwin.close(descriptor)
             throw DetachedProcessError(path: path, detail: "the log could not be checked: \(detail)")
         }
@@ -78,7 +78,7 @@ public struct DetachedProcess: Sendable {
     /// The exit status once the launched process has exited (128 plus the signal when killed), else nil.
     public func exitStatus(of pid: Int32) -> Int32? {
         var status: Int32 = 0
-        guard waitpid(pid, &status, WNOHANG) == pid else { return nil }
+        guard unsafe waitpid(pid, &status, WNOHANG) == pid else { return nil }
         let signal = status & 0x7F
         return signal == 0 ? (status >> 8) & 0xFF : 128 + signal
     }

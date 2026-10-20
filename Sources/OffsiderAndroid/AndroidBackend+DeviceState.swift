@@ -92,8 +92,7 @@ extension AndroidBackend: BiometricControlling {
         let finger = fingerID ?? (outcome == .match ? BiometricControl.androidMatchFinger : BiometricControl.androidNoMatchFinger)
         let adb = try await adbExecutable()
         for arguments in [BiometricControl.androidTouchArguments(serial: serial, fingerID: finger), BiometricControl.androidRemoveArguments(serial: serial)] {
-            var environment = host.environment
-            environment["ADB_MDNS"] = "0"
+            let environment = ChildEnvironment.make(.adbServer, from: host.environment)
             let result = try await host.processes.capture(executable: adb.path, arguments: arguments, environment: environment, timeout: 5)
             let output = result.stdout + result.stderr
             if result.status != 0 || output.contains("KO") {

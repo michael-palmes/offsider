@@ -8,7 +8,7 @@ public enum ProcessStartTime {
         guard pid > 0 else { return nil }
         var info = proc_bsdinfo()
         let size = Int32(MemoryLayout<proc_bsdinfo>.size)
-        guard proc_pidinfo(pid, PROC_PIDTBSDINFO, 0, &info, size) == size else { return nil }
+        guard unsafe proc_pidinfo(pid, PROC_PIDTBSDINFO, 0, &info, size) == size else { return nil }
         return (Int(info.pbi_start_tvsec), Int(info.pbi_start_tvusec))
     }
 

@@ -53,7 +53,7 @@ public enum ScreenCompare {
         }
 
         private var percentage: String {
-            String(format: "%.1f%%", changedFraction * 100)
+            unsafe String(format: "%.1f%%", changedFraction * 100)
         }
     }
 

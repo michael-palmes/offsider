@@ -40,15 +40,15 @@ public enum ScreenDiff {
                     guard tolerance > 0 else {
                         var index = firstRow * width
                         while index < endRow * width {
-                            if old[index] != new[index] {
-                                marked[index] = magenta
+                            if unsafe old[index] != new[index] {
+                                unsafe marked[index] = magenta
                                 changed += 1
                                 minX = min(minX, index % width)
                                 maxX = max(maxX, index % width)
                                 minY = min(minY, index / width)
                                 maxY = max(maxY, index / width)
                             } else {
-                                marked[index] = faded(new[index])
+                                unsafe marked[index] = unsafe faded(new[index])
                             }
                             index += 1
                         }
@@ -60,8 +60,8 @@ public enum ScreenDiff {
                     )
                     for tile in tiles {
                         ImageFingerprint.forEachBlock(columns: tile.columns, rows: tile.rows) { columns, rows in
-                            let was = ImageFingerprint.blockMean(UnsafeRawPointer(old), bytesPerRow: width * 4, columns: columns, rows: rows)
-                            let now = ImageFingerprint.blockMean(UnsafeRawPointer(new), bytesPerRow: width * 4, columns: columns, rows: rows)
+                            let was = unsafe ImageFingerprint.blockMean(UnsafeRawPointer(old), bytesPerRow: width * 4, columns: columns, rows: rows)
+                            let now = unsafe ImageFingerprint.blockMean(UnsafeRawPointer(new), bytesPerRow: width * 4, columns: columns, rows: rows)
                             let moved = differs(was.red, now.red, by: tolerance) || differs(was.green, now.green, by: tolerance)
                                 || differs(was.blue, now.blue, by: tolerance)
                             let blockWidth = columns.count
@@ -69,11 +69,11 @@ public enum ScreenDiff {
                             let end = rows.upperBound * width
                             while rowStart < end {
                                 if moved {
-                                    (marked + rowStart).update(repeating: magenta, count: blockWidth)
+                                    unsafe (marked + rowStart).update(repeating: magenta, count: blockWidth)
                                 } else {
                                     var index = rowStart
                                     while index < rowStart + blockWidth {
-                                        marked[index] = faded(new[index])
+                                        unsafe marked[index] = unsafe faded(new[index])
                                         index += 1
                                     }
                                 }

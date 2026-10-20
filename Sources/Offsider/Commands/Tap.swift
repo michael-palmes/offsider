@@ -76,6 +76,9 @@ struct Tap: AsyncParsableCommand, VerifiableCommand {
             guard let pointX, let pointY else {
                 throw ValidationError("Both -x and -y must be provided together.")
             }
+            if let problem = Coordinates.problem([("-x", pointX), ("-y", pointY)]) {
+                throw ValidationError(problem)
+            }
             guard pointX >= 0, pointY >= 0 else {
                 throw ValidationError("Coordinates must be non-negative values.")
             }

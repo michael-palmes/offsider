@@ -5,13 +5,22 @@ import OffsiderCore
 import OSLog
 
 // Every connection receives this newline-delimited handshake before the client writes a request.
-// A false value guarantees that the broker has not read or executed any touch primitives.
+// A false value guarantees that the broker has not read or executed any input.
 private struct HIDBrokerHandshake: Codable {
     let ready: Bool
 }
 
-private struct HIDBrokerResponse: Codable {
-    let error: String?
+/// A request the broker never took, so the input was not sent and may go another way.
+struct HIDBrokerNotSent: LocalizedError, UserFacingError {
+    let detail: String
+
+    var userFacingDescription: String {
+        "Offsider could not reach the simulator's input session, so nothing was sent. Run the command again."
+    }
+
+    var errorDescription: String? {
+        userFacingDescription
+    }
 }
 
 struct HIDBrokerNotReadyError: LocalizedError, UserFacingError {
@@ -40,6 +49,9 @@ enum HIDBrokerLiveness: Equatable {
     case stale
     case absent
 }
+
+/// The broker closed the connection before sending a byte: the way it refuses a peer whose code it does not accept.
+struct HIDBrokerClosedError: Error {}
 
 struct HIDBrokerSocketIdentity: Equatable {
     let device: dev_t
@@ -79,20 +91,24 @@ extension HIDBroker {
     static func connectAndAwaitHandshake(
         endpoint: String,
         connector: (String) throws -> Int32,
-        timeoutMilliseconds: Int = serverIOTimeoutMilliseconds
+        timeoutMilliseconds: Int = serverIOTimeoutMilliseconds,
+        simulatorUDID: String? = nil
     ) throws -> Int32 {
         let descriptor = try connector(endpoint)
         do {
             try configureReceiveTimeout(descriptor, milliseconds: timeoutMilliseconds)
-            let data = try readMessage(from: descriptor)
+            let data = try readMessage(from: descriptor, withinMilliseconds: timeoutMilliseconds)
             let handshake = try JSONDecoder().decode(HIDBrokerHandshake.self, from: data)
             guard handshake.ready else { throw HIDBrokerNotReadyError() }
             try configureReceiveTimeout(descriptor, milliseconds: clientResponseTimeoutMilliseconds)
             return descriptor
         } catch {
-            Darwin.close(descriptor)
+            defer { Darwin.close(descriptor) }
             if let notReady = error as? HIDBrokerNotReadyError {
                 throw notReady
+            }
+            if error is HIDBrokerClosedError {
+                try replaceRefusingBroker(simulatorUDID: simulatorUDID, endpoint: endpoint, reconnect: { try connector(endpoint) })
             }
             throw HIDBrokerNotReadyError(
                 diagnosticDescription: "The broker readiness handshake failed: \(error.localizedDescription)",
@@ -100,6 +116,39 @@ extension HIDBroker {
                 allowsReplacementAfterProcessExit: true
             )
         }
+    }
+
+    /// A broker that closed before its handshake may have refused this command's code. A closed peer can no longer be asked who it was, so the
+    /// broker is found by its arguments and the endpoint it holds: one from another build is stopped so a fresh one starts; one from this build
+    /// that refuses a second connection too is a dead end named in one line. Anything else is left to the retry loop.
+    static func replaceRefusingBroker(
+        simulatorUDID: String?,
+        endpoint: String,
+        reconnect: () throws -> Int32,
+        requirement: () throws -> PeerCodeIdentity.Requirement = { try PeerCodeIdentity.ownRequirement() },
+        stopOtherBuilds: ([String], String, PeerCodeIdentity.Requirement) -> (stopped: [pid_t], ownBuild: [pid_t]) = {
+            BrokerProcess.stopOtherBuilds(serving: $0, boundTo: $1, requirement: $2)
+        }
+    ) throws {
+        guard let requirement = try? requirement() else { return }
+        let outcome = stopOtherBuilds(simulatorUDID.map(serveArguments) ?? ["hid-broker"], endpoint, requirement)
+        if !outcome.stopped.isEmpty {
+            throw HIDBrokerNotReadyError(diagnosticDescription: "A broker from another Offsider build refused this command; it was stopped so a fresh one starts.")
+        }
+        guard !outcome.ownBuild.isEmpty, let again = try? reconnect() else { return }
+        defer { Darwin.close(again) }
+        do {
+            _ = try readMessage(from: again, withinMilliseconds: serverIOTimeoutMilliseconds)
+            return
+        } catch is HIDBrokerClosedError {
+        } catch {
+            return
+        }
+        throw CLIError(
+            errorDescription: "The simulator input broker refused this command although both are the same Offsider build. Run `offsider doctor`.",
+            reason: .hidBrokerFailed,
+            hint: "offsider doctor"
+        )
     }
 
     static func acquireStartupLock(
@@ -156,8 +205,10 @@ extension HIDBroker {
         return .stale
     }
 
+    private static let lifetimeLockSuffix = ".lifetime.lock"
+
     private static func lifetimeLockPath(_ endpoint: String) -> String {
-        endpoint + ".lifetime.lock"
+        endpoint + lifetimeLockSuffix
     }
 
     private static func acquirePrivateLock(
@@ -192,18 +243,72 @@ extension HIDBroker {
             (error.code == Int(ECONNREFUSED) || error.code == Int(ENOENT))
     }
 
-    static func exchange(_ requestData: Data, on descriptor: Int32) throws {
-        let response: HIDBrokerResponse
+    /// Writes one request and reads its reply; the reply's error is thrown as the broker worded it.
+    @discardableResult
+    static func exchange(_ requestData: Data, on descriptor: Int32, timeoutMilliseconds: Int = clientResponseTimeoutMilliseconds) throws -> HIDBrokerReply {
         do {
+            try configureReceiveTimeout(descriptor, milliseconds: timeoutMilliseconds)
             try writeAll(requestData, to: descriptor)
-            let responseData = try readMessage(from: descriptor)
-            response = try JSONDecoder().decode(HIDBrokerResponse.self, from: responseData)
+        } catch {
+            // The broker acts only on a whole request, so one it could not take was never sent.
+            throw HIDBrokerNotSent(detail: error.localizedDescription)
+        }
+        let reply: HIDBrokerReply
+        do {
+            let replyData = try readMessage(from: descriptor, withinMilliseconds: timeoutMilliseconds)
+            reply = try JSONDecoder().decode(HIDBrokerReply.self, from: replyData)
         } catch {
             throw CLIError(errorDescription: "HID request outcome is unknown and was not replayed: \(error.localizedDescription)", reason: .inputOutcomeUnknown)
         }
-        if let error = response.error {
+        if reply.notSent == true {
+            throw HIDBrokerNotSent(detail: reply.error ?? "the broker refused it")
+        }
+        if let error = reply.error {
             throw CLIError(errorDescription: error, reason: .hidBrokerFailed)
         }
+        return reply
+    }
+
+    /// `status` or `stop` to the broker at `socket`; nil when it does not answer.
+    static func control(_ op: HIDBrokerRequest.Op, at socket: String) -> HIDBrokerReply? {
+        guard var data = try? JSONEncoder().encode(HIDBrokerRequest(op: op)),
+              let descriptor = try? connectAndAwaitHandshake(endpoint: socket, connector: connect(to:), timeoutMilliseconds: serverIOTimeoutMilliseconds) else {
+            return nil
+        }
+        defer { Darwin.close(descriptor) }
+        data.append(0x0A)
+        return try? exchange(data, on: descriptor, timeoutMilliseconds: serverIOTimeoutMilliseconds)
+    }
+
+    /// The endpoints of live brokers speaking this build's protocol, whichever Xcode they serve, found by the lifetime lock each holds from its start; with `simulatorUDID`, only that simulator's.
+    static func liveEndpoints(root: String = brokerRootPath(), simulatorUDID: String? = nil) -> [String] {
+        let suffix = "-v\(BrokerEndpointNaming.protocolVersion).\(BrokerEndpointNaming.socketExtension)"
+        // Commands name a broker by the UDID as typed, so every case of it may have one.
+        let prefixes = simulatorUDID.map { udid in
+            Set([udid, udid.uppercased(), udid.lowercased()].map { String(BrokerEndpointNaming.fnv1a64($0), radix: 36) + "-" })
+        }
+        let names = (try? FileManager.default.contentsOfDirectory(atPath: root)) ?? []
+        return names.compactMap { name -> String? in
+            guard name.hasSuffix(lifetimeLockSuffix) else { return nil }
+            let socket = String(name.dropLast(lifetimeLockSuffix.count))
+            guard socket.hasSuffix(suffix), prefixes.map({ $0.contains { socket.hasPrefix($0) } }) ?? true else { return nil }
+            return (root as NSString).appendingPathComponent(socket)
+        }
+        .sorted()
+        .filter { liveness(endpoint: $0) == .alive }
+    }
+
+    /// Runs blocking socket work on a global queue, off the main actor.
+    static func offMain<T: Sendable>(_ body: @escaping @Sendable () -> T) async -> T {
+        await withCheckedContinuation { continuation in
+            DispatchQueue.global(qos: .userInitiated).async { continuation.resume(returning: body()) }
+        }
+    }
+
+    static func writeReply(_ reply: HIDBrokerReply, to descriptor: Int32) throws {
+        var data = try JSONEncoder().encode(reply)
+        data.append(0x0A)
+        try writeAll(data, to: descriptor)
     }
 
     static func waitForStaleEndpointShutdown(_ path: String) throws {
@@ -293,19 +398,36 @@ extension HIDBroker {
         guard unlink(path) == 0 || errno == ENOENT else { throw posixError("unlink") }
     }
 
-    static func readMessage(from descriptor: Int32) throws -> Data {
+    /// One newline-ended message, read before one deadline for all of it, so a peer trickling bytes cannot stretch it.
+    static func readMessage(
+        from descriptor: Int32,
+        withinMilliseconds milliseconds: Int,
+        monotonicNow: () -> UInt64 = monotonicTimeNanoseconds
+    ) throws -> Data {
+        let deadline = monotonicNow() + UInt64(max(1, milliseconds)) * 1_000_000
+        let timedOut = CLIError(errorDescription: "HID broker read timed out.", reason: .hidBrokerFailed)
         var data = Data()
         var buffer = [UInt8](repeating: 0, count: 4096)
         while data.count <= maximumMessageBytes {
+            let now = monotonicNow()
+            guard now < deadline else { throw timedOut }
+            var poller = pollfd(fd: descriptor, events: Int16(POLLIN), revents: 0)
+            let ready = Darwin.poll(&poller, 1, Int32(clamping: max(1, (deadline - now) / 1_000_000)))
+            if ready == 0 { throw timedOut }
+            if ready < 0 {
+                if errno == EINTR { continue }
+                throw posixError("poll")
+            }
             let count = Darwin.read(descriptor, &buffer, buffer.count)
             if count < 0 {
                 if errno == EINTR { continue }
-                if errno == EAGAIN || errno == EWOULDBLOCK {
-                    throw CLIError(errorDescription: "HID broker read timed out.", reason: .hidBrokerFailed)
-                }
+                if errno == EAGAIN || errno == EWOULDBLOCK { throw timedOut }
                 throw posixError("read")
             }
-            if count == 0 { break }
+            if count == 0 {
+                if data.isEmpty { throw HIDBrokerClosedError() }
+                break
+            }
             if let newline = buffer[..<count].firstIndex(of: 0x0A) {
                 data.append(contentsOf: buffer[..<newline])
                 return data
@@ -313,12 +435,6 @@ extension HIDBroker {
             data.append(contentsOf: buffer[..<count])
         }
         throw CLIError(errorDescription: "HID broker message is missing or exceeds the maximum size.", reason: .hidBrokerFailed)
-    }
-
-    static func writeResponse(error: String?, to descriptor: Int32) throws {
-        var data = try JSONEncoder().encode(HIDBrokerResponse(error: error))
-        data.append(0x0A)
-        try writeAll(data, to: descriptor)
     }
 
     static func writeHandshake(ready: Bool, to descriptor: Int32) throws {
@@ -368,7 +484,7 @@ extension HIDBroker {
         }
     }
 
-    private static func configureReceiveTimeout(_ descriptor: Int32, milliseconds: Int) throws {
+    static func configureReceiveTimeout(_ descriptor: Int32, milliseconds: Int) throws {
         var readTimeout = socketTimeout(milliseconds: max(1, milliseconds))
         guard setsockopt(
             descriptor,
@@ -390,7 +506,11 @@ extension HIDBroker {
 
     static func logDiagnostic(_ error: Error) {
         guard let notReady = error as? HIDBrokerNotReadyError else { return }
-        diagnosticLogger.debug("\(notReady.diagnosticDescription, privacy: .public)")
+        diagnosticLog(notReady.diagnosticDescription)
+    }
+
+    static func diagnosticLog(_ message: String) {
+        diagnosticLogger.debug("\(message, privacy: .public)")
     }
 
     static func posixError(_ operation: String) -> NSError {

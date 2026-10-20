@@ -119,17 +119,17 @@ struct TapCover {
         }
     }
 
-    /// `button 'Buy' (197, 793) 189x45 on stack-test-full-page-1`.
+    /// `button "Buy" (197, 793) 189x45 on stack-test-full-page-1`.
     static func describe(_ verdict: CoverVerdict) -> String {
         var parts = [verdict.cover.role.rawValue]
         if let name = verdict.cover.normalizedLabel ?? verdict.cover.normalizedID {
-            parts.append("'\(TerminalText.line(SelectorText.truncated(name), keepsTab: false))'")
+            parts.append(TerminalText.quoted(SelectorText.truncated(name)))
         }
         if let frame = verdict.cover.frame {
             parts.append(frame.summary)
         }
         if let screen = verdict.screen, screen != verdict.cover.normalizedID {
-            parts.append("on \(TerminalText.line(SelectorText.truncated(screen), keepsTab: false))")
+            parts.append("on \(TerminalText.field(SelectorText.truncated(screen)))")
         }
         return parts.joined(separator: " ")
     }

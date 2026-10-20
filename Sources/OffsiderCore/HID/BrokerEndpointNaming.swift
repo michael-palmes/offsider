@@ -1,7 +1,7 @@
 import Foundation
 
 public enum BrokerEndpointNaming {
-    public static let protocolVersion = 2
+    public static let protocolVersion = 3
     public static let socketExtension = "sock"
 
     public static func rootDirectoryName(uid: UInt32) -> String {

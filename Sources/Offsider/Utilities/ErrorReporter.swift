@@ -101,8 +101,14 @@ enum ErrorReporter {
 
     static func writeEnvelopeIfWanted(_ payload: ErrorPayload) {
         guard context.wantsJSON else { return }
-        let line = ErrorEnvelope(command: context.command, error: payload).jsonLine() + "\n"
+        let capped = payload.scrubbed { TerminalText.capped($0, cap: TerminalText.maxErrorCharacters) }
+        let line = envelopeLine(capped, command: context.command) + "\n"
         FileHandle.standardOutput.write(Data(line.utf8))
+    }
+
+    /// The envelope with its `untrusted` list: a message can quote device text, and candidates, covers and saved users always do.
+    static func envelopeLine(_ payload: ErrorPayload, command: String?) -> String {
+        UntrustedPaths.appending(payload.untrustedPaths(), to: ErrorEnvelope(command: command, error: payload).jsonLine())
     }
 
     private static func writeErrorLine(_ message: String, hint: String? = nil) {
@@ -111,15 +117,15 @@ enum ErrorReporter {
         FileHandle.standardError.write(Data(text.utf8))
     }
 
-    /// `Error: <message>` and a newline, with control and bidi characters escaped and continuation lines indented.
+    /// `Error: <message>` and a newline, with control and bidi characters escaped, continuation lines indented and at most 4 KiB shown.
     static func errorText(_ message: String) -> String {
-        "Error: \(TerminalText.block(message))\n"
+        "Error: \(TerminalText.block(TerminalText.capped(message, cap: TerminalText.maxErrorCharacters)))\n"
     }
 
     /// `Try: <hint>` and a newline, dim on a terminal; empty when there is no hint or the message already names it.
     static func hintText(_ hint: String?, message: String, style: TerminalStyle) -> String {
         guard let hint, !hint.isEmpty, !message.contains(hint) else { return "" }
-        let line = "Try: \(TerminalText.line(hint, cap: nil, keepsTab: false))"
+        let line = "Try: \(TerminalText.line(hint, cap: TerminalText.maxErrorCharacters, keepsTab: false))"
         return (style.colours ? style.dim(line) : line) + "\n"
     }
 

@@ -21,6 +21,9 @@ struct AndroidSessionServe: AsyncParsableCommand {
 
     @MainActor
     func run() async throws {
+        BrokerLimits.apply()
+        // Read before anything else, while the executable on disk is still the one running.
+        let requirement = try PeerCodeIdentity.ownRequirement()
         let serial = device.trimmingCharacters(in: .whitespaces)
         // Gated again here, before anything reaches the device, since anything can start this entry point directly.
         switch DeviceIDClassifier.classify(serial) {
@@ -43,7 +46,14 @@ struct AndroidSessionServe: AsyncParsableCommand {
             FileHandle.standardOutput.write(Data("\(stamp) \(message)\n".utf8))
         }
         let backend = AndroidBackend(host: host, log: log)
-        let broker = try await backend.warmHelperBroker(for: serial)
+        // Only a binary that satisfies this broker's own designated requirement gets a byte; a refusal is one line in its log.
+        let broker = try await backend.warmHelperBroker(for: serial, admits: { client in
+            let verdict = PeerCodeIdentity.check(peer: client, requirement: requirement)
+            if !verdict.accepted {
+                log(.info, "Refused pid \(verdict.pid): it is not this Offsider build (\(verdict.detail ?? "no reason given"))")
+            }
+            return verdict.accepted
+        })
         let signals = [SIGTERM, SIGINT, SIGHUP].map { number -> DispatchSourceSignal in
             signal(number, SIG_IGN)
             let source = DispatchSource.makeSignalSource(signal: number, queue: .main)

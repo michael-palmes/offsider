@@ -126,6 +126,8 @@ struct Batch: AsyncParsableCommand {
     }
 
     func run() async throws {
+        if !Screenshot.masksSecure(flag: nil, batchDefault: maskSecure) { try await UnmaskedConsent.confirm(command: "batch") }
+        try await AllowPathConsent.confirm(path: file, allowPath: allowPath, command: "batch")
         let logger = OffsiderLogger(writeToStdErr: verbose)
         let watchdog = DeviceWatchdog()
         let route = try await DeviceRouter.routeForInput(deviceOption.id, logger: logger, watchdog: watchdog)
@@ -319,11 +321,11 @@ struct Batch: AsyncParsableCommand {
         if !steps.isEmpty {
             rawLines = steps
         } else if let file {
-            let read = try TextFileInput.read(file, allowSensitive: allowPath)
+            let read = try TextFileInput.read(file, allowing: allowPath ? AllowPathConsent.confirmed : nil)
             FileHandle.standardError.write(Data((read.announcement + "\n").utf8))
             rawLines = read.text.components(separatedBy: .newlines)
         } else {
-            rawLines = readStdinLines()
+            rawLines = try Self.readStepLines(from: FileHandle.standardInput)
         }
 
         return rawLines
@@ -331,12 +333,22 @@ struct Batch: AsyncParsableCommand {
             .filter { !$0.isEmpty && !$0.hasPrefix("#") }
     }
 
-    private func readStdinLines() -> [String] {
-        var lines: [String] = []
-        while let line = readLine() {
-            lines.append(line)
+    /// The most `--stdin` reads; far more steps than any batch needs.
+    static let maxStdinBytes = 16 << 20
+
+    /// Every line `handle` holds, refusing more than `maxBytes` rather than buffering without end.
+    static func readStepLines(from handle: FileHandle, maxBytes: Int = maxStdinBytes) throws -> [String] {
+        var data = Data()
+        while let chunk = try handle.read(upToCount: 65_536), !chunk.isEmpty {
+            data.append(chunk)
+            guard data.count <= maxBytes else {
+                throw CLIError(
+                    errorDescription: "--stdin sent more than \(maxBytes >> 20) MB of steps. Split them across several batches.",
+                    reason: .usage
+                )
+            }
         }
-        return lines
+        return String(decoding: data, as: UTF8.self).components(separatedBy: .newlines)
     }
 }
 

@@ -85,7 +85,7 @@ public struct AndroidDoctorProbe {
 
     private func adbBinary(_ adb: URL) async -> AdbBinaryFact {
         do {
-            let result = try await host.processes.capture(executable: adb.path, arguments: ["version"], environment: host.environment, timeout: 5)
+            let result = try await host.processes.capture(executable: adb.path, arguments: ["version"], environment: ChildEnvironment.make(.adbServer, from: host.environment), timeout: 5)
             guard result.status == 0 else {
                 return .failed(HelperLauncher.firstLine(result.stderr) ?? "it exited with status \(result.status)")
             }

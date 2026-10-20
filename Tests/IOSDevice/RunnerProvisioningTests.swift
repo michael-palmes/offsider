@@ -94,7 +94,9 @@ struct RunnerProvisioningTests {
         let fixture = try Fixture()
         defer { fixture.remove() }
 
-        let build = try await fixture.builder(environment: ["OFFSIDER_IOS_TEAM_ID": Self.team, "OFFSIDER_IOS_RUNNER_PREFIX": "com.example.qa"]).build(for: .device(udid: "U"), deviceName: "iPhone")
+        let build = try await XcodeRunnerBuilder.$confirmNewPrefix.withValue({ _ in }) {
+            try await fixture.builder(environment: ["OFFSIDER_IOS_TEAM_ID": Self.team, "OFFSIDER_IOS_RUNNER_PREFIX": "com.example.qa"]).build(for: .device(udid: "U"), deviceName: "iPhone")
+        }
 
         let arguments = try #require(fixture.xcodebuild.calls.first)
         #expect(arguments.contains("DEVELOPMENT_TEAM=\(Self.team)") && arguments.contains("-allowProvisioningUpdates"))
@@ -103,6 +105,42 @@ struct RunnerProvisioningTests {
         #expect(fixture.notices.values.count == 1)
         #expect(fixture.notices.values.first?.contains("team \(Self.team)") == true && fixture.notices.values.first?.contains("com.example.qa.runner") == true)
         #expect(build.key == XcodeRunnerBuilder.key(sourceDigest: try XcodeRunnerBuilder.sourceDigest(of: fixture.source), xcodeBuild: "27A266a", team: Self.team, prefix: "com.example.qa", destination: .device(udid: "U")))
+    }
+
+    @Test("the first device build under a new bundle prefix needs a person: refused without one, asked once, then remembered")
+    func newPrefixNeedsPerson() async throws {
+        let fixture = try Fixture()
+        defer { fixture.remove() }
+        let environment = ["OFFSIDER_IOS_TEAM_ID": Self.team, "OFFSIDER_IOS_RUNNER_PREFIX": "com.example.qa"]
+
+        let refused = await #expect(throws: RunnerPrefixNeedsPerson.self) {
+            _ = try await fixture.builder(environment: environment).build(for: .device(udid: "U"), deviceName: "iPhone")
+        }
+        #expect(refused?.reason == .personRequired)
+        #expect(refused?.hint == "offsider runner build --device U")
+        #expect(fixture.xcodebuild.calls.isEmpty)
+
+        let asked = LockedBox<[String]>([])
+        _ = try await XcodeRunnerBuilder.$confirmNewPrefix.withValue({ asked.value.append($0) }) {
+            try await fixture.builder(environment: environment).build(for: .device(udid: "U"), deviceName: "iPhone")
+        }
+        #expect(asked.value == ["com.example.qa"])
+
+        let other = await #expect(throws: (any Error).self) {
+            _ = try await XcodeRunnerBuilder.$confirmNewPrefix.withValue({ _ in throw CancellationError() }) {
+                try await fixture.builder(environment: ["OFFSIDER_IOS_TEAM_ID": Self.team, "OFFSIDER_IOS_RUNNER_PREFIX": "com.example.other"]).build(for: .device(udid: "U"), deviceName: "iPhone")
+            }
+        }
+        #expect(other is CancellationError)
+        #expect(fixture.xcodebuild.calls.count == 1)
+    }
+
+    @Test("Offsider's own prefix never asks")
+    func defaultPrefixNeverAsks() async throws {
+        let fixture = try Fixture()
+        defer { fixture.remove() }
+        _ = try await fixture.builder().build(for: .device(udid: "U"), deviceName: "iPhone")
+        #expect(fixture.xcodebuild.calls.count == 1)
     }
 
     @Test("only registerDevice adds xcodebuild's device registration flag, and the allowance's team signs when the variable is unset")

@@ -44,17 +44,24 @@ public struct ManagedDevicePolicy: Equatable, Sendable {
     public static let allowPhysicalDevicesKey = "allowPhysicalDevices"
     public static let allowedDeviceIDsKey = "allowedDeviceIDs"
     public static let allowedBundleIDsKey = "allowedBundleIDs"
+    /// Apps added to the built-in deny-list; an entry ending in `.` denies every id it starts.
+    public static let deniedBundleIDsKey = "deniedBundleIDs"
 
     public let allowPhysicalDevices: Bool?
     public let allowedDeviceIDs: [String]?
     public let allowedBundleIDs: [String]?
+    public let deniedBundleIDs: [String]?
     /// A forced key held a value of the wrong type.
     public let unreadable: Bool
 
-    public init(allowPhysicalDevices: Bool? = nil, allowedDeviceIDs: [String]? = nil, allowedBundleIDs: [String]? = nil, unreadable: Bool = false) {
+    public init(
+        allowPhysicalDevices: Bool? = nil, allowedDeviceIDs: [String]? = nil, allowedBundleIDs: [String]? = nil, deniedBundleIDs: [String]? = nil,
+        unreadable: Bool = false
+    ) {
         self.allowPhysicalDevices = allowPhysicalDevices
         self.allowedDeviceIDs = allowedDeviceIDs
         self.allowedBundleIDs = allowedBundleIDs
+        self.deniedBundleIDs = deniedBundleIDs
         self.unreadable = unreadable
     }
 
@@ -62,7 +69,7 @@ public struct ManagedDevicePolicy: Equatable, Sendable {
 
     /// True when any key is forced.
     public var present: Bool {
-        allowPhysicalDevices != nil || allowedDeviceIDs != nil || allowedBundleIDs != nil || unreadable
+        allowPhysicalDevices != nil || allowedDeviceIDs != nil || allowedBundleIDs != nil || deniedBundleIDs != nil || unreadable
     }
 
     public static func read(from source: any ManagedPreferenceSource) -> ManagedDevicePolicy {
@@ -84,7 +91,10 @@ public struct ManagedDevicePolicy: Equatable, Sendable {
         }
         let devices = strings(allowedDeviceIDsKey)
         let bundles = strings(allowedBundleIDsKey)
-        return ManagedDevicePolicy(allowPhysicalDevices: allow, allowedDeviceIDs: devices, allowedBundleIDs: bundles, unreadable: unreadable)
+        let denied = strings(deniedBundleIDsKey)
+        return ManagedDevicePolicy(
+            allowPhysicalDevices: allow, allowedDeviceIDs: devices, allowedBundleIDs: bundles, deniedBundleIDs: denied, unreadable: unreadable
+        )
     }
 
     /// Whether the managed list names the device; UDIDs compare without case.

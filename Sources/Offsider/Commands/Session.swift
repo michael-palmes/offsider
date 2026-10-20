@@ -12,7 +12,9 @@ struct SessionCommand: AsyncParsableCommand {
         An iPhone or iPad can have two: the XCUITest runner that reads its screen, and the session broker that holds its screen stream \
         and HID input. Each stops by itself after 300 idle seconds (OFFSIDER_IOS_RUNNER_IDLE, OFFSIDER_IOS_SESSION_IDLE). \
         An Android emulator keeps its UiAutomation helper warm, which holds the device's UiAutomation slot until it stops \
-        by itself after 60 idle seconds (OFFSIDER_ANDROID_SESSION_IDLE; OFFSIDER_ANDROID_SESSION=off keeps none).
+        by itself after 60 idle seconds (OFFSIDER_ANDROID_SESSION_IDLE; OFFSIDER_ANDROID_SESSION=off keeps none). \
+        A simulator keeps its input session warm, which stops by itself after 60 idle seconds \
+        (OFFSIDER_SIMULATOR_SESSION_IDLE; OFFSIDER_SIMULATOR_SESSION=off opens one per command).
         """,
         subcommands: [SessionStatus.self, SessionStop.self]
     )
@@ -39,7 +41,8 @@ struct SessionStatus: AsyncParsableCommand {
             brokers.append(await manager.status(of: record))
         }
         let helpers = await AndroidWarmHelpers.statuses(for: device)
-        let rows = DeviceSessionRow.rows(runners: runners, brokers: brokers, helpers: helpers)
+        let inputs = await SimulatorInputSessions.statuses(device: device).map(\.status)
+        let rows = DeviceSessionRow.rows(runners: runners, brokers: brokers, helpers: helpers, inputs: inputs)
         print(json ? DeviceSessionRow.json(rows) : DeviceSessionRow.text(rows), terminator: "")
     }
 }
@@ -47,7 +50,7 @@ struct SessionStatus: AsyncParsableCommand {
 struct SessionStop: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "stop",
-        abstract: "Stop the runner, session broker or warm helper on one device, or on every device when --device is left out."
+        abstract: "Stop the runner, session broker, warm helper or input session on one device, or on every device when --device is left out."
     )
 
     @Option(name: .customLong("device"), help: ArgumentHelp("The device whose sessions to stop.", valueName: "id"))
@@ -81,10 +84,15 @@ struct SessionStop: AsyncParsableCommand {
         )
         for record in runners {
             await runnerManager.stop(record)
+            RunnerSessions.removeLog(udid: record.udid)
+        }
+        if let device, case .iosDevice(let udid) = DeviceIDClassifier.classify(device.trimmingCharacters(in: .whitespacesAndNewlines)) {
+            RunnerSessions.removeLog(udid: udid)
         }
         let serial = await AndroidWarmHelpers.serial(for: device).serial
         let helpers = try await TerminalSpinner.run("Stopping the warm helper") { await AndroidBackend.stopWarmHelpers(host: .cli(), serial: serial) }
-        let stopped = DeviceSessionRow.stopped(runners: runners.map(\.udid), brokers: brokers.map(\.udid), helpers: helpers)
+        let inputs = await SimulatorInputSessions.stop(device: device)
+        let stopped = DeviceSessionRow.stopped(runners: runners.map(\.udid), brokers: brokers.map(\.udid), helpers: helpers, inputs: inputs)
         var cleaned: RunnerCleanupReport?
         if let cleanUDID { cleaned = await RunnerSessions.clean(udid: cleanUDID) }
         if json {
@@ -94,7 +102,9 @@ struct SessionStop: AsyncParsableCommand {
                 print(device.map { "No session is running for \($0)." } ?? "No session is running.")
             } else {
                 for entry in stopped {
-                    let parts = [entry.runner ? "runner" : nil, entry.broker ? "session broker" : nil, entry.helper ? "warm helper" : nil].compactMap { $0 }
+                    let parts = [
+                        entry.runner ? "runner" : nil, entry.broker ? "session broker" : nil, entry.helper ? "warm helper" : nil, entry.input ? "input session" : nil,
+                    ].compactMap { $0 }
                     print("Stopped the \(parts.joined(separator: " and ")) on \(entry.device).")
                 }
             }
@@ -147,19 +157,61 @@ enum AndroidWarmHelpers {
     }
 }
 
-/// One device's runner and broker, or its warm Android helper, as `session status` prints them.
+/// Each simulator's warm input session, read through its broker without counting as use.
+enum SimulatorInputSessions {
+    static let stopWait: Duration = .seconds(5)
+    /// A broker starting when `session stop` runs answers once its session is open, which takes about as long as a command's own.
+    static let startWait: Duration = .seconds(10)
+
+    /// `waitForStarting` waits for a broker that is still opening its session, as `stop` does.
+    static func statuses(device: String?, waitForStarting: Bool = false) async -> [(socket: String, status: HIDBrokerStatus)] {
+        let udid = device?.trimmingCharacters(in: .whitespaces)
+        var found: [(socket: String, status: HIDBrokerStatus)] = []
+        for socket in HIDBroker.liveEndpoints(simulatorUDID: udid) {
+            let deadline = ContinuousClock.now + startWait
+            var status = await HIDBroker.offMain { HIDBroker.control(.status, at: socket)?.status }
+            while status == nil, waitForStarting, HIDBroker.liveness(endpoint: socket) == .alive, ContinuousClock.now < deadline {
+                try? await Task.sleep(for: .milliseconds(100))
+                status = await HIDBroker.offMain { HIDBroker.control(.status, at: socket)?.status }
+            }
+            guard let status, udid.map({ status.udid.caseInsensitiveCompare($0) == .orderedSame }) ?? true else { continue }
+            found.append((socket, status))
+        }
+        return found
+    }
+
+    /// Asks each broker to stop and waits until it has lifted what its commands left down and exited; returns the simulators stopped.
+    static func stop(device: String?) async -> [String] {
+        var stopped: [String] = []
+        for (socket, status) in await statuses(device: device, waitForStarting: true) {
+            guard await HIDBroker.offMain({ HIDBroker.control(.stop, at: socket) }) != nil else { continue }
+            let deadline = ContinuousClock.now + stopWait
+            while HIDBroker.liveness(endpoint: socket) == .alive, ContinuousClock.now < deadline {
+                try? await Task.sleep(for: .milliseconds(50))
+            }
+            stopped.append(status.udid)
+        }
+        return stopped
+    }
+}
+
+/// One device's runner and broker, its warm Android helper, or a simulator's input session, as `session status` prints them.
 struct DeviceSessionRow: Equatable {
     let device: String
     let runner: RunnerSessionRow?
     let broker: DeviceSessionStatus?
     var helper: WarmHelperStatus? = nil
+    var input: HIDBrokerStatus? = nil
 
-    static func rows(runners: [RunnerSessionRow], brokers: [DeviceSessionStatus], helpers: [WarmHelperStatus] = []) -> [DeviceSessionRow] {
+    static func rows(
+        runners: [RunnerSessionRow], brokers: [DeviceSessionStatus], helpers: [WarmHelperStatus] = [], inputs: [HIDBrokerStatus] = []
+    ) -> [DeviceSessionRow] {
         let devices = Set(runners.map(\.record.udid) + brokers.map(\.record.udid)).sorted()
         let ios = devices.map { udid in
             DeviceSessionRow(device: udid, runner: runners.first { $0.record.udid == udid }, broker: brokers.first { $0.record.udid == udid })
         }
-        return ios + helpers.sorted { $0.serial < $1.serial }.map { DeviceSessionRow(device: $0.serial, runner: nil, broker: nil, helper: $0) }
+        let simulators = inputs.sorted { $0.udid < $1.udid }.map { DeviceSessionRow(device: $0.udid, runner: nil, broker: nil, input: $0) }
+        return ios + simulators + helpers.sorted { $0.serial < $1.serial }.map { DeviceSessionRow(device: $0.serial, runner: nil, broker: nil, helper: $0) }
     }
 
     static func text(_ rows: [DeviceSessionRow]) -> String {
@@ -167,6 +219,11 @@ struct DeviceSessionRow: Equatable {
         let formatter = ISO8601DateFormatter()
         return rows.map { row in
             var lines = ["\(row.device)"]
+            if let input = row.input {
+                let started = formatter.string(from: Date(timeIntervalSince1970: input.startedAt))
+                lines.append("  input  \(input.state ?? "ready")  pid \(input.pid)  started \(started)  idle \(input.idleFor) s of \(input.idleSeconds) s")
+                return lines.joined(separator: "\n") + "\n"
+            }
             if let helper = row.helper {
                 let pid = helper.helperPid.map { "  device pid \($0)" } ?? ""
                 lines.append("  helper  \(helper.state)  pid \(helper.brokerPid)\(pid)  started \(formatter.string(from: helper.startedAt))  idle \(helper.idleFor) s of \(helper.idleSeconds) s")
@@ -210,6 +267,7 @@ struct DeviceSessionRow: Equatable {
                 "runner": row.runner.map { $0.fields(formatter) as Any } ?? NSNull(),
                 "broker": row.broker.map { brokerFields($0, formatter) as Any } ?? NSNull(),
                 "helper": row.helper.map { helperFields($0, formatter) as Any } ?? NSNull(),
+                "input": row.input.map { inputFields($0, formatter) as Any } ?? NSNull(),
             ]
         }
         let data = (try? JSONSerialization.data(withJSONObject: ["sessions": sessions], options: [.sortedKeys])) ?? Data("{}".utf8)
@@ -250,21 +308,35 @@ struct DeviceSessionRow: Equatable {
         return fields
     }
 
+    static func inputFields(_ input: HIDBrokerStatus, _ formatter: ISO8601DateFormatter) -> [String: Any] {
+        [
+            "state": input.state ?? "ready",
+            "pid": Int(input.pid),
+            "startedAt": formatter.string(from: Date(timeIntervalSince1970: input.startedAt)),
+            "idleSeconds": input.idleSeconds,
+            "idleFor": input.idleFor,
+            "attached": input.attached,
+        ]
+    }
+
     struct Stopped: Equatable {
         let device: String
         let runner: Bool
         let broker: Bool
         var helper = false
+        var input = false
     }
 
-    static func stopped(runners: [String], brokers: [String], helpers: [String] = []) -> [Stopped] {
-        Set(runners + brokers + helpers).sorted().map {
-            Stopped(device: $0, runner: runners.contains($0), broker: brokers.contains($0), helper: helpers.contains($0))
+    static func stopped(runners: [String], brokers: [String], helpers: [String] = [], inputs: [String] = []) -> [Stopped] {
+        Set(runners + brokers + helpers + inputs).sorted().map {
+            Stopped(device: $0, runner: runners.contains($0), broker: brokers.contains($0), helper: helpers.contains($0), input: inputs.contains($0))
         }
     }
 
     static func stoppedJSON(_ stopped: [Stopped], clean: [String: Any]? = nil) -> String {
-        let entries: [[String: Any]] = stopped.map { ["device": $0.device, "runner": $0.runner, "broker": $0.broker, "helper": $0.helper] }
+        let entries: [[String: Any]] = stopped.map {
+            ["device": $0.device, "runner": $0.runner, "broker": $0.broker, "helper": $0.helper, "input": $0.input]
+        }
         var object: [String: Any] = ["stopped": entries]
         if let clean { object["clean"] = clean }
         let data = (try? JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])) ?? Data("{}".utf8)
