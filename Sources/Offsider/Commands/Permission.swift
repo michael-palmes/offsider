@@ -36,7 +36,7 @@ struct PermissionCommand: AsyncParsableCommand {
     @Option(name: .customLong("app"), help: ArgumentHelp("The app's bundle ID or Android package (required except for services).", valueName: "id"))
     var app: String?
 
-    @Option(name: .customLong("device"), help: ArgumentHelp("The device ID from `offsider list-devices` (default OFFSIDER_DEVICE; required except for services).", valueName: "id"))
+    @Option(name: .customLong("device"), help: ArgumentHelp("The device ID from `offsider devices` (default OFFSIDER_DEVICE; required except for services).", valueName: "id"))
     var explicitDevice: String?
 
     /// `services` needs no device, so only it ignores `OFFSIDER_DEVICE`.

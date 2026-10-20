@@ -29,11 +29,11 @@ struct AndroidErrorReasonTests {
     @Test("a device error hints at the command that fixes it; a failed adb command never echoes itself")
     func hints() {
         #expect(AndroidError.avdNotRunning("Pixel").hint == "offsider boot Pixel")
-        #expect(AndroidError.serialNotRunning("emulator-5554").hint == "offsider list-devices")
+        #expect(AndroidError.serialNotRunning("emulator-5554").hint == "offsider devices")
         #expect(AndroidError.adbServerNotRunning(endpoint: "tcp:5037").hint == nil)
         #expect(AndroidError.adbCommandFailed(serial: "emulator-5554", command: "shell input text S3NT1NEL", detail: "").hint == nil)
         #expect(AndroidError.appNotInstalled("com.example", serial: "emulator-5554").hint == "adb -s emulator-5554 install <path-to-apk>")
-        #expect(AndroidError.ambiguousDeviceName("Pixel", emulatorSerial: "emulator-5554").hint == "offsider list-devices")
-        #expect(AndroidError.networkDevice("192.168.1.2:5555").hint == "offsider list-devices")
+        #expect(AndroidError.ambiguousDeviceName("Pixel", emulatorSerial: "emulator-5554").hint == "offsider devices")
+        #expect(AndroidError.networkDevice("192.168.1.2:5555").hint == "offsider devices")
     }
 }

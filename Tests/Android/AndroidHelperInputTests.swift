@@ -81,7 +81,7 @@ struct AndroidHelperInputTests {
 
         let error = await #expect(throws: AndroidError.self) { try await session.perform(.touch(direction: .down, x: 60, y: 10)) }
         #expect(error?.kind == .inputFailed)
-        #expect(error?.message == "Input on emulator-5556 failed: the UiAutomation helper reported inject-refused: Android did not dispatch step 0 (touch). Check that the device is still connected with `offsider list-devices`.")
+        #expect(error?.message == "Input on emulator-5556 failed: the UiAutomation helper reported inject-refused: Android did not dispatch step 0 (touch). Check that the device is still connected with `offsider devices`.")
         await session.close()
         await rig.backend.close()
 

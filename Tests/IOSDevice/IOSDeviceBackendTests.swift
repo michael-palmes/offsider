@@ -75,14 +75,14 @@ struct IOSDeviceBackendTests {
         #expect(error?.reason == .deviceUntrusted)
     }
 
-    @Test("an unknown UDID is device_not_found with a list-devices hint")
+    @Test("an unknown UDID is device_not_found with a devices hint")
     func notListed() async throws {
         let error = await #expect(throws: IOSDeviceError.self) {
             _ = try await Self.backend(try FakeDevicectl.listing("devicectl-list-xcode26.json"))
                 .requireBootedDevice(DeviceID(rawValue: "00008140-0000000000000001", platform: .ios))
         }
         #expect(error?.reason == .deviceNotFound)
-        #expect(error?.hint == "offsider list-devices")
+        #expect(error?.hint == "offsider devices")
     }
 
     @Test("a failed devicectl names its first stderr line and points at doctor")
@@ -145,7 +145,7 @@ struct IOSDeviceBackendTests {
         #expect(devicectl.calls.allSatisfy { $0.first == "list" })
     }
 
-    @Test("without Xcode the backend is unavailable, so list-devices skips phones quietly")
+    @Test("without Xcode the backend is unavailable, so devices skips phones quietly")
     func xcodeMissing() async throws {
         let devicectl = FakeDevicectl(xcode: .failure(IOSDeviceError(.xcodeMissing, "No usable Xcode")), replies: [:])
         await #expect(throws: PlatformUnavailable.self) {

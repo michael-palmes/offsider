@@ -11,7 +11,7 @@ enum DeviceSource: String, Sendable {
 /// `OFFSIDER_DEVICE`, the device a command uses when `--device` is absent; a test binds its own value.
 enum DeviceDefault {
     static let environmentKey = "OFFSIDER_DEVICE"
-    static let missingMessage = "Missing --device <id>. Pass --device, or set OFFSIDER_DEVICE; run offsider list-devices to see IDs."
+    static let missingMessage = "Missing --device <id>. Pass --device, or set OFFSIDER_DEVICE; run offsider devices to see IDs."
 
     @TaskLocal static var environment: @Sendable () -> String? = { ProcessInfo.processInfo.environment[environmentKey] }
 

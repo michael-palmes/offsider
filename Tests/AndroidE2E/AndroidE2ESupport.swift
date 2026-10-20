@@ -47,7 +47,7 @@ enum AndroidE2E {
         "'" + text.replacingOccurrences(of: "'", with: "'\\''") + "'"
     }
 
-    /// OFFSIDER_ANDROID_DEVICE checked through its console when a serial, else through `list-devices`; any AVD but the E2E one is refused before any input.
+    /// OFFSIDER_ANDROID_DEVICE checked through its console when a serial, else through `devices`; any AVD but the E2E one is refused before any input.
     /// With OFFSIDER_ANDROID_PHONE set, that phone alone, checked against `adb devices -l`.
     static func serial() async throws -> String {
         if isAndroidPhoneE2EEnabled {
@@ -470,16 +470,16 @@ actor GuardedEmulator {
         return serial
     }
 
-    /// An AVD name is resolved through `list-devices`; the row's serial then passes the same console check,
+    /// An AVD name is resolved through `devices`; the row's serial then passes the same console check,
     /// so a listed row never stands in for `emu avd name`.
     private static func listedSerial(_ requested: String) async throws -> String {
         try AndroidE2EGuard.preflight(serial: nil, expected: AndroidE2E.expectedAVD, allowed: AndroidE2E.allowedAVDs).get()
-        let listing = try await TestHelpers.runOffsiderCommandSeparated("list-devices --platform android --json")
+        let listing = try await TestHelpers.runOffsiderCommandSeparated("devices --platform android --json")
         guard listing.exitCode == 0,
               let object = try JSONSerialization.jsonObject(with: Data(listing.stdout.utf8)) as? [String: Any],
               let rows = object["devices"] as? [[String: Any]],
               let row = rows.first(where: { $0["id"] as? String == requested || $0["name"] as? String == requested }) else {
-            throw AndroidE2EError(description: "OFFSIDER_ANDROID_DEVICE \(requested) is not in `offsider list-devices --platform android`.")
+            throw AndroidE2EError(description: "OFFSIDER_ANDROID_DEVICE \(requested) is not in `offsider devices --platform android`.")
         }
         let name = row["name"] as? String ?? ""
         guard row["state"] as? String == "Booted", let serial = row["id"] as? String else {

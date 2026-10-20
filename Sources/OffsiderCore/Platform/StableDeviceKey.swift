@@ -27,7 +27,7 @@ public enum StableDeviceKey {
         }
     }
 
-    /// The key for a `list-devices` row: a running emulator by its AVD.
+    /// The key for a `devices` row: a running emulator by its AVD.
     public static func of(_ row: DeviceSummary) -> String? {
         switch row.kind {
         case .emulator: return row.avd

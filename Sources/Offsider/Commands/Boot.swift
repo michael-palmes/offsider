@@ -29,7 +29,7 @@ struct Boot: AsyncParsableCommand, JSONReportingCommand {
         """
     )
 
-    @Argument(help: ArgumentHelp("The AVD name, or a simulator's name or UDID, from `offsider list-devices`.", valueName: "avd"))
+    @Argument(help: ArgumentHelp("The AVD name, or a simulator's name or UDID, from `offsider devices`.", valueName: "avd"))
     var avd: String
 
     @Flag(name: .customLong("headless"), help: "Run the emulator without its window.")
@@ -64,11 +64,11 @@ struct Boot: AsyncParsableCommand, JSONReportingCommand {
         case .iosSimulator:
             try refuseEmulatorOptions()
         case .iosDevice:
-            throw ValidationError("boot starts Android emulators, and \(avd) is a physical iPhone or iPad. Turn it on, unlock it and connect its cable, then run `offsider list-devices`.")
+            throw ValidationError("boot starts Android emulators, and \(avd) is a physical iPhone or iPad. Turn it on, unlock it and connect its cable, then run `offsider devices`.")
         case .androidSerial, .androidNetworkSerial:
-            throw ValidationError("boot takes an AVD name, not a serial. Run `offsider list-devices` to see AVD names.")
+            throw ValidationError("boot takes an AVD name, not a serial. Run `offsider devices` to see AVD names.")
         case .empty:
-            throw ValidationError("boot needs an AVD or simulator name; run `offsider list-devices` to see them.")
+            throw ValidationError("boot needs an AVD or simulator name; run `offsider devices` to see them.")
         case .unrecognised:
             try refuseEmulatorOptions()
         case .androidName:
@@ -109,7 +109,7 @@ struct Boot: AsyncParsableCommand, JSONReportingCommand {
         }
     }
 
-    /// Boots the simulator `avd` names; when none does, throws `otherwise`, or a not-found error naming list-devices.
+    /// Boots the simulator `avd` names; when none does, throws `otherwise`, or a not-found error naming devices.
     @MainActor
     private func bootSimulator(logger: OffsiderLogger, otherwise: (any Error)?) async throws {
         let booter = SimulatorBooter(logger: logger)
@@ -123,7 +123,7 @@ struct Boot: AsyncParsableCommand, JSONReportingCommand {
         }
         guard let simulator = found else {
             if let otherwise { throw otherwise }
-            throw CLIError(errorDescription: "No simulator or AVD is named \(avd).", reason: .deviceNotFound, hint: "offsider list-devices")
+            throw CLIError(errorDescription: "No simulator or AVD is named \(avd).", reason: .deviceNotFound, hint: "offsider devices")
         }
         if memory != nil || noSnapshotLoad || !emulatorArguments.isEmpty {
             throw ValidationError("--memory, --no-snapshot-load and --emulator-arg start emulators only, and \(avd) is a simulator.")

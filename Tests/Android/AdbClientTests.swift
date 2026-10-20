@@ -92,7 +92,7 @@ struct AdbClientTests {
         let error = await #expect(throws: AndroidError.self) {
             try await Self.client(server).shell("true", on: "emulator-5560")
         }
-        #expect(error?.message == "No emulator with serial emulator-5560 is running. Run `offsider list-devices` to see running emulators.")
+        #expect(error?.message == "No emulator with serial emulator-5560 is running. Run `offsider devices` to see running emulators.")
     }
 
     @Test("an offline device gets the offline message")

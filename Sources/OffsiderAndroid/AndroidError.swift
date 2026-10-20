@@ -153,14 +153,14 @@ public struct AndroidError: LocalizedError, CustomStringConvertible, Equatable, 
     static func serialNotRunning(_ serial: String) -> AndroidError {
         AndroidError(
             .serialNotRunning,
-            "No emulator with serial \(serial) is running. Run `offsider list-devices` to see running emulators."
+            "No emulator with serial \(serial) is running. Run `offsider devices` to see running emulators."
         )
     }
 
     static func phoneNotConnected(_ serial: String) -> AndroidError {
         AndroidError(
             .serialNotRunning,
-            "No device with serial \(serial) is connected. Check the cable, then run `offsider list-devices` to see connected devices."
+            "No device with serial \(serial) is connected. Check the cable, then run `offsider devices` to see connected devices."
         )
     }
 
@@ -178,12 +178,12 @@ public struct AndroidError: LocalizedError, CustomStringConvertible, Equatable, 
     public static func networkDevice(_ serial: String) -> AndroidError {
         AndroidError(
             .unsupportedDevice,
-            "Offsider drives Android phones over USB only, and \(serial) is a network adb connection. Connect the phone with a cable and use its USB serial from `offsider list-devices`; for an emulator, use its emulator-NNNN serial."
+            "Offsider drives Android phones over USB only, and \(serial) is a network adb connection. Connect the phone with a cable and use its USB serial from `offsider devices`; for an emulator, use its emulator-NNNN serial."
         )
     }
 
     static func bootPhone(_ serial: String) -> AndroidError {
-        AndroidError(.unsupportedDevice, "boot starts emulators, and \(serial) is a connected phone. Run `offsider list-devices` to see AVD names.")
+        AndroidError(.unsupportedDevice, "boot starts emulators, and \(serial) is a connected phone. Run `offsider devices` to see AVD names.")
     }
 
     static func ambiguousDeviceName(_ name: String, emulatorSerial: String) -> AndroidError {
@@ -236,7 +236,7 @@ public struct AndroidError: LocalizedError, CustomStringConvertible, Equatable, 
     }
 
     static func noDeviceNamed(_ name: String) -> AndroidError {
-        AndroidError(.noDeviceNamed, "No device named \(name). Run `offsider list-devices` to find device IDs.")
+        AndroidError(.noDeviceNamed, "No device named \(name). Run `offsider devices` to find device IDs.")
     }
 
     static func avdRunningTwice(_ name: String, serials: [String]) -> AndroidError {
@@ -295,7 +295,7 @@ public struct AndroidError: LocalizedError, CustomStringConvertible, Equatable, 
     static func grpcDeadlineExceeded(method: String, seconds: Int) -> AndroidError {
         AndroidError(
             .grpcDeadlineExceeded,
-            "The emulator did not answer `\(method)` within \(seconds) s. It may be overloaded; retry, or check it with `offsider list-devices`."
+            "The emulator did not answer `\(method)` within \(seconds) s. It may be overloaded; retry, or check it with `offsider devices`."
         )
     }
 
@@ -304,7 +304,7 @@ public struct AndroidError: LocalizedError, CustomStringConvertible, Equatable, 
     }
 
     static func screenshotFailed(_ serial: String, detail: String) -> AndroidError {
-        AndroidError(.screenshotFailed, "Could not read the screen of \(serial) (\(detail)). Retry, or check it with `offsider list-devices`.")
+        AndroidError(.screenshotFailed, "Could not read the screen of \(serial) (\(detail)). Retry, or check it with `offsider devices`.")
     }
 
     static func videoOutputFailed(detail: String) -> AndroidError {
@@ -706,7 +706,7 @@ public struct AndroidError: LocalizedError, CustomStringConvertible, Equatable, 
     }
 
     static func inputFailed(serial: String, detail: String) -> AndroidError {
-        AndroidError(.inputFailed, "Input on \(serial) failed: \(detail). Check that the device is still connected with `offsider list-devices`.")
+        AndroidError(.inputFailed, "Input on \(serial) failed: \(detail). Check that the device is still connected with `offsider devices`.")
     }
 
     private static func buttonName(_ button: HardwareButton) -> String {
@@ -787,9 +787,9 @@ extension AndroidError: OffsiderFailure {
         case .deviceUnavailable where kind == .deviceLocked:
             return Self.firstCommand(in: message)
         case .deviceUnavailable where kind == .avdNotRunning || kind == .stillBooting || kind == .deviceOffline:
-            return Self.firstCommand(in: message) ?? "offsider list-devices"
+            return Self.firstCommand(in: message) ?? "offsider devices"
         case .deviceUnavailable:
-            return "offsider list-devices"
+            return "offsider devices"
         default:
             return kind == .adbCommandFailed ? nil : Self.firstCommand(in: message)
         }

@@ -3,14 +3,14 @@ import Testing
 
 @Suite("iOS device list", .serialized, .enabled(if: isIOSDeviceE2EEnabled))
 struct IOSDeviceListE2ETests {
-    @Test("list-devices shows the device as a physical USB row with the usual JSON keys")
+    @Test("devices shows the device as a physical USB row with the usual JSON keys")
     func listed() async throws {
         let udid = try await IOSDeviceE2E.udid()
-        let result = try await TestHelpers.runOffsiderCommandSeparated("list-devices --platform ios --json", timeout: 120)
+        let result = try await TestHelpers.runOffsiderCommandSeparated("devices --platform ios --json", timeout: 120)
         #expect(result.exitCode == 0, "\(result.stderr)")
         let object = try #require(try JSONSerialization.jsonObject(with: Data(result.stdout.utf8)) as? [String: Any])
         let rows = try #require(object["devices"] as? [[String: Any]])
-        let row = try #require(rows.first { $0["id"] as? String == udid }, "list-devices has no row for \(udid)")
+        let row = try #require(rows.first { $0["id"] as? String == udid }, "devices has no row for \(udid)")
         #expect(row["platform"] as? String == "ios")
         #expect(row["kind"] as? String == "physical")
         #expect(row["connection"] as? String == "usb")

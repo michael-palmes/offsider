@@ -36,7 +36,7 @@ public enum IOSDeviceReadiness: String, Equatable, Sendable, CaseIterable {
         device.transportType == "wired"
     }
 
-    /// The `list-devices` STATE column.
+    /// The `devices` STATE column.
     public var stateText: String {
         switch self {
         case .ready: return "Booted"

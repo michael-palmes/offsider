@@ -163,11 +163,11 @@ enum DeviceRouter {
             backend.appScopes[serial] = appScope(for: allowance, policy: gate.policy(), profilePackage: profilePackage)
             return Route(backend: backend, device: device, allowance: allowance)
         case .empty:
-            throw CLIError(errorDescription: "Device ID cannot be empty. Run `offsider list-devices` to find device IDs.", reason: .invalidDeviceID, hint: "offsider list-devices")
+            throw CLIError(errorDescription: "Device ID cannot be empty. Run `offsider devices` to find device IDs.", reason: .invalidDeviceID, hint: "offsider devices")
         case .unrecognised:
             throw CLIError(
-                errorDescription: "Device \(id) is not a device ID Offsider recognises. Run `offsider list-devices` to find device IDs.",
-                reason: .invalidDeviceID, hint: "offsider list-devices"
+                errorDescription: "Device \(id) is not a device ID Offsider recognises. Run `offsider devices` to find device IDs.",
+                reason: .invalidDeviceID, hint: "offsider devices"
             )
         }
     }

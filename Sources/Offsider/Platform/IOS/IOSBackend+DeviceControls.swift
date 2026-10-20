@@ -48,7 +48,7 @@ extension IOSBackend: DeviceSettingsControlling {
             return try await body()
         } catch {
             logger.info().log("Settings call failed: \(error)")
-            throw CLIError(errorDescription: "Offsider could not \(action) simulator \(id.rawValue): \(error.localizedDescription). Check it is booted with `offsider list-devices`.", reason: .deviceControlFailed, hint: "offsider list-devices")
+            throw CLIError(errorDescription: "Offsider could not \(action) simulator \(id.rawValue): \(error.localizedDescription). Check it is booted with `offsider devices`.", reason: .deviceControlFailed, hint: "offsider devices")
         }
     }
 }

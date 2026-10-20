@@ -120,7 +120,7 @@ struct UnlockCodeCommand: AsyncParsableCommand {
         case .androidName(let name):
             return name
         case .androidSerial:
-            throw CLIError(errorDescription: "Save an emulator's code under its AVD name from `offsider list-devices`: \(id) changes from launch to launch.", reason: .usage, hint: "offsider list-devices")
+            throw CLIError(errorDescription: "Save an emulator's code under its AVD name from `offsider devices`: \(id) changes from launch to launch.", reason: .usage, hint: "offsider devices")
         case .androidNetworkSerial(let serial):
             throw AndroidError.networkDevice(serial)
         case .iosSimulator:
@@ -128,7 +128,7 @@ struct UnlockCodeCommand: AsyncParsableCommand {
         case .iosDevice:
             throw CLIError(errorDescription: "unlock-code is Android only: Offsider never stores or types an iPhone or iPad passcode. Unlock it by hand.", reason: .notSupported)
         case .empty, .unrecognised:
-            throw CLIError(errorDescription: "\(id.isEmpty ? "Device ID cannot be empty" : "\(id) is not a phone serial or AVD name"). Run `offsider list-devices` to find device IDs.", reason: .invalidDeviceID, hint: "offsider list-devices")
+            throw CLIError(errorDescription: "\(id.isEmpty ? "Device ID cannot be empty" : "\(id) is not a phone serial or AVD name"). Run `offsider devices` to find device IDs.", reason: .invalidDeviceID, hint: "offsider devices")
         }
     }
 

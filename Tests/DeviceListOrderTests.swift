@@ -2,7 +2,7 @@ import Foundation
 import OffsiderCore
 import Testing
 
-@Suite("list-devices order and next step")
+@Suite("devices order and next step")
 struct DeviceListOrderTests {
     static func row(_ id: String, _ platform: DevicePlatform, _ state: String, _ kind: DeviceKind, avd: String? = nil) -> DeviceSummary {
         DeviceSummary(id: id, platform: platform, state: state, name: id, osVersion: nil, deviceType: nil, kind: kind, avd: avd)

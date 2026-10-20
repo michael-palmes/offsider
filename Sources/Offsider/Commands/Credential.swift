@@ -642,7 +642,7 @@ struct CredentialCommand: AsyncParsableCommand {
 
 /// `--device` without `--wait-lock`. `credential` never holds the device lock itself.
 struct CredentialDeviceOption: ParsableArguments {
-    @Option(name: .customLong("device"), help: ArgumentHelp("The device ID from `offsider list-devices` (default OFFSIDER_DEVICE). Not needed with --app.", valueName: "id"))
+    @Option(name: .customLong("device"), help: ArgumentHelp("The device ID from `offsider devices` (default OFFSIDER_DEVICE). Not needed with --app.", valueName: "id"))
     var explicitID: String?
 
     var resolved: (id: String, source: DeviceSource)? { DeviceDefault.resolve(explicit: explicitID) }

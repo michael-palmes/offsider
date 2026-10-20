@@ -157,7 +157,7 @@ enum RunnerSessions {
         guard case .iosDevice(let udid) = DeviceIDClassifier.classify(raw.trimmingCharacters(in: .whitespacesAndNewlines)) else {
             throw CLIError(
                 errorDescription: "`offsider \(command)` is for a physical iPhone or iPad, named by its UDID with --device; \(raw.isEmpty ? "none was given" : "\(raw) is not one").",
-                reason: .usage, hint: "offsider list-devices --physical"
+                reason: .usage, hint: "offsider devices --physical"
             )
         }
         return udid

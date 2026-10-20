@@ -192,7 +192,7 @@ struct DoctorRunner {
                 id: .simulatorState,
                 status: .fail,
                 detail: CLIError.deviceNotFound(id: udid).userFacingDescription,
-                hint: "Check the ID with offsider list-devices."
+                hint: "Check the ID with offsider devices."
             )] + dependents.map { .skipped($0, "requires simulator.state") }
         }
         guard simulator.state == .booted else {

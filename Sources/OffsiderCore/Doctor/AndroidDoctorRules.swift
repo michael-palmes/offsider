@@ -147,7 +147,7 @@ public enum AndroidDoctorRules {
         case .other(let state):
             return (.fail, "adb reports \(name) as \(state)", nil)
         case .notFound(let message):
-            return (.fail, message, "Check the ID with offsider list-devices.")
+            return (.fail, message, "Check the ID with offsider devices.")
         }
     }
 

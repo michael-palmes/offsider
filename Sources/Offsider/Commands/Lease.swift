@@ -13,7 +13,7 @@ struct LeaseCommand: AsyncParsableCommand {
         exit 8 (device_leased) while another label holds a live lease, unless --force; the same label renews it. \
         `set` records the session it runs in (the agent or terminal above its shell), so `doctor --device` passes \
         for any later command of that session and warns for any other. When OFFSIDER_LEASE is set it decides \
-        instead, passing only for a matching label. `list-devices` shows leases. `check` is a read-only snapshot: \
+        instead, passing only for a matching label. `devices` shows leases. `check` is a read-only snapshot: \
         exit 0 when the device is free or this session's (by session, --label or OFFSIDER_LEASE), exit 8 \
         (device_leased) while another session's lease is live, even when that session has ended; only `set` claims \
         a device atomically. For a UDID or an AVD name it reads only the lease file and the process table.
@@ -102,13 +102,13 @@ struct LeaseCommand: AsyncParsableCommand {
     static func resolve(_ id: String) async throws -> (platform: DevicePlatform, key: String) {
         if let key = StableDeviceKey.of(id: id) { return key }
         guard case .androidSerial = DeviceIDClassifier.classify(id) else {
-            throw CLIError(errorDescription: "\(id) is not a device ID. Run `offsider list-devices` to find device IDs.", reason: .invalidDeviceID, hint: "offsider list-devices")
+            throw CLIError(errorDescription: "\(id) is not a device ID. Run `offsider devices` to find device IDs.", reason: .invalidDeviceID, hint: "offsider devices")
         }
         let route = try await DeviceRouter.route(id, logger: OffsiderLogger())
         try await route.backend.prepare()
         let booted = try await route.backend.requireBootedDevice(route.device)
         guard let key = StableDeviceKey.of(booted) else {
-            throw CLIError(errorDescription: "Could not read the AVD name of \(id), which a lease is kept under. Lease it by its AVD name from `offsider list-devices`.", reason: .commandFailed, hint: "offsider list-devices")
+            throw CLIError(errorDescription: "Could not read the AVD name of \(id), which a lease is kept under. Lease it by its AVD name from `offsider devices`.", reason: .commandFailed, hint: "offsider devices")
         }
         return (.android, key)
     }
@@ -178,7 +178,7 @@ struct LeaseCommand: AsyncParsableCommand {
         if let lease, let ownership, ownership != .thisSession {
             let span = "since \(DeviceLeaseRules.clock(lease.created)), until \(DeviceLeaseRules.clock(lease.expires))"
             let holder: String
-            var next = "Choose another device from `offsider list-devices`, or pass --label (or set OFFSIDER_LEASE) if the lease is yours."
+            var next = "Choose another device from `offsider devices`, or pass --label (or set OFFSIDER_LEASE) if the lease is yours."
             switch ownership {
             case .ended(let owner):
                 ownerEnded = true
@@ -189,7 +189,7 @@ struct LeaseCommand: AsyncParsableCommand {
             case .otherLabel:
                 // The label decides before the session does, so the lease may still be this session's.
                 holder = "under another label than '\((label ?? "").trimmingCharacters(in: .whitespaces))' (--label or OFFSIDER_LEASE)"
-                next = "If the lease is yours, pass its label with --label or set OFFSIDER_LEASE to it; otherwise choose another device from `offsider list-devices`."
+                next = "If the lease is yours, pass its label with --label or set OFFSIDER_LEASE to it; otherwise choose another device from `offsider devices`."
             default:
                 holder = "by another session"
             }

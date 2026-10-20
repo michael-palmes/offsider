@@ -188,14 +188,14 @@ struct IOSBackendMappingTests {
         #expect(route.device == DeviceID(rawValue: "ABCDEF00-0000-4000-8000-00000000ABCD", platform: .ios))
     }
 
-    @Test("empty and unrecognised IDs point to list-devices", arguments: ["", "  ", "pixel/9"])
+    @Test("empty and unrecognised IDs point to devices", arguments: ["", "  ", "pixel/9"])
     func unusableIDsPointToListDevices(id: String) async {
         let error = await #expect(throws: CLIError.self) {
             _ = try await DeviceRouter.route(id, logger: OffsiderLogger())
         }
         let message = error?.userFacingDescription ?? ""
 
-        #expect(message.contains("Run `offsider list-devices` to find device IDs."))
+        #expect(message.contains("Run `offsider devices` to find device IDs."))
         #expect(!message.contains("Android"))
     }
 }

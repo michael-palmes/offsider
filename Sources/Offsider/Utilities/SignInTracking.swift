@@ -88,7 +88,7 @@ struct SignInTracker {
             return (device.platform, device.key, ledger.clear(platform: device.platform, device: device.key, app: app))
         }
         guard let platform = DeviceIDClassifier.classify(id).platform else {
-            throw CLIError(errorDescription: "\(id) is not a device ID. Run `offsider list-devices` to find device IDs.", reason: .invalidDeviceID, hint: "offsider list-devices")
+            throw CLIError(errorDescription: "\(id) is not a device ID. Run `offsider devices` to find device IDs.", reason: .invalidDeviceID, hint: "offsider devices")
         }
         return (platform, id, nil)
     }

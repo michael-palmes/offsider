@@ -43,7 +43,7 @@ public enum DeviceLeaseRules {
             return (
                 .warn,
                 "Leased to another session: \(label) \(span)" + held,
-                "Choose another device from `offsider list-devices`, or set OFFSIDER_LEASE to the lease's label if it is yours."
+                "Choose another device from `offsider devices`, or set OFFSIDER_LEASE to the lease's label if it is yours."
             )
         case .ended(let owner):
             return (
@@ -55,7 +55,7 @@ public enum DeviceLeaseRules {
             return (
                 .warn,
                 "Leased to \(label) by another session (\(owner.name), pid \(owner.pid)) \(span)" + held,
-                "If you set this lease, add OFFSIDER_LEASE=\(shellQuoted(lease.label)) to this command; otherwise choose another device from `offsider list-devices`."
+                "If you set this lease, add OFFSIDER_LEASE=\(shellQuoted(lease.label)) to this command; otherwise choose another device from `offsider devices`."
             )
         }
     }

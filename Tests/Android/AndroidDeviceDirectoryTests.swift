@@ -122,7 +122,7 @@ struct AndroidDeviceDirectoryTests {
         #expect(error?.message == "Twin is running more than once (emulator-5554, emulator-5556). Pass one serial with --device.")
     }
 
-    @Test("a known AVD that is not running points at boot; an unknown name points at list-devices")
+    @Test("a known AVD that is not running points at boot; an unknown name points at devices")
     func notRunningOrUnknown() async throws {
         let directory = Self.directory(Self.server(), home: try Self.homeWithAVDs(["Spare_AVD"]))
 
@@ -130,7 +130,7 @@ struct AndroidDeviceDirectoryTests {
         #expect(notRunning?.message == "Emulator Spare_AVD is not running. Start it with `offsider boot Spare_AVD`.")
 
         let unknown = await #expect(throws: AndroidError.self) { try await directory.serial(forAVDNamed: "Pixel_10") }
-        #expect(unknown?.message == "No device named Pixel_10. Run `offsider list-devices` to find device IDs.")
+        #expect(unknown?.message == "No device named Pixel_10. Run `offsider devices` to find device IDs.")
     }
 
     @Test("resolving a name never queries an emulator whose discovery file already names it")

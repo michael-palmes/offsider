@@ -84,7 +84,7 @@ struct CLIErrorTests {
     func missingDeviceErrorIsActionable() {
         let error = CLIError.deviceNotFound(id: "EXAMPLE-ID")
 
-        #expect(error.description == "No device with ID EXAMPLE-ID was found. Run `offsider list-devices` to see available devices.")
+        #expect(error.description == "No device with ID EXAMPLE-ID was found. Run `offsider devices` to see available devices.")
         #expect(!error.description.contains("set"))
     }
 
