@@ -6,6 +6,14 @@ extension TerminalText {
         case end, middle
     }
 
+    /// `path` with the home folder written `~`.
+    public static func homePath(_ path: String, home: String = NSHomeDirectory()) -> String {
+        guard home.count > 1 else { return path }
+        let folder = home.hasSuffix("/") ? String(home.dropLast()) : home
+        if path == folder { return "~" }
+        return path.hasPrefix(folder + "/") ? "~" + path.dropFirst(folder.count) : path
+    }
+
     /// Plain `text` cut by whole characters to fill at most `width` columns, `ellipsis` marking the cut; unchanged when it fits.
     public static func truncate(_ text: String, to width: Int, at cut: Cut = .end, ellipsis: String = "…") -> String {
         guard width > 0 else { return "" }

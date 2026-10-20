@@ -85,6 +85,12 @@ public final class Console: @unchecked Sendable {
         emit(stream, text)
     }
 
+    /// A stderr line an agent has always read as it is; a person reads `person` as a notice instead, or nothing when it is nil.
+    public func line(_ agent: String, person: Notice?) {
+        guard err.profile == .person else { return data(agent + "\n", to: .err) }
+        if let person { notice(person) }
+    }
+
     /// One notice on stderr, once per process; a person sees at most five of a kind.
     public func notice(_ notice: Notice) {
         guard lock.withLock({ seen.insert(notice).inserted }) else { return }

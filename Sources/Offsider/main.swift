@@ -101,7 +101,7 @@ struct OffsiderCommand: AsyncParsableCommand {
                 let row = try await DevicePicker.orUnanswered(error) { try await DevicePicker.pickRunning() }
                 DeviceDefault.picked = row.id
                 let command = try parseAsRoot(nil)
-                Console.current.data(DevicePickerScreen.using(row, style: .detect(isTerminal: true)) + "\n", to: .err)
+                Console.current.data(DevicePickerScreen.using(row, style: Console.current.err.canvas.style) + "\n", to: .err)
                 return command
             }
             let row = try await DevicePicker.orUnanswered(error, boot: true) { try await DevicePicker.pickBootable() }
