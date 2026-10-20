@@ -2,6 +2,8 @@
 
 `appearance`, `content-size` and `orientation` change the device for every later screen, and `permission`, `status-bar`, `biometric` and `stay-awake` change state that outlives the command; each has a reset, so set them back when done. Setting a value already in place succeeds and says it changed nothing where the platform can read it. Set state before launching the app.
 
+At a terminal, a person sees a read as one line (`Appearance  dark`), a change as a ✅ receipt with what it was (`was light`), and state that outlives the command (a status bar override, stay awake on, a biometric enrolment, a permission, an Android orientation that turned auto-rotate off) with a 📌 note naming the command that undoes it. `permission services` and `show` are tables, and `displays` shows the posture above a row per display. An agent reads the same text as before.
+
 <details>
 <summary>Services and the permissions each maps to</summary>
 

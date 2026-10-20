@@ -21,12 +21,13 @@
 With `--json`, a failure prints one object on stdout, where the success output goes, and the `Error:` line still goes to stderr. `describe-ui` does the same when its output is JSON or NDJSON and `--format` or `--compact` was given or stdout is not a terminal:
 
 ```json
-{"version":1,"ok":false,"command":"screenshot","exitCode":7,"error":{"reason":"device_not_found","message":"No device with ID 5E1B... was found. Run `offsider list-devices` to see available devices.","hint":"offsider list-devices","dispatched":null,"candidates":[]}}
+{"version":1,"ok":false,"command":"screenshot","exitCode":7,"error":{"reason":"device_not_found","message":"No device with ID 5E1B... was found. Run `offsider devices` to see available devices.","hint":"offsider devices","dispatched":null,"candidates":[]}}
 ```
 
 `--verify --json` reports (version 2), `batch --json` step lines and a `login --json` that stopped after it began typing carry the same `error` object in place of their own envelope.
 
-- `hint` is the next command to run and never repeats typed text. Without `--json`, stderr prints it on a `Try:` line under the `Error:` line, unless the message already quotes it; `<DEVICE_ID>` in it becomes the `--device` value.
+- `hint` is the next command to run and never repeats typed text. Without `--json`, stderr prints it on a `Try:` line under the `Error:` line, unless the message already quotes it; `<DEVICE_ID>` in it becomes the `--device` value. A person at a terminal sees ❌ instead of `Error:`, the cause in bold red, the rest of the message under it and `Try  <command>`; an agent's lines are never styled, and its hints never say `export`.
+- `command` is the command's name: `devices` also when run as `list-devices`.
 - `message` and `hint` show at most 4,096 characters, ending `…(+N)`. Screen text inside a message is double-quoted, while your own selector keeps single quotes. When a message or a candidate holds text from the device, the object ends with `untrusted`, listing those paths: `error.message`, `error.candidates[].id`, `label`, `window` and `screen`, `error.coveredBy.id`, `label`, `screen` and `process`, and `error.users[].tags` and `about`.
 - A refusal only a person can lift (`device_not_allowed`, `app_not_allowed`, `team_missing`, a `login` link no person confirmed, and `doctor`'s policy and team hints) asks an agent to fetch the user, naming what to choose. A person at a terminal, without `--json`, gets the same message without that sentence, and the `Try:` line names `offsider device-access allow`.
 - `candidates` lists up to five elements (`id`, `label`, `role`, `frame`, `onScreen`, `index`, `window`, `screen` and `beneath`, never a value) for selector errors, and `target_covered` adds `coveredBy`, the element the tap would have reached. `user_not_found` and `user_ambiguous` add `users`, up to 20 saved users as `name`, `tags` and `about`, never a username.
@@ -35,7 +36,7 @@ With `--json`, a failure prints one object on stdout, where the success output g
 
 ## Verify reports
 
-A `--verify --json` report also carries `ignored` (`{node, reason}` entries left out of the check, `reason` `live`, `volatile` or `toast`), `elapsedMs` from the command's start and `phasesMs` (`settle`, `resolve`, `baseline`, `dispatch`, `verify`), and `note` is `logbox_opened` when the React Native LogBox inspector opened over the app. For an agent (standard output not a terminal), the text change summaries quote ids (`Button#"save"`); a person sees them bare. JSON values such as `changes[].node` and `ignored[].node` stay bare on both, and the `untrusted` list names them. A verified report also lists what changed: `changes` holds up to 10 entries, value and state changes first, then added, removed and moved nodes, each as `{"kind": "changed", "node": "text \"State\" id=state", "field": "value", "old": "All", "new": "Unread"}` (`kind` is `added`, `removed` or `changed`; `field`, `old` and `new` are null where they do not apply). `changesTruncated` counts the entries left out, and `note` is `keyboard_closed` when the keyboard left and nothing outside it changed except frames: the input may have been spent closing the keyboard, so repeat it if the control shows no effect. A change seen only in the screenshot gives `changes: []`. Android's `button home --verify` values (`change` `activity`, `note` `home_intent`) are additions within version 2.
+A `--verify --json` report also carries `ignored` (`{node, reason}` entries left out of the check, `reason` `live`, `volatile` or `toast`), `elapsedMs` from the command's start and `phasesMs` (`settle`, `resolve`, `baseline`, `dispatch`, `verify`), and `note` is `logbox_opened` when the React Native LogBox inspector opened over the app. For an [agent](agents.md#what-a-person-and-an-agent-see), the text change summaries quote ids (`Button#"save"`); a person sees them bare. JSON values such as `changes[].node` and `ignored[].node` stay bare on both, and the `untrusted` list names them. A verified report also lists what changed: `changes` holds up to 10 entries, value and state changes first, then added, removed and moved nodes, each as `{"kind": "changed", "node": "text \"State\" id=state", "field": "value", "old": "All", "new": "Unread"}` (`kind` is `added`, `removed` or `changed`; `field`, `old` and `new` are null where they do not apply). `changesTruncated` counts the entries left out, and `note` is `keyboard_closed` when the keyboard left and nothing outside it changed except frames: the input may have been spent closing the keyboard, so repeat it if the control shows no effect. A change seen only in the screenshot gives `changes: []`. Android's `button home --verify` values (`change` `activity`, `note` `home_intent`) are additions within version 2.
 
 ## Error reasons
 
@@ -51,7 +52,7 @@ A `--verify --json` report also carries `ignored` (`{node, reason}` entries left
 | `selector_ambiguous` | 6 | Several elements matched | Pick from `candidates`: use `--id`, add `--element-type` or tap by coordinates |
 | `selector_ambiguous_switch` | 6 | The match holds several switches | Target the switch with `--id` or coordinates |
 | `user_ambiguous` | 6 | Several saved users match `--where`, or several are saved and none is the default; nothing was typed | Read `users`, then add a `--where` tag only one has (the `hint` adds `platform=` when that is enough) or pass its name |
-| `device_not_found` | 7 | No device has that ID | `offsider list-devices` |
+| `device_not_found` | 7 | No device has that ID | `offsider devices` |
 | `device_not_booted` | 7 | The device exists but is not running | `offsider boot <ID>` |
 | `device_not_ready` | 7 | The emulator is offline or still booting | Wait, or `offsider boot <AVD>` |
 | `device_unauthorised` | 7 | adb is not authorised for the emulator | Accept the prompt, or restart it with `offsider boot` |
@@ -67,7 +68,7 @@ A `--verify --json` report also carries `ignored` (`{node, reason}` entries left
 | `device_busy` | 8 | Another Offsider command holds the device, `record-video` met `login` or `wake` holding it, or `login` found a recording running; the message names its pid | Wait and retry, or follow the `hint`: add `--wait-lock 30` to the same command |
 | `device_leased` | 8 | `lease set` or `lease check` found another session's live lease on the device | Choose another device; `offsider lease show`, or `--force` when that lease is stale |
 | `uiautomation_busy` | 8 | Another UiAutomation client holds the emulator | Stop that client, or run the `hint`, then retry |
-| `xcode_missing` | 9 | No usable Xcode is selected | Run the `hint`, `sudo xcode-select -s` with the newest Apple-signed Xcode in `/Applications` other than the one refused; without sudo, `export DEVELOPER_DIR=` that developer folder. With none left, install Xcode 26 or later |
+| `xcode_missing` | 9 | No usable Xcode is selected | Run the `hint`, `sudo xcode-select -s` with the newest Apple-signed Xcode in `/Applications` other than the one refused; without sudo, `export DEVELOPER_DIR=` that developer folder (an agent is told to run each command as `DEVELOPER_DIR=<dir> offsider …`). With none left, install Xcode 26 or later |
 | `xcode_unusable` | 9 | The selected Xcode cannot load simulator support, `DEVELOPER_DIR` points outside an Apple-signed Xcode, or a private method Offsider calls has changed | Select an Apple-signed Xcode 26 or later as for `xcode_missing`, or update Offsider |
 | `android_sdk_missing` | 9 | No Android SDK or adb was found | Install Platform-Tools or set `ANDROID_HOME` |
 | `adb_server_unavailable` | 9 | The adb server is not running or not answering | Run the command again: Offsider starts one with `ADB_MDNS=0`. When one runs but does not answer, stop it first with the `hint` (the SDK's `adb kill-server`) |
@@ -79,7 +80,7 @@ A `--verify --json` report also carries `ignored` (`{node, reason}` entries left
 | `team_missing` | 9 | No signing team was chosen for the iPhone runner; Xcode's signed-in team is never used on its own | Ask the user to run `offsider device-access allow` and choose a team from its menu, or set `OFFSIDER_IOS_TEAM_ID` |
 | `usbmux_unavailable` | 9 | usbmuxd, which reaches iPhones over USB, is not answering, or does not list the device on USB | Unplug and replug the cable; restart the Mac if it persists |
 | `usage` | 64 | Invalid arguments or options, including `OFFSIDER_DEVICE` naming a physical device and an iPhone or iPad command with no app to pin | Fix the command line; see `--help` |
-| `invalid_device_id` | 64 | The device ID is empty or not a device ID | `offsider list-devices` |
+| `invalid_device_id` | 64 | The device ID is empty or not a device ID | `offsider devices` |
 | `invalid_setting` | 64 | An `OFFSIDER_` variable has a value Offsider cannot read | Fix or unset it |
 | `unsupported_button` | 64 | The device's platform has no such button | Use a button the platform has |
 | `unsupported_key` | 64 | The key has no equivalent on the device | Use a supported key |
@@ -108,7 +109,7 @@ A `--verify --json` report also carries `ignored` (`{node, reason}` entries left
 | `tree_read_failed` | 1 | The accessibility tree could not be read | Retry; on iOS run `offsider doctor --device <ID>` |
 | `no_window` | 1 | The device shows no window | Unlock it and bring an app to the front |
 | `screen_not_idle` | 1 | The screen did not settle for uiautomator | Retry when the screen is still |
-| `screenshot_failed` | 1 | The screen could not be captured, or `--output` names something other than an image file you own | Retry, check the path, or check the device with `offsider list-devices` |
+| `screenshot_failed` | 1 | The screen could not be captured, or `--output` names something other than an image file you own | Retry, check the path, or check the device with `offsider devices` |
 | `baseline_unreadable` | 1 | The `--compare` baseline cannot be read | Check the path, or capture a new baseline |
 | `baseline_mismatch` | 1 | The baseline and the capture differ in size | Capture both with the same `--region` and `--scale` |
 | `display_unreadable` | 1 | The display size or turn could not be read | Retry, or check the device |

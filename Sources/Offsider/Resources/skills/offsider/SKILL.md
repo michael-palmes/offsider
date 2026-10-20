@@ -8,10 +8,10 @@ Offsider drives iOS Simulators, Android Emulators and USB phones and iPads from 
 
 ## Every session
 
-1. Find the device with `offsider list-devices`: iOS simulators, USB iPhones and iPads by UDID, running Android emulators and USB phones by serial, and shut-down AVDs by name. `--json` adds each device's `kind` and `connection` (`guide android`). Never choose a `physical` device yourself: drive a phone only when the user names its serial or UDID, and a physical one needs the user to run `offsider device-access allow` (`guide ios-device`).
+1. Find the device with `offsider devices`: iOS simulators, USB iPhones and iPads by UDID, running Android emulators and USB phones by serial, and shut-down AVDs by name. `--json` adds each device's `kind` and `connection` (`guide android`). Never choose a `physical` device yourself: drive a phone only when the user names its serial or UDID, and a physical one needs the user to run `offsider device-access allow` (`guide ios-device`).
 2. Boot with `DEVICE=$(offsider boot <AVD, simulator name or UDID>)` (`--headless` hides an emulator): it waits until booted, prints the serial or UDID and never starts a running device again. Never start emulators with `emulator -port` or `-grpc` yourself.
 3. Run `offsider doctor --device <DEVICE_ID> --json` at the start of a session and when input seems ignored. Exit 0 is clean, 3 means warnings and 4 means failures; read each check's `status` and follow its `hint` (`guide errors`).
-4. Pass `--device <DEVICE_ID>` to every device command, or `export OFFSIDER_DEVICE=<DEVICE_ID>` once for a simulator or emulator (`--device` wins). `list-devices`, `boot`, `init`, `guide` and `doctor` do not need it.
+4. Pass `--device <DEVICE_ID>` to every device command: an `export` may not reach your next shell. `devices`, `boot`, `init`, `guide` and `doctor` do not need it.
 5. If the repository has an `OFFSIDER.md`, read `offsider guide --project .` first.
 
 ## Stop and ask

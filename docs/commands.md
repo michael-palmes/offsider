@@ -1,10 +1,10 @@
 # Commands
 
-Every device command takes `--device <id>`, using an ID from `offsider list-devices`: a simulator UDID (case-insensitive), a USB iPhone or iPad's UDID (such as `00008130-001C...`), an Android emulator serial such as `emulator-5554`, the name of a running AVD, or a USB phone's serial. Without `--device`, a command uses `OFFSIDER_DEVICE` when it is set and not blank; `--device` always wins, and with neither the command exits 64. `OFFSIDER_DEVICE` never names a physical device: a phone, iPhone or iPad must be [allowed](device-access.md) and named with `--device` on every command, so `doctor --fix` needs `--device` too. `doctor` prints the binding (`device.source` is `environment` in `--json`); `permission services` and the `--device` filters of `runner` and `session` ignore it. `offsider <command> --help` lists every option. In 0.3.0, `--udid` became `--device` and `list-simulators` became `list-devices`; the old names exit 64 with a hint.
+Every device command takes `--device <id>`, using an ID from `offsider devices`: a simulator UDID (case-insensitive), a USB iPhone or iPad's UDID (such as `00008130-001C...`), an Android emulator serial such as `emulator-5554`, the name of a running AVD, or a USB phone's serial. Without `--device`, a command uses `OFFSIDER_DEVICE` when it is set and not blank; `--device` always wins, and with neither the command exits 64. `OFFSIDER_DEVICE` never names a physical device: a phone, iPhone or iPad must be [allowed](device-access.md) and named with `--device` on every command, so `doctor --fix` needs `--device` too. `doctor` prints the binding (`device.source` is `environment` in `--json`); `permission services` and the `--device` filters of `runner` and `session` ignore it. `offsider <command> --help` lists every option. In 0.3.0, `--udid` became `--device` and `list-simulators` became `list-devices`, and both old names exit 64 with a hint. `list-devices` is now `devices`, and still works. On a terminal, a person sees [their own view](agents.md#what-a-person-and-an-agent-see) of each command; an agent or a pipe reads plain text.
 
 | Command | What it does |
 | --- | --- |
-| `devices` | List iOS simulators (iPhone and iPad), allowed iPhones, iPads and USB Android phones, running Android emulators and shut-down AVDs with their IDs as a table, booted and booting ones first on each platform, or as [JSON](#device-list-json) with `--json`; `--platform ios\|android` filters, `--booted` keeps only booted and booting devices, and `--physical` lists every connected physical device, allowed or not, for a person. On a terminal it ends with a `Next:` line on stderr ([first run](getting-started.md#first-run)) |
+| `devices` | List iOS simulators (iPhone and iPad), allowed iPhones, iPads and USB Android phones, running Android emulators and shut-down AVDs with their IDs as a table, booted and booting ones first on each platform, or as [JSON](#device-list-json) with `--json`; `--platform ios\|android` filters, `--booted` keeps only booted and booting devices, and `--physical` lists every connected physical device, allowed or not, for a person. A person sees rows grouped by kind behind status dots, ending with a `Next` command on stderr ([first run](getting-started.md#first-run)) |
 | `device-access` | `allow` (a person at a terminal picks from menus), `status` (also `device-access` alone) or `remove` Offsider's access to a physical iPhone, iPad or Android phone (`--device`, `--app`, `--expires`, `--team` for an iPhone's runner, for scripts; `--json`; [physical devices](device-access.md)) |
 | `boot` | Start an Android emulator by AVD name, or an iOS simulator by name or UDID, wait until it has booted and print its serial or UDID; a device that is already running is not started again ([starting an emulator](android.md#starting-an-emulator)) |
 | `doctor` | Check the host, Xcode, Device Hub, simulators and the Android SDK, or one device with `--device`; `--json` prints one object and `--fix` applies safe fixes ([doctor](troubleshooting.md)) |
@@ -56,7 +56,7 @@ Every device command takes `--device <id>`, using an ID from `offsider list-devi
 
 ## Device list JSON
 
-`list-devices --json` prints one object with a schema version, for scripts and agents:
+`devices --json` prints one object with a schema version, for scripts and agents, on one line for an agent and indented for a person:
 
 ```json
 {
@@ -93,6 +93,6 @@ Every device command takes `--device <id>`, using an ID from `offsider list-devi
   - `batch --json` step lines: the error paths, a `wait` step's `match` and `nearest[]`, and a `describe-ui` step's `tree.*` or `output`.
   - `logs --json`: `entries[].process`, `entries[].tag`, `entries[].message` and `entries[].raw`; each `--follow` line lists its own `process`, `tag`, `message` and `raw`.
   - `wait` and `assert`: `match` and `nearest[]`.
-  - `list-devices`, `doctor` (`checks[].detail`, `device.name`, `booted[].name`), `credential` (the notes), `login` and every [JSON error](errors.md#json-errors).
+  - `devices`, `doctor` (`checks[].detail`, `device.name`, `booted[].name`), `credential` (the notes), `login` and every [JSON error](errors.md#json-errors).
 
 Keys may be added within a version.

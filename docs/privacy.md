@@ -42,7 +42,7 @@ Outside that directory, the allow-list of physical devices lives in `~/.config/o
 
 `offsider init` also adds permission rules for the agents installed on this Mac (ticked by default): Claude Code's `~/.claude/settings.json` gains `deny` and `ask` entries, and Codex gets `~/.codex/rules/offsider.rules`. They deny `credential join`, `device-access`, `unlock-code`, `wake --unlock`, `runner build --register-device` and `describe-ui --raw-source`, and ask before `login`, `credential`, `permission`, `type --file`, `--no-mask-secure` captures and raw `adb` and `devicectl`. Both agents match the command as typed, so a rule slows a misled agent rather than stops one; `offsider init --print-rules` prints them, and `doctor`'s `install.rules` warns when one is missing.
 
-When standard output is not a terminal, Offsider takes the run for an agent's (`OFFSIDER_OUTPUT=person` or `agent` overrides that): screen names are always quoted, and turning off the password mask (`--no-mask-secure`, `OFFSIDER_MASK_SECURE=0`) needs a person at a terminal with Touch ID or the login password (`person_required` otherwise).
+When standard output is not a terminal, or an agent harness sets `CLAUDE_CODE_CHILD_SESSION` or `AI_AGENT`, Offsider takes the run for an agent's (`OFFSIDER_OUTPUT=person` or `agent` overrides that; [both views](agents.md#what-a-person-and-an-agent-see)): screen names are always quoted, no device picker opens, and turning off the password mask (`--no-mask-secure`, `OFFSIDER_MASK_SECURE=0`) needs a person at a terminal with Touch ID or the login password (`person_required` otherwise). A marker only ever moves a run towards the agent's checks, never away.
 
 Offsider enforces, whatever the agent does:
 

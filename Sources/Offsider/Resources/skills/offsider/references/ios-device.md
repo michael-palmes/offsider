@@ -6,7 +6,7 @@
 - The user must also allow it: ask them to run `offsider device-access allow` in their own terminal, and say which device to choose (by its name) and which app to pin. Its menus need nothing looked up or pasted, so never hand them a UDID, team ID or command with flags. Until then every command exits 7 `device_not_allowed` before anything reaches the device; never allow it yourself. An allowance expires (12 hours by default), and while it holds each command prints one stderr line saying it drives a physical device. `device-access status --device <UDID>` checks it.
 - USB only. A device on Wi-Fi, or one usbmuxd stops listing on USB, exits 7 with `device_not_wired`: ask the user to connect its cable. Offsider never pairs a device or accepts a prompt on it.
 - The user prepares the device once: unlock it and tap Trust, turn on Developer Mode (Settings > Privacy & Security), and for input turn on Settings > Developer > UI Automation.
-- `offsider list-devices` shows the device with `kind` `physical`, `connection` `usb` or `network`, and a state: Booted (ready), Wireless, Untrusted, Developer Mode off, Preparing, Reconnecting or Unavailable. A hint on stderr says what to do for each problem state.
+- `offsider devices` shows the device with `kind` `physical`, `connection` `usb` or `network`, and a state: Booted (ready), Wireless, Untrusted, Developer Mode off, Preparing, Reconnecting or Unavailable. A hint on stderr says what to do for each problem state.
 - Run `offsider doctor --device <UDID> --json` first. Its `ios-device.*` checks cover Xcode, CoreDevice, the listing, the connection, trust, Developer Mode, the developer disk image, the tunnel, the lock state, HID input (`hid` round-trips a barrier on the button socket), UI Automation, the session broker, usbmuxd and runner signing. `--fix` only mounts the developer disk image, on an allowed device named with `--device`. A device no one allowed reports one failing `device.policy` check and nothing else.
 - iOS does not report UI Automation, so `ios-device.ui-automation` is a skip naming the Settings path: ask the user to check it. `ios-device.session` is a skip when no broker is running; doctor never starts one.
 - The device must stay unlocked. A locked device refuses input, and stops Xcode starting the runner, with exit 7 `device_locked`: ask the user to unlock it, then retry. Offsider never types an iPhone passcode, and `wake`, `stay-awake` and `unlock-code` are Android only.
@@ -25,7 +25,7 @@
 
 | | Xcode 27, broker | Xcode 27, no broker | Xcode 26 |
 | --- | --- | --- | --- |
-| `list-devices`, `doctor`, `appearance`, `content-size`, `orientation` | yes | yes | yes |
+| `devices`, `doctor`, `appearance`, `content-size`, `orientation` | yes | yes | yes |
 | `screenshot` | stream | `devicectl` | `devicectl` |
 | `describe-ui`, `wait`, `assert` (runner) | yes | yes | yes |
 | Element and coordinate `tap`, `swipe`, `button home` | broker | runner | runner |

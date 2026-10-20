@@ -18,3 +18,5 @@
 - `status` reads toasts and the inspector without a tap, listing each toast bottom first, numbered from 1, with its message (redacted as `logs` redacts unless `--no-redact`; `--json`: `{version, logs, toasts: [{index, count, message, frame}], inspector, emptyDialog}`).
 - `open [--index n]` taps a toast and waits for the inspector, so `describe-ui` can read the whole log (`--json`: `{version, index, message, log, of}`; exit 2 with no such toast, 5 when the inspector does not open).
 - `dismiss [--index n]` clears every log, or only toast n (`--timeout`, `--json`: `{version, cleared, remaining, method, emptyDialog}`), exiting 5 when some remain; `method` is `inspector` when a clear tap opened the inspector. On Android, React Native can leave its LogBox dialog up and empty after the last log; `dismiss` reads again for 1.5 s, then exits 5 with `emptyDialog` true and sends nothing more (reload the app, such as with `rn open`, to close it).
+
+At a terminal, a person sees the dev menu's items and `rn logbox status` as a header and rows, and a ✅ receipt after choosing a menu item, `rn tools off` and `rn logbox dismiss`. An agent reads the same lines as before.

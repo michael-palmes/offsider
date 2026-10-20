@@ -8,6 +8,8 @@ Captures are written mode 0600. A generated file name never replaces a file: a t
 
 `--compare <baseline>` (`--threshold`, `--expect changed|unchanged`) exits 0 when the capture changed, or with `--expect unchanged` when it did not, and 5 otherwise. It adds `expected`, `met`, `changedPixels`, `comparedPixels` and `changedBounds` to `--json`, and with `--diff-output <png>` writes the capture faded to white with changed pixels in magenta.
 
+A person at a terminal sees a spinner while it captures, then ✅ `Screenshot saved` with the path (your home folder as `~`), the size and how many fields were masked; with `--compare`, the verdict (Changed from, Matches, Differs from or No change from the baseline), the tile counts and the diff's path. An agent or a pipe reads the path, or the compare's summary line, as before.
+
 ### Masks
 
 Masks are painted from one accessibility tree read before the image is written, and `--json` reports `masked`, `maskedBy`, `maskedBeneath` (matches on a screen beneath a page, still painted), `skippedBeneath` (with `--mask-skip-beneath`) and `maskUnmatched`.
@@ -40,7 +42,7 @@ An `offsider.mask.json` at the repository root (found like `offsider.login.json`
 
 ### Video
 
-`record-video` records the display to an H.264 MP4 until Ctrl+C (`--output`, `--fps`, `--quality`, `--scale`) into a private staging folder beside the target, then moves it into place, and its `--json` prints `path`, `frames`, `heldFrames`, `maskedBy` and `unmasked` when it ends. `stream-video` streams frames to stdout as `mjpeg`, `raw`, `ffmpeg` or `bgra` (`--format`, `--fps`, `--quality`, `--scale`).
+`record-video` records the display to an H.264 MP4 until Ctrl+C (`--output`, `--fps`, `--quality`, `--scale`) into a private staging folder beside the target, then moves it into place, and its `--json` prints `path`, `frames`, `heldFrames`, `maskedBy` and `unmasked` when it ends. `stream-video` streams frames to stdout as `mjpeg`, `raw`, `ffmpeg` or `bgra` (`--format`, `--fps`, `--quality`, `--scale`). On a terminal, `record-video` shows `Recording <ID>  mm:ss  (Ctrl+C to stop)`, then ✅ `Video saved` with the path, length and frames; `stream-video` adds only a dim line before and after on stderr, so stdout stays frames.
 
 Video is never masked by the accessibility tree, since a tree read cannot be proven to match every frame of a screen that scrolls or changes. `record-video` and `stream-video` refuse `--mask-secure`, `--mask-id`, `--mask-label`, `--mask-label-contains`, `--mask-text` and `--mask-emails`, and refuse to run while the evidence run masks emails or ids: exit 1 with `video_unmasked`, with no file written. Otherwise they read the screen once before the first frame and refuse the same way when a password field, or an element `offsider.mask.json` names, is on screen or the read fails (`OFFSIDER_MASK_SECURE=0` skips the password check outside a run, but not the mask file's). The check is made at the start only, so a password field that appears later is recorded. `record-video` also exits 8 (`device_busy`) while `login` or `wake` holds the device, and marks the device as recording so `login` refuses meanwhile. Take masked evidence with `screenshot` or screenshot steps in a `batch`; `--unmasked` records anyway, with a warning, and is a usage error beside a tree mask flag.
 
