@@ -1020,8 +1020,8 @@ struct LoginCredentialSettingsTests {
     }
 
     /// The form check is the first step after the Keychain gates, so `selector_not_found` means every gate passed.
-    private func passedTheGates(_ error: (any Error)?) -> Bool {
-        (error as? CLIError)?.reason == .selectorNotFound
+    private func expectPassedTheGates(_ error: (any Error)?, sourceLocation: SourceLocation = #_sourceLocation) {
+        #expect((error as? CLIError)?.reason == .selectorNotFound, "stopped by \(String(describing: error))", sourceLocation: sourceLocation)
     }
 
     @Test("a link only the index knows is person_required naming join, and join's encrypted link lets login through")
@@ -1037,7 +1037,7 @@ struct LoginCredentialSettingsTests {
         #expect(refused.failureMessage.contains("no person has confirmed that link, so nothing was typed"))
 
         try store.join(member: "com.example.android", canonical: "com.example.app")
-        #expect(passedTheGates(await login(store, package: "com.example.android")))
+        expectPassedTheGates(await login(store, package: "com.example.android"))
     }
 
     @Test("join repairs a link only the index knows: it asks, checks presence, writes the encrypted link, and login then types")
@@ -1059,7 +1059,7 @@ struct LoginCredentialSettingsTests {
         #expect(person.reasons == ["let com.example.android use the saved logins of com.example.app"])
         #expect(try store.loadStored(app: "com.example.app", key: "dev")?.links == ["com.example.android"])
         #expect(try store.loadStored(app: "com.example.app", key: "qa")?.links == ["com.example.android"])
-        #expect(passedTheGates(await login(store, package: "com.example.android")))
+        expectPassedTheGates(await login(store, package: "com.example.android"))
     }
 
     @Test("a login saved with confirm asks once before the password is read, and a declined check reads nothing")
@@ -1075,12 +1075,12 @@ struct LoginCredentialSettingsTests {
         #expect(store.decrypts == 0)
 
         let person = FakePresence()
-        #expect(passedTheGates(await login(store, package: "com.example.app", presence: person)))
+        expectPassedTheGates(await login(store, package: "com.example.app", presence: person))
         #expect(person.reasons == ["type the saved login dev into com.example.app on emulator-5554"])
 
         try store.saveStored(guarded, app: "com.example.app", key: "dev", isDefault: true, context: LoginContext())
         let late = FakePresence()
-        #expect(passedTheGates(await login(store, package: "com.example.app", presence: late)))
+        expectPassedTheGates(await login(store, package: "com.example.app", presence: late))
         #expect(late.reasons.count == 1)
     }
 
@@ -1093,10 +1093,10 @@ struct LoginCredentialSettingsTests {
         #expect(refused.reason == .deviceNotAllowed)
         #expect(refused.hint == "offsider credential describe dev --devices any --app com.example.app")
         #expect(refused.failureMessage.contains("Nothing was typed."))
-        #expect(passedTheGates(await login(store, package: "com.example.app")))
+        expectPassedTheGates(await login(store, package: "com.example.app"))
 
         try store.saveStored(StoredLogin(credential: try credential(), devices: .any), app: "com.example.app", key: "dev", isDefault: true, context: nil)
-        #expect(passedTheGates(await login(store, package: "com.example.app", device: "ZY22FAKE01")))
+        expectPassedTheGates(await login(store, package: "com.example.app", device: "ZY22FAKE01"))
     }
 
     @Test("a browser or system app in front is app_not_allowed before the Keychain is read")

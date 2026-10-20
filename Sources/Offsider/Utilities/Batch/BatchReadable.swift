@@ -43,7 +43,13 @@ struct BatchReadResult {
 /// A command that can run as a batch step after the previous step's input has been sent.
 @MainActor
 protocol BatchReadable {
+    /// Whether the step first waits out `BatchContext.drawGap` after an input step, so it sees what the input drew.
+    var awaitsInputDrawn: Bool { get }
     func runInBatch(context: BatchContext, logger: OffsiderLogger) async throws -> BatchReadResult
+}
+
+extension BatchReadable {
+    var awaitsInputDrawn: Bool { true }
 }
 
 extension BatchContext {
@@ -53,6 +59,9 @@ extension BatchContext {
 }
 
 extension Wait: BatchReadable {
+    /// Selector waits only: `--settled` has its own input gate, `--region --changed` must see the change happen, and `--seconds` reads nothing.
+    var awaitsInputDrawn: Bool { selector.query != nil }
+
     func runInBatch(context: BatchContext, logger: OffsiderLogger) async throws -> BatchReadResult {
         let readsTree = selector.query != nil || (settled && settleBy != .screen)
         let outcome = try await context.watchdog.guarding(bound: watchdogBound, device: context.device.rawValue) {

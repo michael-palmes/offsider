@@ -12,14 +12,41 @@ final class DeviceWatchdog: @unchecked Sendable {
     private let fire: @Sendable (String) -> Void
     private var timer: DispatchSourceTimer?
 
+    /// What a watchdog made without its own `fire` does when it goes off.
+    enum Action: Sendable {
+        /// Writes the message to stderr and carries on, as code run in-process, such as a test, should.
+        case report
+        /// Reports and ends the process.
+        case exitProcess
+
+        var fire: @Sendable (String) -> Void {
+            switch self {
+            case .report: DeviceWatchdog.report
+            case .exitProcess: DeviceWatchdog.exitProcess
+            }
+        }
+    }
+
+    /// `OffsiderCommand.withCLIDefaults` runs every command under `exitProcess`.
+    @TaskLocal static var defaultAction = Action.report
+
+    /// What this watchdog does when it goes off; nil when it was made with its own `fire`.
+    let action: Action?
+
     init(
         grace: TimeInterval = DeviceWatchdog.grace,
         setupBound: TimeInterval = DeviceWatchdog.setupBound,
-        fire: @escaping @Sendable (String) -> Void = DeviceWatchdog.exitProcess
+        fire: (@Sendable (String) -> Void)? = nil
     ) {
         self.grace = grace
         self.setupBound = setupBound
-        self.fire = fire
+        if let fire {
+            action = nil
+            self.fire = fire
+        } else {
+            action = Self.defaultAction
+            self.fire = Self.defaultAction.fire
+        }
     }
 
     /// Arms for `bound` plus the grace, replacing any earlier arming.
@@ -75,5 +102,9 @@ final class DeviceWatchdog: @unchecked Sendable {
 
     @Sendable static func exitProcess(_ message: String) {
         ErrorReporter.exitUnresponsive(message)
+    }
+
+    @Sendable static func report(_ message: String) {
+        FileHandle.standardError.write(Data((message + "\n").utf8))
     }
 }

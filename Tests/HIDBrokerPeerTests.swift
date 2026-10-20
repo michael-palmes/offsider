@@ -34,13 +34,6 @@ struct HIDBrokerPeerTests {
         #expect(lines.first?.contains("not this Offsider build") == true)
     }
 
-    @Test("a broker stops at its first idle moment after 12 hours")
-    func lifetime() {
-        let start: UInt64 = 1_000
-        #expect(!HIDBroker.hasOutlived(startedAt: start, now: start + HIDBroker.maxLifetimeNanoseconds - 1))
-        #expect(HIDBroker.hasOutlived(startedAt: start, now: start + HIDBroker.maxLifetimeNanoseconds))
-    }
-
     @Test("a broker of another build that closes before its handshake is stopped so a fresh one can start")
     func otherBuildReplaced() throws {
         let folder = "/private/tmp/ohp-\(UUID().uuidString.prefix(8))"
@@ -84,32 +77,5 @@ struct HIDBrokerPeerTests {
         var stopped: [pid_t] = []
         try HIDBroker.replaceRefusingBroker(on: pair[0], reconnect: { throw POSIXError(.ECONNREFUSED) }, stop: { stopped.append($0) })
         #expect(stopped.isEmpty)
-    }
-
-    @Test("the broker is spawned in its own session and inherits no descriptor beyond stdin, stdout and stderr")
-    func spawnInheritsNoDescriptor() throws {
-        let folder = NSTemporaryDirectory() + "offsider-hid-spawn-\(UUID().uuidString.prefix(8))"
-        try FileManager.default.createDirectory(atPath: folder, withIntermediateDirectories: false)
-        defer { try? FileManager.default.removeItem(atPath: folder) }
-        let opened = open(folder + "/leak", O_WRONLY | O_CREAT, 0o600)
-        let leaked = fcntl(opened, F_DUPFD, 200)
-        Darwin.close(opened)
-        defer { Darwin.close(leaked) }
-        #expect(fcntl(leaked, F_GETFD) & FD_CLOEXEC == 0)
-        let log = folder + "/hid.log"
-        let pid = try HIDBroker.launchDetached(executable: URL(fileURLWithPath: "/bin/sh"), arguments: ["-c", "ls /dev/fd"], logPath: log)
-        var status: Int32 = 0
-        #expect(waitpid(pid, &status, 0) == pid)
-        let lines = String(decoding: FileManager.default.contents(atPath: log) ?? Data(), as: UTF8.self).split(separator: "\n").map(String.init)
-        let descriptors = Set(lines.filter { $0.allSatisfy(\.isNumber) })
-        #expect(!descriptors.contains(String(leaked)))
-        #expect(descriptors.isSuperset(of: ["0", "1", "2"]))
-
-        let sleeper = try HIDBroker.launchDetached(executable: URL(fileURLWithPath: "/bin/sleep"), arguments: ["5"], logPath: log)
-        defer {
-            kill(sleeper, SIGKILL)
-            _ = waitpid(sleeper, &status, 0)
-        }
-        #expect(getsid(sleeper) == sleeper)
     }
 }

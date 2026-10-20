@@ -441,6 +441,14 @@ public struct AndroidError: LocalizedError, CustomStringConvertible, Equatable, 
         )
     }
 
+    static func helperBusyWarm(_ serial: String) -> AndroidError {
+        AndroidError(
+            .helperBusy,
+            "Offsider's warm UiAutomation helper on \(serial) is serving another command, so this one cannot read the screen another way. Retry when that command finishes, or stop the helper now.",
+            hint: "offsider session stop --device \(serial)"
+        )
+    }
+
     static func helperCrashed(_ serial: String, detail: String) -> AndroidError {
         AndroidError(
             .helperCrashed,

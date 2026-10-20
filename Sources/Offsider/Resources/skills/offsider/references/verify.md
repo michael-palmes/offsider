@@ -2,7 +2,7 @@
 
 ## The execution model
 
-Most input commands (`tap`, `swipe`, `drag`, `type`, `key` and the rest) are fire-and-forget: Offsider confirms the event was dispatched but cannot know the app processed it. A tap may land before a view is interactive, or during a transition. `slider` is the exception: it sets the matched slider, re-reads its `value` and fails when the result is outside tolerance.
+Most input commands (`tap`, `swipe`, `drag`, `type`, `key` and the rest) are fire-and-forget: Offsider confirms the event was dispatched but cannot know the app processed it. A tap may land before a view is interactive, or during a transition: after the first command, input on a simulator or emulator goes through a warm session and lands within milliseconds, so after a launch or a navigation use `tap --verify` or `wait --settled`. `slider` is the exception: it sets the matched slider, re-reads its `value` and fails when the result is outside tolerance.
 
 ## --verify
 

@@ -338,52 +338,25 @@ public final class DeviceSessionServer {
 
     /// Binds `path` 0600 inside a private folder; refuses when a broker already answers there, and replaces a stale socket this user owns.
     nonisolated static func listen(at path: String, udid: String) throws -> Int32 {
-        // The private folder keeps the socket out of reach until its chmod, without a process-wide umask that would strip other threads' new folders.
-        try OffsiderPrivateDirectory.ensurePrivateDirectory((path as NSString).deletingLastPathComponent, uid: getuid())
-        if let channel = try? DeviceSessionChannel.connect(to: path) {
-            channel.close()
-            throw IOSDeviceError(.sessionFailed, "Another device session already serves \(udid) on \(path).")
-        }
-        var info = stat()
-        if lstat(path, &info) == 0 {
-            guard (info.st_mode & S_IFMT) == S_IFSOCK, info.st_uid == getuid() else {
-                throw IOSDeviceError(.sessionFailed, "\(path) is not a socket this user owns, so Offsider will not replace it.")
-            }
-            unlink(path)
-        }
-        let descriptor = socket(AF_UNIX, SOCK_STREAM, 0)
-        guard descriptor >= 0 else { throw posix("socket", path) }
-        var on: Int32 = 1
-        setsockopt(descriptor, SOL_SOCKET, SO_NOSIGPIPE, &on, socklen_t(MemoryLayout<Int32>.size))
         do {
-            var address = try DeviceSessionChannel.unixAddress(path)
-            let bound = withUnsafePointer(to: &address) {
-                $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { bind(descriptor, $0, socklen_t(MemoryLayout<sockaddr_un>.size)) }
-            }
-            guard bound == 0 else { throw posix("bind", path) }
-            guard chmod(path, S_IRUSR | S_IWUSR) == 0 else { throw posix("chmod", path) }
-            guard Darwin.listen(descriptor, SOMAXCONN) == 0 else { throw posix("listen", path) }
-            return descriptor
-        } catch {
-            Darwin.close(descriptor)
-            throw error
+            return try UnixSocket.listen(at: path)
+        } catch UnixSocketError.alreadyServed {
+            throw IOSDeviceError(.sessionFailed, "Another device session already serves \(udid) on \(path).")
+        } catch UnixSocketError.notOwnedSocket {
+            throw IOSDeviceError(.sessionFailed, "\(path) is not a socket this user owns, so Offsider will not replace it.")
+        } catch UnixSocketError.system(let operation, _, let code) {
+            throw IOSDeviceError(.sessionFailed, "The device session could not \(operation) \(path): \(String(cString: strerror(code))).")
+        } catch UnixSocketError.pathTooLong {
+            throw DeviceSessionWireError(detail: "the socket path \(path) is too long")
         }
-    }
-
-    nonisolated static func posix(_ operation: String, _ path: String) -> IOSDeviceError {
-        IOSDeviceError(.sessionFailed, "The device session could not \(operation) \(path): \(String(cString: strerror(errno))).")
     }
 
     nonisolated static func socketIdentity(_ path: String) -> [UInt64]? {
-        var info = stat()
-        guard lstat(path, &info) == 0 else { return nil }
-        return [UInt64(info.st_dev), UInt64(info.st_ino)]
+        UnixSocket.identity(path)
     }
 
     nonisolated static func isSameUser(_ descriptor: Int32, uid: uid_t = getuid()) -> Bool {
-        var peerUID: uid_t = 0
-        var peerGID: gid_t = 0
-        return getpeereid(descriptor, &peerUID, &peerGID) == 0 && peerUID == uid
+        UnixSocket.isSameUser(descriptor, uid: uid)
     }
 
     typealias Handler = @Sendable (Int, DeviceSessionRequest, DeviceSessionOrigin) async -> (DeviceSessionReply, Data?)

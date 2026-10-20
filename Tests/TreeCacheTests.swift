@@ -339,6 +339,51 @@ struct TreeCacheTests {
         #expect(FileManager.default.fileExists(atPath: fixture.path(for: Self.device)))
     }
 
+    // MARK: Cached against live
+
+    /// A live read with an iOS title and an element actionable only by custom actions, both of which a cached tree drops.
+    static func liveScreen(_ heartRate: String, platform: DevicePlatform) -> UITree {
+        var tree = FakeUI.live(FakeUI.tree(platform: platform, [
+            FakeUI.node(.header, id: "live-ticker-title", label: "Heart Rate", frame: FakeUI.frame(16, 60, 370, 30)),
+            FakeUI.node(.text, id: "live-ticker-heart-rate", label: heartRate, frame: FakeUI.frame(16, 100, 370, 40)),
+            FakeUI.node(.text, id: "live-ticker-run", label: "Morning run", frame: FakeUI.frame(16, 160, 370, 44)),
+            FakeUI.node(.button, id: "live-ticker-open-detail", label: "Open Detail", frame: FakeUI.frame(20, 600, 350, 44)),
+        ]))
+        if case .ios(var title) = tree.roots[0].children[0].native, case .ios(var run) = tree.roots[0].children[2].native {
+            title.title = "Heart Rate"
+            run.customActions = ["Delete"]
+            tree.roots[0].children[0].native = .ios(title)
+            tree.roots[0].children[2].native = .ios(run)
+        }
+        return tree
+    }
+
+    @Test("a live read matches its own cached copy in every comparison with the cache, and a changed label shows as just that", arguments: DevicePlatform.allCases)
+    func cachedCopyMatchesLiveRead(platform: DevicePlatform) throws {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let screen = Self.liveScreen("72 bpm", platform: platform)
+        let ticked = Self.liveScreen("75 bpm", platform: platform)
+        func cached(readAgo: TimeInterval, inputAgo: TimeInterval, role: TreeCacheRecord.TreeRole) throws -> TreeCacheRecord {
+            try TreeCacheRecord(
+                platform: platform, device: screen.device, command: "describe-ui", writtenAt: now - readAgo, treeReadAt: now - readAgo,
+                lastInputAt: now - inputAgo, treeRole: role, appFrame: screen.applicationFrame, hash: TreeDiff.hash(screen), roots: screen.roots
+            ).reloaded()
+        }
+        let settled = try cached(readAgo: 5, inputAgo: 30, role: .read)
+        let justTapped = try cached(readAgo: 0.2, inputAgo: 0.1, role: .preAction)
+        let old = try #require(settled.tree)
+
+        #expect(TreeDiff.diff(old: old, new: screen, filter: UITreeFilter(onScreen: true, labelled: true, actionable: true)).isUnchanged)
+        #expect(TreeDiff.diff(old: old, new: ticked).entries.map(\.key) == ["#live-ticker-heart-rate"])
+        #expect(LiveText.learn(cached: settled, first: screen, readAt: now).isEmpty)
+        #expect(LiveText.learn(cached: settled, first: ticked, readAt: now).count == 1)
+        let gate = try #require(SettleGate.after(justTapped, now: now))
+        #expect(!gate.showsEffect(in: screen, ignoreValues: false))
+        #expect(gate.showsEffect(in: ticked, ignoreValues: false))
+        let button = screen.roots[0].children[3]
+        #expect(TransitionGuard.decide(target: button, record: justTapped, now: now) == .actNow(.sameFrame))
+    }
+
     @Test("OFFSIDER_TREE_CACHE=off turns the cache off")
     func switchedOff() {
         #expect(!TreeCacheEnvironment.isEnabled(["OFFSIDER_TREE_CACHE": "off"]))

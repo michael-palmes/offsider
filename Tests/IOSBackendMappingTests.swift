@@ -55,14 +55,14 @@ final class StubBackend: DeviceBackend {
 @Suite("iOS Backend Mapping Tests")
 @MainActor
 struct IOSBackendMappingTests {
-    @Test("detached touch steps map to broker primitives in order")
-    func detachedTouchStepsMapToBrokerPrimitives() {
+    @Test("detached touch steps map to simulator touches in order")
+    func detachedTouchStepsMapToBrokerEvents() {
         let steps: [DetachedTouchStep] = [.down(x: 12.5, y: 42), .hold(0.25), .up(x: 13, y: 43.5)]
 
-        #expect(steps.map(\.brokerPrimitive) == [
-            .touch(.down, x: 12.5, y: 42),
+        #expect(steps.map(\.hidEvent) == [
+            .touch(direction: .down, x: 12.5, y: 42),
             .delay(0.25),
-            .touch(.up, x: 13, y: 43.5)
+            .touch(direction: .up, x: 13, y: 43.5)
         ])
     }
 

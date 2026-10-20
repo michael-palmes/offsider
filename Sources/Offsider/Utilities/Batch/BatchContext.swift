@@ -29,9 +29,9 @@ final class BatchContext {
     let watchdog: DeviceWatchdog
     /// `batch --mask-secure` or `--no-mask-secure`; nil leaves each screenshot step to its own flag, the environment and the default.
     let maskSecure: Bool?
-    /// `batch --no-settle`: tap steps skip the transition guard.
+    /// `batch --no-settle`: tap steps skip the transition guard and read steps the draw gap.
     let noSettle: Bool
-    /// The device's cached record from before the batch, for the guard until a step sends input.
+    /// The device's cached record from before the batch, for the guard and the draw gap until a step sends input.
     let cachedRecord: TreeCacheRecord?
 
     private var cachedTree: UITree?
@@ -93,6 +93,21 @@ final class BatchContext {
             return try await accessibilityTree(forceRefresh: forceRefresh)
         }
     }
+
+    /// Waits out the rest of `drawGap` after the last input, a step's or else the command's before the batch, so a read sees what it drew; `--no-settle` reads at once.
+    func awaitInputDrawn() async throws {
+        guard !noSettle, let lastInputAt = lastInputAt ?? cachedRecord?.lastInputAt else { return }
+        let environment = TreeCacheEnvironment.current
+        let elapsed = max(0, environment.now().timeIntervalSince(lastInputAt))
+        let remaining = TransitionGuard.seconds(Self.drawGap) - elapsed
+        guard remaining > 0 else { return }
+        try await Timings.measure("draw-gap") {
+            try await environment.sleep(.milliseconds(Int((remaining * 1000).rounded(.up))))
+        }
+    }
+
+    /// How long a read step gives an earlier input to reach the screen: over three times the slowest draw measured on an emulator.
+    static let drawGap: Duration = .milliseconds(100)
 
     /// Drops the cached tree; a step that sent input or slept may have changed the screen.
     func invalidateTree(sentInput: Bool = false) {

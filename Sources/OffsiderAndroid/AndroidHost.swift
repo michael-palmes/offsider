@@ -98,6 +98,8 @@ public struct AndroidHost: Sendable {
     public var timing: AndroidTiming
     /// The private `displays/` directory for the display cache, or nil for none; none by default.
     public var displayCacheDirectory: @Sendable () -> String? = { nil }
+    /// How a command reaches or starts the broker that keeps the helper warm; nil keeps one helper per command, the default.
+    public var helperBroker: HelperBrokerHost?
 
     init(
         environment: [String: String],

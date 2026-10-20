@@ -53,7 +53,7 @@ Add a seed under `Tests/Fixtures/fuzz/<target>/` when you change a parser (place
 
 A new or changed command or option also updates:
 
-- `README.md` (the Commands table)
+- `docs/commands.md` (the Commands table) and the `docs/` page that covers the command
 - `Sources/Offsider/Resources/skills/offsider/SKILL.md` (the skill `offsider init` installs)
 - `CHANGELOG.md`, under `## [Unreleased]`
 

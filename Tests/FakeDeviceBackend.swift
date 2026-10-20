@@ -14,6 +14,9 @@ class FakeDeviceBackend: DeviceBackend {
     var bands = ScreenBands(top: 0, bottom: 0)
     /// Called on every tree read, before the tree is served.
     var onTreeRead: (() -> Void)?
+    /// With `advanceTreeOnInput`, seconds on the tree cache clock before reads see an input's screen; screenshots then follow the trees.
+    var drawDelay: TimeInterval = 0
+    private var pendingDraws: [Date] = []
 
     private(set) var treeIndex = 0
     private(set) var screenshotIndex = 0
@@ -97,8 +100,21 @@ class FakeDeviceBackend: DeviceBackend {
         self.advanceTreeOnInput = advanceTreeOnInput
         if advanceTreeOnInput {
             session.onPerform = { [unowned self] _ in
-                treeIndex = min(treeIndex + 1, max(trees.count - 1, 0))
+                if drawDelay > 0 {
+                    pendingDraws.append(TreeCacheEnvironment.current.now() + drawDelay)
+                } else {
+                    treeIndex = min(treeIndex + 1, max(trees.count - 1, 0))
+                }
             }
+        }
+    }
+
+    /// Moves on past every input whose draw delay has passed.
+    private func landDraws() {
+        let now = TreeCacheEnvironment.current.now()
+        while let due = pendingDraws.first, due <= now {
+            pendingDraws.removeFirst()
+            treeIndex = min(treeIndex + 1, max(trees.count - 1, 0))
         }
     }
 
@@ -108,6 +124,7 @@ class FakeDeviceBackend: DeviceBackend {
     }
 
     private func readTree(for id: DeviceID) -> UITree {
+        landDraws()
         onTreeRead?()
         treeReads += 1
         let tree = currentTree ?? UITree(platform: platform, device: id.rawValue, roots: [])
@@ -159,6 +176,10 @@ class FakeDeviceBackend: DeviceBackend {
         screenshotReads += 1
         guard !screenshots.isEmpty else {
             throw CLIError(errorDescription: "no screenshot scripted")
+        }
+        if drawDelay > 0 {
+            landDraws()
+            return screenshots[min(treeIndex, screenshots.count - 1)]
         }
         let data = screenshots[min(screenshotIndex, screenshots.count - 1)]
         screenshotIndex = min(screenshotIndex + 1, screenshots.count - 1)
@@ -260,6 +281,40 @@ enum FakeUI {
     ) -> UITree {
         let root = node(.application, label: label, frame: frame(0, 0, width, height), platform: platform, children: children)
         return UITree(platform: platform, device: device, roots: [root])
+    }
+
+    /// `tree` as a live read gives it, with the class names, iOS types and AX roles a cached tree leaves out; other native attributes stay.
+    static func live(_ tree: UITree) -> UITree {
+        func dressed(_ node: UINode) -> UINode {
+            let (className, type, role) = switch node.role {
+            case .application: ("android.widget.FrameLayout", "Application", "AXApplication")
+            case .button: ("android.view.ViewGroup", "Button", "AXButton")
+            case .header: ("android.widget.TextView", "Heading", "AXHeading")
+            case .text: ("android.widget.TextView", "StaticText", "AXStaticText")
+            case .textField: ("android.widget.EditText", "TextField", "AXTextField")
+            case .switch: ("android.widget.Switch", "CheckBox", "AXCheckBox")
+            case .slider: ("android.widget.SeekBar", "Slider", "AXSlider")
+            default: ("android.view.ViewGroup", "Group", "AXGroup")
+            }
+            var live = node
+            switch (tree.platform, node.native) {
+            case (.android, .android(var attributes)):
+                attributes.className = className
+                live.native = .android(attributes)
+            case (.android, .ios):
+                live.native = .android(AndroidNativeAttributes(className: className, resourceId: node.id))
+            case (.ios, .ios(var attributes)):
+                (attributes.type, attributes.role) = (type, role)
+                live.native = .ios(attributes)
+            case (.ios, .android):
+                live.native = .ios(IOSNativeAttributes(type: type, role: role))
+            }
+            live.children = node.children.map(dressed)
+            return live
+        }
+        var live = tree
+        live.roots = tree.roots.map(dressed)
+        return live
     }
 }
 

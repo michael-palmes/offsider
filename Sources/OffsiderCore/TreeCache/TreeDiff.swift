@@ -75,13 +75,13 @@ public struct TreeDiff: Equatable, Sendable {
         diff(old: lines(in: old, filter: filter), new: lines(in: new, filter: filter), truncated: new.sourceTruncated)
     }
 
-    /// The nodes `filter` keeps that have an identity, in document order.
+    /// The nodes `filter` keeps that have an identity, in document order, judged without the native attributes a cached tree drops.
     public static func lines(in tree: UITree, filter: UITreeFilter = UITreeFilter()) -> [TreeDiffLine] {
         let rect = tree.visibleRect
         var kept: [(node: UINode, underKeyboard: Bool)] = []
         func visit(_ node: UINode, underKeyboard: Bool) {
             let underKeyboard = underKeyboard || node.role == .keyboard
-            if filter.matches(node, visibleRect: rect) {
+            if filter.matches(node, visibleRect: rect, native: false) {
                 var leaf = node
                 leaf.children = []
                 kept.append((leaf, underKeyboard))

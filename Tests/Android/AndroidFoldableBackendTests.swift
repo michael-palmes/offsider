@@ -16,10 +16,13 @@ struct AndroidFoldableBackendTests {
         private var hinge: Int
         private var override: Int?
         private var lagging = 0
+        private var shownClosed: Bool
+        private var panelLag = 0
 
         init(emulator: FakeEmulator?, closed: Bool) {
             self.emulator = emulator
             hinge = closed ? 0 : 2
+            shownClosed = closed
             emulator?.postureNow = closed ? .closed : .opened
         }
 
@@ -27,6 +30,16 @@ struct AndroidFoldableBackendTests {
 
         /// The next `count` display probes still describe the panel the fold is leaving, as `wm size` and the viewport do on the device.
         func lagProbes(_ count: Int) { lock.withLock { lagging = count } }
+
+        /// After the next state change, `count` display reads still show the panel the fold is leaving, as the device does while device_state has committed and the panel has not swapped yet.
+        func lagPanelSwap(_ count: Int) { lock.withLock { panelLag = count } }
+
+        private func shownPanelClosed() -> Bool {
+            if shownClosed != (committed == 0) {
+                if panelLag > 0 { panelLag -= 1 } else { shownClosed = committed == 0 }
+            }
+            return shownClosed
+        }
 
         private var base: Int {
             guard let emulator else { return hinge }
@@ -56,7 +69,9 @@ struct AndroidFoldableBackendTests {
         func reply(to service: String) -> FakeAdbServer.Reply {
             lock.withLock {
                 let command = service.hasPrefix("shell,v2,raw:") ? String(service.dropFirst("shell,v2,raw:".count)) : service
-                let closed = committed == 0
+                let readsPanel = [AndroidDisplayList.command, AndroidDisplayStatus.script, AndroidDisplayStatus.scriptWithProbe, AndroidDisplayGeometry.probeScript]
+                    .contains(command)
+                let closed = readsPanel ? shownPanelClosed() : committed == 0
                 switch command {
                 case AndroidDeviceState.printStates:
                     return FakeAdbServer.shell(stdout: FoldableFixtures.foldPrintStates)

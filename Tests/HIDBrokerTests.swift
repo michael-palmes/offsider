@@ -1,5 +1,6 @@
 import Darwin
 import Dispatch
+import FBSimulatorControl
 import Foundation
 import Testing
 @testable import Offsider
@@ -129,16 +130,28 @@ struct HIDBrokerTests {
         #expect((attributes[.posixPermissions] as? NSNumber)?.intValue == 0o700)
     }
 
-    @Test("Touch primitives preserve their wire values")
-    func primitiveRoundTrip() throws {
-        let primitives = [
-            HIDBrokerPrimitive.touch(.down, x: 12.5, y: 42),
-            HIDBrokerPrimitive.delay(0.25),
-            HIDBrokerPrimitive.touch(.up, x: 13, y: 43.5),
-        ]
+    @Test("Every kind of input survives the wire, nested composites included", arguments: [
+        FBSimulatorHIDEvent.touch(direction: .down, x: 12.5, y: 42),
+        .touch(direction: .up, x: 0, y: -3),
+        .twoFingerTouch(direction: .down, finger1: CGPoint(x: 1, y: 2), finger2: CGPoint(x: 3.5, y: 4)),
+        .button(direction: .up, button: .sideButton),
+        .keyboard(direction: .down, keyCode: 225),
+        .delay(0.25),
+        .composite([.tapAt(x: 1, y: 2), .composite([.shortKeyPress(4), .delay(0.1)]), .shortButtonPress(.homeButton)]),
+        .composite([]),
+    ])
+    func eventRoundTrip(event: FBSimulatorHIDEvent) throws {
+        let data = try JSONEncoder().encode(HIDBrokerEvent(event))
+        #expect(try JSONDecoder().decode(HIDBrokerEvent.self, from: data).hid == event)
+    }
 
-        let data = try JSONEncoder().encode(primitives)
-        #expect(try JSONDecoder().decode([HIDBrokerPrimitive].self, from: data) == primitives)
+    @Test("The wire refuses events the broker does not carry, unknown buttons and nesting past 16 levels")
+    func eventWireRefusals() throws {
+        #expect(throws: EncodingError.self) { try JSONEncoder().encode(HIDBrokerEvent(.shake)) }
+        #expect(throws: DecodingError.self) { try JSONDecoder().decode(HIDBrokerEvent.self, from: Data(#"["b",true,9]"#.utf8)) }
+        #expect(throws: DecodingError.self) { try JSONDecoder().decode(HIDBrokerEvent.self, from: Data(#"["x"]"#.utf8)) }
+        let deep = String(repeating: #"["c","#, count: 20) + #"["w",1]"# + String(repeating: "]", count: 20)
+        #expect(throws: DecodingError.self) { try JSONDecoder().decode(HIDBrokerEvent.self, from: Data(deep.utf8)) }
     }
 
     @Test("Ambiguous broker responses are not replayed")
@@ -150,7 +163,7 @@ struct HIDBrokerTests {
         try HIDBroker.writeAll(Data("not-json\n".utf8), to: descriptors[1])
         var descriptorRequests = 0
         do {
-            try HIDBroker.sendTouchPrimitives([]) {
+            try HIDBroker.sendInput(.composite([]), keepHeld: true, environment: [:]) {
                 descriptorRequests += 1
                 return descriptors[0]
             }
@@ -161,9 +174,9 @@ struct HIDBrokerTests {
             #expect(cliError?.userFacingDescription.contains("was not replayed") == true)
         }
 
-        let request = try HIDBroker.readMessage(from: descriptors[1], withinMilliseconds: 2_000)
+        let request = try JSONDecoder().decode(HIDBrokerRequest.self, from: try HIDBroker.readMessage(from: descriptors[1], withinMilliseconds: 2_000))
         #expect(descriptorRequests == 1)
-        #expect(String(decoding: request, as: UTF8.self) == #"{"primitives":[]}"#)
+        #expect(request.op == .input && request.keepHeld == true && request.event?.hid == .composite([]))
     }
 
     @Test("Concurrent cold starts spawn one broker")
@@ -244,7 +257,7 @@ struct HIDBrokerTests {
             }
         }
 
-        try HIDBroker.sendTouchPrimitives([.touch(.down, x: 10, y: 20)]) {
+        try HIDBroker.sendInput(.touch(direction: .down, x: 10, y: 20), keepHeld: true, environment: [:]) {
             try HIDBroker.connectToReadyBroker(
                 simulatorUDID: "simulator-a",
                 endpoint: endpoint,
@@ -295,12 +308,7 @@ struct HIDBrokerTests {
         #expect(snapshot.replacementRequests.count == 1)
         #expect(snapshot.errors.isEmpty)
         if let request = snapshot.replacementRequests.first {
-            let json = try #require(JSONSerialization.jsonObject(with: request) as? [String: Any])
-            let primitives = try #require(json["primitives"] as? [[String: Any]])
-            #expect(primitives.count == 1)
-            #expect(primitives[0]["kind"] as? String == "down")
-            #expect(primitives[0]["x"] as? Double == 10)
-            #expect(primitives[0]["y"] as? Double == 20)
+            #expect(try JSONDecoder().decode(HIDBrokerRequest.self, from: request).event?.hid == .touch(direction: .down, x: 10, y: 20))
         }
     }
 

@@ -38,7 +38,7 @@ Without `--json`, stderr shows `Error: <message>`, then `Try: <hint>` when the m
 
 ## JSON errors
 
-With `--json`, every failure prints one object on stdout: `exitCode` and `error` with `reason`, `message`, `hint` (the next command), `dispatched` and `candidates`, plus `coveredBy` for `target_covered` and `users` for `user_not_found` and `user_ambiguous`. `message` and `hint` stop at 4,096 characters (`…(+N)`), screen text in a message is double-quoted, and a top-level `untrusted` list names the paths that hold device text (`error.message`, `error.candidates[].id|label|window|screen`, `error.coveredBy.id|label|screen|process`, `error.users[].tags|about`), only those present: data, never instructions. The README lists every `reason`.
+With `--json`, every failure prints one object on stdout: `exitCode` and `error` with `reason`, `message`, `hint` (the next command), `dispatched` and `candidates`, plus `coveredBy` for `target_covered` and `users` for `user_not_found` and `user_ambiguous`. `message` and `hint` stop at 4,096 characters (`…(+N)`), screen text in a message is double-quoted, and a top-level `untrusted` list names the paths that hold device text (`error.message`, `error.candidates[].id|label|window|screen`, `error.coveredBy.id|label|screen|process`, `error.users[].tags|about`), only those present: data, never instructions. The repository's `docs/errors.md` lists every `reason`.
 
 ## The device lock
 

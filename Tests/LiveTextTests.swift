@@ -27,7 +27,7 @@ struct LiveTextTests {
             platform: tree.platform, device: tree.device, command: "describe-ui", writtenAt: readAt, treeReadAt: readAt,
             lastInputAt: inputAgo.map { now.addingTimeInterval(-$0) }, treeRole: role, roots: tree.roots
         )
-        return try TreeCacheRecord(data: written.encoded())
+        return try written.reloaded()
     }
 
     @Test("text that changed between the cached tree and the first read, with no input between, is learnt live")

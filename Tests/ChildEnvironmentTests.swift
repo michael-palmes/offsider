@@ -61,4 +61,14 @@ struct ChildEnvironmentTests {
         let result = try await ProcessCapture.run(executable: "/usr/bin/env", arguments: [], environment: ["ANDROID_HOME": "/sdk"], timeout: 10)
         #expect(result.stdout == "ANDROID_HOME=/sdk\n")
     }
+
+    @Test("an Android broker finds the SDK and the adb server, keeps Offsider's settings, forces mDNS off and gets no secrets")
+    func androidBrokerProfile() {
+        let environment = ChildEnvironment.make(.androidBroker, from: Self.caller)
+        #expect(Set(environment.keys) == Self.base.union([
+            "ANDROID_HOME", "ANDROID_SDK_ROOT", "ANDROID_AVD_HOME", "ANDROID_ADB_SERVER_PORT", "ADB_SERVER_SOCKET", "ADB_LIBUSB", "ADB_VENDOR_KEYS",
+            "ADB_MDNS", "OFFSIDER_IOS_SESSION_IDLE",
+        ]))
+        #expect(environment["ADB_MDNS"] == "0")
+    }
 }

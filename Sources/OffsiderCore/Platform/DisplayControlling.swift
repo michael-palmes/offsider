@@ -121,6 +121,13 @@ public protocol PostureControlling: DeviceBackend {
     func posture(of id: DeviceID) async throws -> Posture?
     /// Dispatch only; poll `posture(of:)` to see it take effect. Throws an actionable error where the platform cannot fold.
     func requestPosture(_ posture: Posture, on id: DeviceID) async throws
+    /// Drops the screen this command has read, so the next `screenInfo` reads the device again.
+    func forgetScreen(of id: DeviceID)
+}
+
+public extension PostureControlling {
+    /// For a backend whose `screenInfo` reads the device every call.
+    func forgetScreen(of id: DeviceID) {}
 }
 
 /// Optional capability: moving a foldable's hinge to an angle.

@@ -15,7 +15,7 @@ struct OffsiderCommand: AsyncParsableCommand {
         commandName: "offsider",
         abstract: "A hand for your agent on iOS and Android, simulated or real: read and drive iOS Simulators, Android Emulators and USB iPhones, iPads and Android phones.",
         version: VERSION,
-        subcommands: [HIDBrokerCommand.self, DeviceSessionCommand.self],
+        subcommands: [HIDBrokerCommand.self, DeviceSessionCommand.self, AndroidSessionCommand.self],
         groupedSubcommands: [
             CommandGroup(name: "Start", subcommands: [ListDevices.self, Doctor.self, Init.self, Guide.self, Boot.self]),
             CommandGroup(name: "Read", subcommands: [
@@ -29,8 +29,8 @@ struct OffsiderCommand: AsyncParsableCommand {
                 OrientationCommand.self, PostureCommand.self, AppearanceCommand.self, ContentSizeCommand.self, PermissionCommand.self,
                 StatusBarCommand.self, BiometricCommand.self, StayAwakeCommand.self, Wake.self, UnlockCodeCommand.self,
             ]),
-            CommandGroup(name: "Physical devices", subcommands: [DeviceAccessCommand.self, RunnerCommand.self, SessionCommand.self]),
-            CommandGroup(name: "Sessions", subcommands: [RunCommand.self, LeaseCommand.self]),
+            CommandGroup(name: "Physical devices", subcommands: [DeviceAccessCommand.self, RunnerCommand.self]),
+            CommandGroup(name: "Sessions", subcommands: [SessionCommand.self, RunCommand.self, LeaseCommand.self]),
         ]
     )
 
@@ -46,6 +46,16 @@ struct OffsiderCommand: AsyncParsableCommand {
         """
 
     static func main() async {
+        await withCLIDefaults(runCommandLine)
+    }
+
+    /// Runs `body` as the CLI runs every command: a device watchdog that goes off ends the process.
+    static func withCLIDefaults<T>(_ body: () async throws -> T) async rethrows -> T {
+        try await DeviceWatchdog.$defaultAction.withValue(.exitProcess, operation: body)
+    }
+
+    @MainActor
+    private static func runCommandLine() async {
         Timings.installTotal()
         let arguments = Array(CommandLine.arguments.dropFirst())
         if arguments.isEmpty {

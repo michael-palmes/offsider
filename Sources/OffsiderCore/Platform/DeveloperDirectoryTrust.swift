@@ -50,11 +50,14 @@ public struct UntrustedDeveloperDirectory: OffsiderFailure, LocalizedError, Equa
     public var errorDescription: String? { failureMessage }
 }
 
-/// Checks that a developer directory is `<Xcode>.app/Contents/Developer` and that the app satisfies `anchor apple`; answers are cached per process by resolved path.
+/// Checks that a developer directory is `<Xcode>.app/Contents/Developer` and that the app satisfies `requirement`; answers are cached per process by resolved path.
 public final class DeveloperDirectoryTrust: @unchecked Sendable {
     public typealias Validator = @Sendable (_ appPath: String) -> Bool
 
-    public static let requirement = "anchor apple"
+    /// The Mac App Store signs Xcode's app wrapper with its own certificate, never as `anchor apple`; the code inside stays Apple's own.
+    public static let appStoreXcode = #"anchor apple generic and certificate leaf[field.1.2.840.113635.100.6.1.9] exists and identifier "com.apple.dt.Xcode""#
+    /// Apple's own signature, as on Xcode from developer.apple.com, or the Mac App Store's on Xcode.
+    public static let requirement = "anchor apple or (\(appStoreXcode))"
     public static let shared = DeveloperDirectoryTrust()
 
     /// The app's main executable and Info.plist only; validating Xcode's resources would take seconds.

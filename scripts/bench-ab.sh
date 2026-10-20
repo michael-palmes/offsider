@@ -18,10 +18,11 @@ ALLOW_OUTPUT_CHANGE=0
 PHONE=0
 
 ALLOWED_AVDS="${OFFSIDER_ANDROID_E2E_AVD:-Offsider_E2E} ${OFFSIDER_ANDROID_FOLD_AVD:-Offsider_E2E_Fold}"
-KNOWN_SCENARIOS="android-describe android-describe-uiautomator android-tap-id android-tap-id-verify android-tap-id-verify-live android-batch-describe-5 \
+KNOWN_SCENARIOS="android-describe android-describe-first android-describe-uiautomator android-tap-id android-tap-id-first android-tap-id-verify \
+android-tap-id-verify-live android-batch-describe-5 \
 android-tap-xy android-tap-xy-input android-tap-xy-helper android-tap-physical android-swipe android-type-ascii android-type-ascii-helper \
 android-screenshot android-screenshot-json android-screenshot-raw android-screenshot-helper android-batch-tap-5 android-wait-settled \
-ios-describe ios-tap-id ios-tap-id-verify ios-tap-id-verify-live"
+ios-describe ios-tap-id ios-tap-id-first ios-tap-id-verify ios-tap-id-verify-live ios-tap-xy ios-tap-xy-first"
 PLAYGROUND_RN="com.mpalmes.offsider.playground.rn"
 
 usage() {
@@ -33,8 +34,10 @@ Runs each scenario as pairs of base and head samples in a seeded order, drops pa
 exit code or stdout hash differ, and reports medians, a bootstrap 95% interval and a verdict
 (faster, slower, same or unresolved; a 5% dead zone and a 10 ms floor). Timings a verified
 command prints are left out of the hash; *-live scenarios toggle a switch, so only their exit
-codes are compared, and each sample reads the screen 2 s after the last one first, untimed,
-so the ticker can be learnt.
+codes are compared. Each Android sample, and each *-live one, reads the screen untimed 2 s
+first, as an agent's previous command would. Head's warm helper is stopped before every base
+sample, so the base finds the UiAutomation slot free; *-first scenarios stop head's warm helper
+or simulator input session before head samples too, timing a session's first command.
 
 Devices: an emulator-<port> whose AVD is one of: ${ALLOWED_AVDS}
          or a simulator whose name starts with Offsider,
@@ -217,7 +220,7 @@ fi
 
 open_screen() {
   local screen="$1"
-  if [[ "$PLATFORM" == "ios" && "$screen" == "live-ticker" ]]; then
+  if [[ "$PLATFORM" == "ios" ]]; then
     xcrun simctl launch --terminate-running-process "$DEVICE" "$PLAYGROUND_RN" -OffsiderScreen "$screen" >/dev/null 2>&1 \
       || echo "bench-ab: warning: could not open $screen in the React Native playground; running on the screen that is showing" >&2
   elif [[ "$PHONE" == "1" ]]; then
@@ -225,9 +228,6 @@ open_screen() {
       || echo "bench-ab: warning: could not open $screen; running on the screen that is showing" >&2
   elif [[ "$PLATFORM" == "android" ]]; then
     "$REPO/scripts/rn-playground.sh" launch-android "$DEVICE" "$screen" >&2 || echo "bench-ab: warning: could not open $screen; running on the screen that is showing" >&2
-  else
-    xcrun simctl launch --terminate-running-process "$DEVICE" com.mpalmes.offsider.playground -OffsiderScreen "$screen" >/dev/null 2>&1 \
-      || echo "bench-ab: warning: could not open $screen; running on the screen that is showing" >&2
   fi
   sleep 2
 }
@@ -245,7 +245,7 @@ scenario_screen() {
 # The element whose centre a coordinate scenario uses, so one scenario fits every screen size.
 scenario_anchor() {
   case "$1" in
-    android-tap-xy*) echo tap-test-area ;;
+    android-tap-xy* | ios-tap-xy*) echo tap-test-area ;;
     android-swipe) echo swipe-test-area ;;
   esac
 }
@@ -341,10 +341,14 @@ warmup = int(os.environ["BENCH_WARMUP"])
 seed = int(os.environ["BENCH_SEED"])
 bins = {"base": os.environ["BENCH_BASE_BIN"], "head": os.environ["BENCH_HEAD_BIN"]}
 
+platform = "android" if scenario.startswith("android-") else "ios"
+first_command = scenario.endswith("-first")
 commands = {
     "android-describe": (["describe-ui", "--device", device], {}),
+    "android-describe-first": (["describe-ui", "--device", device], {}),
     "android-describe-uiautomator": (["describe-ui", "--device", device], {"OFFSIDER_ANDROID_TREE": "uiautomator"}),
     "android-tap-id": (["tap", "--id", "tap-test-area", "--device", device], {}),
+    "android-tap-id-first": (["tap", "--id", "tap-test-area", "--device", device], {}),
     "android-tap-id-verify": (["tap", "--id", "tap-test-area", "--verify", "--device", device], {}),
     "android-tap-id-verify-live": (["tap", "--id", "live-ticker-toggle", "--verify", "--device", device], {}),
     "android-wait-settled": (["wait", "--settled", "--device", device], {}),
@@ -355,6 +359,7 @@ commands = {
     "android-batch-tap-5": (["batch", "--device", device] + ["--step", "tap --id tap-test-area"] * 5, {}),
     "ios-describe": (["describe-ui", "--device", device], {}),
     "ios-tap-id": (["tap", "--id", "tap-test-area", "--device", device], {}),
+    "ios-tap-id-first": (["tap", "--id", "tap-test-area", "--device", device], {}),
     "ios-tap-id-verify": (["tap", "--id", "tap-test-area", "--verify", "--device", device], {}),
     "ios-tap-id-verify-live": (["tap", "--id", "live-ticker-toggle", "--verify", "--device", device], {}),
 }
@@ -364,6 +369,8 @@ if x and y:
     commands["android-tap-xy"] = (tap, {})
     commands["android-tap-xy-input"] = (tap, {"OFFSIDER_ANDROID_INPUT": "input"})
     commands["android-tap-xy-helper"] = (tap, {"OFFSIDER_ANDROID_INPUT": "helper"})
+    commands["ios-tap-xy"] = (tap, {})
+    commands["ios-tap-xy-first"] = (tap, {})
     commands["android-swipe"] = (
         ["swipe", "--start-x", x, "--start-y", str(int(y) + 100), "--end-x", x, "--end-y", str(int(y) - 100), "--duration", "0.3", "--device", device], {}
     )
@@ -385,10 +392,28 @@ def normalised(text):
         return ""
     return verify_timing.sub("", timestamp.sub('"timestamp":0', text))
 
-def sample(side):
-    if live:
+quiet = dict(os.environ, ADB_MDNS="0")
+
+def untimed(binary, arguments, extra=None):
+    subprocess.run([binary] + arguments, env=dict(quiet, **(extra or {})), stdin=subprocess.DEVNULL, capture_output=True)
+
+def prepare(side):
+    """The previous command an agent ran: an untimed read 2 s earlier. Head's warm helper never meets a base sample."""
+    if platform == "android":
+        if side == "base" or first_command:
+            untimed(bins["head"], ["session", "stop", "--device", device])
+        warm_off = {"OFFSIDER_ANDROID_SESSION": "off"} if first_command else None
+        untimed(bins[side], ["describe-ui", "--summary", "--device", device], warm_off)
         time.sleep(2)
-        subprocess.run([bins[side], "describe-ui", "--device", device], env=dict(os.environ, ADB_MDNS="0"), stdin=subprocess.DEVNULL, capture_output=True)
+    else:
+        if first_command:
+            untimed(bins["head"], ["session", "stop", "--device", device])
+        if live:
+            time.sleep(2)
+            untimed(bins[side], ["describe-ui", "--device", device])
+
+def sample(side):
+    prepare(side)
     start = time.perf_counter_ns()
     result = subprocess.run([bins[side]] + arguments, env=environment, stdin=subprocess.DEVNULL, capture_output=True)
     wall = (time.perf_counter_ns() - start) / 1e6
@@ -424,6 +449,9 @@ with open(path, "a") as handle:
 PY
   [[ "$STOP_REASON" == "completed" ]] || break
 done
+
+# Head's warm helper would hold the UiAutomation slot, and its simulator input session the dtuhidd connection, for a minute after the run.
+ADB_MDNS=0 "$HEAD_BIN" session stop --device "$DEVICE" >/dev/null 2>&1 || true
 
 BENCH_LOAD_END="$(sysctl -n vm.loadavg | awk '{print $2}')"
 export BENCH_LOAD_END BENCH_STOP_REASON="$STOP_REASON"

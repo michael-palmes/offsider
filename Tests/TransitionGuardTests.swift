@@ -212,7 +212,9 @@ struct TransitionGuardTests {
                 backend: backend, device: Self.device, axCachePolicy: .perBatch, typeSubmissionMode: .chunked, typeChunkSize: 200,
                 cachedRecord: settled
             )
-            try await Batch.runSteps(["tap --id open", "tap --id apply"], context: context, session: backend.session, continueOnError: false, logger: OffsiderLogger())
+            try await DispatchTracker.$current.withValue(DispatchTracker()) {
+                try await Batch.runSteps(["tap --id open", "tap --id apply"], context: context, session: backend.session, continueOnError: false, logger: OffsiderLogger())
+            }
         }
 
         #expect(backend.treeReads == 3)

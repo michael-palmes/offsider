@@ -82,8 +82,7 @@ With `--json`, a failure prints `exitCode` and an `error` object. `dispatched: n
 ## Before finishing
 
 - Every device command has `--device`; every command and flag is real.
-- Quoting is right: single quotes for literals, `--stdin` or `--file` for complex text.
 - Outcomes that matter were checked with `assert`, `wait`, `--verify` or a region compare.
 - Labels came from `describe-ui` and targets were on screen.
 - Device state changed with a setter (`guide device-state`) was set back.
-- Any run was stopped with `run stop`.
+- Any run was stopped with `run stop`; `session stop --device <DEVICE_ID>` ran before Appium or Maestro.

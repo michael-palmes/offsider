@@ -44,15 +44,28 @@ struct AndroidSelectorTests {
     func tapAfterWindowChanges() async throws {
         try await AndroidE2E.open("modal-navigation-test", waitingFor: "modal-navigation-test-open")
         for _ in 1...5 {
-            try await AndroidE2E.run("tap --id modal-navigation-test-open")
-            try await AndroidE2E.run("tap --id modal-navigation-test-done")
+            try await tapOnceShown("modal-navigation-test-open")
+            try await tapOnceShown("modal-navigation-test-done")
         }
-        try await AndroidE2E.run("tap --id modal-navigation-test-open")
-        try await AndroidE2E.run("tap --id modal-navigation-test-detail-link")
-        try await AndroidE2E.run("tap --id modal-navigation-test-complete")
-        try await AndroidE2E.run("tap --id modal-navigation-test-back")
-        try await AndroidE2E.run("tap --id modal-navigation-test-done")
+        try await tapOnceShown("modal-navigation-test-open")
+        try await tapOnceShown("modal-navigation-test-detail-link")
+        try await tapOnceShown("modal-navigation-test-complete")
+        try await tapOnceShown("modal-navigation-test-back")
+        try await tapOnceShown("modal-navigation-test-done")
         _ = try await AndroidE2E.waitForLabel(of: "modal-navigation-test-state") { $0 == "Modal Navigation State: Completed" }
+    }
+
+    /// Repeats a plain tap only while its target is not on screen yet (exit 2): `--wait-timeout` would also retry finding no window, which this test catches.
+    private func tapOnceShown(_ id: String, timeout: TimeInterval = 20) async throws {
+        let deadline = Date().addingTimeInterval(timeout)
+        var result = try await AndroidE2E.offsider("tap --id \(id)")
+        while result.exitCode == 2, Date() < deadline {
+            try await Task.sleep(for: .milliseconds(100))
+            result = try await AndroidE2E.offsider("tap --id \(id)")
+        }
+        guard result.exitCode == 0 else {
+            throw AndroidE2EError(description: "offsider tap --id \(id) exited \(result.exitCode): \(result.stderr)")
+        }
     }
 
     @Test("--label taps a row in a long list")

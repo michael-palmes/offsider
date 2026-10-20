@@ -142,7 +142,7 @@ public struct SettleGate: Equatable, Sendable {
 
     /// Nil when the input is already older than the gate would hold.
     public init?(sinceInput: TimeInterval, before: UITree?) {
-        let snapshot = before.map(AccessibilitySnapshot.init(tree:)).flatMap { $0.isKnown ? $0 : nil }
+        let snapshot = before.map { AccessibilitySnapshot(tree: $0, native: false) }.flatMap { $0.isKnown ? $0 : nil }
         let limit = snapshot == nil ? Self.floor : Self.hold
         guard sinceInput < limit else { return nil }
         self.sinceInput = max(0, sinceInput)
@@ -151,6 +151,16 @@ public struct SettleGate: Equatable, Sendable {
 
     /// How long after the input the gate opens by itself.
     public var limit: TimeInterval { before == nil ? Self.floor : Self.hold }
+
+    /// True when `tree` differs from the screen before the input, compared without native types, which a cached tree drops.
+    public func showsEffect(in tree: UITree, ignoreValues: Bool) -> Bool {
+        guard let before else { return false }
+        let detector = ChangeDetector(options: .init(ignoreText: ignoreValues))
+        if case .changed = detector.compare(before, AccessibilitySnapshot(tree: tree, native: false)) {
+            return true
+        }
+        return false
+    }
 
     /// The gate for a record's last input; none without one, when it is old, or when its command read the screen after it (a verified input).
     public static func after(_ record: TreeCacheRecord?, now: Date) -> SettleGate? {
@@ -347,7 +357,8 @@ public enum WaitLoop {
             var change: String?
             let detector = ChangeDetector(options: .init(ignoreText: ignoreValues))
             if source != .screen {
-                let snapshot = AccessibilitySnapshot(tree: try await sources.tree())
+                let tree = try await sources.tree()
+                let snapshot = AccessibilitySnapshot(tree: tree)
                 state.treeReads += 1
                 state.readableTree = state.readableTree || snapshot.isKnown
                 if let previous = state.snapshot {
@@ -362,7 +373,7 @@ public enum WaitLoop {
                         }
                     }
                 }
-                if let before = gate?.before, case .changed = detector.compare(before, snapshot) {
+                if let gate, !state.gateOpen, gate.showsEffect(in: tree, ignoreValues: ignoreValues) {
                     state.gateOpen = true
                 }
                 state.snapshot = snapshot

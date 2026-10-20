@@ -7,7 +7,9 @@ struct Batch: AsyncParsableCommand {
         abstract: "Run ordered input and read steps using one device session.",
         discussion: """
         Batch runs a whole case (tap, wait, check, capture, read the tree) in one command. Steps run in order \
-        and are written like the standalone commands without --device. Read steps run after the previous step's input is sent.
+        and are written like the standalone commands without --device. A read step that starts within 100 ms of input, from \
+        an earlier step or the command just before the batch (unless OFFSIDER_TREE_CACHE=off), waits out the rest of those \
+        100 ms first, so it sees what the input drew; wait --settled, --region and --seconds steps start at once.
 
         Input steps:
           tap, swipe, gesture, touch, type, button, key, key-sequence, key-combo
@@ -24,7 +26,7 @@ struct Batch: AsyncParsableCommand {
         with focus where the device reports it) is refused with exit 64 (secure_field_argument): sign in with \
         `offsider login` instead.
 
-        With --json, stdout is NDJSON: one line per finished step, in this key order: step, kind, line, ok, ms; \
+        With --json, stdout is NDJSON: one line per finished step, in this key order: step, kind, line, ok, ms (a read step's includes that 100 ms wait); \
         a type step's line shows its text as <N characters>, never the text; \
         a failure adds exitCode and error; wait and assert add met, reason, match; screenshot adds its --json keys; \
         describe-ui adds tree (json format) or output (ndjson or text). A last line follows: \
@@ -86,7 +88,7 @@ struct Batch: AsyncParsableCommand {
     @Flag(name: .customLong("mask-secure"), inversion: .prefixedNo, help: "Whether screenshot steps paint password fields black, reusing the cached tree when it is fresh (the default; OFFSIDER_MASK_SECURE=0 turns it off). A step's own flag wins.")
     var maskSecure: Bool?
 
-    @Flag(name: .customLong("no-settle"), help: "Tap steps act at once, without waiting out a transition an earlier input may have started.")
+    @Flag(name: .customLong("no-settle"), help: "Steps act at once: tap steps do not wait out a transition an earlier input may have started, and read steps do not give an input 100 ms to draw.")
     var noSettle = false
 
     @Flag(name: .customLong("json"), help: "Print one NDJSON line per step to stdout, then a summary line; human text goes to stderr.")
@@ -247,7 +249,7 @@ struct Batch: AsyncParsableCommand {
             // Also after a failure: a step can send input before it fails.
             defer {
                 if let kind = BatchStepKind(rawValue: stepName), kind.mayChangeScreen {
-                    context.invalidateTree(sentInput: kind != .sleep)
+                    context.invalidateTree(sentInput: DispatchTracker.current.state != .no)
                 }
             }
             switch try await BatchStepParser.parseStep(tokens, deviceID: context.device.rawValue, context: context, logger: logger) {
@@ -255,6 +257,9 @@ struct Batch: AsyncParsableCommand {
                 try await runner.run(BatchPlan(primitives: primitives))
             case .read(let step):
                 sendsInput = false
+                if step.awaitsInputDrawn {
+                    try await context.awaitInputDrawn()
+                }
                 let result = try await step.runInBatch(context: context, logger: logger)
                 detail = result.detail
                 output.report(result)

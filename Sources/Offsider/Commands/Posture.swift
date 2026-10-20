@@ -113,11 +113,12 @@ struct PostureCommand: AsyncParsableCommand {
                 throw CLIError(errorDescription: timeoutMessage(target: target, timeout: timeout, platform: device.platform, device: deviceName), reason: .stateNotReached)
             }
             current = target
-            // The device state commits before the panel swap, so wait for the screen to follow it.
+            // The device state commits before the panel swap, so read the screen afresh until it follows it.
             let swapDeadline = now() + min(timeout, 10)
             while now() < swapDeadline {
                 let screen = try? await backend.screenInfo(for: device)
                 if screen.map({ Self.panelChanged(from: before, to: $0, target: target) }) ?? true { break }
+                folder.forgetScreen(of: device)
                 try await sleep(.milliseconds(250))
             }
         }

@@ -270,6 +270,31 @@ struct WaitLoopTests {
         #expect(outcome.elapsed == elapsed)
     }
 
+    @Test("a screen cached before the input holds the gate against live reads of it, which carry native types, until a page is pushed", arguments: [DevicePlatform.android, .ios])
+    func cachedScreenHoldsGateAgainstLiveReads(platform: DevicePlatform) async throws {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let record = TreeCacheRecord(
+            platform: platform, device: "fake-device", command: "tap", writtenAt: now, treeReadAt: now.addingTimeInterval(-0.2),
+            lastInputAt: now.addingTimeInterval(-0.1), treeRole: .preAction, roots: Self.liveTicker("$1.00", platform: platform).roots
+        )
+        let gate = try #require(SettleGate.after(try record.reloaded(), now: now))
+        let script = Script()
+        script.trees = (2...5).map { .success(Self.liveTicker("$\($0).00", platform: platform)) }
+            + [.success(Self.liveTicker("$6.00", platform: platform, pushed: true))]
+        let outcome = try await WaitLoop.run(.settled(by: .tree, quiet: 0.5, ignoreValues: true, gate: gate), timeout: 5, interval: 0.25, sources: script.sources)
+        #expect(outcome.met)
+        #expect(outcome.elapsed == 1.5, "the push lands on the fifth read, 1 s in, and a quiet window follows it")
+    }
+
+    /// The live-ticker screen as a live read gives it, with the native types a cached tree leaves out.
+    private static func liveTicker(_ price: String, platform: DevicePlatform, pushed: Bool = false) -> UITree {
+        let detail = FakeUI.node(.header, id: "live-ticker-detail", label: "Detail", frame: FakeUI.frame(0, 60, 402, 44))
+        return FakeUI.live(FakeUI.tree(platform: platform, [
+            FakeUI.node(.text, id: "live-ticker-price", label: price, frame: FakeUI.frame(300, 100, 80, 30)),
+            FakeUI.node(.button, id: "live-ticker-open-detail", label: "Open Detail", frame: FakeUI.frame(20, 600, 350, 44)),
+        ] + (pushed ? [detail] : [])))
+    }
+
     @Test("the gate follows the last input's record: none after a verified input or an old one, the tree before an unverified one")
     func gateFromRecord() {
         let now = Date(timeIntervalSince1970: 1_800_000_000)

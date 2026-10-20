@@ -92,16 +92,20 @@ struct RNDevMenuTests {
         #expect(DevMenu.tools(in: menu) == (inspector: false, perfMonitor: false))
     }
 
-    @Test("fast-refresh holds its switch rather than tapping it, since the Expo switch ignores a quick tap")
+    @Test("fast-refresh holds its switch rather than tapping it, since the Expo switch ignores a quick tap, and counts the hold as sent")
     func fastRefreshHoldsSwitch() async throws {
         let menu = try Self.captured("devmenu-expo-ios")
         let device = DeviceID(rawValue: "IOS-UDID", platform: .ios)
         let backend = FakeDeviceBackend(platform: .ios, trees: [menu, Self.app])
         let command = try RNDevMenu.parse(["fast-refresh", "--device", device.rawValue])
+        let tracker = DispatchTracker()
 
-        _ = try await command.perform(on: DeviceRouter.Route(backend: backend, device: device), clock: ScriptedClock().poll)
+        _ = try await DispatchTracker.$current.withValue(tracker) {
+            try await command.perform(on: DeviceRouter.Route(backend: backend, device: device), clock: ScriptedClock().poll)
+        }
 
         #expect(backend.session.calls.isEmpty)
+        #expect(tracker.state == .yes)
         let steps = try #require(backend.detachedTouches.first)
         #expect(steps.count == 3)
         #expect(steps.contains(.hold(DevMenuDriver.switchHold)))

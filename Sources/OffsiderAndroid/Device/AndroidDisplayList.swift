@@ -62,6 +62,9 @@ struct AndroidDisplayList: Equatable, Sendable {
         return AndroidDisplayList(displays: displays, activeUniqueId: activeUniqueId)
     }
 
+    /// Whether each display type is external; Android 9 names the built-in and external types `BUILT_IN` and `HDMI`.
+    private static let externalByType = ["INTERNAL": false, "BUILT_IN": false, "EXTERNAL": true, "HDMI": true]
+
     /// `DisplayDeviceInfo{"Built-in Screen": uniqueId="local:46...", 1080 x 2424, ... density 420, ... type INTERNAL, ... state ON, ...}`.
     private static func physical(in line: String) -> Physical? {
         guard let nameStart = line.range(of: "{\""),
@@ -74,15 +77,14 @@ struct AndroidDisplayList: Equatable, Sendable {
         let fields = line[line.index(after: idEnd)...].split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }
         guard let size = fields.first(where: { $0.contains(" x ") }).flatMap(Self.size),
               let density = fields.first(where: { $0.hasPrefix("density ") }).flatMap({ Int($0.dropFirst("density ".count)) }), PixelMath.isSide(density),
-              let type = fields.first(where: { $0.hasPrefix("type ") }).map({ String($0.dropFirst("type ".count)) }),
-              type == "INTERNAL" || type == "EXTERNAL",
+              let external = fields.first(where: { $0.hasPrefix("type ") }).flatMap({ Self.externalByType[String($0.dropFirst("type ".count))] }),
               uniqueId.hasPrefix("local:") else {
             return nil
         }
         let state = fields.first { $0.hasPrefix("state ") }.map { String($0.dropFirst("state ".count)) }
         let install = fields.first { $0.hasPrefix("installOrientation ") }.flatMap { Int($0.dropFirst("installOrientation ".count)) } ?? 0
         let descriptor = DisplayDescriptor(
-            role: type == "EXTERNAL" ? .external : .main,
+            role: external ? .external : .main,
             platformId: String(uniqueId.dropFirst("local:".count)),
             name: name,
             pixelWidth: size.0,
@@ -90,7 +92,7 @@ struct AndroidDisplayList: Equatable, Sendable {
             scale: Double(density) / 160,
             nativeOrientation: (install % 4) * 90
         )
-        return Physical(descriptor: descriptor, uniqueId: uniqueId, external: type == "EXTERNAL", on: state != "OFF")
+        return Physical(descriptor: descriptor, uniqueId: uniqueId, external: external, on: state != "OFF")
     }
 
     private static func size(_ field: String) -> (Int, Int)? {

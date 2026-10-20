@@ -112,16 +112,26 @@ public struct UiAutomationFact: Equatable, Sendable {
     public let accessibilityEnabled: Bool?
     public let enabledServices: [String]
     public let offsiderHelperPids: [Int32]
+    /// The device pid of the helper Offsider keeps warm between commands, when one is running.
+    public var warmHelperPid: Int32?
 
-    public init(accessibilityEnabled: Bool?, enabledServices: [String], offsiderHelperPids: [Int32]) {
+    public init(accessibilityEnabled: Bool?, enabledServices: [String], offsiderHelperPids: [Int32], warmHelperPid: Int32? = nil) {
         self.accessibilityEnabled = accessibilityEnabled
         self.enabledServices = enabledServices
         self.offsiderHelperPids = offsiderHelperPids
+        self.warmHelperPid = warmHelperPid
+    }
+
+    /// Every running Offsider helper is the warm one.
+    public var onlyWarmHelper: Bool {
+        guard let warmHelperPid, !offsiderHelperPids.isEmpty else { return false }
+        return offsiderHelperPids.allSatisfy { $0 == warmHelperPid }
     }
 }
 
 public enum HelperProbeFact: Equatable, Sendable {
-    case ready(launchMilliseconds: Int, pushed: Bool, helloMilliseconds: Int, pingMilliseconds: Int, protocolVersion: Int, sdkInt: Int)
+    /// `pingMilliseconds` is nil when a warm helper was serving a command, so it was not pinged.
+    case ready(launchMilliseconds: Int, pushed: Bool, helloMilliseconds: Int, pingMilliseconds: Int?, protocolVersion: Int, sdkInt: Int)
     case busy(String)
     case unavailable(String)
     case forcedOff
