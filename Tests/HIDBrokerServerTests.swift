@@ -568,9 +568,11 @@ struct HIDBrokerFrameReaderTests {
         try #require(socketpair(AF_UNIX, SOCK_STREAM, 0, &pair) == 0)
         defer { pair.forEach { Darwin.close($0) } }
         let reader = HIDBrokerFrameReader(descriptor: pair[0], frameTimeoutMilliseconds: 200)
+        // A write after the pair closes would end the whole test process with SIGPIPE, so the writer is waited for and its socket marked.
+        HIDBroker.configureNoSignalPipe(pair[1])
         let firstByteAt = Clock()
         let dripping = Task.detached {
-            for index in 0..<40 {
+            for index in 0..<40 where !Task.isCancelled {
                 var byte: UInt8 = 0x7B
                 if index == 0 { firstByteAt.mark() }
                 _ = Darwin.write(pair[1], &byte, 1)
@@ -580,6 +582,7 @@ struct HIDBrokerFrameReaderTests {
         let read = await reader.next(silentWithin: 5_000)
         let closedAt = ContinuousClock.now
         dripping.cancel()
+        _ = await dripping.value
         #expect(read == .closed)
         // Measured from the first byte, so a late start of the writer under a busy test run does not count.
         let held = closedAt - (firstByteAt.marked ?? closedAt)
@@ -599,13 +602,15 @@ struct HIDBrokerFrameReaderTests {
         try #require(socketpair(AF_UNIX, SOCK_STREAM, 0, &pair) == 0)
         defer { pair.forEach { Darwin.close($0) } }
         let reader = HIDBrokerFrameReader(descriptor: pair[0], frameTimeoutMilliseconds: 2_000)
-        Task {
+        HIDBroker.configureNoSignalPipe(pair[1])
+        let writing = Task {
             for piece in ["{\"op\":", "\"status\"", "}\n"] {
                 _ = piece.utf8CString.withUnsafeBufferPointer { Darwin.write(pair[1], $0.baseAddress, piece.utf8.count) }
                 try? await Task.sleep(for: .milliseconds(20))
             }
         }
         let read = await reader.next(silentWithin: 5_000)
+        _ = await writing.value
         #expect(read == .frame(Data("{\"op\":\"status\"}".utf8)))
     }
 }
