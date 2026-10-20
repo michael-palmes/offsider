@@ -102,7 +102,7 @@ struct HostProbeTests {
 
     @Test("the live probe reads this process's own arguments buffer and the Mac's load")
     func live() {
-        let buffer = HostProbe.procargs(getpid())
+        let buffer = BrokerProcess.procargs(getpid())
         #expect((buffer?.count ?? 0) > 4)
         #expect(HostProbe.live.facts().loadAverage.count == 3)
     }
