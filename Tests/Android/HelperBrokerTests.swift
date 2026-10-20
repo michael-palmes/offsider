@@ -118,7 +118,7 @@ final class BrokerFixture {
 
 /// Runs a test body in an exit test's child, recording what it throws, which the parent would otherwise see only as SIGTRAP.
 @MainActor
-private func recordingErrors(sourceLocation: SourceLocation = #_sourceLocation, _ body: @MainActor () async throws -> Void) async {
+func recordingErrors(sourceLocation: SourceLocation = #_sourceLocation, _ body: @MainActor () async throws -> Void) async {
     do {
         try await body()
     } catch is ExpectationFailedError {
