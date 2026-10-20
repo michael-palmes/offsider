@@ -58,9 +58,12 @@ enum ScreenStateHint {
     static func notice(_ line: String) -> Notice {
         let prefix = "Note: "
         let sentence = line.hasPrefix(prefix) ? String(line.dropFirst(prefix.count)) : line
-        let (cause, rest) = TerminalText.firstSentence(sentence)
-        let quoted = rest.split(separator: "`", omittingEmptySubsequences: false)
-        let command = quoted.count >= 3 ? String(quoted[1]) : nil
+        let (cause, _) = TerminalText.firstSentence(sentence)
+        // The command is the sentence's own last span, so a device name holding backticks never stands in for it.
+        let run = "Run `"
+        let command = sentence.range(of: run, options: .backwards).flatMap { start in
+            sentence[start.upperBound...].firstIndex(of: "`").map { String(sentence[start.upperBound..<$0]) }
+        }
         return Notice(kind: .note, text: command == nil ? sentence : cause, agentText: sentence, mark: .lock, command: command, label: "Try")
     }
 }

@@ -394,6 +394,12 @@ struct DevicePersonOutputTests {
         #expect(shown.err == "🔐  ZY22FAKE01 is showing its password lock screen, so input and screen\n    reads do not reach the app.\n    Try  offsider wake --device ZY22FAKE01\n")
     }
 
+    @Test("a device name holding backticks never becomes the Try command")
+    func screenNoteIgnoresNameSpans() {
+        let sentence = "Phone `rm x`. Now is showing its lock screen, so input and screen reads do not reach the app. Run `offsider wake --device ZY22FAKE01`, then retry."
+        #expect(ScreenStateHint.notice("Note: " + sentence).command == "offsider wake --device ZY22FAKE01")
+    }
+
     @Test("unlock-code saves, reads and removes as a person's receipts and lines, with the next command; an agent's text is unchanged")
     func unlockCodePages() throws {
         let store = MemoryUnlockCodeStore()
