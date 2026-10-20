@@ -11,47 +11,7 @@ struct OutputDisciplineLintTests {
     /// Raw writes each file may still make.
     static let budgets: [String: Int] = [
         "AndroidSession.swift": 1,
-        "Appearance.swift": 1,
-        "Batch.swift": 1,
-        "Biometric.swift": 2,
-        "Boot.swift": 11,
-        "Button.swift": 2,
-        "ContentSize.swift": 2,
-        "Credential.swift": 6,
-        "DescribeUI.swift": 3,
-        "DeviceAccess.swift": 4,
         "DeviceSession.swift": 2,
-        "Displays.swift": 1,
-        "Doctor.swift": 3,
-        "Guide.swift": 2,
-        "Init.swift": 3,
-        "Lease.swift": 2,
-        "Login.swift": 3,
-        "Logs.swift": 5,
-        "Orientation.swift": 3,
-        "Permission.swift": 2,
-        "Posture.swift": 1,
-        "RN.swift": 1,
-        "RNDevMenu.swift": 5,
-        "RNLogBox.swift": 8,
-        "RNOpen.swift": 4,
-        "RecordVideo.swift": 7,
-        "Run.swift": 17,
-        "Runner.swift": 7,
-        "Screenshot.swift": 5,
-        "Session.swift": 5,
-        "Shake.swift": 1,
-        "Slider.swift": 1,
-        "StatusBar.swift": 2,
-        "StayAwake.swift": 2,
-        "StreamVideo.swift": 13,
-        "Tap.swift": 5,
-        "Turnstile.swift": 4,
-        "Type.swift": 2,
-        "UnlockCode.swift": 3,
-        "VideoMasking.swift": 2,
-        "Wait.swift": 6,
-        "Wake.swift": 1,
     ]
 
     static func code(_ url: URL) throws -> [String] {
@@ -82,7 +42,7 @@ struct OutputDisciplineLintTests {
         }
     }
 
-    @Test("no budget is larger than the file needs", .disabled("until every command is converted"))
+    @Test("no budget is larger than the file needs")
     func noStaleBudgets() throws {
         let counts = try Self.counts()
         for (file, budget) in Self.budgets {
