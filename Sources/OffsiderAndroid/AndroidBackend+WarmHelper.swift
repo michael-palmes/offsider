@@ -79,6 +79,7 @@ extension AndroidBackend {
     }
 
     /// Stops every warm helper, or `serial`'s alone, another build's too, each once its UiAutomation slot is free; returns the serials stopped.
+    /// A broker of another build refuses the request, so it is found by its arguments and signalled instead.
     public static func stopWarmHelpers(host: AndroidHost, serial: String? = nil) async -> [String] {
         var stopped: [String] = []
         for socket in host.warmHelperSockets(serial: serial) {
@@ -86,8 +87,17 @@ extension AndroidBackend {
             if name == nil {
                 name = await HelperBrokerClient.servedSerial(at: socket)
             }
-            guard await HelperBrokerClient.stop(at: socket) else { continue }
-            stopped.append(name ?? "unknown")
+            if await HelperBrokerClient.stop(at: socket) {
+                stopped.append(name ?? "unknown")
+                continue
+            }
+            let served = name ?? HelperBrokerPaths.servedSerial(inLog: (socket as NSString).deletingPathExtension + ".log")
+            guard UnixSocket.answers(socket), let served, let requirement = try? PeerCodeIdentity.ownRequirement(),
+                  !BrokerProcess.stopOtherBuilds(serving: HelperBrokerClient.serveArguments(served), requirement: requirement).stopped.isEmpty else {
+                continue
+            }
+            await HelperBrokerClient.untilGone(socket)
+            stopped.append(served)
         }
         return stopped
     }

@@ -84,19 +84,7 @@ public enum HostSessionParser {
 
     /// `isCommand` names Offsider's top-level commands, so a stray argument is never taken for one.
     public static func parse(_ buffer: [UInt8], isCommand: (String) -> Bool) -> (command: String?, device: String?) {
-        guard buffer.count > 4 else { return (nil, nil) }
-        let argc = Int(buffer[0]) | Int(buffer[1]) << 8 | Int(buffer[2]) << 16 | Int(buffer[3]) << 24
-        var strings: [String] = []
-        var index = 4
-        while index < buffer.count, buffer[index] != 0 { index += 1 }
-        while index < buffer.count, buffer[index] == 0 { index += 1 }
-        while index < buffer.count, strings.count < argc + 256 {
-            let start = index
-            while index < buffer.count, buffer[index] != 0 { index += 1 }
-            strings.append(String(decoding: buffer[start..<index], as: UTF8.self))
-            index += 1
-        }
-        guard argc >= 1, strings.count >= argc else { return (nil, nil) }
+        guard let (argc, strings) = split(buffer) else { return (nil, nil) }
         let arguments = Array(strings[1..<argc])
         let environment = strings[argc...]
 
@@ -123,6 +111,30 @@ public enum HostSessionParser {
             device = environment.first { $0.hasPrefix("OFFSIDER_DEVICE=") }.map { String($0.dropFirst("OFFSIDER_DEVICE=".count)) }
         }
         return (command, device.flatMap(deviceID))
+    }
+
+    /// The process's arguments, `argv[0]` first, without its environment.
+    public static func argv(_ buffer: [UInt8]) -> [String]? {
+        guard let (argc, strings) = split(buffer) else { return nil }
+        return Array(strings[0..<argc])
+    }
+
+    /// The argument count and the strings after the executable path: `argv`, then the environment.
+    private static func split(_ buffer: [UInt8]) -> (argc: Int, strings: [String])? {
+        guard buffer.count > 4 else { return nil }
+        let argc = Int(buffer[0]) | Int(buffer[1]) << 8 | Int(buffer[2]) << 16 | Int(buffer[3]) << 24
+        var strings: [String] = []
+        var index = 4
+        while index < buffer.count, buffer[index] != 0 { index += 1 }
+        while index < buffer.count, buffer[index] == 0 { index += 1 }
+        while index < buffer.count, strings.count < argc + 256 {
+            let start = index
+            while index < buffer.count, buffer[index] != 0 { index += 1 }
+            strings.append(String(decoding: buffer[start..<index], as: UTF8.self))
+            index += 1
+        }
+        guard argc >= 1, strings.count >= argc else { return nil }
+        return (argc, strings)
     }
 
     private static func isSubcommandWord(_ text: String) -> Bool {

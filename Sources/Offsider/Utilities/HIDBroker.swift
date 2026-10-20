@@ -88,12 +88,12 @@ enum HIDBroker {
     /// A ready broker's connection for a command's input session, if one runs.
     static func attach(simulatorUDID: String) -> Attachment {
         guard let endpoint = try? endpointPath(simulatorUDID: simulatorUDID) else { return .unavailable }
-        return attach(endpoint: endpoint, connector: connect(to:))
+        return attach(endpoint: endpoint, connector: connect(to:), simulatorUDID: simulatorUDID)
     }
 
-    static func attach(endpoint: String, connector: (String) throws -> Int32) -> Attachment {
+    static func attach(endpoint: String, connector: (String) throws -> Int32, simulatorUDID: String? = nil) -> Attachment {
         do {
-            return .ready(try connectAndAwaitHandshake(endpoint: endpoint, connector: connector, timeoutMilliseconds: attachTimeoutMilliseconds))
+            return .ready(try connectAndAwaitHandshake(endpoint: endpoint, connector: connector, timeoutMilliseconds: attachTimeoutMilliseconds, simulatorUDID: simulatorUDID))
         } catch {
             logDiagnostic(error)
             // One whose simulator restarted stops by itself, so the next is started once this command is done.
@@ -306,7 +306,8 @@ enum HIDBroker {
             return try connectAndAwaitHandshake(
                 endpoint: endpoint,
                 connector: connector,
-                timeoutMilliseconds: handshakeTimeout()
+                timeoutMilliseconds: handshakeTimeout(),
+                simulatorUDID: simulatorUDID
             )
         } catch {
             guard isBrokerUnavailable(error) else { throw error }
@@ -327,7 +328,8 @@ enum HIDBroker {
             return try connectAndAwaitHandshake(
                 endpoint: endpoint,
                 connector: connector,
-                timeoutMilliseconds: handshakeTimeout()
+                timeoutMilliseconds: handshakeTimeout(),
+                simulatorUDID: simulatorUDID
             )
         } catch {
             guard isBrokerUnavailable(error) else { throw error }
@@ -350,7 +352,8 @@ enum HIDBroker {
                 return try connectAndAwaitHandshake(
                     endpoint: endpoint,
                     connector: connector,
-                    timeoutMilliseconds: handshakeTimeout()
+                    timeoutMilliseconds: handshakeTimeout(),
+                    simulatorUDID: simulatorUDID
                 )
             } catch {
                 guard isBrokerUnavailable(error) else { throw error }

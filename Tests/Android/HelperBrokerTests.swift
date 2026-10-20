@@ -450,6 +450,31 @@ struct HelperBrokerTests {
         try? FileManager.default.removeItem(at: fixture.root)
     }
 
+    final class Asked: @unchecked Sendable {
+        private let lock = NSLock()
+        private var arguments: [[String]] = []
+        func record(_ value: [String]) { lock.withLock { arguments.append(value) } }
+        var all: [[String]] { lock.withLock { arguments } }
+    }
+
+    @Test("a broker that closes before a byte, as another build's does, is looked up by its arguments before the command starts its own")
+    func refusingBrokerIsLookedUp() async throws {
+        let fixture = BrokerFixture()
+        // No hello reply: the scripted broker closes the connection unread, as a broker of another build does.
+        let broker = try ScriptedBroker(path: fixture.socket)
+        var client = try fixture.client()
+        let asked = Asked()
+        client.stopOtherBuilds = { arguments in
+            asked.record(arguments)
+            return []
+        }
+        let connection = try await client.existing(helloID: 1)
+        #expect(connection == nil)
+        #expect(asked.all == [["android-session", "serve", "--device", FakeHelperDevice.serial]])
+        broker.cancel()
+        try? FileManager.default.removeItem(at: fixture.root)
+    }
+
     @Test("a stop while the helper is still starting returns once the start has ended and the slot is free, never before")
     func stopWhileStartingWaitsForTheStart() async throws {
         let fixture = BrokerFixture(startDelay: .milliseconds(3500))

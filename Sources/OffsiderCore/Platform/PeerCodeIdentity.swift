@@ -22,6 +22,14 @@ public enum PeerCodeIdentity {
         public let identified: Bool
         /// Why the peer was refused; nil when accepted.
         public let detail: String?
+
+        public init(pid: pid_t, cdhash: String?, accepted: Bool, identified: Bool, detail: String?) {
+            self.pid = pid
+            self.cdhash = cdhash
+            self.accepted = accepted
+            self.identified = identified
+            self.detail = detail
+        }
     }
 
     /// The designated requirement of the running process: for a Developer ID build its team and identifier, for an ad-hoc build its own cdhash.

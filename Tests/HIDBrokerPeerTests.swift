@@ -34,48 +34,52 @@ struct HIDBrokerPeerTests {
         #expect(lines.first?.contains("not this Offsider build") == true)
     }
 
-    @Test("a broker of another build that closes before its handshake is stopped so a fresh one can start")
+    @Test("a broker of another build that closes before its handshake is found by its arguments and stopped so a fresh one can start")
     func otherBuildReplaced() throws {
-        let folder = "/private/tmp/ohp-\(UUID().uuidString.prefix(8))"
-        try FileManager.default.createDirectory(atPath: folder, withIntermediateDirectories: false)
-        defer { try? FileManager.default.removeItem(atPath: folder) }
-        let path = folder + "/b.sock"
-        // nc stands in for a broker from another build: same user, code that is not this binary.
-        let listener = Process()
-        listener.executableURL = URL(fileURLWithPath: "/usr/bin/nc")
-        listener.arguments = ["-lU", path]
-        listener.standardInput = FileHandle.nullDevice
-        listener.standardOutput = FileHandle.nullDevice
-        listener.standardError = FileHandle.nullDevice
-        try listener.run()
-        defer { if listener.isRunning { listener.terminate() } }
-        var descriptor: Int32 = -1
-        for _ in 0..<100 {
-            descriptor = (try? HIDBroker.connect(to: path)) ?? -1
-            if descriptor >= 0 { break }
-            usleep(50_000)
-        }
-        try #require(descriptor >= 0)
-        defer { Darwin.close(descriptor) }
-
-        var stopped: [pid_t] = []
+        var asked: [[String]] = []
         #expect(throws: HIDBrokerNotReadyError.self) {
             try HIDBroker.replaceRefusingBroker(
-                on: descriptor,
+                simulatorUDID: "00000000-0000-0000-0000-000000000001",
                 reconnect: { throw POSIXError(.ECONNREFUSED) },
                 requirement: { try PeerCodeIdentity.ownRequirement() },
-                stop: { stopped.append($0) }
+                stopOtherBuilds: { arguments, _ in
+                    asked.append(arguments)
+                    return ([4242], [])
+                }
             )
         }
-        #expect(stopped == [listener.processIdentifier])
+        #expect(asked == [["hid-broker", "--udid", "00000000-0000-0000-0000-000000000001"]])
     }
 
-    @Test("a peer of this very build is never stopped")
+    @Test("a broker of this very build that closes a second connection too is a dead end named in one line, and one that answers is not")
     func sameBuildKept() throws {
-        let pair = try Self.pair()
-        defer { pair.forEach { Darwin.close($0) } }
-        var stopped: [pid_t] = []
-        try HIDBroker.replaceRefusingBroker(on: pair[0], reconnect: { throw POSIXError(.ECONNREFUSED) }, stop: { stopped.append($0) })
-        #expect(stopped.isEmpty)
+        let closed = try Self.pair()
+        Darwin.close(closed[1])
+        defer { Darwin.close(closed[0]) }
+        let deadEnd = #expect(throws: CLIError.self) {
+            try HIDBroker.replaceRefusingBroker(
+                simulatorUDID: "00000000-0000-0000-0000-000000000001",
+                reconnect: { closed[0] },
+                requirement: { try PeerCodeIdentity.ownRequirement() },
+                stopOtherBuilds: { _, _ in ([], [getpid()]) }
+            )
+        }
+        #expect(deadEnd?.reason == .hidBrokerFailed)
+
+        let answering = try Self.pair()
+        try HIDBroker.writeAll(Data("{\"ready\":true}\n".utf8), to: answering[1])
+        try HIDBroker.replaceRefusingBroker(
+            simulatorUDID: "00000000-0000-0000-0000-000000000001",
+            reconnect: { answering[0] },
+            requirement: { try PeerCodeIdentity.ownRequirement() },
+            stopOtherBuilds: { _, _ in ([], [getpid()]) }
+        )
+        Darwin.close(answering[1])
+    }
+
+    @Test("with no broker found, or no udid, the retry loop is left to decide")
+    func nothingFound() throws {
+        try HIDBroker.replaceRefusingBroker(simulatorUDID: "00000000-0000-0000-0000-000000000001", reconnect: { throw POSIXError(.ECONNREFUSED) }, stopOtherBuilds: { _, _ in ([], []) })
+        try HIDBroker.replaceRefusingBroker(simulatorUDID: nil, reconnect: { throw POSIXError(.ECONNREFUSED) }, stopOtherBuilds: { _, _ in ([9], []) })
     }
 }

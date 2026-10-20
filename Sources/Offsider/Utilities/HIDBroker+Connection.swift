@@ -91,7 +91,8 @@ extension HIDBroker {
     static func connectAndAwaitHandshake(
         endpoint: String,
         connector: (String) throws -> Int32,
-        timeoutMilliseconds: Int = serverIOTimeoutMilliseconds
+        timeoutMilliseconds: Int = serverIOTimeoutMilliseconds,
+        simulatorUDID: String? = nil
     ) throws -> Int32 {
         let descriptor = try connector(endpoint)
         do {
@@ -107,7 +108,7 @@ extension HIDBroker {
                 throw notReady
             }
             if error is HIDBrokerClosedError {
-                try replaceRefusingBroker(on: descriptor, reconnect: { try connector(endpoint) })
+                try replaceRefusingBroker(simulatorUDID: simulatorUDID, reconnect: { try connector(endpoint) })
             }
             throw HIDBrokerNotReadyError(
                 diagnosticDescription: "The broker readiness handshake failed: \(error.localizedDescription)",
@@ -117,28 +118,28 @@ extension HIDBroker {
         }
     }
 
-    /// A broker that closed before its handshake may have refused this command's code. One from another build is stopped so a fresh one
-    /// starts; one from this build that refuses a second connection too is a dead end named in one line. Anything else is left to the retry loop.
+    /// A broker that closed before its handshake may have refused this command's code. A closed peer can no longer be asked who it was, so the
+    /// broker is found by its arguments: one from another build is stopped so a fresh one starts; one from this build that refuses a second
+    /// connection too is a dead end named in one line. Anything else is left to the retry loop.
     static func replaceRefusingBroker(
-        on descriptor: Int32,
+        simulatorUDID: String?,
         reconnect: () throws -> Int32,
         requirement: () throws -> PeerCodeIdentity.Requirement = { try PeerCodeIdentity.ownRequirement() },
-        stop: (pid_t) -> Void = { _ = kill($0, SIGTERM) }
+        stopOtherBuilds: ([String], PeerCodeIdentity.Requirement) -> (stopped: [pid_t], ownBuild: [pid_t]) = {
+            BrokerProcess.stopOtherBuilds(serving: $0, requirement: $1)
+        }
     ) throws {
-        guard isSameUserPeer(descriptor), let requirement = try? requirement() else { return }
-        let verdict = PeerCodeIdentity.check(peer: descriptor, requirement: requirement)
-        guard verdict.identified, verdict.pid > 0, verdict.pid != getpid() else { return }
-        guard verdict.accepted else {
-            stop(verdict.pid)
+        guard let simulatorUDID, let requirement = try? requirement() else { return }
+        let outcome = stopOtherBuilds(["hid-broker", "--udid", simulatorUDID], requirement)
+        if !outcome.stopped.isEmpty {
             throw HIDBrokerNotReadyError(diagnosticDescription: "A broker from another Offsider build refused this command; it was stopped so a fresh one starts.")
         }
-        guard let again = try? reconnect() else { return }
+        guard !outcome.ownBuild.isEmpty, let again = try? reconnect() else { return }
         defer { Darwin.close(again) }
         do {
             _ = try readMessage(from: again, withinMilliseconds: serverIOTimeoutMilliseconds)
             return
         } catch is HIDBrokerClosedError {
-            guard PeerCodeIdentity.peerPID(of: again) == verdict.pid else { return }
         } catch {
             return
         }
