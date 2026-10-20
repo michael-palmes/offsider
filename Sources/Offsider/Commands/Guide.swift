@@ -25,20 +25,20 @@ struct Guide: AsyncParsableCommand {
     }
 
     func run() async throws {
+        let console = Console.current
         if let project {
             let found = try Self.projectGuide(from: project)
-            print("Project guide: \(found.path)", to: &standardError)
-            Swift.print(found.text, terminator: "")
+            Console.current.line("Project guide: \(found.path)", person: .note("From \(TerminalText.homePath(found.path))", mark: .guide))
+            console.data(found.text)
             return
         }
         guard let topic else {
-            Swift.print(Self.topicList(), terminator: "")
-            if let found = try? ProjectGuide.locate(from: ".") {
-                Swift.print("Project guide: \(found.path) (offsider guide --project .)")
-            }
+            let found = try? ProjectGuide.locate(from: ".")
+            let agent = Self.topicList() + (found.map { "Project guide: \($0.path) (offsider guide --project .)\n" } ?? "")
+            console.show(StartPersonView.guideTopics(GuideTopic.allCases.map { ($0.rawValue, $0.readItWhen) }, agentText: agent, projectGuide: found != nil))
             return
         }
-        Swift.print(try Self.content(of: topic), terminator: "")
+        console.data(try Self.content(of: topic))
     }
 
     static func projectGuide(from path: String, home: String = NSHomeDirectory()) throws -> ProjectGuide.Found {

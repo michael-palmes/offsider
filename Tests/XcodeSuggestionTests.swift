@@ -12,8 +12,20 @@ struct XcodeSuggestionTests {
             XcodeBundle(path: "/Applications/Xcode-patched.app", version: "28.0", appleSigned: false),
         ])
         #expect(suggestion.select == "sudo xcode-select -s /Applications/Xcode-beta.app/Contents/Developer")
-        #expect(suggestion.environment == "export DEVELOPER_DIR=/Applications/Xcode-beta.app/Contents/Developer")
+        #expect(suggestion.environment(for: .person) == "export DEVELOPER_DIR=/Applications/Xcode-beta.app/Contents/Developer")
         #expect(suggestion.advice.contains("`sudo xcode-select -s /Applications/Xcode-beta.app/Contents/Developer`"))
+    }
+
+    @Test("an agent, whose shell forgets an export, is told to put DEVELOPER_DIR before each command; a person may export it")
+    func perAudience() {
+        let suggestion = XcodeSuggestion(developerDirectory: "/Applications/Xcode.app/Contents/Developer")
+        #expect(suggestion.environment == "DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer offsider …")
+        #expect(suggestion.adding(to: "No Xcode.") == "No Xcode. Without sudo, run each command as `DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer offsider …` instead.")
+        #expect(suggestion.advice == "Select it with `sudo xcode-select -s /Applications/Xcode.app/Contents/Developer`, or without sudo run each command as `DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer offsider …`.")
+        for text in [suggestion.environment ?? "", suggestion.adding(to: "No Xcode."), suggestion.advice] {
+            #expect(!text.contains("export"))
+        }
+        #expect(suggestion.advice(for: .person) == "Select it with `sudo xcode-select -s /Applications/Xcode.app/Contents/Developer`, or without sudo: `export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer`.")
     }
 
     @Test("versions compare by number, Xcode.app wins a tie, and an unsigned bundle is never named")
@@ -34,7 +46,7 @@ struct XcodeSuggestionTests {
         #expect(suggestion.select == "Install Xcode 26 or later from the Mac App Store or developer.apple.com.")
         #expect(suggestion.advice == suggestion.select)
         #expect(suggestion.adding(to: "No Xcode.") == "No Xcode.")
-        #expect(XcodeSuggestion(developerDirectory: "/Applications/Xcode.app/Contents/Developer").adding(to: "No Xcode.")
+        #expect(XcodeSuggestion(developerDirectory: "/Applications/Xcode.app/Contents/Developer").adding(to: "No Xcode.", audience: .person)
             == "No Xcode. Without sudo, run `export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer` instead.")
     }
 

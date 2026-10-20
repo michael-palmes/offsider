@@ -69,7 +69,7 @@ struct AndroidRoutingTests {
         let error = await #expect(throws: AndroidError.self) {
             _ = try await DeviceRouter.route("Pixel_9", logger: OffsiderLogger(), host: Self.host(server, home: try AndroidTestHost.temporaryHome()))
         }
-        #expect(error?.message == "No device named Pixel_9. Run `offsider list-devices` to find device IDs.")
+        #expect(error?.message == "No device named Pixel_9. Run `offsider devices` to find device IDs.")
         #expect(server.connectionAttempts == 0)
     }
 

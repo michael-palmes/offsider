@@ -48,10 +48,13 @@ struct RNPrepare: AsyncParsableCommand {
         try await preparer.prepare()
         let device = try await preparer.requireBootedDevice(route.device).id
         do {
-            try await preparer.prepareExpoDevClient(bundleID, on: device)
+            try await Console.current.progress("Preparing \(bundleID)") { try await preparer.prepareExpoDevClient(bundleID, on: device) }
         } catch let error as ExpoDevClientError {
             throw CLIError(errorDescription: error.message, reason: .expoDevClientFailed)
         }
-        print("Prepared \(bundleID): the Expo dev menu intro is marked as seen and the menu will not open at launch.")
+        Console.current.show(InputPersonView.receipt(
+            "Prepared \(bundleID)", details: ["The dev menu intro is marked as seen and the menu stays shut at launch"],
+            agent: "Prepared \(bundleID): the Expo dev menu intro is marked as seen and the menu will not open at launch.\n"
+        ))
     }
 }

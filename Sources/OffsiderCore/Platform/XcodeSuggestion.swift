@@ -50,16 +50,27 @@ public struct XcodeSuggestion: Equatable, Sendable {
     public var firstLaunch: String {
         developerDirectory.map { "sudo xcode-select -s \($0) && sudo xcodebuild -runFirstLaunch" } ?? install
     }
-    /// The same choice for this shell only, with no sudo.
-    public var environment: String? { developerDirectory.map { "export DEVELOPER_DIR=\($0)" } }
-    /// `message` with the no-sudo choice after it, for a message whose `Try:` line carries `select`.
-    public func adding(to message: String) -> String {
-        environment.map { "\(message) Without sudo, run `\($0)` instead." } ?? message
+    /// The same choice with no sudo: `export` for a person's shell; for an agent, whose shell forgets it, a prefix on each command.
+    public var environment: String? { environment(for: .current) }
+
+    public func environment(for audience: ErrorAudience) -> String? {
+        developerDirectory.map { audience == .person ? "export DEVELOPER_DIR=\($0)" : "DEVELOPER_DIR=\($0) offsider …" }
     }
+
+    /// `message` with the no-sudo choice after it, for a message whose `Try:` line carries `select`.
+    public func adding(to message: String) -> String { adding(to: message, audience: .current) }
+
+    public func adding(to message: String, audience: ErrorAudience) -> String {
+        guard let environment = environment(for: audience) else { return message }
+        return audience == .person ? "\(message) Without sudo, run `\(environment)` instead." : "\(message) Without sudo, run each command as `\(environment)` instead."
+    }
+
     /// One sentence naming both, for a doctor hint.
-    public var advice: String {
-        guard let environment else { return install }
-        return "Select it with `\(select)`, or without sudo: `\(environment)`."
+    public var advice: String { advice(for: .current) }
+
+    public func advice(for audience: ErrorAudience) -> String {
+        guard let environment = environment(for: audience) else { return install }
+        return audience == .person ? "Select it with `\(select)`, or without sudo: `\(environment)`." : "Select it with `\(select)`, or without sudo run each command as `\(environment)`."
     }
 
     /// Apple-signed bundles, newest version first; `Xcode.app` wins a tie, then the name.

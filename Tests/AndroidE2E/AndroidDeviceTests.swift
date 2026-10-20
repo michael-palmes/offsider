@@ -2,12 +2,12 @@ import Foundation
 import ImageIO
 import Testing
 
-@Suite("Android list-devices", .serialized, .enabled(if: isAndroidE2EEnabled))
+@Suite("Android devices", .serialized, .enabled(if: isAndroidE2EEnabled))
 struct AndroidListDevicesTests {
     @Test("the guarded emulator is listed as booted with its AVD name and Android version")
     func guardedRow() async throws {
         let serial = try await AndroidE2E.serial()
-        let result = try await TestHelpers.runOffsiderCommandSeparated("list-devices --platform android")
+        let result = try await TestHelpers.runOffsiderCommandSeparated("devices --platform android")
         #expect(result.exitCode == 0)
         let row = result.stdout.split(separator: "\n").first { $0.contains(" \(serial) ") }
         #expect(row?.contains("Booted") == true)
@@ -17,7 +17,7 @@ struct AndroidListDevicesTests {
 
     @Test("--json rows carry the neutral keys")
     func jsonKeys() async throws {
-        let result = try await TestHelpers.runOffsiderCommandSeparated("list-devices --platform android --json")
+        let result = try await TestHelpers.runOffsiderCommandSeparated("devices --platform android --json")
         let object = try #require(try JSONSerialization.jsonObject(with: Data(result.stdout.utf8)) as? [String: Any])
         let rows = try #require(object["devices"] as? [[String: Any]])
         #expect(!rows.isEmpty)
@@ -30,7 +30,7 @@ struct AndroidListDevicesTests {
     @Test("--json names the guarded emulator's AVD and when its process started")
     func jsonAVDAndBootedBy() async throws {
         let serial = try await AndroidE2E.serial()
-        let result = try await TestHelpers.runOffsiderCommandSeparated("list-devices --platform android --json")
+        let result = try await TestHelpers.runOffsiderCommandSeparated("devices --platform android --json")
         let object = try #require(try JSONSerialization.jsonObject(with: Data(result.stdout.utf8)) as? [String: Any])
         let rows = try #require(object["devices"] as? [[String: Any]])
         let row = try #require(rows.first { $0["id"] as? String == serial })

@@ -13,7 +13,7 @@ struct LeaseCommand: AsyncParsableCommand {
         exit 8 (device_leased) while another label holds a live lease, unless --force; the same label renews it. \
         `set` records the session it runs in (the agent or terminal above its shell), so `doctor --device` passes \
         for any later command of that session and warns for any other. When OFFSIDER_LEASE is set it decides \
-        instead, passing only for a matching label. `list-devices` shows leases. `check` is a read-only snapshot: \
+        instead, passing only for a matching label. `devices` shows leases. `check` is a read-only snapshot: \
         exit 0 when the device is free or this session's (by session, --label or OFFSIDER_LEASE), exit 8 \
         (device_leased) while another session's lease is live, even when that session has ended; only `set` claims \
         a device atomically. For a UDID or an AVD name it reads only the lease file and the process table.
@@ -83,18 +83,24 @@ struct LeaseCommand: AsyncParsableCommand {
 
     @MainActor
     func run() async throws {
+        let console = Console.current
         let store = DeviceLeaseStore()
-        let target = try await device.asyncMap { try await Self.resolve($0) }
+        let target = try await device.asyncMap { id in try await console.progress("Finding \(id)") { try await Self.resolve(id) } }
         if try parsedAction() == .check, let target {
             try Self.runCheck(target, label: label, environment: ProcessInfo.processInfo.environment, json: json, store: store, now: Date(), selfPID: getpid(), processes: .live) {
-                print($0)
+                console.data($0 + "\n")
             }
             return
         }
-        print(try Self.perform(
+        let result = try Self.result(
             try parsedAction(), target: target, label: label.flatMap(DeviceLease.validLabel), minutes: ttl ?? DeviceLease.defaultMinutes,
             force: force, json: json, store: store, now: Date(), pid: getppid(), owner: ProcessAncestry.owner(from: getppid(), in: .live)
-        ))
+        )
+        if let page = result.page {
+            console.show(page)
+        } else {
+            console.data(result.text + "\n")
+        }
     }
 
     /// The device's stable key; an emulator serial is asked for its AVD name.
@@ -102,13 +108,13 @@ struct LeaseCommand: AsyncParsableCommand {
     static func resolve(_ id: String) async throws -> (platform: DevicePlatform, key: String) {
         if let key = StableDeviceKey.of(id: id) { return key }
         guard case .androidSerial = DeviceIDClassifier.classify(id) else {
-            throw CLIError(errorDescription: "\(id) is not a device ID. Run `offsider list-devices` to find device IDs.", reason: .invalidDeviceID, hint: "offsider list-devices")
+            throw CLIError(errorDescription: "\(id) is not a device ID. Run `offsider devices` to find device IDs.", reason: .invalidDeviceID, hint: "offsider devices")
         }
         let route = try await DeviceRouter.route(id, logger: OffsiderLogger())
         try await route.backend.prepare()
         let booted = try await route.backend.requireBootedDevice(route.device)
         guard let key = StableDeviceKey.of(booted) else {
-            throw CLIError(errorDescription: "Could not read the AVD name of \(id), which a lease is kept under. Lease it by its AVD name from `offsider list-devices`.", reason: .commandFailed, hint: "offsider list-devices")
+            throw CLIError(errorDescription: "Could not read the AVD name of \(id), which a lease is kept under. Lease it by its AVD name from `offsider devices`.", reason: .commandFailed, hint: "offsider devices")
         }
         return (.android, key)
     }
@@ -117,6 +123,14 @@ struct LeaseCommand: AsyncParsableCommand {
         _ action: Action, target: (platform: DevicePlatform, key: String)?, label: String?, minutes: Int, force: Bool, json: Bool,
         store: DeviceLeaseStore, now: Date, pid: Int32, owner: ProcessIdentity? = nil
     ) throws -> String {
+        try result(action, target: target, label: label, minutes: minutes, force: force, json: json, store: store, now: now, pid: pid, owner: owner).text
+    }
+
+    /// What an action prints for an agent, and the page a person sees instead; no page under --json or for check.
+    private static func result(
+        _ action: Action, target: (platform: DevicePlatform, key: String)?, label: String?, minutes: Int, force: Bool, json: Bool,
+        store: DeviceLeaseStore, now: Date, pid: Int32, owner: ProcessIdentity? = nil
+    ) throws -> (text: String, page: Page?) {
         switch action {
         case .set:
             guard let target, let label else { throw ValidationError(DeviceDefault.missingMessage) }
@@ -124,32 +138,35 @@ struct LeaseCommand: AsyncParsableCommand {
                 try claim(existing, key: target.key, label: label, minutes: minutes, force: force, now: now, pid: pid, owner: owner)
             }
             let renewing = existing?.label == label
-            if json { return report("set", target: target, lease: lease) }
+            if json { return (report("set", target: target, lease: lease), nil) }
             let verb = renewing ? "Renewed the lease on" : "Leased"
             let quoted = DeviceLeaseRules.shellQuoted(label)
             let leased = "\(verb) \(target.key) to '\(label)' until \(DeviceLeaseRules.clock(lease.expires))"
-            guard let owner = lease.owner else {
-                return "\(leased). Run `export OFFSIDER_LEASE=\(quoted)` so `offsider doctor` knows this session holds it."
-            }
-            return "\(leased) for this session (\(owner.name), pid \(owner.pid)); `offsider doctor` recognises it from any command this session runs. From another session, set OFFSIDER_LEASE=\(quoted)."
+            let text = lease.owner.map { owner in
+                "\(leased) for this session (\(owner.name), pid \(owner.pid)); `offsider doctor` recognises it from any command this session runs. From another session, set OFFSIDER_LEASE=\(quoted)."
+            } ?? "\(leased). Run later commands as `OFFSIDER_LEASE=\(quoted) offsider …` so `offsider doctor` knows this session holds it."
+            return (text, StartPersonView.leased(target.key, lease: lease, renewed: renewing, agentText: text))
         case .release:
             guard let target else { throw ValidationError(DeviceDefault.missingMessage) }
             let removed = store.remove(platform: target.platform, key: target.key, now: now)
-            if json { return report("release", target: target, lease: removed) }
-            return removed.map { "Released the lease '\($0.label)' on \(target.key)." } ?? "\(target.key) was not leased."
+            if json { return (report("release", target: target, lease: removed), nil) }
+            let text = removed.map { "Released the lease '\($0.label)' on \(target.key)." } ?? "\(target.key) was not leased."
+            return (text, StartPersonView.released(target.key, lease: removed, agentText: text))
         case .check:
             guard let target else { throw ValidationError(DeviceDefault.missingMessage) }
             let checked = check(target, label: label, json: json, store: store, now: now, selfPID: pid, processes: .live)
             if let failure = checked.failure { throw failure }
-            return checked.output
+            return (checked.output, nil)
         case .show:
             let leases = target.map { target in
                 store.lease(platform: target.platform, key: target.key, now: now).map { [LeasedDevice(platform: target.platform, key: target.key, lease: $0)] } ?? []
             } ?? store.all(now: now)
-            if json { return showReport(leases) }
-            guard !leases.isEmpty else { return target.map { "\($0.key) is not leased." } ?? "No devices are leased." }
-            return leases.map { "\($0.platform.rawValue)  \($0.key)  '\($0.lease.label)'  since \(DeviceLeaseRules.clock($0.lease.created)), until \(DeviceLeaseRules.clock($0.lease.expires))" }
-                .joined(separator: "\n")
+            if json { return (showReport(leases), nil) }
+            let text = leases.isEmpty
+                ? target.map { "\($0.key) is not leased." } ?? "No devices are leased."
+                : leases.map { "\($0.platform.rawValue)  \($0.key)  '\($0.lease.label)'  since \(DeviceLeaseRules.clock($0.lease.created)), until \(DeviceLeaseRules.clock($0.lease.expires))" }
+                    .joined(separator: "\n")
+            return (text, StartPersonView.leases(leases, agentText: text))
         }
     }
 
@@ -178,7 +195,7 @@ struct LeaseCommand: AsyncParsableCommand {
         if let lease, let ownership, ownership != .thisSession {
             let span = "since \(DeviceLeaseRules.clock(lease.created)), until \(DeviceLeaseRules.clock(lease.expires))"
             let holder: String
-            var next = "Choose another device from `offsider list-devices`, or pass --label (or set OFFSIDER_LEASE) if the lease is yours."
+            var next = "Choose another device from `offsider devices`, or pass --label (or set OFFSIDER_LEASE) if the lease is yours."
             switch ownership {
             case .ended(let owner):
                 ownerEnded = true
@@ -189,7 +206,7 @@ struct LeaseCommand: AsyncParsableCommand {
             case .otherLabel:
                 // The label decides before the session does, so the lease may still be this session's.
                 holder = "under another label than '\((label ?? "").trimmingCharacters(in: .whitespaces))' (--label or OFFSIDER_LEASE)"
-                next = "If the lease is yours, pass its label with --label or set OFFSIDER_LEASE to it; otherwise choose another device from `offsider list-devices`."
+                next = "If the lease is yours, pass its label with --label or set OFFSIDER_LEASE to it; otherwise choose another device from `offsider devices`."
             default:
                 holder = "by another session"
             }

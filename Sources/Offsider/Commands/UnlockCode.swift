@@ -1,5 +1,4 @@
 import ArgumentParser
-import Darwin
 import Foundation
 import OffsiderAndroid
 import OffsiderCore
@@ -56,29 +55,30 @@ struct UnlockCodeCommand: AsyncParsableCommand {
     func run() async throws {
         let parsed = try parsedAction()
         let device = try Self.deviceKey(deviceOption.id)
-        let readsLabel = try await Self.gatePhone(device, rawID: deviceOption.id, action: parsed)
-        let name = readsLabel ? DeviceName.display(device, label: await AndroidPhoneLabel.label(serial: device, host: .cli())) : device
-        let styled: TerminalStyle? = json || isatty(STDOUT_FILENO) == 0 ? nil : .detect(isTerminal: true)
+        let console = Console.current
+        let name = try await console.progress("Looking for the device") {
+            let readsLabel = try await Self.gatePhone(device, rawID: deviceOption.id, action: parsed)
+            return readsLabel ? DeviceName.display(device, label: await AndroidPhoneLabel.label(serial: device, host: .cli())) : device
+        }
         let store = KeychainUnlockCodeStore()
+        let report: Report
         if parsed == .set, stdin {
             let code = try await Self.confirmedStandardInput(name: name, device: device)
-            print(try Self.perform(.set, device: device, name: name, json: json, styled: styled, store: store, ledger: UnlockAttemptLedger()) { code })
-            return
-        }
-        if parsed == .set {
+            report = try Self.result(.set, device: device, name: name, json: json, store: store, ledger: UnlockAttemptLedger()) { code }
+        } else if parsed == .set {
             try PersonPresence.requireTerminal(instead: "Ask the user to run `offsider unlock-code set --device \(device)` in their own terminal.")
-        }
-        guard parsed == .set else {
-            print(try Self.perform(parsed, device: device, name: name, json: json, styled: styled, store: store, ledger: UnlockAttemptLedger()) {
-                throw CLIError(errorDescription: "Only set reads a code.", reason: .usage)
-            })
-            return
-        }
-        print(try TerminalPrompt.run(cancelled: PromptScreen.cancelledNothingSaved) { prompt in
-            try Self.perform(.set, device: device, name: name, json: json, styled: styled, store: store, ledger: UnlockAttemptLedger()) {
-                try Self.ask(prompt, name: name)
+            report = try TerminalPrompt.run(cancelled: PromptScreen.cancelledNothingSaved) { prompt in
+                try Self.result(.set, device: device, name: name, json: json, store: store, ledger: UnlockAttemptLedger()) {
+                    try Self.ask(prompt, name: name)
+                }
             }
-        })
+        } else {
+            report = try Self.result(parsed, device: device, name: name, json: json, store: store, ledger: UnlockAttemptLedger()) {
+                throw CLIError(errorDescription: "Only set reads a code.", reason: .usage)
+            }
+        }
+        let notices = report.person.notices.map(\.forPersonOnly)
+        DevicePersonView.emit(report.text, json: json, person: report.person.blocks, notices: notices, console: console)
     }
 
     /// `op read ... | unlock-code set --stdin`: the code comes from the pipe, and a person confirms on `/dev/tty` and with Touch ID or the password.
@@ -120,7 +120,7 @@ struct UnlockCodeCommand: AsyncParsableCommand {
         case .androidName(let name):
             return name
         case .androidSerial:
-            throw CLIError(errorDescription: "Save an emulator's code under its AVD name from `offsider list-devices`: \(id) changes from launch to launch.", reason: .usage, hint: "offsider list-devices")
+            throw CLIError(errorDescription: "Save an emulator's code under its AVD name from `offsider devices`: \(id) changes from launch to launch.", reason: .usage, hint: "offsider devices")
         case .androidNetworkSerial(let serial):
             throw AndroidError.networkDevice(serial)
         case .iosSimulator:
@@ -128,35 +128,48 @@ struct UnlockCodeCommand: AsyncParsableCommand {
         case .iosDevice:
             throw CLIError(errorDescription: "unlock-code is Android only: Offsider never stores or types an iPhone or iPad passcode. Unlock it by hand.", reason: .notSupported)
         case .empty, .unrecognised:
-            throw CLIError(errorDescription: "\(id.isEmpty ? "Device ID cannot be empty" : "\(id) is not a phone serial or AVD name"). Run `offsider list-devices` to find device IDs.", reason: .invalidDeviceID, hint: "offsider list-devices")
+            throw CLIError(errorDescription: "\(id.isEmpty ? "Device ID cannot be empty" : "\(id) is not a phone serial or AVD name"). Run `offsider devices` to find device IDs.", reason: .invalidDeviceID, hint: "offsider devices")
         }
     }
 
+    /// The agent's text or JSON, and a person's page.
+    struct Report {
+        let text: String
+        let person: Page
+    }
+
     /// `device` is the Keychain key and goes in JSON; `name` is for people.
-    static func perform(_ action: Action, device: String, name: String? = nil, json: Bool, styled: TerminalStyle? = nil, store: any UnlockCodeStoring, ledger: UnlockAttemptLedger, readCode: () throws -> UnlockCode) throws -> String {
+    static func perform(_ action: Action, device: String, name: String? = nil, json: Bool, store: any UnlockCodeStoring, ledger: UnlockAttemptLedger, readCode: () throws -> UnlockCode) throws -> String {
+        try result(action, device: device, name: name, json: json, store: store, ledger: ledger, readCode: readCode).text
+    }
+
+    static func result(_ action: Action, device: String, name: String? = nil, json: Bool, store: any UnlockCodeStoring, ledger: UnlockAttemptLedger, readCode: () throws -> UnlockCode) throws -> Report {
         let name = name ?? device
         switch action {
         case .set:
             try store.save(try readCode(), for: device)
             ledger.clear(device)
-            if json { return report("set", device: device, saved: true, lastAttemptFailed: false) }
-            if let styled { return UnlockCodeScreen.saved(name: name, device: device, style: styled) }
-            return "Saved the unlock code for \(name) in the login Keychain. `offsider wake --unlock --device \(device)` types it when the lock screen asks."
+            let text = json
+                ? report("set", device: device, saved: true, lastAttemptFailed: false)
+                : "Saved the unlock code for \(name) in the login Keychain. `offsider wake --unlock --device \(device)` types it when the lock screen asks."
+            return Report(text: text, person: UnlockCodeScreen.saved(name: name, device: device))
         case .status:
             let saved = try store.hasCode(for: device)
             let failed = ledger.hasFailed(device)
-            if json { return report("status", device: device, saved: saved, lastAttemptFailed: failed) }
-            if let styled { return UnlockCodeScreen.status(name: name, device: device, saved: saved, lastAttemptFailed: failed, style: styled) }
-            guard saved else { return "\(name): no unlock code saved" }
-            return failed
+            let person = UnlockCodeScreen.status(name: name, device: device, saved: saved, lastAttemptFailed: failed)
+            if json { return Report(text: report("status", device: device, saved: saved, lastAttemptFailed: failed), person: person) }
+            guard saved else { return Report(text: "\(name): no unlock code saved", person: person) }
+            let text = failed
                 ? "\(name): unlock code saved, but it did not unlock the device last time, so Offsider will not type it until the device is unlocked by hand or the code is saved again"
                 : "\(name): unlock code saved"
+            return Report(text: text, person: person)
         case .remove:
             let removed = try store.remove(for: device)
             ledger.clear(device)
-            if json { return report("remove", device: device, saved: false, lastAttemptFailed: false) }
-            if let styled { return UnlockCodeScreen.removed(name: name, removed: removed, style: styled) }
-            return removed ? "Removed the unlock code for \(name)" : "No unlock code was saved for \(name)"
+            let text = json
+                ? report("remove", device: device, saved: false, lastAttemptFailed: false)
+                : removed ? "Removed the unlock code for \(name)" : "No unlock code was saved for \(name)"
+            return Report(text: text, person: UnlockCodeScreen.removed(name: name, removed: removed))
         }
     }
 

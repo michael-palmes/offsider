@@ -36,7 +36,7 @@ struct PermissionCommand: AsyncParsableCommand {
     @Option(name: .customLong("app"), help: ArgumentHelp("The app's bundle ID or Android package (required except for services).", valueName: "id"))
     var app: String?
 
-    @Option(name: .customLong("device"), help: ArgumentHelp("The device ID from `offsider list-devices` (default OFFSIDER_DEVICE; required except for services).", valueName: "id"))
+    @Option(name: .customLong("device"), help: ArgumentHelp("The device ID from `offsider devices` (default OFFSIDER_DEVICE; required except for services).", valueName: "id"))
     var explicitDevice: String?
 
     /// `services` needs no device, so only it ignores `OFFSIDER_DEVICE`.
@@ -107,34 +107,72 @@ struct PermissionCommand: AsyncParsableCommand {
 
     func run() async throws {
         let plan = try plan()
+        let console = Console.current
         if case .services(let platform) = plan {
-            print(json ? DeviceStateReport.services(Self.services(platform)) : Self.servicesTable(platform))
+            let text = json ? DeviceStateReport.services(Self.services(platform)) : Self.servicesTable(platform)
+            let notices = platform == .ios ? [] : [DevicePersonView.literalNote.forPersonOnly]
+            DevicePersonView.emit(text, json: json, person: DevicePersonView.services(Self.services(platform), platform: platform), notices: notices, console: console)
             return
         }
         let logger = OffsiderLogger()
         let isChange = if case .change = plan { true } else { false }
         let route = try await DeviceRouter.routeForInput(device ?? "", logger: logger, locking: isChange)
         try Self.requireAppScope(plan, allowance: route.allowance)
-        try await route.backend.prepare()
-        let id = try await route.backend.requireBootedDevice(route.device).id
-        guard let backend = route.backend as? any PermissionControlling else {
-            throw CLIError(errorDescription: "permission is not available for \(id.rawValue).", reason: .notSupported)
+        let (result, id) = try await console.progress(Self.progressLabel(plan)) {
+            try await route.backend.prepare()
+            let id = try await route.backend.requireBootedDevice(route.device).id
+            guard let backend = route.backend as? any PermissionControlling else {
+                throw CLIError(errorDescription: "permission is not available for \(id.rawValue).", reason: .notSupported)
+            }
+            return (try await Self.result(plan, json: json, on: id, backend: backend), id)
         }
-        print(try await Self.report(plan, json: json, on: id, backend: backend))
+        var notices: [Notice] = []
+        if let change = result.change, case .change(_, _, let app, _) = plan {
+            notices = Self.notices(change, app: app, on: id)
+        }
+        DevicePersonView.emit(result.text, json: json, person: result.person, notices: notices, console: console)
+    }
+
+    /// The change's notes, which an agent reads on stdout, and how a person resets a grant or revoke, which outlives the command.
+    static func notices(_ change: PermissionChange, app: String, on device: DeviceID) -> [Notice] {
+        var notices = change.notes.map { Notice.note($0, personOnly: true) }
+        let changed = DevicePersonView.changed(change)
+        guard change.action != .reset, !changed.isEmpty else { return notices }
+        let undo = "offsider permission reset \(changed.joined(separator: " ")) --app \(app) --device \(device.rawValue)"
+        notices.append(DevicePersonView.lasting("Stays after this command", undo: undo, label: "Reset"))
+        return notices
+    }
+
+    static func progressLabel(_ plan: Plan) -> String {
+        guard case .change(let action, _, _, _) = plan else { return "Reading its permissions" }
+        switch action {
+        case .grant: return "Granting"
+        case .revoke: return "Revoking"
+        case .reset: return "Resetting"
+        }
     }
 
     @MainActor
     static func report(_ plan: Plan, json: Bool, on device: DeviceID, backend: any PermissionControlling) async throws -> String {
+        try await result(plan, json: json, on: device, backend: backend).text
+    }
+
+    /// The agent's text or JSON, what a person sees, and the change, whose notes a person reads as notices.
+    @MainActor
+    static func result(_ plan: Plan, json: Bool, on device: DeviceID, backend: any PermissionControlling) async throws -> (text: String, person: [Block], change: PermissionChange?) {
         switch plan {
         case .services(let platform):
-            return json ? DeviceStateReport.services(services(platform)) : servicesTable(platform)
+            let text = json ? DeviceStateReport.services(services(platform)) : servicesTable(platform)
+            return (text, DevicePersonView.services(services(platform), platform: platform), nil)
         case .show(let app, _):
             let state = try await backend.permissions(of: app, on: device)
-            return json ? DeviceStateReport.permissionShow(state, app: app, on: device) : showLines(state, app: app)
+            let text = json ? DeviceStateReport.permissionShow(state, app: app, on: device) : showLines(state, app: app)
+            return (text, DevicePersonView.permissions(state, app: app), nil)
         case .change(let action, let targets, let app, _):
             try refuseAllOnPhone(action, targets, app: app, on: device)
             let change = try await backend.applyPermission(action, targets, app: app, on: device)
-            return json ? DeviceStateReport.permissionChange(change, app: app, on: device) : changeLines(change, app: app, platform: device.platform)
+            let text = json ? DeviceStateReport.permissionChange(change, app: app, on: device) : changeLines(change, app: app, platform: device.platform)
+            return (text, DevicePersonView.permissionChange(change, app: app), change)
         }
     }
 

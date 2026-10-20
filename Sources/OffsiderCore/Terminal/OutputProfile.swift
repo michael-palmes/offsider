@@ -13,7 +13,7 @@ public enum OutputProfile: String, Sendable, CaseIterable {
     /// Tests inject a profile; nil uses the one this process detected.
     @TaskLocal public static var override: OutputProfile?
 
-    /// The profile for this process: the override, else `OFFSIDER_OUTPUT`, else whether standard output is a terminal.
+    /// The profile for this process: the override, else `OFFSIDER_OUTPUT`, else an agent's marker, else whether standard output is a terminal.
     public static var current: OutputProfile { override ?? detected }
 
     /// One `isatty` per process.
@@ -21,12 +21,31 @@ public enum OutputProfile: String, Sendable, CaseIterable {
         environment: ProcessInfo.processInfo.environment, isTerminal: isatty(STDOUT_FILENO) != 0
     )
 
-    /// An unknown `OFFSIDER_OUTPUT` value is ignored, so a typo never loosens the agent profile.
+    /// `OFFSIDER_OUTPUT` when it names a profile; an unknown value is ignored, so a typo never loosens the agent profile.
+    public static func named(in environment: [String: String]) -> OutputProfile? {
+        environment[variable].flatMap { OutputProfile(rawValue: $0.trimmingCharacters(in: .whitespaces).lowercased()) }
+    }
+
+    /// Markers only ever move the answer towards `.agent`, so an agent on a pseudo-terminal still gets the agent's gates.
     public static func resolve(environment: [String: String], isTerminal: Bool) -> OutputProfile {
-        if let named = environment[variable].flatMap({ OutputProfile(rawValue: $0.trimmingCharacters(in: .whitespaces).lowercased()) }) {
-            return named
-        }
+        if let named = named(in: environment) { return named }
+        if AgentMarkers.present(in: environment) { return .agent }
         return isTerminal ? .person : .agent
+    }
+}
+
+/// The variables an agent harness sets in the commands it runs. Never `CLAUDECODE`: IDE extensions set it in terminals people use.
+public enum AgentMarkers {
+    public static let variables = ["CLAUDE_CODE_CHILD_SESSION", "AI_AGENT"]
+
+    /// True when any marker is set to something other than empty or `0`.
+    public static func present(in environment: [String: String]) -> Bool {
+        variables.contains { name in
+            environment[name].map { value in
+                let trimmed = value.trimmingCharacters(in: .whitespaces)
+                return !trimmed.isEmpty && trimmed != "0"
+            } ?? false
+        }
     }
 }
 

@@ -172,6 +172,8 @@ struct Batch: AsyncParsableCommand {
 
         let session = try await watchdog.guardingSetup(device: device.rawValue) { try await backend.openInputSession(for: device) }
         let output = BatchOutput.console(json: json)
+        let clock = ContinuousClock()
+        let started = clock.now
 
         do {
             try await Self.runSteps(
@@ -188,7 +190,7 @@ struct Batch: AsyncParsableCommand {
         }
         await session.close()
 
-        output.status("✓ Batch completed successfully (\(stepLines.count) steps)")
+        output.completed(steps: stepLines.count, elapsed: Self.seconds(clock.now - started))
     }
 
     /// Runs every step (or up to the first failure), reporting each through `output`; throws exit 1 or 5 as the help describes.
@@ -207,11 +209,16 @@ struct Batch: AsyncParsableCommand {
         let batchStart = clock.now
         var records: [BatchStepRecord] = []
         var states: [DispatchState] = []
+        output.begin(steps: stepLines.count)
 
         for (index, line) in stepLines.enumerated() {
-            let (record, state) = await runStep(index + 1, line: line, context: context, runner: runner, output: output, logger: logger)
+            let label = "Step \(index + 1) of \(stepLines.count): \(ReadPersonView.plannedLine(line))"
+            let (record, state, result) = await Console.current.progress(label) {
+                await runStep(index + 1, line: line, context: context, runner: runner, output: output, logger: logger)
+            }
             records.append(record)
             states.append(state)
+            output.finished(record, result: result, of: stepLines.count)
             if output.json {
                 output.write(record.jsonLine() + "\n")
             }
@@ -219,14 +226,15 @@ struct Batch: AsyncParsableCommand {
                 break
             }
         }
+        output.notRun(stepLines[records.count...], of: stepLines.count)
 
         let failed = records.filter { !$0.ok }
         let dispatched = BatchStepRecord.dispatched(states)
+        let elapsed = Self.seconds(clock.now - batchStart)
         if output.json {
-            let elapsed = Self.seconds(clock.now - batchStart)
             output.write(BatchStepRecord.summaryLine(ok: failed.isEmpty, elapsed: elapsed, steps: stepLines.count, failed: failed.count, dispatched: dispatched) + "\n")
         }
-        try finish(failed, continueOnError: continueOnError, dispatched: dispatched, output: output)
+        try finish(failed, continueOnError: continueOnError, dispatched: dispatched, output: output, steps: stepLines.count, ran: records.count, elapsed: elapsed)
         return records
     }
 
@@ -238,13 +246,14 @@ struct Batch: AsyncParsableCommand {
         runner: BatchPlanRunner,
         output: BatchOutput,
         logger: OffsiderLogger
-    ) async -> (BatchStepRecord, DispatchState) {
+    ) async -> (BatchStepRecord, DispatchState, BatchReadResult?) {
         let clock = ContinuousClock()
         let start = clock.now
         var stepName = "<unparsed>"
         var detail = BatchStepRecord.Detail.none
         var failure: BatchStepRecord.Failure?
         var parsedTokens: [String]?
+        var readResult: BatchReadResult?
         var sendsInput = true
         DispatchTracker.current.reset()
         do {
@@ -266,6 +275,7 @@ struct Batch: AsyncParsableCommand {
                     try await context.awaitInputDrawn()
                 }
                 let result = try await step.runInBatch(context: context, logger: logger)
+                readResult = result
                 detail = result.detail
                 output.report(result)
                 if let unmet = result.unmet {
@@ -284,12 +294,14 @@ struct Batch: AsyncParsableCommand {
             step: number, kind: stepName, line: BatchStepRedaction.redactedLine(line, tokens: parsedTokens), elapsed: seconds(clock.now - start), failure: failure, detail: detail
         )
         EvidenceRecorder.current.finishPending(step: number, line: record.line, exit: failure?.exitCode ?? 0, reason: failure?.error.reason.rawValue)
-        return (record, sendsInput ? DispatchTracker.current.state : .no)
+        return (record, sendsInput ? DispatchTracker.current.state : .no, readResult)
     }
 
     /// The code of the first step that failed to run; else exit 5 when only conditions were not met.
     @MainActor
-    private static func finish(_ failed: [BatchStepRecord], continueOnError: Bool, dispatched: DispatchState, output: BatchOutput) throws {
+    private static func finish(
+        _ failed: [BatchStepRecord], continueOnError: Bool, dispatched: DispatchState, output: BatchOutput, steps: Int, ran: Int, elapsed: TimeInterval
+    ) throws {
         let failures = failed.compactMap { record in record.failure.map { (record, $0) } }
         guard !failures.isEmpty else { return }
 
@@ -304,10 +316,12 @@ struct Batch: AsyncParsableCommand {
         let summary = text + "\nDispatched: \(dispatched.rawValue)" + (dispatched == .no ? "" : " (input may have reached the device; check before resending)")
 
         if failures.allSatisfy({ $0.1.isConditionNotMet }) {
-            output.writeError(summary + "\n")
+            output.unmet(summary, steps: steps, failed: failures.map(\.0.step), ran: ran, dispatched: dispatched, elapsed: elapsed)
             throw ExitCode(OffsiderExitCode.unverified.rawValue)
         }
         let code = failures.first { !$0.1.isConditionNotMet }?.1.error.exitCode ?? .failure
+        // A person's rows end with a blank line before the error.
+        output.person?.data("\n")
         throw ReportedFailure(underlying: CLIError(errorDescription: summary), exitCode: code)
     }
 
@@ -322,7 +336,7 @@ struct Batch: AsyncParsableCommand {
             rawLines = steps
         } else if let file {
             let read = try TextFileInput.read(file, allowing: allowPath ? AllowPathConsent.confirmed : nil)
-            FileHandle.standardError.write(Data((read.announcement + "\n").utf8))
+            Console.current.line(read.announcement, person: .note("Steps from \(TerminalText.homePath(read.resolvedPath))", mark: .steps))
             rawLines = read.text.components(separatedBy: .newlines)
         } else {
             rawLines = try Self.readStepLines(from: FileHandle.standardInput)

@@ -34,17 +34,6 @@ struct OffsiderCommand: AsyncParsableCommand {
         ]
     )
 
-    /// What bare `offsider` prints: the first commands to run, one line each.
-    static let startHere = """
-          offsider list-devices    See devices and their IDs
-          offsider doctor          Check this Mac is ready
-          offsider init            Teach your agent to use Offsider
-          offsider guide           Read a topic in depth
-          offsider boot <AVD>      Start an emulator or simulator
-          offsider --help          Every command and option
-
-        """
-
     static func main() async {
         await withCLIDefaults(runCommandLine)
     }
@@ -59,14 +48,14 @@ struct OffsiderCommand: AsyncParsableCommand {
         Timings.installTotal()
         let arguments = Array(CommandLine.arguments.dropFirst())
         if arguments.isEmpty {
-            print(startHere, terminator: "")
+            Console.current.show(StartScreen.page(version: VERSION))
             Darwin.exit(0)
         }
         if let hint = ArgumentHints.hint(for: arguments) {
             let reason: FailureReason = hint.isLegacy ? .legacyArgument : .usage
             ErrorReporter.prepare(command: nil, arguments: arguments)
             ErrorReporter.writeEnvelopeIfWanted(ErrorPayload(reason: reason, message: hint.message))
-            FileHandle.standardError.write(Data(ErrorReporter.errorText(hint.message).utf8))
+            ErrorReporter.writeErrorLine(hint.message)
             Darwin.exit(reason.exitCode.rawValue)
         }
         // ArgumentParser's own `main(nil)`, with the command's backends closed before the process exits.
@@ -93,6 +82,7 @@ struct OffsiderCommand: AsyncParsableCommand {
                     }
                 }
             }
+            Console.current.release()
         } catch {
             if parsed == nil {
                 ErrorReporter.prepare(command: nil, arguments: arguments)
@@ -112,7 +102,7 @@ struct OffsiderCommand: AsyncParsableCommand {
                 let row = try await DevicePicker.orUnanswered(error) { try await DevicePicker.pickRunning() }
                 DeviceDefault.picked = row.id
                 let command = try parseAsRoot(nil)
-                FileHandle.standardError.write(Data((DevicePickerScreen.using(row, style: .detect(isTerminal: true)) + "\n").utf8))
+                Console.current.data(DevicePickerScreen.using(row, style: Console.current.err.canvas.style) + "\n", to: .err)
                 return command
             }
             let row = try await DevicePicker.orUnanswered(error, boot: true) { try await DevicePicker.pickBootable() }

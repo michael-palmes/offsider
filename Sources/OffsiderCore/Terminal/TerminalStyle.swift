@@ -1,7 +1,7 @@
 import Foundation
 
 /// The terminal UI kit's palette and glyphs, one per stream. Colour only for a terminal, never with `NO_COLOR` or `TERM=dumb`;
-/// ASCII glyphs and tags (`[iPhone]`, `[OK]`, `>`, `=`, `-`) with `NO_COLOR` or a locale that is not UTF-8.
+/// ASCII glyphs and tags (`[iPhone]`, `[OK]`, `>`, `=`, `-`) with `NO_COLOR`, `UI_ASCII` or a locale that is not UTF-8.
 /// Roles: cyan for rules and structure, green for the cursor row and success, magenta for `(Recommended)`, yellow for
 /// warnings, dim for secondary detail, bold for the question. Nothing else is coloured.
 public struct TerminalStyle: Equatable, Sendable {
@@ -15,9 +15,11 @@ public struct TerminalStyle: Equatable, Sendable {
 
     public static let plain = TerminalStyle(colours: false)
 
+    /// `FORCE_COLOR` is never honoured: agents inherit it from the terminal that started them.
     public static func detect(isTerminal: Bool, environment: [String: String] = ProcessInfo.processInfo.environment) -> TerminalStyle {
         let noColour = environment["NO_COLOR"].map { !$0.isEmpty } ?? false
-        return TerminalStyle(colours: isTerminal && !noColour && environment["TERM"] != "dumb", ascii: noColour || !isUTF8(environment))
+        let asked = environment["UI_ASCII"].map { !$0.isEmpty && $0 != "0" } ?? false
+        return TerminalStyle(colours: isTerminal && !noColour && environment["TERM"] != "dumb", ascii: noColour || asked || !isUTF8(environment))
     }
 
     /// The first locale variable set decides; with none set, macOS terminals are UTF-8.
@@ -36,10 +38,10 @@ public struct TerminalStyle: Equatable, Sendable {
     public var picked: String { pointer }
     public var upDown: String { ascii ? "up/down" : "↑↓" }
 
-    /// An emoji that leads a row or line, or its short ASCII tag. Every emoji here is one scalar drawn two columns wide,
-    /// except `warning`, which needs its variation selector and so is followed by two spaces wherever it is used.
+    /// An emoji that leads a line, two columns wide and one scalar (all but `warning`), or its short ASCII tag.
     public enum Mark: Sendable, CaseIterable {
         case lock, iPhone, iPad, android, team, app, anyApp, time, keep, type, done, cancel, warning, another, digits
+        case doctor, mac, fix, boot, run, record, screenshot, logs, session, guide, steps, build, key, user, link, clean, nothing, bye, tip
 
         public var emoji: String {
             switch self {
@@ -58,6 +60,25 @@ public struct TerminalStyle: Equatable, Sendable {
             case .warning: return "⚠️"
             case .another: return "➕"
             case .digits: return "🔢"
+            case .doctor: return "🩺"
+            case .mac: return "💻"
+            case .fix: return "🔧"
+            case .boot: return "🚀"
+            case .run: return "🎬"
+            case .record: return "🔴"
+            case .screenshot: return "📸"
+            case .logs: return "📜"
+            case .session: return "🔌"
+            case .guide: return "📖"
+            case .steps: return "📋"
+            case .build: return "🔨"
+            case .key: return "🔑"
+            case .user: return "👤"
+            case .link: return "🔗"
+            case .clean: return "🧹"
+            case .nothing: return "🤷"
+            case .bye: return "👋"
+            case .tip: return "💡"
             }
         }
 
@@ -78,11 +99,43 @@ public struct TerminalStyle: Equatable, Sendable {
             case .warning: return "[!]"
             case .another: return "[+]"
             case .digits: return "[id]"
+            case .doctor: return "[check]"
+            case .mac: return "[Mac]"
+            case .fix: return "[fix]"
+            case .boot: return "[boot]"
+            case .run: return "[run]"
+            case .record: return "[rec]"
+            case .screenshot: return "[shot]"
+            case .logs: return "[logs]"
+            case .session: return "[session]"
+            case .guide: return "[guide]"
+            case .steps: return "[steps]"
+            case .build: return "[build]"
+            case .key: return "[key]"
+            case .user: return "[user]"
+            case .link: return "[link]"
+            case .clean: return "[clean]"
+            case .nothing: return "[-]"
+            case .bye: return "[bye]"
+            case .tip: return "[tip]"
             }
         }
     }
 
     public func mark(_ mark: Mark) -> String { ascii ? mark.tag : mark.emoji }
+
+    /// A row's state as one column: `●` on, `◐` starting, `○` off, `✓` ok, `!` warn, `✗` fail, `-` skipped.
+    public func status(_ status: RowStatus) -> String {
+        switch status {
+        case .on: return green(ascii ? "*" : "●")
+        case .starting: return ascii ? "~" : "◐"
+        case .off: return dim(ascii ? "o" : "○")
+        case .ok: return green(ascii ? "+" : "✓")
+        case .warn: return yellow("!")
+        case .fail: return red(ascii ? "x" : "✗")
+        case .skip: return dim("-")
+        }
+    }
 
     public func bold(_ text: String) -> String { sgr("1", text) }
     public func dim(_ text: String) -> String { sgr("2", text) }
@@ -95,6 +148,11 @@ public struct TerminalStyle: Equatable, Sendable {
     private func sgr(_ code: String, _ text: String) -> String {
         colours ? "\u{1B}[\(code)m\(text)\u{1B}[0m" : text
     }
+}
+
+/// What the dot leading a table row says, as `TerminalStyle.status` draws it.
+public enum RowStatus: Sendable, Equatable, CaseIterable {
+    case on, starting, off, ok, warn, fail, skip
 }
 
 /// Terminal cell maths for text Offsider draws, so a redraw can move back over exactly what it wrote.
@@ -113,9 +171,30 @@ public enum TerminalText {
         return String(out)
     }
 
-    /// Columns `text` fills: emoji and East Asian wide characters take two, joiners and variation selectors none.
+    /// Columns `text` fills, counted per character: emoji and East Asian wide characters take two, marks and joiners none.
     public static func width(_ text: String) -> Int {
-        stripStyle(text).unicodeScalars.reduce(0) { $0 + cells($1) }
+        if text.utf8.allSatisfy({ $0 >= 0x20 && $0 < 0x7F }) { return text.utf8.count }
+        return stripStyle(text).reduce(0) { $0 + width($1) }
+    }
+
+    /// Columns one character fills: an emoji sequence takes two, U+FE0E the base's text width; `isEmoji` alone is never enough.
+    public static func width(_ character: Character) -> Int {
+        let scalars = character.unicodeScalars
+        guard let first = scalars.first else { return 0 }
+        if scalars.count == 1 { return cells(first) }
+        if scalars.contains("\u{FE0E}") { return cells(first, presentation: false) }
+        if first.properties.isEmojiPresentation { return 2 }
+        var previous: Unicode.Scalar?
+        var pictographic = false
+        var joined = false
+        for scalar in scalars {
+            if scalar == "\u{FE0F}", previous?.properties.isEmoji == true { return 2 }
+            if scalar == "\u{200D}" { joined = true }
+            if scalar.properties.isEmoji, scalar.value > 0x7F { pictographic = true }
+            previous = scalar
+        }
+        if joined, pictographic { return 2 }
+        return scalars.reduce(0) { $0 + cells($1) }
     }
 
     /// Rows `text` fills on a terminal `columns` wide; an empty line still takes one.
@@ -136,12 +215,18 @@ public enum TerminalText {
         return ((up > 0 ? "\u{1B}[\(up)A" : "") + "\u{1B}[\(target % columns + 1)G", row)
     }
 
-    private static func cells(_ scalar: Unicode.Scalar) -> Int {
+    /// A scalar's own columns: marks, format characters and selectors none, East Asian wide and emoji-presentation two.
+    private static func cells(_ scalar: Unicode.Scalar, presentation: Bool = true) -> Int {
         let value = scalar.value
         if value < 0x20 || (0x7F..<0xA0).contains(value) { return 0 }
-        if (0x0300...0x036F).contains(value) || (0xFE00...0xFE0F).contains(value) || value == 0x200D { return 0 }
-        if wide.contains(where: { $0.contains(value) }) { return 2 }
-        return 1
+        if value < 0x300 { return 1 }
+        switch scalar.properties.generalCategory {
+        case .nonspacingMark, .enclosingMark, .format: return 0
+        default: break
+        }
+        if (0xFE00...0xFE0F).contains(value) || (0xE0100...0xE01EF).contains(value) || (0x1160...0x11FF).contains(value) { return 0 }
+        if presentation, scalar.properties.isEmojiPresentation { return 2 }
+        return wide.contains(where: { $0.contains(value) }) ? 2 : 1
     }
 
     private static let wide: [ClosedRange<UInt32>] = [

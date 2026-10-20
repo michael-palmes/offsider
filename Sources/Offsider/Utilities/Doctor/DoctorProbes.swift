@@ -195,7 +195,7 @@ enum DoctorProbes {
         let started = ContinuousClock.now
         let progress = Task { @MainActor in
             try await Task.sleep(for: .seconds(5))
-            FileHandle.standardError.write(Data("Waiting for dtuhidd to answer (up to \(Int(hidTransportTimeout)) s)...\n".utf8))
+            Console.current.step("Waiting for dtuhidd to answer (up to \(Int(hidTransportTimeout)) s)...", label: "Waiting for dtuhidd, up to \(Int(hidTransportTimeout)) s")
         }
         defer { progress.cancel() }
         do {

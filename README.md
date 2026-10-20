@@ -19,6 +19,7 @@ Offsider gives your coding agent eyes and hands on a phone. It reads the screen,
 - **Proves the tap worked.** `--verify` waits for the screen to change, and exits 5 if it didn't.
 - **Won't tap the wrong thing.** A target that's covered, off screen or under the keyboard is refused, and nothing is sent.
 - **Says what to do next.** Every error has a reason, an exit code and the next command to run.
+- **Plain for agents, clear for you.** Your agent reads plain lines with nothing to strip; your terminal shows grouped tables, status dots and a spinner over every wait.
 - **Knows React Native.** LogBox, the dev menu and Metro, on both platforms.
 - **[Fast](#fast), [secure](#secure) and [private](#private)** with nothing to set up.
 
@@ -48,7 +49,7 @@ Your agent installs the build with your usual tools, then uses Offsider to read 
 **3. Or drive it yourself.** These are the commands your agent uses:
 
 ```bash
-offsider list-devices                                     # simulators, emulators and AVDs
+offsider devices                                          # simulators, emulators and AVDs
 export OFFSIDER_DEVICE=$(offsider boot "iPhone 17 Pro")   # or an AVD, such as Pixel_9
 offsider describe-ui --summary                            # what's on screen
 offsider tap --id search                                  # tap by id, or --label "Search"

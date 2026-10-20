@@ -64,6 +64,31 @@ struct OutputProfileTests {
         #expect(OutputProfile.resolve(environment: ["OFFSIDER_OUTPUT": "human"], isTerminal: false) == .agent)
     }
 
+    @Test("an agent's marker makes a terminal an agent, CLAUDECODE alone does not, and OFFSIDER_OUTPUT beats both")
+    func markers() {
+        #expect(OutputProfile.resolve(environment: ["CLAUDE_CODE_CHILD_SESSION": "1"], isTerminal: true) == .agent)
+        #expect(OutputProfile.resolve(environment: ["AI_AGENT": "claude-code_2.1_agent"], isTerminal: true) == .agent)
+        #expect(OutputProfile.resolve(environment: ["CLAUDECODE": "1"], isTerminal: true) == .person)
+        #expect(OutputProfile.resolve(environment: ["AI_AGENT": ""], isTerminal: true) == .person)
+        #expect(OutputProfile.resolve(environment: ["CLAUDE_CODE_CHILD_SESSION": "0"], isTerminal: true) == .person)
+        #expect(OutputProfile.resolve(environment: ["CLAUDE_CODE_CHILD_SESSION": "1", "OFFSIDER_OUTPUT": "person"], isTerminal: false) == .person)
+        #expect(OutputProfile.named(in: ["OFFSIDER_OUTPUT": "human"]) == nil)
+    }
+
+    @Test("errors read as a person's only when configured, not JSON, on a terminal and with no agent's marker", arguments: [
+        (true, false, true, [:], ErrorAudience.person),
+        (false, false, true, [:], .agent),
+        (true, true, true, [:], .agent),
+        (true, false, false, [:], .agent),
+        (true, false, true, ["AI_AGENT": "claude-code_2.1_agent"], .agent),
+        (true, false, true, ["OFFSIDER_OUTPUT": "agent"], .agent),
+        (true, false, true, ["CLAUDECODE": "1"], .person),
+        (true, false, false, ["OFFSIDER_OUTPUT": "person"], .agent),
+    ] as [(Bool, Bool, Bool, [String: String], ErrorAudience)])
+    func errorAudience(configured: Bool, json: Bool, terminal: Bool, environment: [String: String], expected: ErrorAudience) {
+        #expect(ErrorAudience.resolve(configured: configured, json: json, stderrIsTerminal: terminal, environment: environment) == expected)
+    }
+
     @Test("a person sees a clean name bare, an agent always sees it quoted, and a hazard is quoted for both")
     func field() {
         #expect(TerminalText.field("Sign in", profile: .person) == "Sign in")
@@ -188,6 +213,13 @@ struct UntrustedSinkTests {
         )
     }
 
+    /// A listing whose device name, skip message and lease label all carry `label`.
+    static func listing(_ label: String) -> DeviceListing {
+        var leased = DeviceSummary(id: "emulator-5554", platform: .android, state: "Booted", name: label, osVersion: label, deviceType: nil, kind: .emulator)
+        leased.lease = DeviceLease(label: label, created: Date(timeIntervalSince1970: 0), expires: Date(timeIntervalSince1970: 60), pid: 1)
+        return DeviceListing(devices: [device(label), leased], hiddenPhysical: 2, skipped: [ListingSkip(what: "iOS devices", message: label, hint: label)])
+    }
+
     @MainActor
     static func sinks(_ label: String) throws -> [(String, String)] {
         let payload = ErrorPayload(
@@ -195,10 +227,16 @@ struct UntrustedSinkTests {
             candidates: [FailureCandidate(id: label, label: label, role: "button", frame: nil, onScreen: true)]
         )
         return [
-            ("list-devices table", DeviceListRenderer.table([device(label)])),
-            ("list-devices table, agent", DeviceListRenderer.table([device(label)], profile: .agent)),
-            ("list-devices --json", DeviceListRenderer.json([device(label)])),
-            ("list-devices hints", ListDevices.phoneHints([device(label)]).joined(separator: "\n")),
+            ("devices table", DeviceListRenderer.table([device(label)])),
+            ("devices table, agent", DeviceListRenderer.table([device(label)], profile: .agent)),
+            ("devices --json", DeviceListRenderer.json([device(label)])),
+            ("devices --json, compact", DeviceListRenderer.json([device(label)], compact: true)),
+            ("devices notes, agent", AgentRenderer.notices(DevicesScreen.notices(listing(label)))),
+            ("devices notes, person", PersonRenderer.notices(DevicesScreen.notices(listing(label)), canvas: Canvas(columns: 80, style: .plain), afterBody: true)),
+            ("devices page, agent", AgentRenderer.body(DevicesScreen.page(listing(label)).blocks)),
+            ("devices page, person", PersonRenderer.body(DevicesScreen.page(listing(label)).blocks, canvas: Canvas(columns: 80, style: .plain))),
+            ("devices page, narrow person", PersonRenderer.body(DevicesScreen.page(listing(label)).blocks, canvas: Canvas(columns: 30, style: .plain))),
+            ("error, person", PersonRenderer.error(payload.message, hint: label, canvas: Canvas(columns: 80, style: .plain))),
             ("doctor --json", try Doctor.jsonText(doctorReport(label))),
             ("describe-ui --raw-source", try DescribeUI.rawSourceText(Data("{\"label\":\"\(label.replacingOccurrences(of: "\u{1B}", with: "\\u001b").replacingOccurrences(of: "\u{07}", with: "\\u0007"))\u{202E}\u{E0041}\"}".utf8))),
             ("Error line", ErrorReporter.errorText(payload.message)),
@@ -250,12 +288,14 @@ struct UntrustedSinkTests {
         #expect(envelope.count < TerminalText.maxErrorCharacters + 300)
     }
 
-    @Test("each command's untrusted paths name values in a sample document", arguments: ["list-devices", "doctor", "error envelope", "error envelope with candidates"])
+    @Test("each command's untrusted paths name values in a sample document", arguments: ["devices", "devices compact", "doctor", "error envelope", "error envelope with candidates"])
     @MainActor
     func untrustedPathsResolve(command: String) throws {
         switch command {
-        case "list-devices":
+        case "devices":
             #expect(try expectUntrustedPathsResolve(DeviceListRenderer.json([Self.device("Ada's iPhone")])) == ["devices[].name", "devices[].osVersion", "devices[].deviceType"])
+        case "devices compact":
+            #expect(try expectUntrustedPathsResolve(DeviceListRenderer.json([Self.device("Ada's iPhone")], compact: true)) == ["devices[].name", "devices[].osVersion", "devices[].deviceType"])
         case "doctor":
             #expect(try expectUntrustedPathsResolve(try Doctor.jsonText(Self.doctorReport("Pixel"))) == ["checks[].detail", "device.name", "booted[].name"])
         case "error envelope":

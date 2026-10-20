@@ -1052,7 +1052,7 @@ function preflight() {
     ui_try "open x-apple.systempreferences:com.apple.settings.Storage"
   fi
   [[ "$problems" == 0 ]] || exit 1
-  print_success "Tools ready: Xcode ${xcode_version}, xcodegen, jq, git, ${free_gb} GB free"
+  ui_row ok "Tools ready" "Xcode ${xcode_version} ${UI_DOT} xcodegen, jq, git ${UI_DOT} ${free_gb} GB free"
 }
 
 # True when <build_products> holds XCFrameworks recorded for this pin, fork URL and Xcode.
@@ -1090,12 +1090,17 @@ function package_frameworks() {
   cmd_xcframeworks
 }
 
-# Quiet mode logs a step behind a spinner; verbose mode (CI, a pipe or --verbose) streams it as before.
+# Quiet mode logs a step behind a spinner and leaves a status row; verbose mode (CI, a pipe or --verbose) streams it as before.
 function dev_step() {
-  local label="$1"
+  local label="$1" status=0
   shift
   if [[ "$DEV_QUIET" == 1 ]]; then
-    ui_run_logged "$label" "$IDB_BUILD_LOG" "$@" || die "Could not finish: ${label#\[*\] }." "$0 dev --verbose"
+    # Not `ui_run_logged … || die`: bash ignores set -e under ||, so a step would run on past a failure.
+    set +e
+    ui_run_logged "$label" "$IDB_BUILD_LOG" "$@"
+    status=$?
+    set -e
+    [[ "$status" == 0 ]] || die "Could not finish: ${label#\[*\] }." "$0 dev --verbose"
   else
     ui_section "" "$label"
     "$@"
@@ -1104,8 +1109,9 @@ function dev_step() {
 
 function cmd_dev() {
   local rebuild=0 donor
-  DEV_QUIET=1
-  [[ -t 1 && -z "${CI:-}" ]] || DEV_QUIET=0
+  # A person at a terminal and an agent get rows over a log; CI and a pipe get the full stream.
+  DEV_QUIET=0
+  if [[ -z "${CI:-}" ]] && [[ -t 1 || "$UI_AGENT" == 1 ]]; then DEV_QUIET=1; fi
   while [[ $# -gt 0 ]]; do
     case "$1" in
       --rebuild) rebuild=1 ;;
@@ -1116,13 +1122,15 @@ function cmd_dev() {
   done
   mkdir -p "$(dirname "$IDB_BUILD_LOG")"
   : > "$IDB_BUILD_LOG"
-  ui_banner "🛠️" "Offsider dev build"
+  local pin="$IDB_GIT_REF"
+  [[ "$pin" =~ ^[0-9a-f]{40}$ ]] && pin="${pin:0:7}"
+  ui_banner "🛠️" "Offsider dev build" "idb ${pin}"
   preflight
   dev_step "Fetching the pinned idb fork" cmd_setup
 
   if [[ "$rebuild" == 0 ]]; then
     if build_matches_pin "$BUILD_OUTPUT_DIR" && verify_xcframeworks_quietly; then
-      print_success "build_products already matches the idb pin"
+      ui_receipt "Frameworks already built" "build_products matches the idb pin and this Xcode"
       ui_next "swift build"
       return 0
     fi
@@ -1131,7 +1139,7 @@ function cmd_dev() {
       rm -rf "$BUILD_OUTPUT_DIR"
       cp -R "$donor" "$BUILD_OUTPUT_DIR"
       if verify_xcframeworks_quietly; then
-        print_success "Reused the matching build from ${donor}"
+        ui_receipt "Frameworks reused" "from $(ui_path "$donor")"
         ui_next "swift build"
         return 0
       fi
@@ -1150,8 +1158,11 @@ function cmd_dev() {
   dev_step "[4/6] Building FBSimulatorControl" framework_build "FBSimulatorControl" "${FBSIMCONTROL_PROJECT}" "${BUILD_OUTPUT_DIR}"
   dev_step "[5/6] Building FBDeviceControl" framework_build "FBDeviceControl" "${FBSIMCONTROL_PROJECT}" "${BUILD_OUTPUT_DIR}"
   dev_step "[6/6] Packaging the XCFrameworks" package_frameworks
-  print_success "Frameworks ready in ${BUILD_XCFRAMEWORK_DIR}"
-  if [[ "$DEV_QUIET" == 1 ]]; then log "Build log: ${IDB_BUILD_LOG}"; fi
+  if [[ "$DEV_QUIET" == 1 ]]; then
+    ui_receipt "Frameworks ready" "in $(ui_path "$BUILD_XCFRAMEWORK_DIR")" "log $(ui_path "$IDB_BUILD_LOG")"
+  else
+    ui_receipt "Frameworks ready" "in $(ui_path "$BUILD_XCFRAMEWORK_DIR")"
+  fi
   ui_next "swift build"
 }
 

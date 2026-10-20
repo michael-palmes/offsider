@@ -38,9 +38,9 @@ struct CLIError: LocalizedError, UserFacingError, OffsiderFailure {
 
     static func deviceNotFound(id: String) -> CLIError {
         CLIError(
-            errorDescription: "No device with ID \(id) was found. Run `offsider list-devices` to see available devices.",
+            errorDescription: "No device with ID \(id) was found. Run `offsider devices` to see available devices.",
             reason: .deviceNotFound,
-            hint: "offsider list-devices"
+            hint: "offsider devices"
         )
     }
 

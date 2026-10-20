@@ -71,7 +71,9 @@ struct OrientationCommand: AsyncParsableCommand {
         let logger = OffsiderLogger()
         let watchdog = DeviceWatchdog()
         let route = try await DeviceRouter.routeForInput(deviceOption.id, logger: logger, watchdog: watchdog, locking: target != nil)
-        try await watchdog.guarding(bound: timeout, device: deviceOption.id) { try await turn(target, on: route, logger: logger) }
+        try await Console.current.progress(target.map { "Turning to \($0.rawValue)" } ?? "Reading the orientation") {
+            try await watchdog.guarding(bound: timeout, device: deviceOption.id) { try await turn(target, on: route, logger: logger) }
+        }
     }
 
     @MainActor
@@ -88,7 +90,7 @@ struct OrientationCommand: AsyncParsableCommand {
             guard let previous else {
                 throw CLIError(errorDescription: "Offsider could not read the orientation of \(deviceOption.id). Run `offsider describe-ui --device \(deviceOption.id)` to check the screen size instead.", reason: .orientationUnknown)
             }
-            try await report(previous, previous: nil, backend: backend, device: device)
+            try await report(previous, previous: nil, setting: false, backend: backend, device: device)
             return
         }
         let turn: () async throws -> Void = {
@@ -107,7 +109,7 @@ struct OrientationCommand: AsyncParsableCommand {
         }
         guard let rotation = backend as? any AutoRotateControlling else {
             if previous != target { try await turn() }
-            try await report(target, previous: previous, backend: backend, device: device)
+            try await report(target, previous: previous, setting: true, backend: backend, device: device)
             return
         }
         let marker = await (backend as? any BootMarking)?.bootMarker(for: device)
@@ -120,9 +122,16 @@ struct OrientationCommand: AsyncParsableCommand {
             read: { try await rotation.autoRotateState(on: device) },
             writeAccelerometer: { try await rotation.setAccelerometerRotation($0, on: device) },
             turn: turn,
-            warn: { FileHandle.standardError.write(Data(($0 + "\n").utf8)) }
+            warn: { Console.current.notice(Self.autoRotateNotice($0, serial: device.rawValue)) }
         )
-        try await report(target, previous: previous, backend: backend, device: device, rotation: rotationReport)
+        try await report(target, previous: previous, setting: true, backend: backend, device: device, rotation: rotationReport)
+    }
+
+    /// The warning `turnKeepingAutoRotate` raised, its words unchanged for an agent.
+    static func autoRotateNotice(_ line: String, serial: String) -> Notice {
+        let prefix = "Warning: "
+        let sentence = line.hasPrefix(prefix) ? String(line.dropFirst(prefix.count)) : line
+        return .warning("Auto-rotate was not switched back", agent: sentence, try: "offsider orientation portrait --device \(serial)")
     }
 
     /// Records auto-rotate for this boot before a turn turns it off and writes it back on portrait; refuses to turn when it cannot record it.
@@ -196,13 +205,17 @@ struct OrientationCommand: AsyncParsableCommand {
         }
     }
 
-    private func report(_ current: DeviceOrientation, previous: DeviceOrientation?, backend: any DeviceBackend, device: DeviceID, rotation: RotationReport? = nil) async throws {
+    private func report(_ current: DeviceOrientation, previous: DeviceOrientation?, setting: Bool, backend: any DeviceBackend, device: DeviceID, rotation: RotationReport? = nil) async throws {
         let screen = try? await backend.screenInfo(for: device)
-        if json {
-            print(DeviceSettingsReport.orientation(current, previous: previous, screen: screen, rotation: rotation))
-        } else {
-            print(Self.line(current, screen: screen, platform: device.platform))
-        }
+        let text = json ? DeviceSettingsReport.orientation(current, previous: previous, screen: screen, rotation: rotation) : Self.line(current, screen: screen, platform: device.platform)
+        let person = DevicePersonView.orientation(current, previous: previous, screen: screen, platform: device.platform, rotation: rotation, setting: setting)
+        DevicePersonView.emit(text, json: json, person: person, notices: Self.notices(current, rotation: rotation, on: device))
+    }
+
+    /// When this turn switched Android's auto-rotate off, how a person gets it back.
+    static func notices(_ current: DeviceOrientation, rotation: RotationReport?, on device: DeviceID) -> [Notice] {
+        guard let rotation, current != .portrait, rotation.before?.autoRotate == true, rotation.now?.autoRotate == false else { return [] }
+        return [DevicePersonView.lasting("Auto-rotate stays off until portrait", undo: "offsider orientation portrait --device \(device.rawValue)")]
     }
 
     static func line(_ current: DeviceOrientation, screen: UIScreenInfo?, platform: DevicePlatform) -> String {

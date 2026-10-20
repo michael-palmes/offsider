@@ -41,13 +41,35 @@ final class CommandScope {
     /// Physical devices this process has announced, so the banner prints once per device.
     private var announced: Set<String> = []
 
-    /// Where the physical-device banner goes; stderr, also under `--json`.
-    var bannerNote: (String) -> Void = { FileHandle.standardError.write(Data("\($0)\n".utf8)) }
+    /// Takes the agent's banner line instead of stderr, for tests; nil writes it, in every mode, through the console.
+    var bannerNote: ((String) -> Void)?
 
     func noteRoute(_ route: DeviceRouter.Route) {
         routes.append(route)
         guard let allowance = route.allowance, announced.insert("\(allowance.platform.rawValue) \(allowance.key)").inserted else { return }
-        bannerNote(Self.banner(for: allowance, managed: DevicePolicyGate.current.policy().managed.present))
+        let managed = DevicePolicyGate.current.policy().managed.present
+        let line = Self.banner(for: allowance, managed: managed)
+        if let bannerNote {
+            bannerNote(line)
+            return
+        }
+        let console = Console.current
+        let err = console.err
+        // Never a notice: a safety line is never deduped or capped.
+        console.data(err.profile == .person ? Self.personBanner(for: allowance, managed: managed, now: Date(), timeZone: .current, canvas: err.canvas) : line + "\n", to: .err)
+    }
+
+    /// A person's one dim line: `🔐  Driving Test iPhone · allowed until 18:00 · com.example.app only`, broken between parts when narrow.
+    nonisolated static func personBanner(for allowance: DeviceAllowance, managed: Bool, now: Date, timeZone: TimeZone, canvas: Canvas) -> String {
+        let style = canvas.style
+        let lead = style.mark(.lock) + (style.ascii ? " " : "  ")
+        let indent = String(repeating: " ", count: TerminalText.width(lead))
+        let parts = [
+            "Driving \(AccessStatusScreen.name(allowance))", "allowed " + AllowScreen.until(allowance.expires, now: now, timeZone: timeZone), AllowScreen.apps(allowance.apps),
+        ] + (managed ? ["managed policy applies"] : [])
+        // Two columns short, for the separator `pack` leaves at the end of a broken line.
+        let lines = PromptScreen.pack(parts, separator: " \(style.dot) ", width: max(canvas.usable - indent.count - 2, 10))
+        return lines.enumerated().map { ($0 == 0 ? lead : indent) + style.dim($1) }.joined(separator: "\n") + "\n"
     }
 
     /// The one line a command prints before it drives a physical device.

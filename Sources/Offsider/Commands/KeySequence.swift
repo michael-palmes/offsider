@@ -66,7 +66,9 @@ struct KeySequence: AsyncParsableCommand {
         let logger = OffsiderLogger()
         let route = try await DeviceRouter.routeForInput(deviceOption, logger: logger)
         await appOption.apply(to: route)
-        try await perform(on: route, logger: logger)
+        try await Console.current.progress("Pressing the keys") { try await perform(on: route, logger: logger) }
+        // The keys may spell typed text, so the receipt counts and names none of them.
+        Console.current.show(InputPersonView.receipt("Sent the key sequence"))
     }
 
     @MainActor

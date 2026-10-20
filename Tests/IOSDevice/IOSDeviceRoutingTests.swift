@@ -21,7 +21,7 @@ struct IOSDeviceRoutingTests {
         #expect(route.device.isPhysicalIOSDevice)
     }
 
-    @Test("list-devices asks the device backend too")
+    @Test("devices asks the device backend too")
     func allBackendsIncludePhones() {
         let backends = DeviceRouter.allBackends(logger: OffsiderLogger())
         #expect(backends.contains { $0 is IOSDeviceBackend })
@@ -70,7 +70,7 @@ struct IOSDeviceRoutingTests {
         #expect(boot.stderr.contains("is a physical iPhone or iPad"))
     }
 
-    @Test("list-devices explains every iPhone it cannot drive yet, by model and UDID", arguments: [
+    @Test("devices explains every iPhone it cannot drive yet, by model and UDID", arguments: [
         ("Untrusted", "usb", "tap Trust"),
         ("Developer Mode off", "usb", "turn it on in Settings"),
         ("Preparing", "usb", "prepared for development"),
@@ -80,7 +80,7 @@ struct IOSDeviceRoutingTests {
     ] as [(String, String?, String)])
     func phoneHints(state: String, connection: String?, advice: String) {
         let row = DeviceSummary(id: Self.phone, platform: .ios, state: state, name: "Apple iPhone", osVersion: "iOS 27.2", deviceType: "iPhone", kind: .physical, connection: connection)
-        let hints = ListDevices.phoneHints([row])
+        let hints = DevicesScreen.notices(DeviceListing(devices: [row])).compactMap(\.agentText)
         #expect(hints.count == 1)
         #expect(hints.first?.hasPrefix("Apple iPhone (\(Self.phone))") == true)
         #expect(hints.first?.contains(advice) == true)
@@ -89,7 +89,7 @@ struct IOSDeviceRoutingTests {
     @Test("a ready wired iPhone needs no hint")
     func readyPhoneHasNoHint() {
         let row = DeviceSummary(id: Self.phone, platform: .ios, state: "Booted", name: "Apple iPhone", osVersion: nil, deviceType: nil, kind: .physical, connection: "usb")
-        #expect(ListDevices.phoneHints([row]).isEmpty)
+        #expect(DevicesScreen.notices(DeviceListing(devices: [row])).isEmpty)
     }
 
     @Test("the other buttons pass the phone check", arguments: ["home", "lock", "side-button", "siri"])

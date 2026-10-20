@@ -34,7 +34,7 @@ struct EmulatorRPCErrorsTests {
 
     @Test("deadlineExceeded names the method and its timeout")
     func deadline() {
-        #expect(Self.map(.deadlineExceeded, method: .sendKey).message == "The emulator did not answer `sendKey` within 2 s. It may be overloaded; retry, or check it with `offsider list-devices`.")
+        #expect(Self.map(.deadlineExceeded, method: .sendKey).message == "The emulator did not answer `sendKey` within 2 s. It may be overloaded; retry, or check it with `offsider devices`.")
     }
 
     @Test("other codes keep the emulator's message but never the token", arguments: [RPCError.Code.internalError, .invalidArgument, .unimplemented])

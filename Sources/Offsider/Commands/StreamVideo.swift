@@ -102,12 +102,15 @@ struct StreamVideo: AsyncParsableCommand {
         cancellationFlag: CancellationFlag
     ) async throws {
         let device = source.device
-        FileHandle.standardError.write(Data("Starting screenshot-based video stream from \(device.platform.videoSourceNoun) \(device.rawValue)...\n".utf8))
-        FileHandle.standardError.write(Data("Format: \(format.rawValue), FPS: \(fps), Quality: \(quality), Scale: \(scale)\n".utf8))
-        FileHandle.standardError.write(Data("Press Ctrl+C to stop streaming\n".utf8))
+        Console.current.aside(
+            "Starting screenshot-based video stream from \(device.platform.videoSourceNoun) \(device.rawValue)...",
+            person: StartPersonView.streamHeader(device: device.rawValue, format: format.rawValue, fps: fps)
+        )
+        Console.current.aside("Format: \(format.rawValue), FPS: \(fps), Quality: \(quality), Scale: \(scale)", person: nil)
+        Console.current.aside("Press Ctrl+C to stop streaming", person: nil)
 
         var pending = try await source.firstFrame { error in
-            FileHandle.standardError.write(Data("Error capturing frame: \(TerminalText.line(error.localizedDescription))\n".utf8))
+            Self.captureFailed(error)
         }
         let frameInterval = 1.0 / Double(fps)
         let mjpegBoundary = "--mjpegstream"
@@ -165,11 +168,11 @@ struct StreamVideo: AsyncParsableCommand {
                     let elapsed = Date().timeIntervalSince(startTime)
                     if elapsed > 0 {
                         let actualFPS = Double(frameCount) / elapsed
-                        FileHandle.standardError.write(Data(String(format: "Captured %llu frames (%.1f FPS actual)\n", frameCount, actualFPS).utf8))
+                        Console.current.aside(String(format: "Captured %llu frames (%.1f FPS actual)", frameCount, actualFPS), person: nil)
                     }
                 }
             } catch {
-                FileHandle.standardError.write(Data("Error capturing frame: \(TerminalText.line(error.localizedDescription))\n".utf8))
+                Self.captureFailed(error)
             }
 
             let elapsed = Date().timeIntervalSince(frameStartTime)
@@ -188,8 +191,15 @@ struct StreamVideo: AsyncParsableCommand {
             let avgFPS = Double(frameCount) / elapsed
             let held = heldCount > 0 ? ", \(heldCount) held" : ""
             let summary = String(format: "Streamed %llu frames in %.1f seconds (%.1f FPS average)", frameCount, elapsed, avgFPS)
-            FileHandle.standardError.write(Data("\(summary)\(held)\n".utf8))
+            Console.current.clearLine()
+            Console.current.aside(summary + held, person: String(format: "Streamed %llu frames in %.1f s", frameCount, elapsed) + held)
         }
+    }
+
+    /// An agent reads every failed frame; a person one warning per distinct cause.
+    private static func captureFailed(_ error: any Error) {
+        let message = TerminalText.line(error.localizedDescription)
+        Console.current.line("Error capturing frame: \(message)", person: .warning("A frame could not be captured: \(message)"))
     }
 
     // MARK: - BGRA streaming
@@ -203,14 +213,23 @@ struct StreamVideo: AsyncParsableCommand {
             throw CLIError(errorDescription: "BGRA streaming is not supported for device \(device.rawValue).", reason: .notSupported)
         }
 
-        FileHandle.standardError.write(Data("Starting BGRA video stream from \(device.platform.videoSourceNoun) \(device.rawValue)...\n".utf8))
-        FileHandle.standardError.write(Data("Format: bgra, Quality: \(quality), Scale: \(scale)\n".utf8))
-        FileHandle.standardError.write(Data("Note: This is raw pixel data. Use ffmpeg to convert:\n".utf8))
-        FileHandle.standardError.write(Data("  offsider stream-video --format bgra --device <DEVICE_ID> | ffmpeg -f rawvideo -pixel_format bgra -video_size WIDTHxHEIGHT -i - output.mp4\n".utf8))
+        Console.current.aside(
+            "Starting BGRA video stream from \(device.platform.videoSourceNoun) \(device.rawValue)...",
+            person: StartPersonView.streamHeader(device: device.rawValue, format: "bgra", fps: nil)
+        )
+        Console.current.aside("Format: bgra, Quality: \(quality), Scale: \(scale)", person: nil)
+        Console.current.line("Note: This is raw pixel data. Use ffmpeg to convert:", person: .note(
+            "Raw BGRA pixels; pipe them to ffmpeg to convert",
+            see: "offsider stream-video --format bgra --device \(device.rawValue) | ffmpeg -f rawvideo -pixel_format bgra -video_size WIDTHxHEIGHT -i - output.mp4"
+        ))
+        Console.current.aside("  offsider stream-video --format bgra --device <DEVICE_ID> | ffmpeg -f rawvideo -pixel_format bgra -video_size WIDTHxHEIGHT -i - output.mp4", person: nil)
         if device.platform == .android {
-            FileHandle.standardError.write(Data("Note: the Android Emulator sends a new frame only when the screen changes, so a still screen sends one frame.\n".utf8))
+            Console.current.line(
+                "Note: the Android Emulator sends a new frame only when the screen changes, so a still screen sends one frame.",
+                person: .note("The emulator sends a frame only when the screen changes")
+            )
         }
-        FileHandle.standardError.write(Data("Press Ctrl+C to stop streaming\n".utf8))
+        Console.current.aside("Press Ctrl+C to stop streaming", person: nil)
 
         try await streamer.streamBGRA(
             from: device,

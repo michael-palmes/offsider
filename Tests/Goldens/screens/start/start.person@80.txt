@@ -1,0 +1,13 @@
+📱  Offsider                                       0.13.0
+─────────────────────────────────────────────────────────
+
+  Get started
+    offsider devices     See devices and their IDs
+    offsider doctor      Check this Mac is ready
+    offsider init        Teach your agent to use Offsider
+
+  Go further
+    offsider boot <AVD>  Start an emulator or simulator
+    offsider guide       Read a topic in depth
+    offsider --help      Every command and option
+#stderr

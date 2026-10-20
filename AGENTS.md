@@ -36,7 +36,7 @@ Offsider began as a fork of AXe (`cameroncooke/axe`) v1.8.0 and is developed ind
 | Command | Purpose |
 | --- | --- |
 | `make setup` | First run: `./scripts/build.sh dev`, then `swift build` |
-| `./scripts/build.sh dev [--rebuild] [--verbose]` or `make frameworks` | Check the tools (Xcode 26+, XcodeGen, jq, git, 10 GB), clone idb at the pin and build the XCFrameworks, reusing a `build_products/` that matches the pin and Xcode here or in another worktree; logs to `.build/idb-build.log` (`--verbose` streams), `--rebuild` always builds; run once per clone before `swift build` |
+| `./scripts/build.sh dev [--rebuild] [--verbose]` or `make frameworks` | Check the tools (Xcode 26+, XcodeGen, jq, git, 10 GB), clone idb at the pin and build the XCFrameworks, reusing a `build_products/` that matches the pin and Xcode here or in another worktree; logs to `.build/idb-build.log` behind a row per step (`--verbose` streams), `--rebuild` always builds; run once per clone before `swift build` |
 | `swift build` | Build the `offsider` executable |
 | `swift test` | Unit tests; no simulator needed, E2E suites skip |
 | `./scripts/build.sh help` | List build steps (`setup`, `clean`, `generate`, `frameworks`, `install`, `strip`, `xcframeworks`, `dev`, `executable`, `verify-xcframeworks`, `verify-arches`, `helper`, `runner`); bare `./scripts/build.sh` prints where to start |
@@ -45,7 +45,7 @@ Offsider began as a fork of AXe (`cameroncooke/axe`) v1.8.0 and is developed ind
 | `scripts/release.sh rehearse --version X --adhoc` | Stage, sign, package, verify and Homebrew-gate a local build without secrets; without `--version` it uses `git describe`'s |
 | `scripts/release.sh pack-payload`, `unpack-payload`, `unpack-archive` | Move the unsigned payload and the signed archive between the release workflow's build, sign and verify jobs |
 | `make e2e` or `./test-runner.sh --simulator` | Rebuild idb (unless `OFFSIDER_REUSE_IDB=1`), build Offsider and the playground, run simulator E2E suites (needs XcodeGen) |
-| `./test-runner.sh` | On a terminal, a mode picker (phone and iPhone modes never the default); otherwise `--simulator`. `--help` lists modes, `--help-env` settings, suites and examples |
+| `./test-runner.sh` | On a person's terminal, a mode picker (phone and iPhone modes never the default); otherwise, and always for an agent, `--simulator`. `--help` lists modes, `--help-env` settings, suites and examples |
 | `scripts/e2e-devices.sh [status\|create]` or `make e2e-devices` | Show the E2E devices (`Offsider_E2E`, `Offsider_E2E_Fold`, the `Offsider Duo` simulator) and create the missing ones; never boots them. `scripts/e2e-devices-core.sh status\|create [--dry-run]` is its JSON core |
 | `./test-runner.sh --unit-tests` | Build dependencies, then run non-E2E tests |
 | `./test-runner.sh --tests-only` | Run E2E against an existing binary (`OFFSIDER_BIN_PATH`) |
@@ -106,7 +106,7 @@ Agents building in parallel use `swift build --scratch-path <dir>` and `swift te
 | `OFFSIDER_SIMULATOR_SESSION_IDLE` | Seconds a simulator's warm input session stays after the last command (default 60, at most 3600); a broker stops after 12 hours at its next idle moment |
 | `OFFSIDER_IOS_RUNNER_IDLE` | Seconds an iPhone runner session stays up after its last request (default 300, at most 3600); a session is restarted after 12 hours |
 | `OFFSIDER_IOS_SESSION_IDLE` | Seconds an iPhone or iPad session broker stays up after its last command (default 300, at most 3600); a broker stops after 12 hours at its next idle moment |
-| `OFFSIDER_GOLDENS_UPDATE=1` | Re-renders the tree goldens offline (`--filter TreeGoldenRefresh`), or recaptures them with the RN device variables (`--filter TreeGoldenCaptureTests`) |
+| `OFFSIDER_GOLDENS_UPDATE=1` | Re-renders the tree goldens offline (`--filter TreeGoldenRefresh`), or recaptures them with the RN device variables (`--filter TreeGoldenCaptureTests`); rewrites the screen goldens in `Tests/Goldens/screens/` (`--filter ScreenGoldenTests`) |
 | `OFFSIDER_TREE_CACHE` | `off` stops reading and writing the per-device tree cache under the private directory's `trees/` (`describe-ui --diff`, the tap guard and batch read steps then see no earlier tree or input) |
 | `OFFSIDER_DISPLAY_CACHE` | `off` stops reading and writing the per-phone display cache under the private directory's `displays/` (a foldable phone's active panel, its size and device state, so the next capture skips the display reads) |
 | `OFFSIDER_DEVICE` | The default `--device` for device commands (an explicit `--device` wins; blank is unset); it never names a physical device (exit 64: a phone, iPhone or iPad needs `--device` on each command); `test-runner.sh` and test child processes unset it |
@@ -116,7 +116,7 @@ Agents building in parallel use `swift build --scratch-path <dir>` and `swift te
 | `OFFSIDER_TIMINGS=1` | Prints iOS and Android phase timings to stderr (`offsider timing: <phase> <n> ms`) |
 | `OFFSIDER_MASK_SECURE` | `screenshot` and `batch` mask password fields by default; `0`, `false`, `no` or `off` turns that default off (and the video password check outside a run), `1`, `true`, `yes` or `on` keeps it; a capture's or batch's `--mask-secure` or `--no-mask-secure` wins, and a run's mask is never dropped |
 | `OFFSIDER_BENCH_DIR` | Where `scripts/bench-ab.sh` writes its records (default `$TMPDIR/offsider-bench`) |
-| `OFFSIDER_OUTPUT` | `person` or `agent` overrides whether output is for an agent (default: agent when stdout is not a terminal); an agent's run always quotes screen names and needs a person for `--no-mask-secure`, `OFFSIDER_MASK_SECURE=0` and `describe-ui --raw-source`; `swift test` runs as an agent, so suites asserting person output use the `.personOutput` trait |
+| `OFFSIDER_OUTPUT` | `person` or `agent` overrides who reads the output; else `CLAUDE_CODE_CHILD_SESSION` or `AI_AGENT` (set, not `0`; never `CLAUDECODE`) means an agent, else stdout that is not a terminal. An agent gets stdout unchanged, one prefixed stderr line per note, no colour codes, spinners, pickers or `export` hints, and quoted screen names, and needs a person for `--no-mask-secure`, `OFFSIDER_MASK_SECURE=0` and `describe-ui --raw-source`; a person gets the styled view (`UI_ASCII=1` for ASCII, `COLUMNS` for a width). `swift test` runs as an agent, so suites asserting person output use the `.personOutput` trait |
 | `OFFSIDER_FUZZ` | `1` at build time adds the `OffsiderFuzz` product (debug builds only) |
 | `OFFSIDER_FUZZ_TARGET` | The fuzz target `OffsiderFuzz` runs when its first argument names none |
 | `OFFSIDER_HELPER_JDK` | JDK 17 home for `scripts/build.sh helper` (else `JAVA_HOME`, then `/usr/libexec/java_home -v 17`) |
@@ -132,7 +132,7 @@ Agents building in parallel use `swift build --scratch-path <dir>` and `swift te
 | iPhone runner | `Sources/Offsider/Resources/runner/` (`project.yml` and the generated `OffsiderRunner.xcodeproj`); regenerate with `scripts/build.sh runner` |
 | Android helper (Java) | `AndroidHelper/src/`; never edit the dex or manifest in `Sources/Offsider/Resources/helper/` by hand |
 | HID broker, accessibility resolution, errors | `Sources/Offsider/Utilities/` |
-| Terminal prompts and styling | `Sources/OffsiderCore/Terminal/` (`TerminalUI`, `PromptScreen`, `AllowScreen`); scripts use `scripts/lib/ui.sh` |
+| Terminal output and prompts | `Sources/OffsiderCore/Terminal/`: `Console` (the one writer), `Page`, `Table`, `PersonRenderer`, `AgentRenderer`, screens such as `DevicesScreen`, and prompts (`TerminalUI`, `PromptScreen`); goldens in `Tests/Goldens/screens/`; scripts use `scripts/lib/ui.sh` |
 | The skill `offsider init` installs | `Sources/Offsider/Resources/skills/offsider/SKILL.md` (a router under 10 KB); topics `offsider guide` prints are `references/<topic>.md` beside it, listed in `Types/GuideTopic.swift` |
 | Version string | `Plugins/VersionPlugin` (generates git-ignored `Version.swift`) |
 | Tests | `Tests/<Name>Tests.swift`; E2E fixture screens in `OffsiderPlaygroundApp/` |
@@ -158,7 +158,7 @@ A command or option change also updates `docs/commands.md` (and the `docs/` page
 
 ## Physical iPhone caveats
 
-- Drive an iPhone or iPad only when the user names its UDID; never pick one from `list-devices`. Reading its `devicectl` row is fine.
+- Drive an iPhone or iPad only when the user names its UDID; never pick one from `devices`. Reading its `devicectl` row is fine.
 - Every physical device must first be on the allow-list: the user runs `offsider device-access allow` in their own terminal, chooses the device, a team and `com.mpalmes.offsider.playground` from its menus, then Touch ID or their password. Tell them which device and app to choose by name, never an id to paste. Agents never run `allow`, never edit `~/.config/offsider/allowed-devices.json` and never add a bypass; `test-runner.sh` checks the list and says what to choose.
 - Offsider never pairs a device or accepts a prompt on it, and refuses Wi-Fi connections (`device_not_wired`); keep it that way, USB only through usbmuxd.
 - The runner source lives under `Sources/Offsider/Resources/runner`; after changing `project.yml`, regenerate the committed project with `scripts/build.sh runner` and check it with `scripts/build.sh runner --check`.

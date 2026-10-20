@@ -3,7 +3,7 @@ import OffsiderAndroid
 import OffsiderCore
 
 extension AndroidBackend {
-    /// Debug and info go to the Offsider logger; warnings print one `Warning:` line on stderr.
+    /// Debug and info go to the Offsider logger; warnings are console notices, shown once.
     static func make(logger: OffsiderLogger, host: AndroidHost = .cli()) -> AndroidBackend {
         AndroidBackend(host: host, log: logBridge(logger: logger))
     }
@@ -29,7 +29,7 @@ private final class AndroidLogSink: @unchecked Sendable {
         case .info:
             logger.info().log(message)
         case .warning:
-            FileHandle.standardError.write(Data("Warning: \(TerminalText.block(TerminalText.capped(message, cap: TerminalText.maxErrorCharacters)))\n".utf8))
+            Console.current.notice(.warning(message))
         }
     }
 }

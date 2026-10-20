@@ -1,6 +1,6 @@
 import Foundation
 
-/// What a `list-devices` row is: a simulator, a running emulator, a shut-down AVD or a physical phone.
+/// What a `devices` row is: a simulator, a running emulator, a shut-down AVD or a physical phone.
 public enum DeviceKind: String, Equatable, Sendable {
     case simulator
     case emulator
@@ -64,79 +64,52 @@ public enum DeviceListRenderer {
 
     /// Names come from the device, so they are escaped, and quoted for an agent.
     public static func table(_ devices: [DeviceSummary], profile: OutputProfile = .current) -> String {
-        let header = ["PLATFORM", "STATE", "ID", "NAME", "OS"]
-        let rows: [[String]] = [header] + devices.map { device -> [String] in
-            let shown = TerminalText.field(device.name, cap: maxNameCharacters, profile: profile)
-            let name: String = device.allowed == true ? shown + " (allowed)" : shown
-            return [device.platform.rawValue, TerminalText.line(device.state, cap: maxNameCharacters), TerminalText.line(device.id, cap: maxNameCharacters), name,
-                    device.osVersion.map { TerminalText.line($0, cap: maxNameCharacters) } ?? "-"]
-        }
-        let widths = header.indices.map { column in rows.map { $0[column].count }.max() ?? 0 }
-        return rows.map { row in
-            row.enumerated().map { column, cell in
-                column == row.count - 1 ? cell : cell + String(repeating: " ", count: widths[column] - cell.count)
-            }
-            .joined(separator: "  ")
-        }
-        .joined(separator: "\n") + "\n"
+        AgentRenderer.table(DevicesScreen.table(devices), profile: profile)
     }
 
-    /// Keys stay in schema order with explicit nulls, which `JSONEncoder` does not guarantee.
+    /// Keys stay in schema order with explicit nulls, which `JSONEncoder` does not guarantee: one line for an agent, indented for a person.
     /// `hiddenPhysical` counts the physical rows left out because they are not allowed.
-    public static func json(_ devices: [DeviceSummary], hiddenPhysical: Int = 0) -> String {
-        guard !devices.isEmpty else {
-            return "{\n  \"version\": \(jsonVersion),\n  \"devices\": [],\n  \"hiddenPhysical\": \(hiddenPhysical)\n}\n"
+    public static func json(_ devices: [DeviceSummary], hiddenPhysical: Int = 0, compact: Bool = false) -> String {
+        var members: [(String, OrderedJSON)] = [
+            ("version", .integer(jsonVersion)),
+            ("devices", .array(devices.map(object))),
+            ("hiddenPhysical", .integer(hiddenPhysical)),
+        ]
+        if !devices.isEmpty {
+            // The values each device reports about itself.
+            let paths = ["devices[].name"]
+                + (devices.contains { $0.osVersion != nil } ? ["devices[].osVersion"] : [])
+                + (devices.contains { $0.deviceType != nil } ? ["devices[].deviceType"] : [])
+            members.append((UntrustedPaths.key, .array(paths.map(OrderedJSON.string))))
         }
-        // The values each device reports about itself.
-        let paths = ["devices[].name"]
-            + (devices.contains { $0.osVersion != nil } ? ["devices[].osVersion"] : [])
-            + (devices.contains { $0.deviceType != nil } ? ["devices[].deviceType"] : [])
-        let objects = devices.map { device -> String in
-            let allowed: String = device.allowed.map { $0 ? "true" : "false" } ?? "null"
-            let fields: [(String, String)] = [
-                ("id", string(device.id)),
-                ("platform", string(device.platform.rawValue)),
-                ("state", string(device.state)),
-                ("name", string(device.name)),
-                ("osVersion", device.osVersion.map(string) ?? "null"),
-                ("deviceType", device.deviceType.map(string) ?? "null"),
-                ("kind", string(device.kind.rawValue)),
-                ("connection", device.connection.map(string) ?? "null"),
-                ("avd", device.avd.map(string) ?? "null"),
-                ("bootedBy", device.bootedBy.map(stamp) ?? "null"),
-                ("heldBy", device.heldBy.map(holder) ?? "null"),
-                ("lease", device.lease.map { lease($0, mine: device.leaseIsMine) } ?? "null"),
-                ("allowed", allowed),
-            ]
-            let body = fields.map { "      \(string($0.0)): \($0.1)" }.joined(separator: ",\n")
-            return "    {\n\(body)\n    }"
-        }
-        let document = "{\n  \"version\": \(jsonVersion),\n  \"devices\": [\n\(objects.joined(separator: ",\n"))\n  ],\n  \"hiddenPhysical\": \(hiddenPhysical)\n}\n"
-        return UntrustedPaths.appending(paths, to: document)
+        return OrderedJSON.object(members).rendered(compact: compact) + "\n"
     }
 
-    static func stamp(_ stamp: ProcessStamp) -> String {
-        let startedAt: String = string(ProcessStamp.timestamp(stamp.startedAt))
-        return "{\"pid\": \(stamp.pid), \"startedAt\": \(startedAt)}"
-    }
-
-    static func holder(_ holder: DeviceLockHolder) -> String {
-        let command: String = string(holder.command)
-        let startedAt: String = holder.startedAt.map { string(ProcessStamp.timestamp($0)) } ?? "null"
-        return "{\"pid\": \(holder.pid), \"command\": \(command), \"startedAt\": \(startedAt)}"
-    }
-
-    static func lease(_ lease: DeviceLease, mine: Bool) -> String {
-        let label: String = string(lease.label)
-        let since: String = string(ProcessStamp.timestamp(lease.created))
-        let expiresAt: String = string(ProcessStamp.timestamp(lease.expires))
-        return "{\"label\": \(label), \"since\": \(since), \"expiresAt\": \(expiresAt), \"mine\": \(mine)}"
-    }
-
-    /// Escaped as `OrderedJSON` escapes, so DEL, C1, bidi and tag characters never pass.
-    private static func string(_ value: String) -> String {
-        var output = ""
-        OrderedJSON.writeString(value, to: &output)
-        return output
+    static func object(_ device: DeviceSummary) -> OrderedJSON {
+        .object([
+            ("id", .string(device.id)),
+            ("platform", .string(device.platform.rawValue)),
+            ("state", .string(device.state)),
+            ("name", .string(device.name)),
+            ("osVersion", .optional(device.osVersion, OrderedJSON.string)),
+            ("deviceType", .optional(device.deviceType, OrderedJSON.string)),
+            ("kind", .string(device.kind.rawValue)),
+            ("connection", .optional(device.connection, OrderedJSON.string)),
+            ("avd", .optional(device.avd, OrderedJSON.string)),
+            ("bootedBy", .optional(device.bootedBy) { .object([("pid", .integer(Int($0.pid))), ("startedAt", .string(ProcessStamp.timestamp($0.startedAt)))]) }),
+            ("heldBy", .optional(device.heldBy) { holder in
+                .object([
+                    ("pid", .integer(Int(holder.pid))), ("command", .string(holder.command)),
+                    ("startedAt", .optional(holder.startedAt) { .string(ProcessStamp.timestamp($0)) }),
+                ])
+            }),
+            ("lease", .optional(device.lease) { lease in
+                .object([
+                    ("label", .string(lease.label)), ("since", .string(ProcessStamp.timestamp(lease.created))),
+                    ("expiresAt", .string(ProcessStamp.timestamp(lease.expires))), ("mine", .bool(device.leaseIsMine)),
+                ])
+            }),
+            ("allowed", .optional(device.allowed, OrderedJSON.bool)),
+        ])
     }
 }

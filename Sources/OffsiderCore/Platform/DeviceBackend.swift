@@ -21,6 +21,8 @@ public enum DetachedTouchStep: Equatable, Sendable {
 @MainActor
 public protocol DeviceBackend: AnyObject {
     var platform: DevicePlatform { get }
+    /// What `devices` says it skipped when this backend cannot list: `iOS Simulators`, `iPhones and iPads`.
+    var listingName: String { get }
     func prepare() async throws
     func listDevices() async throws -> [DeviceSummary]
     func requireBootedDevice(_ id: DeviceID) async throws -> BootedDevice
@@ -46,6 +48,8 @@ public protocol DeviceBackend: AnyObject {
 }
 
 extension DeviceBackend {
+    public var listingName: String { platform.devicesName }
+
     public func close() async {}
 
     public func screenSize(for id: DeviceID) async throws -> UISize? {

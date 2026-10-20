@@ -156,15 +156,26 @@ struct Logs: AsyncParsableCommand {
         try await read(from: try await DeviceRouter.route(deviceOption.id, logger: logger))
     }
 
-    /// Prints one line of stdout at once, so a reader of `--follow` sees each entry as it arrives.
+    /// Writes one line of stdout at once, so a reader of `--follow` sees each entry as it arrives.
     @MainActor
     static func printLine(_ line: String) {
-        print(line)
-        fflush(stdout)
+        Console.current.data(line + "\n")
     }
 
+    /// A stderr line as it is for an agent; a warning or a note for a person.
     static func printNote(_ line: String) {
-        print(line, to: &standardError)
+        Console.current.line(line, person: personNotice(line))
+    }
+
+    /// A person's few words for the notes most reads print; the rest read as they are.
+    static func personNotice(_ line: String) -> Notice {
+        if line == wholeLogNote { return .note("Reading every app's log; --app, --rn or --process reads one", mark: .logs) }
+        let following = "Following logs on "
+        let stop = "; press Ctrl+C to stop."
+        if line.hasPrefix(following), line.hasSuffix(stop) {
+            return .note("Following logs on \(line.dropFirst(following.count).dropLast(stop.count)) · Ctrl+C stops", mark: .logs)
+        }
+        return ReadPersonView.logNotice(line)
     }
 
     /// `write` receives each line meant for stdout, and `note` each one meant for stderr, without its newline.
@@ -221,7 +232,11 @@ struct Logs: AsyncParsableCommand {
             note("Following logs on \(booted.id.rawValue); press Ctrl+C to stop.")
         }
         let started = Date()
-        try await reading.value
+        if follow {
+            try await reading.value
+        } else {
+            try await Console.current.progress(duration.map { "Collecting logs for \(WaitLoop.seconds($0))" } ?? "Reading logs") { try await reading.value }
+        }
         if !follow {
             Self.emit(sink.collector, platform: booted.id.platform, device: booted.id.rawValue, json: json, timeZone: zone, keepsColour: raw, write: tee, note: note)
         }
@@ -255,7 +270,7 @@ struct Logs: AsyncParsableCommand {
     }
 
     static func warnRunWriteFailed(_ error: any Error) {
-        print("Warning: could not write the logs into the run: \(TerminalText.line(OffsiderCommand.message(for: error), cap: TerminalText.maxErrorCharacters)).", to: &standardError)
+        printNote("Warning: could not write the logs into the run: \(TerminalText.line(OffsiderCommand.message(for: error), cap: TerminalText.maxErrorCharacters)).")
     }
 
     /// The stderr line after a read that redacted something; nil when nothing was.

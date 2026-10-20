@@ -1,0 +1,12 @@
+PLATFORM  STATE     ID                                    NAME                     OS
+ios       Booted    00000000-0000-4000-8000-000000000001  "iPhone 17 Pro"          iOS 26.0
+ios       Booting   00000000-0000-4000-8000-000000000003  "iPhone 17e"             iOS 26.0
+ios       Shutdown  00000000-0000-4000-8000-000000000002  "iPad Air 13-inch (M3)"  iOS 26.0
+android   Booted    emulator-5554                         "Pixel_9"                Android 16
+android   Booted    R58M123ABC                            "Pixel 8" (allowed)      -
+android   Shutdown  Medium_Phone_API_37                   "Medium_Phone_API_37"    Android API 37
+#stderr
+Warning: Skipped iPhones and iPads: This Xcode is not trusted, so Offsider will not run its tools. Choose an Xcode that Apple signed.
+Try: sudo xcode-select -s /Applications/Xcode.app
+Note: emulator-5554 is leased to 'PR 123' until 15:13 (offsider lease show).
+Note: 3 physical devices are hidden because no one allowed Offsider to drive them; a person can list them with offsider devices --physical.

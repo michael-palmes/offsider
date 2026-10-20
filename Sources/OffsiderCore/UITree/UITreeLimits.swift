@@ -19,6 +19,12 @@ public struct UITreeTruncation: Equatable, Sendable {
         if nodes { parts.append("\(UITreeLimits.maxNodes.formatted()) elements") }
         return "Note: the tree was cut at \(parts.joined(separator: " and ")), so some elements are not listed."
     }
+
+    /// `note` for `Console`: an agent reads it as it is, a person in fewer words.
+    public var notice: Notice {
+        let cut = [depth ? "\(UITreeLimits.maxDepth) levels" : nil, nodes ? "\(UITreeLimits.maxNodes.formatted()) elements" : nil].compactMap { $0 }
+        return .note("Tree cut at \(cut.joined(separator: " and ")); some elements are not listed", agent: String(note.dropFirst("Note: ".count)))
+    }
 }
 
 /// The most of a tree Offsider keeps, whatever a device or file sends.

@@ -372,9 +372,9 @@ offsider_bin() {
   echo "${bin}"
 }
 
-# The available iPhone simulators, booted first, as "  name  udid  state" lines; the first UDID goes in IOS_SUGGESTED_UDID.
+# The available iPhone simulators, booted first, as status rows on stderr; the first UDID goes in IOS_SUGGESTED_UDID.
 list_ios_simulators() {
-  local rows
+  local rows udid name state width names=()
   IOS_SUGGESTED_UDID=""
   command -v jq >/dev/null 2>&1 || return 0
   rows=$(xcrun simctl list devices available -j 2>/dev/null | jq -r \
@@ -382,9 +382,15 @@ list_ios_simulators() {
      | sort_by(if .state == "Booted" then 0 else 1 end) | .[] | "\(.udid)\t\(.name)\t\(.state)"') || return 0
   [ -n "${rows}" ] || return 0
   IOS_SUGGESTED_UDID="${rows%%$'\t'*}"
-  printf '%s\n' "${rows}" | while IFS=$'\t' read -r udid name state; do
-    printf '  %s  %s%s%s  %s\n' "${name}" "${DIM}" "${udid}" "${NC}" "${state}" >&2
-  done
+  while IFS=$'\t' read -r udid name state; do names+=("${name}"); done <<<"${rows}"
+  width="$(ui_widest "${names[@]}")"
+  while IFS=$'\t' read -r udid name state; do
+    if [ "${state}" = Booted ]; then
+      UI_ROW_LABEL_WIDTH="${width}" ui_row on "${name}" "${udid}" >&2
+    else
+      UI_ROW_LABEL_WIDTH="${width}" ui_row off "${name}" "${udid}" >&2
+    fi
+  done <<<"${rows}"
 }
 
 # The serial of the running emulator whose AVD is $1, else nothing.

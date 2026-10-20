@@ -97,8 +97,8 @@ struct Init: AsyncParsableCommand {
             if client == .auto, interactive {
                 agents = try Self.chooseInstall([(String, String)](), rules: agents, name: \.0, folder: \.1).rules
             }
-            let (lines, failures) = Self.installRules(agents, home: home)
-            Self.write(lines)
+            let (steps, failures) = Self.applyRules(agents, home: home)
+            Console.current.show(InitScreen.page(steps))
             try Self.throwFirst(failures)
             return
         }
@@ -116,10 +116,10 @@ struct Init: AsyncParsableCommand {
         if targets.isEmpty, agents.isEmpty {
             throw CLIError(errorDescription: "No install targets resolved.", reason: .initFailed)
         }
-        var lines = targets.isEmpty ? [] : try installSkill(to: targets)
-        let (ruleLines, failures) = Self.installRules(agents, home: home)
-        lines += ruleLines
-        Self.write(lines + ["Next: offsider doctor"])
+        var steps = targets.isEmpty ? [] : try installSkill(to: targets)
+        let (ruleSteps, failures) = Self.applyRules(agents, home: home)
+        steps += ruleSteps
+        Console.current.show(InitScreen.page(steps, next: "offsider doctor"))
         try Self.throwFirst(failures)
     }
 
@@ -139,7 +139,7 @@ struct Init: AsyncParsableCommand {
         let folders = SkillInstall.distinct(targets, resolvedPath: folder)
         guard folders.count + rules.count > 1 else { return (targets, rules) }
         let rows = folders.map { first in
-            MenuRow([targets.filter { folder($0) == folder(first) }.map(name).joined(separator: " and "), InitScreen.shortPath(folder(first), home: homeDirectoryPath())])
+            MenuRow([targets.filter { folder($0) == folder(first) }.map(name).joined(separator: " and "), TerminalText.homePath(folder(first), home: homeDirectoryPath())])
         } + rules.map { MenuRow($0.pickerRow) }
         let chosen = try TerminalPrompt.run(cancelled: InitScreen.cancelled, descriptor: descriptor) { prompt in
             try prompt.chooseMany(InitScreen.agentsQuestion, rows: rows, ticked: Set(rows.indices))
@@ -161,7 +161,12 @@ struct Init: AsyncParsableCommand {
 
     /// Merges the rules into each agent's file; a file that cannot be read safely is left untouched and reported.
     static func installRules(_ agents: [AgentPermissionRules.Agent], home: String) -> (lines: [String], failures: [String]) {
-        var lines: [String] = []
+        let (steps, failures) = applyRules(agents, home: home)
+        return (steps.map(\.line), failures)
+    }
+
+    private static func applyRules(_ agents: [AgentPermissionRules.Agent], home: String) -> (steps: [InitScreen.Step], failures: [String]) {
+        var steps: [InitScreen.Step] = []
         var failures: [String] = []
         for agent in agents {
             let file = URL(fileURLWithPath: home).appendingPathComponent(agent.rulesFile)
@@ -171,14 +176,15 @@ struct Init: AsyncParsableCommand {
                 if let content = merge.content {
                     try writeAtomically(content, to: file)
                 }
-                lines.append(AgentPermissionRules.resultLine(path: shown, added: merge.added))
+                let line = AgentPermissionRules.resultLine(path: shown, added: merge.added)
+                steps.append(InitScreen.Step(merge.added == 0 ? .rulesPresent : .rulesAdded(merge.added), who: agent.name, path: shown, line: line))
             } catch let error as AgentPermissionRules.MergeError {
                 failures.append(AgentPermissionRules.failureLine(path: shown, error: error))
             } catch {
                 failures.append("Could not add rules to \(shown): \(error.localizedDescription)")
             }
         }
-        return (lines, failures)
+        return (steps, failures)
     }
 
     /// The file's bytes, nil when it does not exist; reads at most one byte past the cap so a huge file is refused cheaply.
@@ -214,7 +220,7 @@ struct Init: AsyncParsableCommand {
 
     private static func throwFirst(_ failures: [String]) throws {
         guard let first = failures.first else { return }
-        for other in failures.dropFirst() { fputs("\(other)\n", stderr) }
+        for other in failures.dropFirst() { Console.current.line(other, person: .warning(other)) }
         throw CLIError(errorDescription: first, reason: .initFailed)
     }
 
@@ -234,18 +240,19 @@ struct Init: AsyncParsableCommand {
         return String(decoding: data, as: UTF8.self)
     }
 
-    private func installSkill(to targets: [ClientInfo]) throws -> [String] {
+    private func installSkill(to targets: [ClientInfo]) throws -> [InitScreen.Step] {
         let bundled = Data(try Self.loadSkillMarkdown().utf8)
-        var lines: [String] = []
+        var steps: [InitScreen.Step] = []
 
         for (target, names) in Self.distinctFolders(targets) {
             let targetDirectory = target.skillsDirectory.appendingPathComponent(Self.skillFolderName, isDirectory: true)
             let targetFile = targetDirectory.appendingPathComponent("SKILL.md", isDirectory: false)
             let action = SkillInstall.action(existing: FileManager.default.contents(atPath: targetFile.path), bundled: bundled, force: force)
-            let label = "\(names.joined(separator: " and ")): \(targetFile.path)"
+            let who = names.joined(separator: " and ")
+            let label = "\(who): \(targetFile.path)"
             switch action {
             case .upToDate:
-                lines.append("Already up to date -> \(label)")
+                steps.append(InitScreen.Step(.upToDate, who: who, path: targetFile.path, line: "Already up to date -> \(label)"))
                 continue
             case .refuse:
                 throw CLIError(
@@ -258,7 +265,8 @@ struct Init: AsyncParsableCommand {
             do {
                 try FileManager.default.createDirectory(at: targetDirectory, withIntermediateDirectories: true)
                 try bundled.write(to: targetFile, options: .atomic)
-                lines.append("\(action == .install ? "Installed" : "Updated") Offsider skill -> \(label)")
+                let line = "\(action == .install ? "Installed" : "Updated") Offsider skill -> \(label)"
+                steps.append(InitScreen.Step(action == .install ? .installed : .updated, who: who, path: targetFile.path, line: line))
             } catch {
                 throw CLIError(
                     errorDescription: "Failed to install Offsider skill for \(target.name): \(error.localizedDescription)",
@@ -267,11 +275,11 @@ struct Init: AsyncParsableCommand {
             }
         }
 
-        if lines.isEmpty {
+        if steps.isEmpty {
             throw CLIError(errorDescription: "No install targets resolved.", reason: .initFailed)
         }
 
-        return lines
+        return steps
     }
 
     /// One entry per real folder, naming every client that shares it (a symlinked `~/.claude/skills` is one folder).
@@ -310,7 +318,7 @@ struct Init: AsyncParsableCommand {
     }
 
     private func uninstallSkill(from targets: [ClientInfo]) throws {
-        var removedPaths: [String] = []
+        var removed: [InitScreen.Step] = []
 
         for target in targets {
             let targetDirectory = target.skillsDirectory.appendingPathComponent(Self.skillFolderName, isDirectory: true)
@@ -320,7 +328,8 @@ struct Init: AsyncParsableCommand {
 
             do {
                 try FileManager.default.removeItem(at: targetDirectory)
-                removedPaths.append("\(target.name): \(targetDirectory.path)")
+                let line = "Removed Offsider skill -> \(target.name): \(targetDirectory.path)"
+                removed.append(InitScreen.Step(.removed, who: target.name, path: targetDirectory.path, line: line))
             } catch {
                 throw CLIError(
                     errorDescription: "Failed to uninstall Offsider skill for \(target.name): \(error.localizedDescription)",
@@ -329,19 +338,7 @@ struct Init: AsyncParsableCommand {
             }
         }
 
-        if removedPaths.isEmpty {
-            fputs("No installed Offsider skill directories were found.\n", stdout)
-            return
-        }
-
-        Self.write(removedPaths.map { "Removed Offsider skill -> \($0)" })
-    }
-
-    /// Plain lines to a pipe; on a terminal, the same results drawn with the terminal UI kit.
-    private static func write(_ lines: [String]) {
-        let terminal = isatty(STDOUT_FILENO) != 0
-        let shown = terminal ? InitScreen.styled(lines, style: .detect(isTerminal: true)) : lines
-        for line in shown { fputs("\(line)\n", stdout) }
+        Console.current.show(removed.isEmpty ? InitScreen.nothingToRemove : InitScreen.page(removed))
     }
 
     private func resolveTargets(for operation: Operation) throws -> [ClientInfo] {

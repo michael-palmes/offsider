@@ -76,13 +76,45 @@ struct Slider: AsyncParsableCommand {
         let logger = OffsiderLogger()
         let route = try await DeviceRouter.routeForInput(deviceOption, logger: logger)
         await appOption.apply(to: route)
-        let line = try await setSlider(on: SliderTarget(backend: route.backend, device: route.device), logger: logger)
+        let result = try await Console.current.progress("Setting \(selectorText) to \(formatPercent(value))%") {
+            try await set(on: SliderTarget(backend: route.backend, device: route.device), logger: logger)
+        }
         logger.info().log("Slider set completed successfully")
-        print(line)
+        Console.current.show(Self.receipt(
+            selector: selectorText, requested: formatPercent(value), reached: result.nearestStep.map(formatPercent), agent: line(for: result)
+        ))
+    }
+
+    /// `Slider id=volume set to 40%` for a person, with the step it reached when the control could not show the value asked for.
+    static func receipt(selector: String, requested: String, reached: String?, agent: String) -> Page {
+        InputPersonView.receipt(
+            "Slider \(selector) set to \(reached ?? requested)%",
+            details: reached == nil ? [] : ["The nearest step to \(requested)%"],
+            agent: agent + "\n"
+        )
     }
 
     /// Resolves, sets and verifies the slider, and returns the success line.
     func setSlider(on target: SliderTarget, logger: OffsiderLogger) async throws -> String {
+        line(for: try await set(on: target, logger: logger))
+    }
+
+    /// `✓ Slider set to 40 successfully (value: 0.4)`, naming the step it reached when the control could not show the value asked for.
+    private func line(for result: SliderResult) -> String {
+        guard let nearestStep = result.nearestStep else {
+            return "✓ Slider set to \(formatPercent(value)) successfully (value: \(result.observed))"
+        }
+        return "✓ Slider set to \(formatPercent(nearestStep)) (the nearest step to \(formatPercent(value))) successfully (value: \(result.observed))"
+    }
+
+    /// `id=volume`, as the command line named the slider.
+    private var selectorText: String {
+        if let elementID { return "id=\(elementID)" }
+        if let elementLabelContains { return "label-contains=\(elementLabelContains)" }
+        return "label=\(elementLabel ?? "")"
+    }
+
+    private func set(on target: SliderTarget, logger: OffsiderLogger) async throws -> SliderResult {
         try await target.backend.prepare()
 
         let query = try accessibilityQuery()
@@ -100,7 +132,7 @@ struct Slider: AsyncParsableCommand {
             logger: logger
         )
 
-        let result = try await setAndVerifySliderValue(
+        return try await setAndVerifySliderValue(
             initialMatch: polled.value,
             initialTree: polled.tree,
             query: query,
@@ -108,11 +140,6 @@ struct Slider: AsyncParsableCommand {
             target: target,
             logger: logger
         )
-
-        guard let nearestStep = result.nearestStep else {
-            return "✓ Slider set to \(formatPercent(value)) successfully (value: \(result.observed))"
-        }
-        return "✓ Slider set to \(formatPercent(nearestStep)) (the nearest step to \(formatPercent(value))) successfully (value: \(result.observed))"
     }
 
     private func accessibilityQuery() throws -> AccessibilityQuery {

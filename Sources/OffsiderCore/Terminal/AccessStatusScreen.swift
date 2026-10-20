@@ -1,7 +1,7 @@
 import Foundation
 
-/// What `device-access status` shows on a terminal, drawn with `TerminalUI`: a banner, one row per device agents may
-/// control now, a yellow line when the managed policy or a broken list refuses devices, and the commands to change it.
+/// What `device-access status` shows a person: a header that counts the devices agents may control now, a row for each,
+/// a warning when the managed policy or a broken list refuses devices, and the commands to change it.
 public enum AccessStatusScreen {
     public static let title = "Phones and tablets agents may control"
     public static let nothingAllowed = "Nothing allowed yet."
@@ -15,17 +15,15 @@ public enum AccessStatusScreen {
 
     /// `any app · until 22:14`, `com.example.app · until removed`, with `· team ABCDE12345` when `team` is on and the entry has one.
     public static func detail(_ entry: DeviceAllowance, now: Date, timeZone: TimeZone, team: Bool, style: TerminalStyle) -> String {
-        let until = entry.expires == nil ? "until removed" : AllowScreen.until(entry.expires, now: now, timeZone: timeZone)
-        let apps = entry.apps.isEmpty ? "any app" : entry.allowsWholeDevice ? "any app and all logs" : entry.apps.map { PromptScreen.label($0) }.joined(separator: ", ")
-        return ([apps, until] + (team ? entry.team.map { ["team \(PromptScreen.visible($0))"] } ?? [] : [])).joined(separator: " \(style.dot) ")
+        ([apps(entry), until(entry, now: now, timeZone: timeZone)] + (team ? entry.team.map { ["team \(PromptScreen.visible($0))"] } ?? [] : [])).joined(separator: " \(style.dot) ")
     }
 
-    /// 📲 for an iPad, 📱 for an iPhone, 🤖 for an Android phone, from what the entry recorded.
-    public static func mark(_ entry: DeviceAllowance) -> TerminalStyle.Mark {
-        switch entry.platform {
-        case .android: return .android
-        case .ios: return entry.name.contains("iPad") ? .iPad : .iPhone
-        }
+    static func apps(_ entry: DeviceAllowance) -> String {
+        entry.apps.isEmpty ? "any app" : entry.allowsWholeDevice ? "any app and all logs" : entry.apps.map { PromptScreen.label($0) }.joined(separator: ", ")
+    }
+
+    static func until(_ entry: DeviceAllowance, now: Date, timeZone: TimeZone) -> String {
+        entry.expires == nil ? "until removed" : AllowScreen.until(entry.expires, now: now, timeZone: timeZone)
     }
 
     public static func name(_ entry: DeviceAllowance) -> String {
@@ -49,20 +47,37 @@ public enum AccessStatusScreen {
         return blocked ? managedBlocksSome : nil
     }
 
-    public static func lines(_ policy: PhysicalDevicePolicy, now: Date, timeZone: TimeZone, width: Int, style: TerminalStyle) -> [String] {
-        var lines = TerminalUI.banner(title, mark: .lock, width: width, style: style) + [""]
-        if let warning = warning(policy, now: now) { lines += TerminalUI.warning(warning, width: width, style: style) }
+    /// A person's page; `agent` is what an agent reads on stdout instead, as it always did.
+    public static func page(_ policy: PhysicalDevicePolicy, now: Date, timeZone: TimeZone, agent: String = "") -> Page {
+        var notices: [Notice] = []
+        if let warning = warning(policy, now: now) {
+            let allowAgain = [listChanged, listUnreadable].contains(warning)
+            notices.append(.warning(warning, try: allowAgain ? allowCommand : nil))
+        }
         let entries = allowed(policy, now: now)
         guard !entries.isEmpty else {
-            let indent = String(repeating: " ", count: style.ascii ? style.mark(.warning).count + 1 : 3)
-            return lines + TerminalUI.warning(nothingAllowed, width: width, style: style)
-                + TerminalUI.commands([("Next", allowCommand)], indent: indent, style: style)
+            let person: [Block] = [.header(Header(.lock, title, ["none allowed"])), .prose(nothingAllowed)]
+            return Page([.person(person), .agent(agent)], notices: notices + (notices.contains { $0.command == allowCommand } ? [] : [.next(allowCommand)]))
         }
-        if lines.count > 4 { lines.append("") }
-        lines += TerminalUI.rows(entries.map { MenuRow(mark($0), [name($0), detail($0, now: now, timeZone: timeZone, team: true, style: style)]) }, selected: nil, style: style)
-        return lines + [""] + TerminalUI.commands([
-            ("Allow", allowCommand),
-            ("Withdraw", removeCommand(entries.count == 1 ? entries[0].key : "<id>")),
-        ], indent: "  ", style: style)
+        let rows = entries.map { entry in
+            Table.Row([
+                Table.Cell(name(entry)),
+                Table.Cell(apps(entry)),
+                Table.Cell(until(entry, now: now, timeZone: timeZone)),
+                entry.team.map { Table.Cell("team \(PromptScreen.visible($0))") },
+            ], status: .on)
+        }
+        let table = Table(columns: [
+            Table.Column(agent: "NAME", person: 0, fit: .cut(min: 12)),
+            Table.Column(agent: "APPS", person: 1, fit: .cut(min: 12), tone: .dim),
+            Table.Column(agent: "UNTIL", person: 2, fit: .whole, tone: .dim),
+            Table.Column(agent: "TEAM", person: 3, fit: .optional(priority: 1), tone: .dim),
+        ], rows: rows)
+        let commands = Block.commands(title: nil, [
+            Shortcut(allowCommand, "allow another"),
+            Shortcut(removeCommand(entries.count == 1 ? entries[0].key : "<id>"), "withdraw \(entries.count == 1 ? "it" : "one")"),
+        ])
+        let person: [Block] = [.header(Header(.lock, title, ["\(entries.count) allowed"])), .table(table), commands]
+        return Page([.person(person), .agent(agent)], notices: notices)
     }
 }

@@ -116,6 +116,17 @@ struct SessionCommandTests {
         #expect(entries.count == 1 && entries[0]["input"] as? Bool == true && entries[0]["helper"] as? Bool == false)
     }
 
+    @Test("stop text names what stopped on each device, or that nothing was running, as it always read")
+    func stopText() {
+        let stopped = DeviceSessionRow.stopped(runners: ["A"], brokers: ["A"], helpers: ["emulator-5554"], inputs: ["SIM-1"])
+        #expect(DeviceSessionRow.stoppedText(stopped, device: nil) == "Stopped the runner and session broker on A.\nStopped the input session on SIM-1.\nStopped the warm helper on emulator-5554.\n")
+        #expect(DeviceSessionRow.stoppedText([], device: "SIM-1") == "No session is running for SIM-1.\n")
+        #expect(DeviceSessionRow.stoppedText([], device: nil) == "No session is running.\n")
+        #expect(RunnerSessions.stoppedText(["A", "B"], device: nil) == "Stopped the runner on A.\nStopped the runner on B.\n")
+        #expect(RunnerSessions.stoppedText([], device: "A") == "No runner is running for A.\n")
+        #expect(RunnerSessions.stoppedText([], device: nil) == "No runner is running.\n")
+    }
+
     @Test("nested session commands keep their parent in the command path")
     func paths() throws {
         #expect(CommandPath.of(try SessionStatus.parse([])) == "session status")

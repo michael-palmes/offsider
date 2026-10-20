@@ -6,7 +6,7 @@ Status: **same** (same name and meaning), **renamed** (exists under another name
 
 | idb | Offsider | Status |
 | --- | --- | --- |
-| `idb list-targets` | `list-devices` | renamed |
+| `idb list-targets` | `devices` | renamed |
 | `idb ui describe-all` | `describe-ui` (`--summary` for agents) | renamed |
 | `idb ui describe-point X Y` | `describe-ui --point X,Y` | renamed |
 | `idb ui tap X Y` | `tap -x X -y Y` | renamed |

@@ -2,6 +2,8 @@
 
 `describe-ui` prints one object. Every key is present, with `null` when a value is unknown, and `--point x,y` returns the same envelope with the element at that point as the only root. `screen` and frames are in points on iOS and dp on Android. `--display <id>` checks that the active display is the one you expect, and `--app <bundle-id>` names the app to read on a physical iPhone, iPad or Android phone.
 
+A person and an agent read the same output; a person also sees a spinner while it reads, and its notes as styled lines on stderr.
+
 ```json
 {
   "version": 2,

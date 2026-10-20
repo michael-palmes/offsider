@@ -40,6 +40,13 @@ public struct RunTimeline: Equatable, Sendable {
             if let reason = entry.reason { parts.append(reason) }
         }
         if let file = entry.file { parts.append(file) }
+        let notes = notes(for: entry)
+        if !notes.isEmpty { parts.append("(\(notes.joined(separator: ", ")))") }
+        return parts.joined(separator: " ")
+    }
+
+    /// `masked 2`, `changed`, `3 entries` and the like: what a capture did beyond its file.
+    func notes(for entry: RunManifestLine) -> [String] {
         var notes: [String] = []
         if let masked = entry.masked, masked > 0 { notes.append("masked \(masked)") }
         if let skipped = entry.skippedBeneath, skipped > 0 { notes.append("skipped beneath \(skipped)") }
@@ -48,8 +55,7 @@ public struct RunTimeline: Equatable, Sendable {
         if let entries = entry.entries { notes.append(Self.count(entries, "entry", plural: "entries")) }
         if let redacted = entry.redacted, redacted > 0 { notes.append("redacted \(redacted)") }
         if let diff = entry.diff { notes.append("diff \(diff)") }
-        if !notes.isEmpty { parts.append("(\(notes.joined(separator: ", ")))") }
-        return parts.joined(separator: " ")
+        return notes
     }
 
     /// `{"version":1,"dir","label","startedAt","stoppedAt","entries":[…],"files","failures","unrecorded":[…]}`.

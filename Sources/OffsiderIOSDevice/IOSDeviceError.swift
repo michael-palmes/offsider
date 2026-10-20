@@ -60,7 +60,7 @@ public struct IOSDeviceError: LocalizedError, CustomStringConvertible, Equatable
     static func notYetSupported(_ udid: String, feature: String) -> IOSDeviceError {
         IOSDeviceError(
             .notYetSupported,
-            "\(feature) on a physical iPhone or iPad is not available in this version of Offsider, and \(udid) is one. Use an iOS simulator from `offsider list-devices`."
+            "\(feature) on a physical iPhone or iPad is not available in this version of Offsider, and \(udid) is one. Use an iOS simulator from `offsider devices`."
         )
     }
 
@@ -77,12 +77,12 @@ public struct IOSDeviceError: LocalizedError, CustomStringConvertible, Equatable
     static func notListed(_ udid: String) -> IOSDeviceError {
         IOSDeviceError(
             .notListed,
-            "No iPhone or iPad with UDID \(udid) is known to this Mac. Connect it with a cable, unlock it and trust this Mac, then run `offsider list-devices`."
+            "No iPhone or iPad with UDID \(udid) is known to this Mac. Connect it with a cable, unlock it and trust this Mac, then run `offsider devices`."
         )
     }
 
     static func unavailable(_ name: String) -> IOSDeviceError {
-        IOSDeviceError(.unavailable, "\(name) is paired with this Mac but not connected. Connect its cable and unlock it, then run `offsider list-devices`.")
+        IOSDeviceError(.unavailable, "\(name) is paired with this Mac but not connected. Connect its cable and unlock it, then run `offsider devices`.")
     }
 
     static func notWired(_ name: String) -> IOSDeviceError {
@@ -119,7 +119,7 @@ extension IOSDeviceError {
         case .notOnUSB:
             return .notWired(udid)
         case .notAttached, .result(2):
-            return IOSDeviceError(.unavailable, "\(udid) is not attached over USB. Connect its cable and unlock it, then run `offsider list-devices`.")
+            return IOSDeviceError(.unavailable, "\(udid) is not attached over USB. Connect its cable and unlock it, then run `offsider devices`.")
         case .result(3):
             return runnerNotListening(udid)
         case .result(let number):

@@ -43,7 +43,7 @@ struct DeviceAccessContext: Sendable {
     var seal: any DeviceAllowListSealing
     var managed: any ManagedPreferenceSource
     var now: @Sendable () -> Date
-    /// Connected physical devices, as `list-devices` shows them, and the warnings the scan raised.
+    /// Connected physical devices, as `devices` shows them, and the warnings the scan raised.
     var physicalDevices: @Sendable @MainActor () async throws -> (rows: [DeviceSummary], warnings: [String])
     /// Stops the device's runner and session broker; returns what stopped.
     var stopSessions: @Sendable @MainActor (String) async -> [String]
@@ -59,8 +59,8 @@ struct DeviceAccessContext: Sendable {
     var frontApp: @Sendable @MainActor (DeviceSummary) async -> String? = { _ in nil }
     /// offsider.login.json in this folder or above, whose app is offered first when present.
     var profile: @Sendable () -> LoginProfile? = { nil }
-    /// Uninstalls the runner from an iPhone or iPad and deletes its builds and logs; returns the report's text.
-    var cleanRunner: @Sendable @MainActor (String) async -> String = { _ in "" }
+    /// Uninstalls the runner from an iPhone or iPad and deletes its builds and logs.
+    var cleanRunner: @Sendable @MainActor (String) async -> RunnerCleanupReport = { RunnerCleanupReport(udid: $0) }
     /// A runner build or session this Mac holds for an iPhone or iPad, which `remove` offers to clean.
     var hasRunner: @Sendable (String) -> Bool = { _ in false }
     /// Whether `remove` may ask a question: standard input and output are both a terminal.
@@ -74,7 +74,7 @@ struct DeviceAccessContext: Sendable {
         physicalDevices: {
             let backends = DeviceRouter.allBackends(logger: OffsiderLogger())
             var warnings: [String] = []
-            let rows = try await ListDevices.collect(from: backends) { warnings.append($0) }
+            let rows = try await ListDevices.collect(from: backends) { warnings.append("Skipped \($0.what): \($0.message)") }
             return (rows.filter { $0.kind == .physical }, warnings)
         },
         stopSessions: { key in await DeviceAccessCommand.stopSessions(udid: key) },
@@ -94,7 +94,7 @@ struct DeviceAccessContext: Sendable {
             return top?.split(separator: "/").first.map(String.init)
         },
         profile: { (try? LoginProfiles.load(project: nil, warn: { _ in })) ?? nil },
-        cleanRunner: { udid in RunnerSessions.cleanText(await RunnerSessions.clean(udid: udid)) },
+        cleanRunner: { udid in await RunnerSessions.clean(udid: udid) },
         hasRunner: { RunnerSessions.hasRecord(udid: $0) },
         interactive: { isatty(STDIN_FILENO) != 0 && isatty(STDOUT_FILENO) != 0 }
     )
@@ -139,7 +139,7 @@ extension DeviceAccessCommand {
         case .androidNetworkSerial(let serial):
             throw AndroidError.networkDevice(serial)
         case .empty, .unrecognised:
-            throw CLIError(errorDescription: "\(id.isEmpty ? "Device ID cannot be empty" : "\(id) is not a device ID Offsider recognises"). Run `offsider list-devices --physical` to find it.", reason: .invalidDeviceID, hint: "offsider list-devices --physical")
+            throw CLIError(errorDescription: "\(id.isEmpty ? "Device ID cannot be empty" : "\(id) is not a device ID Offsider recognises"). Run `offsider devices --physical` to find it.", reason: .invalidDeviceID, hint: "offsider devices --physical")
         }
     }
 
@@ -220,15 +220,16 @@ struct DeviceAccessAllow: AsyncParsableCommand {
 
     @MainActor
     func run() async throws {
+        let console = Console.current
         let output: String
         do {
             output = try await perform(context: DeviceAccessContext.current)
         } catch let interrupted as Interrupted {
-            if isatty(STDOUT_FILENO) == 0 { print(interrupted.output) }
+            if console.out.profile != .person { console.data(interrupted.output + "\n") }
             throw interrupted.failure
         }
-        // The receipt is already on the terminal; stdout gets it only when it goes elsewhere.
-        if json || isatty(STDOUT_FILENO) == 0 { print(output) }
+        // A person read the receipt on the terminal already; stdout gets it only when someone else reads it.
+        if json || console.out.profile != .person { console.data(output + "\n") }
     }
 
     /// `Test iPhone stays allowed`, or `Test iPhone and Test Pixel stay allowed`.
@@ -438,7 +439,7 @@ struct DeviceAccessAllow: AsyncParsableCommand {
             guard let match = rows.first(where: { $0.connection == "usb" && $0.platform == pasted.platform && StableDeviceKey.of($0) == pasted.key }) else {
                 throw CLIError(
                     errorDescription: "\(pasted.key) is not a physical device connected over USB. Connect it with a cable, then run `offsider device-access allow` and choose it.",
-                    reason: .deviceNotFound, hint: "offsider list-devices --physical"
+                    reason: .deviceNotFound, hint: "offsider devices --physical"
                 )
             }
             return (match, [])
@@ -631,31 +632,37 @@ struct DeviceAccessStatus: AsyncParsableCommand {
     var json = false
 
     func run() async throws {
+        let console = Console.current
         let context = DeviceAccessContext.current
-        let screen = isatty(STDOUT_FILENO) != 0 ? (style: TerminalStyle.detect(isTerminal: true), width: PromptScreen.width(columns: Self.columns())) : nil
-        let (output, refusal) = try perform(context: context, screen: screen)
-        print(output, terminator: "")
+        if !json, device == nil {
+            let page = screen(context: context)
+            console.show(Page(page.blocks, notices: console.out.profile == .person ? page.notices : []))
+            return
+        }
+        let (output, refusal) = try perform(context: context)
+        console.data(output)
         if let refusal { throw refusal }
     }
 
-    private static func columns() -> Int? {
-        var size = winsize()
-        return ioctl(STDOUT_FILENO, TIOCGWINSZ, &size) == 0 && size.ws_col > 0 ? Int(size.ws_col) : nil
-    }
-
-    /// The report, and the error to exit with when `--device` is not allowed. `screen` draws the styled list for a terminal,
-    /// unless `--json` or `--device` asks for the text agents parse.
-    func perform(context: DeviceAccessContext, screen: (style: TerminalStyle, width: Int)? = nil) throws -> (String, CLIError?) {
+    /// The whole list: a person's screen, and beside it the text agents parse.
+    func screen(context: DeviceAccessContext) -> Page {
         let policy = context.policy()
         let now = context.now()
-        if let screen, !json, device == nil {
-            return (AccessStatusScreen.lines(policy, now: now, timeZone: context.timeZone, width: screen.width, style: screen.style).joined(separator: "\n") + "\n", nil)
-        }
+        return AccessStatusScreen.page(policy, now: now, timeZone: context.timeZone, agent: DeviceAccessReport.statusText(policy, now: now, path: Self.path(context)))
+    }
+
+    static func path(_ context: DeviceAccessContext) -> String {
+        context.store()?.path ?? "~/.config/offsider/\(DeviceAllowListStore.fileName)"
+    }
+
+    /// The text or JSON agents parse, and the error to exit with when `--device` is not allowed.
+    func perform(context: DeviceAccessContext) throws -> (String, CLIError?) {
+        let policy = context.policy()
+        let now = context.now()
         let target = try device.map(DeviceAccessCommand.physicalKey)
-        let path = context.store()?.path ?? "~/.config/offsider/\(DeviceAllowListStore.fileName)"
         let output = json
             ? policy.statusJSON(now: now, only: target)
-            : DeviceAccessReport.statusText(policy, now: now, path: path)
+            : DeviceAccessReport.statusText(policy, now: now, path: Self.path(context))
         guard let target else { return (output, nil) }
         switch policy.decision(platform: target.platform, key: target.key, now: now) {
         case .allowed(let entry):
@@ -682,11 +689,27 @@ struct DeviceAccessRemove: AsyncParsableCommand {
 
     @MainActor
     func run() async throws {
-        print(try await perform(context: DeviceAccessContext.current))
+        let console = Console.current
+        let removal = try await remove(context: DeviceAccessContext.current, person: !json && console.out.profile == .person)
+        let notices = removal.notices.map(\.forPersonOnly)
+        DevicePersonView.emit(removal.text, json: json, person: removal.person, notices: notices, console: console)
+    }
+
+    /// The agent's text or JSON, and what a person sees after anything the runner question already drew.
+    struct Removal {
+        var text: String
+        var person: [Block] = []
+        var notices: [Notice] = []
     }
 
     @MainActor
     func perform(context: DeviceAccessContext) async throws -> String {
+        try await remove(context: context).text
+    }
+
+    /// Draws a person's receipt above the runner question when `person`; otherwise the question shows the agent's text.
+    @MainActor
+    func remove(context: DeviceAccessContext, person: Bool = false) async throws -> Removal {
         let target = try DeviceAccessCommand.physicalKey(device)
         let store = try context.requireStore()
         let existing = try? store.load()
@@ -701,21 +724,39 @@ struct DeviceAccessRemove: AsyncParsableCommand {
             }, commit: { try context.seal.seal($0) })
         }
         let hadRunner = target.platform == .ios && context.hasRunner(target.key)
-        let stopped = await context.stopSessions(target.key)
-        if json { return DeviceAccessReport.changeJSON(action: "remove", platform: target.platform, key: target.key, allowance: removed, stopped: stopped) }
+        let stopped = await Console.current.progress("Stopping its sessions") { await context.stopSessions(target.key) }
+        if json { return Removal(text: DeviceAccessReport.changeJSON(action: "remove", platform: target.platform, key: target.key, allowance: removed, stopped: stopped)) }
         var text = removed.map { "Removed \($0.name) (\(target.key)) from the allow-list; Offsider will not drive it again until a person allows it." }
             ?? "\(target.key) was not on the allow-list."
         if tampered, existing != nil { text += " The allow-list had been changed outside Offsider, so every entry was dropped." }
         if !stopped.isEmpty { text += " Stopped its \(stopped.joined(separator: " and "))." }
-        guard hadRunner else { return text }
+        let sessions = stopped.isEmpty ? nil : "stopped its \(stopped.joined(separator: " and "))"
+        let receipt = removed.map { DevicePersonView.receipt("Withdrew \(AccessStatusScreen.name($0))", [sessions]) }
+            ?? DevicePersonView.receipt("Nothing to withdraw", ["\(target.key) was not on the list", sessions])
+        let dropped: [Notice] = tampered && existing != nil ? [.warning("The list was changed outside Offsider, so every entry was dropped")] : []
+        guard hadRunner else { return Removal(text: text, person: receipt, notices: dropped) }
         let clean = Self.cleanCommand(target.key)
-        guard context.interactive() else { return text + " Uninstall Offsider's runner from it with `\(clean)`." }
+        guard context.interactive() else {
+            let installed = Notice.note("Its runner is still installed", mark: .clean, see: clean, label: "Remove")
+            return Removal(text: text + " Uninstall Offsider's runner from it with `\(clean)`.", person: receipt, notices: dropped + [installed])
+        }
         let answer = try TerminalPrompt.run(cancelled: "Kept the runner; `\(clean)` removes it later.", descriptor: context.promptDescriptor, keeps: true) { prompt in
-            prompt.lines([text])
+            prompt.lines(person ? Self.drawn(receipt, notices: dropped, width: prompt.width, style: prompt.style) : [text])
             return try prompt.ask(Self.cleanQuestion) { Self.yesOrNo($0) == nil ? "Type y or n." : nil }
         }
-        guard Self.yesOrNo(answer) == true else { return "Kept the runner; `\(clean)` removes it later." }
-        return await context.cleanRunner(target.key).trimmingCharacters(in: .newlines)
+        guard Self.yesOrNo(answer) == true else {
+            return Removal(text: "Kept the runner; `\(clean)` removes it later.", person: DevicePersonView.receipt("Kept the runner") + [.commands(title: nil, [Shortcut(clean, "removes it later")])])
+        }
+        let report = await Console.current.progress("Uninstalling the runner") { await context.cleanRunner(target.key) }
+        let cleaned = DevicePersonView.cleaned(report)
+        return Removal(text: RunnerSessions.cleanText(report).trimmingCharacters(in: .newlines), person: cleaned.blocks, notices: cleaned.notices)
+    }
+
+    /// A person's receipt and notices as the prompt draws them, above its question.
+    static func drawn(_ blocks: [Block], notices: [Notice], width: Int, style: TerminalStyle) -> [String] {
+        let canvas = Canvas(columns: width + 1, style: style)
+        let text = PersonRenderer.body(blocks, canvas: canvas) + PersonRenderer.notices(notices, canvas: canvas, afterBody: false)
+        return text.split(separator: "\n", omittingEmptySubsequences: false).dropLast().map(String.init)
     }
 
     static let cleanQuestion = "Also uninstall its runner? (Y/n) "

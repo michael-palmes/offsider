@@ -94,13 +94,17 @@ struct RNOpen: AsyncParsableCommand {
     func run() async throws {
         let logger = OffsiderLogger()
         let route = try await DeviceRouter.routeForInput(deviceOption, logger: logger)
-        let report = try await open(on: route, metro: MetroStatus(), clock: .live)
-        let line = "✓ \(bundleID) loaded from Metro on port \(port) in \(WaitLoop.seconds(Double(report.elapsedMs) / 1000)) (\(report.sends) send\(report.sends == 1 ? "" : "s")\(report.launcherSeen ? ", launcher seen" : ""))"
+        let console = Console.current
+        let report = try await console.progress("Loading \(bundleID) from Metro") { try await open(on: route, metro: MetroStatus(), clock: .live) }
+        let took = WaitLoop.seconds(Double(report.elapsedMs) / 1000)
+        let sends = "\(report.sends) send\(report.sends == 1 ? "" : "s")"
+        let line = "✓ \(bundleID) loaded from Metro on port \(port) in \(took) (\(sends)\(report.launcherSeen ? ", launcher seen" : ""))"
         if json {
-            print(report.jsonLine())
-            print(line, to: &standardError)
+            console.data(report.jsonLine() + "\n")
+            console.data(line + "\n", to: .err)
         } else {
-            print(line)
+            let details = "Port \(port), \(took), \(sends)" + (report.launcherSeen ? ", launcher seen" : "")
+            console.show(InputPersonView.receipt("\(bundleID) loaded from Metro", details: [details], agent: line + "\n"))
         }
     }
 

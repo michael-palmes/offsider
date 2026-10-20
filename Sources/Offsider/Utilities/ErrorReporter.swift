@@ -102,8 +102,7 @@ enum ErrorReporter {
     static func writeEnvelopeIfWanted(_ payload: ErrorPayload) {
         guard context.wantsJSON else { return }
         let capped = payload.scrubbed { TerminalText.capped($0, cap: TerminalText.maxErrorCharacters) }
-        let line = envelopeLine(capped, command: context.command) + "\n"
-        FileHandle.standardOutput.write(Data(line.utf8))
+        Console.current.data(envelopeLine(capped, command: context.command) + "\n")
     }
 
     /// The envelope with its `untrusted` list: a message can quote device text, and candidates, covers and saved users always do.
@@ -111,10 +110,13 @@ enum ErrorReporter {
         UntrustedPaths.appending(payload.untrustedPaths(), to: ErrorEnvelope(command: command, error: payload).jsonLine())
     }
 
-    private static func writeErrorLine(_ message: String, hint: String? = nil) {
-        let style = TerminalStyle.detect(isTerminal: isatty(STDERR_FILENO) != 0)
-        let text = errorText(message) + (context.wantsJSON ? "" : hintText(hint, message: message, style: style))
-        FileHandle.standardError.write(Data(text.utf8))
+    /// A person sees the cause in bold red and a `Try` line; an agent the plain `Error:` and `Try:` lines.
+    static func writeErrorLine(_ message: String, hint: String? = nil) {
+        Console.current.release()
+        let text = ErrorAudience.current == .person
+            ? PersonRenderer.error(message, hint: hint, canvas: Console.current.err.canvas)
+            : errorText(message) + (context.wantsJSON ? "" : hintText(hint, message: message, style: .plain))
+        Console.current.data(text, to: .err)
     }
 
     /// `Error: <message>` and a newline, with control and bidi characters escaped, continuation lines indented and at most 4 KiB shown.

@@ -25,10 +25,10 @@ struct FailureReasonTests {
     func envelopeShape() throws {
         let envelope = ErrorEnvelope(
             command: "screenshot",
-            error: ErrorPayload(reason: .deviceNotFound, message: "No device", hint: "offsider list-devices")
+            error: ErrorPayload(reason: .deviceNotFound, message: "No device", hint: "offsider devices")
         )
         let line = envelope.jsonLine()
-        #expect(line.hasPrefix(#"{"version":1,"ok":false,"command":"screenshot","exitCode":7,"error":{"reason":"device_not_found","message":"No device","hint":"offsider list-devices","dispatched":null,"candidates":[]}}"#))
+        #expect(line.hasPrefix(#"{"version":1,"ok":false,"command":"screenshot","exitCode":7,"error":{"reason":"device_not_found","message":"No device","hint":"offsider devices","dispatched":null,"candidates":[]}}"#))
     }
 
     @Test("a payload keeps at most five candidates")

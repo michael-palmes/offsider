@@ -32,7 +32,7 @@ extension IOSBackend: DisplayControlling {
 
     private func singleDisplay(of simulator: FBSimulator, id: DeviceID) async throws -> DisplayList {
         guard let screen = try await screenInfo(for: id), let scale = screen.scale else {
-            throw CLIError(errorDescription: "Offsider could not read the screen of simulator \(id.rawValue). Check it is booted with `offsider list-devices`.", reason: .displayUnreadable, hint: "offsider list-devices")
+            throw CLIError(errorDescription: "Offsider could not read the screen of simulator \(id.rawValue). Check it is booted with `offsider devices`.", reason: .displayUnreadable, hint: "offsider devices")
         }
         let profiled = displayCatalog.profile(of: simulator)?.first
         let portrait = screen.rotation?.isLandscape == true ? (screen.height, screen.width) : (screen.width, screen.height)

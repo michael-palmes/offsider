@@ -317,9 +317,13 @@ public struct DoctorPolicy: Codable, Equatable, Sendable {
 extension DoctorReport {
     /// For a host-only report, the device check to run next when exactly one simulator or emulator is booted.
     public var nextStep: String? {
+        nextCommand.map { "Next: \($0)" }
+    }
+
+    public var nextCommand: String? {
         guard device == nil else { return nil }
         let emulators = (android?.devices ?? []).filter { $0.kind == "emulator" && $0.state == "device" }.map(\.serial)
         let ids = booted.map(\.udid) + emulators
-        return ids.count == 1 ? "Next: offsider doctor --device \(ids[0])" : nil
+        return ids.count == 1 ? "offsider doctor --device \(ids[0])" : nil
     }
 }

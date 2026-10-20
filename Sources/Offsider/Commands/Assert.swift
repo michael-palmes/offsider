@@ -41,11 +41,15 @@ struct Assert: AsyncParsableCommand {
         // An Android tree read locks the device, so the claim (and any --wait-lock) comes before the watchdog's bound.
         let locking = DeviceIDClassifier.classify(deviceOption.id).platform == .android
         let route = try await DeviceRouter.routeForInput(deviceOption.id, logger: logger, watchdog: watchdog, locking: locking)
-        let outcome = try await watchdog.guarding(setupThen: 0, device: deviceOption.id) { ready in
-            try await evaluate(on: route, logger: logger, probesOnMiss: true, onPrepared: ready)
+        let outcome = try await Console.current.progress("Checking \(subject)") {
+            try await watchdog.guarding(setupThen: 0, device: deviceOption.id) { ready in
+                try await evaluate(on: route, logger: logger, probesOnMiss: true, onPrepared: ready)
+            }
         }
         let mask = (try? await AmbientMasks.treeMask()) ?? .none
-        try Wait.report(outcome, success: successLine(outcome), failure: failureLine(outcome), json: json, checked: selector, mask: mask)
+        try Wait.report(
+            outcome, success: successLine(outcome), failure: failureLine(outcome), json: json, checked: selector, mask: mask, person: personOutcome
+        )
     }
 
     /// One read on `route` without printing; a batch step or a test reports the outcome itself. `tree` replaces the device's tree read; `probesOnMiss` reads the screen's centre once when the check fails.
@@ -80,6 +84,14 @@ struct Assert: AsyncParsableCommand {
     func failureLine(_ outcome: WaitOutcome) -> String {
         let nearest = outcome.nearMiss.map { " (nearest: \($0.summary))" } ?? ""
         return "✗ Assertion failed: \(subject) \(Self.predicate(outcome.reason))\(nearest)."
+    }
+
+    /// A person's ✅ naming the state that held, or ❌ with what was there instead and the nearest element; `shown` is already redacted.
+    func personOutcome(_ shown: WaitOutcome, note: String?) -> Outcome {
+        guard shown.met else {
+            return .failed("\(subject) \(Self.predicate(shown.reason))", details: shown.nearMiss.map { ["Nearest  \($0.summary)"] } ?? [])
+        }
+        return .done("\(subject) is \(gone ? "gone" : selector.presentState)", details: note.map { [$0] } ?? [])
     }
 
     private var subject: String {

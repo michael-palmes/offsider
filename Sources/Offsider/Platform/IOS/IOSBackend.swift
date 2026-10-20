@@ -20,6 +20,7 @@ final class IOSBackend: DeviceBackend {
     }
 
     var platform: DevicePlatform { .ios }
+    var listingName: String { "iOS Simulators" }
 
     func prepare() async throws {
         guard !Self.isPrepared else { return }
@@ -64,11 +65,11 @@ final class IOSBackend: DeviceBackend {
     func requireBootedDevice(_ id: DeviceID) async throws -> BootedDevice {
         let udid = id.rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !udid.isEmpty else {
-            throw CLIError(errorDescription: "Device ID cannot be empty. Use --device to choose a device.", reason: .invalidDeviceID, hint: "offsider list-devices")
+            throw CLIError(errorDescription: "Device ID cannot be empty. Use --device to choose a device.", reason: .invalidDeviceID, hint: "offsider devices")
         }
 
         guard let simulator = try await cachedSimulator(udid: udid, logger: logger) else {
-            throw CLIError(errorDescription: "Simulator with UDID \(udid) not found.", reason: .deviceNotFound, hint: "offsider list-devices")
+            throw CLIError(errorDescription: "Simulator with UDID \(udid) not found.", reason: .deviceNotFound, hint: "offsider devices")
         }
 
         guard simulator.state == .booted else {
@@ -341,7 +342,7 @@ extension IOSBackend: RawVideoStreaming {
             try await stream.startStreamingAsync(stdoutConsumer)
             isStreaming = true
             try await Task.sleep(nanoseconds: 1_000_000_000)
-            FileHandle.standardError.write(Data("BGRA stream is now running...\n".utf8))
+            Console.current.aside("BGRA stream is now running...", person: nil)
 
             while true {
                 if Task.isCancelled {
@@ -353,10 +354,11 @@ extension IOSBackend: RawVideoStreaming {
                 try? await Task.sleep(nanoseconds: 100_000_000)
             }
 
-            FileHandle.standardError.write(Data("\nStopping BGRA stream...\n".utf8))
+            Console.current.aside("\nStopping BGRA stream...", person: nil)
             isStreaming = false
             try await stream.stopStreamingAsync()
-            FileHandle.standardError.write(Data("BGRA stream stopped\n".utf8))
+            Console.current.clearLine()
+            Console.current.aside("BGRA stream stopped", person: "Stream stopped")
         } catch {
             if isStreaming, let videoStream {
                 isStreaming = false

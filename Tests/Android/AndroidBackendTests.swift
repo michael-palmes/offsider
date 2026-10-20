@@ -76,7 +76,7 @@ struct AndroidBackendTests {
         let missing = await #expect(throws: AndroidError.self) {
             try await backend.requireBootedDevice(DeviceID(rawValue: "emulator-5570", platform: .android))
         }
-        #expect(missing?.message == "No emulator with serial emulator-5570 is running. Run `offsider list-devices` to see running emulators.")
+        #expect(missing?.message == "No emulator with serial emulator-5570 is running. Run `offsider devices` to see running emulators.")
     }
 
     @Test("screen info is the logical size in dp with the density scale and orientation")
@@ -162,7 +162,7 @@ struct AndroidBackendTests {
         #expect(!server.services.contains("shell,v2,raw:" + AndroidDisplayGeometry.probeScript))
     }
 
-    @Test("list-devices rows come from adb and the AVD folder")
+    @Test("devices rows come from adb and the AVD folder")
     func listDevices() async throws {
         let rows = try await Self.backend(Self.server()).listDevices()
         #expect(rows.map(\.id) == ["emulator-5556", "emulator-5558", "emulator-5560"])
@@ -176,7 +176,7 @@ struct AndroidBackendTests {
 
         await #expect(throws: PlatformUnavailable.self) { try await backend.prepare() }
         let error = await #expect(throws: AndroidError.self) { try await backend.resolveAndroidName("Pixel_10") }
-        #expect(error?.message == "No device named Pixel_10. Run `offsider list-devices` to find device IDs.")
+        #expect(error?.message == "No device named Pixel_10. Run `offsider devices` to find device IDs.")
         #expect(server.connectionAttempts == 0)
     }
 }

@@ -59,15 +59,18 @@ struct RunnerBuildCommand: AsyncParsableCommand {
         guard let backend = route.backend as? IOSDeviceBackend else {
             throw CLIError(errorDescription: "runner build is for a physical iPhone or iPad, and \(udid) is not one.", reason: .usage)
         }
+        let console = Console.current
         let build = try await XcodeRunnerBuilder.$confirmNewPrefix.withValue(Self.confirmPrefix(udid: udid)) {
-            try await backend.buildRunner(for: route.device, registerDevice: registerDevice)
+            try await console.progress("Building the runner") { try await backend.buildRunner(for: route.device, registerDevice: registerDevice) }
         }
+        let text: String
         if json {
             let data = try JSONSerialization.data(withJSONObject: ["device": udid, "key": build.key, "directory": build.directory.path], options: [.sortedKeys])
-            print(String(decoding: data, as: UTF8.self))
+            text = String(decoding: data, as: UTF8.self)
         } else {
-            print("The Offsider runner for \(udid) is built and its signature checked (\(build.directory.path)).")
+            text = "The Offsider runner for \(udid) is built and its signature checked (\(build.directory.path))."
         }
+        DevicePersonView.emit(text, json: json, person: DevicePersonView.built(udid: udid, directory: build.directory), console: console)
     }
 }
 
@@ -87,7 +90,12 @@ struct RunnerStatus: AsyncParsableCommand {
         let rows = RunnerSessions.records(device: device).map { record in
             RunnerSessionRow(record: record, alive: XcodebuildProcesses().isRunning(record))
         }
-        print(json ? RunnerSessionRow.json(rows) : RunnerSessionRow.text(rows), terminator: "")
+        if json {
+            Console.current.data(RunnerSessionRow.json(rows))
+            return
+        }
+        let person = DevicePersonView.sessions(rows.map { DeviceSessionRow(device: $0.record.udid, runner: $0, broker: nil) }, title: "Runner sessions")
+        Console.current.show(Page([.person(person), .agent(RunnerSessionRow.text(rows))]))
     }
 }
 
@@ -113,37 +121,47 @@ struct RunnerStop: AsyncParsableCommand {
     @MainActor
     func run() async throws {
         let cleanUDID = try clean ? RunnerSessions.cleanableUDID(device ?? "", command: "runner stop --clean") : nil
-        let records = RunnerSessions.records(device: device)
-        let manager = RunnerSessionManager(
-            store: RunnerSessions.store,
-            builder: UnusedRunnerBuilder(),
-            environment: ProcessInfo.processInfo.environment,
-            developerDirectory: nil,
-            log: { _, _ in }
-        )
-        for record in records {
-            await manager.stop(record)
-            RunnerSessions.removeLog(udid: record.udid)
+        let console = Console.current
+        let (stopped, cleaned) = await console.progress("Stopping the runner") {
+            let records = RunnerSessions.records(device: device)
+            let manager = RunnerSessionManager(
+                store: RunnerSessions.store,
+                builder: UnusedRunnerBuilder(),
+                environment: ProcessInfo.processInfo.environment,
+                developerDirectory: nil,
+                log: { _, _ in }
+            )
+            for record in records {
+                await manager.stop(record)
+                RunnerSessions.removeLog(udid: record.udid)
+            }
+            if let device, case .iosDevice(let udid) = DeviceIDClassifier.classify(device.trimmingCharacters(in: .whitespacesAndNewlines)) {
+                RunnerSessions.removeLog(udid: udid)
+            }
+            var cleaned: RunnerCleanupReport?
+            if let cleanUDID {
+                console.relabel("Uninstalling the runner")
+                cleaned = await RunnerSessions.clean(udid: cleanUDID)
+            }
+            return (records.map(\.udid), cleaned)
         }
-        if let device, case .iosDevice(let udid) = DeviceIDClassifier.classify(device.trimmingCharacters(in: .whitespacesAndNewlines)) {
-            RunnerSessions.removeLog(udid: udid)
-        }
-        let stopped = records.map(\.udid)
-        var cleaned: RunnerCleanupReport?
-        if let cleanUDID { cleaned = await RunnerSessions.clean(udid: cleanUDID) }
         if json {
             var object: [String: Any] = ["stopped": stopped]
             if let cleaned { object["clean"] = RunnerSessions.cleanFields(cleaned) }
             let data = try JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])
-            print(String(decoding: data, as: UTF8.self))
-        } else {
-            if stopped.isEmpty {
-                print(device.map { "No runner is running for \($0)." } ?? "No runner is running.")
-            } else {
-                for udid in stopped { print("Stopped the runner on \(udid).") }
-            }
-            if let cleaned { print(RunnerSessions.cleanText(cleaned), terminator: "") }
+            console.data(String(decoding: data, as: UTF8.self) + "\n")
+            return
         }
+        var text = RunnerSessions.stoppedText(stopped, device: device)
+        var person = DevicePersonView.runnersStopped(stopped, device: device)
+        var notices: [Notice] = []
+        if let cleaned {
+            text += RunnerSessions.cleanText(cleaned)
+            let view = DevicePersonView.cleaned(cleaned)
+            person += view.blocks
+            notices = view.notices.map(\.forPersonOnly)
+        }
+        console.show(Page([.person(person), .agent(text)], notices: notices))
     }
 }
 
@@ -157,7 +175,7 @@ enum RunnerSessions {
         guard case .iosDevice(let udid) = DeviceIDClassifier.classify(raw.trimmingCharacters(in: .whitespacesAndNewlines)) else {
             throw CLIError(
                 errorDescription: "`offsider \(command)` is for a physical iPhone or iPad, named by its UDID with --device; \(raw.isEmpty ? "none was given" : "\(raw) is not one").",
-                reason: .usage, hint: "offsider list-devices --physical"
+                reason: .usage, hint: "offsider devices --physical"
             )
         }
         return udid
@@ -197,6 +215,12 @@ enum RunnerSessions {
             udid: udid, cacheRoot: XcodeRunnerBuilder.defaultCacheRoot(home: FileManager.default.homeDirectoryForCurrentUser),
             environmentPrefix: prefix, devicectl: XcrunDevicectl(environment: environment), logPaths: logs
         )
+    }
+
+    /// `Stopped the runner on <udid>.` per phone, or that none was running.
+    static func stoppedText(_ udids: [String], device: String?) -> String {
+        guard !udids.isEmpty else { return (device.map { "No runner is running for \($0)." } ?? "No runner is running.") + "\n" }
+        return udids.map { "Stopped the runner on \($0).\n" }.joined()
     }
 
     static func cleanText(_ report: RunnerCleanupReport) -> String {

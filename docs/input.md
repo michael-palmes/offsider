@@ -11,6 +11,8 @@ Most input commands confirm dispatch, not effect. Add `--verify` to `tap`, `type
 - Text that changed with no input between the previous command's read and this one (a live price or clock) and React Native LogBox toasts never count. The verified line names up to three changes and ends with its timing, `(settle 0.4 s, tap 0.1 s, verify 1.2 s)`.
 - `slider` always checks its value.
 
+At a terminal, a person sees a ✅ receipt for every input command, even those an agent reads nothing from, and never the typed text or its length. `--verify` shows ✅ with what changed and its timings, or ❌ with the commands to try next, and a retry as a ⚠️ line. An agent's lines are unchanged.
+
 If input seems to be ignored, or screen reads fail, run `offsider doctor --device <ID>` (see [Doctor and troubleshooting](troubleshooting.md)).
 
 ## Selectors and taps
@@ -43,6 +45,7 @@ Selector `tap`, `slider` and batch `tap` steps guard against a target still movi
 
 - `wait` waits until an element is on screen (`--id`, `--label`, `--label-contains`, `--value`, `--has-value`) or `--gone` (held for `--stable-for <ms>`, default 500 with `--gone`), the first of several with `--any` (repeat `--id`, `--label`, `--label-contains` or `--value`), the screen is `--settled` (`--ignore-values` lets ticking text pass; within 2 s of an input it also waits for that input's effect), a `--region x,y,w,h` is `--changed` or `--stable`, or `--seconds` pass (both up to 900 s); `--timeout`, `--json`. On timeout, a selector that found nothing names the closest element (`nearest` in `--json`). `--region` watches pixels, for content the accessibility tree cannot see, such as charts, maps and web views.
 - `assert` checks once that an element is on screen, optionally with `--has-value`, or `--gone`. `--id` with `--label` (or `--label-contains`) or `--value` must match one element, as in `wait` and `tap`. When nothing matched, it names the closest element.
+- A person sees a spinner while they look, then ✅ with the time it took, or ❌ on stderr with the last state and the nearest element.
 - On Android, both exit 1 (`logbox_inspector_open`) when React Native's LogBox inspector hides the app (`wait` once it has for 1.5 s), since a selector for the app cannot match until it closes.
 
 `batch` takes the same commands as steps, so one call can run a whole case in one device session, from `--step`, `--file` or `--stdin`:
@@ -60,6 +63,8 @@ offsider batch --device <ID> --json \
 Steps are input steps (including `rn devmenu <item>`), `sleep`, and the read steps `wait`, `assert`, `screenshot` and `describe-ui`. Selector steps read the screen again after any step that sends input. A read step that starts within 100 ms of input, from an earlier step or the command just before the batch (unless `OFFSIDER_TREE_CACHE=off`), waits out the rest of those 100 ms first, once per input, so a screenshot or tree read shows what the input drew; `wait --settled`, `--region` and `--seconds` start at once, and a slower effect, such as a network reply, still needs a `wait` step. `batch` supports `--wait-timeout`, `--ax-cache`, `--no-settle` (tap steps skip the transition guard, and read steps the 100 ms wait), `--continue-on-error` and `--mask-secure` or `--no-mask-secure` (whether screenshot steps mask password fields, on by default; a step's own flag wins). `--file` follows the rules of `type --file`, with `--allow-path` for a refused location; a `type --file --allow-path` step reads a refused file only when `batch --allow-path` confirmed that path. `--stdin` reads at most 16 MB. A `type` step aimed at a password field, by `--into-*` or the focused field where the device reports focus, exits 64 (`secure_field_argument`) with nothing typed: sign in with `login`.
 
 With `--json`, stdout is one NDJSON line per step (`step`, `kind`, `line`, `ok`, `ms`, plus `exitCode` and `error` on failure and each read step's own result; a read step's `ms` includes that 100 ms wait), then a summary line with `steps`, `failed` and `dispatched` (`yes`, `no` or `unknown`: whether any step sent input). A `type` step's line shows `<N characters>`, never its text, as do `--mask-text`, `--mask-label` and `--grep` values. Human text goes to stderr and ends a failure with `Dispatched: <state>`. A failed step's `error` is the [JSON error object](errors.md#json-errors).
+
+Without `--json`, a person at a terminal sees a 📋 header, a row per step as it ends (`✓ 1  tap --id open  8 ms`, a `type` step's text as `<hidden>`), a dim `-` row for each step that did not run, and ✅ `Batch done` or ❌ `Batch stopped at step N`, with a warning to check the screen before resending when input may have reached the device. An agent or a pipe reads the same lines as before.
 
 The batch exits with the code of its first step that failed to run, else 5 when a `wait`, `assert` or `screenshot --compare` condition was not met, else 0. Earlier steps may have run whatever the code, so resend a failed batch whole only when `dispatched` is `no`.
 

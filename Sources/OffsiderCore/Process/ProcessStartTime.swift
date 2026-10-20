@@ -17,7 +17,7 @@ public enum ProcessStartTime {
     }
 }
 
-/// A process and when it started, as `list-devices --json` reports it.
+/// A process and when it started, as `devices --json` reports it.
 public struct ProcessStamp: Equatable, Sendable {
     public let pid: Int32
     public let startedAt: Date

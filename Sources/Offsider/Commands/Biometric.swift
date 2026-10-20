@@ -63,23 +63,42 @@ struct BiometricCommand: AsyncParsableCommand {
         let (action, modality) = try plan()
         let logger = OffsiderLogger()
         let route = try await DeviceRouter.routeForInput(deviceOption, logger: logger, locking: action != .status)
-        try await route.backend.prepare()
-        let id = try await route.backend.requireBootedDevice(route.device).id
-        guard let backend = route.backend as? any BiometricControlling else {
-            throw CLIError(errorDescription: "biometric is not available for \(id.rawValue).", reason: .notSupported)
+        let console = Console.current
+        let labels: [BiometricAction: String] = [.enrol: "Enrolling", .unenrol: "Removing enrolment", .status: "Reading enrolment"]
+        let (report, id) = try await console.progress(labels[action] ?? "Sending to the sensor") {
+            try await route.backend.prepare()
+            let id = try await route.backend.requireBootedDevice(route.device).id
+            guard let backend = route.backend as? any BiometricControlling else {
+                throw CLIError(errorDescription: "biometric is not available for \(id.rawValue).", reason: .notSupported)
+            }
+            return (try await Self.report(action, modality: modality, fingerID: fingerID, json: json, on: id, backend: backend), id)
         }
-        let report = try await Self.report(action, modality: modality, fingerID: fingerID, json: json, on: id, backend: backend)
         if let warning = report.warning {
-            FileHandle.standardError.write(Data("Warning: \(warning)\n".utf8))
+            console.notice(Self.unenrolled(warning, name: report.name, on: id))
         }
-        print(report.output)
+        DevicePersonView.emit(report.output, json: json, person: report.person, notices: Self.notices(action, on: id), console: console)
+    }
+
+    /// The warning before a match on a simulator with nothing enrolled, its words unchanged for an agent.
+    static func unenrolled(_ warning: String, name: String, on device: DeviceID) -> Notice {
+        .warning("\(name) is not enrolled", agent: warning, try: "offsider biometric enrol --device \(device.rawValue)")
+    }
+
+    /// Enrolment outlives the command, so a person reads how to undo it.
+    static func notices(_ action: BiometricAction, on device: DeviceID) -> [Notice] {
+        guard action == .enrol || action == .unenrol else { return [] }
+        let undo = "offsider biometric \(action == .enrol ? "unenrol" : "enrol") --device \(device.rawValue)"
+        return [DevicePersonView.lasting("Stays \(action == .enrol ? "enrolled" : "unenrolled") after this command", undo: undo)]
     }
 
     @MainActor
-    static func report(_ action: BiometricAction, modality: BiometricModality?, fingerID: Int?, json: Bool, on device: DeviceID, backend: any BiometricControlling) async throws -> (output: String, warning: String?) {
+    static func report(_ action: BiometricAction, modality: BiometricModality?, fingerID: Int?, json: Bool, on device: DeviceID, backend: any BiometricControlling) async throws -> (output: String, warning: String?, name: String, person: [Block]) {
         let defaultModality = modality == nil ? try await backend.defaultBiometricModality(on: device) : nil
         let modality = modality ?? defaultModality ?? .face
         let name = device.platform == .android ? "Fingerprint" : modality.displayName
+        func person(enrolled: Bool?, sent: String?) -> [Block] {
+            DevicePersonView.biometric(action, name: name, modality: modality, enrolled: enrolled, sent: sent, platform: device.platform)
+        }
         switch action {
         case .enrol, .unenrol:
             let enrolled = action == .enrol
@@ -87,13 +106,13 @@ struct BiometricCommand: AsyncParsableCommand {
             let output = json
                 ? DeviceStateReport.biometric(action, modality: modality, enrolled: enrolled, sent: nil, on: device)
                 : "\(name): \(enrolled ? "enrolled" : "not enrolled")"
-            return (output, nil)
+            return (output, nil, name, person(enrolled: enrolled, sent: nil))
         case .status:
             let enrolled = try await backend.biometricEnrolled(on: device)
             let output = json
                 ? DeviceStateReport.biometric(action, modality: modality, enrolled: enrolled, sent: nil, on: device)
                 : "\(name): \(enrolled.map { $0 ? "enrolled" : "not enrolled" } ?? "enrolment unknown")"
-            return (output, nil)
+            return (output, nil, name, person(enrolled: enrolled, sent: nil))
         case .match, .noMatch:
             let outcome: BiometricOutcome = action == .match ? .match : .noMatch
             let enrolled = try? await backend.biometricEnrolled(on: device)
@@ -102,7 +121,7 @@ struct BiometricCommand: AsyncParsableCommand {
                 ? "\(name) is not enrolled, so apps see no biometrics. Run `offsider biometric enrol --device \(device.rawValue)` first."
                 : nil
             if json {
-                return (DeviceStateReport.biometric(action, modality: modality, enrolled: enrolled ?? nil, sent: sent, on: device), warning)
+                return (DeviceStateReport.biometric(action, modality: modality, enrolled: enrolled ?? nil, sent: sent, on: device), warning, name, [])
             }
             let what: String
             if device.platform == .android {
@@ -110,7 +129,7 @@ struct BiometricCommand: AsyncParsableCommand {
             } else {
                 what = "sent a \(outcome == .match ? "matching" : "non-matching") \(modality == .face ? "face" : "finger")"
             }
-            return ("\(name): \(what) (an app must be asking for it)", warning)
+            return ("\(name): \(what) (an app must be asking for it)", warning, name, person(enrolled: enrolled ?? nil, sent: sent))
         }
     }
 }

@@ -12,7 +12,7 @@ enum CommandEffect: String, Sendable {
     /// Keyed by command path (`rn prepare` for a nested one); a test fails when a command is missing.
     static let table: [String: CommandEffect] = [
         "describe-ui": .read,
-        "list-devices": .none,
+        "devices": .none,
         "boot": .input,
         "doctor": .none,
         "init": .none,

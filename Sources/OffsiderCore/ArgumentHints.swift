@@ -13,7 +13,7 @@ public enum ArgumentHints {
         }
     }
 
-    public static let udidMessage = "--udid was renamed to --device in 0.3.0. Run offsider list-devices to find device IDs."
+    public static let udidMessage = "--udid was renamed to --device in 0.3.0. Run offsider devices to find device IDs."
     public static let listSimulatorsMessage = "list-simulators was renamed to list-devices in 0.3.0."
 
     private static let internalBrokerCommand = "hid-broker"

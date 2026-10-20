@@ -34,16 +34,23 @@ struct SessionStatus: AsyncParsableCommand {
 
     @MainActor
     func run() async throws {
-        let runners = RunnerSessions.records(device: device).map { RunnerSessionRow(record: $0, alive: XcodebuildProcesses().isRunning($0)) }
-        let manager = DeviceSessions.manager()
-        var brokers: [DeviceSessionStatus] = []
-        for record in DeviceSessions.records(device: device) {
-            brokers.append(await manager.status(of: record))
+        let console = Console.current
+        let rows = await console.progress("Checking sessions") {
+            let runners = RunnerSessions.records(device: device).map { RunnerSessionRow(record: $0, alive: XcodebuildProcesses().isRunning($0)) }
+            let manager = DeviceSessions.manager()
+            var brokers: [DeviceSessionStatus] = []
+            for record in DeviceSessions.records(device: device) {
+                brokers.append(await manager.status(of: record))
+            }
+            let helpers = await AndroidWarmHelpers.statuses(for: device)
+            let inputs = await SimulatorInputSessions.statuses(device: device).map(\.status)
+            return DeviceSessionRow.rows(runners: runners, brokers: brokers, helpers: helpers, inputs: inputs)
         }
-        let helpers = await AndroidWarmHelpers.statuses(for: device)
-        let inputs = await SimulatorInputSessions.statuses(device: device).map(\.status)
-        let rows = DeviceSessionRow.rows(runners: runners, brokers: brokers, helpers: helpers, inputs: inputs)
-        print(json ? DeviceSessionRow.json(rows) : DeviceSessionRow.text(rows), terminator: "")
+        if json {
+            console.data(DeviceSessionRow.json(rows))
+            return
+        }
+        console.show(Page([.person(DevicePersonView.sessions(rows)), .agent(DeviceSessionRow.text(rows))]))
     }
 }
 
@@ -69,47 +76,53 @@ struct SessionStop: AsyncParsableCommand {
     @MainActor
     func run() async throws {
         let cleanUDID = try clean ? RunnerSessions.cleanableUDID(device ?? "", command: "session stop --clean") : nil
-        let brokers = DeviceSessions.records(device: device)
-        let manager = DeviceSessions.manager()
-        for record in brokers {
-            await manager.stop(record)
-        }
-        let runners = RunnerSessions.records(device: device)
-        let runnerManager = RunnerSessionManager(
-            store: RunnerSessions.store,
-            builder: UnusedRunnerBuilder(),
-            environment: ProcessInfo.processInfo.environment,
-            developerDirectory: nil,
-            log: { _, _ in }
-        )
-        for record in runners {
-            await runnerManager.stop(record)
-            RunnerSessions.removeLog(udid: record.udid)
-        }
-        if let device, case .iosDevice(let udid) = DeviceIDClassifier.classify(device.trimmingCharacters(in: .whitespacesAndNewlines)) {
-            RunnerSessions.removeLog(udid: udid)
-        }
-        let serial = await AndroidWarmHelpers.serial(for: device).serial
-        let helpers = try await TerminalSpinner.run("Stopping the warm helper") { await AndroidBackend.stopWarmHelpers(host: .cli(), serial: serial) }
-        let inputs = await SimulatorInputSessions.stop(device: device)
-        let stopped = DeviceSessionRow.stopped(runners: runners.map(\.udid), brokers: brokers.map(\.udid), helpers: helpers, inputs: inputs)
-        var cleaned: RunnerCleanupReport?
-        if let cleanUDID { cleaned = await RunnerSessions.clean(udid: cleanUDID) }
-        if json {
-            print(DeviceSessionRow.stoppedJSON(stopped, clean: cleaned.map(RunnerSessions.cleanFields)))
-        } else {
-            if stopped.isEmpty {
-                print(device.map { "No session is running for \($0)." } ?? "No session is running.")
-            } else {
-                for entry in stopped {
-                    let parts = [
-                        entry.runner ? "runner" : nil, entry.broker ? "session broker" : nil, entry.helper ? "warm helper" : nil, entry.input ? "input session" : nil,
-                    ].compactMap { $0 }
-                    print("Stopped the \(parts.joined(separator: " and ")) on \(entry.device).")
-                }
+        let console = Console.current
+        let (stopped, cleaned) = await console.progress("Stopping sessions") {
+            let brokers = DeviceSessions.records(device: device)
+            let manager = DeviceSessions.manager()
+            for record in brokers {
+                await manager.stop(record)
             }
-            if let cleaned { print(RunnerSessions.cleanText(cleaned), terminator: "") }
+            let runners = RunnerSessions.records(device: device)
+            let runnerManager = RunnerSessionManager(
+                store: RunnerSessions.store,
+                builder: UnusedRunnerBuilder(),
+                environment: ProcessInfo.processInfo.environment,
+                developerDirectory: nil,
+                log: { _, _ in }
+            )
+            for record in runners {
+                await runnerManager.stop(record)
+                RunnerSessions.removeLog(udid: record.udid)
+            }
+            if let device, case .iosDevice(let udid) = DeviceIDClassifier.classify(device.trimmingCharacters(in: .whitespacesAndNewlines)) {
+                RunnerSessions.removeLog(udid: udid)
+            }
+            let serial = await AndroidWarmHelpers.serial(for: device).serial
+            let helpers = await AndroidBackend.stopWarmHelpers(host: .cli(), serial: serial)
+            let inputs = await SimulatorInputSessions.stop(device: device)
+            let stopped = DeviceSessionRow.stopped(runners: runners.map(\.udid), brokers: brokers.map(\.udid), helpers: helpers, inputs: inputs)
+            var cleaned: RunnerCleanupReport?
+            if let cleanUDID {
+                console.relabel("Uninstalling the runner")
+                cleaned = await RunnerSessions.clean(udid: cleanUDID)
+            }
+            return (stopped, cleaned)
         }
+        if json {
+            console.data(DeviceSessionRow.stoppedJSON(stopped, clean: cleaned.map(RunnerSessions.cleanFields)) + "\n")
+            return
+        }
+        var text = DeviceSessionRow.stoppedText(stopped, device: device)
+        var person = DevicePersonView.stopped(stopped, device: device)
+        var notices: [Notice] = []
+        if let cleaned {
+            text += RunnerSessions.cleanText(cleaned)
+            let view = DevicePersonView.cleaned(cleaned)
+            person += view.blocks
+            notices = view.notices.map(\.forPersonOnly)
+        }
+        console.show(Page([.person(person), .agent(text)], notices: notices))
     }
 }
 
@@ -325,6 +338,17 @@ struct DeviceSessionRow: Equatable {
         let broker: Bool
         var helper = false
         var input = false
+
+        /// `runner`, `session broker`, `warm helper` and `input session`, those that stopped.
+        var parts: [String] {
+            [runner ? "runner" : nil, broker ? "session broker" : nil, helper ? "warm helper" : nil, input ? "input session" : nil].compactMap { $0 }
+        }
+    }
+
+    /// `Stopped the runner and session broker on <udid>.` per device, or that none was running.
+    static func stoppedText(_ stopped: [Stopped], device: String?) -> String {
+        guard !stopped.isEmpty else { return (device.map { "No session is running for \($0)." } ?? "No session is running.") + "\n" }
+        return stopped.map { "Stopped the \($0.parts.joined(separator: " and ")) on \($0.device).\n" }.joined()
     }
 
     static func stopped(runners: [String], brokers: [String], helpers: [String] = [], inputs: [String] = []) -> [Stopped] {

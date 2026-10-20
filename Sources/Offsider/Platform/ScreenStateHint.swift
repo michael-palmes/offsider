@@ -51,7 +51,20 @@ enum ScreenStateHint {
     }
 
     static func writeNote(_ line: String) {
-        FileHandle.standardError.write(Data((line + "\n").utf8))
+        Console.current.notice(notice(line))
+    }
+
+    /// The note `annotate` wrote, unchanged for an agent; a person reads its first sentence and the command as a `Try` line.
+    static func notice(_ line: String) -> Notice {
+        let prefix = "Note: "
+        let sentence = line.hasPrefix(prefix) ? String(line.dropFirst(prefix.count)) : line
+        let (cause, _) = TerminalText.firstSentence(sentence)
+        // The command is the sentence's own last span, so a device name holding backticks never stands in for it.
+        let run = "Run `"
+        let command = sentence.range(of: run, options: .backwards).flatMap { start in
+            sentence[start.upperBound...].firstIndex(of: "`").map { String(sentence[start.upperBound..<$0]) }
+        }
+        return .note(command == nil ? sentence : cause, agent: sentence, mark: .lock, see: command, label: "Try")
     }
 }
 

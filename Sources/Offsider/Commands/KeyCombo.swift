@@ -74,6 +74,8 @@ struct KeyCombo: AsyncParsableCommand {
         let route = try await DeviceRouter.routeForInput(deviceOption, logger: logger)
         await appOption.apply(to: route)
         try await perform(on: route, logger: logger)
+        let modifiers = (try? parseCommaSeparatedIntsStrict(modifiersString, fieldName: "modifier keycodes")) ?? []
+        Console.current.show(InputPersonView.receipt("Sent " + InputPersonView.combo(modifiers: modifiers, key: key, android: route.device.platform == .android)))
     }
 
     @MainActor

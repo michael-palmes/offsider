@@ -493,7 +493,7 @@ struct EmulatorBootTests {
         let request = EmulatorBootRequest(avdName: "R58M123ABC", headless: false, timeout: .seconds(240))
 
         let error = await #expect(throws: AndroidError.self) { try await EmulatorBooter(host: host) { _, _ in }.boot(request) { _ in } }
-        #expect(error?.message == "boot starts emulators, and R58M123ABC is a connected phone. Run `offsider list-devices` to see AVD names.")
+        #expect(error?.message == "boot starts emulators, and R58M123ABC is a connected phone. Run `offsider devices` to see AVD names.")
         #expect(server.requests.allSatisfy { $0.serial == nil })
     }
 

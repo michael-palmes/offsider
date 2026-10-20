@@ -6,7 +6,7 @@
 - [Reading the screen](reading-the-screen.md): reading `describe-ui` output, its summary or its changes.
 - [Input](input.md): tapping, typing, waiting and checking that input worked.
 - [Screenshots, video and logs](capture.md): capturing evidence, with masks and redaction.
-- [Agents](agents.md): setting up an agent, sharing devices between agents, or moving from another tool.
+- [Agents](agents.md): setting up an agent, what it reads and what you see, sharing devices between agents, or moving from another tool.
 - [Physical devices](device-access.md): allowing a phone, iPhone or iPad, and managed policy.
 - [Privacy and security](privacy.md): what Offsider shows, keeps and refuses.
 - [Device state](device-state.md): appearance, permissions, status bar, orientation and foldables.

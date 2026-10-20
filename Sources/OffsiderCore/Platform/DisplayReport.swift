@@ -25,6 +25,29 @@ public enum DisplayReport {
         return (lines + ["Posture: \(list.posture?.rawValue ?? "not foldable")"]).joined(separator: "\n")
     }
 
+    /// A person sees the posture, then a row per display with the active one lit; an agent reads `table` as it is.
+    public static func page(_ list: DisplayList, platform: DevicePlatform) -> Page {
+        let unit = platform == .android ? "dp" : "pt"
+        let columns = [
+            Table.Column(agent: nil, person: 0, tone: .bold),
+            Table.Column(agent: nil, person: 1),
+            Table.Column(agent: nil, person: 2, fit: .optional(priority: 2), tone: .dim),
+            Table.Column(agent: nil, person: 3, fit: .optional(priority: 1), tone: .dim),
+            Table.Column(agent: nil, person: 4, fit: .optional(priority: 0), tone: .dim),
+        ]
+        let rows = list.displays.map { display in
+            Table.Row([
+                Table.Cell(display.descriptor.role.rawValue, tag: display.active ? "active" : nil),
+                Table.Cell("\(number(display.pointWidth)) x \(number(display.pointHeight)) \(unit)"),
+                Table.Cell(OrderedJSON.formatNumber(display.descriptor.scale) + "x"),
+                display.rotationDegrees.map { Table.Cell("\($0)°") },
+                Table.Cell("id " + display.descriptor.platformId, untrusted: true),
+            ], status: display.active ? .on : .off)
+        }
+        let header = Header(platform == .android ? .android : .iPhone, "Displays", [list.posture.map { "posture \($0.rawValue)" } ?? "not foldable"])
+        return Page([.person([.header(header), .table(Table(columns: columns, rows: rows))]), .agent(table(list, platform: platform) + "\n")])
+    }
+
     public static func json(_ list: DisplayList) -> String {
         OrderedJSON.object([
             ("displays", .array(list.displays.map { display in

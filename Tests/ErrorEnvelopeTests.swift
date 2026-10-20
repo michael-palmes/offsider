@@ -19,7 +19,7 @@ struct ErrorEnvelopeTests {
         #expect(json["ok"] as? Bool == false && json["command"] as? String == "screenshot" && json["exitCode"] as? Int == 7)
         let error = try #require(json["error"] as? [String: Any])
         #expect(error["reason"] as? String == "device_not_found")
-        #expect(error["hint"] as? String == "offsider list-devices")
+        #expect(error["hint"] as? String == "offsider devices")
         #expect(error["dispatched"] is NSNull)
         #expect(result.stderr.hasPrefix("Error: "))
     }
@@ -49,7 +49,7 @@ struct ErrorEnvelopeTests {
         #expect(result.exitCode == 64)
         let error = try #require(try Self.envelope(result.stdout)["error"] as? [String: Any])
         #expect(error["reason"] as? String == "usage")
-        #expect(result.stderr.contains("Missing --device <id>. Pass --device, or set OFFSIDER_DEVICE; run offsider list-devices to see IDs."))
+        #expect(result.stderr.contains("Missing --device <id>. Pass --device, or set OFFSIDER_DEVICE; run offsider devices to see IDs."))
     }
 
     @Test("a usage error under --json still prints an envelope and exits 64")

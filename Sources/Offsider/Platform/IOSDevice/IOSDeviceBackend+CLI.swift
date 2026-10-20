@@ -3,7 +3,7 @@ import OffsiderCore
 import OffsiderIOSDevice
 
 extension IOSDeviceBackend {
-    /// Debug and info go to the Offsider logger; warnings print one `Warning:` line on stderr.
+    /// Debug and info go to the Offsider logger; notices and warnings are console notices, shown once.
     static func make(logger: OffsiderLogger) -> IOSDeviceBackend {
         let sink = IOSDeviceLogSink(logger: logger)
         var host = IOSDeviceHost.live()
@@ -11,7 +11,8 @@ extension IOSDeviceBackend {
         host.runnerSourceDigests = BundleIntegrity.runnerFiles()
         host.sessionExecutable = Bundle.main.executableURL
         if Timings.isEnabled {
-            host.timing = .printing { line in FileHandle.standardError.write(Data((line + "\n").utf8)) }
+            let console = Console.current
+            host.timing = .printing { line in console.data(line + "\n", to: .err) }
         }
         return IOSDeviceBackend(host: host) { level, message in sink.write(level, message) }
     }
@@ -32,9 +33,9 @@ private final class IOSDeviceLogSink: @unchecked Sendable {
         case .info:
             logger.info().log(message)
         case .notice:
-            FileHandle.standardError.write(Data("\(TerminalText.block(TerminalText.capped(message, cap: TerminalText.maxErrorCharacters)))\n".utf8))
+            Console.current.notice(.note(message))
         case .warning:
-            FileHandle.standardError.write(Data("Warning: \(TerminalText.block(TerminalText.capped(message, cap: TerminalText.maxErrorCharacters)))\n".utf8))
+            Console.current.notice(.warning(message))
         }
     }
 }

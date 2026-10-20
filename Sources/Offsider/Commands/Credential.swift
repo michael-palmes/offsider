@@ -110,15 +110,15 @@ struct CredentialCommand: AsyncParsableCommand {
         let parsed = try parsedAction()
         let key = key.map { Self.storedKey($0) ?? $0 }
         let store = KeychainLoginCredentialStore()
-        let person = isatty(STDIN_FILENO) != 0 && isatty(STDERR_FILENO) != 0
-        let styled = json || isatty(STDOUT_FILENO) == 0 ? nil : TerminalOutput(style: .detect(isTerminal: true), device: suggestedDevice)
+        let console = Console.current
+        let styled = json || console.out.profile != .person ? nil : TerminalOutput(style: console.out.canvas.style, device: suggestedDevice)
         if parsed == .join {
             try PersonPresence.requireTerminal(instead: "Ask the user to run `offsider credential join \(suggestedDevice)` in their own terminal.")
-            let foreground = try await finding(person) { try await resolveForeground() }
-            print(try await Self.join(
+            let foreground = try await finding { try await resolveForeground() }
+            console.data(try await Self.join(
                 foreground: foreground, platform: platform, requested: app.flatMap(Self.appID), json: json, styled: styled, store: store,
                 chooseApp: Self.chooseApp, confirmLink: Self.confirmLink
-            ))
+            ) + "\n")
             return
         }
         let deviceID = device.resolved?.id
@@ -127,7 +127,7 @@ struct CredentialCommand: AsyncParsableCommand {
         if !settings.loosening.isEmpty {
             try PersonPresence.requireTerminal(instead: "Ask the user to run `offsider credential \(parsed.rawValue)` with these flags in their own terminal.")
         }
-        let app = try await finding(person && app == nil) { try await resolveApp() }
+        let app = try await finding { try await resolveApp() }
         let edit = try contextEdit()
         let filter = try LoginCommand.whereTags(filters, named: key != nil)
         if !settings.loosening.isEmpty {
@@ -139,26 +139,51 @@ struct CredentialCommand: AsyncParsableCommand {
             let read = stdin ? Self.readFromStandardInput : {
                 throw CLIError(errorDescription: "credential set asks for the username on a terminal. Without one, pass --stdin.", reason: .usage)
             }
-            let notice = DispatchWorkItem { FileHandle.standardError.write(Data(Self.keychainWriteNotice.utf8)) }
-            print(try Self.perform(
-                parsed, app: app, key: key, update: update, edit: edit, settings: settings, personConfirmed: confirmed, where: filter, json: json, styled: styled, store: store,
-                tracker: .live(), deviceID: deviceID,
-                keychainWillWrite: { DispatchQueue.global().asyncAfter(deadline: .now() + 3, execute: notice) },
-                keychainDidWrite: { notice.cancel() },
-                warn: { print(Self.warning, to: &standardError) },
-                readCredential: read
-            ))
+            // A person's spinner asks for the prompt in place of the agent's line.
+            let notice = DispatchWorkItem {
+                if console.err.animates, console.err.profile == .person {
+                    console.relabel(Self.keychainWriteLabel)
+                } else {
+                    console.data(Self.keychainWriteNotice, to: .err)
+                }
+            }
+            let perform = {
+                try Self.perform(
+                    parsed, app: app, key: key, update: update, edit: edit, settings: settings, personConfirmed: confirmed, where: filter, json: json, styled: styled,
+                    store: store, tracker: .live(), deviceID: deviceID,
+                    keychainWillWrite: { DispatchQueue.global().asyncAfter(deadline: .now() + 3, execute: notice) },
+                    keychainDidWrite: { notice.cancel() },
+                    warn: { console.line(Self.warning, person: .warning(Self.personWarning)) },
+                    readCredential: read
+                )
+            }
+            // set reads the login from standard input, which a person may be typing, so no spinner draws over it.
+            let text = try await parsed == .set ? perform() : console.progress(Self.progressLabel(parsed)) { try perform() }
+            console.data(text + "\n")
             return
         }
-        print(try TerminalPrompt.run(cancelled: PromptScreen.cancelledNothingSaved) { prompt in
+        console.data(try TerminalPrompt.run(cancelled: PromptScreen.cancelledNothingSaved) { prompt in
             prompt.lines(CredentialScreen.header(app: app, key: key, width: prompt.width, style: prompt.style))
             let questions = TerminalCredentialQuestions(prompt: prompt)
             return try Self.perform(
                 .set, app: app, key: key, update: update, edit: edit, settings: settings, personConfirmed: confirmed, json: json, styled: styled, store: store,
                 questions: questions, readCredential: questions.credential
             )
-        })
+        } + "\n")
     }
+
+    /// What the spinner says while a Keychain read or write may wait on a macOS prompt.
+    static func progressLabel(_ action: Action) -> String {
+        switch action {
+        case .describe: return "Saving the notes and tags"
+        case .remove: return "Removing the login"
+        case .signedOut: return "Clearing the sign-in"
+        case .set, .status, .join: return "Reading the saved logins"
+        }
+    }
+
+    static let keychainWriteLabel = "Answer the Keychain prompt to save the notes and tags"
+    static let personWarning = "Test credentials only: anything that runs as you can type them into this app. The password is never shown."
 
     /// Context flags given on the command line, in the order help lists them.
     var contextFlags: [String] {
@@ -200,9 +225,9 @@ struct CredentialCommand: AsyncParsableCommand {
         device.resolved.map { "--device \($0.id)" } ?? "--device <id>"
     }
 
-    private func finding<T>(_ spin: Bool, _ work: () async throws -> T) async throws -> T {
-        guard spin else { return try await work() }
-        return try await TerminalSpinner.run("Finding the app in front…", work)
+    /// A person's spinner while the app in front is read; `--app` returns at once, so nothing draws.
+    private func finding<T>(_ work: () async throws -> T) async throws -> T {
+        try await Console.current.progress("Finding the app in front", work)
     }
 
     static let keyMessage = "A saved login's name is 1 to 32 characters from A-Z, a-z, 0-9, '.', '_' and '-', starting with a letter or digit, such as dev, or default for the login saved without a name. No new login can take the name default."
@@ -642,7 +667,7 @@ struct CredentialCommand: AsyncParsableCommand {
 
 /// `--device` without `--wait-lock`. `credential` never holds the device lock itself.
 struct CredentialDeviceOption: ParsableArguments {
-    @Option(name: .customLong("device"), help: ArgumentHelp("The device ID from `offsider list-devices` (default OFFSIDER_DEVICE). Not needed with --app.", valueName: "id"))
+    @Option(name: .customLong("device"), help: ArgumentHelp("The device ID from `offsider devices` (default OFFSIDER_DEVICE). Not needed with --app.", valueName: "id"))
     var explicitID: String?
 
     var resolved: (id: String, source: DeviceSource)? { DeviceDefault.resolve(explicit: explicitID) }
