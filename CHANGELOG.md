@@ -69,7 +69,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - The simulator HID broker takes every kind of simulator input (touches, two-finger touches, keys and buttons), not only `touch --down` and `--up` alone, up to 65,536 events and an hour of pauses in one request (it took touches only, with pauses up to 25 s together). Touches through it no longer wait idb's 80 ms drain, which only kept a closing connection open, and it now starts detached in its own session, logging its start and stop to `sessions/simulator-<hash>.log`.
 - Warm simulator input follows the command before it within milliseconds, so a tap just after a launch or a navigation can reach a screen that drops it. Use `tap --verify` or `wait --settled` after a screen changes.
 - `batch --no-settle` now also stops read steps waiting for an input to draw (see Fixed), as well as tap steps' transition guard. A read step's `ms` in `batch --json` includes that wait.
-- No process Offsider starts inherits its sockets (broker listeners and their connections, adb, usbmuxd, the iPhone runner and the screen stream): each is close-on-exec, so a child never keeps a connection open after Offsider closes it. Offsider's own ways of starting processes already closed them; this also covers a process a library starts.
+- Sockets Offsider opens or accepts itself (broker listeners and their connections, adb, usbmuxd, the iPhone runner and the screen stream) are close-on-exec, so a child that a library starts some other way does not inherit them. Offsider's own ways of starting processes already passed on none. The emulator gRPC connection, opened by Network.framework, is not covered.
 
 ### Fixed
 

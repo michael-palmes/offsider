@@ -1,6 +1,6 @@
 import Darwin
 
-/// `socket` and `accept` with close-on-exec set, so no process Offsider starts, however it is started, holds a connection or listener open.
+/// `socket` and `accept` with close-on-exec set, so no child started after they return, however it is started, inherits the descriptor.
 public enum CloseOnExecSocket {
     /// A new socket, or -1 with `errno` set.
     public static func make(_ domain: Int32, _ type: Int32) -> Int32 {
