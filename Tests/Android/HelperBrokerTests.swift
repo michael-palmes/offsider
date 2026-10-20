@@ -428,8 +428,9 @@ struct HelperBrokerTests {
             await recordingErrors {
                 let fixture = BrokerFixture()
                 try await fixture.start()
+                try await fixture.untilReady()
                 let inject = try HelperWire.frame(try HelperRequest.inject([], sync: true).payload(id: 7))
-                // Sent and closed without yielding, so the broker, on this actor too, reaches the input's turn only once its command has gone.
+                // Sent and shut for writing without yielding, so the broker, on this actor too, reaches the input's turn only once its command has gone.
                 let client = socket(AF_UNIX, SOCK_STREAM, 0)
                 try #require(client >= 0)
                 var address = try UnixSocket.address(fixture.socket)
@@ -437,10 +438,13 @@ struct HelperBrokerTests {
                     $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { Darwin.connect(client, $0, socklen_t(MemoryLayout<sockaddr_un>.size)) }
                 }
                 let written = inject.withUnsafeBytes { Darwin.write(client, $0.baseAddress, $0.count) }
-                Darwin.close(client)
+                shutdown(client, SHUT_WR)
                 try #require(connected == 0 && written == inject.count)
-                try await Task.sleep(for: .milliseconds(200))
+                let stream = PosixAdbStream.adopting(client)
+                let answer = try await stream.read(upTo: 64 * 1024, deadline: .now + .seconds(5))
+                await stream.close()
 
+                #expect(answer.isEmpty, "the broker answered input whose command had gone")
                 #expect(!fixture.device.ops.contains("inject"))
                 try await fixture.stop()
             }
