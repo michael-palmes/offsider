@@ -37,11 +37,14 @@ final class BrokerFixture {
         )
     }
 
+    /// The folder goes with the fixture, however its test ends.
+    deinit { try? FileManager.default.removeItem(at: root) }
+
     var socket: String { broker.socketPath }
 
     /// Starts serving and returns once the socket answers.
     func start() async throws {
-        running = Task { try await broker.run() }
+        running = Task { [broker] in try await broker.run() }
         let deadline = ContinuousClock.now + .seconds(5)
         while !UnixSocket.answers(socket) {
             guard ContinuousClock.now < deadline else { throw HelperBrokerUnavailable(detail: "the broker never listened") }
@@ -51,10 +54,25 @@ final class BrokerFixture {
 
     /// Returns once the broker's status says its helper is ready.
     func untilReady() async throws {
+        _ = try await status(showing: "its helper ready") { $0.state == .ready }
+    }
+
+    /// The broker's first status that passes `check`, which `description` names.
+    func status(showing description: String, where check: (HelperBrokerWire.Status) -> Bool) async throws -> HelperBrokerWire.Status {
         let deadline = ContinuousClock.now + .seconds(5)
-        while await HelperBrokerClient.status(at: socket)?.state != .ready {
-            guard ContinuousClock.now < deadline else { throw HelperBrokerUnavailable(detail: "the helper never got ready") }
+        while true {
+            if let status = await HelperBrokerClient.status(at: socket), check(status) { return status }
+            guard ContinuousClock.now < deadline else { throw HelperBrokerUnavailable(detail: "the broker's status never showed \(description)") }
             try await Task.sleep(for: .milliseconds(10))
+        }
+    }
+
+    /// Returns once the helper has received `op`, so a request sent next waits behind it.
+    func untilHelperReceived(_ op: String) async throws {
+        let deadline = ContinuousClock.now + .seconds(5)
+        while !device.ops.contains(op) {
+            guard ContinuousClock.now < deadline else { throw HelperBrokerUnavailable(detail: "the helper never received \(op)") }
+            try await Task.sleep(for: .milliseconds(5))
         }
     }
 
@@ -97,178 +115,238 @@ final class BrokerFixture {
     func stop() async throws {
         broker.requestStop()
         _ = try await finished()
-        try? FileManager.default.removeItem(at: root)
     }
 }
 
+/// Runs a test body in an exit test's child, recording what it throws, which the parent would otherwise see only as SIGTRAP.
+@MainActor
+func recordingErrors(sourceLocation: SourceLocation = #_sourceLocation, _ body: @MainActor () async throws -> Void) async {
+    do {
+        try await body()
+    } catch is ExpectationFailedError {
+        // `#require` has already recorded it.
+    } catch {
+        Issue.record(error, sourceLocation: sourceLocation)
+    }
+}
+
+// Tests serving a broker run in a child process, as a broker has its own; in this one the other suites hold up the main actor it serves on.
 @Suite("Android warm helper broker")
 @MainActor
 struct HelperBrokerTests {
     @Test("two commands share one warm helper, and neither quits it")
-    func commandsShareOneHelper() async throws {
-        let fixture = BrokerFixture()
-        try await fixture.start()
+    func commandsShareOneHelper() async {
+        await #expect(processExitsWith: .success) { @MainActor in
+            await recordingErrors {
+                let fixture = BrokerFixture()
+                try await fixture.start()
 
-        let first = try await HelperSession.attach(try fixture.client(), log: { _, _ in })
-        _ = try await first.dump()
-        await first.close()
-        let second = try await HelperSession.attach(try fixture.client(), log: { _, _ in })
-        _ = try await second.dump()
-        await second.close()
+                let first = try await HelperSession.attach(try fixture.client(), log: { _, _ in })
+                _ = try await first.dump()
+                await first.close()
+                let second = try await HelperSession.attach(try fixture.client(), log: { _, _ in })
+                _ = try await second.dump()
+                await second.close()
 
-        #expect(fixture.device.startedProcesses == 1)
-        #expect(!fixture.device.ops.contains("quit"))
-        #expect(fixture.device.ops.filter { $0 == "dump" }.count == 2)
-        #expect(first.isWarm && second.isWarm)
-        #expect(fixture.spawns == 0)
-        try await fixture.stop()
-        #expect(fixture.device.ops.last == "quit")
+                #expect(fixture.device.startedProcesses == 1)
+                #expect(!fixture.device.ops.contains("quit"))
+                #expect(fixture.device.ops.filter { $0 == "dump" }.count == 2)
+                #expect(first.isWarm && second.isWarm)
+                #expect(fixture.spawns == 0)
+                try await fixture.stop()
+                #expect(fixture.device.ops.last == "quit")
+            }
+        }
     }
 
     @Test("a new command's event cursor starts at the helper's latest event, so older events are not new")
-    func cursorStartsAtLatestEvent() async throws {
-        let device = FakeHelperDevice()
-        device.answer = { _, op, _ in op == "ping" ? .ok(#"{"eventSeq":42}"#) : nil }
-        let fixture = BrokerFixture(device: device)
-        try await fixture.start()
+    func cursorStartsAtLatestEvent() async {
+        await #expect(processExitsWith: .success) { @MainActor in
+            await recordingErrors {
+                let device = FakeHelperDevice()
+                device.answer = { _, op, _ in op == "ping" ? .ok(#"{"eventSeq":42}"#) : nil }
+                let fixture = BrokerFixture(device: device)
+                try await fixture.start()
 
-        let session = try await HelperSession.attach(try fixture.client(), log: { _, _ in })
-        #expect(session.eventCursor == 42)
-        #expect(session.ready.pid == 4001)
-        await session.close()
-        try await fixture.stop()
+                let session = try await HelperSession.attach(try fixture.client(), log: { _, _ in })
+                #expect(session.eventCursor == 42)
+                #expect(session.ready.pid == 4001)
+                await session.close()
+                try await fixture.stop()
+            }
+        }
     }
 
     @Test("a busy UiAutomation slot reaches the command as busy, so it never falls back to uiautomator")
-    func busyStartIsBusy() async throws {
-        let device = FakeHelperDevice(starts: [.exit(status: 4, stdout: #"{"ok":false,"error":{"code":"busy","message":"UiAutomation is busy","detail":"UiAutomationService already registered"}}"# + "\n")])
-        let fixture = BrokerFixture(device: device)
-        try await fixture.start()
+    func busyStartIsBusy() async {
+        await #expect(processExitsWith: .success) { @MainActor in
+            await recordingErrors {
+                let device = FakeHelperDevice(starts: [.exit(status: 4, stdout: #"{"ok":false,"error":{"code":"busy","message":"UiAutomation is busy","detail":"UiAutomationService already registered"}}"# + "\n")])
+                let fixture = BrokerFixture(device: device)
+                try await fixture.start()
 
-        await #expect(throws: HelperStartFailure.busy(detail: "UiAutomationService already registered")) {
-            _ = try await HelperSession.attach(try fixture.client(), log: { _, _ in })
+                await #expect(throws: HelperStartFailure.busy(detail: "UiAutomationService already registered")) {
+                    _ = try await HelperSession.attach(try fixture.client(), log: { _, _ in })
+                }
+                #expect(try await fixture.finished())
+            }
         }
-        #expect(try await fixture.finished())
     }
 
     @Test("an unavailable helper keeps its reason, so the command falls back as it would with its own")
-    func unavailableKeepsReason() async throws {
-        let device = FakeHelperDevice(starts: [.exit(status: 3, stdout: #"{"ok":false,"error":{"code":"hidden-api","message":"UiAutomationConnection is not reachable"}}"# + "\n")])
-        let fixture = BrokerFixture(device: device)
-        try await fixture.start()
+    func unavailableKeepsReason() async {
+        await #expect(processExitsWith: .success) { @MainActor in
+            await recordingErrors {
+                let device = FakeHelperDevice(starts: [.exit(status: 3, stdout: #"{"ok":false,"error":{"code":"hidden-api","message":"UiAutomationConnection is not reachable"}}"# + "\n")])
+                let fixture = BrokerFixture(device: device)
+                try await fixture.start()
 
-        await #expect(throws: HelperStartFailure.unavailable(.hiddenAPI("UiAutomationConnection is not reachable"))) {
-            _ = try await HelperSession.attach(try fixture.client(), log: { _, _ in })
+                await #expect(throws: HelperStartFailure.unavailable(.hiddenAPI("UiAutomationConnection is not reachable"))) {
+                    _ = try await HelperSession.attach(try fixture.client(), log: { _, _ in })
+                }
+                #expect(try await fixture.finished())
+            }
         }
-        #expect(try await fixture.finished())
     }
 
     @Test("the broker stops after its idle timeout, and the helper gets quit")
-    func idleTimeoutStops() async throws {
-        let fixture = BrokerFixture(idle: .milliseconds(300))
-        try await fixture.start()
-        let session = try await HelperSession.attach(try fixture.client(), log: { _, _ in })
-        _ = try await session.dump()
-        await session.close()
+    func idleTimeoutStops() async {
+        await #expect(processExitsWith: .success) { @MainActor in
+            await recordingErrors {
+                let fixture = BrokerFixture(idle: .milliseconds(300))
+                try await fixture.start()
+                let session = try await HelperSession.attach(try fixture.client(), log: { _, _ in })
+                _ = try await session.dump()
+                await session.close()
 
-        #expect(try await fixture.finished(within: .seconds(5)))
-        #expect(fixture.device.ops.last == "quit")
+                #expect(try await fixture.finished(within: .seconds(5)))
+                #expect(fixture.device.ops.last == "quit")
+            }
+        }
     }
 
     @Test("status and stop never count as use, and stop frees the slot before the socket goes")
-    func statusThenStop() async throws {
-        let fixture = BrokerFixture()
-        try await fixture.start()
-        let session = try await HelperSession.attach(try fixture.client(), log: { _, _ in })
-        await session.close()
+    func statusThenStop() async {
+        await #expect(processExitsWith: .success) { @MainActor in
+            await recordingErrors {
+                let fixture = BrokerFixture()
+                try await fixture.start()
+                let session = try await HelperSession.attach(try fixture.client(), log: { _, _ in })
+                await session.close()
 
-        let status = try #require(await HelperBrokerClient.status(at: fixture.socket))
-        #expect(status.serial == FakeHelperDevice.serial)
-        #expect(status.state == .ready)
-        #expect(status.helperPid == 4001)
-        #expect(await HelperBrokerClient.stop(at: fixture.socket))
-        #expect(!UnixSocket.answers(fixture.socket))
-        #expect(fixture.device.ops.last == "quit")
-        #expect(try await fixture.finished())
+                let status = try #require(await HelperBrokerClient.status(at: fixture.socket))
+                #expect(status.serial == FakeHelperDevice.serial)
+                #expect(status.state == .ready)
+                #expect(status.helperPid == 4001)
+                #expect(await HelperBrokerClient.stop(at: fixture.socket))
+                #expect(!UnixSocket.answers(fixture.socket))
+                #expect(fixture.device.ops.last == "quit")
+                #expect(try await fixture.finished())
+            }
+        }
     }
 
     @Test("a broker of another build is stopped, and the command is told to start its own")
-    func otherBuildIsReplaced() async throws {
-        let fixture = BrokerFixture(dexSha256: String(repeating: "0", count: 64))
-        try await fixture.start()
+    func otherBuildIsReplaced() async {
+        await #expect(processExitsWith: .success) { @MainActor in
+            await recordingErrors {
+                let fixture = BrokerFixture(dexSha256: String(repeating: "0", count: 64))
+                try await fixture.start()
 
-        let found = try await fixture.client().existing(helloID: 1)
-        #expect(found == nil)
-        #expect(try await fixture.finished())
-        #expect(fixture.device.ops.last == "quit")
+                let found = try await fixture.client().existing(helloID: 1)
+                #expect(found == nil)
+                #expect(try await fixture.finished())
+                #expect(fixture.device.ops.last == "quit")
+            }
+        }
     }
 
     @Test("a quit from a command is refused and the warm helper keeps serving")
-    func quitIsRefused() async throws {
-        let fixture = BrokerFixture()
-        try await fixture.start()
+    func quitIsRefused() async {
+        await #expect(processExitsWith: .success) { @MainActor in
+            await recordingErrors {
+                let fixture = BrokerFixture()
+                try await fixture.start()
 
-        let reply = try #require(await HelperBrokerClient.control("quit", at: fixture.socket))
-        #expect(String(decoding: reply, as: UTF8.self).contains(#""ok":false"#))
-        let session = try await HelperSession.attach(try fixture.client(), log: { _, _ in })
-        _ = try await session.dump()
-        await session.close()
-        #expect(fixture.device.ops.filter { $0 == "quit" }.isEmpty)
-        try await fixture.stop()
+                let reply = try #require(await HelperBrokerClient.control("quit", at: fixture.socket))
+                #expect(String(decoding: reply, as: UTF8.self).contains(#""ok":false"#))
+                let session = try await HelperSession.attach(try fixture.client(), log: { _, _ in })
+                _ = try await session.dump()
+                await session.close()
+                #expect(fixture.device.ops.filter { $0 == "quit" }.isEmpty)
+                try await fixture.stop()
+            }
+        }
     }
 
     @Test("a helper that dies mid-command ends the broker, and the command reports it crashed")
-    func lostHelperEndsBroker() async throws {
-        let device = FakeHelperDevice()
-        device.answer = { _, op, _ in op == "dump" ? .hangUp : nil }
-        let fixture = BrokerFixture(device: device)
-        try await fixture.start()
-        let session = try await HelperSession.attach(try fixture.client(), log: { _, _ in })
+    func lostHelperEndsBroker() async {
+        await #expect(processExitsWith: .success) { @MainActor in
+            await recordingErrors {
+                let device = FakeHelperDevice()
+                device.answer = { _, op, _ in op == "dump" ? .hangUp : nil }
+                let fixture = BrokerFixture(device: device)
+                try await fixture.start()
+                let session = try await HelperSession.attach(try fixture.client(), log: { _, _ in })
 
-        await #expect(throws: AndroidError.self) { _ = try await session.dump() }
-        #expect(try await fixture.finished())
-        await session.close()
+                await #expect(throws: AndroidError.self) { _ = try await session.dump() }
+                #expect(try await fixture.finished())
+                await session.close()
+            }
+        }
     }
 
     @Test("a command silent past the idle timeout is told idle before the broker stops, so it restarts without counting a loss")
-    func silentClientHearsIdle() async throws {
-        let fixture = BrokerFixture(idle: .milliseconds(1500))
-        try await fixture.start()
-        let stream = try #require(await HelperBrokerClient.open(fixture.socket))
-        let connection = HelperConnection(shell: nil, socket: stream, ready: HelperBrokerClient.unknownReady)
-        guard case .reply = try await connection.exchange(.hello(token: ""), id: 1, timeout: .seconds(5)) else {
-            Issue.record("no hello reply")
-            return
-        }
-        try await Task.sleep(for: .seconds(1))
+    func silentClientHearsIdle() async {
+        await #expect(processExitsWith: .success) { @MainActor in
+            await recordingErrors {
+                let fixture = BrokerFixture(idle: .milliseconds(1500))
+                try await fixture.start()
+                let stream = try #require(await HelperBrokerClient.open(fixture.socket))
+                let connection = HelperConnection(shell: nil, socket: stream, ready: HelperBrokerClient.unknownReady)
+                guard case .reply = try await connection.exchange(.hello(token: ""), id: 1, timeout: .seconds(5)) else {
+                    Issue.record("no hello reply")
+                    return
+                }
+                try await Task.sleep(for: .seconds(1))
 
-        let outcome = try await connection.exchange(.ping, id: 2, timeout: .seconds(5))
-        #expect(outcome == .bye(reason: "idle", detail: "no request within 0.75 seconds"))
-        await connection.close()
-        #expect(try await fixture.finished())
+                let outcome = try await connection.exchange(.ping, id: 2, timeout: .seconds(5))
+                #expect(outcome == .bye(reason: "idle", detail: "no request within 0.75 seconds"))
+                await connection.close()
+                #expect(try await fixture.finished())
+            }
+        }
     }
 
     @Test("a broker started with another idle timeout is replaced, so the command's own setting holds")
-    func otherIdleIsReplaced() async throws {
-        let fixture = BrokerFixture(idle: .seconds(30))
-        try await fixture.start()
+    func otherIdleIsReplaced() async {
+        await #expect(processExitsWith: .success) { @MainActor in
+            await recordingErrors {
+                let fixture = BrokerFixture(idle: .seconds(30))
+                try await fixture.start()
 
-        let found = try await fixture.client(idleSeconds: 5).existing(helloID: 1)
-        #expect(found == nil)
-        #expect(try await fixture.finished())
+                let found = try await fixture.client(idleSeconds: 5).existing(helloID: 1)
+                #expect(found == nil)
+                #expect(try await fixture.finished())
+            }
+        }
     }
 
     @Test("a warm command's requests carry its timeout, so the broker gives up on the helper when the command does")
-    func requestsCarryTheirTimeout() async throws {
-        let fixture = BrokerFixture()
-        try await fixture.start()
-        let session = try await HelperSession.attach(try fixture.client(), log: { _, _ in })
-        _ = try await session.dump()
-        await session.close()
+    func requestsCarryTheirTimeout() async {
+        await #expect(processExitsWith: .success) { @MainActor in
+            await recordingErrors {
+                let fixture = BrokerFixture()
+                try await fixture.start()
+                let session = try await HelperSession.attach(try fixture.client(), log: { _, _ in })
+                _ = try await session.dump()
+                await session.close()
 
-        let dump = try #require(fixture.device.frames.first { $0.op == "dump" })
-        #expect(dump.json.contains(#""brokerTimeoutMs":15000"#))
-        try await fixture.stop()
+                let dump = try #require(fixture.device.frames.first { $0.op == "dump" })
+                #expect(dump.json.contains(#""brokerTimeoutMs":15000"#))
+                try await fixture.stop()
+            }
+        }
     }
 
     @Test("the relay waits as long as the command does, never longer than the cap", arguments: [
@@ -283,43 +361,46 @@ struct HelperBrokerTests {
     }
 
     @Test("status counts the commands attached, which a command reading another way waits on before it stops the helper")
-    func statusCountsAttached() async throws {
-        let fixture = BrokerFixture()
-        try await fixture.start()
-        let session = try await HelperSession.attach(try fixture.client(), log: { _, _ in })
+    func statusCountsAttached() async {
+        await #expect(processExitsWith: .success) { @MainActor in
+            await recordingErrors {
+                let fixture = BrokerFixture()
+                try await fixture.start()
+                let session = try await HelperSession.attach(try fixture.client(), log: { _, _ in })
 
-        #expect(await HelperBrokerClient.status(at: fixture.socket)?.attached == 1)
-        await session.close()
-        try await Task.sleep(for: .milliseconds(100))
-        let idle = try #require(await HelperBrokerClient.status(at: fixture.socket))
-        #expect(idle.attached == 0)
-        #expect(idle.protocol == 2 && idle.sdkInt == 36 && idle.helper == "1.0.0")
-        try await fixture.stop()
+                #expect(await HelperBrokerClient.status(at: fixture.socket)?.attached == 1)
+                await session.close()
+                let idle = try await fixture.status(showing: "no command attached") { $0.attached == 0 }
+                #expect(idle.protocol == 2 && idle.sdkInt == 36 && idle.helper == "1.0.0")
+                try await fixture.stop()
+            }
+        }
     }
 
     @Test("a command over the client limit is refused with its own request id")
-    func refusalAnswersTheRequest() async throws {
-        let fixture = BrokerFixture(maxClients: 1)
-        try await fixture.start()
-        // The start's probe must have gone before the one client allowed attaches; a status that answers shows the slot free.
-        let free = ContinuousClock.now + .seconds(5)
-        while await HelperBrokerClient.status(at: fixture.socket) == nil, ContinuousClock.now < free {
-            try await Task.sleep(for: .milliseconds(20))
-        }
-        let session = try await HelperSession.attach(try fixture.client(), log: { _, _ in })
+    func refusalAnswersTheRequest() async {
+        await #expect(processExitsWith: .success) { @MainActor in
+            await recordingErrors {
+                let fixture = BrokerFixture(maxClients: 1)
+                try await fixture.start()
+                // The start's probe must have gone before the one client allowed attaches; a status that answers shows the slot free.
+                _ = try await fixture.status(showing: "a free client slot") { _ in true }
+                let session = try await HelperSession.attach(try fixture.client(), log: { _, _ in })
 
-        let stream = try #require(await HelperBrokerClient.open(fixture.socket))
-        let connection = HelperConnection(shell: nil, socket: stream, ready: HelperBrokerClient.unknownReady)
-        let outcome = try await connection.exchange(.ping, id: 42, timeout: .seconds(5))
-        guard case .reply(let frame) = outcome else {
-            Issue.record("no reply to the refused request: \(outcome)")
-            return
+                let stream = try #require(await HelperBrokerClient.open(fixture.socket))
+                let connection = HelperConnection(shell: nil, socket: stream, ready: HelperBrokerClient.unknownReady)
+                let outcome = try await connection.exchange(.ping, id: 42, timeout: .seconds(5))
+                guard case .reply(let frame) = outcome else {
+                    Issue.record("no reply to the refused request: \(outcome)")
+                    return
+                }
+                let reply = try JSONDecoder().decode(HelperBrokerWire.ErrorReply.self, from: frame)
+                #expect(reply.error.code == HelperBrokerWire.Code.refused)
+                await connection.close()
+                await session.close()
+                try await fixture.stop()
+            }
         }
-        let reply = try JSONDecoder().decode(HelperBrokerWire.ErrorReply.self, from: frame)
-        #expect(reply.error.code == HelperBrokerWire.Code.refused)
-        await connection.close()
-        await session.close()
-        try await fixture.stop()
     }
 
     @Test("doctor reads a ready warm helper from status, and reports one still starting as unavailable")
@@ -342,68 +423,92 @@ struct HelperBrokerTests {
     }
 
     @Test("input whose command has gone is never sent")
-    func goneInputIsDropped() async throws {
-        let fixture = BrokerFixture()
-        try await fixture.start()
-        let stream = try #require(await HelperBrokerClient.open(fixture.socket))
-        let inject = try HelperRequest.inject([], sync: true).payload(id: 7)
-        try await stream.write(try HelperWire.frame(inject), deadline: .now + .seconds(2))
-        await stream.close()
-        try await Task.sleep(for: .milliseconds(200))
+    func goneInputIsDropped() async {
+        await #expect(processExitsWith: .success) { @MainActor in
+            await recordingErrors {
+                let fixture = BrokerFixture()
+                try await fixture.start()
+                try await fixture.untilReady()
+                let inject = try HelperWire.frame(try HelperRequest.inject([], sync: true).payload(id: 7))
+                // Sent and shut for writing without yielding, so the broker, on this actor too, reaches the input's turn only once its command has gone.
+                let client = CloseOnExecSocket.make(AF_UNIX, SOCK_STREAM)
+                try #require(client >= 0)
+                var address = try UnixSocket.address(fixture.socket)
+                let connected = withUnsafePointer(to: &address) {
+                    $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { Darwin.connect(client, $0, socklen_t(MemoryLayout<sockaddr_un>.size)) }
+                }
+                let written = inject.withUnsafeBytes { Darwin.write(client, $0.baseAddress, $0.count) }
+                shutdown(client, SHUT_WR)
+                try #require(connected == 0 && written == inject.count)
+                let stream = PosixAdbStream.adopting(client)
+                let answer = try await stream.read(upTo: 64 * 1024, deadline: .now + .seconds(5))
+                await stream.close()
 
-        #expect(!fixture.device.ops.contains("inject"))
-        try await fixture.stop()
+                #expect(answer.isEmpty, "the broker answered input whose command had gone")
+                #expect(!fixture.device.ops.contains("inject"))
+                try await fixture.stop()
+            }
+        }
     }
 
     @Test("input queued behind another command's slow request is dropped unsent once its command has gone, so a late tap never lands")
-    func queuedInputOfGoneCommandIsDropped() async throws {
-        let device = FakeHelperDevice()
-        device.answer = { _, op, _ in op == "dump" ? .okAfter(FakeHelperDevice.tapTestDump, .milliseconds(800)) : nil }
-        let fixture = BrokerFixture(device: device)
-        try await fixture.start()
-        let reader = try await HelperSession.attach(try fixture.client(), log: { _, _ in })
-        let slow = Task { _ = try await reader.dump() }
-        try await Task.sleep(for: .milliseconds(100))
+    func queuedInputOfGoneCommandIsDropped() async {
+        await #expect(processExitsWith: .success) { @MainActor in
+            await recordingErrors {
+                let device = FakeHelperDevice()
+                device.answer = { _, op, _ in op == "dump" ? .okAfter(FakeHelperDevice.tapTestDump, .milliseconds(800)) : nil }
+                let fixture = BrokerFixture(device: device)
+                try await fixture.start()
+                let reader = try await HelperSession.attach(try fixture.client(), log: { _, _ in })
+                let slow = Task { _ = try await reader.dump() }
+                try await fixture.untilHelperReceived("dump")
 
-        let stream = try #require(await HelperBrokerClient.open(fixture.socket))
-        let inject = try HelperRequest.inject([], sync: true).adding(HelperBrokerWire.timeoutField, .int(5000)).payload(id: 7)
-        try await stream.write(try HelperWire.frame(inject), deadline: .now + .seconds(2))
-        try await Task.sleep(for: .milliseconds(200))
-        await stream.close()
-        try await slow.value
-        try await Task.sleep(for: .milliseconds(200))
+                let stream = try #require(await HelperBrokerClient.open(fixture.socket))
+                let inject = try HelperRequest.inject([], sync: true).adding(HelperBrokerWire.timeoutField, .int(5000)).payload(id: 7)
+                try await stream.write(try HelperWire.frame(inject), deadline: .now + .seconds(2))
+                try await Task.sleep(for: .milliseconds(200))
+                await stream.close()
+                try await slow.value
+                // Queued after the input, so the input's turn has passed once it answers.
+                try await reader.ping()
 
-        #expect(!fixture.device.ops.contains("inject"))
-        await reader.close()
-        try await fixture.stop()
+                #expect(!fixture.device.ops.contains("inject"))
+                await reader.close()
+                try await fixture.stop()
+            }
+        }
     }
 
     @Test("a request still queued when its command's timeout passes is refused unsent, and the helper keeps serving")
-    func lateRequestIsRefusedUnsent() async throws {
-        let device = FakeHelperDevice()
-        device.answer = { _, op, _ in op == "dump" ? .okAfter(FakeHelperDevice.tapTestDump, .milliseconds(800)) : nil }
-        let fixture = BrokerFixture(device: device)
-        try await fixture.start()
-        let reader = try await HelperSession.attach(try fixture.client(), log: { _, _ in })
-        let slow = Task { _ = try await reader.dump() }
-        try await Task.sleep(for: .milliseconds(100))
+    func lateRequestIsRefusedUnsent() async {
+        await #expect(processExitsWith: .success) { @MainActor in
+            await recordingErrors {
+                let device = FakeHelperDevice()
+                device.answer = { _, op, _ in op == "dump" ? .okAfter(FakeHelperDevice.tapTestDump, .milliseconds(800)) : nil }
+                let fixture = BrokerFixture(device: device)
+                try await fixture.start()
+                let reader = try await HelperSession.attach(try fixture.client(), log: { _, _ in })
+                let slow = Task { _ = try await reader.dump() }
+                try await fixture.untilHelperReceived("dump")
 
-        let stream = try #require(await HelperBrokerClient.open(fixture.socket))
-        let connection = HelperConnection(shell: nil, socket: stream, ready: HelperBrokerClient.unknownReady)
-        let display = HelperRequest.display.adding(HelperBrokerWire.timeoutField, .int(300))
-        let outcome = try await connection.exchange(display, id: 9, timeout: .seconds(5))
-        guard case .reply(let frame) = outcome else {
-            Issue.record("no reply to the late request: \(outcome)")
-            return
+                let stream = try #require(await HelperBrokerClient.open(fixture.socket))
+                let connection = HelperConnection(shell: nil, socket: stream, ready: HelperBrokerClient.unknownReady)
+                let display = HelperRequest.display.adding(HelperBrokerWire.timeoutField, .int(300))
+                let outcome = try await connection.exchange(display, id: 9, timeout: .seconds(5))
+                guard case .reply(let frame) = outcome else {
+                    Issue.record("no reply to the late request: \(outcome)")
+                    return
+                }
+                #expect(try JSONDecoder().decode(HelperBrokerWire.ErrorReply.self, from: frame).error.code == HelperBrokerWire.Code.refused)
+                try await slow.value
+
+                #expect(!fixture.device.ops.contains("display"))
+                #expect(await HelperBrokerClient.status(at: fixture.socket)?.state == .ready)
+                await connection.close()
+                await reader.close()
+                try await fixture.stop()
+            }
         }
-        #expect(try JSONDecoder().decode(HelperBrokerWire.ErrorReply.self, from: frame).error.code == HelperBrokerWire.Code.refused)
-        try await slow.value
-
-        #expect(!fixture.device.ops.contains("display"))
-        #expect(await HelperBrokerClient.status(at: fixture.socket)?.state == .ready)
-        await connection.close()
-        await reader.close()
-        try await fixture.stop()
     }
 
     @Test("a request's turn drops it when its command has gone or given up, and input that waited long enough to land late", arguments: [
@@ -420,34 +525,40 @@ struct HelperBrokerTests {
     }
 
     @Test("a broker with another idle timeout is stopped only once free, so a command that attached after the hello is never cut off")
-    func otherIdleWaitsForFree() async throws {
-        let fixture = BrokerFixture()
-        let dex = FakeHelperDevice.dex.sha256
-        let busy = #"{"serial":"emulator-5556","state":"ready","brokerPid":3,"attached":1}"#
-        let broker = try ScriptedBroker(path: fixture.socket, status: busy, hello: { id in
-            HelperBrokerWire.helloReply(id: id, helper: "1.5.0", protocol: HelperDex.protocolVersion, ops: ["dump"], broker: HelperBrokerWire.Hello(
-                brokerProtocol: HelperBrokerWire.protocolVersion, brokerPid: 3, dexSha256: dex, helperPid: 4001, sdkInt: 36, idleSeconds: 30,
-                launchMs: 100, pushed: false, eventSeq: 0, attached: 0
-            ))
-        })
-        var client = try fixture.client(idleSeconds: 5)
-        client.freeWait = .milliseconds(300)
+    func otherIdleWaitsForFree() async {
+        await #expect(processExitsWith: .success) { @MainActor in
+            await recordingErrors {
+                let fixture = BrokerFixture()
+                let dex = FakeHelperDevice.dex.sha256
+                let busy = #"{"serial":"emulator-5556","state":"ready","brokerPid":3,"attached":1}"#
+                let broker = try ScriptedBroker(path: fixture.socket, status: busy, hello: { id in
+                    HelperBrokerWire.helloReply(id: id, helper: "1.5.0", protocol: HelperDex.protocolVersion, ops: ["dump"], broker: HelperBrokerWire.Hello(
+                        brokerProtocol: HelperBrokerWire.protocolVersion, brokerPid: 3, dexSha256: dex, helperPid: 4001, sdkInt: 36, idleSeconds: 30,
+                        launchMs: 100, pushed: false, eventSeq: 0, attached: 0
+                    ))
+                })
+                var client = try fixture.client(idleSeconds: 5)
+                client.freeWait = .milliseconds(300)
 
-        #expect(try await client.existing(helloID: 1) == nil)
-        #expect(broker.ops.contains("hello") && !broker.ops.contains("stop"))
-        broker.cancel()
-        try? FileManager.default.removeItem(at: fixture.root)
+                #expect(try await client.existing(helloID: 1) == nil)
+                #expect(broker.ops.contains("hello") && !broker.ops.contains("stop"))
+                broker.cancel()
+            }
+        }
     }
 
     @Test("a broker that does not report its commands is left running by a stop that waits for it to be free")
-    func unknownAttachedIsInUse() async throws {
-        let fixture = BrokerFixture()
-        let broker = try ScriptedBroker(path: fixture.socket, status: #"{"serial":"emulator-5556","state":"ready","brokerPid":3}"#)
+    func unknownAttachedIsInUse() async {
+        await #expect(processExitsWith: .success) { @MainActor in
+            await recordingErrors {
+                let fixture = BrokerFixture()
+                let broker = try ScriptedBroker(path: fixture.socket, status: #"{"serial":"emulator-5556","state":"ready","brokerPid":3}"#)
 
-        #expect(await HelperBrokerClient.stopWhenFree(at: fixture.socket, wait: .milliseconds(300)) == .inUse)
-        #expect(!broker.ops.contains("stop"))
-        broker.cancel()
-        try? FileManager.default.removeItem(at: fixture.root)
+                #expect(await HelperBrokerClient.stopWhenFree(at: fixture.socket, wait: .milliseconds(300)) == .inUse)
+                #expect(!broker.ops.contains("stop"))
+                broker.cancel()
+            }
+        }
     }
 
     final class Asked: @unchecked Sendable {
@@ -458,120 +569,145 @@ struct HelperBrokerTests {
     }
 
     @Test("a broker that closes before a byte, as another build's does, is looked up by its arguments before the command starts its own")
-    func refusingBrokerIsLookedUp() async throws {
-        let fixture = BrokerFixture()
-        // No hello reply: the scripted broker closes the connection unread, as a broker of another build does.
-        let broker = try ScriptedBroker(path: fixture.socket)
-        var client = try fixture.client()
-        let asked = Asked()
-        let socket = fixture.socket
-        client.stopOtherBuilds = { arguments, path in
-            asked.record(arguments + [path])
-            return []
+    func refusingBrokerIsLookedUp() async {
+        await #expect(processExitsWith: .success) { @MainActor in
+            await recordingErrors {
+                let fixture = BrokerFixture()
+                // No hello reply: the scripted broker closes the connection unread, as a broker of another build does.
+                let broker = try ScriptedBroker(path: fixture.socket)
+                var client = try fixture.client()
+                let asked = Asked()
+                let socket = fixture.socket
+                client.stopOtherBuilds = { arguments, path in
+                    asked.record(arguments + [path])
+                    return []
+                }
+                let connection = try await client.existing(helloID: 1)
+                #expect(connection == nil)
+                #expect(asked.all == [["android-session", "serve", "--device", FakeHelperDevice.serial, socket]])
+                broker.cancel()
+            }
         }
-        let connection = try await client.existing(helloID: 1)
-        #expect(connection == nil)
-        #expect(asked.all == [["android-session", "serve", "--device", FakeHelperDevice.serial, socket]])
-        broker.cancel()
-        try? FileManager.default.removeItem(at: fixture.root)
     }
 
     @Test("a stop while the helper is still starting returns once the start has ended and the slot is free, never before")
-    func stopWhileStartingWaitsForTheStart() async throws {
-        let fixture = BrokerFixture(startDelay: .milliseconds(3500))
-        try await fixture.start()
+    func stopWhileStartingWaitsForTheStart() async {
+        await #expect(processExitsWith: .success) { @MainActor in
+            await recordingErrors {
+                let fixture = BrokerFixture(startDelay: .milliseconds(3500))
+                try await fixture.start()
 
-        #expect(await HelperBrokerClient.stop(at: fixture.socket))
-        #expect(!UnixSocket.answers(fixture.socket))
-        #expect(fixture.device.ops.last == "quit")
-        #expect(try await fixture.finished())
+                #expect(await HelperBrokerClient.stop(at: fixture.socket))
+                #expect(!UnixSocket.answers(fixture.socket))
+                #expect(fixture.device.ops.last == "quit")
+                #expect(try await fixture.finished())
+            }
+        }
     }
 
     @Test("health pings the warm helper itself, so a helper that stopped answering never looks ready")
-    func healthPingsTheHelper() async throws {
-        let healthy = BrokerFixture()
-        try await healthy.start()
-        try await healthy.untilReady()
-        #expect(await HelperBrokerClient.health(at: healthy.socket) != nil)
-        #expect(healthy.device.ops.last == "ping")
-        try await healthy.stop()
+    func healthPingsTheHelper() async {
+        await #expect(processExitsWith: .success) { @MainActor in
+            await recordingErrors {
+                let healthy = BrokerFixture()
+                try await healthy.start()
+                try await healthy.untilReady()
+                #expect(await HelperBrokerClient.health(at: healthy.socket) != nil)
+                #expect(healthy.device.ops.last == "ping")
+                try await healthy.stop()
 
-        let device = FakeHelperDevice()
-        device.answer = { _, op, _ in op == "ping" ? .silence : nil }
-        let wedged = BrokerFixture(device: device)
-        try await wedged.start()
-        try await wedged.untilReady()
-        #expect(await HelperBrokerClient.health(at: wedged.socket) == nil)
-        #expect(try await wedged.finished())
+                let device = FakeHelperDevice()
+                device.answer = { _, op, _ in op == "ping" ? .silence : nil }
+                let wedged = BrokerFixture(device: device)
+                try await wedged.start()
+                try await wedged.untilReady()
+                #expect(await HelperBrokerClient.health(at: wedged.socket) == nil)
+                #expect(try await wedged.finished())
+            }
+        }
     }
 
     @Test("a ping queued behind another command's slow request still gets its full time, so a new command attaches and the helper stays")
-    func queuedPingKeepsTheHelper() async throws {
-        let device = FakeHelperDevice()
-        device.answer = { _, op, _ in
-            switch op {
-            case "dump": .okAfter(FakeHelperDevice.tapTestDump, .milliseconds(800))
-            case "ping": .okAfter("{}", .milliseconds(100))
-            default: nil
+    func queuedPingKeepsTheHelper() async {
+        await #expect(processExitsWith: .success) { @MainActor in
+            await recordingErrors {
+                let device = FakeHelperDevice()
+                device.answer = { _, op, _ in
+                    switch op {
+                    case "dump": .okAfter(FakeHelperDevice.tapTestDump, .milliseconds(800))
+                    case "ping": .okAfter("{}", .milliseconds(100))
+                    default: nil
+                    }
+                }
+                let fixture = BrokerFixture(device: device, pingTimeout: .milliseconds(300))
+                try await fixture.start()
+                let reader = try await HelperSession.attach(try fixture.client(), log: { _, _ in })
+                let slow = Task { _ = try await reader.dump() }
+                try await fixture.untilHelperReceived("dump")
+
+                let second = try await HelperSession.attach(try fixture.client(), log: { _, _ in })
+                try await slow.value
+                #expect(second.isWarm)
+                #expect(await HelperBrokerClient.status(at: fixture.socket)?.state == .ready)
+                #expect(fixture.device.startedProcesses == 1)
+                await second.close()
+                await reader.close()
+                try await fixture.stop()
             }
         }
-        let fixture = BrokerFixture(device: device, pingTimeout: .milliseconds(300))
-        try await fixture.start()
-        let reader = try await HelperSession.attach(try fixture.client(), log: { _, _ in })
-        let slow = Task { _ = try await reader.dump() }
-        try await Task.sleep(for: .milliseconds(100))
-
-        let second = try await HelperSession.attach(try fixture.client(), log: { _, _ in })
-        try await slow.value
-        #expect(second.isWarm)
-        #expect(await HelperBrokerClient.status(at: fixture.socket)?.state == .ready)
-        #expect(fixture.device.startedProcesses == 1)
-        await second.close()
-        await reader.close()
-        try await fixture.stop()
     }
 
     @Test("health answers busy at once while a command's request runs on the helper, instead of a ping that waits behind it")
-    func healthWhileBusyAnswersAtOnce() async throws {
-        let device = FakeHelperDevice()
-        device.answer = { _, op, _ in op == "dump" ? .okAfter(FakeHelperDevice.tapTestDump, .milliseconds(1500)) : nil }
-        let fixture = BrokerFixture(device: device)
-        try await fixture.start()
-        let reader = try await HelperSession.attach(try fixture.client(), log: { _, _ in })
-        let slow = Task { _ = try await reader.dump() }
-        try await Task.sleep(for: .milliseconds(100))
+    func healthWhileBusyAnswersAtOnce() async {
+        await #expect(processExitsWith: .success) { @MainActor in
+            await recordingErrors {
+                let device = FakeHelperDevice()
+                device.answer = { _, op, _ in op == "dump" ? .okAfter(FakeHelperDevice.tapTestDump, .milliseconds(1500)) : nil }
+                let fixture = BrokerFixture(device: device)
+                try await fixture.start()
+                let reader = try await HelperSession.attach(try fixture.client(), log: { _, _ in })
+                let slow = Task { _ = try await reader.dump() }
+                try await fixture.untilHelperReceived("dump")
 
-        let asked = ContinuousClock.now
-        #expect(await HelperBrokerClient.health(at: fixture.socket) == .busy)
-        #expect(ContinuousClock.now - asked < .milliseconds(700))
-        try await slow.value
-        #expect(await HelperBrokerClient.status(at: fixture.socket)?.state == .ready)
-        await reader.close()
-        try await fixture.stop()
+                let asked = ContinuousClock.now
+                #expect(await HelperBrokerClient.health(at: fixture.socket) == .busy)
+                #expect(ContinuousClock.now - asked < .milliseconds(700))
+                try await slow.value
+                #expect(await HelperBrokerClient.status(at: fixture.socket)?.state == .ready)
+                await reader.close()
+                try await fixture.stop()
+            }
+        }
     }
 
     @Test("a broker whose status does not read is left running by a stop that waits for it to be free")
-    func unreadableStatusIsInUse() async throws {
-        let fixture = BrokerFixture()
-        let broker = try ScriptedBroker(path: fixture.socket)
+    func unreadableStatusIsInUse() async {
+        await #expect(processExitsWith: .success) { @MainActor in
+            await recordingErrors {
+                let fixture = BrokerFixture()
+                let broker = try ScriptedBroker(path: fixture.socket)
 
-        #expect(await HelperBrokerClient.stopWhenFree(at: fixture.socket, wait: .milliseconds(300)) == .inUse)
-        #expect(!broker.ops.contains("stop"))
-        broker.cancel()
-        try? FileManager.default.removeItem(at: fixture.root)
+                #expect(await HelperBrokerClient.stopWhenFree(at: fixture.socket, wait: .milliseconds(300)) == .inUse)
+                #expect(!broker.ops.contains("stop"))
+                broker.cancel()
+            }
+        }
     }
 
     @Test("a stop returns once its broker's socket goes, even when another broker takes the path at once")
-    func stopEndsWhenAnotherBrokerTakesThePath() async throws {
-        let fixture = BrokerFixture()
-        let broker = try ScriptedBroker(path: fixture.socket, replaceOnStop: true)
+    func stopEndsWhenAnotherBrokerTakesThePath() async {
+        await #expect(processExitsWith: .success) { @MainActor in
+            await recordingErrors {
+                let fixture = BrokerFixture()
+                let broker = try ScriptedBroker(path: fixture.socket, replaceOnStop: true)
 
-        let asked = ContinuousClock.now
-        #expect(await HelperBrokerClient.stop(at: fixture.socket))
-        #expect(ContinuousClock.now - asked < .milliseconds(1500))
-        #expect(UnixSocket.answers(fixture.socket))
-        broker.cancel()
-        try? FileManager.default.removeItem(at: fixture.root)
+                let asked = ContinuousClock.now
+                #expect(await HelperBrokerClient.stop(at: fixture.socket))
+                #expect(ContinuousClock.now - asked < .milliseconds(1500))
+                #expect(UnixSocket.answers(fixture.socket))
+                broker.cancel()
+            }
+        }
     }
 
     @Test("the relay cap outlasts the longest inject a command sends, so a full-length gesture is never cut off")
@@ -581,107 +717,123 @@ struct HelperBrokerTests {
     }
 
     @Test("a request whose turn comes with almost no time left still gets its reply, and the helper is not taken as wedged")
-    func lateTurnKeepsHealthyHelper() async throws {
-        let device = FakeHelperDevice()
-        device.answer = { _, op, _ in
-            switch op {
-            case "dump": .okAfter(FakeHelperDevice.tapTestDump, .milliseconds(800))
-            case "display": .okAfter(FakeHelperDevice.displayReply, .milliseconds(600))
-            default: nil
+    func lateTurnKeepsHealthyHelper() async {
+        await #expect(processExitsWith: .success) { @MainActor in
+            await recordingErrors {
+                let device = FakeHelperDevice()
+                device.answer = { _, op, _ in
+                    switch op {
+                    case "dump": .okAfter(FakeHelperDevice.tapTestDump, .milliseconds(800))
+                    case "display": .okAfter(FakeHelperDevice.displayReply, .milliseconds(600))
+                    default: nil
+                    }
+                }
+                let fixture = BrokerFixture(device: device)
+                try await fixture.start()
+                let reader = try await HelperSession.attach(try fixture.client(), log: { _, _ in })
+                let slow = Task { _ = try await reader.dump() }
+                try await fixture.untilHelperReceived("dump")
+
+                let stream = try #require(await HelperBrokerClient.open(fixture.socket))
+                let connection = HelperConnection(shell: nil, socket: stream, ready: HelperBrokerClient.unknownReady)
+                let display = HelperRequest.display.adding(HelperBrokerWire.timeoutField, .int(1100))
+                let outcome = try await connection.exchange(display, id: 9, timeout: .seconds(5))
+                try await slow.value
+
+                guard case .reply(let frame) = outcome else {
+                    Issue.record("no reply to the late turn: \(outcome)")
+                    return
+                }
+                #expect(HelperBrokerWire.isOK(frame))
+                #expect(await HelperBrokerClient.status(at: fixture.socket)?.state == .ready)
+                await connection.close()
+                await reader.close()
+                try await fixture.stop()
             }
         }
-        let fixture = BrokerFixture(device: device)
-        try await fixture.start()
-        let reader = try await HelperSession.attach(try fixture.client(), log: { _, _ in })
-        let slow = Task { _ = try await reader.dump() }
-        try await Task.sleep(for: .milliseconds(100))
-
-        let stream = try #require(await HelperBrokerClient.open(fixture.socket))
-        let connection = HelperConnection(shell: nil, socket: stream, ready: HelperBrokerClient.unknownReady)
-        let display = HelperRequest.display.adding(HelperBrokerWire.timeoutField, .int(850))
-        let outcome = try await connection.exchange(display, id: 9, timeout: .seconds(5))
-        try await slow.value
-
-        guard case .reply(let frame) = outcome else {
-            Issue.record("no reply to the late turn: \(outcome)")
-            return
-        }
-        #expect(HelperBrokerWire.isOK(frame))
-        #expect(await HelperBrokerClient.status(at: fixture.socket)?.state == .ready)
-        await connection.close()
-        await reader.close()
-        try await fixture.stop()
     }
 
     @Test("a broker that answers but does not stop is reported as still serving, never as stopped")
-    func unstoppableBrokerIsNotStopped() async throws {
-        let fixture = BrokerFixture()
-        let free = #"{"serial":"emulator-5556","state":"ready","brokerPid":3,"attached":0}"#
-        let other = try ScriptedBroker(path: fixture.socket, status: free, answersStop: false)
+    func unstoppableBrokerIsNotStopped() async {
+        await #expect(processExitsWith: .success) { @MainActor in
+            await recordingErrors {
+                let fixture = BrokerFixture()
+                let free = #"{"serial":"emulator-5556","state":"ready","brokerPid":3,"attached":0}"#
+                let other = try ScriptedBroker(path: fixture.socket, status: free, answersStop: false)
 
-        #expect(await HelperBrokerClient.stopWhenFree(at: fixture.socket, wait: .milliseconds(200)) == .stillServing)
-        #expect(UnixSocket.answers(fixture.socket))
-        other.cancel()
-        try? FileManager.default.removeItem(at: fixture.root)
+                #expect(await HelperBrokerClient.stopWhenFree(at: fixture.socket, wait: .milliseconds(200)) == .stillServing)
+                #expect(UnixSocket.answers(fixture.socket))
+                other.cancel()
+            }
+        }
     }
 
     @Test("a broker with another idle timeout that serves another command is kept, so neither command cuts the other off")
-    func otherIdleInUseIsKept() async throws {
-        let fixture = BrokerFixture(idle: .seconds(30))
-        try await fixture.start()
-        let first = try await HelperSession.attach(try fixture.client(), log: { _, _ in })
+    func otherIdleInUseIsKept() async {
+        await #expect(processExitsWith: .success) { @MainActor in
+            await recordingErrors {
+                let fixture = BrokerFixture(idle: .seconds(30))
+                try await fixture.start()
+                let first = try await HelperSession.attach(try fixture.client(), log: { _, _ in })
 
-        let second = try #require(try await fixture.client(idleSeconds: 5).existing(helloID: 1))
-        #expect(await HelperBrokerClient.status(at: fixture.socket)?.attached == 2)
-        await second.close()
-        await first.close()
-        #expect(fixture.device.startedProcesses == 1)
-        try await fixture.stop()
+                let second = try #require(try await fixture.client(idleSeconds: 5).existing(helloID: 1))
+                #expect(await HelperBrokerClient.status(at: fixture.socket)?.attached == 2)
+                await second.close()
+                await first.close()
+                #expect(fixture.device.startedProcesses == 1)
+                try await fixture.stop()
+            }
+        }
     }
 
     @Test("a broker of another build that serves another command is left running, and this command is told to start its own helper")
-    func otherBuildInUseIsLeft() async throws {
-        let fixture = BrokerFixture(dexSha256: String(repeating: "0", count: 64))
-        try await fixture.start()
-        let stream = try #require(await HelperBrokerClient.open(fixture.socket))
-        let other = HelperConnection(shell: nil, socket: stream, ready: HelperBrokerClient.unknownReady)
-        guard case .reply = try await other.exchange(.hello(token: ""), id: 1, timeout: .seconds(5)) else {
-            Issue.record("no hello reply")
-            return
-        }
-        var client = try fixture.client()
-        client.freeWait = .milliseconds(300)
+    func otherBuildInUseIsLeft() async {
+        await #expect(processExitsWith: .success) { @MainActor in
+            await recordingErrors {
+                let fixture = BrokerFixture(dexSha256: String(repeating: "0", count: 64))
+                try await fixture.start()
+                let stream = try #require(await HelperBrokerClient.open(fixture.socket))
+                let other = HelperConnection(shell: nil, socket: stream, ready: HelperBrokerClient.unknownReady)
+                guard case .reply = try await other.exchange(.hello(token: ""), id: 1, timeout: .seconds(5)) else {
+                    Issue.record("no hello reply")
+                    return
+                }
+                var client = try fixture.client()
+                client.freeWait = .milliseconds(300)
 
-        await #expect(throws: HelperBrokerUnavailable.self) { _ = try await client.existing(helloID: 2) }
-        #expect(UnixSocket.answers(fixture.socket))
-        await other.close()
-        try await fixture.stop()
+                await #expect(throws: HelperBrokerUnavailable.self) { _ = try await client.existing(helloID: 2) }
+                #expect(UnixSocket.answers(fixture.socket))
+                await other.close()
+                try await fixture.stop()
+            }
+        }
     }
 
     @Test("past the client and refusal limits a connection is closed unanswered, so a flood cannot pile up work")
-    func refusalsAreCapped() async throws {
-        let fixture = BrokerFixture(maxClients: 1)
-        try await fixture.start()
-        let free = ContinuousClock.now + .seconds(5)
-        while await HelperBrokerClient.status(at: fixture.socket) == nil, ContinuousClock.now < free {
-            try await Task.sleep(for: .milliseconds(20))
-        }
-        let session = try await HelperSession.attach(try fixture.client(), log: { _, _ in })
-        // Refused but silent, it holds the one refusal slot while the broker waits for its request.
-        let silent = try #require(await HelperBrokerClient.open(fixture.socket))
-        try await Task.sleep(for: .milliseconds(300))
+    func refusalsAreCapped() async {
+        await #expect(processExitsWith: .success) { @MainActor in
+            await recordingErrors {
+                let fixture = BrokerFixture(maxClients: 1)
+                try await fixture.start()
+                _ = try await fixture.status(showing: "a free client slot") { _ in true }
+                let session = try await HelperSession.attach(try fixture.client(), log: { _, _ in })
+                // Refused but silent, it holds the one refusal slot while the broker waits for its request.
+                let silent = try #require(await HelperBrokerClient.open(fixture.socket))
+                try await Task.sleep(for: .milliseconds(300))
 
-        let stream = try #require(await HelperBrokerClient.open(fixture.socket))
-        let connection = HelperConnection(shell: nil, socket: stream, ready: HelperBrokerClient.unknownReady)
-        let outcome = try await connection.exchange(.ping, id: 42, timeout: .seconds(5))
-        guard case .lost = outcome else {
-            Issue.record("answered past the refusal limit: \(outcome)")
-            return
+                let stream = try #require(await HelperBrokerClient.open(fixture.socket))
+                let connection = HelperConnection(shell: nil, socket: stream, ready: HelperBrokerClient.unknownReady)
+                let outcome = try await connection.exchange(.ping, id: 42, timeout: .seconds(5))
+                guard case .lost = outcome else {
+                    Issue.record("answered past the refusal limit: \(outcome)")
+                    return
+                }
+                await connection.close()
+                await silent.close()
+                await session.close()
+                try await fixture.stop()
+            }
         }
-        await connection.close()
-        await silent.close()
-        await session.close()
-        try await fixture.stop()
     }
 
     @Test("a status from another build missing newer fields still reads, so session stop finds its broker")
@@ -696,20 +848,23 @@ struct HelperBrokerTests {
         (#"{"serial":"emulator-5556","state":"draining"}"#, nil),
         (#"{"state":"draining"}"#, "2026-10-18T09:00:00Z Serving emulator-5556 on /tmp/s/android-x.sock\n"),
     ] as [(String, String?)])
-    func stopsUnreadableBroker(status: String, log: String?) async throws {
-        let fixture = BrokerFixture()
-        let other = try ScriptedBroker(path: fixture.socket, status: status)
-        if let log {
-            try log.write(toFile: (fixture.socket as NSString).deletingPathExtension + ".log", atomically: true, encoding: .utf8)
-        }
-        var host = AndroidTestHost.make()
-        host.helperBroker = try fixture.brokerHost()
+    func stopsUnreadableBroker(status: String, log: String?) async {
+        await #expect(processExitsWith: .success) { @MainActor [status, log] in
+            await recordingErrors {
+                let fixture = BrokerFixture()
+                let other = try ScriptedBroker(path: fixture.socket, status: status)
+                if let log {
+                    try log.write(toFile: (fixture.socket as NSString).deletingPathExtension + ".log", atomically: true, encoding: .utf8)
+                }
+                var host = AndroidTestHost.make()
+                host.helperBroker = try fixture.brokerHost()
 
-        let stopped = await AndroidBackend.stopWarmHelpers(host: host)
-        #expect(stopped == ["emulator-5556"])
-        #expect(!UnixSocket.answers(fixture.socket))
-        other.cancel()
-        try? FileManager.default.removeItem(at: fixture.root)
+                let stopped = await AndroidBackend.stopWarmHelpers(host: host)
+                #expect(stopped == ["emulator-5556"])
+                #expect(!UnixSocket.answers(fixture.socket))
+                other.cancel()
+            }
+        }
     }
 }
 
