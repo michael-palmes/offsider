@@ -18,12 +18,12 @@ check() {
     fi
 }
 
-# needs <changes result> <macos output> <unit-tests> <release-rehearsal> <lint>
+# needs <changes result> <unit-tests output> <release-rehearsal output> <unit-tests> <release-rehearsal> <lint>
 needs() {
     local outputs=""
-    [[ -n "$2" ]] && outputs="\"macos\":\"$2\""
+    [[ -n "$2" ]] && outputs="\"unit-tests\":\"$2\",\"release-rehearsal\":\"$3\""
     printf '{"changes":{"result":"%s","outputs":{%s}},"lint":{"result":"%s","outputs":{}},"unit-tests":{"result":"%s","outputs":{}},"release-rehearsal":{"result":"%s","outputs":{}}}' \
-        "$1" "$outputs" "$5" "$3" "$4"
+        "$1" "$outputs" "$6" "$4" "$5"
 }
 
 # gate <needs json> prints the exit status, then every line the gate printed.
@@ -34,16 +34,21 @@ gate() {
     printf '%s %s' "$status" "$output"
 }
 
-check "every job green passes" "0 " "$(gate "$(needs success true success success success)")"
-check "a docs-only change may skip the macOS jobs" "0 " "$(gate "$(needs success false skipped skipped success)")"
+check "every job green passes" "0 " "$(gate "$(needs success true true success success success)")"
+check "a docs-only change may skip the macOS jobs" "0 " "$(gate "$(needs success false false skipped skipped success)")"
+check "a merge to main may skip the plain unit tests while the rehearsal runs" "0 " \
+    "$(gate "$(needs success false true skipped success success)")"
+check "a skip excused for one job never excuses another" \
+    "1 ::error::release-rehearsal was skipped although the change needs it" \
+    "$(gate "$(needs success false true skipped skipped success)")"
 check "a code change that skipped the macOS jobs fails" \
     "1 ::error::unit-tests was skipped although the change needs it"$'\n'"::error::release-rehearsal was skipped although the change needs it" \
-    "$(gate "$(needs success true skipped skipped success)")"
-check "a failed changes job fails, even with the macOS jobs skipped" 1 "$(gate "$(needs failure "" skipped skipped success)" | head -c 1)"
-check "a failed unit test job fails" "1 ::error::unit-tests: failure" "$(gate "$(needs success true failure success success)")"
-check "a cancelled rehearsal fails" "1 ::error::release-rehearsal: cancelled" "$(gate "$(needs success true success cancelled success)")"
-check "a skip of a job that is not skippable fails, even for docs" "1 ::error::lint: skipped" "$(gate "$(needs success false skipped skipped skipped)")"
-check "a changes output other than false never excuses a skip" 1 "$(gate "$(needs success maybe skipped skipped success)" | head -c 1)"
+    "$(gate "$(needs success true true skipped skipped success)")"
+check "a failed changes job fails, even with the macOS jobs skipped" 1 "$(gate "$(needs failure "" "" skipped skipped success)" | head -c 1)"
+check "a failed unit test job fails" "1 ::error::unit-tests: failure" "$(gate "$(needs success true true failure success success)")"
+check "a cancelled rehearsal fails" "1 ::error::release-rehearsal: cancelled" "$(gate "$(needs success true true success cancelled success)")"
+check "a skip of a job that is not skippable fails, even for docs" "1 ::error::lint: skipped" "$(gate "$(needs success false false skipped skipped skipped)")"
+check "a changes output other than false never excuses a skip" 1 "$(gate "$(needs success maybe maybe skipped skipped success)" | head -c 1)"
 check "an empty needs list fails" "1 ::error::NEEDS lists no jobs" "$(gate '{}')"
 check "unset needs fail" "1 ::error::NEEDS is empty, so there are no job results to check" "$(gate '')"
 check "needs that are not JSON fail" "1 ::error::NEEDS is not the gate's needs as JSON" "$(gate 'not json')"

@@ -20,8 +20,6 @@ defaults:
     shell: bash
 
 env:
-  XCODEGEN_VERSION: "2.46.0"
-  XCODEGEN_SHA256: "4d9e34b62172d645eed6457cac13fc222569974098ef4ee9c3368bedf0196806"
   # Stable symlink present before and after the RC to GA path rename on the xcode-27 image.
   XCODE_APP: ${{ vars.XCODE_APP || '/Applications/Xcode_27.0.app' }}
   HOMEBREW_NO_AUTO_UPDATE: "1"
@@ -165,13 +163,14 @@ jobs:
       - name: Typecheck
         run: pnpm --dir OffsiderPlaygroundRN typecheck
 
-  # Pushes, schedules and manual runs always build; a pull request that changes only docs skips the macOS jobs.
+  # A docs-only pull request skips both macOS jobs; off pull requests ASan stands in for the unit tests, and runs alone weekly.
   changes:
     name: Changes (docs only?)
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     outputs:
-      macos: ${{ steps.classify.outputs.macos }}
+      unit-tests: ${{ steps.classify.outputs.unit-tests }}
+      release-rehearsal: ${{ steps.classify.outputs.release-rehearsal }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -185,20 +184,29 @@ jobs:
           EVENT_NAME: ${{ github.event_name }}
         run: |
           set -euo pipefail
-          if [ "$EVENT_NAME" = pull_request ]; then
-            result="$(git diff --name-only --no-renames HEAD^1 HEAD | scripts/ci-changes.sh)"
-          else
-            result=macos=true
-          fi
-          echo "$result" >> "$GITHUB_OUTPUT"
-          if [ "$result" = macos=false ]; then
-            echo "::notice title=Docs only::Only docs changed, so the macOS build, tests and release rehearsal are skipped"
-          fi
+          case "$EVENT_NAME" in
+            pull_request)
+              macos="$(git diff --name-only --no-renames HEAD^1 HEAD | scripts/ci-changes.sh)"
+              unit="${macos#macos=}" rehearsal="${macos#macos=}"
+              if [ "$macos" = macos=false ]; then
+                echo "::notice title=Docs only::Only docs changed, so the macOS build, tests and release rehearsal are skipped"
+              fi
+              ;;
+            schedule)
+              unit=false rehearsal=false
+              echo "::notice title=Weekly::The weekly run is the AddressSanitizer unit tests alone"
+              ;;
+            *)
+              unit=false rehearsal=true
+              echo "::notice title=AddressSanitizer::The AddressSanitizer job runs the unit tests here, so the plain run is skipped"
+              ;;
+          esac
+          printf 'unit-tests=%s\nrelease-rehearsal=%s\n' "$unit" "$rehearsal" >> "$GITHUB_OUTPUT"
 
   unit-tests:
     name: Unit tests
     needs: changes
-    if: needs.changes.outputs.macos == 'true'
+    if: needs.changes.outputs.unit-tests == 'true'
     runs-on: ${{ vars.MACOS_RUNNER || 'xcode-27' }}
     timeout-minutes: 45
     steps:
@@ -209,8 +217,6 @@ jobs:
       - uses: ./.github/actions/macos-setup
         with:
           xcode-app: ${{ env.XCODE_APP }}
-          xcodegen-version: ${{ env.XCODEGEN_VERSION }}
-          xcodegen-sha256: ${{ env.XCODEGEN_SHA256 }}
 
       - name: Unit tests
         run: OFFSIDER_REUSE_IDB=1 ./test-runner.sh --unit-tests
@@ -218,7 +224,7 @@ jobs:
   release-rehearsal:
     name: Release build and rehearsal (ad-hoc)
     needs: changes
-    if: needs.changes.outputs.macos == 'true'
+    if: needs.changes.outputs.release-rehearsal == 'true'
     runs-on: ${{ vars.MACOS_RUNNER || 'xcode-27' }}
     timeout-minutes: 30
     steps:
@@ -229,8 +235,6 @@ jobs:
       - uses: ./.github/actions/macos-setup
         with:
           xcode-app: ${{ env.XCODE_APP }}
-          xcodegen-version: ${{ env.XCODEGEN_VERSION }}
-          xcodegen-sha256: ${{ env.XCODEGEN_SHA256 }}
 
       - name: Runner project (regenerate and compare)
         run: scripts/build.sh runner --check
@@ -258,7 +262,7 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Every job passed, or was skipped for a docs-only change
+      - name: Every job passed, or was skipped where the changes job allows it
         env:
           NEEDS: ${{ toJSON(needs) }}
         run: scripts/ci-gate.sh --skippable unit-tests --skippable release-rehearsal
@@ -269,6 +273,9 @@ jobs:
     if: github.event_name != 'pull_request'
     runs-on: ${{ vars.MACOS_RUNNER || 'xcode-27' }}
     timeout-minutes: 60
+    outputs:
+      build: ${{ steps.build.outcome }}
+      tests: ${{ steps.tests.outcome }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -277,13 +284,13 @@ jobs:
       - uses: ./.github/actions/macos-setup
         with:
           xcode-app: ${{ env.XCODE_APP }}
-          xcodegen-version: ${{ env.XCODEGEN_VERSION }}
-          xcodegen-sha256: ${{ env.XCODEGEN_SHA256 }}
 
       - name: Build with AddressSanitizer
+        id: build
         run: swift build --build-tests --sanitize=address
 
       - name: Unit tests with AddressSanitizer
+        id: tests
         env:
           OFFSIDER_E2E: "0"
           OFFSIDER_LANDSCAPE_E2E: "0"
@@ -291,11 +298,14 @@ jobs:
           ASAN_OPTIONS: strip_env=0
         run: swift test --skip-build --sanitize=address --no-parallel
 
-  # No pull request watches main, so a failure there opens one issue, or adds the run to the open one.
+  # No pull request watches main, so a failed ASan build or test step there (a timeout included) opens one issue, or adds to it.
   asan-issue:
     name: Report an AddressSanitizer failure on main
     needs: asan-unit-tests
-    if: failure() && github.ref == 'refs/heads/main'
+    if: >-
+      failure() && github.ref == 'refs/heads/main'
+      && (needs.asan-unit-tests.outputs.build == 'failure'
+      || contains(fromJSON('["failure", "cancelled"]'), needs.asan-unit-tests.outputs.tests))
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:

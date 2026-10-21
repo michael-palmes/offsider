@@ -5,12 +5,13 @@ inputs:
   xcode-app:
     description: The Xcode app to select.
     required: true
+  # release.yml pins the same XcodeGen in its own env; bump both together.
   xcodegen-version:
     description: The XcodeGen release to install.
-    required: true
+    default: "2.46.0"
   xcodegen-sha256:
     description: The SHA-256 of that release's xcodegen.zip.
-    required: true
+    default: "4d9e34b62172d645eed6457cac13fc222569974098ef4ee9c3368bedf0196806"
 
 runs:
   using: composite

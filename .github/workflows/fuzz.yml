@@ -18,10 +18,6 @@ defaults:
   run:
     shell: bash
 
-env:
-  XCODEGEN_VERSION: "2.46.0"
-  XCODEGEN_SHA256: "4d9e34b62172d645eed6457cac13fc222569974098ef4ee9c3368bedf0196806"
-
 jobs:
   fuzz:
     name: Fuzz parsers (ASan)
@@ -39,8 +35,6 @@ jobs:
       - uses: ./.github/actions/macos-setup
         with:
           xcode-app: ${{ env.XCODE_APP }}
-          xcodegen-version: ${{ env.XCODEGEN_VERSION }}
-          xcodegen-sha256: ${{ env.XCODEGEN_SHA256 }}
 
       - name: Build the fuzz driver (ASan)
         env:

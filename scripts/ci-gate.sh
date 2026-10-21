@@ -8,9 +8,10 @@ Usage: NEEDS='<toJSON(needs)>' scripts/ci-gate.sh [--skippable <job>]...
        scripts/ci-gate.sh --check-needs <workflow> <gate job> [<exempt job>]...
 
 The first form reads the gate's needs from $NEEDS and exits 0 only when every
-job succeeded, or is a --skippable job skipped because the changes job found
-docs alone (outputs.macos false). A failure, a cancel, any other skip, an empty
-or unreadable list exits 1.
+job succeeded, or is a --skippable job skipped while the changes job's output
+of the same name is false (a docs-only change, or a run where AddressSanitizer
+stands in). A failure, a cancel, any other skip, an empty or unreadable list
+exits 1.
 
 The second form exits 1 when a job in the workflow is neither the gate, an
 exempt job nor among the gate's needs. It needs ruby.
@@ -31,15 +32,15 @@ fail() {
 }
 
 check_results() {
-  local skippable=" $* " macos results job result failed=0
+  local skippable=" $* " results job result wanted failed=0
   [ -n "${NEEDS:-}" ] || fail "NEEDS is empty, so there are no job results to check"
-  macos="$(jq -r '.changes.outputs.macos // ""' <<< "$NEEDS" 2>/dev/null)" || fail "NEEDS is not the gate's needs as JSON"
-  results="$(jq -r 'to_entries[] | "\(.key)\t\(.value.result)"' <<< "$NEEDS" 2>/dev/null)" || fail "NEEDS is not the gate's needs as JSON"
+  results="$(jq -r '. as $needs | to_entries[] | "\(.key)\t\(.value.result)\t\($needs.changes.outputs[.key] // "")"' <<< "$NEEDS" 2>/dev/null)" \
+    || fail "NEEDS is not the gate's needs as JSON"
   [ -n "$results" ] || fail "NEEDS lists no jobs"
-  while IFS=$'\t' read -r job result; do
+  while IFS=$'\t' read -r job result wanted; do
     [ "$result" != success ] || continue
     if [ "$result" = skipped ] && [[ "$skippable" == *" $job "* ]]; then
-      [ "$macos" != false ] || continue
+      [ "$wanted" != false ] || continue
       printf '::error::%s was skipped although the change needs it\n' "$job"
     else
       printf '::error::%s: %s\n' "$job" "$result"

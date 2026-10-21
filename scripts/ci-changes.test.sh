@@ -40,13 +40,20 @@ check "an empty change list proves nothing" macos=true "$(classify '')"
 long_list_status="$(set -o pipefail; { echo Sources/Offsider/main.swift; for i in $(seq 1 5000); do echo "docs/page-$i.md"; done; } | bash "$CHANGES" > /dev/null; echo $?)"
 check "a long list after a code path is read to the end, so its writer never gets SIGPIPE" 0 "$long_list_status"
 
-# A docs page a test reads must never be skipped as docs.
-read_pages="$(grep -rhoE 'docs/[A-Za-z0-9._-]+\.md' "$REPO/Tests" --include='*.swift' | sort -u)"
+# A docs page a test, the build or a script the macOS jobs run reads must never be skipped as docs.
+macos_inputs() {
+    find "$REPO/Tests" "$REPO/Plugins" -name '*.swift'
+    find "$REPO/scripts/lib" -name '*.sh'
+    printf '%s\n' "$REPO/Package.swift" "$REPO/test-runner.sh" "$REPO/scripts/build.sh" "$REPO/scripts/release.sh"
+}
+read_pages="$(macos_inputs | tr '\n' '\0' | xargs -0 grep -hoE 'docs/[A-Za-z0-9._-]+\.md' | sort -u)"
 check "the tests read at least one docs page" true "$([[ -n "$read_pages" ]] && echo true || echo false)"
 while IFS= read -r page; do
     [[ -n "$page" ]] || continue
-    check "$page, which a test reads, needs the macOS jobs" macos=true "$(classify "$page")"
+    check "$page, which a test or build step reads, needs the macOS jobs" macos=true "$(classify "$page")"
 done <<< "$read_pages"
+built_paths="$(macos_inputs | tr '\n' '\0' | xargs -0 grep -nE '"docs/?"|"docs/\\\(' | sed "s|^$REPO/||")"
+check "no test or build step names a docs page in parts, which this guard cannot see" "" "$built_paths"
 
 usage_output="$(bash "$CHANGES" --all < /dev/null 2>&1)"
 usage_status=$?
