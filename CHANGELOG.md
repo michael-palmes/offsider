@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Fixed
+
+- `devices status --json` and `devices --json status` print JSON; `devices` kept the flag, so `status`, `add` and `remove` printed text.
+
 ## [0.14.0] - 2026-10-22
 
 ### Added
