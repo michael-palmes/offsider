@@ -47,6 +47,13 @@ public protocol DeviceBackend: AnyObject {
     func close() async
 }
 
+/// A backend whose screenshot masks read more of the screen than its tree output shows.
+@MainActor
+public protocol MaskTreeReading: AnyObject {
+    /// The frontmost app's tree for painting masks; never cached or shown.
+    func maskTree(for id: DeviceID) async throws -> UITree
+}
+
 extension DeviceBackend {
     public var listingName: String { platform.devicesName }
 

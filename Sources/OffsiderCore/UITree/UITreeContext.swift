@@ -109,9 +109,13 @@ public struct UITreeContext: Equatable, Sendable {
             self.frame = frame
         }
 
-        /// With `label` masked and cut to 40 characters, as a presented view's label is shown.
-        public static func shown(id: String?, label: String?, className: String?, frame: UIFrame?) -> HiddenBranch {
-            let masked = label.map { SelectorText.truncated(LogRedactor.redact($0).text, limit: PresentationProbe.labelLimit) }
+        /// With `label`, from the element `labelledBy` names, masked and cut to 40 characters, as a presented view's label is shown.
+        public static func shown(id: String?, label: String?, labelledBy: String? = nil, className: String?, frame: UIFrame?) -> HiddenBranch {
+            let mask = OutputMasks.current.mask
+            let masked = label.map { label in
+                let hidden = mask.masked(label, id: labelledBy) ?? (labelledBy == id ? nil : mask.masked(label, id: id))
+                return SelectorText.truncated(hidden ?? LogRedactor.redact(label).text, limit: PresentationProbe.labelLimit)
+            }
             return HiddenBranch(id: id, label: masked, className: className, frame: frame)
         }
 
