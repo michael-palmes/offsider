@@ -190,7 +190,10 @@ struct Screenshot: AsyncParsableCommand {
     /// Standalone: a tree mask reads one fresh tree; without one, no tree is read. `plain` allows writing the device's PNG as it came.
     @MainActor
     func take(_ request: ScreenshotRequest, on route: DeviceRouter.Route, masks: MaskPlan, plain: Bool = false) async throws -> ScreenshotReport {
-        try await take(request, on: route, masks: masks, plain: plain) { try await route.backend.accessibilityTree(for: route.device) }
+        try await take(request, on: route, masks: masks, plain: plain) {
+            guard let reader = route.backend as? any MaskTreeReading else { return try await route.backend.accessibilityTree(for: route.device) }
+            return try await reader.maskTree(for: route.device)
+        }
     }
 
     /// An Android PNG at native scale with nothing to crop, paint or compare is written as the device sent it, sized from its header, with no screen read.
@@ -259,6 +262,12 @@ struct Screenshot: AsyncParsableCommand {
             capture = result.capture
             masked = result
             let console = Console.current
+            if result.unproven != nil {
+                console.notice(.warning(
+                    "Masks can't see behind this modal; check the image",
+                    agent: "a modal window covers the app and Android leaves what is behind it out of the tree, so masks may miss text drawn there; check the image or add --mask-region (maskUnproven)."
+                ))
+            }
             if !result.unmatched.isEmpty {
                 let names = result.unmatched.joined(separator: ", ")
                 console.notice(.warning("Nothing matched \(names), so nothing was painted for it", agent: "nothing matched \(names), so nothing was painted for it."))

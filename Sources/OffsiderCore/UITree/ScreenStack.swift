@@ -214,7 +214,7 @@ struct FlatTree {
     private func headerOrFirstLabel(_ nodes: [UINode]) -> String? {
         let labelled = nodes.filter { $0.label.flatMap(Self.nonEmpty) != nil }
         let pick = labelled.first { $0.role == .header } ?? labelled.first { !$0.role.isActionable } ?? labelled.first
-        return pick?.label.flatMap(Self.nonEmpty)
+        return pick?.label.flatMap(Self.nonEmpty).map { OutputMasks.current.mask.masked($0, id: pick?.normalizedID) ?? $0 }
     }
 
     private static func nonEmpty(_ text: String) -> String? {

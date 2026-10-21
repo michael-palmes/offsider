@@ -109,13 +109,13 @@ struct MatchSummary: Equatable {
         self.init(
             role: node.role,
             id: node.normalizedID,
-            label: node.normalizedLabel.map { SelectorText.truncated(LogRedactor.redactValue($0).text) },
+            label: Self.shownLabel(of: node).map { SelectorText.truncated($0) },
             frame: node.frame,
             isOnScreen: viewport.map { node.frame?.isVisible(in: $0) == true }
         )
         self.index = index
         let ancestors = AccessibilityTargetResolver.ancestorsOf(node, in: roots)
-        window = ancestors.first?.normalizedLabel.map { SelectorText.truncated(LogRedactor.redactValue($0).text) }
+        window = ancestors.first.flatMap(Self.shownLabel).map { SelectorText.truncated($0) }
         if let viewport {
             screen = ancestors.reversed().first { ancestor in
                 ancestor.normalizedID != nil && ancestor.frame.map { AccessibilityTargetResolver.isBackdrop($0, in: viewport) } == true
@@ -125,6 +125,11 @@ struct MatchSummary: Equatable {
             beneath = stack.isBeneath(index: position)
             screen = stack.screenName(of: position).map { SelectorText.truncated($0) } ?? screen
         }
+    }
+
+    /// The trimmed label as tree output shows it, so a message never names what `describe-ui` hides.
+    static func shownLabel(of node: UINode) -> String? {
+        node.normalizedLabel.map { OutputMasks.current.mask.shownLabel($0, id: node.normalizedID) }
     }
 
     var text: String {
@@ -754,15 +759,27 @@ struct AccessibilityTargetResolver {
         return .notFound(kind: query.kind, value: query.rawValue, suggestions: near.map(\.match), candidates: near.compactMap(\.summary))
     }
 
+    /// The field a near miss may name: a label as tree output shows it, and no value of an element a mask hides.
+    private static func shownField(of node: UINode, query: AccessibilityQuery) -> String? {
+        guard let field = query.field(of: node) else { return nil }
+        let mask = OutputMasks.current.mask
+        switch query.kind {
+        case "--id": return field
+        case "--value": return mask.hides(id: node.normalizedID, label: node.normalizedLabel) ? nil : LogRedactor.redactValue(field).text
+        default: return mask.shownLabel(field, id: node.normalizedID)
+        }
+    }
+
     /// The fields closest to the query's text, on-screen elements first, each with the first element showing it.
     private static func nearMatches(roots: [UINode], query: AccessibilityQuery, viewport: UIFrame?) -> [(match: SelectorText.NearMatch, summary: MatchSummary?)] {
         let elements = roots.flatMap { $0.flattened() }
         let onScreen = elements.filter { node in viewport.map { node.frame?.isVisible(in: $0) == true } ?? true }
         let offScreen = elements.filter { node in viewport.map { node.frame?.isVisible(in: $0) != true } ?? false }
         let ordered = onScreen + offScreen
-        return SelectorText.nearMatches(for: query.rawValue, among: ordered.compactMap { query.field(of: $0) }).map { near in
-            let summary = ordered.first { query.field(of: $0) == near.text }.map { node in
-                var summary = MatchSummary(node, viewport: viewport)
+        let fields = ordered.map { Self.shownField(of: $0, query: query) }
+        return SelectorText.nearMatches(for: query.rawValue, among: fields.compactMap { $0 }).map { near in
+            let summary = fields.firstIndex(of: near.text).map { index in
+                var summary = MatchSummary(ordered[index], viewport: viewport)
                 summary.closeness = near.closeness
                 return summary
             }

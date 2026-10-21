@@ -131,7 +131,7 @@ struct TapCover {
     /// `button "Buy" (197, 793) 189x45 on stack-test-full-page-1`.
     static func describe(_ verdict: CoverVerdict) -> String {
         var parts = [verdict.cover.role.rawValue]
-        if let name = verdict.cover.normalizedLabel ?? verdict.cover.normalizedID {
+        if let name = MatchSummary.shownLabel(of: verdict.cover) ?? verdict.cover.normalizedID {
             parts.append(TerminalText.quoted(SelectorText.truncated(name)))
         }
         if let frame = verdict.cover.frame {

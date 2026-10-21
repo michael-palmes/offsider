@@ -70,7 +70,7 @@ public enum PresentationProbe {
     /// The label with secrets masked, cut to 40 characters; never a value, and nothing from a secure field.
     static func shownLabel(of node: UINode) -> String? {
         guard !node.isSecure, let label = node.normalizedLabel else { return nil }
-        return SelectorText.truncated(LogRedactor.redact(label).text, limit: labelLimit)
+        return SelectorText.truncated(OutputMasks.current.mask.masked(label, id: node.normalizedID) ?? LogRedactor.redact(label).text, limit: labelLimit)
     }
 
     /// The hit as an element of the tree: read again unchanged, moved by up to a point, or with its label ticked in place.
@@ -92,6 +92,7 @@ public enum PresentationProbe {
             return inside.dropFirst().contains { $0.normalizedLabel != nil } && inside.contains { $0.isSameElement(as: placed) }
         }
         guard let chosen = stale.first(where: { $0.normalizedID != nil }) ?? stale.first, let frame = chosen.frame else { return nil }
-        return UITreeContext.StaleFrame(id: chosen.normalizedID, label: chosen.normalizedLabel.map { SelectorText.truncated(LogRedactor.redact($0).text, limit: labelLimit) }, frame: frame)
+        let label = chosen.normalizedLabel.map { OutputMasks.current.mask.masked($0, id: chosen.normalizedID) ?? LogRedactor.redact($0).text }
+        return UITreeContext.StaleFrame(id: chosen.normalizedID, label: label.map { SelectorText.truncated($0, limit: labelLimit) }, frame: frame)
     }
 }

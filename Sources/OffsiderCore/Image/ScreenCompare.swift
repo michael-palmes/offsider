@@ -104,6 +104,8 @@ public struct ScreenshotReport: Equatable, Sendable {
     public var diffPath: String?
     /// The mask selectors that matched nothing, such as `--mask-id profile-email`.
     public var maskUnmatched: [String]
+    /// `modal` when the tree could not show what is drawn behind a modal window, so masks may have missed it.
+    public var maskUnproven: String?
 
     public init(
         path: String?,
@@ -122,6 +124,7 @@ public struct ScreenshotReport: Equatable, Sendable {
         maskedBeneath: [MaskKind: Int] = [:],
         skippedBeneath: [MaskKind: Int]? = nil,
         maskUnmatched: [String] = [],
+        maskUnproven: String? = nil,
         diffPath: String? = nil
     ) {
         self.path = path
@@ -140,6 +143,7 @@ public struct ScreenshotReport: Equatable, Sendable {
         self.maskedBeneath = maskedBeneath
         self.skippedBeneath = skippedBeneath
         self.maskUnmatched = maskUnmatched
+        self.maskUnproven = maskUnproven
         self.diffPath = diffPath
     }
 
@@ -186,6 +190,9 @@ public struct ScreenshotReport: Equatable, Sendable {
             }
             if !maskUnmatched.isEmpty {
                 members.append(("maskUnmatched", .array(maskUnmatched.map(OrderedJSON.string))))
+            }
+            if let maskUnproven {
+                members.append(("maskUnproven", .string(maskUnproven)))
             }
         }
         members += [
