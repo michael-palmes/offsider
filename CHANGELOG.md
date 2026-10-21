@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Changed
+
+- CI runs the AddressSanitizer unit tests after each merge to main, weekly and on demand, no longer on every pull request.
+
+## [0.13.0] - 2026-10-21
+
 ### Added
 
 - `offsider.mask.json`, found like `offsider.login.json` (from the working directory up to the repository root), names what every capture and tree hides: `ids`, `labels`, `labelContains`, `valuePatterns` (case-insensitive, bounded counts only) and `emails`. Screenshots, batch screenshot steps and evidence runs paint what it names, `describe-ui`, `--verify` change lists and `wait` and `assert` output show those values as `[redacted]`, the tree cache never stores them, and `record-video` and `stream-video` refuse with `video_unmasked` while a named element is on screen. A broken file stops the command (exit 64) with the line and key to fix. `offsider.mask.example.json` at the repository root shows every key.
@@ -21,7 +27,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - JSON output adds a top-level `untrusted` list of the paths whose values came from a device, an app or an agent-written note (`devices[].name`, `error.message`, `users[].about` and so on), only when one is present, so existing output is unchanged.
 - A managed `deniedBundleIDs` key (forced values only) extends the deny-list on every platform; an entry ending in `.` is a prefix.
 - `OFFSIDER_TIMINGS=1` prints a `foreground-recheck` phase for the app check that follows input.
-- CI runs the unit tests under AddressSanitizer after each merge to main, and a weekly job fuzzes every parser that reads device, daemon or file bytes.
+- CI runs the unit tests under AddressSanitizer, and a weekly job fuzzes every parser that reads device, daemon or file bytes.
 - `devices remove` on a terminal asks whether to uninstall an iPhone's runner too; off a terminal it prints the `session stop --clean` command.
 - Android emulators keep the UiAutomation helper warm between commands, so a later command skips the helper's start, Android's wait for a quiet screen and, on an emulator with one display, the shell read of its displays: a `tap --id` took 0.09 s instead of 0.30 s and a `describe-ui` 0.06 s instead of 0.30 s (medians of 20 paired runs on an API 36 emulator), and the first command, which starts the broker, about 0.03 s longer. A broker, `offsider` started detached for each emulator, keeps the helper and passes commands' requests to it over a 0600 Unix socket in the private `sessions/` folder; it stops 60 s after the last command (`OFFSIDER_ANDROID_SESSION_IDLE`, at most 3600, and a command asking for another replaces it unless another command is using it), when the helper stops answering, or at its next idle moment once 12 hours old. It also keeps the displays and device states a command read on an emulator with one display; a foldable and a USB phone read theirs every command. `OFFSIDER_ANDROID_SESSION=off` starts a helper for each command as before, and `on` keeps it warm on an allowed USB phone too, which otherwise starts one per command.
 - `session status` lists warm Android helpers beside iPhone and iPad sessions (`helper` in `--json`), and `session stop` stops them; `--device` takes the serial or the AVD name.
@@ -763,7 +769,8 @@ First release of Offsider, forked from [AXe](https://github.com/cameroncooke/axe
 - Shortened HID broker socket names so they stay within the Unix socket path limit.
 - Builds now honour an explicit `OFFSIDER_VERSION` when generating the version string.
 
-[Unreleased]: https://github.com/michael-palmes/offsider/compare/v0.12.0...HEAD
+[Unreleased]: https://github.com/michael-palmes/offsider/compare/v0.13.0...HEAD
+[0.13.0]: https://github.com/michael-palmes/offsider/compare/v0.12.0...v0.13.0
 [0.12.0]: https://github.com/michael-palmes/offsider/compare/v0.11.0...v0.12.0
 [0.11.0]: https://github.com/michael-palmes/offsider/compare/v0.10.0...v0.11.0
 [0.10.0]: https://github.com/michael-palmes/offsider/compare/v0.9.0...v0.10.0
