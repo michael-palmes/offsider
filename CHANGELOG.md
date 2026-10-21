@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Changed
+
+- `wait --any` with one selector is a plain wait for it rather than exit 64.
+
 ### Fixed
 
 - `devices status --json` and `devices --json status` print JSON; `devices` kept the flag, so `status`, `add` and `remove` printed text.

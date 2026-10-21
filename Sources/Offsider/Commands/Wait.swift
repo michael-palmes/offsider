@@ -27,8 +27,11 @@ struct Wait: AsyncParsableCommand {
     @Flag(name: .customLong("gone"), help: "Wait until no matching element is on screen.")
     var gone = false
 
-    @Flag(name: .customLong("any"), help: "With two or more selectors (--id, --label, --label-contains, --value, each repeatable), wait until the first of them is on screen.")
+    @Flag(name: .customLong("any"), help: "With two or more selectors (--id, --label, --label-contains, --value, each repeatable), wait until the first of them is on screen. With one, a plain wait for it.")
     var any = false
+
+    /// `--any` over two or more selectors; with one it is a plain wait, so a list built at run time can hold a single label.
+    var waitsForAny: Bool { any && selector.queries.count > 1 }
 
     @Flag(name: .customLong("settled"), help: "Wait until nothing has changed for --quiet-ms.")
     var settled = false
@@ -79,10 +82,7 @@ struct Wait: AsyncParsableCommand {
     static let maximumSeconds = 900
 
     func validate() throws {
-        if any {
-            guard selector.queries.count >= 2 else {
-                throw ValidationError("--any needs two or more selectors, such as --label 'Success!' --label 'Try again'.")
-            }
+        if waitsForAny {
             if gone { throw ValidationError("--any waits for the first selector on screen; it does not take --gone.") }
             if selector.hasValue != nil { throw ValidationError("--any does not take --has-value; use --value as one of the selectors.") }
         } else if selector.mixesLabelSelectors {
@@ -221,7 +221,7 @@ struct Wait: AsyncParsableCommand {
     var condition: WaitCondition { condition(gate: nil) }
 
     func condition(gate: SettleGate?) -> WaitCondition {
-        if any {
+        if waitsForAny {
             let queries = selector.queries
             let selectors = queries.enumerated().map { index, query in
                 (selector: WaitMatch(by: String(query.kind.dropFirst(2)), text: query.rawValue, position: index + 1, of: queries.count), probe: selector.probe(for: query))
@@ -249,7 +249,7 @@ struct Wait: AsyncParsableCommand {
     /// What was met, how long it took and, for `--any`, which of the selectors it was.
     private func successParts(_ outcome: WaitOutcome) -> (headline: String, after: String?, selectors: String?) {
         let after = "after \(WaitLoop.seconds(outcome.elapsed))"
-        if any, let matched = outcome.matched {
+        if waitsForAny, let matched = outcome.matched {
             return ("--\(matched.by) '\(matched.text)' is \(selector.presentState)", after, "\(matched.position) of \(matched.of) selectors")
         }
         if let query = selector.query {
@@ -295,7 +295,7 @@ struct Wait: AsyncParsableCommand {
     }
 
     private var target: String {
-        if any {
+        if waitsForAny {
             return "any of " + selector.queries.map(\.selectorDescription).joined(separator: ", ")
         }
         if let query = selector.query {
