@@ -356,12 +356,12 @@ jobs:
           [ -x "$bin" ] || { echo "::error::$bin not found"; exit 1; }
           since="$(date '+%Y-%m-%d %H:%M:%S')"
           "$bin" --version || { echo "::error::offsider --version failed (exit $?)"; exit 1; }
-          "$bin" doctor --json > "$RUNNER_TEMP/doctor.json"; rc=$?
+          rc=0; "$bin" doctor --json > "$RUNNER_TEMP/doctor.json" || rc=$?
           # 3 and 4 are doctor's warning and failure exits on a runner with no devices; a signal or a load failure is not.
           case "$rc" in 0|3|4) ;; *) echo "::error::offsider doctor --json exited $rc"; exit 1 ;; esac
           bundle="$(jq -r '.checks[] | select(.id == "install.bundle") | .status' "$RUNNER_TEMP/doctor.json")"
           [ "$bundle" = pass ] || { echo "::error::doctor's install.bundle check is '${bundle:-missing}', not pass"; exit 1; }
-          "$bin" list-devices --json > "$RUNNER_TEMP/devices.json"; rc=$?
+          rc=0; "$bin" list-devices --json > "$RUNNER_TEMP/devices.json" || rc=$?
           # 9 is tool_missing: no Android SDK on the runner.
           case "$rc" in 0) jq -e 'type == "array" or type == "object"' "$RUNNER_TEMP/devices.json" > /dev/null || { echo "::error::list-devices printed no JSON"; exit 1; } ;; 9) ;; *) echo "::error::offsider list-devices --json exited $rc"; exit 1 ;; esac
           hits="$(log show --start "$since" --style compact \
