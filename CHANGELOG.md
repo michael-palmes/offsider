@@ -12,6 +12,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Changed
 
+- CI runs the unit tests under AddressSanitizer in place of the plain run after each merge to main, weekly and on demand, and no longer on every pull request.
 - A screenshot from a physical iPhone, iPad or Android phone is named `Screenshot - <name> - <time>` without `--output`, no longer `Simulator Screenshot` or `Emulator Screenshot`; simulators and emulators keep their names, and `record-video` keeps `offsider-video-<time>.mp4` on every device.
 
 ### Fixed

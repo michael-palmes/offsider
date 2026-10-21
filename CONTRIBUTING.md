@@ -28,7 +28,7 @@ bash -n <changed script>     # for any shell script you touched
 make e2e                     # for changes to input, accessibility or capture, on a booted simulator
 ```
 
-CI also runs the unit tests under AddressSanitizer (not a required check). Run it locally with `ASAN_OPTIONS=strip_env=0 swift test --sanitize=address --no-parallel`: without `strip_env=0`, every exit test's child starts without the runtime and aborts. `-Xswiftc -sanitize=address` does not work with SwiftPM's test helpers.
+A pull request that changes only docs (Markdown at the root, `docs/` apart from `errors.md` and `commands.md`, project skills, the issue and pull request templates) skips the macOS build, unit tests and release rehearsal; the one required check from CI is `CI passed`. After each merge to main, weekly and on demand, CI runs the unit tests under AddressSanitizer in place of the plain run (the weekly run does nothing else), never on a pull request, and a failed sanitizer build or test run on main opens an issue. Run it locally with `ASAN_OPTIONS=strip_env=0 swift test --sanitize=address --no-parallel`: without `strip_env=0`, every exit test's child starts without the runtime and aborts. `-Xswiftc -sanitize=address` does not work with SwiftPM's test helpers.
 
 A change to the iOS or Android tree mapping or to the `describe-ui` renderer shows up in the tree goldens under `Tests/Goldens/trees/`. Re-render them with `OFFSIDER_GOLDENS_UPDATE=1 swift test --filter TreeGoldenRefresh` and review the diff. A rendering that outgrows its budget fails; raising the budget is a reviewed edit of `Tests/Goldens/trees/budgets.json`.
 

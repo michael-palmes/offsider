@@ -45,7 +45,7 @@ Committed, scrubbed trees of the React Native playground live in `Tests/Goldens/
 
 </details>
 
-`OffsiderCore` builds with strict memory safety checking (Swift tools 6.2). CI also runs the unit tests under AddressSanitizer, and a weekly job fuzzes the parsers: `OFFSIDER_FUZZ=1 swift build --product OffsiderFuzz --sanitize=address` builds the fuzz driver (it exists only with that variable, so releases never hold it), and `.build/debug/OffsiderFuzz --list` names its targets ([CONTRIBUTING.md](../CONTRIBUTING.md#fuzzing)).
+`OffsiderCore` builds with strict memory safety checking (Swift tools 6.2). CI runs the unit tests under AddressSanitizer after each merge to main, and a weekly job fuzzes the parsers: `OFFSIDER_FUZZ=1 swift build --product OffsiderFuzz --sanitize=address` builds the fuzz driver (it exists only with that variable, so releases never hold it), and `.build/debug/OffsiderFuzz --list` names its targets ([CONTRIBUTING.md](../CONTRIBUTING.md#fuzzing)).
 
 The simulator frameworks come from [michael-palmes/idb](https://github.com/michael-palmes/idb), a mirror of facebook/idb with Cameron Cooke's Xcode 27 changes on the `offsider/xcode27` branch (tag `offsider-idb-v0.2.0`). `scripts/build.sh` pins the exact revision and verifies it before building.
 
