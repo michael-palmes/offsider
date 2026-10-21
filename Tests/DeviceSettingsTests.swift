@@ -352,3 +352,46 @@ struct RotationPlanTests {
         #expect(RotationRecord.parse(record.fileContents) == record)
     }
 }
+
+/// Records each orientation it is asked to turn to.
+@MainActor
+final class RecordingTurnBackend: TurningFakeBackend {
+    private(set) var requested: [DeviceOrientation] = []
+
+    override func requestOrientation(_ orientation: DeviceOrientation, on id: DeviceID) async throws {
+        requested.append(orientation)
+    }
+}
+
+@Suite("Orientation turn")
+@MainActor
+struct OrientationTurnTests {
+    func turn(_ backend: RecordingTurnBackend, on device: DeviceID) async throws {
+        let poll = ScriptedClock().poll
+        try await OrientationCommand.turnWaiting(
+            to: .landscapeLeft, from: .portrait, timeout: 1, on: device, deviceName: "D", turner: backend, sleep: poll.sleep, now: poll.now
+        )
+    }
+
+    @Test("a turn the screen follows is sent once and not undone")
+    func reached() async throws {
+        let backend = RecordingTurnBackend(orientations: [.portrait, .landscapeLeft], screenshots: [], screen: nil)
+        try await turn(backend, on: DeviceID(rawValue: "SIM", platform: .ios))
+        #expect(backend.requested == [.landscapeLeft])
+    }
+
+    @Test("a simulator whose screen never turns is turned back, so a later app or fold does not take the orientation")
+    func simulatorTurnedBack() async {
+        let backend = RecordingTurnBackend(orientations: [.portrait], screenshots: [], screen: nil)
+        await #expect(throws: CLIError.self) { try await turn(backend, on: DeviceID(rawValue: "SIM", platform: .ios)) }
+        #expect(backend.requested.first == .landscapeLeft)
+        #expect(backend.requested.last == .portrait)
+    }
+
+    @Test("an iPhone keeps the orientation it took, as its screen follows once it is awake and unlocked")
+    func physicalKeepsTurn() async {
+        let backend = RecordingTurnBackend(orientations: [.portrait], screenshots: [], screen: nil)
+        await #expect(throws: CLIError.self) { try await turn(backend, on: DeviceID(rawValue: "00008130-0000000000000ABC", platform: .ios)) }
+        #expect(!backend.requested.contains(.portrait))
+    }
+}

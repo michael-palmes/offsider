@@ -154,7 +154,7 @@ A command or option change also updates `docs/commands.md` (and the `docs/` page
 - Most HID commands are fire-and-forget: they confirm dispatch, not effect. Verify with `--verify` on `tap`, `type`, `key` and `button` (exit 5 when nothing changes), or with `describe-ui` or `screenshot`; `slider` always checks its own result. When input seems ignored, run `offsider doctor --device <DEVICE_ID>` to check Device Hub, Resize Mode and dtuhidd.
 - The HID broker serves a per-user Unix socket under `$TMPDIR/offsider-hid-<uid>`, rejects peers running as another user or from another Offsider build (code signature), and keeps a simulator's input session warm until 60 s after the last command. After simulator E2E or a manual check, `offsider session stop --device <UDID>` closes it.
 - A private API break is fixed by moving the idb pin, never by patching `idb_checkout/`.
-- An iPhone Duo simulator, named by `OFFSIDER_FOLDABLE_SIMULATOR_NAME` (default `Offsider Duo`), is the foldable fixture; `offsider posture` folds and unfolds it through the hinge service, so `FoldableTests` runs unattended. The Duo refuses orientation changes.
+- An iPhone Duo simulator, named by `OFFSIDER_FOLDABLE_SIMULATOR_NAME` (default `Offsider Duo`), is the foldable fixture; `offsider posture` folds and unfolds it through the hinge service, so `FoldableTests` runs unattended. `offsider orientation` turns it, folded or unfolded, through Device Hub's orientation picker.
 
 ## Physical iPhone caveats
 

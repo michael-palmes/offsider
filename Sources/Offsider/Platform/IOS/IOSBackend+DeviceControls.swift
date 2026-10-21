@@ -75,6 +75,16 @@ extension IOSBackend: OrientationControlling {
             throw CLIError(errorDescription: "Orientation \(orientation.rawValue) has no simulator event.", reason: .notSupported)
         }
         displayCatalog.forgetReadings(of: id.rawValue)
+        let simulator = try await simulator(for: id)
+        if displayCatalog.isFoldable(simulator) {
+            switch await HingeInjector.connect(simulator) {
+            case let .success(link):
+                await HingeInjector.turn(link, to: orientation, logger: logger)
+                return
+            case let .failure(error):
+                logger.info().log("Orientation picker: \(error)")
+            }
+        }
         try await sendOneEvent(.deviceOrientation(value), to: id)
     }
 

@@ -11,15 +11,38 @@ public enum HingeControl {
     /// IOKit XML, as locationd reads it with `IOCFUnserialize`: whole degrees, as it rejects binary plists and a full XML plist is over its size limit.
     public static func payload(degrees: Int) -> Data {
         let value = String(min(max(degrees, range.lowerBound), range.upperBound), radix: 16)
-        let xml = "<dict><key>provider</key><string>com.apple.Virtualization.VirtualMachines</string>"
-            + "<key>source</key><string>hinge-slider-control</string>"
-            + "<key>type</key><string>range</string>"
-            + "<key>value</key><integer size=\"64\">0x\(value)</integer></dict>"
-        return Data(xml.utf8) + Data([0])
+        return payload(source: "hinge-slider-control", type: "range", value: "<integer size=\"64\">0x\(value)</integer>")
     }
 
     public static func event(degrees: Int) -> DTUHIDValue {
         DTUHIDMessage.vendorDefined(usagePage: usagePage, usage: usage, data: payload(degrees: degrees))
+    }
+
+    /// The orientation Device Hub's picker sends, which a foldable's UI follows where the plain orientation event only changes the reading.
+    public static func orientationPayload(_ orientation: DeviceOrientation) -> Data {
+        payload(source: "orientation-picker-control", type: "enum", value: "<string>\(pickerName(orientation))</string>")
+    }
+
+    public static func orientationEvent(_ orientation: DeviceOrientation) -> DTUHIDValue {
+        DTUHIDMessage.vendorDefined(usagePage: usagePage, usage: usage, data: orientationPayload(orientation))
+    }
+
+    /// locationd's names for the picker's values.
+    static func pickerName(_ orientation: DeviceOrientation) -> String {
+        switch orientation {
+        case .portrait: return "portrait"
+        case .landscapeLeft: return "landscape-left"
+        case .landscapeRight: return "landscape-right"
+        case .portraitUpsideDown: return "pud"
+        }
+    }
+
+    private static func payload(source: String, type: String, value: String) -> Data {
+        let xml = "<dict><key>provider</key><string>com.apple.Virtualization.VirtualMachines</string>"
+            + "<key>source</key><string>\(source)</string>"
+            + "<key>type</key><string>\(type)</string>"
+            + "<key>value</key>\(value)</dict>"
+        return Data(xml.utf8) + Data([0])
     }
 
     /// The angle a posture is set with; nil for `unknown`.

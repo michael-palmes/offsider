@@ -25,4 +25,11 @@ enum HingeInjector {
         }
         await link.close()
     }
+
+    /// Turns a foldable as Device Hub's orientation picker does.
+    static func turn(_ link: SimulatorDTUHID, to orientation: DeviceOrientation, logger: OffsiderLogger) async {
+        logger.info().log("Orientation picker: \(orientation.rawValue)")
+        await link.send(HingeControl.orientationEvent(orientation))
+        await link.close()
+    }
 }
