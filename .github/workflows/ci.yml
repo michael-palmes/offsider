@@ -12,7 +12,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: ci-${{ github.event_name }}-${{ github.head_ref || github.ref }}
+  group: ci-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 defaults:
@@ -312,7 +312,8 @@ jobs:
           title="AddressSanitizer unit tests fail on main"
           failed="The AddressSanitizer unit tests failed on ${SHA}: ${RUN_URL}"
           howto="Reproduce with \`ASAN_OPTIONS=strip_env=0 swift test --sanitize=address --no-parallel\`, and close this issue once main passes again."
-          number="$(gh issue list --state open --limit 200 --json number,title \
+          # Only this workflow's own issue counts, never one someone else opened with the same title.
+          number="$(gh issue list --state open --search "author:app/github-actions in:title \"$title\"" --json number,title \
             --jq "map(select(.title == \"$title\")) | first | .number // empty")"
           if [ -n "$number" ]; then
             gh issue comment "$number" --body "$failed"
