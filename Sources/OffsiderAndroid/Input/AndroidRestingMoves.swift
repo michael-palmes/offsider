@@ -4,8 +4,7 @@ extension AndroidInputStep {
     /// A finger resting on a real touch screen keeps reporting where it is; gesture handlers that act only on moves wait for those reports.
     static let restingMoveMilliseconds = 50
 
-    /// Each pause while fingers are down, with a move to where they rest at every `restingMoveMilliseconds` inside it.
-    /// `resting` holds the fingers already down when the steps start.
+    /// Each pause while fingers are down (`resting` from earlier steps, or put down in `steps`), with a move to where they rest every `restingMoveMilliseconds`.
     static func withRestingMoves(_ steps: [AndroidInputStep], resting: [AndroidPoint] = []) -> [AndroidInputStep] {
         var fingers = resting
         var sent: [AndroidInputStep] = []
@@ -15,8 +14,9 @@ extension AndroidInputStep {
                 fingers = phase == .up ? [] : [point]
             case .touches(let phase, let points):
                 fingers = phase == .up ? [] : points
-            case .pause(let seconds) where !fingers.isEmpty && Int((seconds * 1000).rounded()) > restingMoveMilliseconds:
-                let total = Int((seconds * 1000).rounded())
+            case .pause(let seconds) where !fingers.isEmpty:
+                let total = HelperInjectPlan.milliseconds(seconds)
+                guard total > restingMoveMilliseconds else { break }
                 var elapsed = 0
                 while elapsed + restingMoveMilliseconds < total {
                     sent.append(.pause(Double(restingMoveMilliseconds) / 1000))

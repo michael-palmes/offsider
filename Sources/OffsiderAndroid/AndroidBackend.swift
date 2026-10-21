@@ -296,7 +296,7 @@ public final class AndroidBackend: DeviceBackend, AccessibilityActionPerforming,
             focusedSecureField: { await self.focusedSecureField(id) },
             secretHelper: { HelperInputDriver(session: try await self.helperForSecret(serial)) },
             requireForeground: { try await self.requireDrivableForeground(serial) },
-            multiTouchHelper: { try await self.multiTouchHelper(serial) },
+            multiTouchHelper: { try await self.optionalHelper(serial) },
             gestureHelper: { try await self.gestureHelper(serial) },
             apiLevel: { await self.apiLevel(of: serial) },
             gapHelper: { gap, level in try await self.gapHelper(serial, for: gap, apiLevel: level) },
@@ -308,21 +308,24 @@ public final class AndroidBackend: DeviceBackend, AccessibilityActionPerforming,
         )
     }
 
-    /// The helper for a multi-finger touch on an `input` route, unless OFFSIDER_ANDROID_INPUT=input forbids it.
-    private func multiTouchHelper(_ serial: String) async throws -> HelperInputDriver? {
+    /// The helper for input `input` cannot carry, or carries badly, unless OFFSIDER_ANDROID_INPUT=input forbids it.
+    private func optionalHelper(_ serial: String) async throws -> HelperInputDriver? {
         guard try AndroidInputPolicy.policy(host: host) != .input else { return nil }
         return try await helperForInput(serial, required: false).map { HelperInputDriver(session: $0) }
     }
 
-    /// The helper for a drag or held touch on an `input` route, started if needed; nil under OFFSIDER_ANDROID_INPUT=input,
-    /// or with a warning when it cannot start, since `input motionevent` then sends nothing while the finger rests.
+    /// The optional helper for a touch held still; any reason it cannot start leaves the touch on `input`, with one warning.
     private func gestureHelper(_ serial: String) async throws -> HelperInputDriver? {
         guard try AndroidInputPolicy.policy(host: host) != .input else { return nil }
-        if let session = try await helperForInput(serial, required: false) {
-            return HelperInputDriver(session: session)
+        do {
+            if let helper = try await optionalHelper(serial) {
+                return helper
+            }
+        } catch let error as AndroidError {
+            log(.debug, "The UiAutomation helper did not start on \(serial): \(error.message)")
         }
         if warnedAboutMotionEvents.insert(serial).inserted {
-            log(.warning, "The UiAutomation helper is unavailable on \(serial), so this drag goes through `input motionevent`, which sends nothing while a finger rests: an app waiting for the finger to move can miss a hold. `offsider doctor --device \(serial)` says why.")
+            log(.warning, "The UiAutomation helper is unavailable on \(serial), so this held touch goes through `input motionevent`, which sends nothing while a finger rests: an app waiting for the finger to move can miss the hold. `offsider doctor --device \(serial)` says why.")
         }
         return nil
     }

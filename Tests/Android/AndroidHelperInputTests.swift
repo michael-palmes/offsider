@@ -44,7 +44,7 @@ struct AndroidHelperInputTests {
         #expect(Self.inputScripts(rig).isEmpty)
     }
 
-    @Test("a physical tap through the helper is one inject: down, a 100 ms hold on the device reporting the resting finger at 50 ms, up")
+    @Test("a physical tap through the helper holds 100 ms on the device, reporting the resting finger at 50 ms, and confirms the lift in an inject of its own")
     func physicalTap() async throws {
         let rig = try HelperRig(environment: Self.forced)
         let session = try await Self.session(rig)
@@ -52,8 +52,8 @@ struct AndroidHelperInputTests {
         await session.close()
         await rig.backend.close()
 
-        #expect(rig.device.ops.filter { $0 == "inject" }.count == 1)
-        #expect(rig.device.injected == ["touch down 100 200", "pause 50", "touch move 100 200", "pause 50", "touch up 100 200"])
+        #expect(rig.device.ops.filter { $0 == "inject" }.count == 2)
+        #expect(rig.device.injected == ["touch down 100 200", "pause 48", "touch move 100 200", "pause 50", "touch up 100 200"])
     }
 
     @Test("ASCII text goes through the helper as text and key steps, never `input text`")
@@ -193,8 +193,15 @@ struct AndroidHelperInputTests {
         await session.close()
         await rig.backend.close()
 
-        let resting = Array(repeating: ["pause 50", "touch move 100 500", "touch move p1 160 500"], count: 19).flatMap { $0 }
-        #expect(rig.device.injected == ["touch down 100 500", "touch down p1 160 500"] + resting + ["pause 50", "touch up p1 160 500", "touch up 100 500"])
+        let injected = rig.device.injected
+        #expect(injected.prefix(2) == ["touch down 100 500", "touch down p1 160 500"])
+        #expect(injected.suffix(2) == ["touch up p1 160 500", "touch up 100 500"])
+        let hold = injected.dropFirst(2).dropLast(2)
+        let pauses = hold.compactMap { $0.hasPrefix("pause ") ? Int($0.dropFirst(6)) : nil }
+        let moves = hold.filter { $0.hasPrefix("touch move") }
+        #expect(Set(moves) == ["touch move 100 500", "touch move p1 160 500"])
+        #expect(pauses.allSatisfy { $0 <= AndroidInputStep.restingMoveMilliseconds })
+        #expect(pauses.reduce(0, +) + moves.count / 2 * HelperInjectPlan.restingMoveCostMilliseconds == 1000)
         #expect(Self.inputScripts(rig).isEmpty)
     }
 

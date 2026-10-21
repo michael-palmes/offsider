@@ -100,7 +100,7 @@ Agents building in parallel use `swift build --scratch-path <dir>` and `swift te
 | `OFFSIDER_ANDROID_TREE` | `helper` or `uiautomator` forces one Android tree source (troubleshooting); default `auto` |
 | `OFFSIDER_ANDROID_SESSION` | `auto` (default: emulators keep the helper warm, phones start one per command), `on` (allowed phones too) or `off` (one helper per command) |
 | `OFFSIDER_ANDROID_SESSION_IDLE` | Seconds the warm helper stays after the last command (default 60, at most 3600); a broker stops after 12 hours at its next idle moment |
-| `OFFSIDER_ANDROID_INPUT` | `helper` or `input` forces how input reaches a device without gRPC; default `auto` (the helper when the command already runs it, or for a drag) |
+| `OFFSIDER_ANDROID_INPUT` | `helper` or `input` forces how input reaches a device without gRPC; default `auto` (the helper when the command already runs it, or for a touch held still) |
 | `OFFSIDER_ANDROID_CAPTURE` | `screencap`, `raw` or `helper` forces how a device without gRPC is captured; `raw` and `helper` fall back to `screencap -p`; default `auto` (`screencap -p`) |
 | `OFFSIDER_SIMULATOR_SESSION` | `on` (default) keeps each simulator's input session warm between commands through its HID broker; `off` opens one per command (`touch --down` or `--up` alone still uses the broker) |
 | `OFFSIDER_SIMULATOR_SESSION_IDLE` | Seconds a simulator's warm input session stays after the last command (default 60, at most 3600); a broker stops after 12 hours at its next idle moment |

@@ -16,14 +16,36 @@ struct HelperInjectPlanTests {
         return try HelperInjectPlan.requests(for: steps, held: &held)
     }
 
-    @Test("a timed touch goes without waiting for the app, so its pauses keep their length; anything else, or a touch with no pause, waits")
+    @Test("a timed touch goes without waiting for the app, so its pauses keep their length, and its last touch waits in a request of its own")
     func timedTouchesSkipTheWait() throws {
         let p = AndroidPoint(x: 1, y: 2)
-        #expect(try Self.plan([.touch(.down, p), .pause(0.05), .touch(.move, p), .pause(0.05), .touch(.up, p)]).map(\.sync) == [false])
-        #expect(try Self.plan([.touches(.down, [p, p]), .pause(1), .touches(.up, [p, p])]).map(\.sync) == [false])
+        let held = try Self.plan([.touch(.down, p), .pause(0.05), .touch(.move, AndroidPoint(x: 1, y: 9)), .pause(0.05), .touch(.up, p)])
+        #expect(held.map(\.sync) == [false, true])
+        #expect(try Self.json(held).last == #"[{"kind":"touch","phase":"up","pointer":0,"x":1,"y":2}]"#)
+        #expect(try Self.plan([.touches(.down, [p, p]), .pause(1), .touches(.up, [p, p])]).map(\.sync) == [false, true])
+    }
+
+    @Test("anything but touch phases and pauses, or a touch with no pause, waits for the app in one request")
+    func otherInputWaits() throws {
+        let p = AndroidPoint(x: 1, y: 2)
         #expect(try Self.plan([.touch(.down, p), .touch(.up, p)]).map(\.sync) == [true])
         #expect(try Self.plan([.tap(p), .pause(0.5), .touch(.down, p), .pause(0.1), .touch(.up, p)]).map(\.sync) == [true])
         #expect(try Self.plan([.touch(.down, p), .pause(0.1), .key(.press, usage: 40), .touch(.up, p)]).map(\.sync) == [true])
+    }
+
+    @Test("a pause before a move to where the finger rests gives the helper its own 2 ms for that move; other pauses keep their length")
+    func restingPauseLeavesTimeForTheMove() throws {
+        let p = AndroidPoint(x: 1, y: 2)
+        let q = AndroidPoint(x: 1, y: 9)
+        let requests = try Self.plan([
+            .touch(.down, p), .pause(0.05), .touch(.move, p), .pause(0.05), .touch(.move, q), .pause(0.05), .touch(.up, q),
+        ])
+
+        let pauses = requests.flatMap(\.steps).compactMap { step -> Int? in
+            guard case .object(let fields) = step, case .int(let ms)? = fields["ms"] else { return nil }
+            return ms
+        }
+        #expect(pauses == [48, 50, 50])
     }
 
     @Test("taps, touches, swipes and pauses keep logical pixels and become milliseconds on the device")
@@ -160,17 +182,17 @@ struct AndroidInputPolicyTests {
         #expect(error?.message == "OFFSIDER_ANDROID_INPUT is grpc, which Offsider cannot read. Use auto, helper or input, or unset it.")
     }
 
-    @Test("two fingers go down as pointers 0 then 1 and lift 1 then 0, with the hold between them in one request")
+    @Test("two fingers go down as pointers 0 then 1 and lift 1 then 0, with the hold before the last lift, which waits on its own")
     func twoFingers() throws {
         let fingers = [AndroidPoint(x: 100, y: 500), AndroidPoint(x: 160, y: 500)]
         let requests = try HelperInjectPlanTests.plan([.touches(.down, fingers), .pause(1), .touches(.up, fingers)])
 
-        #expect(requests.count == 1)
-        #expect(requests.first?.waitMilliseconds == 1000)
+        #expect(requests.map(\.waitMilliseconds) == [1000, 0])
         #expect(try HelperInjectPlanTests.json(requests) == [
             #"[{"kind":"touch","phase":"down","pointer":0,"x":100,"y":500},{"kind":"touch","phase":"down","pointer":1,"x":160,"y":500},"#
                 + #"{"kind":"pause","ms":1000},"#
-                + #"{"kind":"touch","phase":"up","pointer":1,"x":160,"y":500},{"kind":"touch","phase":"up","pointer":0,"x":100,"y":500}]"#,
+                + #"{"kind":"touch","phase":"up","pointer":1,"x":160,"y":500}]"#,
+            #"[{"kind":"touch","phase":"up","pointer":0,"x":100,"y":500}]"#,
         ])
     }
 }

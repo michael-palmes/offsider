@@ -106,7 +106,7 @@ final class AndroidInputSession: InputSession, TextInputSession {
     private var heldFingers: [AndroidPoint] = []
     /// The helper for multi-finger input when the route is `input`, which moves one finger; nil when the policy forbids it.
     private let multiTouchHelper: @MainActor () async throws -> HelperInputDriver?
-    /// The helper for a drag or held touch when the route is `input`; nil when the policy forbids it or it cannot start.
+    /// The helper for a touch held still when the route is `input`; nil when the policy forbids it or it cannot start.
     private let gestureHelper: @MainActor () async throws -> HelperInputDriver?
     /// `ro.build.version.sdk`, asked for only when touch phases or a key combination would go through `input`; nil when unreadable.
     private let apiLevel: @MainActor () async -> Int?
@@ -262,7 +262,7 @@ final class AndroidInputSession: InputSession, TextInputSession {
         return route
     }
 
-    /// `input motionevent` starts a process per phase and sends nothing while a finger rests, so it carries a drag only when the helper cannot.
+    /// `input motionevent` sends nothing while a finger rests, so a touch held still starts on the helper, unless a gesture is already under way on `input`.
     private func touchHelper(for steps: [AndroidInputStep]) async throws -> HelperInputDriver? {
         if steps.contains(where: \.isMultiTouch) {
             return try await multiTouchHelper()
@@ -271,6 +271,7 @@ final class AndroidInputSession: InputSession, TextInputSession {
         if let level = await readAPILevel(), !AdbInputScript.sendsMotionEvents(apiLevel: level) {
             return try await gapHelper(.motionEvent, level)
         }
+        guard !touchIsDown, AndroidInputStep.withRestingMoves(steps) != steps else { return nil }
         return try await gestureHelper()
     }
 
