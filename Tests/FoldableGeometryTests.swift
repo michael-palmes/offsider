@@ -247,3 +247,34 @@ struct DTUHIDMessageTests {
         #expect(!IOSDisplayInputSession.isTouchOnly(.composite([.touch(direction: .down, x: 1, y: 1), .keyboard(direction: .down, keyCode: 4)])))
     }
 }
+
+@Suite("Orientation picker")
+struct OrientationPickerTests {
+    @Test("the payload is IOKit XML that IOCFUnserialize reads back as Device Hub's picker value, in locationd's names", arguments: [
+        (DeviceOrientation.portrait, "portrait"), (.landscapeLeft, "landscape-left"), (.landscapeRight, "landscape-right"), (.portraitUpsideDown, "pud"),
+    ])
+    func payload(orientation: DeviceOrientation, name: String) throws {
+        let data = OrientationPicker.payload(orientation)
+        #expect(data.count < 300, "locationd refused a 403-byte XML plist as too large")
+        var error: Unmanaged<CFString>?
+        let parsed = data.withUnsafeBytes { bytes in
+            IOCFUnserialize(bytes.baseAddress!.assumingMemoryBound(to: CChar.self), kCFAllocatorDefault, 0, &error)
+        }
+        let dictionary = try #require(parsed as? [String: Any], "\(String(describing: error?.takeRetainedValue()))")
+        #expect(dictionary["provider"] as? String == "com.apple.Virtualization.VirtualMachines")
+        #expect(dictionary["source"] as? String == "orientation-picker-control")
+        #expect(dictionary["type"] as? String == "enum")
+        #expect(dictionary["value"] as? String == name)
+    }
+
+    @Test("the event goes to the same vendor-defined page and usage as the hinge")
+    func event() {
+        guard case let .dictionary(message) = OrientationPicker.event(.landscapeLeft), case let .dictionary(payload)? = message["payload"] else {
+            Issue.record("not a dictionary")
+            return
+        }
+        #expect(message["featureIdentifier"] == .string("com.apple.coredevice.feature.remote.hid.vendordefined"))
+        #expect(payload["usagePage"] == .uint(0xff61) && payload["usage"] == .uint(0x5b))
+        #expect(payload["data"] == .data(OrientationPicker.payload(.landscapeLeft)))
+    }
+}

@@ -192,7 +192,11 @@ struct PostureCommand: AsyncParsableCommand {
             now: now
         )
         guard outcome == .reached else {
-            throw CLIError(errorDescription: "The hinge did not reach \(angle) degrees within \(DeviceSettingsReport.number(timeout)) s. Check with `offsider posture --device \(deviceName)`.", reason: .postureFailed)
+            let check = "Check with `offsider posture --device \(deviceName)`."
+            guard try await readAngle() != nil else {
+                throw CLIError(errorDescription: "The hinge moved, but Offsider could not read its angle to confirm \(angle) degrees. \(check)", reason: .postureFailed)
+            }
+            throw CLIError(errorDescription: "The hinge did not reach \(angle) degrees within \(DeviceSettingsReport.number(timeout)) s. \(check)", reason: .postureFailed)
         }
         var current = try await folder.posture(of: device) ?? previous
         let settleDeadline = now() + min(timeout, 5)

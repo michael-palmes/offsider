@@ -1002,7 +1002,6 @@ run_foldable_tests() {
     fi
     export OFFSIDER_BIN_PATH
     log "Environment: SIMULATOR_UDID=$SIMULATOR_UDID, OFFSIDER_FOLDABLE_E2E=1, OFFSIDER_BIN_PATH=$OFFSIDER_BIN_PATH"
-    ui_notice note "The unfolded half asks you to unfold the simulator in Device Hub and skips after 120 s."
     run_suite_list "FoldableTests"
 }
 

@@ -136,6 +136,15 @@ struct DisplayCommandTests {
         #expect(backend.requestedAngles == [90, 90])
     }
 
+    @Test("--angle on a hinge that gives no reading says the angle could not be read, not that the hinge fell short")
+    func angleUnreadable() async {
+        let backend = Self.folded()
+        await #expect {
+            try await posture(nil, angle: 90, timeout: 1, on: backend)
+        } throws: { "\($0)" == "The hinge moved, but Offsider could not read its angle to confirm 90 degrees. Check with `offsider posture --device SIM`." }
+        #expect(backend.requestedAngles.first == 90)
+    }
+
     @Test("posture --angle validates its range and refuses a posture name too")
     func angleValidation() throws {
         #expect(throws: (any Error).self) { try PostureCommand.parse(["--angle", "181", "--device", "SIM"]) }

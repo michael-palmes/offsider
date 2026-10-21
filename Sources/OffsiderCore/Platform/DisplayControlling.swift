@@ -98,7 +98,7 @@ public struct DisplayList: Equatable, Sendable {
 }
 
 extension Posture {
-    /// devicectl's hinge angle: 0 is closed, 180 fully open.
+    /// A hinge angle: 0 is closed, 180 fully open.
     public init(hingeAngle: Double) {
         switch hingeAngle {
         case ..<15: self = .closed
