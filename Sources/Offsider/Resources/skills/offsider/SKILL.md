@@ -51,7 +51,7 @@ offsider describe-ui --diff --device <DEVICE_ID>
 
 Exit codes: 0 ok, 1 failure, 2 selector not found, 3 doctor warnings, 4 doctor failures, 5 unverified or condition unmet, 6 ambiguous selector, 7 device not found, not booted, locked or not allowed, 8 device busy, 9 Xcode, adb or SDK missing, 64 usage.
 
-With `--json`, a failure prints `exitCode` and an `error` object. `dispatched: no` means nothing was sent, so a resend is safe; after exit 5 or `dispatched: unknown`, check the screen before sending again (`guide errors`, which covers resending a batch).
+Every input command takes `--json` (`guide verify`); a failure prints `exitCode` and an `error` object. `dispatched: no` means nothing was sent, so a resend is safe; after exit 5 or `dispatched: unknown`, check the screen before sending again (`guide errors`, which covers resending a batch).
 
 ## Commands
 

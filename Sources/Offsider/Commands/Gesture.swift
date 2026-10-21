@@ -83,6 +83,9 @@ struct Gesture: AsyncParsableCommand {
     var postDelay: Double?
     
     @OptionGroup
+    var jsonOption: InputJSONOption
+
+    @OptionGroup
     var deviceOption: DeviceOption
 
     @OptionGroup
@@ -191,6 +194,10 @@ struct Gesture: AsyncParsableCommand {
     }
 
     func run() async throws {
+        try await InputOutput.reporting(command: "gesture", target: preset.rawValue, json: jsonOption.json) { _ in try await send() }
+    }
+
+    private func send() async throws {
         let logger = OffsiderLogger()
         let route = try await DeviceRouter.routeForInput(deviceOption, logger: logger)
         await appOption.apply(to: route)

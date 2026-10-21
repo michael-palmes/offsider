@@ -42,7 +42,7 @@ struct Screenshot: AsyncParsableCommand {
     @OptionGroup
     var displayOption: DisplayOption
 
-    @Option(help: "Output file path, or a directory for a generated name. Defaults to 'Simulator Screenshot - <device name> - <timestamp>.png' (iOS) or 'Emulator Screenshot - <AVD> - <timestamp>.png' (Android) in the current directory. With --compare, an image is written only when this is given.")
+    @Option(help: "Output file path, or a directory for a generated name. Defaults to 'Simulator Screenshot - <device name> - <timestamp>.png' (iOS simulator), 'Emulator Screenshot - <AVD> - <timestamp>.png' (Android emulator) or 'Screenshot - <device name> - <timestamp>.png' (iPhone, iPad or Android phone) in the current directory. With --compare, an image is written only when this is given.")
     var output: String?
 
     @Option(help: ArgumentHelp("'points' for one pixel per point (image coordinates equal tap coordinates), or a factor from 0.1 to 1.", valueName: "points|factor"))
@@ -221,7 +221,7 @@ struct Screenshot: AsyncParsableCommand {
         if plain, isPlain(request, masks: masks, platform: route.device.platform) {
             let png = try await backend.screenshotPNG(for: booted.id)
             if let size = PNGHeader.size(of: png) {
-                return try writePlain(png, size: size, booted: booted, platform: route.device.platform, token: token, recorder: recorder)
+                return try writePlain(png, size: size, booted: booted, token: token, recorder: recorder)
             }
             devicePNG = png
         }
@@ -286,8 +286,7 @@ struct Screenshot: AsyncParsableCommand {
 
         var path: String?
         if output != nil || (compare == nil && token == nil) {
-            let prefix = route.device.platform == .android ? "Emulator Screenshot" : "Simulator Screenshot"
-            let target = try ScreenCapture.outputURL(path: output, prefix: prefix, deviceName: booted.name, format: request.format)
+            let target = try ScreenCapture.outputURL(path: output, prefix: ScreenCapture.defaultPrefix(for: booted.id), deviceName: booted.name, format: request.format)
             let url = try ScreenCapture.write(try rendered.encoded(as: request.format), to: target)
             path = url.path
             Self.saved(url.path, width: rendered.image.width, height: rendered.image.height)
@@ -351,13 +350,12 @@ struct Screenshot: AsyncParsableCommand {
     /// Writes the device's PNG unchanged to `--output` or the default name, and into any run; the report carries only its path and size.
     @MainActor
     private func writePlain(
-        _ png: Data, size: (width: Int, height: Int), booted: BootedDevice, platform: DevicePlatform,
+        _ png: Data, size: (width: Int, height: Int), booted: BootedDevice,
         token: EvidenceRecorder.Token?, recorder: EvidenceRecorder
     ) throws -> ScreenshotReport {
         var path: String?
         if output != nil || token == nil {
-            let prefix = platform == .android ? "Emulator Screenshot" : "Simulator Screenshot"
-            let target = try ScreenCapture.outputURL(path: output, prefix: prefix, deviceName: booted.name, format: .png)
+            let target = try ScreenCapture.outputURL(path: output, prefix: ScreenCapture.defaultPrefix(for: booted.id), deviceName: booted.name, format: .png)
             let url = try ScreenCapture.write(png, to: target)
             path = url.path
             Self.saved(url.path, width: size.width, height: size.height)

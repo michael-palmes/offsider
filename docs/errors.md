@@ -24,7 +24,7 @@ With `--json`, a failure prints one object on stdout, where the success output g
 {"version":1,"ok":false,"command":"screenshot","exitCode":7,"error":{"reason":"device_not_found","message":"No device with ID 5E1B... was found. Run `offsider devices` to see available devices.","hint":"offsider devices","dispatched":null,"candidates":[]}}
 ```
 
-`--verify --json` reports (version 2), `batch --json` step lines and a `login --json` that stopped after it began typing carry the same `error` object in place of their own envelope.
+`--verify --json` reports (version 2), [input `--json` lines](input.md#json-results), `batch --json` step lines and a `login --json` that stopped after it began typing carry the same `error` object in place of their own envelope.
 
 - `hint` is the next command to run and never repeats typed text. Without `--json`, stderr prints it on a `Try:` line under the `Error:` line, unless the message already quotes it; `<DEVICE_ID>` in it becomes the `--device` value. A person at a terminal sees ❌ instead of `Error:`, the cause in bold red, the rest of the message under it and `Try  <command>`; an agent's lines are never styled, and its hints never say `export`.
 - `command` is the command's name: `devices` also when run as `list-devices`.
@@ -32,7 +32,7 @@ With `--json`, a failure prints one object on stdout, where the success output g
 - A refusal only a person can lift (`device_not_allowed`, `app_not_allowed`, `team_missing`, a `login` link no person confirmed, and `doctor`'s policy and team hints) asks an agent to fetch the user, naming what to choose. A person at a terminal, without `--json`, gets the same message without that sentence, and the `Try:` line names `offsider devices add`.
 - `candidates` lists up to five elements (`id`, `label`, `role`, `frame`, `onScreen`, `index`, `window`, `screen` and `beneath`, never a value) for selector errors, and `target_covered` adds `coveredBy`, the element the tap would have reached. `user_not_found` and `user_ambiguous` add `users`, up to 20 saved users as `name`, `tags` and `about`, never a username.
 - `dispatched` says whether input may have reached the device: `no` (nothing was sent, so resending is safe), `unknown` (a send began and failed, so check the screen first) or `yes`; it is null for commands that send no input.
-- A `--json` that is itself the mistake, such as `tap --json` without `--verify`, prints only the usage error.
+- A `--json` that is itself the mistake, such as `guide --json`, prints only the usage error.
 
 ## Verify reports
 

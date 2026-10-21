@@ -26,6 +26,9 @@ struct KeySequence: AsyncParsableCommand {
     var systemKeys: SystemKeyOptions
 
     @OptionGroup
+    var jsonOption: InputJSONOption
+
+    @OptionGroup
     var deviceOption: DeviceOption
 
     @OptionGroup
@@ -63,12 +66,14 @@ struct KeySequence: AsyncParsableCommand {
     }
 
     func run() async throws {
-        let logger = OffsiderLogger()
-        let route = try await DeviceRouter.routeForInput(deviceOption, logger: logger)
-        await appOption.apply(to: route)
-        try await Console.current.progress("Pressing the keys") { try await perform(on: route, logger: logger) }
-        // The keys may spell typed text, so the receipt counts and names none of them.
-        Console.current.show(InputPersonView.receipt("Sent the key sequence"))
+        // The keys may spell typed text, so neither the receipt nor the JSON counts or names them.
+        try await InputOutput.reporting(command: "key-sequence", target: "keys", json: jsonOption.json) { _ in
+            let logger = OffsiderLogger()
+            let route = try await DeviceRouter.routeForInput(deviceOption, logger: logger)
+            await appOption.apply(to: route)
+            try await Console.current.progress("Pressing the keys") { try await perform(on: route, logger: logger) }
+            Console.current.show(InputPersonView.receipt("Sent the key sequence"))
+        }
     }
 
     @MainActor

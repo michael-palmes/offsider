@@ -249,6 +249,18 @@ enum RunRegistry {
         return ended
     }
 
+    /// The latest run whose session has exited and that no `run status` or `run start` has ended yet; nil under `OFFSIDER_RUN`.
+    static func endedWithSession(in environment: EvidenceRunEnvironment) -> RunRecord? {
+        guard case .none = environment.override else { return nil }
+        let records = (try? allRecords(in: environment)) ?? []
+        return records.filter { !environment.processes.isAlive($0.owner) }.max { $0.startedAt < $1.startedAt }
+    }
+
+    /// `offsider run start <dir>`, the folder quoted when a shell would split it.
+    static func startCommand(_ dir: String) -> String {
+        "offsider run start " + VerifyOutput.shellWord(dir)
+    }
+
     static func allRecords(in environment: EvidenceRunEnvironment) throws -> [RunRecord] {
         let directory = try environment.runsDirectory()
         let names = (try? FileManager.default.contentsOfDirectory(atPath: directory)) ?? []
