@@ -12,6 +12,8 @@ final class IOSDisplayCatalog {
     private var postures: [String: Posture] = [:]
     private let displayReadings = FreshReadings<DevicectlDisplays?>()
     private let hingeReadings = FreshReadings<SimulatorHingeLog.Reading?>()
+    private var hingeHistories: [String: SimulatorHingeLog.History] = [:]
+    static let hingeReadTimeout: TimeInterval = 5
 
     init(logger: OffsiderLogger) {
         self.logger = logger
@@ -61,9 +63,8 @@ final class IOSDisplayCatalog {
     func posture(of simulator: FBSimulator, applicationFrame: UIFrame?, refresh: Bool = false) async -> Posture? {
         guard let active = await activeDisplay(of: simulator, applicationFrame: applicationFrame, refresh: refresh) else { return nil }
         var posture = active.posture
-        if active.posture == .open, let hinge = await hingeReading(of: simulator) {
-            logger.info().log("Hinge: \(hinge)")
-            posture = hinge.posture == .halfOpened ? .halfOpened : .open
+        if active.posture == .open {
+            posture = SimulatorHingeLog.innerPosture(await hingeReading(of: simulator))
         }
         postures[simulator.udid] = posture
         return posture
@@ -79,10 +80,23 @@ final class IOSDisplayCatalog {
         await hingeReading(of: simulator)?.angle
     }
 
+    /// Reads the hinge before a move and keeps it, so reads after the move need only the lines since.
+    func hingeAngleBeforeMove(of simulator: FBSimulator) async -> Double? {
+        let reading = await hingeReading(of: simulator)
+        hingeHistories[simulator.udid, default: SimulatorHingeLog.History()].noteMove(at: Date(), from: reading)
+        return reading?.angle
+    }
+
     /// Read at most once a second.
     private func hingeReading(of simulator: FBSimulator) async -> SimulatorHingeLog.Reading? {
-        await hingeReadings.value(for: simulator.udid) {
-            await Self.hingeReading(udid: simulator.udid, logger: logger)
+        let udid = simulator.udid
+        return await hingeReadings.value(for: udid) {
+            var history = hingeHistories[udid] ?? SimulatorHingeLog.History()
+            let read = await Self.hingeReading(udid: udid, since: history.start(boot: Self.bootDate(of: simulator)), logger: logger)
+            let reading = history.record(read)
+            hingeHistories[udid] = history
+            logger.info().log("Hinge: \(reading.map { "\($0)" } ?? "no reading")")
+            return reading
         }
     }
 
@@ -141,9 +155,21 @@ final class IOSDisplayCatalog {
         }
     }
 
-    private static func hingeReading(udid: String, logger: OffsiderLogger) async -> SimulatorHingeLog.Reading? {
+    /// SimDevice's `lastBootedAt`, private CoreSimulator read through KVC, so the log read covers this boot only.
+    private static func bootDate(of simulator: FBSimulator) -> Date? {
+        guard simulator.responds(to: NSSelectorFromString("device")),
+              let device = simulator.value(forKey: "device") as? NSObject,
+              device.responds(to: NSSelectorFromString("lastBootedAt")),
+              let booted = device.value(forKey: "lastBootedAt") as? Date, booted <= Date() else {
+            return nil
+        }
+        return booted
+    }
+
+    private static func hingeReading(udid: String, since start: Date?, logger: OffsiderLogger) async -> SimulatorHingeLog.Reading? {
         do {
-            let result = try await ProcessCapture.run(executable: "/usr/bin/xcrun", arguments: SimulatorHingeLog.arguments(udid: udid), timeout: 10)
+            let arguments = SimulatorHingeLog.arguments(udid: udid, since: start)
+            let result = try await ProcessCapture.run(executable: "/usr/bin/xcrun", arguments: arguments, timeout: hingeReadTimeout)
             guard result.status == 0 else {
                 logger.info().log("Hinge log failed (\(result.status)): \(result.stderr)")
                 return nil
