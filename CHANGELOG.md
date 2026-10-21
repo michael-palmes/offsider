@@ -12,6 +12,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Changed
 
+- `offsider init`'s permission rules ask before the `credential` actions that write (`add`, `set`, `describe`, `remove`, `signed-out`) instead of every `credential` command, so the read-only `credential status` runs freely. `init --rules-only` swaps the broad rule it added before for these, and `doctor`'s `install.rules` warns until it does and counts a rule of yours in `ask` or `deny` that asks or denies at least as much, in any spelling.
+- `credential` takes its action first and exactly as written (exit 64 otherwise), so those rules see every write.
 - `wait --any` with one selector is a plain wait for it rather than exit 64.
 
 ### Fixed
