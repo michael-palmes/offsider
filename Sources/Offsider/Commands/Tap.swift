@@ -138,7 +138,9 @@ struct Tap: AsyncParsableCommand, VerifiableCommand {
 
     func run() async throws {
         guard verification.verify else {
-            try await execute(progress: nil)
+            try await InputOutput.reporting(command: "tap", target: verifyTarget, json: verification.json) { details in
+                try await execute(progress: nil, details: details)
+            }
             return
         }
         try await VerifyOutput.reportingFailures(command: "tap", target: verifyTarget, options: verification) { progress in
@@ -154,16 +156,16 @@ struct Tap: AsyncParsableCommand, VerifiableCommand {
         return "value=\(elementValue ?? "")"
     }
 
-    private func execute(progress: VerifyProgress?) async throws {
+    private func execute(progress: VerifyProgress?, details: InputDetails? = nil) async throws {
         let logger = OffsiderLogger()
         let route = try await DeviceRouter.routeForInput(deviceOption, logger: logger)
         try await Console.current.progress("Tapping \(verifyTarget)") {
-            try await execute(on: route, progress: progress, logger: logger)
+            try await execute(on: route, progress: progress, logger: logger, details: details)
         }
     }
 
-    /// Resolves and sends the tap on `route`; tests pass a fake backend here.
-    func execute(on route: DeviceRouter.Route, progress: VerifyProgress?, logger: OffsiderLogger) async throws {
+    /// Resolves and sends the tap on `route`; tests pass a fake backend here. `details` learns the point it resolved.
+    func execute(on route: DeviceRouter.Route, progress: VerifyProgress?, logger: OffsiderLogger, details: InputDetails? = nil) async throws {
         await appOption.apply(to: route)
         let backend = route.backend
         let device = route.device
@@ -210,6 +212,7 @@ struct Tap: AsyncParsableCommand, VerifiableCommand {
         }
 
         logger.info().log("Tapping \(resolvedDescription)")
+        details?.point = UIPoint(x: resolution.point.x, y: resolution.point.y)
 
         var physicalPoint = try await backend.deviceCoordinates(for: [resolution.point], tree: resolvedTree, on: device)[0]
 

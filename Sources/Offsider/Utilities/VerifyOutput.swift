@@ -261,7 +261,7 @@ enum VerifyOutput {
         return node.label.flatMap { TerminalText.line($0, cap: nil, keepsTab: false) == $0 ? "--label \(shellWord($0))" : nil }
     }
 
-    private static func shellWord(_ text: String) -> String {
+    nonisolated static func shellWord(_ text: String) -> String {
         text.allSatisfy { $0.isASCII && ($0.isLetter || $0.isNumber || "._-:/".contains($0)) } ? text : DeviceLeaseRules.shellQuoted(text)
     }
 
@@ -341,6 +341,11 @@ enum VerifyOutput {
 
     nonisolated static func pointDescription(x: Double, y: Double) -> String {
         "(\(number(x)), \(number(y)))"
+    }
+
+    /// `(100, 600) to (100, 200)`, for a swipe or drag.
+    nonisolated static func segmentDescription(from start: (x: Double, y: Double), to end: (x: Double, y: Double)) -> String {
+        "\(pointDescription(x: start.x, y: start.y)) to \(pointDescription(x: end.x, y: end.y))"
     }
 
     /// Rounded to 0.01, the precision of describe-ui frames.

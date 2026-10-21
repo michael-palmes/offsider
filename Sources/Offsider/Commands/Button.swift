@@ -202,12 +202,17 @@ struct Button: AsyncParsableCommand, VerifiableCommand {
 
     func run() async throws {
         if Self.isShortHome(buttonType, duration: duration), DeviceIDClassifier.classify(deviceOption.id).platform == .android {
-            try await pressAndroidHome()
+            // With --verify, pressAndroidHome prints the verify report itself.
+            try await InputOutput.reporting(command: "button", target: buttonType.rawValue, json: verification.json && !verification.verify) { _ in
+                try await pressAndroidHome()
+            }
             return
         }
         guard verification.verify else {
-            try await execute(progress: nil)
-            Console.current.show(InputPersonView.receipt("Pressed \(buttonType.personName)", aside: duration.map(InputPersonView.held)))
+            try await InputOutput.reporting(command: "button", target: buttonType.rawValue, json: verification.json) { _ in
+                try await execute(progress: nil)
+                Console.current.show(InputPersonView.receipt("Pressed \(buttonType.personName)", aside: duration.map(InputPersonView.held)))
+            }
             return
         }
         try await VerifyOutput.reportingFailures(command: "button", target: buttonType.rawValue, options: verification) { progress in

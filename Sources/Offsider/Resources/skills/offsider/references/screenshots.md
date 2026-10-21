@@ -3,6 +3,7 @@
 ## Capturing
 
 - Screenshots are in pixels by default; taps and `describe-ui` frames are in points (dp on Android). Capture with `screenshot --scale points` so image coordinates are tap coordinates.
+- Without `--output`, a screenshot lands in the current folder as `Simulator Screenshot - <name> - <time>.png`, `Emulator Screenshot - …` or, from a physical iPhone, iPad or Android phone, `Screenshot - …`. In a git checkout, pass `--output` or start a run (`guide evidence`), so no capture is committed by mistake.
 - Crop with `--region <x,y,w,h>` (points, from `describe-ui`) instead of reading a full screen. `--scale <0.1-1>`, `--format jpeg` and `--quality` shrink the file.
 - `--json` prints `path`, `width`, `height`, `pixelsPerPoint`, `region`, `orientation`, `rotation`, `display` and `posture`. Landscape captures are upright.
 - `screenshot --display <id>` captures a foldable's other display (`guide foldables`).

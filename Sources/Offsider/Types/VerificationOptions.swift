@@ -32,12 +32,12 @@ struct VerificationOptions: ParsableArguments {
     @Option(name: .customLong("retries"), help: "Extra attempts when nothing changes, 0 to 3 (default: 1, or 0 for a tap on a switch, checkbox or radio button and for button app-switch). Tap retries switch the tap style.")
     var retries: Int?
 
-    @Flag(name: .customLong("json"), help: "Print one JSON result to stdout; human text goes to stderr. Requires --verify.")
+    @Flag(name: .customLong("json"), help: "Print one JSON result to stdout; human text goes to stderr. With --verify, the verify report.")
     var json = false
 
     func validate() throws {
-        if !verify, verifyTimeout != nil || retries != nil || json {
-            throw ValidationError("--verify-timeout, --retries and --json require --verify.")
+        if !verify, verifyTimeout != nil || retries != nil {
+            throw ValidationError("--verify-timeout and --retries require --verify.")
         }
         if verifyID != nil && ignoreText {
             throw ValidationError("Use only one of --verify-id or --verify-ignore-text.")
@@ -54,7 +54,7 @@ struct VerificationOptions: ParsableArguments {
     }
 
     var isRequested: Bool {
-        verify || json || verifyTimeout != nil || retries != nil
+        verify || verifyTimeout != nil || retries != nil
     }
 
     var resolvedTimeout: Double { verifyTimeout ?? (verifyID != nil ? Self.defaultAppearingTimeout : Self.defaultTimeout) }

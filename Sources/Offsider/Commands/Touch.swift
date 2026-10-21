@@ -48,6 +48,9 @@ struct Touch: AsyncParsableCommand {
     var spread: Double?
 
     @OptionGroup
+    var jsonOption: InputJSONOption
+
+    @OptionGroup
     var deviceOption: DeviceOption
 
     @OptionGroup
@@ -143,6 +146,11 @@ struct Touch: AsyncParsableCommand {
     }
 
     func run() async throws {
+        let target = VerifyOutput.pointDescription(x: pointX, y: pointY)
+        try await InputOutput.reporting(command: "touch", target: target, json: jsonOption.json) { _ in try await touch() }
+    }
+
+    private func touch() async throws {
         let logger = OffsiderLogger()
         let route = try await DeviceRouter.routeForInput(deviceOption, logger: logger)
         await appOption.apply(to: route)
@@ -187,7 +195,9 @@ struct Touch: AsyncParsableCommand {
         }
 
         do {
-            try await Console.current.progress("Touching") { try await backend.sendDetachedTouch(steps, to: device) }
+            try await Console.current.progress("Touching") {
+                try await DispatchTracker.current.sending { try await backend.sendDetachedTouch(steps, to: device) }
+            }
         } catch {
             await DeviceActivityLedger.current.recordInput(on: device)
             throw error

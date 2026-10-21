@@ -42,6 +42,9 @@ struct KeyCombo: AsyncParsableCommand {
     var systemKeys: SystemKeyOptions
 
     @OptionGroup
+    var jsonOption: InputJSONOption
+
+    @OptionGroup
     var deviceOption: DeviceOption
 
     @OptionGroup
@@ -70,12 +73,19 @@ struct KeyCombo: AsyncParsableCommand {
     }
 
     func run() async throws {
-        let logger = OffsiderLogger()
-        let route = try await DeviceRouter.routeForInput(deviceOption, logger: logger)
-        await appOption.apply(to: route)
-        try await perform(on: route, logger: logger)
         let modifiers = (try? parseCommaSeparatedIntsStrict(modifiersString, fieldName: "modifier keycodes")) ?? []
-        Console.current.show(InputPersonView.receipt("Sent " + InputPersonView.combo(modifiers: modifiers, key: key, android: route.device.platform == .android)))
+        try await InputOutput.reporting(command: "key-combo", target: Self.target(modifiers: modifiers, key: key), json: jsonOption.json) { _ in
+            let logger = OffsiderLogger()
+            let route = try await DeviceRouter.routeForInput(deviceOption, logger: logger)
+            await appOption.apply(to: route)
+            try await perform(on: route, logger: logger)
+            Console.current.show(InputPersonView.receipt("Sent " + InputPersonView.combo(modifiers: modifiers, key: key, android: route.device.platform == .android)))
+        }
+    }
+
+    /// `keycodes 227+4`, modifiers first.
+    static func target(modifiers: [Int], key: Int) -> String {
+        "keycodes " + (modifiers + [key]).map(String.init).joined(separator: "+")
     }
 
     @MainActor

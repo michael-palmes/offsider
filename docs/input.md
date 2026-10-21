@@ -15,6 +15,20 @@ At a terminal, a person sees a ✅ receipt for every input command, even those a
 
 If input seems to be ignored, or screen reads fail, run `offsider doctor --device <ID>` (see [Doctor and troubleshooting](troubleshooting.md)).
 
+### JSON results
+
+Every input command takes `--json`: `tap`, `type`, `key`, `key-sequence`, `key-combo`, `button`, `swipe`, `drag`, `touch`, `gesture`, `slider` and `shake`. Stdout then holds one line, also on a failure, and the command's own lines move to stderr:
+
+```json
+{"version":1,"ok":true,"command":"tap","target":"id=save","dispatched":"yes","point":{"x":201,"y":640},"elapsedMs":182,"exitCode":0,"error":null}
+```
+
+- `target` is what the command line named: a selector, a point, `(x, y) to (x, y)`, a key or button, a preset. `type` says `text` and `key-sequence` says `keys`, never what they typed.
+- `dispatched` is `yes`, `no` (nothing was sent, so a resend is safe) or `unknown` (a send began and failed: check the screen first). `ok` and exit 0 never mean the input worked, and a `slider` already at its value sends nothing (`dispatched` `no`).
+- `tap` adds `point`, where it tapped (or, on a failure, aimed) in points; `slider` adds `percent`, the value it reached, and `value`, as its element reads it (listed in `untrusted`).
+- A failure sets `ok` to false and carries the [JSON error object](errors.md#json-errors) in `error`, with `exitCode` to match. A usage error (exit 64) prints the plain error envelope, with nothing sent.
+- With `--verify`, `tap`, `type`, `key` and `button` print the [verify report](errors.md#verify-reports) instead.
+
 ## Selectors and taps
 
 ![Four phones: a target on screen is tapped, while a target parked below the screen, one covered by a pushed page and one under the keyboard are each refused and nothing is tapped.](assets/tap-guard.png)

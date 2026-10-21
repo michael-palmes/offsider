@@ -29,6 +29,14 @@ extension Tap: JSONReportingCommand { var wantsJSON: Bool { verification.json } 
 extension Type: JSONReportingCommand { var wantsJSON: Bool { verification.json } }
 extension Key: JSONReportingCommand { var wantsJSON: Bool { verification.json } }
 extension Button: JSONReportingCommand { var wantsJSON: Bool { verification.json } }
+extension Swipe: JSONReportingCommand { var wantsJSON: Bool { jsonOption.json } }
+extension Drag: JSONReportingCommand { var wantsJSON: Bool { jsonOption.json } }
+extension Touch: JSONReportingCommand { var wantsJSON: Bool { jsonOption.json } }
+extension Gesture: JSONReportingCommand { var wantsJSON: Bool { jsonOption.json } }
+extension KeySequence: JSONReportingCommand { var wantsJSON: Bool { jsonOption.json } }
+extension KeyCombo: JSONReportingCommand { var wantsJSON: Bool { jsonOption.json } }
+extension Slider: JSONReportingCommand { var wantsJSON: Bool { jsonOption.json } }
+extension Shake: JSONReportingCommand { var wantsJSON: Bool { jsonOption.json } }
 extension Screenshot: JSONReportingCommand { var wantsJSON: Bool { json } }
 extension Wait: JSONReportingCommand { var wantsJSON: Bool { json } }
 extension Assert: JSONReportingCommand { var wantsJSON: Bool { json } }

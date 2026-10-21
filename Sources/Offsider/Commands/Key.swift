@@ -60,8 +60,10 @@ struct Key: AsyncParsableCommand, VerifiableCommand {
 
     func run() async throws {
         guard verification.verify else {
-            try await execute(progress: nil)
-            Console.current.show(InputPersonView.receipt(receiptHeadline, aside: receiptAside))
+            try await InputOutput.reporting(command: "key", target: "keycode \(keycode)", json: verification.json) { _ in
+                try await execute(progress: nil)
+                Console.current.show(InputPersonView.receipt(receiptHeadline, aside: receiptAside))
+            }
             return
         }
         try await VerifyOutput.reportingFailures(command: "key", target: "keycode \(keycode)", options: verification) { progress in
