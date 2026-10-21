@@ -12,8 +12,8 @@ public final class SecretBytes {
         case released([UInt8])
     }
 
-    /// Test hook for every buffer made and freed.
-    nonisolated(unsafe) static var audit: ((AuditEvent) -> Void)?
+    /// Test hook for every buffer made and freed, bound per task so parallel tests never see each other's buffers.
+    @TaskLocal static var audit: (@Sendable (AuditEvent) -> Void)?
 
     public init(capacity: Int) {
         self.capacity = max(capacity, 0)
