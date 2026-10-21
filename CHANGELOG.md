@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.14.0] - 2026-10-22
+
 ### Added
 
 - `orientation` turns the iPhone Duo simulator, folded or unfolded, as Device Hub's orientation picker does: the cover and inner displays turn to each landscape (the inner one upside down too), capture upright and take taps and swipes where asked, and a turn outlasts a fold. It used to time out; where the simulator's orientation service cannot be reached, it now says so at once.
@@ -785,7 +787,8 @@ First release of Offsider, forked from [AXe](https://github.com/cameroncooke/axe
 - Shortened HID broker socket names so they stay within the Unix socket path limit.
 - Builds now honour an explicit `OFFSIDER_VERSION` when generating the version string.
 
-[Unreleased]: https://github.com/michael-palmes/offsider/compare/v0.13.0...HEAD
+[Unreleased]: https://github.com/michael-palmes/offsider/compare/v0.14.0...HEAD
+[0.14.0]: https://github.com/michael-palmes/offsider/compare/v0.13.0...v0.14.0
 [0.13.0]: https://github.com/michael-palmes/offsider/compare/v0.12.0...v0.13.0
 [0.12.0]: https://github.com/michael-palmes/offsider/compare/v0.11.0...v0.12.0
 [0.11.0]: https://github.com/michael-palmes/offsider/compare/v0.10.0...v0.11.0
