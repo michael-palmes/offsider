@@ -41,6 +41,8 @@ public enum DevMenu {
         public var label: String
         public var role: UIRole
         public var frame: UIFrame?
+        /// An item the app registered: with expo-dev-menu's `registerDevMenuItems`, or React Native's `DevSettings.addMenuItem`.
+        public var custom = false
     }
 
     public struct State: Equatable, Sendable {
@@ -55,19 +57,27 @@ public enum DevMenu {
     /// Items only a dev menu lists, unlike Reload and Close, which an app screen may have too.
     static let menuOnlyItems: [Item] = [.home, .inspector, .perfMonitor, .fastRefresh, .debugger]
 
-    /// The open menu: a Reload item beside two menu-only items, or under React Native's title; nil when no menu shows.
+    /// The heading the Expo menu draws above an app's `registerDevMenuItems` buttons, on iOS and Android.
+    static let expoCustomHeading = "CUSTOM MENU ITEMS"
+
+    /// React Native's last built-in row on Android: Settings, or Fast Refresh when its newer performance monitor drops Settings.
+    static let reactNativeLastRows: Set<String> = ["Settings", "Enable Fast Refresh", "Disable Fast Refresh"]
+
+    /// The open menu: Reload beside two menu-only items (Expo's custom heading counts, as app items can push the tools off screen) or under React Native's title.
     public static func read(_ tree: UITree) -> State? {
         let nodes = tree.roots.flatMap { $0.flattened() }
         let titled = nodes.contains { trimmedLabel($0) == reactNativeTitle }
         let hasReload = nodes.contains { matchedLabel($0, Item.reload.labels) != nil }
         let menuItems = menuOnlyItems.filter { item in nodes.contains { matchedLabel($0, item.labels) != nil } }
-        guard hasReload, titled || menuItems.count >= 2 else { return nil }
+        let headed = nodes.contains(where: isCustomHeading)
+        guard hasReload, titled || menuItems.count + (headed ? 1 : 0) >= 2 else { return nil }
         let hasHome = menuItems.contains(.home)
         let items = Item.allCases.compactMap { item -> (Int, Entry)? in
             guard let (index, node, text) = best(item.labels, in: nodes) else { return nil }
             return (index, Entry(label: text, role: node.role, frame: node.frame))
         }
-        return State(menu: hasHome ? "expo" : "react-native", items: items.sorted { $0.0 < $1.0 }.map(\.1))
+        let custom = customItems(in: tree).map { ($0.index, Entry(label: $0.label, role: $0.node.role, frame: $0.node.frame, custom: true)) }
+        return State(menu: hasHome ? "expo" : "react-native", items: (items + custom).sorted { $0.0 < $1.0 }.map(\.1))
     }
 
     /// The node for `item`, or for an exact `label`; the close control also by its `xmark` id.
@@ -75,8 +85,11 @@ public enum DevMenu {
         match(for: item, label: label, in: tree)?.node
     }
 
-    /// The node to tap for `item` or `label`, with the menu label it was found by.
+    /// The node to tap for `item` or `label`, with the menu label it was found by; a label the app registered is the menu's, never a button behind it.
     public static func match(for item: Item?, label: String?, in tree: UITree) -> (node: UINode, label: String)? {
+        if let label, let custom = customItems(in: tree).first(where: { $0.label == label && $0.node.frame != nil }) {
+            return (custom.node, custom.label)
+        }
         let nodes = tree.roots.flatMap { $0.flattened() }.filter { $0.frame != nil }
         if item == .close, let xmark = nodes.first(where: { $0.id == "xmark" }) {
             return (xmark, trimmedLabel(xmark) ?? "Close")
@@ -117,6 +130,62 @@ public enum DevMenu {
             .min { ($0.frame?.width ?? 0) * ($0.frame?.height ?? 0) < ($1.frame?.width ?? 0) * ($1.frame?.height ?? 0) }
     }
 
+    /// The items an app registered, with their pre-order indices: Expo's buttons under its custom heading, or the rows React Native's Android menu appends.
+    static func customItems(in tree: UITree) -> [(index: Int, node: UINode, label: String)] {
+        let nodes = tree.roots.flatMap { $0.flattened() }
+        var ends: [Int] = []
+        func visit(_ node: UINode) {
+            let index = ends.count
+            ends.append(index + 1)
+            node.children.forEach(visit)
+            ends[index] = ends.count
+        }
+        tree.roots.forEach(visit)
+        return expoCustomItems(nodes, ends: ends) + reactNativeCustomItems(nodes, ends: ends)
+    }
+
+    /// The buttons after Expo's custom heading, up to the next section's heading (TOOLS) or the end of the heading's container; a button's own texts are skipped.
+    private static func expoCustomItems(_ nodes: [UINode], ends: [Int]) -> [(index: Int, node: UINode, label: String)] {
+        guard let heading = nodes.firstIndex(where: isCustomHeading) else { return [] }
+        let sectionEnd = (0..<heading).last { ends[$0] > heading }.map { ends[$0] } ?? nodes.count
+        var found: [(index: Int, node: UINode, label: String)] = []
+        var index = heading + 1
+        while index < sectionEnd, !isSectionHeading(nodes[index]) {
+            if nodes[index].role.isActionable, let label = trimmedLabel(nodes[index]), !label.isEmpty {
+                found.append((index, nodes[index], label))
+                index = ends[index]
+            } else {
+                index += 1
+            }
+        }
+        return found
+    }
+
+    private static func isCustomHeading(_ node: UINode) -> Bool {
+        !node.role.isActionable && trimmedLabel(node)?.uppercased() == expoCustomHeading
+    }
+
+    /// An Expo section heading, which the menu draws in capitals on both platforms.
+    private static func isSectionHeading(_ node: UINode) -> Bool {
+        guard !node.role.isActionable, let text = trimmedLabel(node) else { return false }
+        return text == text.uppercased() && text != text.lowercased()
+    }
+
+    /// The rows after React Native's last built-in row in the list holding its Reload, where `DevSettings.addMenuItem` puts them.
+    private static func reactNativeCustomItems(_ nodes: [UINode], ends: [Int]) -> [(index: Int, node: UINode, label: String)] {
+        guard let title = nodes.firstIndex(where: { trimmedLabel($0) == reactNativeTitle }),
+              let reload = nodes.indices.first(where: { $0 > title && matchedLabel(nodes[$0], Item.reload.labels) != nil }),
+              let list = (0..<reload).last(where: { ends[$0] > reload }),
+              let last = (reload..<ends[list]).last(where: { trimmedLabel(nodes[$0]).map { reactNativeLastRows.contains($0) } == true }) else { return [] }
+        var found: [(index: Int, node: UINode, label: String)] = []
+        var row = ends[last]
+        while row < ends[list] {
+            if let label = trimmedLabel(nodes[row]), !label.isEmpty { found.append((row, nodes[row], label)) }
+            row = ends[row]
+        }
+        return found
+    }
+
     /// Which developer tools show: the element inspector's panel (its Inspect and Touchables tabs) and the performance monitor (`UI` and `JS` frame rates, which iOS draws as a `RAM` cell beside `UI` and `JS` columns).
     public static func tools(in tree: UITree) -> (inspector: Bool, perfMonitor: Bool) {
         let texts = tree.roots.flatMap { $0.flattened() }.flatMap { [$0.label, $0.value] }.compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
@@ -130,7 +199,9 @@ public enum DevMenu {
         OrderedJSON.object([
             ("version", .integer(1)),
             ("menu", .string(state.menu)),
-            ("items", .array(state.items.map { .object([("label", .string($0.label)), ("role", .string($0.role.rawValue))]) })),
+            ("items", .array(state.items.map { entry in
+                .object([("label", .string(entry.label)), ("role", .string(entry.role.rawValue))] + (entry.custom ? [("custom", .bool(true))] : []))
+            })),
         ]).rendered(compact: true)
     }
 

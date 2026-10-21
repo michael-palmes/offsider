@@ -37,7 +37,7 @@ struct RNDevMenuTests {
         let state = try #require(DevMenu.read(menu))
         #expect(state.menu == "expo")
         #expect(state.items.map(\.label) == ["Close", "Reload", "Go home", "Toggle performance monitor", "Toggle element inspector", "Open DevTools", "Fast Refresh"])
-        #expect(state.items.allSatisfy { $0.role == .button })
+        #expect(state.items.allSatisfy { $0.role == .button && !$0.custom })
         #expect(DevMenu.node(for: .home, label: nil, in: menu)?.label == "Home Go home")
         #expect(DevMenu.node(for: .reload, label: nil, in: menu)?.role == .button)
         #expect(DevMenu.node(for: nil, label: "Open React Native dev menu", in: menu)?.label == "React Native dev menu Open React Native dev menu")
@@ -68,6 +68,148 @@ struct RNDevMenuTests {
         #expect(state?.items.map(\.label) == ["Reload", "Go home", "Toggle performance monitor", "Toggle element inspector", "Fast Refresh", "Close"])
         #expect(DevMenu.read(Self.app) == nil)
         #expect(DevMenu.jsonLine(state!).hasPrefix(#"{"version":1,"menu":"expo","items":[{"label":"Reload","role":"button"}"#))
+        #expect(!DevMenu.jsonLine(state!).contains("custom"))
+    }
+
+    // MARK: Items the app registers
+
+    /// `tree` with Expo's custom section before its TOOLS heading, as expo-dev-menu draws `registerDevMenuItems` items:
+    /// a capitalised heading, then a button per item, held in one container on Android and beside the heading on iOS.
+    static func withCustomItems(_ tree: UITree, _ labels: [String] = ["Clear cache", "Toggle mock data"]) -> UITree {
+        let platform = tree.platform
+        let buttons = labels.enumerated().map { offset, label in
+            let frame = FakeUI.frame(24, 600 + Double(offset) * 64, 363, 64)
+            let text = FakeUI.node(.text, label: label, frame: FakeUI.frame(40, frame.y + 23, 120, 17), platform: platform)
+            return platform == .android
+                ? FakeUI.node(.button, label: label, frame: frame, platform: platform, children: [FakeUI.node(.group, frame: frame, platform: platform, children: [text]), FakeUI.node(.button, frame: frame, platform: platform)])
+                : FakeUI.node(.button, label: label, frame: frame, platform: platform, children: [text])
+        }
+        let heading = FakeUI.node(.text, label: "CUSTOM MENU ITEMS", frame: FakeUI.frame(24, 570, 150, 15), platform: platform)
+        let section = platform == .android ? [heading, FakeUI.node(.group, frame: FakeUI.frame(24, 600, 363, 128), platform: platform, children: buttons)] : [heading] + buttons
+        func insert(_ node: UINode) -> UINode {
+            var copy = node
+            if let tools = node.children.firstIndex(where: { $0.label == "TOOLS" }) {
+                copy.children.insert(contentsOf: section, at: tools)
+            } else {
+                copy.children = node.children.map(insert)
+            }
+            return copy
+        }
+        var edited = tree
+        edited.roots = tree.roots.map(insert)
+        return edited
+    }
+
+    @Test("items an app registers with Expo are listed after Go home and marked custom, while the built-ins, Expo's other buttons and the app behind are as before", arguments: [DevicePlatform.android, .ios])
+    func expoCustomItems(platform: DevicePlatform) throws {
+        let plain = platform == .android ? try Self.capture("devmenu-expo-android") : try Self.captured("devmenu-expo-ios")
+        let before = try #require(DevMenu.read(plain))
+        let state = try #require(DevMenu.read(Self.withCustomItems(plain)))
+
+        let fastRefresh = platform == .android ? "Fast Refresh" : "Fast refresh"
+        #expect(state.menu == "expo")
+        #expect(state.items.map(\.label) == ["Close", "Reload", "Go home", "Clear cache", "Toggle mock data", "Toggle performance monitor", "Toggle element inspector", "Open DevTools", fastRefresh])
+        #expect(state.items.filter(\.custom).map(\.label) == ["Clear cache", "Toggle mock data"])
+        #expect(state.items.filter { !$0.custom } == before.items)
+        let others = ["Show Banner", "Clear Logs", "Start Clock", "Source code explorer", "Open React Native dev menu", "Copy system info", "Tools button"]
+        #expect(state.items.allSatisfy { !others.contains($0.label) })
+    }
+
+    @Test("rn devmenu --json marks only the app's items custom, and its agent line lists them apart with their exact labels")
+    func customListing() throws {
+        let state = try #require(DevMenu.read(Self.withCustomItems(try Self.capture("devmenu-expo-android"))))
+        let json = DevMenu.jsonLine(state)
+
+        #expect(json.contains(#"{"label":"Go home","role":"button"},{"label":"Clear cache","role":"button","custom":true},{"label":"Toggle mock data","role":"button","custom":true},{"label":"Toggle performance monitor","role":"button"}"#))
+        #expect(json.components(separatedBy: "custom").count == 3)
+        #expect(RNDevMenu.Outcome.listed(state).textLine() == "expo dev menu: Close, Reload, Go home, Toggle performance monitor, Toggle element inspector, Open DevTools, Fast Refresh; custom: Clear cache, Toggle mock data")
+    }
+
+    @Test("rn devmenu --label chooses an item the app registered, then closes the menu Expo's Android menu leaves open")
+    func choosesCustomItem() async throws {
+        let menu = Self.withCustomItems(try Self.capture("devmenu-expo-android"))
+        let close = try #require(DevMenu.node(for: .close, label: nil, in: menu)?.frame?.center)
+        let backend = FakeDeviceBackend(platform: .android, trees: [menu, menu, Self.app], advanceTreeOnInput: true)
+
+        let outcome = try await RNDevMenu.parse(["--label", "Toggle mock data", "--device", Self.device.rawValue])
+            .perform(on: DeviceRouter.Route(backend: backend, device: Self.device), clock: ScriptedClock().poll)
+
+        #expect(outcome == .chose(menu: "expo", item: nil, label: "Toggle mock data"))
+        #expect(backend.session.calls == [.perform(.tapAt(x: 205.5, y: 696)), .perform(.tapAt(x: close.x, y: close.y))])
+    }
+
+    @Test("a button behind the menu with an app item's label is neither listed nor tapped: the menu's own item is")
+    func customItemOverAppButton() throws {
+        var menu = Self.withCustomItems(try Self.captured("devmenu-expo-ios"))
+        menu.roots[0].children.insert(FakeUI.node(.button, id: "app-clear-cache", label: "Clear cache", frame: FakeUI.frame(16, 120, 370, 44)), at: 0)
+
+        let state = try #require(DevMenu.read(menu))
+        let chosen = try #require(DevMenu.node(for: nil, label: "Clear cache", in: menu))
+
+        #expect(state.items.filter { $0.label == "Clear cache" }.map(\.frame) == [FakeUI.frame(24, 600, 363, 64)])
+        #expect(chosen.frame == FakeUI.frame(24, 600, 363, 64) && chosen.id == nil)
+    }
+
+    @Test("on Android an Expo menu whose app items push the tools below the fold still reads as the menu, listing only its own items")
+    func customItemsHideTools() throws {
+        let customs = (1...5).map { "Seed account \($0)" }
+        let reload = FakeUI.node(.button, label: "Reload Reload", frame: FakeUI.frame(24, 461.33, 177.52, 64), platform: .android)
+        let heading = FakeUI.node(.text, label: "CUSTOM MENU ITEMS", frame: FakeUI.frame(24, 557.33, 150, 15.62), platform: .android)
+        let menu = FakeUI.tree(platform: .android, [
+            FakeUI.node(.button, label: "Close", frame: FakeUI.frame(345.52, 391.62, 48, 48), platform: .android),
+            FakeUI.node(.scrollView, frame: FakeUI.frame(0, 461.33, 411.43, 462.1), platform: .android, children: [
+                reload,
+                FakeUI.node(.button, label: "Home Go home", frame: FakeUI.frame(209.52, 461.33, 177.9, 64), platform: .android),
+                heading,
+                FakeUI.node(.group, frame: FakeUI.frame(24, 588.95, 363.43, 334.48), platform: .android, children: customs.enumerated().map { offset, label in
+                    FakeUI.node(.button, label: label, frame: FakeUI.frame(24, 588.95 + Double(offset) * 64, 363.43, 64), platform: .android)
+                }),
+            ]),
+            FakeUI.node(.button, id: "app-sync", label: "Sync now", frame: FakeUI.frame(16, 120, 370, 44), platform: .android),
+        ])
+
+        let state = try #require(DevMenu.read(menu))
+
+        #expect(state.menu == "expo")
+        #expect(state.items.map(\.label) == ["Close", "Reload", "Go home"] + customs)
+        #expect(state.items.filter(\.custom).map(\.label) == customs)
+        #expect(DevMenu.read(FakeUI.tree(platform: .android, [reload, heading])) == nil)
+    }
+
+    /// React Native's Android menu rows, under its title, as `AlertDialog` lists them.
+    static func reactNativeMenu(_ rows: [String]) -> UITree {
+        let list = rows.enumerated().map { offset, row in
+            FakeUI.node(.text, id: "android:id/text1", label: row, frame: FakeUI.frame(26.67, 329.14 + Double(offset) * 48, 358.1, 48), platform: .android)
+        }
+        return FakeUI.tree(platform: .android, [
+            FakeUI.node(.text, label: "React Native Dev Menu", frame: FakeUI.frame(26.67, 280.38, 358.1, 40.76), platform: .android),
+            FakeUI.node(.list, id: "android:id/select_dialog_listview", frame: FakeUI.frame(26.67, 329.14, 358.1, 48 * Double(rows.count)), platform: .android, children: list),
+        ])
+    }
+
+    @Test("React Native's Android menu marks custom the rows after its last built-in, Settings or Fast Refresh, and lists no other built-in rows")
+    func reactNativeCustomRows() async throws {
+        let legacy = Self.reactNativeMenu(["Reload", "Open DevTools", "Change Bundle Location", "Toggle Element Inspector", "Disable Fast Refresh", "Show Perf Monitor", "Settings", "Clear cache"])
+        let newer = Self.reactNativeMenu(["Reload", "Open DevTools", "Start performance trace", "Show performance overlay", "Change Bundle Location", "Toggle Element Inspector", "Enable Fast Refresh", "Clear cache"])
+
+        let old = try #require(DevMenu.read(legacy))
+        #expect(old.menu == "react-native")
+        #expect(old.items.map(\.label) == ["Reload", "Open DevTools", "Toggle Element Inspector", "Disable Fast Refresh", "Show Perf Monitor", "Clear cache"])
+        #expect(old.items.filter(\.custom).map(\.label) == ["Clear cache"])
+        #expect(DevMenu.read(newer)?.items.filter(\.custom).map(\.label) == ["Clear cache"])
+        #expect(DevMenu.read(try Self.capture("devmenu-rn-android"))?.items.contains(where: \.custom) == false)
+        var behind = legacy
+        behind.roots.append(FakeUI.node(.group, frame: FakeUI.frame(0, 800, 411, 60), platform: .android, children: ["Home", "Settings", "Profile"].map {
+            FakeUI.node(.button, label: $0, frame: FakeUI.frame(0, 800, 137, 60), platform: .android)
+        }))
+        #expect(DevMenu.read(behind)?.items.filter(\.custom).map(\.label) == ["Clear cache"], "the app's tabs behind the dialog are not the menu's")
+
+        let backend = FakeDeviceBackend(platform: .android, trees: [legacy, Self.app], advanceTreeOnInput: true)
+        let outcome = try await RNDevMenu.parse(["--label", "Clear cache", "--device", Self.device.rawValue])
+            .perform(on: DeviceRouter.Route(backend: backend, device: Self.device), clock: ScriptedClock().poll)
+        #expect(outcome == .chose(menu: "react-native", item: nil, label: "Clear cache"))
+        let row = FakeUI.frame(26.67, 329.14 + 7 * 48, 358.1, 48).center
+        #expect(backend.session.calls == [.perform(.tapAt(x: row.x, y: row.y))])
     }
 
     /// A tree captured from the Expo 57 playground on an iOS 27 simulator, in `Tests/Fixtures`.

@@ -83,11 +83,13 @@ public enum InputPersonView {
         return Page([.person(person), .agent(line + "\n")])
     }
 
-    /// `rn devmenu` with no item: the menu's items for a person, `<menu> dev menu: a, b` for an agent.
-    public static func devMenu(_ menu: String, labels: [String], agent: String) -> Page {
-        let name = menu == "expo" ? "Expo" : "React Native"
-        let table = Table(columns: [Table.Column(agent: nil, person: 0, fit: .cut(min: 16))], rows: labels.map { Table.Row([Table.Cell($0, untrusted: true)]) })
-        return Page([.person([.header(Header(.steps, "Dev menu", [name, labels.count == 1 ? "1 item" : "\(labels.count) items"])), .table(table)]), .agent(agent + "\n")])
+    /// `rn devmenu` with no item: the menu's items for a person, an app's own tagged custom; `<menu> dev menu: a, b; custom: c` for an agent.
+    public static func devMenu(_ state: DevMenu.State, agent: String) -> Page {
+        let name = state.menu == "expo" ? "Expo" : "React Native"
+        let rows = state.items.map { Table.Row([Table.Cell($0.label, untrusted: true, tag: $0.custom ? "custom" : nil)]) }
+        let table = Table(columns: [Table.Column(agent: nil, person: 0, fit: .cut(min: 16))], rows: rows)
+        let count = state.items.count
+        return Page([.person([.header(Header(.steps, "Dev menu", [name, count == 1 ? "1 item" : "\(count) items"])), .table(table)]), .agent(agent + "\n")])
     }
 
     /// `rn logbox status`: the toasts bottom first, or the open inspector, behind a header for a person; the agent's lines as they were.
