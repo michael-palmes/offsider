@@ -12,7 +12,7 @@ struct Batch: AsyncParsableCommand {
         100 ms first, so it sees what the input drew; wait --settled, --region and --seconds steps start at once.
 
         Input steps:
-          tap, swipe, gesture, touch, type, button, key, key-sequence, key-combo
+          tap, swipe, drag, gesture, touch, type, button, key, key-sequence, key-combo
           rn devmenu <item> (or --label <text>)
           sleep <seconds>
 

@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- `batch` takes a `drag` step, written and limited like `offsider drag`.
+
 ### Changed
 
 - `wait --any` with one selector is a plain wait for it rather than exit 64.
