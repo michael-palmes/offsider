@@ -40,6 +40,7 @@ final class EvidenceRecorder {
 
     private var resolved = false
     private var cachedRun: ActiveRun?
+    private var notedEndedRun = false
     private var pending: [Int: Entry] = [:]
     private var nextID = 0
 
@@ -89,12 +90,33 @@ final class EvidenceRecorder {
         }
     }
 
-    /// Starts an entry; nil when there is no run.
+    /// Starts an entry; nil when there is no run, after noting once a run whose session has exited.
     func begin(device: DeviceID?, kind: String) throws -> Token? {
-        guard let environment, try run() != nil else { return nil }
+        guard let environment else { return nil }
+        guard try run() != nil else {
+            noteEndedRun(in: environment)
+            return nil
+        }
         nextID += 1
         pending[nextID] = Entry(start: environment.now(), device: device?.rawValue, platform: device?.platform.rawValue, kind: kind)
         return Token(id: nextID)
+    }
+
+    /// A new session's capture would otherwise land outside the run its last session started, with no word of it.
+    private func noteEndedRun(in environment: EvidenceRunEnvironment) {
+        guard !notedEndedRun else { return }
+        notedEndedRun = true
+        guard let ended = RunRegistry.endedWithSession(in: environment) else { return }
+        Console.current.notice(Self.endedRunNotice(dir: ended.dir))
+    }
+
+    nonisolated static func endedRunNotice(dir: String) -> Notice {
+        let start = RunRegistry.startCommand(dir)
+        return .note(
+            "Not recorded: the run in \(TerminalText.homePath(dir)) ended with its session",
+            agent: "The run in \(dir) ended with its session, so this capture is not in it; `\(start)` carries on its numbering.",
+            see: start, label: "Try"
+        )
     }
 
     /// Takes the entry's number and returns the path of its file in the run folder, such as `/run/004-screenshot-14.03.22.png`.

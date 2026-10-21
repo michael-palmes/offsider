@@ -10,6 +10,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - A screenshot from a physical iPhone, iPad or Android phone is named `Screenshot - <name> - <time>` without `--output`, no longer `Simulator Screenshot` or `Emulator Screenshot`; simulators and emulators keep their names, and `record-video` keeps `offsider-video-<time>.mp4` on every device.
 
+### Fixed
+
+- A `screenshot`, `logs` or batch screenshot step from a new session, such as an agent app that restarted, no longer writes outside the run its earlier session started without a word: it says once on stderr that the run in `<dir>` ended with its session and that `offsider run start <dir>` carries on its numbering, and still writes as before.
+
 ## [0.13.0] - 2026-10-21
 
 ### Added

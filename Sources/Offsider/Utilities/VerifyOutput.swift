@@ -261,7 +261,7 @@ enum VerifyOutput {
         return node.label.flatMap { TerminalText.line($0, cap: nil, keepsTab: false) == $0 ? "--label \(shellWord($0))" : nil }
     }
 
-    private static func shellWord(_ text: String) -> String {
+    nonisolated static func shellWord(_ text: String) -> String {
         text.allSatisfy { $0.isASCII && ($0.isLetter || $0.isNumber || "._-:/".contains($0)) } ? text : DeviceLeaseRules.shellQuoted(text)
     }
 

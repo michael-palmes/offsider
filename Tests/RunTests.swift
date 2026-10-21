@@ -347,6 +347,97 @@ struct RunTests {
         #expect(fixture.manifest().map(\.n) == [1, 2])
     }
 
+    /// Session 100 exits; a new one, `node` (500) > `zsh` (600) > `offsider` (700), runs the next commands.
+    static func newSession(after fixture: RunFixture) {
+        fixture.processes.remove(pid: 100)
+        fixture.processes.add(pid: 500, name: "node", parent: 1)
+        fixture.processes.add(pid: 600, name: "zsh", parent: 500)
+        fixture.processes.add(pid: 700, name: "offsider", parent: 600)
+    }
+
+    @Test("a new session's captures note once that the last session's run ended, still write their files and leave the run's numbering to run start")
+    func endedRunNote() async throws {
+        let fixture = try RunFixture()
+        _ = try fixture.start()
+        let backend = try Self.screenshotBackend()
+        try await fixture.command(fixture.recorder("screenshot")) { _ = try await Self.screenshot([], on: backend) }
+        Self.newSession(after: fixture)
+        let outputs = (0..<3).map { _ in ScreenshotMaskTests.temporaryPath() }
+        defer { outputs.forEach { try? FileManager.default.removeItem(atPath: $0) } }
+        let note = "Note: The run in \(fixture.folder()) ended with its session, so this capture is not in it; `offsider run start \(fixture.folder())` carries on its numbering.\n"
+
+        let single = ConsoleCapture()
+        try await Console.$current.withValue(single.console(out: .agent, err: .agent)) {
+            try await fixture.command(fixture.recorder("screenshot", selfPID: 700)) { _ = try await Self.screenshot(["--output", outputs[0]], on: backend) }
+        }
+        #expect(single.err.components(separatedBy: note).count == 2)
+
+        let batch = ConsoleCapture()
+        let context = BatchContext(backend: backend, device: Self.device, axCachePolicy: .perBatch, typeSubmissionMode: .chunked, typeChunkSize: 200)
+        try await Console.$current.withValue(batch.console(out: .agent, err: .agent)) {
+            try await fixture.command(fixture.recorder("batch", selfPID: 700)) {
+                _ = try await Batch.runSteps(
+                    ["screenshot --output \(outputs[1])", "screenshot --output \(outputs[2])"], context: context, session: backend.session,
+                    continueOnError: false, output: BatchOutput(json: true, write: { _ in }, writeError: { _ in }), logger: OffsiderLogger()
+                )
+            }
+        }
+        #expect(batch.err.components(separatedBy: note).count == 2)
+        #expect(outputs.allSatisfy { FileManager.default.fileExists(atPath: $0) })
+        #expect(fixture.manifest().map(\.n) == [1])
+
+        let resumed = try RunRegistry.start(fixture.folder(), label: nil, masks: RunMasks(), in: fixture.environment(selfPID: 700, parentPID: 600))
+        #expect(resumed.continued && resumed.state.next == 2)
+    }
+
+    @Test("a new session's logs note once that the last session's run ended, and still print every entry")
+    func endedRunNoteOnLogs() async throws {
+        let fixture = try RunFixture()
+        _ = try fixture.start()
+        Self.newSession(after: fixture)
+        let backend = FakeLogBackend(entries: [LogEntry(message: "plain")])
+        let capture = ConsoleCapture()
+        var stdout: [String] = []
+        try await Console.$current.withValue(capture.console(out: .agent, err: .agent)) {
+            try await fixture.command(fixture.recorder("logs", selfPID: 700)) {
+                try await Logs.parse(["--device", "emulator-5554"])
+                    .read(from: DeviceRouter.Route(backend: backend, device: DeviceID(rawValue: "emulator-5554", platform: .android)), note: { _ in }) { stdout.append($0) }
+            }
+        }
+        #expect(capture.err.contains("Note: The run in \(fixture.folder()) ended with its session"))
+        #expect(stdout.count == 1)
+        #expect(fixture.manifest().isEmpty)
+    }
+
+    @Test("a capture outside any run notes nothing while the run's session lives, or once run status has ended it")
+    func noEndedRunNote() async throws {
+        let fixture = try RunFixture()
+        _ = try fixture.start()
+        let backend = try Self.screenshotBackend()
+        fixture.processes.add(pid: 500, name: "node", parent: 1)
+        fixture.processes.add(pid: 600, name: "zsh", parent: 500)
+        fixture.processes.add(pid: 700, name: "offsider", parent: 600)
+        let output = ScreenshotMaskTests.temporaryPath()
+        defer { try? FileManager.default.removeItem(atPath: output) }
+
+        let capture = ConsoleCapture()
+        try await Console.$current.withValue(capture.console(out: .agent, err: .agent)) {
+            try await fixture.command(fixture.recorder("screenshot", selfPID: 700)) { _ = try await Self.screenshot(["--output", output], on: backend) }
+            fixture.processes.remove(pid: 100)
+            _ = try RunRegistry.status(all: false, in: fixture.environment(selfPID: 700, parentPID: 600))
+            try await fixture.command(fixture.recorder("screenshot", selfPID: 700)) { _ = try await Self.screenshot(["--output", output], on: backend) }
+        }
+        #expect(!capture.err.contains("ended with its session"))
+    }
+
+    @Test("the ended-run note's run start command quotes a folder a shell would split")
+    func endedRunNoteQuotes() {
+        #expect(RunRegistry.startCommand("/Users/me/evidence/pr-12_v2.0") == "offsider run start /Users/me/evidence/pr-12_v2.0")
+        #expect(RunRegistry.startCommand("/Users/me/my runs/it's") == #"offsider run start '/Users/me/my runs/it'\''s'"#)
+        let notice = EvidenceRecorder.endedRunNotice(dir: "/Users/me/my runs")
+        #expect(notice.command == "offsider run start '/Users/me/my runs'")
+    }
+
     // MARK: - Captures
 
     @Test("a screenshot without --output is written only into the run, and its path is the run file")
