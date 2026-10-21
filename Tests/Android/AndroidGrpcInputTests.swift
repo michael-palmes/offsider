@@ -276,6 +276,32 @@ struct AndroidGrpcInputTests {
         #expect(clock.sleeps == [shortened, shortened, shortened])
     }
 
+    @Test("lateness within one resting interval is paid back however short the pauses, so a gesture of tiny steps is not reset by each one")
+    func shortPausesKeepTheDeadline() async throws {
+        let emulator = FakeEmulator()
+        let clock = SleepRecorder()
+        let driver = GrpcInputDriver(emulator: emulator, geometry: Self.panel, sleep: { clock.sleep($0) }, uptime: {
+            clock.total + .milliseconds(5) * emulator.calls.count
+        })
+        let p = AndroidPoint(x: 100, y: 1000)
+        let steps: [AndroidInputStep] = [.touch(.down, p)] + (0..<5).flatMap { _ in [AndroidInputStep.pause(0.003), .touch(.move, p)] } + [.pause(0.1), .touch(.up, p)]
+        try await driver.run(steps)
+
+        let planned: Duration = .seconds(0.003) * 5 + .seconds(0.1)
+        let calls: Duration = .milliseconds(5) * 6
+        #expect(clock.sleeps == [planned - calls])
+    }
+
+    @Test("two moves that round to one panel pixel are two reports, the second at the resting pressure, so the emulator keeps both")
+    func samePixelMovesStayDistinct() async throws {
+        let emulator = FakeEmulator()
+        let clock = SleepRecorder()
+        let driver = GrpcInputDriver(emulator: emulator, geometry: Self.panel, sleep: { clock.sleep($0) }, uptime: { clock.total })
+        try await driver.run([.touch(.down, AndroidPoint(x: 100, y: 1000)), .touch(.move, AndroidPoint(x: 100.2, y: 1000.1)), .touch(.up, AndroidPoint(x: 100.2, y: 1000.1))])
+
+        #expect(emulator.calls == [1, 2, 0].map { .touch(PanelTouch(x: 100, y: 1000, pressure: $0)) })
+    }
+
     @Test("a finger held still over gRPC is reported where it rests every 50 ms, its pressure swapping so the emulator never drops a repeat")
     func restingFinger() async throws {
         let rig = try Self.rig()

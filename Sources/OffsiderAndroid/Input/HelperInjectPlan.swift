@@ -22,19 +22,65 @@ enum HelperInjectPlan {
         /// The estimated time to inject the request's key events.
         var typingMilliseconds = 0
         var textCharacters = 0
+        /// Whether the helper waits for the app to handle each event; a timed touch goes without, as the helper's swipe moves do, so it keeps its length.
+        var sync = true
 
         /// Device-side time the caller adds to the request timeout.
         var deviceMilliseconds: Int { waitMilliseconds + typingMilliseconds }
 
-        /// A timed touch (touch phases and pauses alone) sends each event without waiting a frame for the app, as the helper's swipe moves do, so it keeps its length.
-        var sync: Bool {
+        /// Touch phases and pauses alone, with at least one pause.
+        var isTimedTouch: Bool {
             let kinds = steps.map(Self.kind)
-            return !(kinds.contains("pause") && kinds.allSatisfy { $0 == "touch" || $0 == "pause" })
+            return kinds.contains("pause") && kinds.allSatisfy { $0 == "touch" || $0 == "pause" }
         }
 
         static func kind(of step: HelperValue) -> String? {
             guard case .object(let fields) = step, case .string(let kind)? = fields["kind"] else { return nil }
             return kind
+        }
+
+        /// A rest before the lift goes with the lift in a request that waits, so the reply follows the lift; a lift straight after a move stays behind it, as a fling needs.
+        func confirmingLift() -> [Request] {
+            guard !sync, let restStart = Self.restBeforeLift(steps) else { return [self] }
+            let tail = Request(steps: Array(steps[restStart...]), waitMilliseconds: Self.pauseMilliseconds(steps[restStart...]))
+            guard restStart > 0 else { return [tail] }
+            return [Request(steps: Array(steps[..<restStart]), waitMilliseconds: Self.pauseMilliseconds(steps[..<restStart]), sync: false), tail]
+        }
+
+        /// The first step's pause made `milliseconds` shorter, never below zero, so a round trip just before this request does not lengthen it.
+        mutating func shortenLeadingPause(by milliseconds: Int) {
+            guard milliseconds > 0, let ms = steps.first.flatMap(Self.pause) else { return }
+            let shorter = max(0, ms - milliseconds)
+            steps[0] = .object(["kind": .string("pause"), "ms": .int(shorter)])
+            waitMilliseconds -= ms - shorter
+        }
+
+        /// Where the pauses just before the closing lifts begin; nil when the steps do not end in a lift, or nothing rests before it.
+        private static func restBeforeLift(_ steps: [HelperValue]) -> Int? {
+            var start = steps.endIndex
+            while start > steps.startIndex, isLift(steps[start - 1]) {
+                start -= 1
+            }
+            guard start < steps.endIndex else { return nil }
+            let lifts = start
+            while start > steps.startIndex, pause(steps[start - 1]) != nil {
+                start -= 1
+            }
+            return start < lifts ? start : nil
+        }
+
+        private static func isLift(_ step: HelperValue) -> Bool {
+            guard case .object(let fields) = step, case .string("touch")? = fields["kind"], case .string("up")? = fields["phase"] else { return false }
+            return true
+        }
+
+        private static func pause(_ step: HelperValue) -> Int? {
+            guard case .object(let fields) = step, case .string("pause")? = fields["kind"], case .int(let ms)? = fields["ms"] else { return nil }
+            return ms
+        }
+
+        private static func pauseMilliseconds(_ steps: ArraySlice<HelperValue>) -> Int {
+            steps.compactMap(pause).reduce(0, +)
         }
     }
 
@@ -47,7 +93,7 @@ enum HelperInjectPlan {
             case .tap(let point):
                 builder.add(["kind": .string("tap"), "x": .double(point.x), "y": .double(point.y)])
             case let .swipe(from, to, duration, count):
-                let ms = milliseconds(duration)
+                let ms = AndroidInputStep.milliseconds(duration)
                 guard ms <= maxStepMilliseconds else {
                     throw AndroidError.notSupported("A swipe longer than 30 s through the UiAutomation helper")
                 }
@@ -83,7 +129,7 @@ enum HelperInjectPlan {
                     typing: typingMilliseconds(phase)
                 )
             case .pause(let seconds):
-                var left = milliseconds(seconds)
+                var left = AndroidInputStep.milliseconds(seconds)
                 if index + 1 < steps.count, steps[index + 1].restsAt(fingers) {
                     left = max(0, left - restingMoveCostMilliseconds)
                 }
@@ -142,10 +188,6 @@ enum HelperInjectPlan {
         return ["kind": .string("key"), "phase": .string(name), "code": .int(code), "meta": .int(Int(meta))]
     }
 
-    static func milliseconds(_ seconds: TimeInterval) -> Int {
-        max(0, Int((seconds * 1000).rounded()))
-    }
-
     /// Starts a new request when the next step would pass the step count, the wait limit or the text limit.
     private struct Builder {
         var done: [Request] = []
@@ -164,25 +206,15 @@ enum HelperInjectPlan {
             current.textCharacters += text
         }
 
-        /// A request sent without waiting ends with its last touch in a request of its own that waits, so the reply follows the lift and a failed one is reported.
+        /// Timed touches go without waiting; only the last request confirms its lift, so a long hold split by the limits never waits midway.
         mutating func finish() -> [Request] {
-            (current.steps.isEmpty ? done : done + [current]).flatMap { request -> [Request] in
-                guard !request.sync, request.steps.count > 1, let last = request.steps.last, Request.kind(of: last) == "touch" else { return [request] }
-                var first = request
-                first.steps.removeLast()
-                return [first, Request(steps: [last])]
+            var requests = current.steps.isEmpty ? done : done + [current]
+            for index in requests.indices where requests[index].isTimedTouch {
+                requests[index].sync = false
             }
+            guard let last = requests.popLast() else { return requests }
+            return requests + last.confirmingLift()
         }
     }
 }
 
-extension AndroidInputStep {
-    /// A move to where the fingers already rest: a resting finger's report.
-    func restsAt(_ fingers: [AndroidPoint]) -> Bool {
-        switch self {
-        case .touch(.move, let point): return fingers == [point]
-        case .touches(.move, let points): return !fingers.isEmpty && fingers == points
-        default: return false
-        }
-    }
-}

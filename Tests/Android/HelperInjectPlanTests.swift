@@ -16,13 +16,52 @@ struct HelperInjectPlanTests {
         return try HelperInjectPlan.requests(for: steps, held: &held)
     }
 
-    @Test("a timed touch goes without waiting for the app, so its pauses keep their length, and its last touch waits in a request of its own")
+    @Test("a timed touch goes without waiting for the app, so its pauses keep their length, and its last pause and lift wait in a request of their own")
     func timedTouchesSkipTheWait() throws {
         let p = AndroidPoint(x: 1, y: 2)
         let held = try Self.plan([.touch(.down, p), .pause(0.05), .touch(.move, AndroidPoint(x: 1, y: 9)), .pause(0.05), .touch(.up, p)])
         #expect(held.map(\.sync) == [false, true])
-        #expect(try Self.json(held).last == #"[{"kind":"touch","phase":"up","pointer":0,"x":1,"y":2}]"#)
+        #expect(held.map(\.waitMilliseconds) == [50, 50])
+        #expect(try Self.json(held).last == #"[{"kind":"pause","ms":50},{"kind":"touch","phase":"up","pointer":0,"x":1,"y":2}]"#)
         #expect(try Self.plan([.touches(.down, [p, p]), .pause(1), .touches(.up, [p, p])]).map(\.sync) == [false, true])
+    }
+
+    @Test("a lift straight after a move stays in the same request, so a fling's last move and lift go back to back")
+    func flingLiftStaysBehindItsMove() throws {
+        let p = AndroidPoint(x: 1, y: 2)
+        let q = AndroidPoint(x: 1, y: 90)
+        let fling = try Self.plan([.touch(.down, p), .pause(0.05), .touch(.move, q), .touch(.up, q)])
+        #expect(fling.map(\.sync) == [false])
+        #expect(fling.map(\.steps.count) == [4])
+
+        let rested = try Self.plan([.touch(.down, p), .pause(0.05), .touch(.move, q), .pause(0.05), .touch(.up, q)])
+        #expect(rested.map(\.steps.count) == [3, 2])
+        #expect(rested.map(\.sync) == [false, true])
+    }
+
+    @Test("a hold the request limits split goes without waiting until its last request, which confirms the lift")
+    func longHoldWaitsOnlyAtTheEnd() throws {
+        let p = AndroidPoint(x: 1, y: 2)
+        let requests = try Self.plan([.touch(.down, p), .pause(30), .pause(30), .pause(5), .touch(.up, p)])
+
+        #expect(requests.map(\.sync) == [false, true])
+        #expect(requests.map(\.waitMilliseconds) == [60_000, 5_000])
+    }
+
+    @Test("a round trip comes off the pause that opens a request, never below zero, and nothing else changes")
+    func leadingPauseShortens() throws {
+        let p = AndroidPoint(x: 1, y: 2)
+        var lift = try #require(try Self.plan([.touch(.down, p), .pause(0.05), .touch(.up, p)]).last)
+        lift.shortenLeadingPause(by: 20)
+        #expect(try Self.json([lift]) == [#"[{"kind":"pause","ms":30},{"kind":"touch","phase":"up","pointer":0,"x":1,"y":2}]"#])
+        #expect(lift.waitMilliseconds == 30)
+        lift.shortenLeadingPause(by: 500)
+        #expect(lift.waitMilliseconds == 0)
+
+        var opensWithTouch = try #require(try Self.plan([.touch(.down, p), .touch(.up, p)]).first)
+        let before = opensWithTouch
+        opensWithTouch.shortenLeadingPause(by: 20)
+        #expect(opensWithTouch == before)
     }
 
     @Test("anything but touch phases and pauses, or a touch with no pause, waits for the app in one request")
@@ -182,17 +221,16 @@ struct AndroidInputPolicyTests {
         #expect(error?.message == "OFFSIDER_ANDROID_INPUT is grpc, which Offsider cannot read. Use auto, helper or input, or unset it.")
     }
 
-    @Test("two fingers go down as pointers 0 then 1 and lift 1 then 0, with the hold before the last lift, which waits on its own")
+    @Test("two fingers go down as pointers 0 then 1 and lift 1 then 0, the hold and both lifts waiting in a request of their own")
     func twoFingers() throws {
         let fingers = [AndroidPoint(x: 100, y: 500), AndroidPoint(x: 160, y: 500)]
         let requests = try HelperInjectPlanTests.plan([.touches(.down, fingers), .pause(1), .touches(.up, fingers)])
 
-        #expect(requests.map(\.waitMilliseconds) == [1000, 0])
+        #expect(requests.map(\.waitMilliseconds) == [0, 1000])
         #expect(try HelperInjectPlanTests.json(requests) == [
-            #"[{"kind":"touch","phase":"down","pointer":0,"x":100,"y":500},{"kind":"touch","phase":"down","pointer":1,"x":160,"y":500},"#
-                + #"{"kind":"pause","ms":1000},"#
-                + #"{"kind":"touch","phase":"up","pointer":1,"x":160,"y":500}]"#,
-            #"[{"kind":"touch","phase":"up","pointer":0,"x":100,"y":500}]"#,
+            #"[{"kind":"touch","phase":"down","pointer":0,"x":100,"y":500},{"kind":"touch","phase":"down","pointer":1,"x":160,"y":500}]"#,
+            #"[{"kind":"pause","ms":1000},"#
+                + #"{"kind":"touch","phase":"up","pointer":1,"x":160,"y":500},{"kind":"touch","phase":"up","pointer":0,"x":100,"y":500}]"#,
         ])
     }
 }

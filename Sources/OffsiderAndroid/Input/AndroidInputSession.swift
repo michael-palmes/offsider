@@ -271,7 +271,7 @@ final class AndroidInputSession: InputSession, TextInputSession {
         if let level = await readAPILevel(), !AdbInputScript.sendsMotionEvents(apiLevel: level) {
             return try await gapHelper(.motionEvent, level)
         }
-        guard !touchIsDown, AndroidInputStep.withRestingMoves(steps) != steps else { return nil }
+        guard !touchIsDown, AndroidInputStep.restsAFinger(steps) else { return nil }
         return try await gestureHelper()
     }
 
