@@ -250,19 +250,19 @@ struct TerminalPromptTests {
     /// Types `keys` into a secret prompt while recording every `SecretBytes` made and freed.
     private func auditingSecrets(typing keys: String) throws -> (answer: String?, exit: Int32?, audit: SecretAudit) {
         let audit = SecretAudit()
-        SecretBytes.audit = audit.record
-        defer { SecretBytes.audit = nil }
-        let terminal = try PseudoTerminal()
-        terminal.type(keys)
-        do {
-            let answer = try TerminalPrompt.run(cancelled: PromptScreen.cancelledNothingSaved, descriptor: terminal.secondary) { prompt in
-                try prompt.askSecret("🔑 ", again: "🔁 ") { _ in nil }
+        return try SecretBytes.$audit.withValue({ audit.record($0) }) {
+            let terminal = try PseudoTerminal()
+            terminal.type(keys)
+            do {
+                let answer = try TerminalPrompt.run(cancelled: PromptScreen.cancelledNothingSaved, descriptor: terminal.secondary) { prompt in
+                    try prompt.askSecret("🔑 ", again: "🔁 ") { _ in nil }
+                }
+                _ = terminal.finish()
+                return (answer, nil, audit)
+            } catch let exit as ExitCode {
+                _ = terminal.finish()
+                return (nil, exit.rawValue, audit)
             }
-            _ = terminal.finish()
-            return (answer, nil, audit)
-        } catch let exit as ExitCode {
-            _ = terminal.finish()
-            return (nil, exit.rawValue, audit)
         }
     }
 
