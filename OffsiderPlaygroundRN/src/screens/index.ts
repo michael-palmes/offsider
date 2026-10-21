@@ -14,6 +14,7 @@ import { KeyPressScreen } from './KeyPressScreen';
 import { KeySequenceScreen } from './KeySequenceScreen';
 import { LiveTickerTestScreen } from './LiveTickerTestScreen';
 import { LongScrollTestScreen } from './LongScrollTestScreen';
+import { MaskSheetTestScreen } from './MaskSheetTestScreen';
 import { ModalNavigationTestScreen } from './ModalNavigationTestScreen';
 import { MultiTouchScreen } from './MultiTouchScreen';
 import { OverlayTestScreen } from './OverlayTestScreen';
@@ -60,6 +61,7 @@ export const screens: Record<RouteId, ComponentType> = {
   'long-scroll-test': LongScrollTestScreen,
   'sticky-footer-test': StickyFooterTestScreen,
   'parked-sheet-test': ParkedSheetTestScreen,
+  'mask-sheet-test': MaskSheetTestScreen,
   'stack-test': StackTestScreen,
   'overlay-test': OverlayTestScreen,
   'rows-test': RowsTestScreen,

@@ -153,6 +153,12 @@ export const routeInfo = {
     menuTitle: 'Parked Sheet Test',
     subtitle: 'Sheet kept mounted and parked off screen',
   },
+  'mask-sheet-test': {
+    section: 'Real-world RN',
+    title: 'Mask Sheet',
+    menuTitle: 'Mask Sheet Test',
+    subtitle: 'A short sheet over values that stay drawn',
+  },
   'stack-test': {
     section: 'Real-world RN',
     title: 'Mounted Stack',
