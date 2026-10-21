@@ -329,6 +329,12 @@ enum ScreenCapture {
         let userNamed: Bool
     }
 
+    /// What a default capture name starts with: `Screenshot` for a physical iPhone, iPad or Android phone, else the simulator's or emulator's.
+    nonisolated static func defaultPrefix(for device: DeviceID) -> String {
+        if device.isPhysicalIOSDevice || device.isPhysicalAndroidDevice { return "Screenshot" }
+        return device.platform == .android ? "Emulator Screenshot" : "Simulator Screenshot"
+    }
+
     /// A directory or no path gets "<prefix> - <device> - <timestamp>.<ext>" with the device name made safe; missing parent directories are created; nothing is deleted.
     nonisolated static func outputURL(path: String?, prefix: String, deviceName: String, format: ImageFormat, now: Date = Date()) throws -> OutputTarget {
         let fileManager = FileManager.default

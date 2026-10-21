@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Changed
+
+- A screenshot from a physical iPhone, iPad or Android phone is named `Screenshot - <name> - <time>` without `--output`, no longer `Simulator Screenshot` or `Emulator Screenshot`; simulators and emulators keep their names, and `record-video` keeps `offsider-video-<time>.mp4` on every device.
+
 ## [0.13.0] - 2026-10-21
 
 ### Added

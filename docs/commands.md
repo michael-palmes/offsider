@@ -30,7 +30,7 @@ Every device command takes `--device <id>`, using an ID from `offsider devices`:
 | `wait` | Wait until an element is on screen or gone, the screen settles, a region changes or holds still, or time passes; exits 5 on timeout ([conditions](input.md#waits-assertions-and-batches)) |
 | `assert` | Check once that an element is on screen, optionally with a value, or gone; exits 5 when it is not ([conditions](input.md#waits-assertions-and-batches)) |
 | `batch` | Run a whole case in one device session from `--step`, `--file` or `--stdin` ([batches](input.md#waits-assertions-and-batches)) |
-| `screenshot` | Save a PNG or JPEG of the active display, with password fields masked by default, cropped, scaled, compared with a baseline or masked further as asked ([screenshots](capture.md#screenshots-and-video)) |
+| `screenshot` | Save a PNG or JPEG of the active display, with password fields masked by default, cropped, scaled, compared with a baseline or masked further as asked; without `--output`, named `Simulator Screenshot`, `Emulator Screenshot` or, from a physical device, `Screenshot`, then the device name and time ([screenshots](capture.md#screenshots-and-video)) |
 | `logs` | Print recent device log entries, or collect live ones, with redaction; the app `offsider.login.json` names by default, `--all` for the whole device ([logs](capture.md#logs)) |
 | `run` | `start <dir>`, `stop` or `status` an evidence run that numbers this session's captures into one folder ([evidence runs](capture.md#evidence-runs)) |
 | `appearance` | Read or set light or dark appearance; on Android a reading can be `auto` or `custom` when night mode follows a schedule |
