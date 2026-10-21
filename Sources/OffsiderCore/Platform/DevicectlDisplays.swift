@@ -58,16 +58,6 @@ public struct DevicectlDisplays: Equatable, Sendable {
     public static func anticlockwise(_ clockwise: Int) -> Int {
         (360 - clockwise % 360) % 360
     }
-
-    /// The first `Angle:` reading in `devicectl device motion hinge-angle` output, whose numbers carry a degree sign.
-    public static func hingeAngle(in text: String) -> Double? {
-        for line in text.split(whereSeparator: \.isNewline) {
-            guard let range = line.range(of: "Angle:") else { continue }
-            let value = line[range.upperBound...].drop { $0 == " " }.prefix { $0.isNumber || $0 == "." || $0 == "-" || $0 == "+" }
-            if let angle = Double(value) { return angle }
-        }
-        return nil
-    }
 }
 
 /// Which built-in display is active, and the posture that follows from it.

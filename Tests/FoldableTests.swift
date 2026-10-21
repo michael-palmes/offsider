@@ -210,6 +210,22 @@ struct FoldableTests {
         try await Self.expectTapsLand(on: screen, at: (x: 300, y: 500))
     }
 
+    @Test("unfolded: half-opened and --angle move the hinge without leaving the inner display, and posture and displays read the hinge back")
+    func unfoldedHinge() async throws {
+        try await Self.requirePosture("open")
+        let half = try await Self.decode(PostureReport.self, "posture half-opened --json")
+        #expect(half.posture == "half-opened" && half.display == "inner")
+        #expect(try await Self.posture() == "half-opened")
+
+        let angled = try await Self.decode(PostureReport.self, "posture --angle 90 --json")
+        #expect(angled.posture == "half-opened" && angled.display == "inner")
+        #expect(try await Self.decode(Displays.self, "displays --json").posture == "half-opened")
+
+        let open = try await Self.decode(PostureReport.self, "posture open --json")
+        #expect(open.posture == "open" && open.display == "inner")
+        #expect(try await Self.posture() == "open")
+    }
+
     @Test("unfolded: two fingers on the inner display are refused before anything is sent")
     func unfoldedRefusesTwoFingers() async throws {
         try await Self.requirePosture("open")

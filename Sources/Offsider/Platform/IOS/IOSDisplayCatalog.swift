@@ -1,4 +1,3 @@
-import Darwin
 import FBSimulatorControl
 import Foundation
 import OffsiderCore
@@ -12,7 +11,7 @@ final class IOSDisplayCatalog {
     private var actives: [String: ActiveDisplay] = [:]
     private var postures: [String: Posture] = [:]
     private let displayReadings = FreshReadings<DevicectlDisplays?>()
-    private let hingeReadings = FreshReadings<Double?>()
+    private let hingeReadings = FreshReadings<SimulatorHingeLog.Reading?>()
 
     init(logger: OffsiderLogger) {
         self.logger = logger
@@ -62,9 +61,9 @@ final class IOSDisplayCatalog {
     func posture(of simulator: FBSimulator, applicationFrame: UIFrame?, refresh: Bool = false) async -> Posture? {
         guard let active = await activeDisplay(of: simulator, applicationFrame: applicationFrame, refresh: refresh) else { return nil }
         var posture = active.posture
-        if active.posture == .open, let angle = await hingeAngle(of: simulator) {
-            logger.info().log("Hinge angle: \(angle)")
-            posture = Posture(hingeAngle: angle) == .halfOpened ? .halfOpened : .open
+        if active.posture == .open, let hinge = await hingeReading(of: simulator) {
+            logger.info().log("Hinge: \(hinge)")
+            posture = hinge.posture == .halfOpened ? .halfOpened : .open
         }
         postures[simulator.udid] = posture
         return posture
@@ -75,14 +74,19 @@ final class IOSDisplayCatalog {
         postures[simulator.udid] ?? actives[simulator.udid]?.posture
     }
 
-    /// devicectl's hinge reading in degrees, at most once a second; nil when it gives none within a few seconds.
+    /// The hinge angle in degrees from the simulator's log; nil when the log gives only its state, or nothing.
     func hingeAngle(of simulator: FBSimulator) async -> Double? {
+        await hingeReading(of: simulator)?.angle
+    }
+
+    /// Read at most once a second.
+    private func hingeReading(of simulator: FBSimulator) async -> SimulatorHingeLog.Reading? {
         await hingeReadings.value(for: simulator.udid) {
-            await Self.hingeAngle(udid: simulator.udid, logger: logger)
+            await Self.hingeReading(udid: simulator.udid, logger: logger)
         }
     }
 
-    /// After moving the hinge or turning the device, so the next devicectl reading is fresh.
+    /// After moving the hinge or turning the device, so the next readings are fresh.
     func forgetReadings(of udid: String) {
         displayReadings.forget(udid)
         hingeReadings.forget(udid)
@@ -137,59 +141,22 @@ final class IOSDisplayCatalog {
         }
     }
 
-    /// `devicectl device motion hinge-angle` streams until its session ends and only flushes a pipe when it exits, so it writes to a terminal and the first angle is read from that.
-    private static func hingeAngle(udid: String, logger: OffsiderLogger, timeout: TimeInterval = 5) async -> Double? {
-        var primary: Int32 = -1
-        var secondary: Int32 = -1
-        guard openpty(&primary, &secondary, nil, nil, nil) == 0 else {
-            logger.info().log("Hinge angle: could not open a terminal for devicectl")
-            return nil
-        }
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/xcrun")
-        process.arguments = ["devicectl", "device", "motion", "hinge-angle", "--device", udid, "--session-timeout", "3", "--timeout", "8"]
-        process.standardInput = FileHandle.nullDevice
-        process.standardError = FileHandle.nullDevice
-        process.standardOutput = FileHandle(fileDescriptor: secondary, closeOnDealloc: false)
-        let buffer = LineBuffer()
-        defer {
-            if process.isRunning {
-                process.terminate()
-                usleep(100_000)
-                if process.isRunning { kill(process.processIdentifier, SIGKILL) }
-            }
-        }
+    private static func hingeReading(udid: String, logger: OffsiderLogger) async -> SimulatorHingeLog.Reading? {
         do {
-            try process.run()
+            let result = try await ProcessCapture.run(executable: "/usr/bin/xcrun", arguments: SimulatorHingeLog.arguments(udid: udid), timeout: 10)
+            guard result.status == 0 else {
+                logger.info().log("Hinge log failed (\(result.status)): \(result.stderr)")
+                return nil
+            }
+            return SimulatorHingeLog.reading(in: result.stdout)
         } catch {
-            logger.info().log("Hinge angle: could not run devicectl: \(error)")
-            close(primary)
-            close(secondary)
+            logger.info().log("Hinge log failed: \(error.localizedDescription)")
             return nil
         }
-        close(secondary)
-        let terminal = primary
-        // A dispatch source never fires for a terminal, so a thread reads it until devicectl exits.
-        Thread.detachNewThread {
-            var bytes = [UInt8](repeating: 0, count: 4096)
-            while true {
-                let count = read(terminal, &bytes, bytes.count)
-                guard count > 0 else { break }
-                buffer.append(Data(bytes[0..<count]))
-            }
-            close(terminal)
-        }
-        let deadline = Date().addingTimeInterval(timeout)
-        while Date() < deadline {
-            if let angle = DevicectlDisplays.hingeAngle(in: buffer.text) { return angle }
-            if !process.isRunning, buffer.isEmpty { break }
-            try? await Task.sleep(for: .milliseconds(50))
-        }
-        return DevicectlDisplays.hingeAngle(in: buffer.text)
     }
 }
 
-/// The last reading per simulator, served again while younger than `window`, so polling does not spawn devicectl every time.
+/// The last reading per simulator, served again while younger than `window`, so polling does not spawn a reader every time.
 @MainActor
 final class FreshReadings<Value> {
     let window: TimeInterval
@@ -210,28 +177,5 @@ final class FreshReadings<Value> {
 
     func forget(_ udid: String) {
         readings[udid] = nil
-    }
-}
-
-private final class LineBuffer: @unchecked Sendable {
-    private let lock = NSLock()
-    private var data = Data()
-
-    func append(_ chunk: Data) {
-        lock.lock()
-        data.append(chunk)
-        lock.unlock()
-    }
-
-    var text: String {
-        lock.lock()
-        defer { lock.unlock() }
-        return String(decoding: data, as: UTF8.self)
-    }
-
-    var isEmpty: Bool {
-        lock.lock()
-        defer { lock.unlock() }
-        return data.isEmpty
     }
 }
