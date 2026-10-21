@@ -228,8 +228,10 @@ struct Type: AsyncParsableCommand, VerifiableCommand {
     func run() async throws {
         try await AllowPathConsent.confirm(path: inputFile, allowPath: allowPath, command: "type")
         guard verification.verify else {
-            try await execute(progress: nil)
-            Console.current.show(InputPersonView.receipt(receiptHeadline))
+            try await InputOutput.reporting(command: "type", target: "text", json: verification.json) { _ in
+                try await execute(progress: nil)
+                Console.current.show(InputPersonView.receipt(receiptHeadline))
+            }
             return
         }
         try await VerifyOutput.reportingFailures(command: "type", target: "text", options: verification) { progress in

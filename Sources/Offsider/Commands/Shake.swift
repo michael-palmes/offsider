@@ -17,6 +17,9 @@ struct Shake: AsyncParsableCommand {
     static let androidMessage = "shake is iOS only: Android emulators have no shake event. To open a React Native dev menu, run offsider rn devmenu (it sends the menu key, as offsider button menu does)."
 
     @OptionGroup
+    var jsonOption: InputJSONOption
+
+    @OptionGroup
     var deviceOption: DeviceOption
 
     func validate() throws {
@@ -27,14 +30,16 @@ struct Shake: AsyncParsableCommand {
     }
 
     func run() async throws {
-        let logger = OffsiderLogger()
-        let route = try await DeviceRouter.routeForInput(deviceOption, logger: logger)
-        guard let shaker = route.backend as? any DeviceShaking else {
-            throw ValidationError(Self.androidMessage)
+        try await InputOutput.reporting(command: "shake", target: "shake", json: jsonOption.json) { _ in
+            let logger = OffsiderLogger()
+            let route = try await DeviceRouter.routeForInput(deviceOption, logger: logger)
+            guard let shaker = route.backend as? any DeviceShaking else {
+                throw ValidationError(Self.androidMessage)
+            }
+            try await shaker.prepare()
+            let device = try await shaker.requireBootedDevice(route.device).id
+            try await DispatchTracker.current.sending { try await shaker.shake(device) }
+            Console.current.show(InputPersonView.receipt("Shake sent", agent: "Shake sent\n"))
         }
-        try await shaker.prepare()
-        let device = try await shaker.requireBootedDevice(route.device).id
-        try await shaker.shake(device)
-        Console.current.show(InputPersonView.receipt("Shake sent", agent: "Shake sent\n"))
     }
 }

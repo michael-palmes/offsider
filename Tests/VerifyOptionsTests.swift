@@ -17,12 +17,11 @@ struct VerifyOptionsTests {
         #expect(result.stdout.isEmpty)
     }
 
-    @Test("--json without --verify is a usage error")
-    func jsonRequiresVerify() async throws {
-        let result = try await run("key 40 --json")
+    @Test("--verify-timeout without --verify is a usage error, even beside --json")
+    func timeoutRequiresVerify() async throws {
+        let result = try await run("key 40 --json --verify-timeout 2")
         #expect(result.exitCode == 64)
         #expect(result.stderr.contains("require --verify"))
-        #expect(result.stdout.isEmpty)
     }
 
     @Test("--retries above 3 is a usage error")

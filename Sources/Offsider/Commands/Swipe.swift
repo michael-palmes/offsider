@@ -48,6 +48,9 @@ struct Swipe: AsyncParsableCommand {
     var holdEnd: Int?
     
     @OptionGroup
+    var jsonOption: InputJSONOption
+
+    @OptionGroup
     var deviceOption: DeviceOption
 
     @OptionGroup
@@ -103,6 +106,15 @@ struct Swipe: AsyncParsableCommand {
     }
 
     func run() async throws {
+        try await InputOutput.reporting(command: "swipe", target: target, json: jsonOption.json) { _ in try await swipe() }
+    }
+
+    /// `(100, 600) to (100, 200)`.
+    var target: String {
+        VerifyOutput.segmentDescription(from: (startX, startY), to: (endX, endY))
+    }
+
+    private func swipe() async throws {
         let logger = OffsiderLogger()
         let route = try await DeviceRouter.routeForInput(deviceOption, logger: logger)
         await appOption.apply(to: route)
@@ -153,7 +165,7 @@ struct Swipe: AsyncParsableCommand {
 
     /// `Swiped (100, 600) to (100, 200)`.
     var receiptHeadline: String {
-        "Swiped \(VerifyOutput.pointDescription(x: startX, y: startY)) to \(VerifyOutput.pointDescription(x: endX, y: endY))"
+        "Swiped \(target)"
     }
 }
 

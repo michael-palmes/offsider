@@ -343,6 +343,11 @@ enum VerifyOutput {
         "(\(number(x)), \(number(y)))"
     }
 
+    /// `(100, 600) to (100, 200)`, for a swipe or drag.
+    nonisolated static func segmentDescription(from start: (x: Double, y: Double), to end: (x: Double, y: Double)) -> String {
+        "\(pointDescription(x: start.x, y: start.y)) to \(pointDescription(x: end.x, y: end.y))"
+    }
+
     /// Rounded to 0.01, the precision of describe-ui frames.
     nonisolated static func number(_ value: Double) -> String {
         let rounded = (value * 100).rounded() / 100

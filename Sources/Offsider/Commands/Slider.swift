@@ -47,6 +47,9 @@ struct Slider: AsyncParsableCommand {
     var noSettle: Bool = false
 
     @OptionGroup
+    var jsonOption: InputJSONOption
+
+    @OptionGroup
     var deviceOption: DeviceOption
 
     @OptionGroup
@@ -73,16 +76,20 @@ struct Slider: AsyncParsableCommand {
     }
 
     func run() async throws {
-        let logger = OffsiderLogger()
-        let route = try await DeviceRouter.routeForInput(deviceOption, logger: logger)
-        await appOption.apply(to: route)
-        let result = try await Console.current.progress("Setting \(selectorText) to \(formatPercent(value))%") {
-            try await set(on: SliderTarget(backend: route.backend, device: route.device), logger: logger)
+        try await InputOutput.reporting(command: "slider", target: selectorText, json: jsonOption.json) { details in
+            let logger = OffsiderLogger()
+            let route = try await DeviceRouter.routeForInput(deviceOption, logger: logger)
+            await appOption.apply(to: route)
+            let result = try await Console.current.progress("Setting \(selectorText) to \(formatPercent(value))%") {
+                try await set(on: SliderTarget(backend: route.backend, device: route.device), logger: logger)
+            }
+            logger.info().log("Slider set completed successfully")
+            details.percent = result.nearestStep ?? value
+            details.value = result.observed
+            Console.current.show(Self.receipt(
+                selector: selectorText, requested: formatPercent(value), reached: result.nearestStep.map(formatPercent), agent: line(for: result)
+            ))
         }
-        logger.info().log("Slider set completed successfully")
-        Console.current.show(Self.receipt(
-            selector: selectorText, requested: formatPercent(value), reached: result.nearestStep.map(formatPercent), agent: line(for: result)
-        ))
     }
 
     /// `Slider id=volume set to 40%` for a person, with the step it reached when the control could not show the value asked for.

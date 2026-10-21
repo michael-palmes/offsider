@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- `--json` on every input command: `swipe`, `drag`, `touch`, `gesture`, `key-sequence`, `key-combo`, `slider` and `shake` take it, and `tap`, `type`, `key` and `button` take it without `--verify`. Stdout holds one line, also on a failure, `{"version":1,"ok":true,"command":"swipe","target":"(10, 600) to (10, 200)","dispatched":"yes","elapsedMs":412,"exitCode":0,"error":null}`, and the command's own lines go to stderr. `tap` adds `point` and `slider` adds `percent` and `value`; `type` and `key-sequence` name their target `text` and `keys`, never what they typed. With `--verify`, the verify report is unchanged.
+
 ### Changed
 
 - A screenshot from a physical iPhone, iPad or Android phone is named `Screenshot - <name> - <time>` without `--output`, no longer `Simulator Screenshot` or `Emulator Screenshot`; simulators and emulators keep their names, and `record-video` keeps `offsider-video-<time>.mp4` on every device.

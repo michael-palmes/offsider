@@ -107,6 +107,7 @@ struct SecretEchoTests {
         "type '\(sentinel)'",
         "type '\(sentinel)£'",
         "type '\(sentinel)' --verify --json",
+        "type '\(sentinel)' --json",
         "batch --json --step 'type \(sentinel)'",
     ])
     func noEcho(command: String) async throws {
