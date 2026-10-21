@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Changed
+
+- CI runs the unit tests under AddressSanitizer in place of the plain run after each merge to main, weekly and on demand, and no longer on every pull request.
+
 ## [0.13.0] - 2026-10-21
 
 ### Added

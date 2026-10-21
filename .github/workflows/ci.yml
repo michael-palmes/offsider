@@ -4,13 +4,15 @@ on:
   pull_request:
   push:
     branches: [main]
+  schedule:
+    - cron: "17 4 * * 1"
   workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: ci-${{ github.head_ref || github.ref }}
+  group: ci-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 defaults:
@@ -18,8 +20,11 @@ defaults:
     shell: bash
 
 env:
-  XCODEGEN_VERSION: "2.46.0"
-  XCODEGEN_SHA256: "4d9e34b62172d645eed6457cac13fc222569974098ef4ee9c3368bedf0196806"
+  # Stable symlink present before and after the RC to GA path rename on the xcode-27 image.
+  XCODE_APP: ${{ vars.XCODE_APP || '/Applications/Xcode_27.0.app' }}
+  HOMEBREW_NO_AUTO_UPDATE: "1"
+  HOMEBREW_NO_ANALYTICS: "1"
+  HOMEBREW_NO_ENV_HINTS: "1"
 
 jobs:
   lint:
@@ -35,6 +40,15 @@ jobs:
         run: |
           set -euo pipefail
           for f in scripts/*.sh test-runner.sh; do bash -n "$f"; done
+
+      - name: CI script tests
+        run: |
+          set -euo pipefail
+          bash scripts/ci-changes.test.sh
+          bash scripts/ci-gate.test.sh
+
+      - name: Every CI job gates merges
+        run: scripts/ci-gate.sh --check-needs .github/workflows/ci.yml ci-passed asan-unit-tests asan-issue
 
       # Full strictness on the release script; upstream scripts gated at error level until cleaned up.
       - name: shellcheck
@@ -149,83 +163,81 @@ jobs:
       - name: Typecheck
         run: pnpm --dir OffsiderPlaygroundRN typecheck
 
-  build-test:
-    name: Build, unit tests, release rehearsal (ad-hoc)
+  # A docs-only pull request skips both macOS jobs; off pull requests ASan stands in for the unit tests, and runs alone weekly.
+  changes:
+    name: Changes (docs only?)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      unit-tests: ${{ steps.classify.outputs.unit-tests }}
+      release-rehearsal: ${{ steps.classify.outputs.release-rehearsal }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 2
+          persist-credentials: false
+
+      # A pull request checks out its merge commit, so HEAD^1 is the base it lands on.
+      - name: Classify the changed files
+        id: classify
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          set -euo pipefail
+          case "$EVENT_NAME" in
+            pull_request)
+              macos="$(git diff --name-only --no-renames HEAD^1 HEAD | scripts/ci-changes.sh)"
+              unit="${macos#macos=}" rehearsal="${macos#macos=}"
+              if [ "$macos" = macos=false ]; then
+                echo "::notice title=Docs only::Only docs changed, so the macOS build, tests and release rehearsal are skipped"
+              fi
+              ;;
+            schedule)
+              unit=false rehearsal=false
+              echo "::notice title=Weekly::The weekly run is the AddressSanitizer unit tests alone"
+              ;;
+            *)
+              unit=false rehearsal=true
+              echo "::notice title=AddressSanitizer::The AddressSanitizer job runs the unit tests here, so the plain run is skipped"
+              ;;
+          esac
+          printf 'unit-tests=%s\nrelease-rehearsal=%s\n' "$unit" "$rehearsal" >> "$GITHUB_OUTPUT"
+
+  unit-tests:
+    name: Unit tests
+    needs: changes
+    if: needs.changes.outputs.unit-tests == 'true'
     runs-on: ${{ vars.MACOS_RUNNER || 'xcode-27' }}
-    timeout-minutes: 75
-    env:
-      # Stable symlink present before and after the RC to GA path rename on the xcode-27 image.
-      XCODE_APP: ${{ vars.XCODE_APP || '/Applications/Xcode_27.0.app' }}
-      HOMEBREW_NO_AUTO_UPDATE: "1"
-      HOMEBREW_NO_ANALYTICS: "1"
-      HOMEBREW_NO_ENV_HINTS: "1"
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
-      - name: Select Xcode
-        id: xcode
-        run: |
-          set -euo pipefail
-          [ "$(uname -m)" = arm64 ] || { echo "::error::expected an arm64 runner"; exit 1; }
-          if [ ! -d "$XCODE_APP" ]; then
-            echo "::error::$XCODE_APP not found"; ls -d /Applications/Xcode*.app; exit 1
-          fi
-          sudo xcode-select --switch "$XCODE_APP"
-          echo "DEVELOPER_DIR=$XCODE_APP/Contents/Developer" >> "$GITHUB_ENV"
-          sw_vers; xcodebuild -version
-          echo "build=$(xcodebuild -version | awk '/Build version/ { print $3 }')" >> "$GITHUB_OUTPUT"
-
-      - name: Install XcodeGen (pinned)
-        run: |
-          set -euo pipefail
-          zip="$RUNNER_TEMP/xcodegen.zip"
-          curl -fsSLo "$zip" "https://github.com/yonaskolb/XcodeGen/releases/download/${XCODEGEN_VERSION}/xcodegen.zip"
-          echo "${XCODEGEN_SHA256}  $zip" | shasum -a 256 -c -
-          unzip -q "$zip" -d "$RUNNER_TEMP/xcodegen"
-          bin_dir="$(dirname "$(find "$RUNNER_TEMP/xcodegen" -type f -name xcodegen -perm -u+x | head -1)")"
-          echo "$bin_dir" >> "$GITHUB_PATH"
-          "$bin_dir/xcodegen" --version
-
-      - name: Runner project (regenerate and compare)
-        run: scripts/build.sh runner --check
-
-      - name: Resolve idb pin
-        id: idb
-        run: |
-          set -euo pipefail
-          ref="$(sed -nE 's/^DEFAULT_IDB_GIT_REF="([0-9a-f]{40})"$/\1/p' scripts/build.sh)"
-          [ -n "$ref" ] || { echo "::error::DEFAULT_IDB_GIT_REF not found in scripts/build.sh"; exit 1; }
-          echo "ref=$ref" >> "$GITHUB_OUTPUT"
-
-      # Key: Xcode build + idb commit + XcodeGen + build.sh/Package.swift hash.
-      - name: Cache idb checkout and frameworks
-        id: cache
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      - uses: ./.github/actions/macos-setup
         with:
-          path: |
-            idb_checkout
-            build_products/Frameworks
-            build_products/XCFrameworks
-          key: idb-arm64-xcode-${{ steps.xcode.outputs.build }}-${{ steps.idb.outputs.ref }}-xcodegen-${{ env.XCODEGEN_VERSION }}-${{ hashFiles('scripts/build.sh', 'Package.swift') }}
-
-      - name: Build idb frameworks
-        env:
-          CACHE_HIT: ${{ steps.cache.outputs.cache-hit }}
-        run: |
-          set -euo pipefail
-          scripts/build.sh setup
-          if [ "$CACHE_HIT" = true ] && scripts/build.sh verify-xcframeworks; then
-            echo "Reusing cached idb frameworks"
-          else
-            for step in clean frameworks install strip xcframeworks verify-xcframeworks; do
-              scripts/build.sh "$step"
-            done
-          fi
+          xcode-app: ${{ env.XCODE_APP }}
 
       - name: Unit tests
         run: OFFSIDER_REUSE_IDB=1 ./test-runner.sh --unit-tests
+
+  release-rehearsal:
+    name: Release build and rehearsal (ad-hoc)
+    needs: changes
+    if: needs.changes.outputs.release-rehearsal == 'true'
+    runs-on: ${{ vars.MACOS_RUNNER || 'xcode-27' }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: ./.github/actions/macos-setup
+        with:
+          xcode-app: ${{ env.XCODE_APP }}
+
+      - name: Runner project (regenerate and compare)
+        run: scripts/build.sh runner --check
 
       - name: Release build (arm64)
         env:
@@ -238,75 +250,83 @@ jobs:
       - name: Release pipeline rehearsal (ad-hoc)
         run: scripts/release.sh rehearse --version 0.0.0-ci --adhoc
 
-  # Not a required check. SwiftPM's --sanitize=address (not -Xswiftc) also injects the runtime into its test helpers.
-  asan-unit-tests:
-    name: Unit tests (AddressSanitizer)
-    runs-on: ${{ vars.MACOS_RUNNER || 'xcode-27' }}
-    timeout-minutes: 60
-    env:
-      XCODE_APP: ${{ vars.XCODE_APP || '/Applications/Xcode_27.0.app' }}
+  # The one required check from this workflow. It runs after a cancel too, so a cancelled run never counts as passed.
+  ci-passed:
+    name: CI passed
+    if: always()
+    needs: [changes, lint, leak-gate, helper, rn-typecheck, unit-tests, release-rehearsal]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
-      - name: Select Xcode
-        id: xcode
-        run: |
-          set -euo pipefail
-          [ -d "$XCODE_APP" ] || { echo "::error::$XCODE_APP not found"; exit 1; }
-          sudo xcode-select --switch "$XCODE_APP"
-          echo "DEVELOPER_DIR=$XCODE_APP/Contents/Developer" >> "$GITHUB_ENV"
-          echo "build=$(xcodebuild -version | awk '/Build version/ { print $3 }')" >> "$GITHUB_OUTPUT"
-
-      - name: Install XcodeGen (pinned)
-        run: |
-          set -euo pipefail
-          zip="$RUNNER_TEMP/xcodegen.zip"
-          curl -fsSLo "$zip" "https://github.com/yonaskolb/XcodeGen/releases/download/${XCODEGEN_VERSION}/xcodegen.zip"
-          echo "${XCODEGEN_SHA256}  $zip" | shasum -a 256 -c -
-          unzip -q "$zip" -d "$RUNNER_TEMP/xcodegen"
-          dirname "$(find "$RUNNER_TEMP/xcodegen" -type f -name xcodegen -perm -u+x | head -1)" >> "$GITHUB_PATH"
-
-      - name: Resolve idb pin
-        id: idb
-        run: |
-          set -euo pipefail
-          ref="$(sed -nE 's/^DEFAULT_IDB_GIT_REF="([0-9a-f]{40})"$/\1/p' scripts/build.sh)"
-          [ -n "$ref" ] || { echo "::error::DEFAULT_IDB_GIT_REF not found in scripts/build.sh"; exit 1; }
-          echo "ref=$ref" >> "$GITHUB_OUTPUT"
-
-      - name: Cache idb checkout and frameworks
-        id: cache
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: |
-            idb_checkout
-            build_products/Frameworks
-            build_products/XCFrameworks
-          key: idb-arm64-xcode-${{ steps.xcode.outputs.build }}-${{ steps.idb.outputs.ref }}-xcodegen-${{ env.XCODEGEN_VERSION }}-${{ hashFiles('scripts/build.sh', 'Package.swift') }}
-
-      - name: Build idb frameworks
+      - name: Every job passed, or was skipped where the changes job allows it
         env:
-          CACHE_HIT: ${{ steps.cache.outputs.cache-hit }}
-        run: |
-          set -euo pipefail
-          scripts/build.sh setup
-          if [ "$CACHE_HIT" = true ] && scripts/build.sh verify-xcframeworks; then
-            echo "Reusing cached idb frameworks"
-          else
-            for step in clean frameworks install strip xcframeworks verify-xcframeworks; do
-              scripts/build.sh "$step"
-            done
-          fi
+          NEEDS: ${{ toJSON(needs) }}
+        run: scripts/ci-gate.sh --skippable unit-tests --skippable release-rehearsal
+
+  # Not gated by CI passed. SwiftPM's --sanitize=address (not -Xswiftc) also injects the runtime into its test helpers.
+  asan-unit-tests:
+    name: Unit tests (AddressSanitizer)
+    if: github.event_name != 'pull_request'
+    runs-on: ${{ vars.MACOS_RUNNER || 'xcode-27' }}
+    timeout-minutes: 60
+    outputs:
+      build: ${{ steps.build.outcome }}
+      tests: ${{ steps.tests.outcome }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: ./.github/actions/macos-setup
+        with:
+          xcode-app: ${{ env.XCODE_APP }}
 
       - name: Build with AddressSanitizer
+        id: build
         run: swift build --build-tests --sanitize=address
 
       - name: Unit tests with AddressSanitizer
+        id: tests
         env:
           OFFSIDER_E2E: "0"
           OFFSIDER_LANDSCAPE_E2E: "0"
           # Keeps the runtime in DYLD_INSERT_LIBRARIES, so an exit test's child starts with it.
           ASAN_OPTIONS: strip_env=0
         run: swift test --skip-build --sanitize=address --no-parallel
+
+  # No pull request watches main, so a failed ASan build or test step there (a timeout included) opens one issue, or adds to it.
+  asan-issue:
+    name: Report an AddressSanitizer failure on main
+    needs: asan-unit-tests
+    if: >-
+      failure() && github.ref == 'refs/heads/main'
+      && (needs.asan-unit-tests.outputs.build == 'failure'
+      || contains(fromJSON('["failure", "cancelled"]'), needs.asan-unit-tests.outputs.tests))
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      issues: write
+    steps:
+      - name: Open or update the issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          title="AddressSanitizer unit tests fail on main"
+          failed="The AddressSanitizer unit tests failed on ${SHA}: ${RUN_URL}"
+          howto="Reproduce with \`ASAN_OPTIONS=strip_env=0 swift test --sanitize=address --no-parallel\`, and close this issue once main passes again."
+          # Only this workflow's own issue counts, never one someone else opened with the same title.
+          number="$(gh issue list --state open --search "author:app/github-actions in:title \"$title\"" --json number,title \
+            --jq "map(select(.title == \"$title\")) | first | .number // empty")"
+          if [ -n "$number" ]; then
+            gh issue comment "$number" --body "$failed"
+          else
+            gh issue create --title "$title" --body "$(printf '%s\n\n%s\n' "$failed" "$howto")"
+          fi
