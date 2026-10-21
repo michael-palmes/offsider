@@ -77,15 +77,23 @@ extension IOSBackend: OrientationControlling {
         displayCatalog.forgetReadings(of: id.rawValue)
         let simulator = try await simulator(for: id)
         if displayCatalog.isFoldable(simulator) {
-            switch await HingeInjector.connect(simulator) {
+            switch await vendorDefinedLink(for: simulator) {
             case let .success(link):
-                await HingeInjector.turn(link, to: orientation, logger: logger)
+                logger.info().log("Orientation picker: \(orientation.rawValue)")
+                await link.send(OrientationPicker.event(orientation))
                 return
+            case let .failure(failure as SimulatorDTUHID.Failure):
+                logger.info().log("Orientation picker: \(failure)")
+                throw CLIError(errorDescription: Self.orientationUnavailable(device: id.rawValue), reason: .notSupported)
             case let .failure(error):
-                logger.info().log("Orientation picker: \(error)")
+                throw error
             }
         }
         try await sendOneEvent(.deviceOrientation(value), to: id)
+    }
+
+    static func orientationUnavailable(device: String) -> String {
+        "Turning is not available on this foldable simulator: its runtime has no orientation service Offsider can reach. Turn it in Device Hub, then check with `offsider orientation --device \(device)`."
     }
 
     /// Outside `InputEvent`, so Android needs no stub for events it cannot send.

@@ -82,6 +82,11 @@ final class SimulatorDTUHID: @unchecked Sendable {
         xpc_connection_cancel(connection)
     }
 
+    /// True when `dtuhidd` still answers, so a kept connection can be reused.
+    func isAnswering() async -> Bool {
+        await roundTrip(DTUHIDMessage.barrier(service: service))
+    }
+
     /// True when `dtuhidd` itself answered before the timeout.
     private func roundTrip(_ message: DTUHIDValue) async -> Bool {
         let object = message.xpcObject

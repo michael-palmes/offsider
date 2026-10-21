@@ -94,7 +94,7 @@ struct FoldableTests {
             let report = try await decode(PostureReport.self, "posture \(wanted) --json")
             try #require(report.posture == wanted, "posture \(wanted) reported \(report.posture)")
         }
-        if upright, try await decode(OrientationReport.self, "orientation --json").orientation != "portrait" {
+        if upright {
             try await offsider("orientation portrait")
         }
     }
@@ -120,16 +120,21 @@ struct FoldableTests {
         _ = try await TestHelpers.waitForLabel(containing: "Touch & Gestures", timeout: 10, simulatorUDID: udid) { _ in true }
     }
 
-    /// With the playground in front, turns to each landscape and back: the active display reads turned, captures upright and takes taps where asked.
-    static func expectTurns(display: String, portraitWidth: Double, portraitHeight: Double) async throws {
+    /// With the playground in front, turns to each orientation and back: the active display reads turned, captures upright and takes taps where asked.
+    static func expectTurns(display: String, portraitWidth: Double, portraitHeight: Double, upsideDown: Bool = false) async throws {
         try await TestHelpers.launchPlaygroundApp(to: "tap-test", simulatorUDID: try udid())
+        let turns = [("landscape-left", 90), ("landscape-right", 270)] + (upsideDown ? [("portrait-upside-down", 180)] : [])
         do {
-            for (name, rotation) in [("landscape-left", 90), ("landscape-right", 270)] {
+            for (name, rotation) in turns {
                 let turned = try await decode(OrientationReport.self, "orientation \(name) --json")
                 #expect(turned.orientation == name && turned.rotation == rotation)
                 let screen = try await decode(Tree.self, "describe-ui").screen
                 #expect(screen.display?.id == display && screen.rotation == rotation)
-                #expect(screen.width == portraitHeight && screen.height == portraitWidth, "\(screen.width) x \(screen.height)")
+                let sideways = rotation % 180 != 0
+                #expect(
+                    screen.width == (sideways ? portraitHeight : portraitWidth) && screen.height == (sideways ? portraitWidth : portraitHeight),
+                    "\(screen.width) x \(screen.height)"
+                )
                 let capture = try await screenshot("--scale points")
                 #expect(capture.upright && Double(capture.width) == screen.width && Double(capture.height) == screen.height)
                 try await expectTapsLand(on: screen)
@@ -273,10 +278,10 @@ struct FoldableTests {
         #expect(try await Self.posture() == "open")
     }
 
-    @Test("unfolded: orientation turns the inner display to each landscape and back, captured upright and tapped where asked")
+    @Test("unfolded: orientation turns the inner display to each landscape, upside down and back, captured upright and tapped where asked")
     func unfoldedOrientation() async throws {
         try await Self.requirePosture("open")
-        try await Self.expectTurns(display: "inner", portraitWidth: 951, portraitHeight: 669)
+        try await Self.expectTurns(display: "inner", portraitWidth: 951, portraitHeight: 669, upsideDown: true)
     }
 
     @Test("a turn outlasts folding: landscape-left on the inner display stays landscape-left on the cover")
