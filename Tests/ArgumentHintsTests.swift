@@ -33,6 +33,24 @@ struct ArgumentHintsTests {
         #expect(ArgumentHints.hint(for: arguments) == nil)
     }
 
+    @Test("credential takes its action first, so a rule on offsider credential <action> sees it; help and a first action pass", arguments: [
+        (["credential", "--app", "com.example.app", "remove", "qa"], true),
+        (["credential", "--stdin", "add"], true),
+        (["credential", "--", "add"], true),
+        (["credential", "status", "--app", "com.example.app"], false),
+        (["credential", "--help"], false),
+        (["credential"], false),
+    ])
+    func credentialActionFirst(arguments: [String], hinted: Bool) {
+        #expect(ArgumentHints.hint(for: arguments) == (hinted ? ArgumentHints.Hint(message: ArgumentHints.credentialActionFirst, isLegacy: false) : nil))
+    }
+
+    @Test("a credential action runs only as written, never in another case or padded", arguments: ["REMOVE", "Add", " status", "remove "])
+    func credentialActionExact(action: String) {
+        let error = #expect(throws: (any Error).self) { try CredentialCommand.parse([action, "--app", "com.example.app"]) }
+        #expect(error.map { CredentialCommand.message(for: $0).contains("Unknown action '\(action)'") } == true)
+    }
+
     @Test("the internal hid-broker keeps its --udid")
     func brokerKeepsUDID() {
         #expect(ArgumentHints.hint(for: ["hid-broker", "--udid", "X"]) == nil)
@@ -81,6 +99,7 @@ struct ArgumentHintsTests {
         ("tap -x 1 -y 1 --udid X", "Error: --udid was renamed to --device in 0.3.0. Run offsider devices to find device IDs.\n"),
         ("list-simulators", "Error: list-simulators was renamed to list-devices in 0.3.0.\n"),
         ("wait --id a --wait-timeout 5 --device X", "Error: wait takes --timeout <seconds>, not --wait-timeout.\n"),
+        ("credential --app com.example.app remove qa", "Error: \(ArgumentHints.credentialActionFirst)\n"),
     ])
     func binaryPrintsHint(command: String, expected: String) async throws {
         let result = try await TestHelpers.runOffsiderCommandSeparated(command)

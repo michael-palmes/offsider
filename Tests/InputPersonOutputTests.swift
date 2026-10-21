@@ -329,6 +329,14 @@ struct InputPersonOutputTests {
         #expect(Self.show(listed.page, person: false).out == "expo dev menu: Reload, Go home\n")
         let person = Self.show(listed.page, person: true).out
         #expect(person.hasPrefix("📋  Dev menu") && person.contains("Expo · 2 items") && person.contains("\n  Go home\n"))
+        let custom = RNDevMenu.Outcome.listed(DevMenu.State(menu: "expo", items: [
+            DevMenu.Entry(label: "Reload", role: .button, frame: nil),
+            DevMenu.Entry(label: "Clear cache", role: .button, frame: nil, custom: true),
+            DevMenu.Entry(label: "Go home", role: .button, frame: nil),
+        ]))
+        #expect(Self.show(custom.page, person: false).out == "expo dev menu: Reload, Go home; custom: Clear cache\n")
+        let customPerson = Self.show(custom.page, person: true).out
+        #expect(customPerson.contains("Expo · 3 items") && customPerson.contains("\n  Clear cache custom\n") && customPerson.contains("\n  Go home\n"))
         let chose = RNDevMenu.Outcome.chose(menu: "expo", item: .reload, label: "Reload")
         #expect(Self.show(chose.page, person: false).out == "✓ Chose Reload and the dev menu closed\n")
         #expect(Self.show(chose.page, person: true).out == "✅  Chose Reload\n    The dev menu closed\n")
@@ -358,7 +366,10 @@ struct InputPersonOutputTests {
                 InputPersonView.receipt("Slider id=volume set to 50%", details: ["The nearest step to 42%"]),
                 InputPersonView.login(LoginReport(app: "com.example.app", key: "qa", turnstile: nil, submitLabel: "Continue with your email address")),
                 InputPersonView.turnstile(TurnstileStatus(state: .challenge, source: .webViewPoints)),
-                InputPersonView.devMenu("react-native", labels: ["Reload", "Toggle Element Inspector"], agent: "react-native dev menu: Reload, Toggle Element Inspector"),
+                InputPersonView.devMenu(DevMenu.State(menu: "react-native", items: [
+                    DevMenu.Entry(label: "Reload", role: .text, frame: nil),
+                    DevMenu.Entry(label: String(repeating: "Toggle mock data ", count: 6), role: .text, frame: nil, custom: true),
+                ]), agent: "react-native dev menu: Reload; custom: Toggle mock data"),
                 InputPersonView.logBox(state, redacts: true, device: "00000000-0000-4000-8000-000000000001"),
                 RNLogBoxOpen.page(LogBoxOpening(toast: state.toasts[0], inspector: LogBoxInspector(log: 1, of: 2)), redacts: true),
             ]

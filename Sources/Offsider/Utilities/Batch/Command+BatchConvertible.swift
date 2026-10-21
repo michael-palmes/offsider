@@ -131,6 +131,18 @@ extension Swipe: BatchConvertible {
     }
 }
 
+extension Drag: BatchConvertible {
+    func toBatchPrimitives(context: BatchContext, logger: OffsiderLogger) async throws -> [BatchPrimitive] {
+        let physicalPoints = try await context.backend.deviceCoordinates(
+            for: [(x: startX, y: startY), (x: endX, y: endY)],
+            tree: nil,
+            on: context.device
+        )
+        let event = try dragEvent(from: physicalPoints[0], to: physicalPoints[1])
+        return [.hidMergeable(InputEvent.delayed(event, pre: preDelay, post: postDelay))]
+    }
+}
+
 extension Gesture: BatchConvertible {
     func toBatchPrimitives(context: BatchContext, logger: OffsiderLogger) async throws -> [BatchPrimitive] {
         let gestureEvent = try await presetEvent(
