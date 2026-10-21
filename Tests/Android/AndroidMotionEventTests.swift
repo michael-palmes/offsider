@@ -113,6 +113,26 @@ struct AndroidMotionEventTests {
         #expect(rig.startShells == 1)
     }
 
+    @Test("the helper's round trip after the first request comes off the pause before the lift, so the hold keeps its length")
+    func liftPauseLosesTheRoundTrip() async throws {
+        let rig = try AndroidKeyCombinationTests.rig(apiLevel: "34")
+        let sleeps = rig.sleeps
+        rig.device.answer = { _, op, json in
+            guard op == "inject" else { return nil }
+            sleeps.sleep(.milliseconds(30))
+            let count = ((try? JSONSerialization.jsonObject(with: Data(json.utf8)) as? [String: Any])?["steps"] as? [Any])?.count ?? 0
+            let steps = Array(repeating: #"{"dispatched":true,"ms":1}"#, count: count).joined(separator: ",")
+            return .ok(#"{"steps":[\#(steps)],"eventSeqBefore":7,"totalMs":12}"#)
+        }
+        try await Self.perform([.composite([
+            .touch(direction: .down, x: 100, y: 500), .delay(0.12), .touch(direction: .down, x: 100, y: 600), .delay(0.05),
+            .touch(direction: .up, x: 100, y: 600),
+        ])], on: rig)
+        await rig.backend.close()
+
+        #expect(Array(rig.device.injected.suffix(2)) == ["pause 32", "touch up 100 600"])
+    }
+
     @Test("from API 29, with the helper unavailable, a drag that holds still goes through `input motionevent` with one warning that the hold sends nothing")
     func recentHeldDragFallsBack() async throws {
         let rig = try AndroidKeyCombinationTests.rig(apiLevel: "34", environment: ["OFFSIDER_ANDROID_TREE": "uiautomator"])

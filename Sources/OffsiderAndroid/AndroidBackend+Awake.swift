@@ -61,7 +61,7 @@ extension AndroidBackend: AwakeControlling {
     /// The code goes as key events through the helper's socket (digits or characters, then Enter), never as a shell argument.
     public func enterUnlockCode(_ code: UnlockCode, on id: DeviceID, beforeTyping: @MainActor () throws -> Void) async throws -> UnlockAttempt {
         let serial = id.rawValue
-        let helper = HelperInputDriver(session: try await helperForSecret(serial))
+        let helper = HelperInputDriver(session: try await helperForSecret(serial), uptime: host.uptime)
         guard try await codeFieldShowing(id) else { throw AndroidError.codeFieldMissing(serial) }
         let state = try await awakeState(on: id)
         guard state.screen == .on, state.lockScreen == .secure else { return UnlockAttempt(typed: false, reading: state) }

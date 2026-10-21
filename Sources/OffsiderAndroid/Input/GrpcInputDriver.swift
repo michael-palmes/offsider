@@ -7,7 +7,7 @@ struct GrpcInputDriver: Sendable {
     let geometry: AndroidDisplayGeometry
     let sleep: @Sendable (Duration) async throws -> Void
     /// Holds end on a deadline from this clock, so call time and sleep overrun come out of the next wait.
-    var uptime: @Sendable () -> Duration = { .seconds(ProcessInfo.processInfo.systemUptime) }
+    let uptime: @Sendable () -> Duration
     /// Shared by every copy of this driver, so a hold spanning a session's dispatches never repeats a report.
     let report = GrpcFingerReport()
 
@@ -88,14 +88,14 @@ struct GrpcInputDriver: Sendable {
         }
     }
 
-    /// Sleeps until `due` plus `seconds`; a stall longer than the pause shifts what follows rather than bunching it.
+    /// Sleeps until `due` plus `seconds`; a stall longer than one resting interval shifts what follows rather than bunching it.
     private func hold(_ seconds: TimeInterval, due: inout Duration) async throws {
         guard seconds > 0 else { return }
         due += .seconds(seconds)
         let now = uptime()
         if due > now {
             try await sleep(due - now)
-        } else if now - due > .seconds(seconds) {
+        } else if now - due > .milliseconds(AndroidInputStep.restingMoveMilliseconds) {
             due = now
         }
     }

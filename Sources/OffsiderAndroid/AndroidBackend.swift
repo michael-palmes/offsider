@@ -294,7 +294,7 @@ public final class AndroidBackend: DeviceBackend, AccessibilityActionPerforming,
             avdName: { await self.avdName(for: serial) },
             replaceFocusedText: { text in try await self.replaceFocusedText(text, on: serial) },
             focusedSecureField: { await self.focusedSecureField(id) },
-            secretHelper: { HelperInputDriver(session: try await self.helperForSecret(serial)) },
+            secretHelper: { HelperInputDriver(session: try await self.helperForSecret(serial), uptime: self.host.uptime) },
             requireForeground: { try await self.requireDrivableForeground(serial) },
             multiTouchHelper: { try await self.optionalHelper(serial) },
             gestureHelper: { try await self.gestureHelper(serial) },
@@ -311,7 +311,7 @@ public final class AndroidBackend: DeviceBackend, AccessibilityActionPerforming,
     /// The helper for input `input` cannot carry, or carries badly, unless OFFSIDER_ANDROID_INPUT=input forbids it.
     private func optionalHelper(_ serial: String) async throws -> HelperInputDriver? {
         guard try AndroidInputPolicy.policy(host: host) != .input else { return nil }
-        return try await helperForInput(serial, required: false).map { HelperInputDriver(session: $0) }
+        return try await helperForInput(serial, required: false).map { HelperInputDriver(session: $0, uptime: host.uptime) }
     }
 
     /// The optional helper for a touch held still; any reason it cannot start leaves the touch on `input`, with one warning.
@@ -321,8 +321,10 @@ public final class AndroidBackend: DeviceBackend, AccessibilityActionPerforming,
             if let helper = try await optionalHelper(serial) {
                 return helper
             }
-        } catch let error as AndroidError {
-            log(.debug, "The UiAutomation helper did not start on \(serial): \(error.message)")
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch {
+            log(.debug, "The UiAutomation helper did not start on \(serial): \((error as? AndroidError)?.message ?? error.localizedDescription)")
         }
         if warnedAboutMotionEvents.insert(serial).inserted {
             log(.warning, "The UiAutomation helper is unavailable on \(serial), so this held touch goes through `input motionevent`, which sends nothing while a finger rests: an app waiting for the finger to move can miss the hold. `offsider doctor --device \(serial)` says why.")
@@ -337,7 +339,7 @@ public final class AndroidBackend: DeviceBackend, AccessibilityActionPerforming,
             throw AndroidError.inputNeedsHelper(serial, for: gap, apiLevel: level, reason: nil)
         }
         switch try await treeSource(for: serial, announcingFallback: false) {
-        case .helper(let session): return HelperInputDriver(session: session)
+        case .helper(let session): return HelperInputDriver(session: session, uptime: host.uptime)
         case .uiautomator(let reason): throw AndroidError.inputNeedsHelper(serial, for: gap, apiLevel: level, reason: reason)
         }
     }
@@ -496,7 +498,7 @@ public final class AndroidBackend: DeviceBackend, AccessibilityActionPerforming,
         case .auto: session = runningHelper(for: serial)
         case .helper: session = try await helperForInput(serial, required: true)
         }
-        return session.map { .helper(HelperInputDriver(session: $0)) } ?? .adb(shell)
+        return session.map { .helper(HelperInputDriver(session: $0, uptime: host.uptime)) } ?? .adb(shell)
     }
 
     /// gRPC `getScreenshot`, turned upright when only the guest rotated; else adb's `screencap`.

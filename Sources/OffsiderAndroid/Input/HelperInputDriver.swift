@@ -9,9 +9,12 @@ final class HelperInputDriver {
     private var held: Set<UInt32> = []
     /// The last inject failed with `inject-refused` or `inject-failed`, after which the helper has cancelled every finger and key.
     private(set) var releasedInput = false
+    /// The host's clock, for the round trip between requests.
+    private let uptime: @Sendable () -> Duration
 
-    init(session: HelperSession) {
+    init(session: HelperSession, uptime: @escaping @Sendable () -> Duration) {
         self.session = session
+        self.uptime = uptime
     }
 
     var serial: String { session.serial }
@@ -38,11 +41,16 @@ final class HelperInputDriver {
         try await run([.touch(.up, point)])
     }
 
+    /// Each request's round trip, its time here less the helper's own, comes off the pause that opens the next one, so a gesture split across requests keeps its timing.
     private func send(_ requests: [HelperInjectPlan.Request]) async throws {
         releasedInput = false
-        for request in requests {
+        var roundTrip = 0
+        for var request in requests {
+            request.shortenLeadingPause(by: roundTrip)
+            let started = uptime()
             do {
-                _ = try await session.inject(request.steps, sync: request.sync, extraWait: .milliseconds(request.deviceMilliseconds))
+                let reply = try await session.inject(request.steps, sync: request.sync, extraWait: .milliseconds(request.deviceMilliseconds))
+                roundTrip = max(0, Int((uptime() - started) / .milliseconds(1)) - reply.totalMs)
             } catch let error as HelperErrorBody {
                 releasedInput = error.code == "inject-refused" || error.code == "inject-failed"
                 throw AndroidError.inputFailed(serial: serial, detail: "the UiAutomation helper reported \(error.code): \(error.message)")
