@@ -35,14 +35,16 @@ public enum SkillInstall {
         return items.filter { seen.insert(resolvedPath($0)).inserted }
     }
 
-    /// `install.skill`: every installed skill matches this build; `stale` lists the ones that differ.
-    public static func doctorVerdict(installed: [String], stale: [String]) -> DoctorRules.Verdict {
+    /// `install.skill` over the installed skills and the stale ones with their `--client`; an agent, which has no terminal for `init`'s picker, is told the client.
+    public static func doctorVerdict(installed: [String], stale: [(file: String, client: String)], agent: Bool, clients: [String] = []) -> DoctorRules.Verdict {
         if installed.isEmpty {
-            return (.skip, "No Offsider skill is installed for an agent", "Run offsider init.")
+            let named = clients.isEmpty ? ["claude", "agents"] : clients
+            return (.skip, "No Offsider skill is installed for an agent", "Run \(agent ? named.map { "offsider init --client \($0)" }.joined(separator: " or ") : "offsider init").")
         }
         if let first = stale.first {
             let others = stale.count > 1 ? " and \(stale.count - 1) more" : ""
-            return (.warn, "\(first)\(others) differs from this version's skill", "Run offsider init to update it.")
+            let commands = agent ? stale.map { "offsider init --client \($0.client)" } : ["offsider init"]
+            return (.warn, "\(first.file)\(others) differs from this version's skill", "Run \(commands.joined(separator: " and ")) to update \(commands.count > 1 ? "them" : "it").")
         }
         return (.pass, installed.count == 1 ? "\(installed[0]) matches this version" : "\(installed.count) installed skills match this version", nil)
     }

@@ -9,6 +9,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ### Fixed
 
 - `devices status --json` and `devices --json status` print JSON; `devices` kept the flag, so `status`, `add` and `remove` printed text.
+- `doctor`'s `install.skill` fix tells an agent `offsider init --client <client>` for each stale skill (and, with none installed, for each agent folder found), since `offsider init` without a terminal exits 64.
 
 ## [0.14.0] - 2026-10-22
 

@@ -297,14 +297,15 @@ struct Init: AsyncParsableCommand {
         }
         let clients = Client.allCases.filter { $0 != .auto }.compactMap { try? clientInfo(for: $0) }
         var installed: [String] = []
-        var stale: [String] = []
+        var stale: [(file: String, client: String)] = []
         for (client, _) in distinctFolders(clients) {
             let file = client.skillsDirectory.appendingPathComponent("\(skillFolderName)/SKILL.md").path
             guard let data = FileManager.default.contents(atPath: file), SkillInstall.isOffsiderSkill(data) else { continue }
             installed.append(file)
-            if data != bundled { stale.append(file) }
+            if data != bundled { stale.append((file, client.id.rawValue)) }
         }
-        return DoctorCheckResult(id: .installSkill, verdict: SkillInstall.doctorVerdict(installed: installed, stale: stale))
+        let verdict = SkillInstall.doctorVerdict(installed: installed, stale: stale, agent: Console.current.out.profile == .agent, clients: detectClients().map(\.id.rawValue))
+        return DoctorCheckResult(id: .installSkill, verdict: verdict)
     }
 
     /// What `doctor`'s `install.rules` check reports: the installed agents still missing any of the rules.
