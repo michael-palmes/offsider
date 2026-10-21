@@ -6,12 +6,22 @@ struct GrpcInputDriver: Sendable {
     let emulator: any EmulatorControlling
     let geometry: AndroidDisplayGeometry
     let sleep: @Sendable (Duration) async throws -> Void
+    /// Holds end on a deadline from this clock, so call time and sleep overrun come out of the next wait.
+    var uptime: @Sendable () -> Duration = { .seconds(ProcessInfo.processInfo.systemUptime) }
+    /// Shared by every copy of this driver, so a hold spanning a session's dispatches never repeats a report.
+    let report = GrpcFingerReport()
 
     /// Nonzero for a finger on the glass; zero lifts it (the spike measured 1 as enough).
     static let pressure: Int32 = 1
+    /// The emulator's touch screen drops a report that repeats the last one, so a repeat goes at this pressure instead, as a real finger's varies.
+    static let restingPressure: Int32 = 2
 
     func run(_ steps: [AndroidInputStep]) async throws {
+        var due = uptime()
         for step in steps {
+            if !report.isDown {
+                due = uptime()
+            }
             switch step {
             case .touch(let phase, let point):
                 try await touch(point, down: phase != .up)
@@ -32,7 +42,7 @@ struct GrpcInputDriver: Sendable {
                 let moves = max(1, count)
                 try await liftingOnFailure(at: to) {
                     for index in 1...moves {
-                        try await pause(duration / Double(moves))
+                        try await hold(duration / Double(moves), due: &due)
                         let fraction = Double(index) / Double(moves)
                         try await touch(AndroidPoint(x: from.x + (to.x - from.x) * fraction, y: from.y + (to.y - from.y) * fraction), down: true)
                     }
@@ -44,24 +54,28 @@ struct GrpcInputDriver: Sendable {
             case let .button(phase, button):
                 guard let key = AndroidButtonMap.grpcKey(for: button, phase: phase) else { throw AndroidError.unsupportedButton(button) }
                 try await emulator.sendKey(key)
+            case .pause(let seconds) where report.isDown:
+                try await hold(seconds, due: &due)
             case .pause(let seconds):
-                try await pause(seconds)
+                if seconds > 0 {
+                    try await sleep(.seconds(seconds))
+                }
             }
         }
     }
 
     func touch(_ point: AndroidPoint, down: Bool) async throws {
         let panel = PanelRotation.panelPoint(point, rotation: geometry.rotation, naturalWidth: geometry.naturalWidth, naturalHeight: geometry.naturalHeight)
-        try await emulator.sendTouch(PanelTouch(x: panel.x, y: panel.y, pressure: down ? Self.pressure : 0))
+        try await emulator.sendTouch(report.pressed([PanelTouch(x: panel.x, y: panel.y, pressure: Self.pressure)], down: down)[0])
     }
 
     /// One event carrying every finger, with identifiers 0, 1, … in order.
     func touches(_ points: [AndroidPoint], down: Bool) async throws {
         let fingers = points.enumerated().map { index, point in
             let panel = PanelRotation.panelPoint(point, rotation: geometry.rotation, naturalWidth: geometry.naturalWidth, naturalHeight: geometry.naturalHeight)
-            return PanelTouch(x: panel.x, y: panel.y, pressure: down ? Self.pressure : 0, identifier: Int32(index))
+            return PanelTouch(x: panel.x, y: panel.y, pressure: Self.pressure, identifier: Int32(index))
         }
-        try await emulator.sendTouches(fingers)
+        try await emulator.sendTouches(report.pressed(fingers, down: down))
     }
 
     /// A gesture that fails part-way still lifts its finger, best effort, before the error goes on.
@@ -74,8 +88,38 @@ struct GrpcInputDriver: Sendable {
         }
     }
 
-    private func pause(_ seconds: TimeInterval) async throws {
+    /// Sleeps until `due` plus `seconds`; a stall longer than the pause shifts what follows rather than bunching it.
+    private func hold(_ seconds: TimeInterval, due: inout Duration) async throws {
         guard seconds > 0 else { return }
-        try await sleep(.seconds(seconds))
+        due += .seconds(seconds)
+        let now = uptime()
+        if due > now {
+            try await sleep(due - now)
+        } else if now - due > .seconds(seconds) {
+            due = now
+        }
+    }
+}
+
+/// The fingers the emulator last saw, with the pressure each report went at.
+final class GrpcFingerReport: @unchecked Sendable {
+    private let lock = NSLock()
+    private var last: [PanelTouch] = []
+
+    var isDown: Bool { lock.withLock { !last.isEmpty } }
+
+    /// `fingers` as sent: a lift at pressure 0, an exact repeat of the last report at the resting pressure, anything else as given.
+    func pressed(_ fingers: [PanelTouch], down: Bool) -> [PanelTouch] {
+        lock.withLock {
+            guard down else {
+                last = []
+                return fingers.map { PanelTouch(x: $0.x, y: $0.y, pressure: 0, identifier: $0.identifier) }
+            }
+            let sent = fingers == last
+                ? fingers.map { PanelTouch(x: $0.x, y: $0.y, pressure: GrpcInputDriver.restingPressure, identifier: $0.identifier) }
+                : fingers
+            last = sent
+            return sent
+        }
     }
 }

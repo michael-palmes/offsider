@@ -14,7 +14,7 @@ enum AdbInputScript {
     /// Scripts stay well under the 64 KB adb request limit.
     static let maxScriptLength = 8_000
 
-    /// Combinations become `input keycombination`, a held key `--longpress`, and before Android 10 a held tap a swipe that stays put.
+    /// Combinations become `input keycombination`, a held key `--longpress`, and a held tap a swipe that stays put.
     static func scripts(for steps: [AndroidInputStep], apiLevel: Int? = nil) throws -> [String] {
         var commands: [String] = []
         var index = 0
@@ -70,14 +70,17 @@ enum AdbInputScript {
         }
     }
 
+    /// A held tap is one `input swipe` in place on every release: its moves keep reporting the finger, which `input motionevent` never does during a hold.
     private static func command(at index: Int, in steps: [AndroidInputStep], apiLevel: Int?) throws -> (String, Int) {
-        if !sendsMotionEvents(apiLevel: apiLevel), case .touch = steps[index] {
-            guard let tap = heldTap(at: index, in: steps) else {
+        if case .touch = steps[index] {
+            if let tap = heldTap(at: index, in: steps) {
+                let point = pixels(tap.point)
+                let ms = Int((tap.hold * 1000).rounded())
+                return (ms > 0 ? "input swipe \(point) \(point) \(ms)" : "input tap \(point)", tap.used)
+            }
+            guard sendsMotionEvents(apiLevel: apiLevel) else {
                 throw AndroidError.inputLacks(.motionEvent, apiLevel: apiLevel ?? motionEventAPILevel)
             }
-            let point = pixels(tap.point)
-            let ms = Int((tap.hold * 1000).rounded())
-            return (ms > 0 ? "input swipe \(point) \(point) \(ms)" : "input tap \(point)", tap.used)
         }
         switch steps[index] {
         case .tap(let point):

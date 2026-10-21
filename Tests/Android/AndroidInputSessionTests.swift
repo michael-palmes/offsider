@@ -49,14 +49,14 @@ struct AndroidInputSessionTests {
         #expect(Self.scripts(server) == ["input tap 525 1050 && sleep 0.5 && input keyevent 66"])
     }
 
-    @Test("a physical tap is a timed down and up")
+    @Test("a physical tap is one swipe that stays put for its 100 ms hold")
     func physicalTap() async throws {
         let server = Self.server()
         let session = try await AndroidBackendTests.backend(server).openInputSession(for: Self.device)
         try await session.performPhysicalTap(at: (x: 100, y: 200), preDelay: nil, postDelay: nil)
         await session.close()
 
-        #expect(Self.scripts(server) == ["input motionevent DOWN 100 200", "input motionevent UP 100 200"])
+        #expect(Self.scripts(server) == ["input swipe 100 200 100 200 100"])
     }
 
     @Test("a gesture that fails after its down lifts the finger when the session closes")

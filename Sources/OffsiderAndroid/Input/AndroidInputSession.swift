@@ -24,6 +24,12 @@ enum AndroidInputExecutor: Sendable {
     case adb(AdbDeviceShell)
     case grpc(GrpcInputDriver)
     case helper(HelperInputDriver)
+
+    /// gRPC and the helper report a resting finger; `input` starts a process per touch phase, so only a held tap's `input swipe` does.
+    var reportsRestingFingers: Bool {
+        if case .adb = self { return false }
+        return true
+    }
 }
 
 /// How `type --replace` went: the helper set the text, or the session must clear the field with keys and type.
@@ -100,6 +106,8 @@ final class AndroidInputSession: InputSession, TextInputSession {
     private var heldFingers: [AndroidPoint] = []
     /// The helper for multi-finger input when the route is `input`, which moves one finger; nil when the policy forbids it.
     private let multiTouchHelper: @MainActor () async throws -> HelperInputDriver?
+    /// The helper for a touch held still when the route is `input`; nil when the policy forbids it or it cannot start.
+    private let gestureHelper: @MainActor () async throws -> HelperInputDriver?
     /// `ro.build.version.sdk`, asked for only when touch phases or a key combination would go through `input`; nil when unreadable.
     private let apiLevel: @MainActor () async -> Int?
     private var knownAPILevel: Int?
@@ -118,6 +126,7 @@ final class AndroidInputSession: InputSession, TextInputSession {
         },
         requireForeground: @escaping @MainActor () async throws -> Void = {},
         multiTouchHelper: @escaping @MainActor () async throws -> HelperInputDriver? = { nil },
+        gestureHelper: @escaping @MainActor () async throws -> HelperInputDriver? = { nil },
         apiLevel: @escaping @MainActor () async -> Int?,
         gapHelper: @escaping @MainActor (AdbInputGap, Int) async throws -> HelperInputDriver,
         readFocusedField: @escaping @MainActor () async -> FocusedFieldReading? = { nil },
@@ -135,6 +144,7 @@ final class AndroidInputSession: InputSession, TextInputSession {
         self.secretHelper = secretHelper
         self.requireForeground = requireForeground
         self.multiTouchHelper = multiTouchHelper
+        self.gestureHelper = gestureHelper
         self.apiLevel = apiLevel
         self.gapHelper = gapHelper
         self.readFocusedField = readFocusedField
@@ -168,7 +178,7 @@ final class AndroidInputSession: InputSession, TextInputSession {
         }
     }
 
-    /// One step through the helper (`inject`) or before Android 10 (`input swipe` in place); elsewhere a timed down and up.
+    /// One step through the helper (`inject`) or `input` (`input swipe` in place); over gRPC a timed down and up.
     func performPhysicalTap(at point: (x: Double, y: Double), preDelay: Double?, postDelay: Double?) async throws {
         guard try await tapsInOneStep() else {
             try await separatePhysicalTap(at: point, preDelay: preDelay, postDelay: postDelay)
@@ -188,11 +198,8 @@ final class AndroidInputSession: InputSession, TextInputSession {
     }
 
     private func tapsInOneStep() async throws -> Bool {
-        switch try await route().executor {
-        case .helper: return true
-        case .grpc: return false
-        case .adb: return !AdbInputScript.sendsMotionEvents(apiLevel: await readAPILevel())
-        }
+        if case .grpc = try await route().executor { return false }
+        return true
     }
 
     private func readAPILevel() async -> Int? {
@@ -235,7 +242,7 @@ final class AndroidInputSession: InputSession, TextInputSession {
         touchIsDown = down
     }
 
-    /// What `input` cannot send goes through the helper: several fingers, older Android's drags, and its key combinations wherever keys go.
+    /// What `input` cannot send, or sends badly, goes through the helper: several fingers, drags, and older Android's key combinations wherever keys go.
     private func rerouted(_ route: AndroidInputRoute, for steps: [AndroidInputStep]) async throws -> AndroidInputRoute {
         var route = route
         if case .adb = route.executor, let helper = try await touchHelper(for: steps) {
@@ -255,13 +262,17 @@ final class AndroidInputSession: InputSession, TextInputSession {
         return route
     }
 
+    /// `input motionevent` sends nothing while a finger rests, so a touch held still starts on the helper, unless a gesture is already under way on `input`.
     private func touchHelper(for steps: [AndroidInputStep]) async throws -> HelperInputDriver? {
         if steps.contains(where: \.isMultiTouch) {
             return try await multiTouchHelper()
         }
-        guard steps.contains(where: \.isTouchPhase), let level = await readAPILevel(),
-              !AdbInputScript.sendsMotionEvents(apiLevel: level), AdbInputScript.needsMotionEvent(steps) else { return nil }
-        return try await gapHelper(.motionEvent, level)
+        guard steps.contains(where: \.isTouchPhase), AdbInputScript.needsMotionEvent(steps) else { return nil }
+        if let level = await readAPILevel(), !AdbInputScript.sendsMotionEvents(apiLevel: level) {
+            return try await gapHelper(.motionEvent, level)
+        }
+        guard !touchIsDown, AndroidInputStep.withRestingMoves(steps) != steps else { return nil }
+        return try await gestureHelper()
     }
 
     /// Buttons, such as Home or Back, only take a phone away from what is in front, so they skip the foreground check.
@@ -475,7 +486,7 @@ final class AndroidInputSession: InputSession, TextInputSession {
         do {
             switch route.executor {
             case .adb(let shell):
-                guard AdbInputScript.sendsMotionEvents(apiLevel: knownAPILevel) else {
+                guard AdbInputScript.sendsMotionEvents(apiLevel: await readAPILevel()) else {
                     log(.warning, "Could not lift the touch left down on \(device.rawValue): `input` there has no motionevent (Android 10, API 29, added it), so it stays down until the next touch.")
                     return
                 }
@@ -506,11 +517,16 @@ final class AndroidInputSession: InputSession, TextInputSession {
     }
 
     private func run(_ steps: [AndroidInputStep], through executor: AndroidInputExecutor, keys: AndroidInputExecutor? = nil) async throws {
+        var sent = steps
+        if executor.reportsRestingFingers {
+            let resting = heldFingers.isEmpty ? (touchIsDown ? lastTouch.map { [$0] } ?? [] : []) : heldFingers
+            sent = AndroidInputStep.withRestingMoves(steps, resting: resting)
+        }
         if let last = steps.last(where: { if case .touch = $0 { return true } else { return false } }), case .touch(_, let point) = last {
             lastTouch = point
         }
         let pressesDown = steps.contains { if case .touch(.down, _) = $0 { return true } else { return false } }
-        let parts = try Self.parts(of: steps, through: executor, keys: keys, apiLevel: knownAPILevel)
+        let parts = try Self.parts(of: sent, through: executor, keys: keys, apiLevel: knownAPILevel)
         let fingersBefore = heldFingers
         for step in steps {
             if case .touches(let phase, let points) = step {

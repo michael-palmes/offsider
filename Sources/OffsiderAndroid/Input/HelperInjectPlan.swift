@@ -12,6 +12,8 @@ enum HelperInjectPlan {
     static let keyEventMilliseconds = 8
     /// Text characters in one request, so one request's typing stays well inside its timeout.
     static let maxTextCharacters = AndroidTextPlan.maxChunkBytes
+    /// The helper's own time around a resting move (its sleep's overrun and the inject), about 2 ms on an emulator, taken off the pause before it.
+    static let restingMoveCostMilliseconds = 2
 
     struct Request: Equatable, Sendable {
         var steps: [HelperValue] = []
@@ -23,12 +25,24 @@ enum HelperInjectPlan {
 
         /// Device-side time the caller adds to the request timeout.
         var deviceMilliseconds: Int { waitMilliseconds + typingMilliseconds }
+
+        /// A timed touch (touch phases and pauses alone) sends each event without waiting a frame for the app, as the helper's swipe moves do, so it keeps its length.
+        var sync: Bool {
+            let kinds = steps.map(Self.kind)
+            return !(kinds.contains("pause") && kinds.allSatisfy { $0 == "touch" || $0 == "pause" })
+        }
+
+        static func kind(of step: HelperValue) -> String? {
+            guard case .object(let fields) = step, case .string(let kind)? = fields["kind"] else { return nil }
+            return kind
+        }
     }
 
     /// `held` carries the modifiers down across calls in one session, so later keys carry their meta state.
     static func requests(for steps: [AndroidInputStep], held: inout Set<UInt32>) throws -> [Request] {
         var builder = Builder()
-        for step in steps {
+        var fingers: [AndroidPoint] = []
+        for (index, step) in steps.enumerated() {
             switch step {
             case .tap(let point):
                 builder.add(["kind": .string("tap"), "x": .double(point.x), "y": .double(point.y)])
@@ -45,12 +59,14 @@ enum HelperInjectPlan {
             case .touch(let phase, let point):
                 let name = phase == .down ? "down" : phase == .move ? "move" : "up"
                 builder.add(touch(name, point, pointer: 0))
+                fingers = phase == .up ? [] : [point]
             case .touches(let phase, let points):
                 let name = phase == .down ? "down" : phase == .move ? "move" : "up"
-                let fingers = Array(points.enumerated())
-                for (pointer, point) in phase == .up ? fingers.reversed() : fingers {
+                let numbered = Array(points.enumerated())
+                for (pointer, point) in phase == .up ? numbered.reversed() : numbered {
                     builder.add(touch(name, point, pointer: pointer))
                 }
+                fingers = phase == .up ? [] : points
             case let .key(phase, usage):
                 let code = try AndroidKeyTable.requireKeyCode(for: usage)
                 if AndroidKeyMeta.bits(for: usage) != nil {
@@ -68,6 +84,9 @@ enum HelperInjectPlan {
                 )
             case .pause(let seconds):
                 var left = milliseconds(seconds)
+                if index + 1 < steps.count, steps[index + 1].restsAt(fingers) {
+                    left = max(0, left - restingMoveCostMilliseconds)
+                }
                 while left > 0 {
                     let part = min(left, maxStepMilliseconds)
                     builder.add(["kind": .string("pause"), "ms": .int(part)], waiting: part)
@@ -123,7 +142,7 @@ enum HelperInjectPlan {
         return ["kind": .string("key"), "phase": .string(name), "code": .int(code), "meta": .int(Int(meta))]
     }
 
-    private static func milliseconds(_ seconds: TimeInterval) -> Int {
+    static func milliseconds(_ seconds: TimeInterval) -> Int {
         max(0, Int((seconds * 1000).rounded()))
     }
 
@@ -145,8 +164,25 @@ enum HelperInjectPlan {
             current.textCharacters += text
         }
 
+        /// A request sent without waiting ends with its last touch in a request of its own that waits, so the reply follows the lift and a failed one is reported.
         mutating func finish() -> [Request] {
-            current.steps.isEmpty ? done : done + [current]
+            (current.steps.isEmpty ? done : done + [current]).flatMap { request -> [Request] in
+                guard !request.sync, request.steps.count > 1, let last = request.steps.last, Request.kind(of: last) == "touch" else { return [request] }
+                var first = request
+                first.steps.removeLast()
+                return [first, Request(steps: [last])]
+            }
+        }
+    }
+}
+
+extension AndroidInputStep {
+    /// A move to where the fingers already rest: a resting finger's report.
+    func restsAt(_ fingers: [AndroidPoint]) -> Bool {
+        switch self {
+        case .touch(.move, let point): return fingers == [point]
+        case .touches(.move, let points): return !fingers.isEmpty && fingers == points
+        default: return false
         }
     }
 }
