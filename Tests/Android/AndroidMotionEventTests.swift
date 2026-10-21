@@ -75,18 +75,57 @@ struct AndroidMotionEventTests {
         #expect(rig.startShells == 0)
     }
 
-    @Test("from API 29, or with an unread level, a physical tap and a drag stay motion events and never start the helper", arguments: ["29", "36", ""])
-    func recentKeepsMotionEvents(apiLevel: String) async throws {
+    @Test("from API 29, or with an unread level, a physical tap is one swipe in place and a drag starts the helper and goes through it", arguments: ["29", "36", ""])
+    func recentDragUsesHelper(apiLevel: String) async throws {
         let rig = try AndroidKeyCombinationTests.rig(apiLevel: apiLevel)
         try await Self.physicalTap(on: rig)
         try await Self.perform([Self.drag], on: rig)
         await rig.backend.close()
 
+        #expect(AndroidHelperInputTests.inputScripts(rig) == ["input swipe 100 200 100 200 100"])
+        #expect(rig.device.injected == ["touch down 100 500", "pause 50", "touch move 100 600", "touch up 100 600"])
+        #expect(rig.startShells == 1)
+    }
+
+    @Test("from API 29 a drag's holds through the helper report the resting finger every 50 ms and keep their length")
+    func recentDragHolds() async throws {
+        let rig = try AndroidKeyCombinationTests.rig(apiLevel: "34")
+        try await Self.perform([.composite([
+            .touch(direction: .down, x: 100, y: 500), .delay(0.2), .touch(direction: .down, x: 100, y: 600), .delay(0.12),
+            .touch(direction: .up, x: 100, y: 600),
+        ])], on: rig)
+        await rig.backend.close()
+
+        #expect(rig.device.injected == [
+            "touch down 100 500", "pause 50", "touch move 100 500", "pause 50", "touch move 100 500", "pause 50", "touch move 100 500", "pause 50",
+            "touch move 100 600", "pause 50", "touch move 100 600", "pause 50", "touch move 100 600", "pause 20",
+            "touch up 100 600",
+        ])
+        #expect(AndroidHelperInputTests.inputScripts(rig).isEmpty)
+    }
+
+    @Test("from API 29, with the helper unavailable, a drag goes through `input motionevent` with one warning that a hold sends nothing")
+    func recentDragFallsBack() async throws {
+        let rig = try AndroidKeyCombinationTests.rig(apiLevel: "34", environment: ["OFFSIDER_ANDROID_TREE": "uiautomator"])
+        try await Self.perform([Self.drag, Self.drag], on: rig)
+        await rig.backend.close()
+
+        let script = "input motionevent DOWN 100 500 && sleep 0.05 && input motionevent MOVE 100 600 && input motionevent UP 100 600"
+        #expect(AndroidHelperInputTests.inputScripts(rig) == [script, script])
+        #expect(rig.log.warnings.filter { $0.contains("sends nothing while a finger rests") }.count == 1)
+        #expect(rig.startShells == 0)
+    }
+
+    @Test("from API 29, OFFSIDER_ANDROID_INPUT=input keeps a drag on `input motionevent` and warns nothing")
+    func recentDragOnInput() async throws {
+        let rig = try AndroidKeyCombinationTests.rig(apiLevel: "34", environment: ["OFFSIDER_ANDROID_INPUT": "input"])
+        try await Self.perform([Self.drag], on: rig)
+        await rig.backend.close()
+
         #expect(AndroidHelperInputTests.inputScripts(rig) == [
-            "input motionevent DOWN 100 200",
-            "input motionevent UP 100 200",
             "input motionevent DOWN 100 500 && sleep 0.05 && input motionevent MOVE 100 600 && input motionevent UP 100 600",
         ])
+        #expect(rig.log.warnings.isEmpty)
         #expect(rig.startShells == 0)
     }
 
@@ -121,8 +160,8 @@ struct AndroidMotionEventTests {
         #expect(rig.log.warnings.contains { $0.hasPrefix("Could not lift the touch left down on emulator-5556: `input` there has no motionevent") })
     }
 
-    @Test("a batch touch --down --up is one held touch: a swipe in place on API 28, one motionevent script from API 29", arguments: [
-        ("28", "input swipe 263 525 263 525 800"), ("36", "input motionevent DOWN 263 525 && sleep 0.8 && input motionevent UP 263 525"),
+    @Test("a batch touch --down --up is one held touch, a swipe in place whose moves report the resting finger, on every release", arguments: [
+        ("28", "input swipe 263 525 263 525 800"), ("36", "input swipe 263 525 263 525 800"),
     ])
     func batchHeldTouch(apiLevel: String, script: String) async throws {
         let rig = try AndroidKeyCombinationTests.rig(apiLevel: apiLevel)

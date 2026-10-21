@@ -188,7 +188,7 @@ struct AndroidGrpcInputTests {
         #expect(rig.connector.connections.isEmpty)
     }
 
-    @Test("two fingers are one gRPC event down with identifiers 0 and 1, a host-timed hold, and one event up at pressure 0")
+    @Test("two fingers are one gRPC event down with identifiers 0 and 1, a host-timed hold reporting both every 50 ms with a varying pressure, and one event up at pressure 0")
     func twoFingers() async throws {
         let rig = try Self.rig()
         try await rig.backend.perform(.composite([
@@ -196,12 +196,44 @@ struct AndroidGrpcInputTests {
             .twoFingerTouch(direction: .up, x1: 100, y1: 1000, x2: 160, y2: 1000),
         ]), on: Self.device)
 
-        #expect(rig.emulator.calls == [
-            .touches([PanelTouch(x: 100, y: 1000, pressure: 1, identifier: 0), PanelTouch(x: 160, y: 1000, pressure: 1, identifier: 1)]),
+        let held = (0..<20).map { index -> FakeEmulator.Call in
+            let pressure: Int32 = index % 2 == 0 ? 1 : 2
+            return .touches([PanelTouch(x: 100, y: 1000, pressure: pressure, identifier: 0), PanelTouch(x: 160, y: 1000, pressure: pressure, identifier: 1)])
+        }
+        #expect(rig.emulator.calls == held + [
             .touches([PanelTouch(x: 100, y: 1000, pressure: 0, identifier: 0), PanelTouch(x: 160, y: 1000, pressure: 0, identifier: 1)]),
         ])
-        #expect(rig.sleeps.sleeps == [.seconds(1)])
+        #expect(rig.sleeps.sleeps == Array(repeating: .seconds(0.05), count: 20))
         #expect(rig.adbScripts.isEmpty)
+    }
+
+    @Test("each gRPC call's own time comes out of the pause after it, so a hold keeps its length, and a stall shifts what follows rather than bunching it")
+    func pausesEndOnDeadline() async throws {
+        let emulator = FakeEmulator()
+        let clock = SleepRecorder()
+        let geometry = AndroidDisplayGeometry(
+            naturalWidth: 1080, naturalHeight: 2424, logicalWidth: 1080, logicalHeight: 2424, rotation: 0, densityDpi: 420, hasSizeOverride: false
+        )
+        let callCost = Duration.milliseconds(5)
+        let driver = GrpcInputDriver(emulator: emulator, geometry: geometry, sleep: { clock.sleep($0) }, uptime: {
+            clock.total + callCost * emulator.calls.count + (emulator.calls.count > 2 ? .milliseconds(300) : .zero)
+        })
+        let p = AndroidPoint(x: 100, y: 1000)
+        try await driver.run([.touch(.down, p), .pause(0.05), .touch(.move, p), .pause(0.05), .touch(.move, p), .pause(0.05), .touch(.move, p), .pause(0.05), .touch(.up, p)])
+
+        let shortened = Duration.seconds(0.05) - callCost
+        #expect(clock.sleeps == [shortened, shortened, shortened])
+    }
+
+    @Test("a finger held still over gRPC is reported where it rests every 50 ms, its pressure swapping so the emulator never drops a repeat")
+    func restingFinger() async throws {
+        let rig = try Self.rig()
+        try await rig.backend.perform(.composite([
+            .touch(direction: .down, x: 100, y: 1000), .delay(0.12), .touch(direction: .up, x: 100, y: 1000),
+        ]), on: Self.device)
+
+        #expect(rig.emulator.calls == [1, 2, 1, 0].map { .touch(PanelTouch(x: 100, y: 1000, pressure: $0)) })
+        #expect(rig.sleeps.sleeps == [.seconds(0.05), .seconds(0.05), .seconds(0.02)])
     }
 
     @Test("in landscape, both fingers follow the portrait panel rule")

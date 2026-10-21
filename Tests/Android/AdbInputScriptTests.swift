@@ -58,11 +58,11 @@ struct AdbInputScriptTests {
         #expect(AdbInputScript.needsMotionEvent([.touch(.down, p), .tap(q), .touch(.up, p)]))
     }
 
-    @Test("before API 29 a held tap is a swipe that stays put for its hold, and an unheld one input tap")
-    func heldTapBeforeAPI29() throws {
+    @Test("on every release a held tap is one swipe that stays put for its hold, whose moves report the resting finger, and an unheld one input tap", arguments: [28, 34, nil])
+    func heldTap(apiLevel: Int?) throws {
         let p = AndroidPoint(x: 550.4, y: 1374.6)
-        #expect(try AdbInputScript.scripts(for: [.touch(.down, p), .pause(0.5), .pause(0.3), .touch(.up, p)], apiLevel: 28) == ["input swipe 550 1375 550 1375 800"])
-        #expect(try AdbInputScript.scripts(for: [.pause(0.2), .touch(.down, p), .touch(.up, p), .key(.press, usage: 40)], apiLevel: 28) == [
+        #expect(try AdbInputScript.scripts(for: [.touch(.down, p), .pause(0.5), .pause(0.3), .touch(.up, p)], apiLevel: apiLevel) == ["input swipe 550 1375 550 1375 800"])
+        #expect(try AdbInputScript.scripts(for: [.pause(0.2), .touch(.down, p), .touch(.up, p), .key(.press, usage: 40)], apiLevel: apiLevel) == [
             "sleep 0.2 && input tap 550 1375 && input keyevent 66",
         ])
     }

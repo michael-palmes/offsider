@@ -23,6 +23,15 @@ enum HelperInjectPlan {
 
         /// Device-side time the caller adds to the request timeout.
         var deviceMilliseconds: Int { waitMilliseconds + typingMilliseconds }
+
+        /// A timed touch (touch phases and pauses alone) sends each event without waiting a frame for the app, as the helper's swipe moves do, so it keeps its length.
+        var sync: Bool {
+            let kinds = steps.map { step -> String? in
+                guard case .object(let fields) = step, case .string(let kind)? = fields["kind"] else { return nil }
+                return kind
+            }
+            return !(kinds.contains("pause") && kinds.allSatisfy { $0 == "touch" || $0 == "pause" })
+        }
     }
 
     /// `held` carries the modifiers down across calls in one session, so later keys carry their meta state.

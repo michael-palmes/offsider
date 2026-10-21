@@ -42,7 +42,7 @@ final class HelperInputDriver {
         releasedInput = false
         for request in requests {
             do {
-                _ = try await session.inject(request.steps, extraWait: .milliseconds(request.deviceMilliseconds))
+                _ = try await session.inject(request.steps, sync: request.sync, extraWait: .milliseconds(request.deviceMilliseconds))
             } catch let error as HelperErrorBody {
                 releasedInput = error.code == "inject-refused" || error.code == "inject-failed"
                 throw AndroidError.inputFailed(serial: serial, detail: "the UiAutomation helper reported \(error.code): \(error.message)")

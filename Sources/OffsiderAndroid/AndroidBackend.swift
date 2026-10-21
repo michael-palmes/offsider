@@ -37,6 +37,7 @@ public final class AndroidBackend: DeviceBackend, AccessibilityActionPerforming,
     private var listedPhones: [String: ConnectedPhone] = [:]
     private var transports: [String: AndroidTransport] = [:]
     private var warnedAboutOverride: Set<String> = []
+    private var warnedAboutMotionEvents: Set<String> = []
     private var dumpCounter = 0
     var treeSources: [String: AndroidTreeSource] = [:]
     var announcedFallbacks: Set<String> = []
@@ -296,6 +297,7 @@ public final class AndroidBackend: DeviceBackend, AccessibilityActionPerforming,
             secretHelper: { HelperInputDriver(session: try await self.helperForSecret(serial)) },
             requireForeground: { try await self.requireDrivableForeground(serial) },
             multiTouchHelper: { try await self.multiTouchHelper(serial) },
+            gestureHelper: { try await self.gestureHelper(serial) },
             apiLevel: { await self.apiLevel(of: serial) },
             gapHelper: { gap, level in try await self.gapHelper(serial, for: gap, apiLevel: level) },
             readFocusedField: { await self.focusedFieldReading(serial) },
@@ -310,6 +312,19 @@ public final class AndroidBackend: DeviceBackend, AccessibilityActionPerforming,
     private func multiTouchHelper(_ serial: String) async throws -> HelperInputDriver? {
         guard try AndroidInputPolicy.policy(host: host) != .input else { return nil }
         return try await helperForInput(serial, required: false).map { HelperInputDriver(session: $0) }
+    }
+
+    /// The helper for a drag or held touch on an `input` route, started if needed; nil under OFFSIDER_ANDROID_INPUT=input,
+    /// or with a warning when it cannot start, since `input motionevent` then sends nothing while the finger rests.
+    private func gestureHelper(_ serial: String) async throws -> HelperInputDriver? {
+        guard try AndroidInputPolicy.policy(host: host) != .input else { return nil }
+        if let session = try await helperForInput(serial, required: false) {
+            return HelperInputDriver(session: session)
+        }
+        if warnedAboutMotionEvents.insert(serial).inserted {
+            log(.warning, "The UiAutomation helper is unavailable on \(serial), so this drag goes through `input motionevent`, which sends nothing while a finger rests: an app waiting for the finger to move can miss a hold. `offsider doctor --device \(serial)` says why.")
+        }
+        return nil
     }
 
     /// The helper for steps `input` on this API level lacks, started if needed; a refusal when the policy or the tree source rules it out.
@@ -404,7 +419,7 @@ public final class AndroidBackend: DeviceBackend, AccessibilityActionPerforming,
     }
 
     /// `touch --down` now and `touch --up` later: one gRPC finger (lifted by the emulator after 120 s if forgotten),
-    /// or one `input motionevent` script per call over adb; before Android 10, only a down and up in one call, as a swipe that stays put.
+    /// or one `input motionevent` script per call over adb; a down and up in one call is a swipe that stays put, and before Android 10 the only kind.
     public func sendDetachedTouch(_ steps: [DetachedTouchStep], to id: DeviceID) async throws {
         try await prepare()
         if steps.contains(where: { if case .down = $0 { return true } else { return false } }) {
@@ -419,7 +434,7 @@ public final class AndroidBackend: DeviceBackend, AccessibilityActionPerforming,
         }
         let shell = AdbDeviceShell(client: try requireClient(), serial: id.rawValue)
         if case .grpc(let driver) = try await inputExecutor(for: id.rawValue, shell: shell, allowingHelper: false).executor {
-            try await driver.run(inputSteps)
+            try await driver.run(AndroidInputStep.withRestingMoves(inputSteps))
             return
         }
         let level = await apiLevel(of: id.rawValue)
@@ -467,7 +482,7 @@ public final class AndroidBackend: DeviceBackend, AccessibilityActionPerforming,
             log(.debug, "\(serial) is \(posture.rawValue), so its input goes over adb: gRPC touches land on the unfolded panel")
             return (.adb(shell), geometry)
         }
-        return (.grpc(GrpcInputDriver(emulator: emulator, geometry: geometry, sleep: host.sleep)), geometry)
+        return (.grpc(GrpcInputDriver(emulator: emulator, geometry: geometry, sleep: host.sleep, uptime: host.uptime)), geometry)
     }
 
     /// Without gRPC: the helper when forced or already running for this command, else `input` shell commands.
@@ -795,6 +810,7 @@ public final class AndroidBackend: DeviceBackend, AccessibilityActionPerforming,
         phones = [:]
         listedPhones = [:]
         warnedAboutOverride = []
+        warnedAboutMotionEvents = []
         for helper in helpers {
             await helper.close()
         }

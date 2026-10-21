@@ -16,6 +16,16 @@ struct HelperInjectPlanTests {
         return try HelperInjectPlan.requests(for: steps, held: &held)
     }
 
+    @Test("a timed touch goes without waiting for the app, so its pauses keep their length; anything else, or a touch with no pause, waits")
+    func timedTouchesSkipTheWait() throws {
+        let p = AndroidPoint(x: 1, y: 2)
+        #expect(try Self.plan([.touch(.down, p), .pause(0.05), .touch(.move, p), .pause(0.05), .touch(.up, p)]).map(\.sync) == [false])
+        #expect(try Self.plan([.touches(.down, [p, p]), .pause(1), .touches(.up, [p, p])]).map(\.sync) == [false])
+        #expect(try Self.plan([.touch(.down, p), .touch(.up, p)]).map(\.sync) == [true])
+        #expect(try Self.plan([.tap(p), .pause(0.5), .touch(.down, p), .pause(0.1), .touch(.up, p)]).map(\.sync) == [true])
+        #expect(try Self.plan([.touch(.down, p), .pause(0.1), .key(.press, usage: 40), .touch(.up, p)]).map(\.sync) == [true])
+    }
+
     @Test("taps, touches, swipes and pauses keep logical pixels and become milliseconds on the device")
     func gestures() throws {
         let requests = try Self.plan([

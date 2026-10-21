@@ -44,7 +44,7 @@ struct AndroidHelperInputTests {
         #expect(Self.inputScripts(rig).isEmpty)
     }
 
-    @Test("a physical tap through the helper is one inject: down, a 100 ms hold on the device, up")
+    @Test("a physical tap through the helper is one inject: down, a 100 ms hold on the device reporting the resting finger at 50 ms, up")
     func physicalTap() async throws {
         let rig = try HelperRig(environment: Self.forced)
         let session = try await Self.session(rig)
@@ -53,7 +53,7 @@ struct AndroidHelperInputTests {
         await rig.backend.close()
 
         #expect(rig.device.ops.filter { $0 == "inject" }.count == 1)
-        #expect(rig.device.injected == ["touch down 100 200", "pause 100", "touch up 100 200"])
+        #expect(rig.device.injected == ["touch down 100 200", "pause 50", "touch move 100 200", "pause 50", "touch up 100 200"])
     }
 
     @Test("ASCII text goes through the helper as text and key steps, never `input text`")
@@ -193,7 +193,8 @@ struct AndroidHelperInputTests {
         await session.close()
         await rig.backend.close()
 
-        #expect(rig.device.injected == ["touch down 100 500", "touch down p1 160 500", "pause 1000", "touch up p1 160 500", "touch up 100 500"])
+        let resting = Array(repeating: ["pause 50", "touch move 100 500", "touch move p1 160 500"], count: 19).flatMap { $0 }
+        #expect(rig.device.injected == ["touch down 100 500", "touch down p1 160 500"] + resting + ["pause 50", "touch up p1 160 500", "touch up 100 500"])
         #expect(Self.inputScripts(rig).isEmpty)
     }
 

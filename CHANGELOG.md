@@ -9,6 +9,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ### Changed
 
 - CI runs the unit tests under AddressSanitizer in place of the plain run after each merge to main, weekly and on demand, and no longer on every pull request.
+- A finger held still through gRPC or the UiAutomation helper is reported where it rests every 50 ms, as a finger on a real touch screen keeps reporting, so a gesture handler that acts only on moves sees the hold: `drag --hold-ms` and `--hold-end`, `touch --down --up --delay`, `touch --fingers 2 --hold`, `gesture long-press-drag` and their batch steps. Over gRPC its pressure swaps between two light values, since the emulator drops a report that repeats the last one. The hold keeps its length.
+- `OFFSIDER_ANDROID_INPUT=auto` also starts the helper for a drag on a device without gRPC (`drag`, `swipe --hold-end`, `gesture long-press-drag`, `slider`'s drag), at about 0.3 s on a phone; `input` keeps every drag on `input motionevent`.
+
+### Fixed
+
+- On an Android phone, or an emulator without gRPC, a held touch now reaches gesture handlers that wait for the finger to move, such as a chart's press-and-scrub, where `input swipe` did and Offsider did not. `input motionevent` sent nothing while the finger rested, and started a process for every step, so a drag of many steps ran slower than `--duration`. A touch held at one point (`touch --down --up --delay`, `tap --tap-style physical` and their batch steps) is now one `input swipe` that stays put on every release, as it already was before Android 10, and a drag goes through the helper. When the helper cannot start, the drag goes through `input motionevent` as before, with one `Warning:` line saying a hold sends nothing.
+- A drag, hold or two-finger touch through the helper no longer runs about a frame long for every event: touch phases and pauses alone now go without waiting for the app to handle each event, as the helper's swipe moves already did. Over gRPC, the time each call takes comes out of the pause after it, so a drag of many steps, or a hold reporting its finger, keeps its length.
 
 ## [0.13.0] - 2026-10-21
 
