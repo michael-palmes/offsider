@@ -26,6 +26,19 @@ struct HelperInjectPlanTests {
         #expect(try Self.plan([.touches(.down, [p, p]), .pause(1), .touches(.up, [p, p])]).map(\.sync) == [false, true])
     }
 
+    @Test("a lift straight after a move stays in the same request, so a fling's last move and lift go back to back")
+    func flingLiftStaysBehindItsMove() throws {
+        let p = AndroidPoint(x: 1, y: 2)
+        let q = AndroidPoint(x: 1, y: 90)
+        let fling = try Self.plan([.touch(.down, p), .pause(0.05), .touch(.move, q), .touch(.up, q)])
+        #expect(fling.map(\.sync) == [false])
+        #expect(fling.map(\.steps.count) == [4])
+
+        let rested = try Self.plan([.touch(.down, p), .pause(0.05), .touch(.move, q), .pause(0.05), .touch(.up, q)])
+        #expect(rested.map(\.steps.count) == [3, 2])
+        #expect(rested.map(\.sync) == [false, true])
+    }
+
     @Test("a hold the request limits split goes without waiting until its last request, which confirms the lift")
     func longHoldWaitsOnlyAtTheEnd() throws {
         let p = AndroidPoint(x: 1, y: 2)

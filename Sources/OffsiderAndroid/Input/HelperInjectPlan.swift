@@ -39,28 +39,48 @@ enum HelperInjectPlan {
             return kind
         }
 
-        /// A timed touch's last pause and what follows, the lift among it, in a request of its own that waits, so the reply follows the lift and a failed one is reported.
+        /// A rest before the lift goes with the lift in a request that waits, so the reply follows the lift; a lift straight after a move stays behind it, as a fling needs.
         func confirmingLift() -> [Request] {
-            guard !sync, let lastPause = steps.lastIndex(where: { Self.kind(of: $0) == "pause" }), lastPause < steps.count - 1 else { return [self] }
-            let head = Array(steps[..<lastPause])
-            let tail = Request(steps: Array(steps[lastPause...]), waitMilliseconds: Self.pauseMilliseconds(Array(steps[lastPause...])))
-            return head.isEmpty ? [tail] : [Request(steps: head, waitMilliseconds: Self.pauseMilliseconds(head), sync: false), tail]
+            guard !sync, let restStart = Self.restBeforeLift(steps) else { return [self] }
+            let tail = Request(steps: Array(steps[restStart...]), waitMilliseconds: Self.pauseMilliseconds(steps[restStart...]))
+            guard restStart > 0 else { return [tail] }
+            return [Request(steps: Array(steps[..<restStart]), waitMilliseconds: Self.pauseMilliseconds(steps[..<restStart]), sync: false), tail]
         }
 
         /// The first step's pause made `milliseconds` shorter, never below zero, so a round trip just before this request does not lengthen it.
         mutating func shortenLeadingPause(by milliseconds: Int) {
-            guard milliseconds > 0, case .object(var fields)? = steps.first, Self.kind(of: .object(fields)) == "pause", case .int(let ms)? = fields["ms"] else { return }
+            guard milliseconds > 0, let ms = steps.first.flatMap(Self.pause) else { return }
             let shorter = max(0, ms - milliseconds)
-            fields["ms"] = .int(shorter)
-            steps[0] = .object(fields)
+            steps[0] = .object(["kind": .string("pause"), "ms": .int(shorter)])
             waitMilliseconds -= ms - shorter
         }
 
-        private static func pauseMilliseconds(_ steps: [HelperValue]) -> Int {
-            steps.reduce(0) { total, step in
-                guard Self.kind(of: step) == "pause", case .object(let fields) = step, case .int(let ms)? = fields["ms"] else { return total }
-                return total + ms
+        /// Where the pauses just before the closing lifts begin; nil when the steps do not end in a lift, or nothing rests before it.
+        private static func restBeforeLift(_ steps: [HelperValue]) -> Int? {
+            var start = steps.endIndex
+            while start > steps.startIndex, isLift(steps[start - 1]) {
+                start -= 1
             }
+            guard start < steps.endIndex else { return nil }
+            let lifts = start
+            while start > steps.startIndex, pause(steps[start - 1]) != nil {
+                start -= 1
+            }
+            return start < lifts ? start : nil
+        }
+
+        private static func isLift(_ step: HelperValue) -> Bool {
+            guard case .object(let fields) = step, case .string("touch")? = fields["kind"], case .string("up")? = fields["phase"] else { return false }
+            return true
+        }
+
+        private static func pause(_ step: HelperValue) -> Int? {
+            guard case .object(let fields) = step, case .string("pause")? = fields["kind"], case .int(let ms)? = fields["ms"] else { return nil }
+            return ms
+        }
+
+        private static func pauseMilliseconds(_ steps: ArraySlice<HelperValue>) -> Int {
+            steps.compactMap(pause).reduce(0, +)
         }
     }
 

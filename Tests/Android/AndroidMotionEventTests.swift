@@ -144,14 +144,15 @@ struct AndroidMotionEventTests {
         #expect(rig.startShells == 0)
     }
 
-    @Test("from API 29, a setting the helper cannot start under leaves a drag that holds still on `input`, with the warning, instead of failing it")
-    func recentHeldDragSurvivesBadSetting() async throws {
+    @Test("from API 29, a setting Offsider cannot read stops a drag that holds still with that setting's error, as it stops any other command, and sends nothing")
+    func recentHeldDragStopsOnBadSetting() async throws {
         let rig = try AndroidKeyCombinationTests.rig(apiLevel: "34", environment: ["OFFSIDER_ANDROID_TREE": "bogus"])
-        try await Self.perform([Self.heldDrag], on: rig)
+        let error = await #expect(throws: AndroidError.self) { try await Self.perform([Self.heldDrag], on: rig) }
         await rig.backend.close()
 
-        #expect(AndroidHelperInputTests.inputScripts(rig) == [Self.heldDragScript])
-        #expect(rig.log.warnings.contains { $0.contains("held touch goes through `input motionevent`") })
+        #expect(error?.kind == .invalidSetting)
+        #expect(AndroidHelperInputTests.inputScripts(rig).isEmpty)
+        #expect(!rig.log.warnings.contains { $0.contains("held touch goes through `input motionevent`") })
     }
 
     @Test("from API 29, OFFSIDER_ANDROID_INPUT=input keeps a drag that holds still on `input motionevent` and warns nothing")

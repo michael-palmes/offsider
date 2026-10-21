@@ -314,17 +314,17 @@ public final class AndroidBackend: DeviceBackend, AccessibilityActionPerforming,
         return try await helperForInput(serial, required: false).map { HelperInputDriver(session: $0, uptime: host.uptime) }
     }
 
-    /// The optional helper for a touch held still; any reason it cannot start leaves the touch on `input`, with one warning.
+    /// The optional helper for a touch held still; a helper that cannot start leaves the touch on `input`, with one warning, while a bad setting or a held device still stops the command.
     private func gestureHelper(_ serial: String) async throws -> HelperInputDriver? {
         guard try AndroidInputPolicy.policy(host: host) != .input else { return nil }
         do {
             if let helper = try await optionalHelper(serial) {
                 return helper
             }
-        } catch is CancellationError {
-            throw CancellationError()
-        } catch {
-            log(.debug, "The UiAutomation helper did not start on \(serial): \((error as? AndroidError)?.message ?? error.localizedDescription)")
+        } catch let error as AndroidError where error.kind != .invalidSetting {
+            log(.debug, "The UiAutomation helper did not start on \(serial): \(error.message)")
+        } catch let error as HelperProtocolError {
+            log(.debug, "The UiAutomation helper did not start on \(serial): \(error.detail)")
         }
         if warnedAboutMotionEvents.insert(serial).inserted {
             log(.warning, "The UiAutomation helper is unavailable on \(serial), so this held touch goes through `input motionevent`, which sends nothing while a finger rests: an app waiting for the finger to move can miss the hold. `offsider doctor --device \(serial)` says why.")
