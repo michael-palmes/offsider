@@ -28,6 +28,11 @@ struct FoldableTests {
         let display: String?
     }
 
+    struct OrientationReport: Decodable {
+        let orientation: String
+        let rotation: Int?
+    }
+
     struct DisplayRef: Decodable {
         let id: String
         let platformId: String
@@ -81,13 +86,17 @@ struct FoldableTests {
         try await decode(PostureReport.self, "posture --json").posture
     }
 
-    /// Folds or unfolds the Duo with `offsider posture` unless it already reports `wanted`.
-    static func requirePosture(_ wanted: String) async throws {
+    /// Folds or unfolds the Duo with `offsider posture` unless it already reports `wanted`, then turns it upright unless `upright` is false.
+    static func requirePosture(_ wanted: String, upright: Bool = true) async throws {
         let displays = try await decode(Displays.self, "displays --json")
         try #require(Set(displays.displays.map(\.id)) == ["cover", "inner"], "SIMULATOR_UDID is not a foldable: \(displays.displays.map(\.id))")
-        if displays.posture == wanted { return }
-        let report = try await decode(PostureReport.self, "posture \(wanted) --json")
-        try #require(report.posture == wanted, "posture \(wanted) reported \(report.posture)")
+        if displays.posture != wanted {
+            let report = try await decode(PostureReport.self, "posture \(wanted) --json")
+            try #require(report.posture == wanted, "posture \(wanted) reported \(report.posture)")
+        }
+        if upright {
+            try await offsider("orientation portrait")
+        }
     }
 
     static func screenshot(_ options: String = "") async throws -> Capture {
@@ -109,6 +118,33 @@ struct FoldableTests {
 
         try await offsider("tap --id BackButton")
         _ = try await TestHelpers.waitForLabel(containing: "Touch & Gestures", timeout: 10, simulatorUDID: udid) { _ in true }
+    }
+
+    /// With the playground in front, turns to each orientation and back: the active display reads turned, captures upright and takes taps where asked.
+    static func expectTurns(display: String, portraitWidth: Double, portraitHeight: Double, upsideDown: Bool = false) async throws {
+        try await TestHelpers.launchPlaygroundApp(to: "tap-test", simulatorUDID: try udid())
+        let turns = [("landscape-left", 90), ("landscape-right", 270)] + (upsideDown ? [("portrait-upside-down", 180)] : [])
+        do {
+            for (name, rotation) in turns {
+                let turned = try await decode(OrientationReport.self, "orientation \(name) --json")
+                #expect(turned.orientation == name && turned.rotation == rotation)
+                let screen = try await decode(Tree.self, "describe-ui").screen
+                #expect(screen.display?.id == display && screen.rotation == rotation)
+                let sideways = rotation % 180 != 0
+                #expect(
+                    screen.width == (sideways ? portraitHeight : portraitWidth) && screen.height == (sideways ? portraitWidth : portraitHeight),
+                    "\(screen.width) x \(screen.height)"
+                )
+                let capture = try await screenshot("--scale points")
+                #expect(capture.upright && Double(capture.width) == screen.width && Double(capture.height) == screen.height)
+                try await expectTapsLand(on: screen)
+            }
+        } catch {
+            try? await offsider("orientation portrait")
+            throw error
+        }
+        let back = try await decode(OrientationReport.self, "orientation portrait --json")
+        #expect(back.orientation == "portrait" && back.rotation == 0)
     }
 
     // MARK: Folded (cover display)
@@ -180,6 +216,22 @@ struct FoldableTests {
         try await Self.expectTapsLand(on: try await Self.decode(Tree.self, "describe-ui").screen)
     }
 
+    @Test("folded: orientation turns the cover display to each landscape and back, captured upright and tapped where asked")
+    func foldedOrientation() async throws {
+        try await Self.requirePosture("closed")
+        try await Self.expectTurns(display: "cover", portraitWidth: 466, portraitHeight: 678)
+    }
+
+    @Test("folded: a turn the home screen cannot show times out and is turned back, so unfolding stays portrait")
+    func foldedHomeScreenTurnUndone() async throws {
+        try await Self.requirePosture("closed")
+        try await Self.offsider("button home")
+        let turned = try await TestHelpers.runOffsiderCommandSeparated("orientation landscape-left --timeout 3", simulatorUDID: try Self.udid())
+        #expect(turned.exitCode == 1, "\(turned.stderr)")
+        try await Self.requirePosture("open", upright: false)
+        #expect(try await Self.decode(OrientationReport.self, "orientation --json").orientation == "portrait")
+    }
+
     // MARK: Unfolded (inner display)
 
     @Test("unfolded: the inner display is a 951 x 669 pt landscape screen at rotation 0 in portrait, captured upright, described and tapped where asked")
@@ -208,6 +260,46 @@ struct FoldableTests {
         #expect(cover.stderr.contains("cover is not active (posture open). Fold the simulator with `offsider posture closed"), "\(cover.stderr)")
 
         try await Self.expectTapsLand(on: screen, at: (x: 300, y: 500))
+    }
+
+    @Test("unfolded: half-opened and --angle move the hinge without leaving the inner display, and posture and displays read the hinge back")
+    func unfoldedHinge() async throws {
+        try await Self.requirePosture("open")
+        let half = try await Self.decode(PostureReport.self, "posture half-opened --json")
+        #expect(half.posture == "half-opened" && half.display == "inner")
+        #expect(try await Self.posture() == "half-opened")
+
+        let angled = try await Self.decode(PostureReport.self, "posture --angle 90 --json")
+        #expect(angled.posture == "half-opened" && angled.display == "inner")
+        #expect(try await Self.decode(Displays.self, "displays --json").posture == "half-opened")
+
+        let open = try await Self.decode(PostureReport.self, "posture open --json")
+        #expect(open.posture == "open" && open.display == "inner")
+        #expect(try await Self.posture() == "open")
+    }
+
+    @Test("unfolded: orientation turns the inner display to each landscape, upside down and back, captured upright and tapped where asked")
+    func unfoldedOrientation() async throws {
+        try await Self.requirePosture("open")
+        try await Self.expectTurns(display: "inner", portraitWidth: 951, portraitHeight: 669, upsideDown: true)
+    }
+
+    @Test("a turn outlasts folding: landscape-left on the inner display stays landscape-left on the cover")
+    func turnOutlastsFold() async throws {
+        try await Self.requirePosture("open")
+        try await TestHelpers.launchPlaygroundApp(to: "tap-test", simulatorUDID: try Self.udid())
+        try await Self.offsider("orientation landscape-left")
+        do {
+            try await Self.requirePosture("closed", upright: false)
+            let cover = try await Self.decode(Tree.self, "describe-ui").screen
+            #expect(cover.display?.id == "cover" && cover.rotation == 90)
+            #expect(cover.width == 678 && cover.height == 466, "\(cover.width) x \(cover.height)")
+        } catch {
+            try? await Self.offsider("orientation portrait")
+            throw error
+        }
+        try await Self.offsider("orientation portrait")
+        try await Self.requirePosture("open")
     }
 
     @Test("unfolded: two fingers on the inner display are refused before anything is sent")

@@ -12,6 +12,8 @@ final class IOSBackend: DeviceBackend {
     /// The last whole tree's application frame, which tells a foldable's displays apart when devicectl cannot.
     private(set) var applicationFrames: [String: UIFrame] = [:]
     private var bootMarkers: [String: String] = [:]
+    /// Kept for the command, so a resend or a turn back pays no second activation floor.
+    private var vendorLinks: [String: SimulatorDTUHID] = [:]
     private static var isPrepared = false
 
     init(logger: OffsiderLogger) {
@@ -21,6 +23,24 @@ final class IOSBackend: DeviceBackend {
 
     var platform: DevicePlatform { .ios }
     var listingName: String { "iOS Simulators" }
+
+    /// The simulator's vendor-defined service, reconnected when the kept connection stops answering.
+    func vendorDefinedLink(for simulator: FBSimulator) async -> Result<SimulatorDTUHID, Error> {
+        if let kept = vendorLinks[simulator.udid] {
+            if await kept.isAnswering() { return .success(kept) }
+            kept.cancel()
+            vendorLinks[simulator.udid] = nil
+        }
+        let connected = await HingeInjector.connect(simulator)
+        if case let .success(link) = connected { vendorLinks[simulator.udid] = link }
+        return connected
+    }
+
+    func close() async {
+        let links = vendorLinks.values
+        vendorLinks = [:]
+        for link in links { await link.close() }
+    }
 
     func prepare() async throws {
         guard !Self.isPrepared else { return }

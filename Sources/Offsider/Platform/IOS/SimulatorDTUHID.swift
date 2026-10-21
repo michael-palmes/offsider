@@ -43,7 +43,14 @@ final class SimulatorDTUHID: @unchecked Sendable {
             let link = SimulatorDTUHID(service: service, connection: try makeConnection(simulator: simulator, service: service))
             if await link.roundTrip(DTUHIDMessage.barrier(service: service)) {
                 let remaining = DTUHIDMessage.activationFloor - (ContinuousClock.now - started)
-                if remaining > .zero { try await Task.sleep(for: remaining) }
+                if remaining > .zero {
+                    do {
+                        try await Task.sleep(for: remaining)
+                    } catch {
+                        link.cancel()
+                        throw error
+                    }
+                }
                 return link
             }
             link.cancel()
@@ -73,6 +80,11 @@ final class SimulatorDTUHID: @unchecked Sendable {
 
     func cancel() {
         xpc_connection_cancel(connection)
+    }
+
+    /// True when `dtuhidd` still answers, so a kept connection can be reused.
+    func isAnswering() async -> Bool {
+        await roundTrip(DTUHIDMessage.barrier(service: service))
     }
 
     /// True when `dtuhidd` itself answered before the timeout.

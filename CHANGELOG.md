@@ -6,8 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.14.0] - 2026-10-22
+
 ### Added
 
+- `orientation` turns the iPhone Duo simulator, folded or unfolded, as Device Hub's orientation picker does: the cover and inner displays turn to each landscape (the inner one upside down too), capture upright and take taps and swipes where asked, and a turn outlasts a fold. It used to time out; where the simulator's orientation service cannot be reached, it now says so at once.
 - `--json` on every input command: `swipe`, `drag`, `touch`, `gesture`, `key-sequence`, `key-combo`, `slider` and `shake` take it, and `tap`, `type`, `key` and `button` take it without `--verify`. Stdout holds one line, also on a failure, `{"version":1,"ok":true,"command":"swipe","target":"(10, 600) to (10, 200)","dispatched":"yes","elapsedMs":412,"exitCode":0,"error":null}`, and the command's own lines go to stderr. `tap` adds `point` and `slider` adds `percent` and `value`; `type` and `key-sequence` name their target `text` and `keys`, never what they typed. With `--verify`, the verify report is unchanged.
 
 ### Changed
@@ -19,6 +22,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Fixed
 
+- An iOS simulator no longer keeps an orientation its screen never showed, which the next app or fold would take: a turn that times out, such as `orientation landscape-left` on a portrait-only home screen, is turned back and the message says so, and a simulator whose screen already shows the target is still told it.
+- On Xcode 27.1, `posture half-opened` and `posture --angle` on the iPhone Duo simulator no longer time out after the hinge has moved, and `posture` and `displays` no longer read a half-opened Duo as `open`. Xcode 27.1 dropped `devicectl device motion hinge-angle`, so Offsider reads the hinge from the simulator's own log since it booted (about 1 s), names the posture as the simulator reports it to apps (`posture --angle 170` reads half-opened), and says when it cannot read the hinge back rather than that the hinge fell short. A move starts from where the hinge is rather than from the far end.
 - On an Android phone, or an emulator without gRPC, a held touch now reaches gesture handlers that wait for the finger to move, such as a chart's press-and-scrub, where `input swipe` did and Offsider did not: `input motionevent` sent nothing while the finger rested. A touch held at one point (`touch --down --up --delay`, `tap --tap-style physical` and their batch steps) is now one `input swipe` that stays put on every release, as it already was before Android 10, and a drag that holds still goes through the helper. When the helper cannot start, the drag goes through `input motionevent` as before, with one `Warning:` line saying the hold sends nothing.
 - A drag, hold or two-finger touch through the helper no longer runs about a frame long for every event: touch phases and pauses alone go without waiting for the app to handle each event, as the helper's swipe moves already did, and a rest before the lift waits with the lift in a request of its own, less the round trip before it, so the command ends after the app has handled the lift, a failed lift is reported and the hold keeps its length. Over gRPC, while a finger is down, each call's time comes out of the next wait, so a drag of many steps keeps its length; a pause with no finger down still sleeps in full.
 - An element `offsider.mask.json` or the evidence run masks no longer shows its label in full, where React Native puts a copied value: `describe-ui` (with `--diff`), `--verify` change lists, `wait` and `assert` output, selector misses, cover warnings and the tree cache keep only the text the file names (`Referral code. [redacted]`, or `[redacted]` for an `ids` match) and hide its other screen text, such as Android's content description and hint. A `--has-value` miss on one says `has a masked value`, and a change summary `value of <element> changed (masked)`.
@@ -784,7 +789,8 @@ First release of Offsider, forked from [AXe](https://github.com/cameroncooke/axe
 - Shortened HID broker socket names so they stay within the Unix socket path limit.
 - Builds now honour an explicit `OFFSIDER_VERSION` when generating the version string.
 
-[Unreleased]: https://github.com/michael-palmes/offsider/compare/v0.13.0...HEAD
+[Unreleased]: https://github.com/michael-palmes/offsider/compare/v0.14.0...HEAD
+[0.14.0]: https://github.com/michael-palmes/offsider/compare/v0.13.0...v0.14.0
 [0.13.0]: https://github.com/michael-palmes/offsider/compare/v0.12.0...v0.13.0
 [0.12.0]: https://github.com/michael-palmes/offsider/compare/v0.11.0...v0.12.0
 [0.11.0]: https://github.com/michael-palmes/offsider/compare/v0.10.0...v0.11.0

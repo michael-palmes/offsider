@@ -11,15 +11,20 @@ public enum HingeControl {
     /// IOKit XML, as locationd reads it with `IOCFUnserialize`: whole degrees, as it rejects binary plists and a full XML plist is over its size limit.
     public static func payload(degrees: Int) -> Data {
         let value = String(min(max(degrees, range.lowerBound), range.upperBound), radix: 16)
-        let xml = "<dict><key>provider</key><string>com.apple.Virtualization.VirtualMachines</string>"
-            + "<key>source</key><string>hinge-slider-control</string>"
-            + "<key>type</key><string>range</string>"
-            + "<key>value</key><integer size=\"64\">0x\(value)</integer></dict>"
-        return Data(xml.utf8) + Data([0])
+        return avpPayload(source: "hinge-slider-control", type: "range", value: "<integer size=\"64\">0x\(value)</integer>")
     }
 
     public static func event(degrees: Int) -> DTUHIDValue {
         DTUHIDMessage.vendorDefined(usagePage: usagePage, usage: usage, data: payload(degrees: degrees))
+    }
+
+    /// Device Hub's control dictionary, which the hinge slider and the orientation picker share.
+    static func avpPayload(source: String, type: String, value: String) -> Data {
+        let xml = "<dict><key>provider</key><string>com.apple.Virtualization.VirtualMachines</string>"
+            + "<key>source</key><string>\(source)</string>"
+            + "<key>type</key><string>\(type)</string>"
+            + "<key>value</key>\(value)</dict>"
+        return Data(xml.utf8) + Data([0])
     }
 
     /// The angle a posture is set with; nil for `unknown`.

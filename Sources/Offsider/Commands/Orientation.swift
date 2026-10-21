@@ -13,8 +13,11 @@ struct OrientationCommand: AsyncParsableCommand {
         gives the same turns in degrees anticlockwise from the display's natural orientation; landscape-left is 90. \
         Without a value, prints the current one.
         iOS reports the frontmost app's orientation, so a portrait-only app or the home screen stays portrait, and \
-        iPhones without a home button never turn upside down. On Android, Offsider turns auto-rotate off while the \
-        device is turned and restores it on `orientation portrait`: the first turn in a boot, portrait included, \
+        iPhones without a home button never turn upside down. The iPhone Duo simulator turns folded or unfolded, as \
+        Device Hub's orientation picker turns it (unfolded, upside down too). A simulator is told the orientation \
+        even when its screen already shows it, and a turn that times out is turned back. On Android, Offsider turns \
+        auto-rotate off while the device is turned and restores it on \
+        `orientation portrait`: the first turn in a boot, portrait included, \
         records auto-rotate and `user_rotation`, and portrait writes auto-rotate back and forgets the record. When \
         auto-rotate cannot be read or recorded, it fails before turning.
 
@@ -94,21 +97,13 @@ struct OrientationCommand: AsyncParsableCommand {
             return
         }
         let turn: () async throws -> Void = {
-            try await turner.requestOrientation(target, on: device)
-            let outcome = try await StateWait.run(
-                target: target,
-                timeout: timeout,
-                read: { try await turner.orientation(of: device) },
-                request: { try await turner.requestOrientation(target, on: device) },
-                sleep: { try await Task.sleep(for: $0) },
-                now: { Date().timeIntervalSinceReferenceDate }
+            try await Self.turnWaiting(
+                to: target, from: previous, timeout: timeout, on: device, deviceName: deviceOption.id, turner: turner,
+                sleep: { try await Task.sleep(for: $0) }, now: { Date().timeIntervalSinceReferenceDate }
             )
-            guard outcome == .reached else {
-                throw CLIError(errorDescription: Self.timeoutMessage(target: target, timeout: timeout, platform: device.platform, device: deviceOption.id, physical: device.isPhysicalIOSDevice), reason: .stateNotReached)
-            }
         }
         guard let rotation = backend as? any AutoRotateControlling else {
-            if previous != target { try await turn() }
+            try await turn()
             try await report(target, previous: previous, setting: true, backend: backend, device: device)
             return
         }
@@ -125,6 +120,45 @@ struct OrientationCommand: AsyncParsableCommand {
             warn: { Console.current.notice(Self.autoRotateNotice($0, serial: device.rawValue)) }
         )
         try await report(target, previous: previous, setting: true, backend: backend, device: device, rotation: rotationReport)
+    }
+
+    /// Turns and waits for the screen. A simulator can hold a turn its screen never showed, which a later app or fold takes,
+    /// so one already showing the target is still told it, and one whose screen never turns is turned back.
+    @MainActor
+    static func turnWaiting(
+        to target: DeviceOrientation,
+        from previous: DeviceOrientation?,
+        timeout: Double,
+        on device: DeviceID,
+        deviceName: String,
+        turner: any OrientationControlling,
+        sleep: @MainActor (Duration) async throws -> Void,
+        now: @MainActor () -> TimeInterval
+    ) async throws {
+        let simulator = device.platform == .ios && !device.isPhysicalIOSDevice
+        guard previous != target else {
+            if simulator { try? await turner.requestOrientation(target, on: device) }
+            return
+        }
+        try await turner.requestOrientation(target, on: device)
+        let outcome = try await StateWait.run(
+            target: target,
+            timeout: timeout,
+            read: { try await turner.orientation(of: device) },
+            request: { try await turner.requestOrientation(target, on: device) },
+            sleep: sleep,
+            now: now
+        )
+        guard outcome == .reached else {
+            var turnedBack: DeviceOrientation?
+            if simulator, let previous, (try? await turner.requestOrientation(previous, on: device)) != nil {
+                turnedBack = previous
+            }
+            throw CLIError(
+                errorDescription: timeoutMessage(target: target, timeout: timeout, platform: device.platform, device: deviceName, physical: device.isPhysicalIOSDevice, turnedBack: turnedBack),
+                reason: .stateNotReached
+            )
+        }
     }
 
     /// The warning `turnKeepingAutoRotate` raised, its words unchanged for an agent.
@@ -191,7 +225,7 @@ struct OrientationCommand: AsyncParsableCommand {
         (error as? any OffsiderFailure)?.failureMessage ?? error.localizedDescription
     }
 
-    static func timeoutMessage(target: DeviceOrientation, timeout: Double, platform: DevicePlatform, device: String, physical: Bool = false) -> String {
+    static func timeoutMessage(target: DeviceOrientation, timeout: Double, platform: DevicePlatform, device: String, physical: Bool = false, turnedBack: DeviceOrientation? = nil) -> String {
         let seconds = DeviceSettingsReport.number(timeout)
         if physical {
             return "The screen did not turn to \(target.rawValue) within \(seconds) s. The device took the new orientation, but its screen follows only while it is awake and unlocked, and only if the frontmost app supports \(target.rawValue). Wake and unlock it, or rotate the device by hand, then check with `offsider orientation --device \(device)`."
@@ -199,7 +233,8 @@ struct OrientationCommand: AsyncParsableCommand {
         switch platform {
         case .ios:
             let app = target.isLandscape ? "supports portrait only" : "does not support \(target.rawValue)"
-            return "The simulator did not turn to \(target.rawValue) within \(seconds) s. This iOS runtime may ignore the orientation event Offsider sends, or the frontmost app \(app). Check with `offsider orientation --device \(device)`."
+            let back = turnedBack.map { ", so Offsider turned it back to \($0.rawValue)" } ?? ""
+            return "The simulator did not turn to \(target.rawValue) within \(seconds) s\(back). This iOS runtime may ignore the orientation event Offsider sends, or the frontmost app \(app). Check with `offsider orientation --device \(device)`."
         case .android:
             return "The emulator did not turn to \(target.rawValue) within \(seconds) s. The foreground app may lock its orientation. Check with `offsider orientation --device \(device)`."
         }

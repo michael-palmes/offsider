@@ -108,14 +108,6 @@ struct DevicectlDisplaysTests {
         #expect(throws: DeviceSettingsError.self) { try DevicectlDisplays.parse(json: Data(#"{"result":{}}"#.utf8)) }
     }
 
-    @Test("the hinge angle comes from the first Angle reading")
-    func hinge() {
-        let output = "Hinge angle monitoring started. 3 seconds remaining:\r\n\u{2022} +0.000s : Angle:120.0\u{00B0}  Mech:120.0\u{00B0}  Velocity:+0.0\u{00B0}/s  AngleValid:Y  VelocityValid:N  Range:0-180\u{00B0}\r\n\u{2022} +0.100s : Angle:180.0\u{00B0}\r\n"
-        #expect(DevicectlDisplays.hingeAngle(in: output) == 120)
-        #expect(DevicectlDisplays.hingeAngle(in: "? +0.000s : Angle:  92.5  Mech:  92.5") == 92.5)
-        #expect(DevicectlDisplays.hingeAngle(in: "Hinge angle monitoring started.") == nil)
-    }
-
     @Test("hinge angles read as postures", arguments: [(0.0, Posture.closed), (90, .halfOpened), (170, .open), (180, .open)])
     func hingePosture(angle: Double, posture: Posture) {
         #expect(Posture(hingeAngle: angle) == posture)

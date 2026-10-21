@@ -129,7 +129,9 @@ extension IOSBackend: PostureControlling, HingeControlling {
         guard displayCatalog.isFoldable(simulator) else {
             throw CLIError(errorDescription: DisplayReport.notFoldable(device: id.rawValue), reason: .notSupported)
         }
-        var reading = await displayCatalog.hingeAngle(of: simulator).map { Int($0.rounded()) }
+        // The connection's one-second activation floor covers the hinge read; a hinge left alone cancels it.
+        async let connection = HingeInjector.connect(simulator)
+        var reading = await displayCatalog.hingeAngleBeforeMove(of: simulator).map { Int($0.rounded()) }
         if reading == degrees {
             let active = await displayCatalog.activeDisplay(of: simulator, applicationFrame: applicationFrames[id.rawValue], refresh: true)
             guard let active, !HingeControl.panelMatches(active.posture ?? .unknown, angle: degrees) else {
@@ -141,12 +143,14 @@ extension IOSBackend: PostureControlling, HingeControlling {
         }
         let start = reading ?? HingeControl.start(from: displayCatalog.lastPosture(of: simulator), to: degrees)
         defer { displayCatalog.forgetReadings(of: simulator.udid) }
+        let link: SimulatorDTUHID
         do {
-            try await HingeInjector.sweep(simulator, from: start, to: degrees, logger: logger)
+            link = try await connection.get()
         } catch let failure as SimulatorDTUHID.Failure {
             logger.info().log("Hinge: \(failure)")
             throw CLIError(errorDescription: Self.postureUnavailable(device: id.rawValue), reason: .notSupported)
         }
+        await HingeInjector.sweep(link, from: start, to: degrees, logger: logger)
     }
 
     static func postureUnavailable(device: String) -> String {
