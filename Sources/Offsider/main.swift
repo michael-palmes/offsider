@@ -74,11 +74,13 @@ struct OffsiderCommand: AsyncParsableCommand {
                 ? EvidenceRecorder(environment: .live(), command: path, arguments: Self.arguments(after: path, in: arguments))
                 : EvidenceRecorder.current
             try await EvidenceRecorder.$current.withValue(recorder) {
-                try await CommandScope.current.run {
-                    if var asyncCommand = command as? any AsyncParsableCommand {
-                        try await asyncCommand.run()
-                    } else {
-                        try command.run()
+                try await OutputMasks.$current.withValue(OutputMasks { AmbientMasks.outputMask() }) {
+                    try await CommandScope.current.run {
+                        if var asyncCommand = command as? any AsyncParsableCommand {
+                            try await asyncCommand.run()
+                        } else {
+                            try command.run()
+                        }
                     }
                 }
             }

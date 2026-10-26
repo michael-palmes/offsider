@@ -88,7 +88,11 @@ struct VideoMaskOptions: ParsableArguments {
         let config = try MaskConfigs.current()
         let tree: UITree
         do {
-            tree = try await backend.accessibilityTree(for: device)
+            if let reader = backend as? any MaskTreeReading {
+                tree = try await reader.maskTree(for: device)
+            } else {
+                tree = try await backend.accessibilityTree(for: device)
+            }
         } catch {
             throw CLIError(errorDescription: VideoMaskPolicy.unreadableRefusal(command: command, error: OffsiderCommand.message(for: error)), reason: .videoUnmasked)
         }

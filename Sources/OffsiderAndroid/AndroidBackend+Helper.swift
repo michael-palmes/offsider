@@ -164,14 +164,16 @@ extension AndroidBackend {
     }
 
     /// One dump mapped to dp; a dump with no app window is read once more after 500 ms, then `noWindow`.
-    func helperRoots(_ serial: String, session: HelperSession) async throws -> (
+    /// `everyView` adds views not important for accessibility, and leaves the session's node index as the last plain read set it.
+    func helperRoots(_ serial: String, session: HelperSession, everyView: Bool = false) async throws -> (
         roots: [UINode], truncated: Bool, windows: [UIWindowInfo], hidden: Int?, namedHidden: [UITreeContext.HiddenBranch]?
     ) {
-        var dump = try await helperDump(serial, session: session)
+        let options = HelperDumpOptions(notImportant: everyView)
+        var dump = try await helperDump(serial, session: session, options: options)
         if HelperTreeMapping.appWindow(in: dump) == nil {
             log(.debug, "The helper found no window on \(serial); reading the screen again")
             try await host.sleep(.milliseconds(500))
-            dump = try await helperDump(serial, session: session)
+            dump = try await helperDump(serial, session: session, options: options)
             guard HelperTreeMapping.appWindow(in: dump) != nil else {
                 throw AndroidError.noWindow(serial)
             }
@@ -189,7 +191,7 @@ extension AndroidBackend {
         let mapped = host.timing.measure(.treeMap) {
             HelperTreeMapping.roots(from: dump, scale: geometry.scale, pid: session.ready.pid)
         }
-        session.remember(mapped.index)
+        if !everyView { session.remember(mapped.index) }
         return (
             mapped.roots, dump.truncated, HelperTreeMapping.windows(from: dump, scale: geometry.scale), dump.skippedInvisible,
             HelperTreeMapping.hiddenBranches(from: dump, scale: geometry.scale)
@@ -253,9 +255,9 @@ extension AndroidBackend {
         return false
     }
 
-    private func helperDump(_ serial: String, session: HelperSession) async throws -> HelperDump {
+    private func helperDump(_ serial: String, session: HelperSession, options: HelperDumpOptions = HelperDumpOptions()) async throws -> HelperDump {
         do {
-            return try await session.dump()
+            return try await session.dump(options)
         } catch HelperStartFailure.busy {
             throw await busyError(serial)
         }

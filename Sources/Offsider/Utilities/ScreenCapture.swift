@@ -75,7 +75,8 @@ struct RenderedScreenshot {
             maskedBy: masks?.painted,
             maskedBeneath: masks?.beneath ?? [:],
             skippedBeneath: masks?.skipped,
-            maskUnmatched: masks?.unmatched ?? []
+            maskUnmatched: masks?.unmatched ?? [],
+            maskUnproven: masks?.unproven
         )
     }
 }
@@ -129,6 +130,15 @@ enum ScreenCapture {
         /// Nil unless `--mask-skip-beneath` was given; then every skippable kind asked for, zeros included.
         var skipped: [MaskKind: Int]?
         var unmatched: [String]
+        /// `modal` when Android left the windows beneath a modal out of the tree.
+        var unproven: String? = nil
+    }
+
+    /// `modal` when an Android modal window, but an empty or opaque LogBox one, hides the windows beneath from the tree.
+    nonisolated static func unproven(_ tree: UITree) -> String? {
+        let context = UITreeContext(tree: tree)
+        guard tree.platform == .android, let window = context.window, window.kind == .modal, !window.empty, context.logBox?.inspector != true else { return nil }
+        return "modal"
     }
 
     /// Paints every mask in `plan` black; a capture that is not upright cannot be mapped, so it is withheld.
@@ -178,12 +188,15 @@ enum ScreenCapture {
             }
         }
         beneath = beneath.filter { $0.value > 0 }
-        guard image !== capture.image else { return MaskResult(capture: capture, painted: painted, beneath: beneath, skipped: skipped, unmatched: targets.unmatched) }
+        let unproven = tree.flatMap(Self.unproven)
+        guard image !== capture.image else {
+            return MaskResult(capture: capture, painted: painted, beneath: beneath, skipped: skipped, unmatched: targets.unmatched, unproven: unproven)
+        }
         let masked = CapturedScreen(
             image: image, platform: capture.platform, screen: capture.screen, pixelsPerPoint: capture.pixelsPerPoint,
             upright: capture.upright, untouchedPNG: nil
         )
-        return MaskResult(capture: masked, painted: painted, beneath: beneath, skipped: skipped, unmatched: targets.unmatched)
+        return MaskResult(capture: masked, painted: painted, beneath: beneath, skipped: skipped, unmatched: targets.unmatched, unproven: unproven)
     }
 
     nonisolated private static func subject(of kind: MaskKind) -> String {

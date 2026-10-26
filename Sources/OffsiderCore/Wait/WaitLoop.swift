@@ -152,11 +152,12 @@ public struct SettleGate: Equatable, Sendable {
     /// How long after the input the gate opens by itself.
     public var limit: TimeInterval { before == nil ? Self.floor : Self.hold }
 
-    /// True when `tree` differs from the screen before the input, compared without native types, which a cached tree drops.
+    /// True when `tree`, masked as the cache masks it, differs from the screen before the input, compared without native types.
     public func showsEffect(in tree: UITree, ignoreValues: Bool) -> Bool {
         guard let before else { return false }
         let detector = ChangeDetector(options: .init(ignoreText: ignoreValues))
-        if case .changed = detector.compare(before, AccessibilitySnapshot(tree: tree, native: false)) {
+        let masked = tree.redacted(OutputMasks.current.mask, scope: .cache)
+        if case .changed = detector.compare(before, AccessibilitySnapshot(tree: masked, native: false)) {
             return true
         }
         return false

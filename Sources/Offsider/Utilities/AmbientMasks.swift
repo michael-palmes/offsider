@@ -63,6 +63,13 @@ enum AmbientMasks {
         return masks.plan
     }
 
+    /// The config's and the caller's run masks for the elements a message names; none when the file cannot be used.
+    nonisolated static func outputMask() -> TreeValueMask {
+        var plan = (try? MaskConfigs.current())?.config.plan ?? .none
+        if let run = EvidenceRecorder.ambientMasks(), !run.isEmpty { plan = plan.union(run.plan) }
+        return (try? TreeValueMask(plan: plan)) ?? .none
+    }
+
     /// The config's and the run's masks for the values a tree shows, with the device's revealed password fields.
     static func treeMask(revealed: RevealedSecrets? = nil) throws -> TreeValueMask {
         var plan = try MaskConfigs.current()?.config.plan ?? .none

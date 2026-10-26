@@ -80,7 +80,7 @@ public struct CoverReport: Equatable, Sendable {
         self.init(
             role: verdict.cover.role.rawValue,
             id: verdict.cover.normalizedID,
-            label: verdict.cover.normalizedLabel.map { SelectorText.truncated($0) },
+            label: verdict.cover.normalizedLabel.map { SelectorText.truncated(OutputMasks.current.mask.shownLabel($0, id: verdict.cover.normalizedID)) },
             frame: verdict.cover.frame,
             screen: verdict.screen.map { SelectorText.truncated($0) },
             evidence: verdict.evidence,

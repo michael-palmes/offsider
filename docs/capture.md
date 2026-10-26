@@ -12,14 +12,14 @@ A person at a terminal sees a spinner while it captures, then ✅ `Screenshot sa
 
 ### Masks
 
-Masks are painted from one accessibility tree read before the image is written, and `--json` reports `masked`, `maskedBy`, `maskedBeneath` (matches on a screen beneath a page, still painted), `skippedBeneath` (with `--mask-skip-beneath`) and `maskUnmatched`.
+Masks are painted from one accessibility tree read before the image is written, and `--json` reports `masked`, `maskedBy`, `maskedBeneath` (matches on a screen beneath a page, still painted), `skippedBeneath` (with `--mask-skip-beneath`), `maskUnmatched` and `maskUnproven`. On Android that read also takes in views not important for accessibility, so text an app hides from it while still drawing it, such as a screen behind a sheet, is painted too; it is never cached. Android leaves the windows behind a modal window, such as a React Native `Modal` sheet, out of the tree altogether, so masks cannot see what is drawn there: `maskUnproven` reads `modal` and stderr says so.
 
 - Password fields are painted opaque black by default; when one has no frame, the image is withheld (`mask_unproven`) and no file is written. This costs one tree read per screenshot (about 100 to 500 ms on a simulator or emulator). `--no-mask-secure` skips it, for a screen with no password field; `OFFSIDER_MASK_SECURE=0` (or `false`, `no`, `off`) makes that the default and `1` (`true`, `yes`, `on`) keeps masking on. The order is the capture's flag, then the batch's, then the variable. An evidence run's password mask is never dropped by a capture. When an agent runs it (standard output is not a terminal), `--no-mask-secure` and `OFFSIDER_MASK_SECURE=0` need a person at a terminal to confirm with Touch ID or the login password, and exit 1 `person_required` otherwise. Masking follows the platform's secure flag, so a secret in an ordinary text field, such as a show-password toggle or a custom PIN pad, is not masked: add `--mask-id` for it.
 - `--mask-id`, `--mask-label`, `--mask-label-contains`, `--mask-text <regex>` and `--mask-emails` paint the elements they match. `--mask-text` searches labels, values (never a secure one), titles, text, content descriptions and hints, and paints the innermost match, so a row is not blacked out for one field.
 - `--mask-region x,y,w,h` paints a rectangle in points without reading the tree.
 - `--mask-skip-beneath` leaves matches of `--mask-id`, `--mask-label`, `--mask-label-contains`, `--mask-text`, `--mask-emails` and the evidence run's email and id masks unpainted when their element is on a screen beneath a page, and `--json` counts them per kind in `skippedBeneath` (zeros included), with a count on stderr. Password fields and `--mask-region` are always painted, and with no page found nothing is skipped. Use it only when the page on top is opaque: a translucent or animating page shows what is beneath, so check the image. `batch` screenshot steps take it too; video commands do not.
 
-iOS briefly shows the last character typed into a secure field. Tree masks cover only what the accessibility tree describes: web views, canvases, images, a field that appears between the tree read and the capture, and text drawn in that gap can still show, so check an image before you share it.
+iOS briefly shows the last character typed into a secure field. Tree masks cover only what the accessibility tree describes: web views, canvases, images, what an Android modal window covers, a field that appears between the tree read and the capture, and text drawn in that gap can still show, so check an image before you share it.
 
 ### Mask file
 
@@ -36,6 +36,7 @@ An `offsider.mask.json` at the repository root (found like `offsider.login.json`
 ```
 
 - `ids`, `labels` and `labelContains` match as `--id`, `--label` and `--label-contains` do (at most 64 each); `valuePatterns` are case-insensitive regular expressions of at most 200 characters with bounded counts (`{1,40}`, never `*`, `+` or `{n,}`); `emails` paints and redacts every email address. Keys starting with `//` are comments.
+- In tree output, messages and the tree cache, a matched element's value reads `[redacted]` and its label keeps only what the file names: an exact `labels` match whole, a `labelContains` match as `Referral code. [redacted]`, an `ids` match as `[redacted]`. React Native puts a copied value inside the label, so name the caption with `labelContains`.
 - The file's masks join a capture's own and the run's; a file selector that matches nothing is not reported in `maskUnmatched`.
 - `record-video` and `stream-video` refuse with `video_unmasked` while an element it names is on screen; `--unmasked` records anyway.
 - A broken file stops the command with exit 64, naming the line and the key to fix.

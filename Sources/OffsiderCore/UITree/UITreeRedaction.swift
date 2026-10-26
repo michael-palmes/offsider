@@ -69,14 +69,64 @@ public struct TreeValueMask: @unchecked Sendable {
 
     var hidesElements: Bool { !ids.isEmpty || !labels.isEmpty || !labelContains.isEmpty }
 
-    func hidesValue(of node: UINode) -> Bool {
+    public func hidesValue(of node: UINode) -> Bool {
+        hides(id: node.normalizedID, label: node.normalizedLabel)
+    }
+
+    /// Whether a masked id or label names the element with this trimmed `id` and `label`, so output hides its text.
+    public func hides(id: String?, label: String?) -> Bool {
         guard hidesElements else { return false }
-        if let id = node.normalizedID, ids.contains(id) { return true }
-        guard let label = node.normalizedLabel else { return false }
+        if let id, ids.contains(id) { return true }
+        guard let label else { return false }
         if labels.contains(label) { return true }
         guard !foldedLabels.isEmpty || !labelContains.isEmpty else { return false }
         let folded = Self.folded(label)
         return foldedLabels.contains(folded) || labelContains.contains { folded.contains($0) }
+    }
+
+    /// An exact `labels` match whole, else only the text `labelContains` names with the rest `[redacted]`, else `[redacted]`.
+    public func maskedLabel(_ label: String) -> String {
+        let folded = Self.folded(label)
+        guard !folded.isEmpty else { return label }
+        if labels.contains(label.trimmingCharacters(in: .whitespacesAndNewlines)) || foldedLabels.contains(folded) { return label }
+        let named = labelContains.compactMap { folded.range(of: $0) }.sorted { $0.lowerBound < $1.lowerBound }
+        guard !named.isEmpty else { return LogRedactor.marker }
+        var shown = ""
+        var cursor = folded.startIndex
+        for range in named where range.upperBound > cursor {
+            let start = max(cursor, range.lowerBound)
+            shown += Self.gap(folded[cursor..<start]) + folded[start..<range.upperBound]
+            cursor = range.upperBound
+        }
+        return shown + Self.gap(folded[cursor...])
+    }
+
+    /// Hidden text between named parts: the marker, with a space kept on either side so the words around it stay apart.
+    private static func gap(_ text: Substring) -> String {
+        guard text.contains(where: { !$0.isWhitespace }) else { return String(text) }
+        return (text.first?.isWhitespace == true ? " " : "") + LogRedactor.marker + (text.last?.isWhitespace == true ? " " : "")
+    }
+
+    /// A label of the element with `id` as tree output shows it: masked when a mask names the element, else with secrets redacted.
+    public func shownLabel(_ label: String, id: String?) -> String {
+        if let masked = masked(label, id: id) { return masked }
+        var count = 0
+        return UITree.redactText(label, mask: self, count: &count)
+    }
+
+    /// `label` as `maskedLabel` shows it when a mask names the element with `id`, else nil.
+    public func masked(_ label: String, id: String?) -> String? {
+        hides(id: Self.trimmed(id), label: Self.trimmed(label)) ? maskedLabel(label) : nil
+    }
+
+    /// `node`'s label as tree output shows it.
+    public func shownLabel(of node: UINode) -> String? {
+        node.label.map { shownLabel($0, id: node.normalizedID) }
+    }
+
+    private static func trimmed(_ text: String?) -> String? {
+        guard let trimmed = text?.trimmingCharacters(in: .whitespacesAndNewlines), !trimmed.isEmpty else { return nil }
+        return trimmed
     }
 
     /// `SelectorText.folded`, skipped for plain ASCII with single spaces, which it would leave as it is.
@@ -113,14 +163,37 @@ public struct TreeValueMask: @unchecked Sendable {
     }
 }
 
-/// Where a tree is going: shown to the reader (every value pattern too), or into the tree cache (values only, labels kept as identity).
+/// The masks the elements a command's messages name honour, read the first time one is named.
+public final class OutputMasks: @unchecked Sendable {
+    /// None unless the command binds its own; a test binds its own too.
+    @TaskLocal public static var current = OutputMasks { .none }
+
+    private let read: @Sendable () -> TreeValueMask
+    private let lock = NSLock()
+    private var cached: TreeValueMask?
+
+    public init(_ read: @escaping @Sendable () -> TreeValueMask) {
+        self.read = read
+    }
+
+    public var mask: TreeValueMask {
+        lock.lock()
+        defer { lock.unlock() }
+        if let cached { return cached }
+        let mask = read()
+        cached = mask
+        return mask
+    }
+}
+
+/// Where a tree is going: shown to the reader (every value pattern too), or into the tree cache (values and masked labels only).
 public enum TreeRedactionScope: Sendable {
     case output
     case cache
 }
 
 extension UITree {
-    /// A copy with masked and revealed values hidden and, for output, secrets in labels and values redacted; ids are never touched.
+    /// A copy with masked elements' text and revealed values hidden and, for output, secrets in labels and values redacted; ids are never touched.
     /// Output trees carry the counts, which the renderer prints.
     public func redacted(_ mask: TreeValueMask = .none, scope: TreeRedactionScope = .output) -> UITree {
         var counts = UITreeRedactionCounts()
@@ -140,9 +213,11 @@ extension UITree {
             node.value = SecureText.masked(node.value)
             node.native.text = SecureText.masked(node.native.text)
         } else if mask.hidesValue(of: node) {
-            if node.value?.isEmpty == false || node.native.text?.isEmpty == false { counts.redacted += 1 }
+            let label = node.label.map(mask.maskedLabel)
+            if node.value?.isEmpty == false || node.native.text?.isEmpty == false || label != node.label { counts.redacted += 1 }
+            node.native.hideText(label: node.label, shown: label)
+            node.label = label
             node.value = hidden(node.value)
-            node.native.text = hidden(node.native.text)
         } else {
             switch scope {
             case .cache:
@@ -164,7 +239,7 @@ extension UITree {
     }
 
     /// Strings under six bytes cannot hold a code, address, card or phrase, so they skip the patterns.
-    private static func redactText(_ text: String, mask: TreeValueMask, count: inout Int) -> String {
+    static func redactText(_ text: String, mask: TreeValueMask, count: inout Int) -> String {
         var result = text
         if text.utf8.count >= LogRedactor.minimumValueLength {
             let redacted = LogRedactor.redactValue(text)
@@ -188,6 +263,12 @@ extension UINative {
                 self = .android(attributes)
             }
         }
+    }
+
+    /// A masked element's screen text: a copy of its label as `shown`, everything else hidden.
+    mutating func hideText(label: String?, shown: String?) {
+        let hide = { (text: String) in text == label ? (shown ?? LogRedactor.marker) : (text.isEmpty ? text : LogRedactor.marker) }
+        redactText(hide)
     }
 
     /// Every attribute that carries screen text, transformed in place.

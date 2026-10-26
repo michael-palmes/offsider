@@ -12,6 +12,7 @@ struct ReactNativeEvidenceTests {
         let changedPixels: Int?
         let changedBounds: Bounds?
         let diffPath: String?
+        let maskUnproven: String?
     }
 
     struct Bounds: Decodable {
@@ -143,5 +144,30 @@ struct ReactNativeEvidenceTests {
 
         let plain = try await app.run("logs --rn --last 1m --no-redact --grep 'OffsiderFixture batch-login'").stdout
         #expect(plain.contains(Self.email))
+    }
+
+    @Test("on Android, text masks paint rows a sheet hides from accessibility, and a Modal sheet is reported unproven", arguments: RNPlatform.enabled.filter { $0 == .android })
+    func masksUnderSheets(platform: RNPlatform) async throws {
+        let app = RNApp(platform)
+        try await app.open("mask-sheet-test")
+        let row = try await app.frame(of: "mask-sheet-test-address")
+        let centre = (x: row.x + row.width / 2, y: row.y + row.height / 2)
+        try await ReactNativeEnvironmentTests.withTemporaryDirectory { directory in
+            for sheet in ["hiding", "modal"] {
+                try await app.run("tap --id mask-sheet-test-open-\(sheet)")
+                try await app.run("wait --id mask-sheet-test-close --timeout 5")
+                let output = directory.appendingPathComponent("\(sheet).png").path
+                let json = try await app.run(#"screenshot --mask-text '\.\.\.' --scale points --json --output "# + AndroidE2E.quote(output)).stdout
+                try await app.run("tap --id mask-sheet-test-close")
+                try await app.run("wait --id mask-sheet-test-close --gone --timeout 5")
+                let shot = try JSONDecoder().decode(Shot.self, from: Data(json.utf8))
+                if sheet == "hiding" {
+                    #expect(shot.maskedBy?["text"] == 2, "\(json)")
+                    #expect(try Self.pixel(atPoint: centre, in: output) == [0, 0, 0], "the address under the sheet was left unmasked")
+                } else {
+                    #expect(shot.maskUnproven == "modal", "\(json)")
+                }
+            }
+        }
     }
 }
