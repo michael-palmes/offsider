@@ -668,6 +668,27 @@ struct DeviceAccessCommandTests {
         #expect(try DeviceAccessStatus.parse(["--json"]).perform(context: context).0.hasPrefix("{"))
     }
 
+    @Test("--json reaches status, add and remove after their name or before it, rather than stopping at devices")
+    func jsonReachesTheSubcommand() async throws {
+        let home = try makePolicyHome()
+        defer { try? FileManager.default.removeItem(atPath: home) }
+        let seal = MemorySeal()
+        try Self.seed(home, seal: seal, [PolicyFixtures.entry()])
+        let context = Self.context(home: home, seal: seal)
+        let json = try DeviceAccessStatus.parse(["--json"]).perform(context: context).0
+        for arguments in [["devices", "status", "--json"], ["devices", "--json", "status"]] {
+            let command = try #require(try OffsiderCommand.parseAsRoot(arguments) as? DeviceAccessStatus)
+            let capture = ConsoleCapture()
+            try await DeviceAccessContext.$current.withValue(context) {
+                try await Console.$current.withValue(capture.console(out: .agent, err: .agent)) { try await command.run() }
+            }
+            #expect(capture.out == json)
+        }
+        #expect(try #require(try OffsiderCommand.parseAsRoot(["devices", "status"]) as? DeviceAccessStatus).json == false)
+        #expect(try #require(try OffsiderCommand.parseAsRoot(["devices", "remove", "--json"]) as? DeviceAccessRemove).json)
+        #expect(try #require(try OffsiderCommand.parseAsRoot(["devices", "--json", "add", "--device", PolicyFixtures.phone]) as? DeviceAccessAllow).json)
+    }
+
     @Test("a list changed outside Offsider warns a person on stderr with the command that allows again; an agent reads it in the text")
     func statusWarnsAPerson() async throws {
         let home = try makePolicyHome()

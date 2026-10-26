@@ -176,8 +176,8 @@ struct Init: AsyncParsableCommand {
                 if let content = merge.content {
                     try writeAtomically(content, to: file)
                 }
-                let line = AgentPermissionRules.resultLine(path: shown, added: merge.added)
-                steps.append(InitScreen.Step(merge.added == 0 ? .rulesPresent : .rulesAdded(merge.added), who: agent.name, path: shown, line: line))
+                let line = AgentPermissionRules.resultLine(path: shown, added: merge.added, replaced: merge.replaced)
+                steps.append(InitScreen.Step(merge.content == nil ? .rulesPresent : .rulesAdded(merge.added), who: agent.name, path: shown, line: line))
             } catch let error as AgentPermissionRules.MergeError {
                 failures.append(AgentPermissionRules.failureLine(path: shown, error: error))
             } catch {
@@ -297,24 +297,27 @@ struct Init: AsyncParsableCommand {
         }
         let clients = Client.allCases.filter { $0 != .auto }.compactMap { try? clientInfo(for: $0) }
         var installed: [String] = []
-        var stale: [String] = []
+        var stale: [(file: String, client: String)] = []
         for (client, _) in distinctFolders(clients) {
             let file = client.skillsDirectory.appendingPathComponent("\(skillFolderName)/SKILL.md").path
             guard let data = FileManager.default.contents(atPath: file), SkillInstall.isOffsiderSkill(data) else { continue }
             installed.append(file)
-            if data != bundled { stale.append(file) }
+            if data != bundled { stale.append((file, client.id.rawValue)) }
         }
-        return DoctorCheckResult(id: .installSkill, verdict: SkillInstall.doctorVerdict(installed: installed, stale: stale))
+        let verdict = SkillInstall.doctorVerdict(installed: installed, stale: stale, agent: Console.current.out.profile == .agent, clients: detectClients().map(\.id.rawValue))
+        return DoctorCheckResult(id: .installSkill, verdict: verdict)
     }
 
-    /// What `doctor`'s `install.rules` check reports: the installed agents still missing any of the rules.
+    /// What `doctor`'s `install.rules` check reports: the installed agents missing a rule (or whose file cannot be read), or holding one since replaced.
     static func rulesDoctorVerdict(home: String = homeDirectoryPath()) -> DoctorRules.Verdict {
         let detected = AgentPermissionRules.detect(home: home)
-        let lacking = detected.filter { agent in
+        let merges = detected.map { agent in
             let existing = try? readCapped(URL(fileURLWithPath: home).appendingPathComponent(agent.rulesFile))
-            return AgentPermissionRules.missing(agent, existing: existing ?? nil) > 0
+            return (agent, try? AgentPermissionRules.merge(agent, existing: existing ?? nil))
         }
-        return AgentPermissionRules.doctorVerdict(detected: detected, lacking: lacking)
+        let lacking = merges.filter { ($0.1?.added ?? 1) > 0 }.map(\.0)
+        let outdated = merges.filter { $0.1?.added == 0 && ($0.1?.replaced ?? 0) > 0 }.map(\.0)
+        return AgentPermissionRules.doctorVerdict(detected: detected, lacking: lacking, outdated: outdated)
     }
 
     private func uninstallSkill(from targets: [ClientInfo]) throws {

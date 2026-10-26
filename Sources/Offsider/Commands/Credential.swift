@@ -261,9 +261,9 @@ struct CredentialCommand: AsyncParsableCommand {
         return trimmed
     }
 
+    /// Exactly as written, so a permission rule such as `offsider credential remove*` matches every spelling that runs.
     func parsedAction() throws -> Action {
-        let word = action.trimmingCharacters(in: .whitespaces).lowercased()
-        guard let parsed = word == "add" ? .set : Action(rawValue: word) else {
+        guard let parsed = action == "add" ? .set : Action(rawValue: action) else {
             throw ValidationError("Unknown action '\(action)'. Use add, status, describe, remove, join or signed-out.")
         }
         return parsed

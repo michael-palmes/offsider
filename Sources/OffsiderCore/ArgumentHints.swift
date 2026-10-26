@@ -27,6 +27,9 @@ public enum ArgumentHints {
 
     private static let internalBrokerCommand = "hid-broker"
 
+    /// `credential` takes its action first, so a permission rule such as `offsider credential remove*` sees every write.
+    public static let credentialActionFirst = "Put the action straight after credential, such as offsider credential status --app com.example.app."
+
     /// Per command: an option it lacks, and what to use instead.
     static let misnamed: [String: [String: String]] = [
         "wait": partialLabel("wait").merging([
@@ -69,6 +72,9 @@ public enum ArgumentHints {
         let options = arguments.prefix { $0 != "--" }
         if options.contains(where: { matches($0, "--udid") }) {
             return Hint(message: udidMessage, isLegacy: true)
+        }
+        if first == "credential", let next = arguments.dropFirst().first, next.hasPrefix("-"), next != "--help", next != "-h" {
+            return Hint(message: credentialActionFirst, isLegacy: false)
         }
         guard let table = misnamed[first] else { return nil }
         for option in options.dropFirst() {
