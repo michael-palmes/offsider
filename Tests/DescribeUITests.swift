@@ -252,7 +252,7 @@ struct DescribeUIRedactionTests {
         #expect(!clean.contains(#""redacted""#))
     }
 
-    @Test("offsider.mask.json ids and labels hide values in the output and the cache, whatever their length")
+    @Test("offsider.mask.json ids and labels hide values, and an id match its label, in the output and the cache")
     func configMasks() async throws {
         let fixture = try TreeCacheFixture()
         let tree = FakeUI.tree([
@@ -263,7 +263,7 @@ struct DescribeUIRedactionTests {
         let config = MaskConfig(ids: ["balance"], labels: ["Member number"])
         let output = try await fixture.run { try await Self.describe(["--format", "text"], on: FakeDeviceBackend(trees: [tree]), config: config) }
 
-        #expect(output.contains(#"text "Balance" id=balance value="[redacted]""#))
+        #expect(output.contains(#"text "[redacted]" id=balance ("#) && !output.contains("$12"))
         #expect(output.contains(#"text "Member number" id=member value="[redacted]""#))
         #expect(output.contains(#"value="Hi there""#))
         let cached = String(decoding: try #require(FileManager.default.contents(atPath: fixture.path(for: Self.device))), as: UTF8.self)

@@ -3,7 +3,7 @@ import OffsiderCore
 
 /// Android emulators and USB phones over the adb server; lives for one command run, so its caches do too.
 @MainActor
-public final class AndroidBackend: DeviceBackend, AccessibilityActionPerforming, AccessibilityChangeWaiting {
+public final class AndroidBackend: DeviceBackend, AccessibilityActionPerforming, AccessibilityChangeWaiting, MaskTreeReading {
     let host: AndroidHost
     let log: AndroidLog
     private var sdk: AndroidSDK?
@@ -162,8 +162,14 @@ public final class AndroidBackend: DeviceBackend, AccessibilityActionPerforming,
         return try await readTree(id, point: point, checkingWindows: true)
     }
 
+    /// With views an app hides from accessibility but still draws, such as a screen behind a sheet; for masks only, never cached.
+    public func maskTree(for id: DeviceID) async throws -> UITree {
+        try await requireDrivableForeground(id.rawValue)
+        return try await readTree(id, point: nil, checkingWindows: true, everyView: true)
+    }
+
     /// The tree without the phone deny-list check, for the lock screen `wake --unlock` reads.
-    func readTree(_ id: DeviceID, point: UIPoint?, checkingWindows: Bool = false) async throws -> UITree {
+    func readTree(_ id: DeviceID, point: UIPoint?, checkingWindows: Bool = false, everyView: Bool = false) async throws -> UITree {
         let serial = id.rawValue
         let startedAt = Date()
         let roots: [UINode]
@@ -173,10 +179,10 @@ public final class AndroidBackend: DeviceBackend, AccessibilityActionPerforming,
         var namedHidden: [UITreeContext.HiddenBranch]?
         switch try await treeSource(for: serial) {
         case .helper(let session):
-            let read = try await helperRoots(serial, session: session)
+            let read = try await helperRoots(serial, session: session, everyView: everyView)
             (roots, truncated, windows, hidden, namedHidden) = (read.roots, read.truncated, read.windows, read.hidden, read.namedHidden)
         case .uiautomator:
-            roots = try await uiautomatorRoots(serial)
+            roots = try await uiautomatorRoots(serial, compressed: !everyView)
         }
         var tree = UITree(platform: .android, device: serial, roots: roots)
         tree.sourceTruncated = truncated
@@ -187,21 +193,21 @@ public final class AndroidBackend: DeviceBackend, AccessibilityActionPerforming,
             try requireDrivableWindows(tree, on: serial)
         }
         guard let point else {
-            DeviceActivityLedger.current.recordTreeRead(tree, on: id, startedAt: startedAt)
+            if !everyView { DeviceActivityLedger.current.recordTreeRead(tree, on: id, startedAt: startedAt) }
             return tree
         }
         return UITree(platform: .android, device: serial, roots: tree.deepestNode(at: point).map { [$0] } ?? [])
     }
 
-    private func uiautomatorRoots(_ serial: String) async throws -> [UINode] {
+    private func uiautomatorRoots(_ serial: String, compressed: Bool = true) async throws -> [UINode] {
         let geometry = try await geometry(for: serial)
         let xml: String
-        if let first = try await dumpHierarchy(serial) {
+        if let first = try await dumpHierarchy(serial, compressed: compressed) {
             xml = first
         } else {
             log(.debug, "uiautomator found no window on \(serial); reading the screen again")
             try await host.sleep(.milliseconds(500))
-            guard let second = try await dumpHierarchy(serial) else {
+            guard let second = try await dumpHierarchy(serial, compressed: compressed) else {
                 throw AndroidError.uiautomatorNoWindow(serial)
             }
             xml = second
@@ -219,9 +225,9 @@ public final class AndroidBackend: DeviceBackend, AccessibilityActionPerforming,
     }
 
     /// The hierarchy XML, or nil when uiautomator found no window, which lasts a moment while an activity starts.
-    private func dumpHierarchy(_ serial: String) async throws -> String? {
+    private func dumpHierarchy(_ serial: String, compressed: Bool) async throws -> String? {
         dumpCounter += 1
-        let script = UIAutomatorDump.script(path: UIAutomatorDump.devicePath(pid: getpid(), counter: dumpCounter))
+        let script = UIAutomatorDump.script(path: UIAutomatorDump.devicePath(pid: getpid(), counter: dumpCounter), compressed: compressed)
         let result = try await requireClient().shell(script, on: serial, timeout: .seconds(20), label: "uiautomator dump")
         switch UIAutomatorDump.classify(result) {
         case .tree(let text): return text

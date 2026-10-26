@@ -44,9 +44,9 @@ enum UIAutomatorDump {
 
     /// Prints the XML on stdout and deletes the file. On failure uiautomator's output goes to stderr and the status is
     /// 4 for the device timeout, the signal status when uiautomator was killed, else 3.
-    static func script(path: String) -> String {
+    static func script(path: String, compressed: Bool = true) -> String {
         let file = AdbShellQuoting.quote(path)
-        return "f=\(file); out=$(timeout \(deviceTimeoutSeconds) uiautomator dump --compressed \"$f\" 2>&1); rc=$?; "
+        return "f=\(file); out=$(timeout \(deviceTimeoutSeconds) uiautomator dump\(compressed ? " --compressed" : "") \"$f\" 2>&1); rc=$?; "
             + "if [ -s \"$f\" ]; then cat \"$f\"; rm -f \"$f\"; else rm -f \"$f\"; echo \"$out\" >&2; "
             + "[ $rc -eq 124 ] && exit 4; [ $rc -ge 128 ] && exit $rc; exit 3; fi"
     }

@@ -407,7 +407,7 @@ struct TreeCacheTests {
         #expect(!FileManager.default.fileExists(atPath: staleSecure))
     }
 
-    @Test("masked ids from offsider.mask.json never reach a cache file, and labels stay for identity")
+    @Test("an element offsider.mask.json masks by id reaches a cache file with neither its label nor its value")
     func configMaskedValueNeverCached() async throws {
         let fixture = try TreeCacheFixture()
         let tree = FakeUI.tree([FakeUI.node(.text, id: "balance", label: "Balance", value: "$4,210.55", frame: FakeUI.frame(20, 100, 350, 30))])
@@ -419,7 +419,8 @@ struct TreeCacheTests {
         }
         let bytes = String(decoding: try #require(FileManager.default.contents(atPath: fixture.path(for: Self.device))), as: UTF8.self)
         #expect(!bytes.contains("4,210"))
-        #expect(record?.tree?.roots[0].children[0].label == "Balance")
+        #expect(record?.tree?.roots[0].children[0].label == LogRedactor.marker)
+        #expect(record?.tree?.roots[0].children[0].id == "balance")
         #expect(record?.tree?.roots[0].children[0].value == LogRedactor.marker)
     }
 

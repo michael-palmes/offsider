@@ -90,8 +90,8 @@ enum HelperTreeMapping {
     static func hiddenBranches(from dump: HelperDump, scale: Double) -> [UITreeContext.HiddenBranch]? {
         dump.hiddenBranches?.map { helper in
             let node = AndroidTreeMapping.node(from: rawNode(helper), scale: scale)
-            let label = node.isSecure ? nil : node.normalizedLabel ?? node.children.first { !$0.isSecure && $0.normalizedLabel != nil }?.normalizedLabel
-            return .shown(id: node.id, label: label, className: helper.class, frame: node.frame)
+            let source = node.isSecure ? nil : node.normalizedLabel != nil ? node : node.children.first { !$0.isSecure && $0.normalizedLabel != nil }
+            return .shown(id: node.id, label: source?.normalizedLabel, labelledBy: source?.normalizedID, className: helper.class, frame: node.frame)
         }
     }
 

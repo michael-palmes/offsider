@@ -48,10 +48,15 @@ public struct ChangeDetector: Sendable {
     private struct Entry {
         let key: String
         let liveKey: String
-        let name: String
-        let element: String
+        let identifier: String?
         let node: AccessibilitySnapshot.Node
         let signature: Signature
+
+        /// Built only for an entry a message names, with a masked element's label as tree output shows it.
+        var name: String { ChangeDetector.displayName(node, identifier: identifier) }
+        var element: String {
+            identifier.map { "\(TerminalText.line(node.type, cap: 64))#\(TerminalText.field($0))" } ?? ChangeDetector.displayName(node, identifier: nil)
+        }
     }
 
     public let options: Options
@@ -262,8 +267,7 @@ public struct ChangeDetector: Sendable {
             result.append(Entry(
                 key: key,
                 liveKey: liveKey,
-                name: Self.displayName(node, identifier: identifier),
-                element: identifier.map { "\(TerminalText.line(node.type, cap: 64))#\(TerminalText.field($0))" } ?? Self.displayName(node, identifier: nil),
+                identifier: identifier,
                 node: node,
                 signature: signature(node)
             ))
@@ -297,9 +301,10 @@ public struct ChangeDetector: Sendable {
         let b = live || textMoved ? after.signature.structural : after.signature
         let name = after.name
         if a.value != b.value, before.node.isSecure || after.node.isSecure { return "value of \(name) changed (secure field)" }
-        if a.value != b.value { return "value of \(name) changed from \(Self.quoted(a.value)) to \(Self.quoted(b.value))" }
-        if a.label != b.label { return "label of \(name) changed from \(Self.quoted(a.label)) to \(Self.quoted(b.label))" }
-        if a.title != b.title { return "title of \(name) changed from \(Self.quoted(a.title)) to \(Self.quoted(b.title))" }
+        let masked = Self.isMasked(before.node) || Self.isMasked(after.node)
+        if a.value != b.value { return masked ? "value of \(name) changed (masked)" : "value of \(name) changed from \(Self.quoted(a.value)) to \(Self.quoted(b.value))" }
+        if a.label != b.label { return masked ? "label of \(name) changed (masked)" : "label of \(name) changed from \(Self.quoted(a.label)) to \(Self.quoted(b.label))" }
+        if a.title != b.title { return masked ? "title of \(name) changed (masked)" : "title of \(name) changed from \(Self.quoted(a.title)) to \(Self.quoted(b.title))" }
         if a.enabled != b.enabled { return "\(name) became \(b.enabled == true ? "enabled" : "disabled")" }
         if a.state.checked != b.state.checked { return "checked state of \(name) changed" }
         if a.state.selected != b.state.selected { return "selected state of \(name) changed" }
@@ -309,11 +314,20 @@ public struct ChangeDetector: Sendable {
         return nil
     }
 
+    /// Whether a masked id or label names the element, so a summary names it without its text.
+    private static func isMasked(_ node: AccessibilitySnapshot.Node) -> Bool {
+        let trimmed = { (text: String?) -> String? in
+            guard let text = text?.trimmingCharacters(in: .whitespacesAndNewlines), !text.isEmpty else { return nil }
+            return text
+        }
+        return OutputMasks.current.mask.hides(id: trimmed(node.identifier), label: trimmed(node.label))
+    }
+
     /// The JSON `node` value: bare, since JSON strings carry their own escaping and the `untrusted` list names the field.
-    private static func displayName(_ node: AccessibilitySnapshot.Node, identifier: String?) -> String {
+    fileprivate static func displayName(_ node: AccessibilitySnapshot.Node, identifier: String?) -> String {
         if let identifier { return TerminalText.bareOrQuoted(identifier) }
         if let label = node.label?.trimmingCharacters(in: .whitespacesAndNewlines), !label.isEmpty {
-            return "\(TerminalText.line(node.type, cap: 64)) \(TerminalText.quoted(label))"
+            return "\(TerminalText.line(node.type, cap: 64)) \(TerminalText.quoted(OutputMasks.current.mask.shownLabel(label, id: node.identifier)))"
         }
         return TerminalText.line(node.type, cap: 64)
     }
