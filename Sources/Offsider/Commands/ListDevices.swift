@@ -167,6 +167,15 @@ struct DeviceListOptions: ParsableArguments {
     @Flag(name: .customLong("json"), help: "Print one JSON object to stdout instead of a table.")
     var json = false
 
+    @OptionGroup var filters: DeviceListFilters
+
+    var platform: DevicePlatform? { filters.platform }
+    var physical: Bool { filters.physical }
+    var booted: Bool { filters.booted }
+}
+
+/// The list's filters. `devices` parses them wherever they fall, so its subcommands declare this group too, receive them and refuse them.
+struct DeviceListFilters: ParsableArguments {
     @Option(name: .customLong("platform"), help: "Only list devices on this platform.")
     var platform: DevicePlatform?
 
@@ -175,4 +184,19 @@ struct DeviceListOptions: ParsableArguments {
 
     @Flag(name: .customLong("booted"), help: "List only booted or booting devices.")
     var booted = false
+
+    /// A usage error for `devices <subcommand>` when any filter is set, naming the listing command it meant.
+    func refuse(in subcommand: any ParsableCommand.Type) throws {
+        let set: [(flag: String, argument: String)?] = [
+            platform.map { ("--platform", "--platform \($0.rawValue)") },
+            physical ? ("--physical", "--physical") : nil,
+            booted ? ("--booted", "--booted") : nil,
+        ]
+        let filters = set.compactMap { $0 }
+        guard let last = filters.last?.flag else { return }
+        let named = filters.count == 1 ? last : filters.dropLast().map(\.flag).joined(separator: ", ") + " and " + last
+        throw ValidationError(
+            "\(named) \(filters.count == 1 ? "filters" : "filter") the device list; devices \(subcommand._commandName) takes --device <id>. To list: offsider devices \(filters.map(\.argument).joined(separator: " "))"
+        )
+    }
 }

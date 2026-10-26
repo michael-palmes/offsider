@@ -728,6 +728,44 @@ struct DeviceAccessCommandTests {
         #expect(CommandPath.of(DeviceAccessAllow.self) == "devices add")
     }
 
+    @Test("a list filter beside add, remove or status exits 64 naming the listing command, rather than being dropped", arguments: [
+        (["devices", "status", "--platform", "ios"], "--platform filters the device list; devices status takes --device <id>. To list: offsider devices --platform ios"),
+        (["devices", "remove", "--booted"], "--booted filters the device list; devices remove takes --device <id>. To list: offsider devices --booted"),
+        (["devices", "--physical", "status", "--json"], "--physical filters the device list; devices status takes --device <id>. To list: offsider devices --physical"),
+        (
+            ["devices", "add", "--device", "R58M123ABC", "--booted", "--platform=android"],
+            "--platform and --booted filter the device list; devices add takes --device <id>. To list: offsider devices --platform android --booted"
+        ),
+    ])
+    func listFiltersRefused(arguments: [String], message: String) {
+        do {
+            let command = try OffsiderCommand.parseAsRoot(arguments)
+            Issue.record("\(arguments) parsed to \(type(of: command)) instead of failing")
+        } catch {
+            #expect(OffsiderCommand.exitCode(for: error) == .validationFailure)
+            #expect(OffsiderCommand.message(for: error) == message)
+        }
+    }
+
+    @Test("the list still takes its filters, and every devices subcommand refuses them and never shows them in help")
+    func everySubcommandRefusesListFilters() throws {
+        let list = try #require(try OffsiderCommand.parseAsRoot(["devices", "--platform", "android", "--physical", "--booted"]) as? ListDevices)
+        #expect(list.options.platform == .android && list.options.physical && list.options.booted)
+        #expect(try #require(try OffsiderCommand.parseAsRoot(["list-devices", "--booted"]) as? ListDevicesAlias).options.booted)
+        for subcommand in ListDevices.configuration.subcommands {
+            let name = subcommand._commandName
+            do {
+                let command = try OffsiderCommand.parseAsRoot(["devices", name, "--booted"])
+                Issue.record("devices \(name) --booted parsed to \(type(of: command)) instead of failing")
+            } catch {
+                #expect(OffsiderCommand.exitCode(for: error) == .validationFailure)
+                #expect(OffsiderCommand.message(for: error).hasPrefix("--booted filters the device list; devices \(name) "), "\(OffsiderCommand.message(for: error))")
+            }
+            let help = OffsiderCommand.helpMessage(for: subcommand, columns: 200)
+            #expect(!help.contains("--platform") && !help.contains("--physical") && !help.contains("--booted"), "\(help)")
+        }
+    }
+
     @Test("device-access names its new command in one line and exits 64")
     func deviceAccessRenamed() {
         #expect(ArgumentHints.hint(for: ["device-access", "allow", "--device", PolicyFixtures.phone]) == ArgumentHints.Hint(

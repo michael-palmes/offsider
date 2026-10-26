@@ -8,6 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Fixed
 
+- `--platform`, `--physical` and `--booted` beside `devices add`, `remove` or `status`, before or after its name, exit 64 naming the listing command (`To list: offsider devices --platform ios`), where the subcommand used to run as if they were not there.
 - An element `offsider.mask.json` or the evidence run masks no longer shows its label in full, where React Native puts a copied value: `describe-ui` (with `--diff`), `--verify` change lists, `wait` and `assert` output, selector misses, cover warnings and the tree cache keep only the text the file names (`Referral code. [redacted]`, or `[redacted]` for an `ids` match) and hide its other screen text, such as Android's content description and hint. A `--has-value` miss on one says `has a masked value`, and a change summary `value of <element> changed (masked)`.
 - On Android, screenshot masks also paint text an app hides from accessibility while still drawing it, such as a screen behind an in-window sheet: their tree read takes in views not important for accessibility too (about a quarter longer) and is never cached. Android leaves the windows behind a modal window, such as a React Native `Modal` sheet, out of the tree, so masks cannot see what is drawn there; `--json` then says `maskUnproven: "modal"`, and stderr says so once.
 
