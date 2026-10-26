@@ -164,8 +164,9 @@ struct ListDevices: AsyncParsableCommand, RunsWithoutSubcommand {
 
 /// The flags `devices` and `list-devices` share.
 struct DeviceListOptions: ParsableArguments {
-    @Flag(name: .customLong("json"), help: "Print one JSON object to stdout instead of a table.")
-    var json = false
+    @OptionGroup var output: DeviceJSONOption
+
+    var json: Bool { output.json }
 
     @Option(name: .customLong("platform"), help: "Only list devices on this platform.")
     var platform: DevicePlatform?
@@ -175,4 +176,10 @@ struct DeviceListOptions: ParsableArguments {
 
     @Flag(name: .customLong("booted"), help: "List only booted or booting devices.")
     var booted = false
+}
+
+/// `--json` for `devices` and its subcommands. The parent parses it wherever it falls, and a subcommand declaring the same group gets that value, so `devices status --json` and `devices --json status` both reach `status`.
+struct DeviceJSONOption: ParsableArguments {
+    @Flag(name: .customLong("json"), help: "Print one JSON object to stdout.")
+    var json = false
 }

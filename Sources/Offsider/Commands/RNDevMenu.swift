@@ -143,7 +143,7 @@ struct RNDevMenu: AsyncParsableCommand {
         discussion: """
         Opens the Expo dev menu (or React Native's) by shake on an iOS simulator and the menu key \
         (KEYCODE_MENU, as `button menu` sends it) on Android emulators and phones. \
-        Without an item it prints the items and leaves the menu open. With one (reload, home, inspector, \
+        Without an item it prints the items, marking custom those the app registered, and leaves the menu open. With one (reload, home, inspector, \
         perf-monitor, fast-refresh, debugger, close) or --label, it taps it and waits until the menu closes, \
         closing it after a switch. React Native's own menu on Android has no close control, so there `close` \
         presses Back and checks the menu went. Exits 2 when the menu has no such item (the items are the candidates), 1 when \
@@ -188,7 +188,10 @@ struct RNDevMenu: AsyncParsableCommand {
 
         func textLine() -> String {
             switch self {
-            case .listed(let state): return "\(state.menu) dev menu: " + state.items.map(\.label).joined(separator: ", ")
+            case .listed(let state):
+                let line = "\(state.menu) dev menu: " + state.items.filter { !$0.custom }.map(\.label).joined(separator: ", ")
+                let custom = state.items.filter(\.custom).map(\.label)
+                return custom.isEmpty ? line : line + "; custom: " + custom.joined(separator: ", ")
             case .chose(_, _, let label): return "✓ Chose \(label) and the dev menu closed"
             }
         }
@@ -197,7 +200,7 @@ struct RNDevMenu: AsyncParsableCommand {
         var page: Page {
             switch self {
             case .listed(let state):
-                return InputPersonView.devMenu(state.menu, labels: state.items.map(\.label), agent: textLine())
+                return InputPersonView.devMenu(state, agent: textLine())
             case .chose(_, _, let label):
                 return InputPersonView.receipt("Chose \(TerminalText.field(label, profile: .person))", details: ["The dev menu closed"], agent: textLine() + "\n")
             }

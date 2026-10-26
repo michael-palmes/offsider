@@ -111,7 +111,7 @@ struct CommandEffectTests {
     func everyCommandClassified() {
         let commands = Self.paths(OffsiderCommand.configuration.subcommands)
         #expect(Set(commands) == Set(CommandEffect.table.keys), "unclassified: \(Set(commands).subtracting(CommandEffect.table.keys))")
-        let steps = ["sleep"] + [BatchStepKind.tap, .swipe, .gesture, .touch, .type, .button, .key, .keySequence, .keyCombo, .wait, .assert, .screenshot, .describeUI].map(\.rawValue)
+        let steps = ["sleep"] + [BatchStepKind.tap, .swipe, .drag, .gesture, .touch, .type, .button, .key, .keySequence, .keyCombo, .wait, .assert, .screenshot, .describeUI].map(\.rawValue)
         #expect(Set(steps) == Set(CommandEffect.batchSteps.keys))
         for step in steps where step != "sleep" {
             #expect((CommandEffect.batchSteps[step] == .input) == BatchStepKind(rawValue: step)!.mayChangeScreen, "\(step)")

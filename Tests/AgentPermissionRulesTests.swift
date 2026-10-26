@@ -24,13 +24,109 @@ struct AgentPermissionRulesTests {
                         "Bash(offsider describe-ui --raw-source*)", "Bash(offsider runner build --register-device*)"] {
             #expect(deny.contains(pattern))
         }
-        for pattern in ["Bash(offsider credential*)", "Bash(offsider login*)", "Bash(offsider permission*)", "Bash(offsider type --file*)",
+        for pattern in ["Bash(offsider credential add*)", "Bash(offsider login*)", "Bash(offsider permission*)", "Bash(offsider type --file*)",
                         "Bash(offsider screenshot --no-mask-secure*)", "Bash(offsider batch --no-mask-secure*)", "Bash(adb *)", "Bash(devicectl *)", "Bash(xcrun devicectl *)"] {
             #expect(ask.contains(pattern))
         }
         #expect(deny == deny.sorted())
         #expect(ask == ask.sorted())
         #expect(AgentPermissionRules.rules.allSatisfy { !$0.reason.isEmpty && !$0.reason.contains("\"") && !$0.reason.contains("\u{2014}") })
+    }
+
+    /// The `Bash(...)` patterns in `lists` that match `command` as Claude Code's prefix rules do.
+    private func matches(_ command: String, _ patterns: [String]) -> Bool {
+        patterns.contains { pattern in AgentPermissionRules.commandPrefix(pattern).map { command.hasPrefix($0) } ?? false }
+    }
+
+    @Test("every credential action that writes asks or is denied for both agents, and the read-only status runs freely")
+    func credentialWritesAsk() {
+        let guarded = AgentPermissionRules.patterns(.ask) + AgentPermissionRules.patterns(.deny)
+        let actions = ["add"] + CredentialCommand.Action.allCases.map(\.rawValue)
+        for action in actions {
+            let command = "offsider credential \(action) --app com.example.app"
+            let codex = AgentPermissionRules.rules.contains { ["offsider", "credential", action, "--app"].starts(with: $0.codex) }
+            #expect(matches(command, guarded) == (action != "status"), "\(command)")
+            #expect(codex == (action != "status"), "Codex: \(command)")
+        }
+    }
+
+    @Test("Offsider's earlier broad credential rule gives way to the narrow ones, once, unless the person moved it")
+    func broadCredentialRuleReplaced() throws {
+        let broad = "Bash(offsider credential*)"
+        let narrow = AgentPermissionRules.patterns(.ask).filter { $0.hasPrefix("Bash(offsider credential ") }
+        #expect(narrow.count == 5)
+        let older = Data(#"{"permissions": {"ask": ["Bash(git push*)", "Bash(offsider credential*)"]}}"#.utf8)
+        let merge = try AgentPermissionRules.merge(.claudeCode, existing: older)
+        let ask = try #require(try permissions(merge.content)["ask"])
+        #expect(!ask.contains(broad))
+        #expect(ask.first == "Bash(git push*)")
+        #expect(narrow.allSatisfy(ask.contains))
+        #expect(merge.replaced == 1)
+        #expect(merge.added == AgentPermissionRules.rules.count)
+        #expect(AgentPermissionRules.resultLine(path: "~/.claude/settings.json", added: merge.added, replaced: merge.replaced) == "Rules added to ~/.claude/settings.json (\(merge.added) new, 1 older replaced)")
+        #expect(try AgentPermissionRules.merge(.claudeCode, existing: merge.content) == AgentPermissionRules.Merge(content: nil, added: 0))
+
+        for list in ["allow", "deny"] {
+            let moved = try AgentPermissionRules.merge(.claudeCode, existing: Data(#"{"permissions": {"\#(list)": ["Bash(offsider credential*)"]}}"#.utf8))
+            let rules = try permissions(moved.content)
+            #expect(rules[list]?.first == broad, "the person's own list keeps it")
+            #expect(rules["ask"]?.contains { narrow.contains($0) } == false, "\(list) stands for the narrow rules")
+            #expect(rules["deny"]?.contains("Bash(offsider credential join*)") == (list == "allow"), "a broad deny already denies join")
+        }
+
+        let both = try AgentPermissionRules.merge(.claudeCode, existing: Data(#"{"permissions": {"allow": ["Bash(offsider credential*)"], "ask": ["Bash(offsider credential*)"]}}"#.utf8))
+        let rules = try permissions(both.content)
+        #expect(rules["allow"] == [broad])
+        #expect(narrow.allSatisfy { rules["ask"]?.contains($0) == true }, "init's ask outranked the allow, so the narrow asks take its place")
+    }
+
+    @Test("a person's rules that ask or deny at least as much count as present, in any spelling; a weaker or broad allow does not")
+    func coveringRulesCount() throws {
+        let theirs = AgentPermissionRules.rules.map { rule in
+            rule.claude.hasPrefix("offsider credential ") && rule.decision == .ask ? "Bash(\(rule.claude.dropLast()):*)" : rule.claudePattern
+        }
+        let all = AgentPermissionRules.rules.map(\.claudePattern)
+        let ask = theirs.filter { !AgentPermissionRules.patterns(.deny).contains($0) }
+        let narrowed = Data(#"{"permissions": {"deny": \#(json(AgentPermissionRules.patterns(.deny))), "ask": \#(json(ask))}}"#.utf8)
+        #expect(ask != AgentPermissionRules.patterns(.ask), "the credential rules are spelt the person's way")
+        #expect(try AgentPermissionRules.merge(.claudeCode, existing: narrowed) == AgentPermissionRules.Merge(content: nil, added: 0))
+
+        let broadAllow = try AgentPermissionRules.merge(.claudeCode, existing: Data(#"{"permissions": {"allow": ["Bash(offsider*)"], "ask": ["Bash(offsider unlock-code:*)"]}}"#.utf8))
+        #expect(broadAllow.added == all.count, "an allow never stands in for a rule, and an ask never for a deny")
+        let deniedAll = Data(#"{"permissions": {"deny": ["Bash(offsider *)"]}}"#.utf8)
+        #expect(try AgentPermissionRules.merge(.claudeCode, existing: deniedAll).added == all.filter { !$0.hasPrefix("Bash(offsider ") }.count)
+    }
+
+    private func json(_ patterns: [String]) -> String {
+        "[" + patterns.map { "\"\($0)\"" }.joined(separator: ", ") + "]"
+    }
+
+    @Test("Codex's earlier credential line is replaced by the narrow ones, and a person's broader prompt or moved line counts")
+    func codexCredentialRules() throws {
+        let older = AgentPermissionRules.codexHeader + #"prefix_rule(pattern=["offsider", "credential"], decision="prompt", justification="Saves, shares or removes test passwords.")"# + "\n"
+        let merge = try AgentPermissionRules.merge(.codex, existing: Data(older.utf8))
+        let text = String(decoding: try #require(merge.content), as: UTF8.self)
+        #expect(!text.contains(#"pattern=["offsider", "credential"], decision"#))
+        #expect(text.contains(#"prefix_rule(pattern=["offsider", "credential", "remove"], decision="prompt""#))
+        #expect(merge.added == AgentPermissionRules.rules.count)
+        #expect(merge.replaced == 1)
+        #expect(try AgentPermissionRules.merge(.codex, existing: merge.content).added == 0)
+
+        let commented = AgentPermissionRules.codexHeader + #"# prefix_rule(pattern=["offsider"], decision="forbidden")"# + "\n"
+        #expect(try AgentPermissionRules.merge(.codex, existing: Data(commented.utf8)).added == AgentPermissionRules.rules.count, "a comment decides nothing")
+
+        for decision in ["forbidden", "allow"] {
+            let moved = older.replacingOccurrences(of: #"decision="prompt""#, with: #"decision="\#(decision)""#)
+            let kept = try AgentPermissionRules.merge(.codex, existing: Data(moved.utf8))
+            let keptText = String(decoding: try #require(kept.content), as: UTF8.self)
+            #expect(keptText.hasPrefix(moved))
+            #expect(!keptText.contains(#""credential", "add"]"#), "decision \(decision)")
+            #expect(keptText.contains(#""credential", "join"], decision="forbidden""#) == (decision == "allow"), "a broad forbidden already forbids join")
+        }
+
+        let both = older + #"prefix_rule(pattern=["offsider", "credential"], decision="allow")"# + "\n"
+        let replaced = String(decoding: try #require(try AgentPermissionRules.merge(.codex, existing: Data(both.utf8)).content), as: UTF8.self)
+        #expect(replaced.contains(#"prefix_rule(pattern=["offsider", "credential", "add"], decision="prompt""#), "the prompt outranked the allow, so the narrow prompts take its place")
     }
 
     @Test("an agent counts as installed only when its own folder exists")
@@ -136,6 +232,28 @@ struct AgentPermissionRulesTests {
         #expect(lacking.detail.contains("Codex"))
         #expect(lacking.hint == "Run offsider init --rules-only.")
         #expect(AgentPermissionRules.doctorVerdict(detected: [.claudeCode], lacking: []).status == .pass)
+        let outdated = AgentPermissionRules.doctorVerdict(detected: [.claudeCode], lacking: [], outdated: [.claudeCode])
+        #expect(outdated.status == .warn)
+        #expect(outdated.detail == "Claude Code has an older Offsider rule to replace")
+        #expect(outdated.hint == "Run offsider init --rules-only.")
+    }
+
+    @Test("doctor warns about an older rule until init replaces it, and says lacks only when a rule is missing")
+    func doctorAfterReplacement() throws {
+        let home = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: home) }
+        let claude = home.appendingPathComponent(".claude")
+        try FileManager.default.createDirectory(at: claude, withIntermediateDirectories: true)
+        let current = try #require(try AgentPermissionRules.merge(.claudeCode, existing: nil).content)
+        var root = try settings(current)
+        var block = try #require(root["permissions"] as? [String: [String]])
+        block["ask"]?.append("Bash(offsider credential*)")
+        root["permissions"] = block
+        try JSONSerialization.data(withJSONObject: root).write(to: claude.appendingPathComponent("settings.json"))
+
+        #expect(Init.rulesDoctorVerdict(home: home.path).detail == "Claude Code has an older Offsider rule to replace")
+        #expect(Init.installRules([.claudeCode], home: home.path).lines == ["Rules updated in ~/.claude/settings.json (1 older replaced)"])
+        #expect(Init.rulesDoctorVerdict(home: home.path).status == .pass)
     }
 
     @Test("installing writes 0600 through a symlink, says how many were added, then says they are present")

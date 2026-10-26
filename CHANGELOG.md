@@ -6,10 +6,23 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- `batch` takes a `drag` step, written and limited like `offsider drag`.
+- `rn devmenu` lists the items an app registers (`registerDevMenuItems`, or `DevSettings.addMenuItem` in React Native's own Android menu), marked `"custom":true` in `--json` and tagged for a person; `--label` already chose them, and now prefers the menu's item over an app button behind it with the same label. Expo's custom heading also counts as menu evidence, so a menu whose tools those items push off screen is still read.
+
+### Changed
+
+- `offsider init`'s permission rules ask before the `credential` actions that write (`add`, `set`, `describe`, `remove`, `signed-out`) instead of every `credential` command, so the read-only `credential status` runs freely. `init --rules-only` swaps the broad rule it added before for these, and `doctor`'s `install.rules` warns until it does and counts a rule of yours in `ask` or `deny` that asks or denies at least as much, in any spelling.
+- `credential` takes its action first and exactly as written (exit 64 otherwise), so those rules see every write.
+- `wait --any` with one selector is a plain wait for it rather than exit 64.
+
 ### Fixed
 
 - An element `offsider.mask.json` or the evidence run masks no longer shows its label in full, where React Native puts a copied value: `describe-ui` (with `--diff`), `--verify` change lists, `wait` and `assert` output, selector misses, cover warnings and the tree cache keep only the text the file names (`Referral code. [redacted]`, or `[redacted]` for an `ids` match) and hide its other screen text, such as Android's content description and hint. A `--has-value` miss on one says `has a masked value`, and a change summary `value of <element> changed (masked)`.
 - On Android, screenshot masks also paint text an app hides from accessibility while still drawing it, such as a screen behind an in-window sheet: their tree read takes in views not important for accessibility too (about a quarter longer) and is never cached. Android leaves the windows behind a modal window, such as a React Native `Modal` sheet, out of the tree, so masks cannot see what is drawn there; `--json` then says `maskUnproven: "modal"`, and stderr says so once.
+- `devices status --json` and `devices --json status` print JSON; `devices` kept the flag, so `status`, `add` and `remove` printed text.
+- `doctor`'s `install.skill` fix tells an agent `offsider init --client <client>` for each stale skill (and, with none installed, for each agent folder found), since `offsider init` without a terminal exits 64.
 
 ## [0.14.0] - 2026-10-22
 

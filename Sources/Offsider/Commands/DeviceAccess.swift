@@ -166,8 +166,9 @@ struct DeviceAccessAllow: AsyncParsableCommand {
     @Option(name: .customLong("team"), help: ArgumentHelp("For an iPhone or iPad: the Apple development team ID that signs Offsider's runner app on it; without it, choose from your Keychain's teams. OFFSIDER_IOS_TEAM_ID wins over it.", valueName: "id"))
     var team: String?
 
-    @Flag(name: .customLong("json"), help: "Print one JSON object to stdout.")
-    var json = false
+    @OptionGroup var output: DeviceJSONOption
+
+    var json: Bool { output.json }
 
     func validate() throws {
         if let expires { _ = try DeviceAccess.expiry(expires) }
@@ -598,8 +599,9 @@ struct DeviceAccessStatus: AsyncParsableCommand {
     @Option(name: .customLong("device"), help: ArgumentHelp("Check only this device.", valueName: "id"))
     var device: String?
 
-    @Flag(name: .customLong("json"), help: "Print one JSON object to stdout.")
-    var json = false
+    @OptionGroup var output: DeviceJSONOption
+
+    var json: Bool { output.json }
 
     func run() async throws {
         let console = Console.current
@@ -654,8 +656,9 @@ struct DeviceAccessRemove: AsyncParsableCommand {
     @Option(name: .customLong("device"), help: ArgumentHelp("The physical device's ID; without it, a person chooses from the allowed ones. OFFSIDER_DEVICE is never read.", valueName: "id"))
     var device: String?
 
-    @Flag(name: .customLong("json"), help: "Print one JSON object to stdout.")
-    var json = false
+    @OptionGroup var output: DeviceJSONOption
+
+    var json: Bool { output.json }
 
     @MainActor
     func run() async throws {

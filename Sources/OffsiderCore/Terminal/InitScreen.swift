@@ -42,7 +42,7 @@ public enum InitScreen {
             case .updated: return "updated"
             case .upToDate, .rulesPresent: return "up to date"
             case .removed: return "removed"
-            case .rulesAdded(let count): return "\(count) new"
+            case .rulesAdded(let count): return count == 0 ? "updated" : "\(count) new"
             }
         }
     }

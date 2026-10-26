@@ -77,7 +77,7 @@ enum CommandEffect: String, Sendable {
 
     /// Batch step kinds, so a new step cannot skip the cache rules.
     static let batchSteps: [String: CommandEffect] = [
-        "tap": .input, "swipe": .input, "gesture": .input, "touch": .input, "type": .input, "button": .input,
+        "tap": .input, "swipe": .input, "drag": .input, "gesture": .input, "touch": .input, "type": .input, "button": .input,
         "key": .input, "key-sequence": .input, "key-combo": .input, "sleep": .none,
         "wait": .read, "assert": .read, "screenshot": .read, "describe-ui": .read,
     ]

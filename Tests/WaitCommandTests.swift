@@ -305,8 +305,22 @@ struct WaitAnyTests {
         #expect(WaitReport(outcome).jsonLine().contains(#""matched":null"#))
     }
 
-    @Test("--any needs two selectors and refuses --gone and --has-value; several selectors need --any", arguments: [
-        (["--any", "--id", "a"], "--any needs two or more selectors"),
+    @Test("--any with one selector is a plain wait for it, reported and met as one without --any")
+    func oneSelectorIsAPlainWait() async throws {
+        let trees = [Self.screen([]), Self.screen(["done"])]
+        let (any, met) = try await Self.evaluate(["--any", "--label", "Done"], trees: trees)
+        let (plain, expected) = try await Self.evaluate(["--label", "Done"], trees: trees)
+
+        #expect(met.met)
+        #expect(met.matched == expected.matched)
+        #expect(WaitReport(met).jsonLine() == WaitReport(expected).jsonLine())
+        #expect(any.successLine(met) == plain.successLine(expected))
+        let (_, gone) = try await Self.evaluate(["--any", "--id", "done", "--gone", "--stable-for", "0"], trees: [Self.screen(["done"]), Self.screen([])])
+        #expect(gone.met)
+    }
+
+    @Test("--any refuses --gone and --has-value with several selectors; several selectors need --any", arguments: [
+        (["--any"], "Choose one of a selector"),
         (["--any", "--id", "a", "--id", "b", "--gone"], "does not take --gone"),
         (["--any", "--id", "a", "--id", "b", "--has-value", "1"], "does not take --has-value"),
         (["--label", "a", "--label", "b"], "pass --any"),
