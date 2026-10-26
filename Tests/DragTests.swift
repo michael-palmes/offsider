@@ -1,5 +1,6 @@
 import Testing
 import Foundation
+import OffsiderCore
 @testable import Offsider
 
 @Suite("Drag Command Surface Tests")
@@ -95,6 +96,40 @@ struct DragHoldTests {
     func durationCap(value: String) {
         let error = #expect(throws: (any Error).self) { try Self.holds(["--duration", value]) }
         #expect(error.map { Drag.message(for: $0).contains("Duration must be at most 30 seconds") } == true)
+    }
+}
+
+@Suite("Drag batch step")
+@MainActor
+struct DragBatchStepTests {
+    static let device = DeviceID(rawValue: "STUB", platform: .ios)
+    static let points = ["--start-x", "100", "--start-y", "300", "--end-x", "100", "--end-y", "600"]
+
+    static func parse(_ arguments: [String]) async throws -> BatchStep {
+        let context = BatchContext(backend: StubBackend(session: RecordingInputSession()), device: device, axCachePolicy: .perBatch, typeSubmissionMode: .composite, typeChunkSize: 1)
+        return try await BatchStepParser.parseStep(["drag"] + arguments, deviceID: device.rawValue, context: context, logger: OffsiderLogger())
+    }
+
+    @Test("a batch drag step sends the command's own drag, with its holds and delays", arguments: [[], ["--hold-ms", "800", "--hold-end", "300", "--pre-delay", "0.2"]])
+    func sendsTheCommandsDrag(extra: [String]) async throws {
+        guard case .input(let primitives) = try await Self.parse(Self.points + extra), primitives.count == 1, case .hidMergeable(let event) = primitives[0] else {
+            Issue.record("expected one mergeable input")
+            return
+        }
+        let command = try Drag.parse(Self.points + extra + ["--device", Self.device.rawValue])
+        #expect(event == InputEvent.delayed(try command.dragEvent(from: (x: 100, y: 300), to: (x: 100, y: 600)), pre: command.preDelay, post: command.postDelay))
+    }
+
+    @Test("a batch drag step is held to drag's limits", arguments: [
+        (["--start-x", "1e19", "--start-y", "300", "--end-x", "100", "--end-y", "600"], "--start-x must be a number from -100000 to 100000"),
+        (["--start-x", "100", "--start-y", "300", "--end-x", "100", "--end-y", "300"], "Start and end points must be different."),
+        (points + ["--steps", "1001"], "Steps must be between 1 and 1000."),
+        (points + ["--hold-ms", "10001"], "--hold-ms must be from 0 to 10000"),
+    ])
+    func limits(arguments: [String], message: String) async {
+        let error = await #expect(throws: (any Error).self) { _ = try await Self.parse(arguments) }
+        #expect(error.map { Drag.message(for: $0).contains(message) } == true, "\(error.map { Drag.message(for: $0) } ?? "")")
+        #expect(error.map { Drag.exitCode(for: $0) } == .validationFailure)
     }
 }
 

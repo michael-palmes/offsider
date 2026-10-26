@@ -37,11 +37,22 @@ struct SkillInstallTests {
 
     @Test("doctor's install.skill passes when every installed skill matches, warns on a stale one and skips with none")
     func doctorVerdict() {
-        #expect(SkillInstall.doctorVerdict(installed: [], stale: []).status == .skip)
-        #expect(SkillInstall.doctorVerdict(installed: ["/a/SKILL.md"], stale: []).status == .pass)
-        let stale = SkillInstall.doctorVerdict(installed: ["/a/SKILL.md", "/b/SKILL.md"], stale: ["/b/SKILL.md"])
+        #expect(SkillInstall.doctorVerdict(installed: [], stale: [], agent: false).status == .skip)
+        #expect(SkillInstall.doctorVerdict(installed: ["/a/SKILL.md"], stale: [], agent: false).status == .pass)
+        let stale = SkillInstall.doctorVerdict(installed: ["/a/SKILL.md", "/b/SKILL.md"], stale: [("/b/SKILL.md", "agents")], agent: false)
         #expect(stale.status == .warn)
         #expect(stale.detail.contains("/b/SKILL.md"))
         #expect(stale.hint == "Run offsider init to update it.")
+    }
+
+    @Test("an agent, which has no terminal for init's picker, is told the init --client that updates each stale skill")
+    func doctorVerdictForAnAgent() {
+        let one = SkillInstall.doctorVerdict(installed: ["/a/SKILL.md"], stale: [("/a/SKILL.md", "claude")], agent: true)
+        #expect(one.hint == "Run offsider init --client claude to update it.")
+        let both = SkillInstall.doctorVerdict(installed: ["/a/SKILL.md", "/b/SKILL.md"], stale: [("/a/SKILL.md", "claude"), ("/b/SKILL.md", "agents")], agent: true)
+        #expect(both.hint == "Run offsider init --client claude and offsider init --client agents to update them.")
+        #expect(SkillInstall.doctorVerdict(installed: [], stale: [], agent: true, clients: ["agents"]).hint == "Run offsider init --client agents.")
+        #expect(SkillInstall.doctorVerdict(installed: [], stale: [], agent: true).hint == "Run offsider init --client claude or offsider init --client agents.")
+        #expect(SkillInstall.doctorVerdict(installed: [], stale: [], agent: false).hint == "Run offsider init.")
     }
 }

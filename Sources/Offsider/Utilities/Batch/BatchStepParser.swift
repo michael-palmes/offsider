@@ -5,6 +5,7 @@ import OffsiderCore
 enum BatchStepKind: String {
     case tap
     case swipe
+    case drag
     case gesture
     case touch
     case type
@@ -23,7 +24,7 @@ enum BatchStepKind: String {
     /// True when the step sends input or sleeps, so the screen may have changed after it.
     var mayChangeScreen: Bool {
         switch self {
-        case .tap, .swipe, .gesture, .touch, .type, .button, .key, .keySequence, .keyCombo, .rn, .sleep:
+        case .tap, .swipe, .drag, .gesture, .touch, .type, .button, .key, .keySequence, .keyCombo, .rn, .sleep:
             return true
         case .wait, .assert, .screenshot, .describeUI:
             return false
@@ -93,6 +94,8 @@ struct BatchStepParser {
             return .input(try await parseCommand(Tap.self, arguments: arguments, context: context, logger: logger))
         case .swipe:
             return .input(try await parseCommand(Swipe.self, arguments: arguments, context: context, logger: logger))
+        case .drag:
+            return .input(try await parseCommand(Drag.self, arguments: arguments, context: context, logger: logger))
         case .gesture:
             return .input(try await parseCommand(Gesture.self, arguments: arguments, context: context, logger: logger))
         case .touch:

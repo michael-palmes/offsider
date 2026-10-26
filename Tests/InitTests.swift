@@ -139,6 +139,20 @@ struct InitTests {
         #expect(second.output.contains("Rules already present in ~/.claude/settings.json"))
     }
 
+    @Test("the init doctor gives an agent for a stale skill runs with no terminal and updates it")
+    func staleSkillFixRunsForAnAgent() async throws {
+        let home = try temporaryHome([".claude/skills/offsider"])
+        defer { try? FileManager.default.removeItem(at: home) }
+        let file = home.appendingPathComponent(".claude/skills/offsider/SKILL.md")
+        try "---\nname: offsider\ndescription: an older build\n---\n".write(to: file, atomically: true, encoding: .utf8)
+        let hint = try #require(SkillInstall.doctorVerdict(installed: [file.path], stale: [(file.path, "claude")], agent: true).hint)
+        let command = try #require(hint.wholeMatch(of: #/Run offsider (.+) to update it\./#)?.1)
+        _ = try await TestHelpers.runOffsiderCommand(String(command), environment: ["HOME": home.path])
+        let updated = try String(contentsOf: file, encoding: .utf8)
+        #expect(!updated.contains("an older build"))
+        #expect(SkillInstall.isOffsiderSkill(Data(updated.utf8)))
+    }
+
     @Test("--client claude with no ~/.claude folder installs the skill but writes no settings")
     func noRulesForAbsentAgent() async throws {
         let home = try temporaryHome([])
