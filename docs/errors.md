@@ -47,7 +47,7 @@ A `--verify --json` report also carries `ignored` (`{node, reason}` entries left
 | --- | --- | --- | --- |
 | `selector_not_found` | 2 | No element matched the selector | Read `candidates` (each with its `closeness`: `case`, `prefix`, `contains` or `similar`), fix the selector (the message names the `--label-contains` text that matches a `prefix` or `contains` label), or wait with `--wait-timeout` |
 | `selector_filtered_by_type` | 2 | Elements matched, but none of the `--element-type` | Drop or change `--element-type`; `candidates` shows the roles |
-| `target_off_screen` | 2 | Every match is off screen, or above or below what its scroll view shows | Scroll it into view, wait, or pass `--allow-offscreen` |
+| `target_off_screen` | 2 | Every match is off screen, or above or below what its scroll view shows | Scroll it into view, wait, or pass `--allow-offscreen`; for `rn devmenu`, run the `hint`'s `swipe`, then choose again |
 | `user_not_found` | 2 | `login --where` or `credential status --where` found no saved user with every tag; nothing was typed | Read `users` (each saved user's `name`, `tags` and `about`, never a username), then pass another `--where` or a name, or ask for a user with the access the test needs |
 | `selector_ambiguous` | 6 | Several elements matched | Pick from `candidates`: use `--id`, add `--element-type` or tap by coordinates |
 | `selector_ambiguous_switch` | 6 | The match holds several switches | Target the switch with `--id` or coordinates |

@@ -21,6 +21,15 @@ struct RNDevMenuTests {
         ])
     }
 
+    /// The Expo menu with the item labelled `label` moved below the 874 pt screen.
+    static func expoMenu(below label: String) -> UITree {
+        FakeUI.tree(platform: .android, Self.expoMenu().roots[0].children.map { node in
+            var moved = node
+            if node.label == label { moved.frame = node.frame.map { FakeUI.frame($0.x, 900, $0.width, $0.height) } }
+            return moved
+        })
+    }
+
     static func perfShowing() -> UITree {
         FakeUI.tree(platform: .android, [FakeUI.node(.text, label: "UI: 60.0 fps", frame: FakeUI.frame(0, 60, 120, 20), platform: .android)])
     }
@@ -109,6 +118,71 @@ struct RNDevMenuTests {
         let steps = try #require(backend.detachedTouches.first)
         #expect(steps.count == 3)
         #expect(steps.contains(.hold(DevMenuDriver.switchHold)))
+    }
+
+    @Test(
+        "an item past the fold of the captured iOS Expo menu gets no tap, so Close never passes for a choice, and the hint swipes the menu up from a spot clear of its switches",
+        arguments: ["Open React Native dev menu", "Tools button"]
+    )
+    func offScreenItem(label: String) async throws {
+        let menu = try Self.captured("devmenu-expo-ios")
+        let device = DeviceID(rawValue: "IOS-UDID", platform: .ios)
+        let backend = FakeDeviceBackend(platform: .ios, trees: [menu, menu, Self.app], advanceTreeOnInput: true)
+
+        let error = await #expect(throws: CLIError.self) {
+            _ = try await RNDevMenu.parse(["--label", label, "--device", device.rawValue])
+                .perform(on: DeviceRouter.Route(backend: backend, device: device), clock: ScriptedClock().poll)
+        }
+
+        #expect(error?.reason == .targetOffScreen)
+        #expect(error?.reason.exitCode == .selectorNotFound)
+        #expect(error?.userFacingDescription.hasPrefix("\"\(label)\" is off screen, below the fold of the expo dev menu, so nothing was tapped.") == true)
+        #expect(backend.session.calls.isEmpty && backend.detachedTouches.isEmpty)
+        let hint = try #require(error?.hint)
+        #expect(hint.hasPrefix("offsider swipe ") && hint.hasSuffix("--device IOS-UDID"))
+        let swipe = try Swipe.parse(hint.split(separator: " ").dropFirst(2).map(String.init))
+        let menuScrollView = 452.5...866.0
+        #expect(swipe.startY > swipe.endY && menuScrollView.contains(swipe.startY) && menuScrollView.contains(swipe.endY))
+        let start = UIPoint(x: swipe.startX, y: swipe.startY)
+        #expect(!menu.roots.flatMap { $0.flattened() }.contains { $0.role == .switch && $0.frame?.contains(start) == true })
+    }
+
+    /// An Expo menu whose scroll view shows y 300 to 700, holding a Clear storage button at `clearStorageY`.
+    static func scrolledMenu(clearStorageY: Double) -> UITree {
+        let rows = ["Reload", "Go home", "Toggle performance monitor"].enumerated().map { index, label in
+            FakeUI.node(.button, label: label, frame: FakeUI.frame(16, 320 + Double(index) * 60, 370, 48), platform: .android)
+        }
+        let extra = FakeUI.node(.button, label: "Clear storage", frame: FakeUI.frame(16, clearStorageY, 370, 48), platform: .android)
+        return FakeUI.tree(platform: .android, [FakeUI.node(.scrollView, frame: FakeUI.frame(0, 300, 402, 400), platform: .android, children: rows + [extra])])
+    }
+
+    @Test("an item above the top of the menu's scroll view gets no tap, and the hint swipes the menu down")
+    func itemAboveScrollView() async throws {
+        let menu = Self.scrolledMenu(clearStorageY: 240)
+        let backend = FakeDeviceBackend(platform: .android, trees: [menu, menu, Self.app], advanceTreeOnInput: true)
+
+        let error = await #expect(throws: CLIError.self) {
+            _ = try await RNDevMenu.parse(["--label", "Clear storage", "--device", Self.device.rawValue])
+                .perform(on: DeviceRouter.Route(backend: backend, device: Self.device), clock: ScriptedClock().poll)
+        }
+
+        #expect(error?.reason == .targetOffScreen)
+        #expect(error?.userFacingDescription.contains("above the top of the expo dev menu") == true)
+        #expect(error?.userFacingDescription.contains("Swipe the menu down") == true)
+        let swipe = try Swipe.parse(try #require(error?.hint).split(separator: " ").dropFirst(2).map(String.init))
+        #expect(swipe.startY < swipe.endY && (300...700).contains(swipe.startY) && (300...700).contains(swipe.endY))
+        #expect(backend.session.calls.isEmpty)
+    }
+
+    @Test("an item the menu's scroll view cuts off is tapped on the part that shows, not past the edge")
+    func clippedItemTappedWhereItShows() async throws {
+        let backend = FakeDeviceBackend(platform: .android, trees: [Self.scrolledMenu(clearStorageY: 680), Self.app], advanceTreeOnInput: true)
+
+        let outcome = try await RNDevMenu.parse(["--label", "Clear storage", "--device", Self.device.rawValue])
+            .perform(on: DeviceRouter.Route(backend: backend, device: Self.device), clock: ScriptedClock().poll)
+
+        #expect(outcome == .chose(menu: "expo", item: nil, label: "Clear storage"))
+        #expect(backend.session.calls == [.perform(.tapAt(x: 201, y: 690))])
     }
 
     @Test("the captured iOS inspector panel and performance monitor are each read as showing, and neither is a menu")
@@ -341,15 +415,16 @@ struct RNDevMenuTests {
         #expect(backend.session.calls == [.perform(.shortButtonPress(.menu))])
     }
 
-    @Test("an item the menu lacks is exit 2 with the menu's items as candidates")
+    @Test("an item the menu lacks is exit 2 with the menu's items as candidates, each marked on screen or not")
     func absentItem() async throws {
-        let backend = FakeDeviceBackend(platform: .android, trees: [Self.expoMenu()])
+        let backend = FakeDeviceBackend(platform: .android, trees: [Self.expoMenu(below: "Fast Refresh")])
         let command = try RNDevMenu.parse(["debugger", "--device", Self.device.rawValue])
         let error = await #expect(throws: CLIError.self) {
             _ = try await command.perform(on: DeviceRouter.Route(backend: backend, device: Self.device), clock: ScriptedClock().poll)
         }
         #expect(error?.reason == .selectorNotFound)
         #expect(error?.candidates.map(\.label) == ["Reload", "Go home", "Toggle performance monitor", "Toggle element inspector", "Fast Refresh", "Close"])
+        #expect(error?.candidates.map(\.onScreen) == [true, true, true, true, false, true])
         #expect(error?.userFacingDescription.contains("text field") == false)
         #expect(backend.session.calls.isEmpty)
     }
@@ -372,6 +447,19 @@ struct RNDevMenuTests {
         #expect(result == (inspector: "off", perfMonitor: "turned-off"))
         #expect(backend.session.calls == [.perform(.shortButtonPress(.menu)), .perform(.tapAt(x: 201, y: 424))])
         #expect(DevMenu.toolsJSONLine(inspector: "off", perfMonitor: "turned-off") == #"{"version":1,"inspector":"off","perfMonitor":"turned-off"}"#)
+    }
+
+    @Test("tools off stops with target_off_screen when the performance monitor's item is below the fold, after only the menu key")
+    func toolsOffItemOffScreen() async throws {
+        let backend = FakeDeviceBackend(platform: .android, trees: [Self.perfShowing(), Self.expoMenu(below: "Toggle performance monitor"), Self.app], advanceTreeOnInput: true)
+
+        let error = await #expect(throws: CLIError.self) {
+            _ = try await RNToolsOff.parse(["--device", Self.device.rawValue]).turnOff(on: DeviceRouter.Route(backend: backend, device: Self.device), clock: ScriptedClock().poll)
+        }
+
+        #expect(error?.reason == .targetOffScreen)
+        #expect(error?.userFacingDescription.contains("then choose it again with `rn devmenu`, which uses the menu that is already open") == true)
+        #expect(backend.session.calls == [.perform(.shortButtonPress(.menu))])
     }
 
     @Test("tools off never toggles when the screen cannot be read")
