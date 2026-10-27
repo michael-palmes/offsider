@@ -25,7 +25,7 @@
 - `key`, `key-sequence` and `key-combo` refuse Meta (227, 231) on a phone with exit 64 and send nothing: phones take Meta combinations as system shortcuts that open other apps. Use Control (224) for select all, as in `key-combo --modifiers 224 --key 4`; pass `--allow-system-keys` only when the user asks for Meta.
 - Offsider never sets `adb reverse` on a phone; ask the user before running it.
 - A phone's screen sleeps and locks when it times out. For long runs ask the user before running `offsider stay-awake on --device <serial>`; after a reboot or unplug it needs unlocking again (`guide device-state`).
-- `wake --unlock` types a code the user saved, once, as key events through the helper; without the helper it exits 9 `helper_unavailable` and types nothing. Ask the user before running it, never loop on it, and never handle the code yourself.
+- `wake --unlock` types a code the user saved, once, as key events through the helper; without the helper it exits 9 `helper_unavailable`, and while a recording runs it exits 8 `device_busy`, typing nothing. Ask the user before running it, never loop on it, and never handle the code yourself.
 - Passwords, and any text typed into a focused password field without gRPC, go through the helper too, never an `input text` command the device's process list would show; without the helper that is exit 9 with nothing typed.
 
 ## The helper

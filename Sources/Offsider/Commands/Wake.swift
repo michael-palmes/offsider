@@ -10,8 +10,8 @@ struct Wake: AsyncParsableCommand {
         lock screen and waits about 3 s. A PIN, pattern or password lock screen stays up, and the command exits 7 \
         (device_locked) unless --unlock finds a PIN or password saved with `offsider unlock-code set`. Then it types \
         that code once, and only into the lock screen's own focused PIN or password field, as key events through the \
-        UiAutomation helper, never as a shell command; without the helper it exits 9 (helper_unavailable) and types \
-        nothing. If the code does not \
+        UiAutomation helper, never as a shell command; without the helper it exits 9 (helper_unavailable), and while \
+        record-video or stream-video records the device it exits 8 (device_busy), typing nothing. If the code does not \
         unlock the device, Offsider will not type it again until the device is unlocked by hand or the code is saved \
         again. Patterns are not supported. Android only: iOS simulators never sleep.
 
@@ -61,9 +61,10 @@ struct Wake: AsyncParsableCommand {
         booted: BootedDevice,
         backend: any AwakeControlling,
         store: any UnlockCodeStoring,
-        ledger: UnlockAttemptLedger
+        ledger: UnlockAttemptLedger,
+        recordingLive: (DeviceLockKey) -> Bool = { RecordingMarker.isLive($0) }
     ) async throws -> String {
-        try await result(unlock: unlock, json: json, booted: booted, backend: backend, store: store, ledger: ledger).text
+        try await result(unlock: unlock, json: json, booted: booted, backend: backend, store: store, ledger: ledger, recordingLive: recordingLive).text
     }
 
     /// The agent's text or JSON, and what a person sees.
@@ -74,7 +75,8 @@ struct Wake: AsyncParsableCommand {
         booted: BootedDevice,
         backend: any AwakeControlling,
         store: any UnlockCodeStoring,
-        ledger: UnlockAttemptLedger
+        ledger: UnlockAttemptLedger,
+        recordingLive: (DeviceLockKey) -> Bool = { RecordingMarker.isLive($0) }
     ) async throws -> (text: String, person: [Block]) {
         let device = booted.id
         let serial = device.rawValue
@@ -94,7 +96,9 @@ struct Wake: AsyncParsableCommand {
                     hint: "offsider wake --unlock --device \(serial)"
                 )
             }
-            let attempt = try await enterSavedCode(current, on: device, name: name, key: unlockKey, backend: backend, store: store, ledger: ledger)
+            let attempt = try await enterSavedCode(
+                current, on: device, name: name, key: unlockKey, backend: backend, store: store, ledger: ledger, recordingLive: recordingLive
+            )
             current = attempt.reading
             if attempt.typed { sent.append("code") }
         }
@@ -115,10 +119,18 @@ struct Wake: AsyncParsableCommand {
         key: String?,
         backend: any AwakeControlling,
         store: any UnlockCodeStoring,
-        ledger: UnlockAttemptLedger
+        ledger: UnlockAttemptLedger,
+        recordingLive: (DeviceLockKey) -> Bool = { RecordingMarker.isLive($0) }
     ) async throws -> UnlockAttempt {
         func locked(_ message: String, hint: String? = nil) -> CLIError {
             CLIError(errorDescription: message, reason: .deviceLocked, hint: hint)
+        }
+        // The caller holds the device lock, and a recording marks the device before it checks the holder, so none can start after this.
+        if recordingLive(DeviceLockKey(platform: device.platform, id: device.rawValue)) {
+            throw CLIError(
+                errorDescription: "A recording is running on \(name) (record-video or stream-video), so wake will not type its unlock code until it stops. Stop the recording, then retry. Nothing was typed.",
+                reason: .deviceBusy
+            )
         }
         guard let key else {
             throw locked("Offsider could not read the AVD name of \(name), which its saved code is kept under. Unlock it on the device.")

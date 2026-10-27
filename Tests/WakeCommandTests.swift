@@ -148,6 +148,32 @@ struct WakeCommandTests {
         }
     }
 
+    @Test("--unlock refuses with device_busy (exit 8) while a recording runs on the device, before reading the saved code or typing")
+    func unlockRefusedWhileRecording() async throws {
+        try await Self.withLedger { (ledger: UnlockAttemptLedger) async throws in
+            let root = try RecordingMarkerTests.root()
+            defer { try? FileManager.default.removeItem(atPath: root) }
+            let marker = try RecordingMarker.create(DeviceLockKey(platform: .android, id: Self.phone.rawValue), root: root)
+            defer { marker.remove() }
+            let backend = Self.backend(Self.locked, afterWake: AwakeReading(screen: .on, lockScreen: .secure, credential: "pin"))
+            let store = try Self.store("2580")
+
+            let error = await #expect(throws: CLIError.self) {
+                _ = try await Wake.report(
+                    unlock: true, json: false, booted: Self.booted, backend: backend, store: store, ledger: ledger,
+                    recordingLive: { RecordingMarker.isLive($0, root: root) }
+                )
+            }
+
+            #expect(error?.reason == .deviceBusy)
+            #expect(error?.reason.exitCode.rawValue == 8)
+            #expect(error?.failureMessage.contains("A recording is running on Motorola moto g (ZY22FAKE01) (record-video or stream-video), so wake will not type its unlock code") == true)
+            #expect(backend.enteredCodes.isEmpty)
+            #expect(store.reads == 0)
+            #expect(!ledger.hasFailed("ZY22FAKE01"))
+        }
+    }
+
     @Test("the failure marker is written before the first key, so a run that dies mid-code never types it again")
     func markerBeforeTyping() async throws {
         try await Self.withLedger { (ledger: UnlockAttemptLedger) async throws in
