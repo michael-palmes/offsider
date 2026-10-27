@@ -19,6 +19,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Fixed
 
+- On an iPhone or iPad, stream screenshots are cropped to the decoded frame's clean aperture, the panel's own size that `devicectl` shots have, where they could come out a few pixels larger; `screenshot --json` adds `capture` (`stream` or `devicectl`), and the fallback notice says a `devicectl` shot has a staged status bar. A Mac display that is asleep no longer reads as no desktop session: the stream opens again once it wakes, and the reason names `caffeinate -d`.
 - `login --project <dir>` on an Android phone allowed for any app drives the `package` of the `offsider.login.json` it found there, where the phone check read only the current folder's file and refused with `app_not_allowed`. `login` also takes `--app <package>`, as other commands do; one the file does not name exits 64 with nothing typed.
 - `wake --unlock` no longer types a device's unlock code while `record-video` or `stream-video` records it: it exits 8 (`device_busy`) with nothing typed, as `login` does for a password. An Android recording with `--unmasked` or `OFFSIDER_MASK_SECURE=0` never took the device lock, so the code could be typed on camera.
 - On Android, `record-video` and `stream-video` no longer hold the device for the whole recording: they lock it only for their one tree read before the first frame, then let go of it and the UiAutomation helper, so `describe-ui`, `screenshot`, `tap` and the rest run while they record, as on iOS.

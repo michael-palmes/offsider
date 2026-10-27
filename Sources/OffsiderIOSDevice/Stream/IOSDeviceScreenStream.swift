@@ -78,7 +78,16 @@ public final class IOSDeviceScreenStream {
     }
 
     private static func open(_ target: Target, tunnelAddress: String, timing: IOSDeviceTiming) async throws -> IOSDeviceScreenStream {
-        guard hasDisplay() else { throw IOSDeviceError.streamNeedsGUISession(target.name) }
+        switch displays() {
+        case .awake:
+            break
+        case .asleep:
+            throw IOSDeviceError.streamFailed(
+                target.name, udid: target.udid, detail: "this Mac's display is asleep; keep it awake for the run, for example with `caffeinate -d` in a terminal"
+            )
+        case .none:
+            throw IOSDeviceError.streamNeedsGUISession(target.name)
+        }
         guard let host = TunnelEndpoint.host(forDevice: tunnelAddress, among: TunnelEndpoint.interfaces()) else {
             throw IOSDeviceError.streamFailed(target.name, udid: target.udid, detail: "this Mac has no CoreDevice tunnel interface for it")
         }
@@ -175,9 +184,35 @@ public final class IOSDeviceScreenStream {
         if let failure = frames.failure { throw IOSDeviceError.streamFailed(target.name, udid: target.udid, detail: failure) }
     }
 
+    /// Whether this process can show the stream: a display awake, only asleep ones (which wake again), or none, as over ssh.
+    enum Displays: Equatable {
+        case awake
+        case asleep
+        case none
+
+        init(active: UInt32?, online: UInt32?) {
+            if let active, active > 0 {
+                self = .awake
+            } else if let online, online > 0 {
+                self = .asleep
+            } else {
+                self = .none
+            }
+        }
+    }
+
+    /// Online displays include sleeping ones; active ones are drawable.
+    nonisolated static func displays() -> Displays {
+        var active: UInt32 = 0
+        var online: UInt32 = 0
+        let activeRead = CGGetActiveDisplayList(0, nil, &active) == .success
+        let onlineRead = CGGetOnlineDisplayList(0, nil, &online) == .success
+        return Displays(active: activeRead ? active : nil, online: onlineRead ? online : nil)
+    }
+
+    /// A desktop session with a display, awake or asleep.
     nonisolated static func hasDisplay() -> Bool {
-        var count: UInt32 = 0
-        return CGGetActiveDisplayList(0, nil, &count) == .success && count > 0
+        displays() != .none
     }
 
     private static func openSocket(_ target: Target, feature: String) async throws -> CoreDeviceServiceSocket {
@@ -324,22 +359,25 @@ public final class IOSDeviceScreenStream {
         return CGImageDestinationFinalize(destination) ? output as Data : nil
     }
 
-    private static func encode(_ pixels: CVPixelBuffer, as format: IOSDeviceScreenFrame.Format) -> IOSDeviceScreenFrame? {
-        let width = CVPixelBufferGetWidth(pixels)
-        let height = CVPixelBufferGetHeight(pixels)
-        let image = CIImage(cvImageBuffer: pixels)
+    /// Cropped to the buffer's clean aperture: the decoder pads frames out to whole blocks, and the screen itself is what devicectl captures.
+    static func encode(_ pixels: CVPixelBuffer, as format: IOSDeviceScreenFrame.Format) -> IOSDeviceScreenFrame? {
+        let image = CIImage(cvImageBuffer: pixels, options: [.applyCleanAperture: true])
+        let width = Int(image.extent.width.rounded(.down))
+        let height = Int(image.extent.height.rounded(.down))
+        guard width > 0, height > 0 else { return nil }
+        let bounds = CGRect(x: image.extent.minX, y: image.extent.minY, width: CGFloat(width), height: CGFloat(height))
         guard let space = CGColorSpace(name: CGColorSpace.sRGB) else { return nil }
         let data: Data?
         switch format {
         case .jpeg:
             data = images.jpegRepresentation(of: image, colorSpace: space, options: [:])
         case .png:
-            data = images.createCGImage(image, from: image.extent, format: .RGBA8, colorSpace: space).flatMap(fastPNG)
+            data = images.createCGImage(image, from: bounds, format: .RGBA8, colorSpace: space).flatMap(fastPNG)
         case .bgra:
             guard let count = DeviceSessionLimits.bgraByteCount(width: width, height: height) else { return nil }
             var bytes = Data(count: count)
             bytes.withUnsafeMutableBytes { buffer in
-                images.render(image, toBitmap: buffer.baseAddress!, rowBytes: width * 4, bounds: image.extent, format: .BGRA8, colorSpace: space)
+                images.render(image, toBitmap: buffer.baseAddress!, rowBytes: width * 4, bounds: bounds, format: .BGRA8, colorSpace: space)
             }
             data = bytes
         }
