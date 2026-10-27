@@ -58,6 +58,37 @@ struct AndroidVideoTests {
         #expect(size > 10_000)
     }
 
+    @Test("a recording whose output pipe closes keeps going, and SIGHUP saves it with nothing left beside the file")
+    func closedPipeThenHangUp() async throws {
+        let serial = try await AndroidE2E.serial()
+        let folder = AndroidE2E.temporaryFile("video-folder")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: try TestHelpers.getOffsiderPath())
+        process.arguments = ["record-video", "--output", folder.appendingPathComponent("clip.mp4").path, "--json", "--device", serial]
+        process.environment = TestHelpers.childEnvironment()
+        let stderr = Pipe()
+        process.standardError = stderr
+        process.standardOutput = FileHandle.nullDevice
+        try process.run()
+        try await Task.sleep(for: .seconds(4))
+        try stderr.fileHandleForReading.close()
+        try await Task.sleep(for: .seconds(3))
+        #expect(process.isRunning, "record-video ended when its stderr closed")
+
+        kill(process.processIdentifier, SIGHUP)
+        let deadline = Date().addingTimeInterval(30)
+        while process.isRunning, Date() < deadline {
+            try await Task.sleep(for: .milliseconds(100))
+        }
+        if process.isRunning { process.terminate() }
+        process.waitUntilExit()
+
+        #expect(process.terminationStatus == 0)
+        #expect(try FileManager.default.contentsOfDirectory(atPath: folder.path) == ["clip.mp4"])
+    }
+
     @Test("stream-video --format bgra sends a full frame of width x height x 4 bytes")
     func bgraFrame() async throws {
         let serial = try await AndroidE2E.serial()

@@ -16,7 +16,9 @@ struct RecordVideo: AsyncParsableCommand {
         a recording while the evidence run masks emails or ids. One tree read before the first frame refuses the same way \
         when a password field is on screen or the tree cannot be read (OFFSIDER_MASK_SECURE=0 skips it outside a run); \
         --unmasked records anyway, with a warning. For masked evidence use \
-        `screenshot` or screenshot steps in a batch.
+        `screenshot` or screenshot steps in a batch. It records until --duration runs out or it gets Ctrl+C, SIGINT, \
+        SIGTERM or SIGHUP, then saves every captured frame at the times they were taken and leaves nothing else beside \
+        the file; a closed output pipe does not stop it.
         """
     )
 
@@ -38,6 +40,9 @@ struct RecordVideo: AsyncParsableCommand {
     @Option(help: "Output MP4 file path. Defaults to offsider-video-<timestamp>.mp4 in the current directory.")
     var output: String?
 
+    @Option(help: ArgumentHelp("Stop and save this many seconds after the first frame (1 to 3600); without it, record until Ctrl+C or SIGINT.", valueName: "seconds"))
+    var duration: Double?
+
     @OptionGroup
     var masks: VideoMaskOptions
 
@@ -56,7 +61,14 @@ struct RecordVideo: AsyncParsableCommand {
         guard scale >= 0.1 && scale <= 1.0 else {
             throw ValidationError("Scale must be between 0.1 and 1.0")
         }
+
+        if let duration, !(duration.isFinite && (1...3600).contains(duration)) {
+            throw ValidationError("--duration must be from 1 to 3600 seconds.")
+        }
     }
+
+    /// Each stops the recording and saves it; SIGPIPE is ignored instead, so a background recording outlives the pipe it was started with.
+    static let stopSignals = [SIGINT, SIGTERM, SIGHUP]
 
     @MainActor
     func run() async throws {
@@ -70,6 +82,63 @@ struct RecordVideo: AsyncParsableCommand {
         defer { marker.remove() }
 
         let target = try prepareOutputURL()
+        let console = Console.current
+        let recording = StartPersonView.recordingLabel(device: device.rawValue, elapsed: 0)
+        console.step("Recording \(device.platform.videoSourceNoun) \(device.rawValue) to \(target.url.path)", label: recording)
+        console.step("Press Ctrl+C or run `kill -INT \(getpid())` to stop recording; every captured frame is saved", label: recording)
+
+        let stop = CancellationFlag()
+        signal(SIGPIPE, SIG_IGN)
+        let signalObserver = SignalObserver(signals: Self.stopSignals) {
+            Task {
+                await stop.cancel()
+            }
+        }
+        defer { signalObserver.invalidate() }
+
+        let source = VideoFrameSource(backend: backend, device: device, scale: scale, regions: regions)
+        let saved = try await console.progress(recording) {
+            try await Self.record(from: source, to: target, fps: fps, quality: quality, scale: scale, duration: duration, stop: stop)
+        }
+        let held = saved.held > 0 ? ", \(saved.held) held" : ""
+        console.clearLine()
+        console.line("Recording saved to \(saved.path): \(saved.summary)\(held)", person: nil)
+        if json {
+            console.data(
+                VideoRecordingReport(
+                    path: saved.path, frames: saved.frames, heldFrames: saved.held, seconds: saved.seconds, regions: source.painted, unmasked: masks.unmasked
+                ).jsonLine() + "\n"
+            )
+        } else {
+            console.show(StartPersonView.videoSaved(path: saved.path, seconds: saved.seconds, frames: saved.frames, held: saved.held))
+        }
+    }
+
+    /// A finished recording: where it went, its frames, those repeating a masked frame, and the time from the first frame to the last.
+    struct SavedRecording: Equatable {
+        let path: String
+        let frames: Int
+        let held: Int
+        let seconds: TimeInterval
+
+        /// `248 frames over 25.6 s (9.7 FPS)`, as the frames were taken.
+        var summary: String {
+            let rate = VideoRecordingReport.framesPerSecond(frames: frames, seconds: seconds).map { String(format: " (%.1f FPS)", $0) } ?? ""
+            return String(format: "%d frame%@ over %.1f s", frames, frames == 1 ? "" : "s", seconds) + rate
+        }
+    }
+
+    /// Records into a private staging folder beside `target` until `stop` or `duration`, then moves the MP4 into place; the folder goes on every path.
+    @MainActor
+    static func record(
+        from source: VideoFrameSource,
+        to target: (url: URL, userNamed: Bool),
+        fps: Int,
+        quality: Int,
+        scale: Double,
+        duration: TimeInterval?,
+        stop: CancellationFlag
+    ) async throws -> SavedRecording {
         let staging: String
         do {
             staging = try OutputFile.stagingDirectory(for: target.url.path)
@@ -77,62 +146,32 @@ struct RecordVideo: AsyncParsableCommand {
             throw CLIError(errorDescription: error.message, reason: .videoFailed)
         }
         defer { OutputFile.discardStaging(staging) }
-        let stagedURL = URL(fileURLWithPath: staging).appendingPathComponent("recording.mp4")
-        var outputURL = target.url
-        let console = Console.current
-        let recording = StartPersonView.recordingLabel(device: device.rawValue, elapsed: 0)
-        Console.current.step("Recording \(device.platform.videoSourceNoun) \(device.rawValue) to \(outputURL.path)", label: recording)
-        Console.current.step("Press Ctrl+C to stop recording", label: recording)
-
-        let cancellationFlag = CancellationFlag()
-        let signalObserver = SignalObserver(signals: [SIGINT, SIGTERM]) {
-            Task {
-                await cancellationFlag.cancel()
-            }
-        }
-        defer { signalObserver.invalidate() }
-
-        let source = VideoFrameSource(backend: backend, device: device, scale: scale, regions: regions)
+        let staged = URL(fileURLWithPath: staging).appendingPathComponent("recording.mp4")
         let written: (frames: Int, held: Int, seconds: TimeInterval)
         do {
-            written = try await console.progress(recording) {
-                try await recordVideo(
-                    from: source,
-                    outputURL: stagedURL,
-                    fps: fps,
-                    quality: quality,
-                    scale: scale,
-                    cancellationFlag: cancellationFlag
-                )
-            }
+            written = try await capture(from: source, outputURL: staged, fps: fps, quality: quality, scale: scale, duration: duration, stop: stop)
         } catch let failure as CLIError where failure.reason == .maskUnproven {
             throw failure
         } catch {
             throw CLIError(errorDescription: "Failed to record video: \(TerminalText.line(error.localizedDescription))", reason: .videoFailed)
         }
         do {
-            outputURL = URL(fileURLWithPath: try OutputFile.commit(stagedURL.path, to: target.url.path, replacing: target.userNamed))
+            let path = try OutputFile.commit(staged.path, to: target.url.path, replacing: target.userNamed)
+            return SavedRecording(path: path, frames: written.frames, held: written.held, seconds: written.seconds)
         } catch let error as OutputFileError {
             throw CLIError(errorDescription: error.message, reason: .videoFailed)
-        }
-        let held = written.held > 0 ? ", \(written.held) of \(written.frames) frames held" : ""
-        Console.current.clearLine()
-        Console.current.line("Recording saved to \(outputURL.path)\(held)", person: nil)
-        if json {
-            console.data(VideoRecordingReport(path: outputURL.path, frames: written.frames, heldFrames: written.held, regions: source.painted, unmasked: masks.unmasked).jsonLine() + "\n")
-        } else {
-            console.show(StartPersonView.videoSaved(path: outputURL.path, seconds: written.seconds, frames: written.frames, held: written.held))
         }
     }
 
     @MainActor
-    private func recordVideo(
+    private static func capture(
         from source: VideoFrameSource,
         outputURL: URL,
         fps: Int,
         quality: Int,
         scale: Double,
-        cancellationFlag: CancellationFlag
+        duration: TimeInterval?,
+        stop: CancellationFlag
     ) async throws -> (frames: Int, held: Int, seconds: TimeInterval) {
         let initialImage = try await source.start()
 
@@ -160,7 +199,10 @@ struct RecordVideo: AsyncParsableCommand {
             if Task.isCancelled {
                 break
             }
-            if await cancellationFlag.isCancelled() {
+            if await stop.isCancelled() {
+                break
+            }
+            if let duration, Date().timeIntervalSince(writerStartTime) >= duration {
                 break
             }
 
@@ -196,7 +238,10 @@ struct RecordVideo: AsyncParsableCommand {
             }
 
             let elapsed = Date().timeIntervalSince(frameStart)
-            let sleepTime = frameInterval - elapsed
+            var sleepTime = frameInterval - elapsed
+            if let duration {
+                sleepTime = min(sleepTime, duration - Date().timeIntervalSince(writerStartTime))
+            }
             if sleepTime > 0 {
                 try await Task.sleep(nanoseconds: UInt64(sleepTime * 1_000_000_000))
             }

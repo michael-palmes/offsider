@@ -259,3 +259,94 @@ struct VideoRecordingStartTests {
         #expect(backend.screenshotReads == 0)
     }
 }
+
+@Suite("Recording to a file", .serialized)
+@MainActor
+struct VideoRecordingFileTests {
+    static let device = DeviceID(rawValue: "emulator-5554", platform: .android)
+
+    static func folder() throws -> URL {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("offsider-record-core-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+        return url
+    }
+
+    static func source(_ screenshots: [Data]) -> VideoFrameSource {
+        VideoFrameSource(backend: FakeDeviceBackend(platform: .android, trees: [], screenshots: screenshots), device: device, scale: 1, regions: [])
+    }
+
+    static func samples(in url: URL) async throws -> Int {
+        let asset = AVURLAsset(url: url)
+        let track = try #require(try await asset.loadTracks(withMediaType: .video).first)
+        let reader = try AVAssetReader(asset: asset)
+        let output = AVAssetReaderTrackOutput(track: track, outputSettings: nil)
+        reader.add(output)
+        #expect(reader.startReading())
+        var count = 0
+        while let buffer = output.copyNextSampleBuffer() {
+            if CMSampleBufferGetNumSamples(buffer) > 0 { count += 1 }
+        }
+        return count
+    }
+
+    /// Stops the recording from inside its sixth capture, so the test does not depend on how fast frames come.
+    final class StoppingBackend: FakeDeviceBackend {
+        let stop = CancellationFlag()
+
+        override func screenshotPNG(for id: DeviceID) async throws -> Data {
+            let data = try await super.screenshotPNG(for: id)
+            if screenshotReads == 6 { await stop.cancel() }
+            return data
+        }
+    }
+
+    @Test("a stopped recording keeps every frame it reports, at the times they were taken, and leaves only the MP4 beside it")
+    func stoppedKeepsEveryFrame() async throws {
+        let folder = try Self.folder()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let target = folder.appendingPathComponent("clip.mp4")
+        let backend = StoppingBackend(platform: .android, trees: [], screenshots: [try VideoMaskTests.whitePNG(width: 120, height: 260)])
+
+        let saved = try await RecordVideo.record(
+            from: VideoFrameSource(backend: backend, device: Self.device, scale: 1, regions: []), to: (target, true),
+            fps: 10, quality: 50, scale: 1, duration: nil, stop: backend.stop
+        )
+
+        #expect(saved.path == target.path)
+        #expect(saved.frames == 6)
+        #expect(try await Self.samples(in: target) == saved.frames)
+        let length = try await AVURLAsset(url: target).load(.duration).seconds
+        #expect(saved.seconds > 0.3 && length >= saved.seconds, "MP4 \(length) s, reported \(saved.seconds) s")
+        #expect(try FileManager.default.contentsOfDirectory(atPath: folder.path) == ["clip.mp4"])
+    }
+
+    @Test("--duration stops the recording by itself after that much video")
+    func durationStops() async throws {
+        let folder = try Self.folder()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let started = ContinuousClock.now
+        let saved = try await RecordVideo.record(
+            from: Self.source([try VideoMaskTests.whitePNG(width: 120, height: 260)]), to: (folder.appendingPathComponent("clip.mp4"), true),
+            fps: 10, quality: 50, scale: 1, duration: 1, stop: CancellationFlag()
+        )
+        let took = ContinuousClock.now - started
+
+        #expect(took >= .seconds(1) && took < .seconds(10), "\(took)")
+        #expect(try await Self.samples(in: URL(fileURLWithPath: saved.path)) == saved.frames)
+        #expect(saved.summary.hasPrefix("\(saved.frames) frames over "))
+    }
+
+    @Test("a recording that fails before its first frame fails with video_failed and leaves nothing beside the target")
+    func failureLeavesNothing() async throws {
+        let folder = try Self.folder()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let error = await #expect(throws: CLIError.self) {
+            _ = try await RecordVideo.record(
+                from: Self.source([]), to: (folder.appendingPathComponent("clip.mp4"), true), fps: 10, quality: 50, scale: 1, duration: nil, stop: CancellationFlag()
+            )
+        }
+
+        #expect(error?.reason == .videoFailed)
+        #expect(try FileManager.default.contentsOfDirectory(atPath: folder.path).isEmpty)
+    }
+}
