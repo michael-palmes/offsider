@@ -16,7 +16,8 @@ struct RecordVideo: AsyncParsableCommand {
         a recording while the evidence run masks emails or ids. One tree read before the first frame refuses the same way \
         when a password field is on screen or the tree cannot be read (OFFSIDER_MASK_SECURE=0 skips it outside a run); \
         --unmasked records anyway, with a warning. For masked evidence use \
-        `screenshot` or screenshot steps in a batch. It records until --duration runs out or it gets Ctrl+C, SIGINT, \
+        `screenshot` or screenshot steps in a batch. Only that read holds the device, so other commands can read and \
+        drive it while it records; a recording sends no input. It records until --duration runs out or it gets Ctrl+C, SIGINT, \
         SIGTERM or SIGHUP, then saves every captured frame at the times they were taken and leaves nothing else beside \
         the file; a closed output pipe does not stop it.
         """
@@ -261,18 +262,23 @@ struct RecordVideo: AsyncParsableCommand {
     }
 
     /// The booted device and its recording marker, for `record-video` and `stream-video` alike; nothing is captured before this returns.
+    /// Frames need neither the tree reader nor the device lock its read took, so both go, and other commands can read and drive the device meanwhile.
     @MainActor
     static func start(
         command: String, backend: any DeviceBackend, device: DeviceID, checksSecureField: Bool,
         root: String = OffsiderPrivateDirectory.root,
-        holder: (DeviceLockKey) -> DeviceLockHolder? = { DeviceLock.currentHolder($0) }
+        holder: (DeviceLockKey) -> DeviceLockHolder? = { DeviceLock.currentHolder($0) },
+        claims: DeviceClaims = .current
     ) async throws -> (device: DeviceID, marker: RecordingMarker) {
         try await backend.prepare()
         let booted = try await backend.requireBootedDevice(device)
         if checksSecureField {
             try await VideoMaskOptions.requireNoSecureField(command: command, backend: backend, device: booted.id)
         }
-        let marker = try beginRecording(DeviceLockKey(platform: booted.id.platform, id: booted.id.rawValue), device: booted.id.rawValue, command: command, root: root, holder: holder)
+        let key = DeviceLockKey(platform: booted.id.platform, id: booted.id.rawValue)
+        let marker = try beginRecording(key, device: booted.id.rawValue, command: command, root: root, holder: holder)
+        await (backend as? any TreeReadReleasing)?.releaseTreeReads(on: booted.id)
+        claims.release(key)
         return (booted.id, marker)
     }
 

@@ -223,6 +223,47 @@ struct VideoRecordingStartTests {
         #expect(!RecordingMarker.isLive(Self.key, root: root))
     }
 
+    /// Locks the device on its first tree read and keeps a reader running, as the Android backend does with its helper.
+    final class LockingReadBackend: FakeDeviceBackend, TreeReadReleasing {
+        let claims: DeviceClaims
+        private(set) var released: [DeviceID] = []
+
+        init(claims: DeviceClaims) {
+            self.claims = claims
+            super.init(platform: .android, trees: [FakeUI.tree(platform: .android, [FakeUI.node(.button, id: "start", label: "Start", frame: FakeUI.frame(20, 100, 200, 44), platform: .android)])])
+        }
+
+        override func accessibilityTree(for id: DeviceID, point: UIPoint?) async throws -> UITree {
+            try await claims.claim(id)
+            return try await super.accessibilityTree(for: id, point: point)
+        }
+
+        func releaseTreeReads(on id: DeviceID) async {
+            released.append(id)
+        }
+    }
+
+    @Test("after its one tree read a recording lets go of the device and its reader, so another command can lock it while the marker stays", arguments: ["record-video", "stream-video"])
+    func lockReleasedAfterRead(command: String) async throws {
+        let root = try RecordingMarkerTests.root()
+        defer { try? FileManager.default.removeItem(atPath: root) }
+        let claims = DeviceClaims()
+        claims.root = { root }
+        let backend = LockingReadBackend(claims: claims)
+
+        let (_, marker) = try await RecordVideo.start(
+            command: command, backend: backend, device: Self.device, checksSecureField: true, root: root, holder: { _ in nil }, claims: claims
+        )
+        defer { marker.remove() }
+
+        #expect(backend.treeReads == 1)
+        #expect(backend.released == [Self.device])
+        #expect(claims.heldKeys.isEmpty)
+        let other = try await DeviceLock.acquire(Self.key, command: "tap", wait: nil, root: root)
+        other.release()
+        #expect(RecordingMarker.isLive(Self.key, root: root))
+    }
+
     @Test("stream-video, like record-video, is refused with device_busy (exit 8) while login holds the device, and leaves no marker", arguments: ["record-video", "stream-video"])
     func refusedDuringLogin(command: String) async throws {
         let root = try RecordingMarkerTests.root()
