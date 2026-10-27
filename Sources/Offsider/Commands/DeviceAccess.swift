@@ -170,7 +170,10 @@ struct DeviceAccessAllow: AsyncParsableCommand {
 
     var json: Bool { output.json }
 
+    @OptionGroup(visibility: .private) var listFilters: DeviceListFilters
+
     func validate() throws {
+        try listFilters.refuse(in: Self.self)
         if let expires { _ = try DeviceAccess.expiry(expires) }
         if let team, !DeviceAllowance.isTeamID(team) {
             throw ValidationError("--team takes a 10-character Apple team ID such as ABCDE12345; '\(team)' is not one.")
@@ -603,6 +606,12 @@ struct DeviceAccessStatus: AsyncParsableCommand {
 
     var json: Bool { output.json }
 
+    @OptionGroup(visibility: .private) var listFilters: DeviceListFilters
+
+    func validate() throws {
+        try listFilters.refuse(in: Self.self)
+    }
+
     func run() async throws {
         let console = Console.current
         let context = DeviceAccessContext.current
@@ -659,6 +668,12 @@ struct DeviceAccessRemove: AsyncParsableCommand {
     @OptionGroup var output: DeviceJSONOption
 
     var json: Bool { output.json }
+
+    @OptionGroup(visibility: .private) var listFilters: DeviceListFilters
+
+    func validate() throws {
+        try listFilters.refuse(in: Self.self)
+    }
 
     @MainActor
     func run() async throws {
