@@ -9,6 +9,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ### Added
 
 - `batch` takes a `drag` step, written and limited like `offsider drag`.
+- `app_not_responding` (exit 1): on Android, when the app in front on an unlocked screen has no window the tree can read, as when its main thread is stuck, `describe-ui` and other reads say so instead of telling you to unlock the device.
 - `rn devmenu` lists the items an app registers (`registerDevMenuItems`, or `DevSettings.addMenuItem` in React Native's own Android menu), marked `"custom":true` in `--json` and tagged for a person; `--label` already chose them, and now prefers the menu's item over an app button behind it with the same label. Expo's custom heading also counts as menu evidence, so a menu whose tools those items push off screen is still read.
 
 ### Changed
@@ -19,6 +20,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Fixed
 
+- `rn open` on a phone allowed for any app reads the tree of `--bundle-id`, as `--app` does elsewhere; every read was refused for naming no app, so `--wait-id` waited out `--timeout` and blamed Metro although the app was up. Tree reads that keep failing for 10 s now end the wait with the read's own error.
+- `rn open` stops early instead of waiting out `--timeout` and blaming Metro: exit 5 when the app holds a screen without the `--wait-id` element for 15 s, naming the screen's first id (a timeout on a screen names it too), or shows Expo's dev menu intro (the hint is `rn prepare`); exit 1 `person_required` when a system prompt such as a permission alert covers the app on an iOS simulator, naming it and its buttons, which `rn open` never answers (without `--wait-id` it no longer reports such a screen as the app up); and `app_not_responding` after 10 s on Android when the app is in front but has no window, with `rn open --restart` as the fix.
 - `--platform`, `--physical` and `--booted` beside `devices add`, `remove` or `status`, before or after its name, exit 64 naming the listing command (`To list: offsider devices --platform ios`), where the subcommand used to run as if they were not there.
 - `rn devmenu <item>` and `--label` no longer report an item past the fold of the dev menu as chosen, as when the Expo menu on an iOS simulator lists more than fits: the tap landed nowhere and the Close fallback then closed the menu. Nothing is tapped now, and it exits 2 (`target_off_screen`) naming the item, with the `swipe` that scrolls the menu towards it as the hint; `rn tools off` stops the same way. An item the menu's scroll view cuts off is tapped on the part that shows, and the candidates of a missing item say which are on screen.
 - An element `offsider.mask.json` or the evidence run masks no longer shows its label in full, where React Native puts a copied value: `describe-ui` (with `--diff`), `--verify` change lists, `wait` and `assert` output, selector misses, cover warnings and the tree cache keep only the text the file names (`Referral code. [redacted]`, or `[redacted]` for an `ids` match) and hide its other screen text, such as Android's content description and hint. A `--has-value` miss on one says `has a masked value`, and a change summary `value of <element> changed (masked)`.
