@@ -81,10 +81,11 @@ struct DevMenuDriver {
                 errorDescription: "The \(state.menu) dev menu has no \(name). Its items: \(state.items.map(\.label).joined(separator: ", ")).\(advice)",
                 reason: .selectorNotFound,
                 hint: "offsider rn devmenu --device \(route.device.rawValue)",
-                candidates: state.items.map { FailureCandidate(id: nil, label: $0.label, role: $0.role.rawValue, frame: $0.frame, onScreen: true) }
+                candidates: state.items.map { entry in FailureCandidate(id: nil, label: entry.label, role: entry.role.rawValue, frame: entry.frame, onScreen: tree.viewport.flatMap { entry.frame?.isVisible(in: $0) }) }
             )
         }
-        try await tap(frame.center, tree: tree, hold: node.role == .switch)
+        let point = try visiblePoint(of: node, frame: frame, label: tapped, menu: state.menu, in: tree)
+        try await tap(point, tree: tree, hold: node.role == .switch)
         if try await closed(leaving: state.menu) { return tapped }
         // A switch or label can leave the menu open, and a Close tapped while the menu still presents can be ignored.
         if item?.isToggle == true || label != nil || item == .close {
@@ -102,6 +103,47 @@ struct DevMenuDriver {
             reason: .notVerified,
             hint: "offsider describe-ui --summary --device \(route.device.rawValue)"
         )
+    }
+
+    /// Where the item shows, as `tap` finds it; past the screen or the menu's scroll view a tap lands nowhere and the Close fallback would pass for a choice.
+    private func visiblePoint(of node: UINode, frame: UIFrame, label: String, menu: String, in tree: UITree) throws -> UIPoint {
+        guard let viewport = tree.viewport else { return frame.center }
+        do {
+            let point = try AccessibilityTargetResolver.visiblePoint(
+                (x: frame.center.x, y: frame.center.y), of: node, frame: frame, viewport: viewport, roots: tree.roots, selector: label
+            )
+            return UIPoint(x: point.x, y: point.y)
+        } catch let error as ElementResolutionError where error.isOffScreen {
+            let band = Self.scrollBand(for: error, of: node, in: tree.roots, viewport: viewport)
+            let below = frame.center.y >= band.center.y
+            let swipe = Self.scrollSwipe(up: below, in: band)
+            let place = below ? "below the fold of" : "above the top of"
+            throw CLIError(
+                errorDescription: "\(TerminalText.quoted(label)) is off screen, \(place) the \(menu) dev menu, so nothing was tapped. Swipe the menu \(below ? "up" : "down") until it shows, then choose it again with `rn devmenu`, which uses the menu that is already open.",
+                reason: .targetOffScreen,
+                hint: "offsider swipe --start-x \(swipe.x) --start-y \(swipe.from) --end-x \(swipe.x) --end-y \(swipe.to) --device \(route.device.rawValue)",
+                candidates: [FailureCandidate(id: node.id, label: label, role: node.role.rawValue, frame: frame, onScreen: false)]
+            )
+        }
+    }
+
+    /// What the screen shows of the scroll view or list that hides `node`, else the screen when under a quarter of it shows, too little to swipe in.
+    private static func scrollBand(for error: ElementResolutionError, of node: UINode, in roots: [UINode], viewport: UIFrame) -> UIFrame {
+        let shown: UIFrame?
+        if case .beyondScrollView(_, _, let visible, _) = error {
+            shown = visible
+        } else {
+            let scroller = AccessibilityTargetResolver.ancestorsOf(node, in: roots).last { [.scrollView, .list].contains($0.role) && $0.hasPositiveFrame }
+            shown = scroller?.frame?.intersection(viewport)
+        }
+        guard let shown, shown.height >= viewport.height / 4 else { return viewport }
+        return shown
+    }
+
+    /// A vertical swipe over 70% of `band`'s height, a quarter in from its left edge, clear of the switches on the right.
+    private static func scrollSwipe(up: Bool, in band: UIFrame) -> (x: Int, from: Int, to: Int) {
+        let low = Int((band.y + band.height * 0.85).rounded()), high = Int((band.y + band.height * 0.15).rounded())
+        return (Int((band.x + band.width / 4).rounded()), up ? low : high, up ? high : low)
     }
 
     /// True once `menu` is gone: no menu shows, or the item opened the other one, as Expo's "Open React Native dev menu" does.
@@ -146,7 +188,8 @@ struct RNDevMenu: AsyncParsableCommand {
         Without an item it prints the items, marking custom those the app registered, and leaves the menu open. With one (reload, home, inspector, \
         perf-monitor, fast-refresh, debugger, close) or --label, it taps it and waits until the menu closes, \
         closing it after a switch. React Native's own menu on Android has no close control, so there `close` \
-        presses Back and checks the menu went. Exits 2 when the menu has no such item (the items are the candidates), 1 when \
+        presses Back and checks the menu went. Exits 2 when the menu has no such item (the items are the candidates) or the item is \
+        off screen (nothing is tapped; the hint is the swipe that scrolls the menu to it), 1 when \
         the menu never opens (a Release build has none) and 5 when it stays open. On Android an Expo dev client \
         keeps the menu key from its menu while a text field has focus, and the error then says so: move focus \
         out of the field, or open Expo's menu with its Tools button, then run this again. In batch, `rn devmenu` is \
