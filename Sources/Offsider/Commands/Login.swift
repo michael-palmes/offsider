@@ -1,5 +1,6 @@
 import ArgumentParser
 import Foundation
+import OffsiderAndroid
 import OffsiderCore
 
 struct LoginCommand: AsyncParsableCommand {
@@ -34,6 +35,9 @@ struct LoginCommand: AsyncParsableCommand {
     @OptionGroup
     var deviceOption: DeviceOption
 
+    @OptionGroup
+    var appOption: AppOption
+
     static let defaultTimeout: Double = 15
 
     var timeout: Double { timeoutOption ?? Self.defaultTimeout }
@@ -57,8 +61,8 @@ struct LoginCommand: AsyncParsableCommand {
         )
         let logger = OffsiderLogger()
         let watchdog = DeviceWatchdog()
-        let route = try await DeviceRouter.routeForInput(deviceOption.id, logger: logger, watchdog: watchdog)
         let profile = try LoginProfiles.load(project: project)
+        let route = try await Self.route(deviceOption.id, profile: profile, app: appOption, logger: logger, watchdog: watchdog)
         let filter = try Self.whereTags(filters, named: key != nil)
         let console = Console.current
         // A person's spinner asks for the prompt in place of the agent's line.
@@ -103,6 +107,26 @@ struct LoginCommand: AsyncParsableCommand {
         } else {
             console.show(InputPersonView.login(report))
         }
+    }
+
+    /// Routes and locks the device; a phone allowed for any app drives `--app`, else the package of the `offsider.login.json` login read.
+    @MainActor
+    static func route(
+        _ rawID: String, profile: LoginProfile?, app: AppOption, logger: OffsiderLogger, watchdog: DeviceWatchdog,
+        host: AndroidHost = .cli(), claims: DeviceClaims = .current
+    ) async throws -> DeviceRouter.Route {
+        if let chosen = app.bundleID, let profile, !profile.isFor(chosen) {
+            throw CLIError(
+                errorDescription: "--app \(chosen) is not an app offsider.login.json names (\(profile.appIDs.joined(separator: " and "))). Pass the same app, or point --project at that app's offsider.login.json. Nothing was typed.",
+                reason: .usage
+            )
+        }
+        let package = profile?.package
+        let route = try await DeviceRouter.$profilePackage.withValue({ package }) {
+            try await DeviceRouter.routeForInput(rawID, logger: logger, watchdog: watchdog, host: host, claims: claims)
+        }
+        app.apply(to: route)
+        return route
     }
 
     static let signingInLabel = "Signing in"
