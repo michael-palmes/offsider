@@ -79,13 +79,14 @@ struct RecordVideo: AsyncParsableCommand {
         let route = try await DeviceRouter.route(deviceOption.id, logger: logger)
         await appOption.apply(to: route)
         let backend = route.backend
-        let (device, marker) = try await Self.start(command: "record-video", backend: backend, device: route.device, checksSecureField: checksSecureField)
+        let (booted, marker) = try await Self.start(command: "record-video", backend: backend, device: route.device, checksSecureField: checksSecureField)
+        let device = booted.id
         defer { marker.remove() }
 
         let target = try prepareOutputURL()
         let console = Console.current
         let recording = StartPersonView.recordingLabel(device: device.rawValue, elapsed: 0)
-        console.step("Recording \(device.platform.videoSourceNoun) \(device.rawValue) to \(target.url.path)", label: recording)
+        console.step("Recording \(booted.videoSourceNoun) \(device.rawValue) to \(target.url.path)", label: recording)
         console.step("Press Ctrl+C or run `kill -INT \(getpid())` to stop recording; every captured frame is saved", label: recording)
 
         let stop = CancellationFlag()
@@ -269,7 +270,7 @@ struct RecordVideo: AsyncParsableCommand {
         root: String = OffsiderPrivateDirectory.root,
         holder: (DeviceLockKey) -> DeviceLockHolder? = { DeviceLock.currentHolder($0) },
         claims: DeviceClaims = .current
-    ) async throws -> (device: DeviceID, marker: RecordingMarker) {
+    ) async throws -> (booted: BootedDevice, marker: RecordingMarker) {
         try await backend.prepare()
         let booted = try await backend.requireBootedDevice(device)
         if checksSecureField {
@@ -279,7 +280,7 @@ struct RecordVideo: AsyncParsableCommand {
         let marker = try beginRecording(key, device: booted.id.rawValue, command: command, root: root, holder: holder)
         await (backend as? any TreeReadReleasing)?.releaseTreeReads(on: booted.id)
         claims.release(key)
-        return (booted.id, marker)
+        return (booted, marker)
     }
 
     /// Marks the device as recording before checking the lock holder, so a `login` that takes the lock in between sees the marker.

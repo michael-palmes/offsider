@@ -43,7 +43,7 @@ struct AndroidVideoTests {
         }
     }
 
-    @Test("record-video writes an MP4 and names the source a device")
+    @Test("record-video writes an MP4 and names the source an emulator")
     func record() async throws {
         let serial = try await AndroidE2E.serial()
         let output = AndroidE2E.temporaryFile("video.mp4")
@@ -53,7 +53,7 @@ struct AndroidVideoTests {
         let status = try await running.interruptAndWait()
 
         #expect(status == 0, "stderr: \(running.stderrText)")
-        #expect(running.stderrText.contains("Recording device \(serial)"))
+        #expect(running.stderrText.contains("Recording emulator \(serial)"))
         let size = (try FileManager.default.attributesOfItem(atPath: output.path)[.size] as? Int) ?? 0
         #expect(size > 10_000)
     }

@@ -212,11 +212,11 @@ struct VideoRecordingStartTests {
         let root = try RecordingMarkerTests.root()
         defer { try? FileManager.default.removeItem(atPath: root) }
         var liveAtCheck: Bool?
-        let (device, marker) = try await RecordVideo.start(
+        let (booted, marker) = try await RecordVideo.start(
             command: command, backend: FakeDeviceBackend(platform: .android, trees: []), device: Self.device, checksSecureField: false, root: root,
             holder: { key in liveAtCheck = RecordingMarker.isLive(key, root: root); return nil }
         )
-        #expect(device == Self.device)
+        #expect(booted.id == Self.device)
         #expect(liveAtCheck == true)
         #expect(RecordingMarker.isLive(Self.key, root: root))
         marker.remove()

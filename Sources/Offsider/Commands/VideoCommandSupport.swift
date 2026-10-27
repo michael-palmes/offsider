@@ -274,9 +274,15 @@ final class H264StreamRecorder: @unchecked Sendable {
     }
 }
 
-extension DevicePlatform {
-    /// What video output calls the source: an Android emulator is not a simulator.
+extension BootedDevice {
+    /// What video output calls the source: `simulator`, `emulator`, `iPhone`, `iPad` or `phone`; an iPhone or iPad is named by its model label.
     var videoSourceNoun: String {
-        self == .ios ? "simulator" : "device"
+        switch id.platform {
+        case .android:
+            return id.isPhysicalAndroidDevice ? "phone" : "emulator"
+        case .ios:
+            guard id.isPhysicalIOSDevice else { return "simulator" }
+            return name.contains("iPad") ? "iPad" : "iPhone"
+        }
     }
 }

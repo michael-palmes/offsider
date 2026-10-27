@@ -73,7 +73,8 @@ struct StreamVideo: AsyncParsableCommand {
         let route = try await DeviceRouter.route(deviceOption.id, logger: logger)
         await appOption.apply(to: route)
         let backend = route.backend
-        let (device, marker) = try await RecordVideo.start(command: "stream-video", backend: backend, device: route.device, checksSecureField: checksSecureField)
+        let (booted, marker) = try await RecordVideo.start(command: "stream-video", backend: backend, device: route.device, checksSecureField: checksSecureField)
+        let device = booted.id
         defer { marker.remove() }
 
         let cancellationFlag = CancellationFlag()
@@ -86,10 +87,10 @@ struct StreamVideo: AsyncParsableCommand {
 
         switch format {
         case .bgra:
-            try await streamBGRA(from: backend, device: device, cancellationFlag: cancellationFlag)
+            try await streamBGRA(from: backend, device: device, noun: booted.videoSourceNoun, cancellationFlag: cancellationFlag)
         default:
             let source = VideoFrameSource(backend: backend, device: device, scale: scale, regions: regions)
-            try await streamCompressedFrames(from: source, format: format, cancellationFlag: cancellationFlag)
+            try await streamCompressedFrames(from: source, format: format, noun: booted.videoSourceNoun, cancellationFlag: cancellationFlag)
         }
     }
 
@@ -99,11 +100,12 @@ struct StreamVideo: AsyncParsableCommand {
     private func streamCompressedFrames(
         from source: VideoFrameSource,
         format: OutputFormat,
+        noun: String,
         cancellationFlag: CancellationFlag
     ) async throws {
         let device = source.device
         Console.current.aside(
-            "Starting screenshot-based video stream from \(device.platform.videoSourceNoun) \(device.rawValue)...",
+            "Starting screenshot-based video stream from \(noun) \(device.rawValue)...",
             person: StartPersonView.streamHeader(device: device.rawValue, format: format.rawValue, fps: fps)
         )
         Console.current.aside("Format: \(format.rawValue), FPS: \(fps), Quality: \(quality), Scale: \(scale)", person: nil)
@@ -207,6 +209,7 @@ struct StreamVideo: AsyncParsableCommand {
     private func streamBGRA(
         from backend: any DeviceBackend,
         device: DeviceID,
+        noun: String,
         cancellationFlag: CancellationFlag
     ) async throws {
         guard let streamer = backend as? any RawVideoStreaming else {
@@ -214,7 +217,7 @@ struct StreamVideo: AsyncParsableCommand {
         }
 
         Console.current.aside(
-            "Starting BGRA video stream from \(device.platform.videoSourceNoun) \(device.rawValue)...",
+            "Starting BGRA video stream from \(noun) \(device.rawValue)...",
             person: StartPersonView.streamHeader(device: device.rawValue, format: "bgra", fps: nil)
         )
         Console.current.aside("Format: bgra, Quality: \(quality), Scale: \(scale)", person: nil)

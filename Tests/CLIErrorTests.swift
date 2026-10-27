@@ -60,10 +60,17 @@ struct CLIErrorTests {
         )
     }
 
-    @Test("Video output never calls an Android emulator a simulator")
-    func videoOutputNamesTheSourceByPlatform() {
-        #expect(DevicePlatform.android.videoSourceNoun == "device")
-        #expect(DevicePlatform.ios.videoSourceNoun == "simulator")
+    @Test("video output names the source's kind: simulator, emulator, iPhone, iPad or phone")
+    func videoOutputNamesTheSourceKind() {
+        func noun(_ id: String, _ platform: DevicePlatform, _ name: String) -> String {
+            BootedDevice(id: DeviceID(rawValue: id, platform: platform), name: name).videoSourceNoun
+        }
+        #expect(noun("00000000-0000-0000-0000-000000000001", .ios, "iPhone 17 Pro") == "simulator")
+        #expect(noun(IOSDeviceFixtures.phone, .ios, "Apple iPhone 16 Pro (\(IOSDeviceFixtures.phone))") == "iPhone")
+        #expect(noun(IOSDeviceFixtures.iPad, .ios, "Apple iPad Pro 11-inch (M4) (\(IOSDeviceFixtures.iPad))") == "iPad")
+        #expect(noun(IOSDeviceFixtures.iPad, .ios, "Apple iPad16,3 (\(IOSDeviceFixtures.iPad))") == "iPad")
+        #expect(noun("emulator-5554", .android, "Offsider_E2E") == "emulator")
+        #expect(noun("ZY22FAKE01", .android, "moto g") == "phone")
     }
 
     @Test("Broker responses expose only curated errors")
