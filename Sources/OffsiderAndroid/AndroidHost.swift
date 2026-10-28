@@ -102,6 +102,8 @@ public struct AndroidHost: Sendable {
     public var postureRecordDirectory: @Sendable (Bool) -> String? = { _ in nil }
     /// How a command reaches or starts the broker that keeps the helper warm; nil keeps one helper per command, the default.
     public var helperBroker: HelperBrokerHost?
+    /// The private `reverses/` directory recording each adb reverse Offsider set, made only when `create`; nil sets none, the default.
+    public var metroReverseDirectory: @Sendable (_ create: Bool) -> String? = { _ in nil }
 
     init(
         environment: [String: String],
@@ -159,6 +161,14 @@ public struct AndroidHost: Sendable {
     public static func privateDisplayCache(environment: [String: String]) -> @Sendable () -> String? {
         guard AndroidDisplayCache.isEnabled(environment) else { return { nil } }
         return { try? OffsiderPrivateDirectory.ensureSubdirectory(AndroidDisplayCache.directoryName) }
+    }
+
+    /// The private directory's `reverses/`, made 0700 when `create`; nil when it is missing or not private.
+    public static func privateMetroReverses() -> @Sendable (Bool) -> String? {
+        { create in
+            let name = MetroReverseRecord.directoryName
+            return create ? try? OffsiderPrivateDirectory.ensureSubdirectory(name) : (try? OffsiderPrivateDirectory.existingSubdirectory(name)) ?? nil
+        }
     }
 
     /// `EPERM` means the process exists but belongs to another user, so it counts as alive.

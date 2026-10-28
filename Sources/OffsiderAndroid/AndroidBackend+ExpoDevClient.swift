@@ -48,17 +48,20 @@ extension AndroidBackend: ExpoDevClientOpening {
         return ExpoDevClient.schemes(fromPackageDump: dump.stdoutText)
     }
 
-    /// Reads `adb reverse` (read-only); Offsider never sets one.
+    /// Reads `adb reverse` only; `addMetroReverse` is the one place Offsider sets one.
     public func metroHost(port: Int, on id: DeviceID) async throws -> String {
         try await prepare()
         let listing = (try? await requireClient().deviceQuery("reverse:list-forward", on: id.rawValue)) ?? ""
         let isEmulator: Bool
         if case .androidSerial = DeviceIDClassifier.classify(id.rawValue) { isEmulator = true } else { isEmulator = false }
         guard let host = ExpoDevClient.androidMetroHost(reverseList: listing, port: port, isEmulator: isEmulator) else {
-            throw ExpoDevClientError(
-                .noRoute,
-                "\(id.rawValue) is a phone with no adb reverse for port \(port), so it cannot reach Metro on this Mac. Run `adb -s \(id.rawValue) reverse tcp:\(port) tcp:\(port)` yourself, then try again; Offsider never sets one."
-            )
+            if let other = MetroReverse.mappings(listing).first(where: { $0.phone == "tcp:\(port)" }) {
+                throw ExpoDevClientError(
+                    .reverseMismatch,
+                    "\(id.rawValue) has an adb reverse from its port \(port) to \(other.mac) on this Mac, not to Metro on port \(port), so Offsider left it alone. Ask the user to remove it (adb -s \(id.rawValue) reverse --remove tcp:\(port)), then try again."
+                )
+            }
+            throw ExpoDevClientError(.noRoute, "\(id.rawValue) is a phone with no adb reverse for port \(port), so it cannot reach Metro on this Mac.")
         }
         return host
     }

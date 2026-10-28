@@ -13,8 +13,10 @@ struct RNOpen: AsyncParsableCommand {
         second; an empty app window, as while the bundle loads, never counts). It resends \
         the link at most every 10 s, three times, while the launcher shows. Every 2 s it also checks the app's \
         process: one seen running and then gone or replaced on two checks a second apart is a crash. An Android \
-        emulator reaches Metro at 10.0.2.2 unless an adb reverse maps the port; a phone needs that reverse, which \
-        Offsider reads but never sets. Exits 9 (metro_not_running) when Metro does not answer, 1 (rn_load_failed) \
+        emulator reaches Metro at 10.0.2.2 unless an adb reverse maps the port. A USB phone needs that reverse: rn open \
+        sets tcp:<port> tcp:<port> only when the person allowed --port in devices add and the Metro that answers runs \
+        as this user (else exit 7, metro_port_not_allowed, or 9), and session stop removes it. \
+        Exits 9 (metro_not_running) when Metro does not answer, 1 (rn_load_failed) \
         when the app shows a load error, 1 (app_crashed) when its process stops, naming the iOS crash report or \
         the Android exception class or signal, and 5 at --timeout. It stops early with exit 5 when the app holds \
         a screen without --wait-id for 15 s (naming the screen) or shows Expo's dev menu intro, 1 (person_required) \
@@ -70,10 +72,12 @@ struct RNOpen: AsyncParsableCommand {
         var waitID: String?
         var elapsedMs: Int
         var bundleMs: Int
+        /// Whether this run set the phone's adb reverse for the port.
+        var reverseSet = false
 
         func jsonLine() -> String {
             let waited = waitID.map { "\"\(Self.escape($0))\"" } ?? "null"
-            return #"{"version":1,"bundleId":"\#(Self.escape(bundleID))","url":"\#(Self.escape(url))","host":"\#(host)","port":\#(port),"metro":"running","sends":\#(sends),"launcherSeen":\#(launcherSeen),"waitId":\#(waited),"elapsedMs":\#(elapsedMs),"bundleMs":\#(bundleMs)}"#
+            return #"{"version":1,"bundleId":"\#(Self.escape(bundleID))","url":"\#(Self.escape(url))","host":"\#(host)","port":\#(port),"metro":"running","sends":\#(sends),"launcherSeen":\#(launcherSeen),"waitId":\#(waited),"elapsedMs":\#(elapsedMs),"bundleMs":\#(bundleMs),"reverseSet":\#(reverseSet)}"#
         }
 
         private static func escape(_ text: String) -> String {
@@ -105,13 +109,15 @@ struct RNOpen: AsyncParsableCommand {
         let report = try await console.progress("Loading \(bundleID) from Metro") { try await open(on: route, metro: MetroStatus(), clock: .live) }
         let took = WaitLoop.seconds(Double(report.elapsedMs) / 1000)
         let sends = "\(report.sends) send\(report.sends == 1 ? "" : "s")"
-        let line = "✓ \(bundleID) loaded from Metro on port \(port) in \(took) (\(sends)\(report.launcherSeen ? ", launcher seen" : ""))"
+        let reverse = report.reverseSet ? "; set adb reverse tcp:\(port), which `offsider session stop --device \(route.device.rawValue)` removes" : ""
+        let line = "✓ \(bundleID) loaded from Metro on port \(port) in \(took) (\(sends)\(report.launcherSeen ? ", launcher seen" : ""))\(reverse)"
         if json {
             console.data(report.jsonLine() + "\n")
             console.data(line + "\n", to: .err)
         } else {
             let details = "Port \(port), \(took), \(sends)" + (report.launcherSeen ? ", launcher seen" : "")
-            console.show(InputPersonView.receipt("\(bundleID) loaded from Metro", details: [details], agent: line + "\n"))
+            let undo = report.reverseSet ? ["set adb reverse tcp:\(port); offsider session stop --device \(route.device.rawValue) removes it"] : []
+            console.show(InputPersonView.receipt("\(bundleID) loaded from Metro", details: [details] + undo, agent: line + "\n"))
         }
     }
 
@@ -133,6 +139,7 @@ struct RNOpen: AsyncParsableCommand {
         try await opener.prepare()
         let url: String
         let host: String
+        let reverseSet: Bool
         do {
             let chosen: String
             if let scheme {
@@ -140,7 +147,7 @@ struct RNOpen: AsyncParsableCommand {
             } else {
                 chosen = try ExpoDevClient.singleScheme(try await opener.devClientSchemes(bundleID, on: device), appID: bundleID)
             }
-            host = try await opener.metroHost(port: port, on: device)
+            (host, reverseSet) = try await reachMetro(opener, route: route, metro: metro)
             url = ExpoDevClient.devClientURL(scheme: chosen, host: host, port: port)
         } catch let error as ExpoDevClientError {
             throw CLIError(errorDescription: error.message, reason: .expoDevClientFailed)
@@ -285,7 +292,7 @@ struct RNOpen: AsyncParsableCommand {
             }
             return Report(
                 bundleID: bundleID, url: url, host: host, port: port, sends: sends, launcherSeen: launcherSeen, waitID: waitID,
-                elapsedMs: Int(((now - start) * 1000).rounded()), bundleMs: Int(((now - lastSend) * 1000).rounded())
+                elapsedMs: Int(((now - start) * 1000).rounded()), bundleMs: Int(((now - lastSend) * 1000).rounded()), reverseSet: reverseSet
             )
         }
         if let failing, !anyRead || clock.now() - failing.since >= Self.failingFor / 2 {
@@ -316,6 +323,33 @@ struct RNOpen: AsyncParsableCommand {
             reason: .conditionNotMet,
             hint: "offsider describe-ui --summary --device \(device.rawValue)"
         )
+    }
+
+    /// The host the device reaches Metro on; a phone without a reverse gets one only for an allowed port whose Metro runs as this user.
+    @MainActor
+    func reachMetro(_ opener: any ExpoDevClientOpening, route: DeviceRouter.Route, metro: MetroStatus) async throws -> (host: String, reverseSet: Bool) {
+        let device = route.device
+        do {
+            return (try await opener.metroHost(port: port, on: device), false)
+        } catch let error as ExpoDevClientError where error.kind == .noRoute {
+            guard let setter = route.backend as? any MetroReverseSetting, let allowance = route.allowance, allowance.platform == .android else { throw error }
+            guard allowance.metroPorts.contains(port) else {
+                let step = ErrorAudience.current.personStep("offsider devices add", agentTail: ", choose \(allowance.name) and Metro port \(port); an agent cannot allow a port")
+                throw CLIError(
+                    errorDescription: "\(device.rawValue) has no adb reverse for port \(port), and port \(port) is not a Metro port allowed on \(allowance.name), so Offsider set none.\(step)",
+                    reason: .metroPortNotAllowed,
+                    hint: "offsider devices add"
+                )
+            }
+            guard await metro.ownedByThisUser(port) else {
+                throw CLIError(
+                    errorDescription: "Offsider could not confirm that the Metro answering on 127.0.0.1:\(port) runs as this user (another user's, or it did not accept a connection within a second), so it set no adb reverse to it. Try again; if it repeats, ask the user to start their own Metro (npx expo start --dev-client --port \(port)).",
+                    reason: .metroNotRunning
+                )
+            }
+            try await setter.addMetroReverse(port: port, on: device)
+            return (try await opener.metroHost(port: port, on: device), true)
+        }
     }
 
     static func shellWord(_ text: String) -> String {
