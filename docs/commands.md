@@ -46,7 +46,7 @@ Every device command takes `--device <id>`, using an ID from `offsider devices`:
 | `lease` | `set`, `release`, `show` or `check` a lease that marks a device as used by one session ([details](agents.md#device-lock-and-leases)) |
 | `orientation` | Read or set the device orientation, waiting until the device has turned ([details](device-state.md#orientation)) |
 | `displays` | List the device's built-in displays (`main`, or `cover` and `inner` on a foldable) with platform ID, size, scale, rotation and which one is active, then the posture; `--json` |
-| `posture` | Read a foldable's posture (`closed`, `half-opened`, `open`) and its active display, or set it, waiting until the display has swapped (`--angle 0-180`, `--timeout`, `--json`; [foldables](device-state.md#foldables)) |
+| `posture` | Read a foldable's posture (`closed`, `half-opened`, `open`) and its active display, or set it on a simulator, emulator or allowed foldable phone, waiting until the display has swapped (`--angle 0-180`, `--timeout`, `--json`); `reset` drops an Android override so the hinge decides again ([foldables](device-state.md#foldables)) |
 | `shake` | Send the shake gesture (iOS only; on Android, `rn devmenu` or `button menu` opens a React Native dev menu); [`--json`](input.md#json-results) |
 | `rn logbox` | Read, open or clear React Native LogBox toasts without tapping blind ([React Native](react-native.md)) |
 | `rn open` | Load an Expo dev client's bundle from Metro on this Mac and wait until the app is up, stopping early when a system prompt, the dev menu intro, a hung app or another screen keeps it from showing ([React Native](react-native.md)) |
@@ -56,7 +56,7 @@ Every device command takes `--device <id>`, using an ID from `offsider devices`:
 | `record-video` | Record the display to an H.264 MP4 until Ctrl+C, SIGINT or `--duration` runs out ([video](capture.md#screenshots-and-video)) |
 | `stream-video` | Stream frames to stdout as `mjpeg`, `raw`, `ffmpeg` or `bgra` ([video](capture.md#screenshots-and-video)) |
 | `runner` | `status` lists the XCUITest runner sessions that read physical iPhones and iPads, `stop` stops one (`--device`, `--clean` to uninstall it too) or all, and `build --device <UDID>` builds the runner (`--register-device`, for a person at a terminal); `--json` |
-| `session` | `status` lists each device's background sessions, an iPhone or iPad's runner and session broker, an Android emulator's warm helper or a simulator's input session, without starting any; `stop` stops them on one device (`--device`, `--clean` to uninstall the runner and delete its builds and logs) or all, and removes the adb reverses `rn open` set; `--json` ([iPhones](ios-devices.md), [Android](android.md#screen-reads-and-the-helper), [simulators](input.md#simulator-input-session)) |
+| `session` | `status` lists each device's background sessions, an iPhone or iPad's runner and session broker, an Android emulator's warm helper or a simulator's input session, without starting any; `stop` stops them on one device (`--device`, `--clean` to uninstall the runner and delete its builds and logs) or all, removes the adb reverses `rn open` set and resets a foldable phone's posture override that `posture` set; `--json` ([iPhones](ios-devices.md), [Android](android.md#screen-reads-and-the-helper), [simulators](input.md#simulator-input-session)) |
 
 ## Device list JSON
 

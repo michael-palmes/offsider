@@ -19,6 +19,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - `app info|launch|stop|open --app <id>`: read one installed app's version, build and install details (on Android also the installer, install and update times, whether it is debuggable and its notification permission), launch it (`--restart` for a cold start, reporting `cold` or `warm` and Android's launch time), stop it, or send it a deep link that reaches that app alone. On a physical device the app must be one the allowance permits, and browsers and system apps are refused; on an iPhone or iPad they use `devicectl` alone. A link the app has no screen for exits 1 with the new reason `link_not_handled`.
 - `offsider guide apps` covers them.
 - `notifications --app <package>` lists one Android app's posted notifications (title, text, big text, sub-text, channel, post time), picked on the device so no other app's text crosses the cable, with one-time codes and card numbers hidden; `--wait <text>` polls until one holds it (`--new`: one that arrives during the wait), exiting 5 at `--timeout`. On a phone the app must be one the allowance permits.
+- `posture closed|half-opened|open` sets an allowed USB foldable phone's posture through a `cmd device_state` override, recorded first with the phone's boot id; `posture reset` drops an Android override so the hinge decides again, and `session stop` and `devices remove` reset one Offsider set while it is still in place.
 
 ### Changed
 

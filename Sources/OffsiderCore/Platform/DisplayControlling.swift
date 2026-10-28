@@ -125,6 +125,13 @@ public protocol PostureControlling: DeviceBackend {
     func forgetScreen(of id: DeviceID)
 }
 
+/// Optional capability: dropping a posture override, so the hinge decides again.
+@MainActor
+public protocol PostureResetting: PostureControlling {
+    /// True when an override was in place and is now gone.
+    func resetPosture(on id: DeviceID) async throws -> Bool
+}
+
 public extension PostureControlling {
     /// For a backend whose `screenInfo` reads the device every call.
     func forgetScreen(of id: DeviceID) {}

@@ -202,12 +202,12 @@ struct AndroidMultiDisplayCaptureTests {
         #expect(AndroidScreenCapture.failureDetail(ScreencapRawTests.warning) == "no output")
     }
 
-    @Test("an off panel on a phone is folded or unfolded by hand, not with offsider posture")
+    @Test("an off panel on a phone names folding it by hand or with offsider posture")
     func displayOffOnPhone() async throws {
         let backend = try Self.backend(Self.fold(closed: false, picks: Self.inner))
 
         let error = await #expect(throws: AndroidError.self) { try await backend.screenshotPNG(for: Self.phone, display: Self.cover) }
-        #expect(error?.message == "The cover display (\(Self.cover)) of R58M123ABC is off (posture open), so it has nothing to capture. Fold the phone, then retry.")
+        #expect(error?.message == "The cover display (\(Self.cover)) of R58M123ABC is off (posture open), so it has nothing to capture. Fold the phone, or run `offsider posture closed --device R58M123ABC`, then retry.")
     }
 }
 
