@@ -8,6 +8,11 @@ public enum AllowScreen {
     public static let teamQuestion = "Which team?"
     public static let appQuestion = "Which app?"
     public static let expiryQuestion = "For how long?"
+    public static let metroQuestion = "Which Metro port?"
+    public static let noMetro = "None"
+    public static let noMetroDetail = "no adb reverse"
+    public static let metroPortDetail = "every app on it can reach Metro"
+    public static let typePorts = "Type ports"
     public static let anotherQuestion = "Allow another?"
     public static let noDevice = "Nothing over USB. Plug in, unlock, trust this Mac."
     public static let wifiOnly = "Wi-Fi only, plug in a cable"
@@ -62,9 +67,15 @@ public enum AllowScreen {
         return apps.isEmpty ? "any app" : apps.map { PromptScreen.label($0) }.joined(separator: ", ") + " only"
     }
 
+    /// `Metro on 8081`, `Metro on 8081 and 8742`, or `no Metro`.
+    public static func metro(_ ports: [Int]) -> String {
+        ports.isEmpty ? "no Metro" : "Metro on " + LoginDirectory.list(ports.map(String.init))
+    }
+
     /// The bold line above the Touch ID request: what is about to be allowed. `team` is the name shown, or `team <id>` when only the ID is known.
-    public static func summary(_ row: DeviceSummary, apps: [String], lifetime: TimeInterval?, team: String?, width: Int, style: TerminalStyle) -> [String] {
-        TerminalUI.summary(mark(row), [name(row), Self.apps(apps), duration(lifetime)] + (team.map { [$0] } ?? []), width: width, style: style)
+    public static func summary(_ row: DeviceSummary, apps: [String], lifetime: TimeInterval?, team: String?, metroPorts: [Int] = [], width: Int, style: TerminalStyle) -> [String] {
+        let metro = metroPorts.isEmpty ? [] : [Self.metro(metroPorts)]
+        return TerminalUI.summary(mark(row), [name(row), Self.apps(apps)] + metro + [duration(lifetime)] + (team.map { [$0] } ?? []), width: width, style: style)
     }
 
     /// `until 22:14` today, `until 21 Oct 22:14` on a later day, or `until you remove it`.
@@ -80,9 +91,10 @@ public enum AllowScreen {
     }
 
     /// The closing block for one device: the only place the full ID shows, since the commands need it.
-    public static func allowed(name: String, key: String, until: String, apps: [String], width: Int, style: TerminalStyle) -> [String] {
+    public static func allowed(name: String, key: String, until: String, apps: [String], metroPorts: [Int] = [], width: Int, style: TerminalStyle) -> [String] {
         let key = PromptScreen.visible(key)
-        return TerminalUI.closing("Allowed \(name) \(until), \(Self.apps(apps)).", commands: [
+        let metro = metroPorts.isEmpty ? "" : ", \(Self.metro(metroPorts))"
+        return TerminalUI.closing("Allowed \(name) \(until), \(Self.apps(apps))\(metro).", commands: [
             ("Withdraw", "offsider devices remove --device \(key)"),
             ("Next", "offsider doctor --device \(key)"),
         ], width: width, style: style)
