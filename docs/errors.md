@@ -107,7 +107,7 @@ A `--verify --json` report also carries `ignored` (`{node, reason}` entries left
 | `secure_paste_refused` | 1 | Typing into a password field would use the clipboard | Use `type --replace` |
 | `mask_unproven` | 1 | `--mask-secure` could not locate every password field, or a video's first frame could not place `--mask-region` | Retry when the screen is still |
 | `tree_read_failed` | 1 | The accessibility tree could not be read | Retry; on iOS run `offsider doctor --device <ID>` |
-| `no_window` | 1 | The device shows no window | Unlock it and bring an app to the front |
+| `no_window` | 1 | The device shows no window | Unlock it and bring an app to the front; with an app already in front, the error is `app_not_responding` |
 | `screen_not_idle` | 1 | The screen did not settle for uiautomator | Retry when the screen is still |
 | `screenshot_failed` | 1 | The screen could not be captured, or `--output` names something other than an image file you own | Retry, check the path, or check the device with `offsider devices` |
 | `baseline_unreadable` | 1 | The `--compare` baseline cannot be read | Check the path, or capture a new baseline |
@@ -151,10 +151,11 @@ A `--verify --json` report also carries `ignored` (`{node, reason}` entries left
 | `metro_not_running` | 9 | `rn open` found no Metro answering on 127.0.0.1 at `--port` | Start Metro on that port, then retry |
 | `rn_load_failed` | 1 | `rn open` saw the app's load error or red box | Read `logs --rn` and Metro's output |
 | `app_crashed` | 1 | `rn open` saw the app's process stop while it waited (the message names the crash report or the exception) | Read the report, or `logs --rn`, then open the app again |
+| `app_not_responding` | 1 | On Android, the app in front on an unlocked screen has no window the tree can read, as when its main thread is stuck; `rn open` reports it after 10 s | Close the app and open it again (`rn open --restart` for a dev client), then retry |
 | `logbox_inspector_open` | 1 | A `wait` or `assert` selector matched nothing while React Native's LogBox inspector, open in its own window, hid the app (on Android), for 1.5 s or on the last read | Close the inspector with `tap --label Minimize` (or `rn logbox dismiss`), then retry |
 | `verify_target_present` | 1 | The `--verify-id` element was already on screen before the input, so nothing was sent (with `type --into-id`, only the tap that focused the field, when that tap brought it on screen) | Pass an id only the next screen has, or use `--verify` |
 | `app_not_allowed` | 1 | The app in front is a browser or system app, the password field sits inside a web view, the app is not the one pinned for this physical device, or a phone's `logs` or `permission` named an app it may not reach; nothing was typed | Bring the app under test to the front, or ask the user to opt the app in |
-| `person_required` | 1 | The step needs a person at the Mac: a terminal, Touch ID or the login password, which was missing, cancelled or unavailable over ssh; an agent turning off the password mask, `--allow-path` or a new runner prefix asks for one | Hand back to the user; do not retry |
+| `person_required` | 1 | The step needs a person at the Mac: a terminal, Touch ID or the login password, which was missing, cancelled or unavailable over ssh; an agent turning off the password mask, `--allow-path` or a new runner prefix asks for one; `rn open` found a system prompt over the app, which it never answers | Hand back to the user; do not retry |
 | `turnstile_required` | 1 | `login` found a Cloudflare Turnstile widget on screen, which only a person may tick; the message says whether the form was submitted | Hand back to the user; never tap the widget or retry |
 | `foreground_changed` | 1 | `login` saw a different app in front just before typing the password or tapping submit; nothing further was typed | Bring the app under test back to the front, then run `login` again |
 | `install_damaged` | 1 | A file bundled with Offsider does not match this build | Reinstall Offsider: `brew reinstall offsider` |

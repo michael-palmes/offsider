@@ -79,6 +79,27 @@ struct SystemPromptCoverTests {
         #expect(SystemPrompt.hosts(in: android).isEmpty)
     }
 
+    @Test("SpringBoard's alert is read from its own tree: the topmost titled box smaller than the screen with buttons, not the switcher's status bar")
+    func alertInAnotherProcessTree() {
+        let pid = Self.promptPID
+        let statusBar = FakeUI.node(.group, frame: FakeUI.frame(0, 0, 402, 54), pid: pid, children: [
+            FakeUI.node(.text, label: "9:41", frame: FakeUI.frame(45, 8, 38, 20), pid: pid),
+            FakeUI.node(.button, id: "breadcrumb", label: "Return to Settings", frame: FakeUI.frame(12, 31, 49, 13), pid: pid),
+        ])
+        let card = FakeUI.node(.group, label: "Playground", frame: Self.screen, pid: pid, children: [statusBar])
+        let alert = FakeUI.node(.other, label: "Allow “Playground” to use your location?", frame: FakeUI.frame(35, 245, 320, 366), pid: pid, children: [
+            FakeUI.node(.button, label: "Allow Once", frame: FakeUI.frame(51, 435, 288, 48), pid: pid),
+            FakeUI.node(.button, label: "Don’t Allow", frame: FakeUI.frame(51, 547, 288, 48), pid: pid),
+        ])
+        let root = FakeUI.node(.application, label: " ", frame: Self.screen, pid: pid, children: [card, alert])
+        let found = SystemPrompt.alert(in: UITree(platform: .ios, device: Self.device.rawValue, roots: [root]))
+        #expect(found?.title == "Allow “Playground” to use your location?")
+        #expect(found?.buttons == ["Allow Once", "Don’t Allow"])
+
+        let withoutAlert = FakeUI.node(.application, label: " ", frame: Self.screen, pid: pid, children: [card])
+        #expect(SystemPrompt.alert(in: UITree(platform: .ios, device: Self.device.rawValue, roots: [withoutAlert])) == nil)
+    }
+
     @Test("a hit is foreign only when its pid is one no node of the tree carries")
     func foreignHit() {
         let roots = Self.signedIn(prompt: true).roots
