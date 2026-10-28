@@ -60,6 +60,20 @@ struct DevMenuDriver {
         )
     }
 
+    /// Without Android's Display over other apps, React Native opens that settings page instead of its performance monitor.
+    func requireOverlayPermission() async throws {
+        guard route.device.platform == .android,
+              let reader = route.backend as? any OverlayPermissionReading,
+              let foreground = route.backend as? any ForegroundReading,
+              let top = try? await foreground.foreground(on: route.device).top,
+              let package = top.split(separator: "/").first.map(String.init),
+              (try? await reader.canDrawOverlays(package, on: route.device)) == false else { return }
+        throw CLIError(
+            errorDescription: "\(package) may not display over other apps, so its performance monitor would open Android's settings instead of showing. Offsider sent nothing. Ask the user to turn on Display over other apps for it (Settings > Apps > Special app access; Samsung calls it Appear on top), then run this again.",
+            reason: .personRequired
+        )
+    }
+
     /// What to do when a focused text field keeps the menu key from Expo's menu.
     static let focusAdvice = "move focus out of the field, or open Expo's menu with its Tools button, then run this again (it uses a menu that is already open)."
 
@@ -190,7 +204,8 @@ struct RNDevMenu: AsyncParsableCommand {
         closing it after a switch. React Native's own menu on Android has no close control, so there `close` \
         presses Back and checks the menu went. Exits 2 when the menu has no such item (the items are the candidates) or the item is \
         off screen (nothing is tapped; the hint is the swipe that scrolls the menu to it), 1 when \
-        the menu never opens (a Release build has none) and 5 when it stays open. On Android an Expo dev client \
+        the menu never opens (a Release build has none) and 5 when it stays open. On Android, `perf-monitor` first \
+        checks the app may display over other apps and exits 1 with `person_required` when it may not. On Android an Expo dev client \
         keeps the menu key from its menu while a text field has focus, and the error then says so: move focus \
         out of the field, or open Expo's menu with its Tools button, then run this again. In batch, `rn devmenu` is \
         an input step that needs an item or --label.
@@ -275,6 +290,9 @@ struct RNDevMenu: AsyncParsableCommand {
     func perform(on route: DeviceRouter.Route, clock: PollClock, send: (@MainActor (InputEvent) async throws -> Void)? = nil) async throws -> Outcome {
         try await route.backend.prepare()
         let driver = DevMenuDriver(route: route, clock: clock, send: send)
+        if item == .perfMonitor || label.map(DevMenu.Item.perfMonitor.labels.contains) == true {
+            try await driver.requireOverlayPermission()
+        }
         let (state, tree) = try await driver.open()
         guard item != nil || label != nil else { return .listed(state) }
         let tapped = try await driver.choose(item, label: label, state: state, tree: tree)

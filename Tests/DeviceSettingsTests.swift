@@ -206,6 +206,16 @@ struct DeviceSettingsTests {
         #expect(OrientationCommand.timeoutMessage(target: target, timeout: 5, platform: .ios, device: "D") == message)
     }
 
+    @Test("an Android timeout names a USB phone as a phone and an emulator as an emulator, and says how to put auto-rotate back")
+    func androidTimeoutMessage() {
+        let phone = OrientationCommand.timeoutMessage(target: .landscapeLeft, timeout: 10, platform: .android, device: "P", physical: true)
+        #expect(phone.hasPrefix("The phone P did not turn to landscape-left within 10 s."))
+        #expect(!phone.contains("emulator"))
+        #expect(phone.contains("`offsider orientation portrait --device P` puts auto-rotate back"))
+        let emulator = OrientationCommand.timeoutMessage(target: .landscapeLeft, timeout: 10, platform: .android, device: "emulator-5554")
+        #expect(emulator.hasPrefix("The emulator did not turn"))
+    }
+
     @Test("an iPhone orientation timeout says the screen turns only while awake and unlocked, and offers turning it by hand")
     func physicalTimeoutMessage() {
         let message = OrientationCommand.timeoutMessage(target: .landscapeRight, timeout: 5, platform: .ios, device: "D", physical: true)
@@ -295,7 +305,7 @@ struct RotationPlanTests {
     @Test("the first turn away from portrait records auto-rotate and user_rotation for this boot")
     func recordsFirstTurn() {
         let plan = RotationPlan.make(before: Self.autoOn, target: .landscapeLeft, record: nil, bootMarker: Self.boot, turning: true)
-        #expect(plan == RotationPlan(recordToWrite: RotationRecord(accelerometerRotation: 1, userRotation: 0, bootMarker: Self.boot), deleteRecord: false, restoreAccelerometer: nil))
+        #expect(plan == RotationPlan(recordToWrite: RotationRecord(accelerometerRotation: 1, userRotation: 0, bootMarker: Self.boot), deleteRecord: false, restoreAccelerometer: nil, sendsTurn: true))
     }
 
     @Test("a later turn keeps the first record, since auto-rotate is already off by then")
@@ -306,17 +316,25 @@ struct RotationPlanTests {
         #expect(plan?.deleteRecord == false)
     }
 
-    @Test("portrait restores auto-rotate from this boot's record and forgets it, even when auto-rotate is unreadable", arguments: [true, false])
+    @Test("portrait sends the turn and restores both settings from this boot's record, even on a screen already portrait or with auto-rotate unreadable", arguments: [true, false])
     func portraitRestores(turning: Bool) {
-        let record = RotationRecord(accelerometerRotation: 1, userRotation: 0, bootMarker: Self.boot)
+        let record = RotationRecord(accelerometerRotation: 1, userRotation: 2, bootMarker: Self.boot)
         #expect(RotationPlan.make(before: nil, target: .portrait, record: record, bootMarker: Self.boot, turning: turning)
-            == RotationPlan(recordToWrite: nil, deleteRecord: true, restoreAccelerometer: 1))
+            == RotationPlan(recordToWrite: nil, deleteRecord: true, restoreAccelerometer: 1, restoreUserRotation: 2, sendsTurn: true))
+    }
+
+    @Test("portrait leaves user_rotation at portrait when auto-rotate was off, since writing it back would turn the screen away")
+    func portraitKeepsLockedRotation() {
+        let record = RotationRecord(accelerometerRotation: 0, userRotation: 1, bootMarker: Self.boot)
+        let plan = RotationPlan.make(before: nil, target: .portrait, record: record, bootMarker: Self.boot, turning: false)
+        #expect(plan?.restoreAccelerometer == 0)
+        #expect(plan?.restoreUserRotation == nil)
     }
 
     @Test("a turn to portrait with no record first records auto-rotate, then writes it back")
     func portraitTurnWithoutRecord() {
         #expect(RotationPlan.make(before: Self.autoOn, target: .portrait, record: nil, bootMarker: Self.boot, turning: true)
-            == RotationPlan(recordToWrite: RotationRecord(accelerometerRotation: 1, userRotation: 0, bootMarker: Self.boot), deleteRecord: true, restoreAccelerometer: 1))
+            == RotationPlan(recordToWrite: RotationRecord(accelerometerRotation: 1, userRotation: 0, bootMarker: Self.boot), deleteRecord: true, restoreAccelerometer: 1, restoreUserRotation: 0, sendsTurn: true))
     }
 
     @Test("with no turn and no record, nothing is recorded or written", arguments: [DeviceOrientation.portrait, .landscapeLeft])

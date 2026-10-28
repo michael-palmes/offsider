@@ -66,11 +66,17 @@ public struct RotationPlan: Equatable, Sendable {
     public let deleteRecord: Bool
     /// `accelerometer_rotation` to write back once the device is portrait.
     public let restoreAccelerometer: Int?
+    /// `user_rotation` to write back after auto-rotate; nil when auto-rotate was off, where it would turn the screen away from portrait.
+    public let restoreUserRotation: Int?
+    /// Sends the turn even when the screen already shows the target: a refused turn leaves `user_rotation` set for when the app allows it.
+    public let sendsTurn: Bool
 
-    public init(recordToWrite: RotationRecord?, deleteRecord: Bool, restoreAccelerometer: Int?) {
+    public init(recordToWrite: RotationRecord?, deleteRecord: Bool, restoreAccelerometer: Int?, restoreUserRotation: Int? = nil, sendsTurn: Bool = false) {
         self.recordToWrite = recordToWrite
         self.deleteRecord = deleteRecord
         self.restoreAccelerometer = restoreAccelerometer
+        self.restoreUserRotation = restoreUserRotation
+        self.sendsTurn = sendsTurn
     }
 
     /// Any turn first records `before` unless this boot has a record, and portrait restores and forgets it; nil when a turn needs a record `before` cannot give.
@@ -83,9 +89,15 @@ public struct RotationPlan: Equatable, Sendable {
             current = recordToWrite
         }
         guard target == .portrait, let current else {
-            return RotationPlan(recordToWrite: recordToWrite, deleteRecord: false, restoreAccelerometer: nil)
+            return RotationPlan(recordToWrite: recordToWrite, deleteRecord: false, restoreAccelerometer: nil, sendsTurn: turning)
         }
-        return RotationPlan(recordToWrite: recordToWrite, deleteRecord: true, restoreAccelerometer: current.accelerometerRotation)
+        return RotationPlan(
+            recordToWrite: recordToWrite,
+            deleteRecord: true,
+            restoreAccelerometer: current.accelerometerRotation,
+            restoreUserRotation: current.accelerometerRotation == 0 ? nil : current.userRotation,
+            sendsTurn: true
+        )
     }
 }
 
@@ -93,6 +105,7 @@ public struct RotationPlan: Equatable, Sendable {
 public protocol AutoRotateControlling: DeviceBackend {
     func autoRotateState(on id: DeviceID) async throws -> AutoRotateState?
     func setAccelerometerRotation(_ value: Int, on id: DeviceID) async throws
+    func setUserRotation(_ value: Int, on id: DeviceID) async throws
 }
 
 /// `autoRotate {before, now, restored}` and `userRotation {before, now}` for `orientation --json` on Android.

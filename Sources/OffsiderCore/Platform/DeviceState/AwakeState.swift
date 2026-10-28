@@ -216,8 +216,14 @@ public struct LockReport: Codable, Equatable, Sendable {
         try container.encode(lockScreen, forKey: .lockScreen)
     }
 
+    /// `wake --unlock` types digits and letters, so a pattern is a person's job.
+    public static let patternHint = "Unlock it on the device: `offsider wake --unlock` types a PIN or password, never a pattern."
+
     /// The next step for a device waiting for its first unlock.
     public func unlockHint(deviceID: String) -> String {
+        if type == "pattern" {
+            return LockReport.patternHint
+        }
         if !savedCode {
             return "Unlock it on the device, or save its code in your own terminal with `offsider unlock-code set --device \(deviceID)`, then run `offsider wake --unlock --device \(deviceID)`."
         }

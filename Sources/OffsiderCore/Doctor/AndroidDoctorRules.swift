@@ -151,14 +151,22 @@ public enum AndroidDoctorRules {
         }
     }
 
-    public static func image(apiLevel: Int?, release: String?, abi: String?) -> Verdict {
+    /// A phone's system image cannot be swapped, so its warning names what to check rather than an image to use.
+    public static func image(apiLevel: Int?, release: String?, abi: String?, isPhysical: Bool = false) -> Verdict {
         var parts: [String] = []
         if let release { parts.append("Android \(release)") }
         if let apiLevel { parts.append("API \(apiLevel)") }
         parts.append(abi ?? "unknown ABI")
         let detail = parts.joined(separator: ", ")
         guard abi == supportedABI else {
-            return (.warn, detail, "Offsider ships and tests \(supportedABI) images only; use an \(supportedABI) system image.")
+            guard isPhysical else {
+                return (.warn, detail, "Offsider ships and tests \(supportedABI) images only; use an \(supportedABI) system image.")
+            }
+            return (
+                .warn,
+                detail + ", untested: Offsider tests \(supportedABI) phones only, though its helper and input do not depend on the ABI",
+                "Check each command's first result on this phone with --verify or a screenshot."
+            )
         }
         return (.pass, detail, nil)
     }
@@ -235,7 +243,9 @@ public enum AndroidDoctorRules {
             return (
                 .warn,
                 "On, \(reading.credentialName) lock screen showing; input and screen reads reach the lock screen",
-                "Unlock it on the device, or save its code with `offsider unlock-code set` and run `offsider wake --unlock --device \(deviceID)`."
+                reading.credential == "pattern"
+                    ? LockReport.patternHint
+                    : "Unlock it on the device, or save its code with `offsider unlock-code set` and run `offsider wake --unlock --device \(deviceID)`."
             )
         case (.on, .swipe):
             return (.warn, "On, lock screen showing; input and screen reads reach the lock screen", wake)
@@ -262,13 +272,14 @@ public enum AndroidDoctorRules {
         guard reading.hasCredential else { return (.pass, "No PIN, pattern or password", nil) }
         let lock = LockReport(reading, savedCode: unlockCode?.saved ?? false, lastAttemptFailed: unlockCode?.lastAttemptFailed ?? false)
         let saved = "code saved: " + (lock.savedCode ? (lock.lastAttemptFailed ? "yes, but it failed last time" : "yes") : "no")
+        let set = reading.credential == nil ? "\(reading.credentialName) set (Android does not say which here; unlock-code takes a PIN or password only)" : "\(reading.credentialName) set"
         switch reading.userUnlocked {
         case false?:
-            return (.fail, "\(reading.credentialName) set; waiting for its first unlock since boot, so apps cannot start; \(saved)", lock.unlockHint(deviceID: deviceID))
+            return (.fail, "\(set); waiting for its first unlock since boot, so apps cannot start; \(saved)", lock.unlockHint(deviceID: deviceID))
         case true?:
-            return (.pass, "\(reading.credentialName) set; unlocked since boot; \(saved)", nil)
+            return (.pass, "\(set); unlocked since boot; \(saved)", nil)
         case nil:
-            return (.pass, "\(reading.credentialName) set; \(saved)", nil)
+            return (.pass, "\(set); \(saved)", nil)
         }
     }
 
@@ -379,7 +390,7 @@ public enum AndroidDoctorRules {
         guard facts.state == .booted else {
             return checks + deviceDependents.map { .skipped($0, "requires android-device.state") }
         }
-        checks.append(DoctorCheckResult(id: .androidDeviceImage, verdict: image(apiLevel: facts.apiLevel, release: facts.release, abi: facts.abi)))
+        checks.append(DoctorCheckResult(id: .androidDeviceImage, verdict: image(apiLevel: facts.apiLevel, release: facts.release, abi: facts.abi, isPhysical: facts.isPhysical)))
         if let kilobytes = facts.awake?.memTotalKB {
             checks.append(DoctorCheckResult(id: .androidDeviceMemory, verdict: memory(memTotalKB: kilobytes, avdName: facts.avdName, isPhysical: facts.isPhysical)))
         } else {
