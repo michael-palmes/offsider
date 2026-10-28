@@ -62,6 +62,7 @@ public enum FailureReason: String, CaseIterable, Sendable {
     case focusMismatch = "focus_mismatch"
     case textNotAccepted = "text_not_accepted"
     case metroNotRunning = "metro_not_running"
+    case metroPortNotAllowed = "metro_port_not_allowed"
     case rnLoadFailed = "rn_load_failed"
     case appCrashed = "app_crashed"
     case logBoxInspectorOpen = "logbox_inspector_open"
@@ -132,7 +133,7 @@ public enum FailureReason: String, CaseIterable, Sendable {
         case .selectorAmbiguous, .selectorAmbiguousSwitch, .userAmbiguous:
             return .ambiguousSelector
         case .deviceNotFound, .deviceNotBooted, .deviceNotReady, .deviceUnauthorised, .deviceLocked, .deviceAmbiguous, .avdNotFound,
-             .deviceNotWired, .deviceUntrusted, .developerModeOff, .devicePreparing, .uiAutomationOff, .deviceNotAllowed:
+             .deviceNotWired, .deviceUntrusted, .developerModeOff, .devicePreparing, .uiAutomationOff, .deviceNotAllowed, .metroPortNotAllowed:
             return .deviceUnavailable
         case .deviceBusy, .uiautomationBusy, .deviceLeased:
             return .deviceBusy

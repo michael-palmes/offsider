@@ -161,6 +161,8 @@ public struct AndroidDeviceFacts: Equatable, Sendable {
     public var helper: HelperProbeFact?
     /// `reverse:list-forward` lines; nil when the list could not be read.
     public var reverses: [String]?
+    /// The ports whose reverse `rn open` set during the phone's current adb connection.
+    public var offsiderReverses: [Int] = []
     /// A USB phone: its state comes from the device list, and emulator-only checks are skipped.
     public var isPhysical = false
     public var model: String?

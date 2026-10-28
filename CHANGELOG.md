@@ -8,6 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Added
 
+- `rn open` sets the `adb reverse` a USB Android phone needs to reach Metro, so a debug build opens on a phone without running `adb reverse` by hand. It does so only for a port a person chose in the new Metro step of `devices add` (None, 8081, or typed ports, None chosen first; `--metro-port`, repeatable, or `none`), as `tcp:<port> tcp:<port>`, never replacing a reverse already there, and only once Metro answers on 127.0.0.1 and the process accepting there runs as this user. A port not chosen exits 7 (`metro_port_not_allowed`) and sets nothing. Offsider records each reverse it sets; `session stop` and `devices remove` take off those and no other, and `doctor --device` marks them. `devices status` and its `--json` list the ports.
 - `batch` takes a `drag` step, written and limited like `offsider drag`.
 - `rn devmenu` lists the items an app registers (`registerDevMenuItems`, or `DevSettings.addMenuItem` in React Native's own Android menu), marked `"custom":true` in `--json` and tagged for a person; `--label` already chose them, and now prefers the menu's item over an app button behind it with the same label. Expo's custom heading also counts as menu evidence, so a menu whose tools those items push off screen is still read.
 

@@ -18,6 +18,13 @@ public protocol ExpoDevClientOpening: DeviceBackend {
     func stopApp(_ appID: String, on id: DeviceID) async throws
 }
 
+/// Optional capability: the `adb reverse` a USB phone needs to reach Metro, set only after the caller checked the person allowed the port.
+@MainActor
+public protocol MetroReverseSetting: DeviceBackend {
+    /// Maps the phone's `tcp:<port>` to the Mac's same port and records it for `session stop`; refuses anything but a USB phone.
+    func addMetroReverse(port: Int, on id: DeviceID) async throws
+}
+
 public struct ExpoDevClientError: Error, CustomStringConvertible, LocalizedError, Equatable, Sendable {
     public enum Kind: Equatable, Sendable {
         case invalidAppID
@@ -246,10 +253,7 @@ public enum ExpoDevClient {
 
     /// Loopback when `adb reverse` maps the port (lines such as `emulator-5554 tcp:8081 tcp:8081`), else the emulator's alias for the Mac; nil for a phone without one.
     public static func androidMetroHost(reverseList: String, port: Int, isEmulator: Bool) -> String? {
-        let mapped = reverseList.split(whereSeparator: \.isNewline).contains { line in
-            line.split(separator: " ").dropFirst().first == "tcp:\(port)"
-        }
-        if mapped { return loopback }
+        if MetroReverse.phoneListens(reverseList, port: port) { return loopback }
         return isEmulator ? emulatorHostAlias : nil
     }
 

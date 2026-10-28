@@ -102,6 +102,59 @@ struct RNOpenCommandTests {
         #expect(error?.reason == .rnLoadFailed && error?.exitCode == .failure)
     }
 
+    static let phone = DeviceID(rawValue: "R58M123ABC", platform: .android)
+    static let noRoute = ExpoDevClientError(.noRoute, "R58M123ABC is a phone with no adb reverse for port 8742, so it cannot reach Metro on this Mac.")
+
+    /// Runs `rn open` on a phone without a reverse, allowed `ports` (no allowance when nil), with Metro owned by this user or not.
+    static func openOnPhone(ports: [Int]?, owned: Bool = true) async throws -> (Result<RNOpen.Report, CLIError>, FakeDeviceBackend) {
+        let backend = FakeDeviceBackend(platform: .android, trees: [Self.app])
+        backend.metroHostError = Self.noRoute
+        let allowance = ports.map { DeviceAllowance(platform: .android, key: Self.phone.rawValue, name: "Test Pixel", added: Date(), expires: nil, apps: [], metroPorts: $0) }
+        var metro = Self.running
+        metro.ownedByThisUser = { _ in owned }
+        let command = try RNOpen.parse(["--port", "8742", "--bundle-id", "com.example.app", "--wait-id", "menu-title", "--device", Self.phone.rawValue])
+        do {
+            let route = DeviceRouter.Route(backend: backend, device: Self.phone, allowance: allowance)
+            return (.success(try await command.open(on: route, metro: metro, clock: ScriptedClock().poll)), backend)
+        } catch let error as CLIError {
+            return (.failure(error), backend)
+        }
+    }
+
+    @Test("a phone with no reverse gets tcp:N tcp:N for a port its allowance lists, when Metro runs as this user, then loads over loopback")
+    func setsAllowedReverse() async throws {
+        let (result, backend) = try await Self.openOnPhone(ports: [8081, 8742])
+        let report = try result.get()
+        #expect(backend.reversesSet == [8742])
+        #expect(report.host == "127.0.0.1")
+        #expect(backend.openedURLs == ["exp+playground://expo-development-client/?url=http%3A%2F%2F127.0.0.1%3A8742"])
+    }
+
+    @Test("a port the phone's allowance does not list exits 7 metro_port_not_allowed, sets nothing and asks for the person")
+    func portNotAllowed() async throws {
+        let (result, backend) = try await Self.openOnPhone(ports: [8081])
+        guard case .failure(let error) = result else { Issue.record("an unlisted port was mapped"); return }
+        #expect(error.reason == .metroPortNotAllowed && error.exitCode == .deviceUnavailable)
+        #expect(error.userFacingDescription.contains("Ask the user to run `offsider devices add` in their own terminal, choose Test Pixel and Metro port 8742"))
+        #expect(backend.reversesSet.isEmpty && backend.openedURLs.isEmpty)
+    }
+
+    @Test("a Metro answering as another user gets no reverse and exits 9")
+    func foreignMetro() async throws {
+        let (result, backend) = try await Self.openOnPhone(ports: [8742], owned: false)
+        guard case .failure(let error) = result else { Issue.record("another user's Metro was mapped"); return }
+        #expect(error.reason == .metroNotRunning)
+        #expect(backend.reversesSet.isEmpty && backend.openedURLs.isEmpty)
+    }
+
+    @Test("with no allowance, as on an emulator or a simulator, a missing route fails as before and nothing is set")
+    func noAllowanceNoReverse() async throws {
+        let (result, backend) = try await Self.openOnPhone(ports: nil)
+        guard case .failure(let error) = result else { Issue.record("a reverse was set without an allowance"); return }
+        #expect(error.reason == .expoDevClientFailed)
+        #expect(backend.reversesSet.isEmpty)
+    }
+
     static let playground = AppProcess(pid: 4100, started: 1)
 
     /// Runs `rn open` with scripted liveness reads, returning the outcome and the backend.

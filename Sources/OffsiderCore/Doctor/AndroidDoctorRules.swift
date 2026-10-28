@@ -313,16 +313,17 @@ public enum AndroidDoctorRules {
         return (.pass, "Automatic system updates are off", nil)
     }
 
-    /// Information only: Offsider never sets or removes a reverse.
-    public static func metroReverse(_ lines: [String]?) -> Verdict {
+    /// Information only: marks the reverses `rn open` set (`offsider`), which `session stop` removes; it never touches another.
+    public static func metroReverse(_ lines: [String]?, offsider: [Int] = []) -> Verdict {
         guard let lines else { return (.pass, "Could not read the reverse list", nil) }
         let pairs = lines.compactMap { line -> String? in
             let fields = line.split(whereSeparator: \.isWhitespace)
             guard fields.count >= 2 else { return nil }
             let remote = fields[fields.count - 2]
             let local = fields[fields.count - 1]
-            let metro = remote == "tcp:\(metroPort)" ? " (Metro)" : ""
-            return "\(remote) to \(local)\(metro)"
+            let set = offsider.contains { remote == "tcp:\($0)" && local == "tcp:\($0)" }
+            let note = set ? " (set by Offsider until session stop)" : remote == "tcp:\(metroPort)" ? " (Metro)" : ""
+            return "\(remote) to \(local)\(note)"
         }
         return (.pass, pairs.isEmpty ? "none" : pairs.joined(separator: ", "), nil)
     }
@@ -417,7 +418,7 @@ public enum AndroidDoctorRules {
         } else {
             checks.append(.skipped(.androidDeviceHelper, "requires android-device.uiautomation"))
         }
-        checks.append(DoctorCheckResult(id: .androidDeviceMetroReverse, verdict: metroReverse(facts.reverses)))
+        checks.append(DoctorCheckResult(id: .androidDeviceMetroReverse, verdict: metroReverse(facts.reverses, offsider: facts.offsiderReverses)))
         let phoneChecks: [(DoctorCheckID, String?, (String) -> Verdict)] = [
             (.androidDeviceAdbExpiry, facts.adbAuthorisationTimeout, adbAuthorisation),
             (.androidDeviceSystemUpdates, facts.automaticUpdatesDisabled, systemUpdates),

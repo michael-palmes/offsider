@@ -457,7 +457,7 @@ struct DeviceAccessCommandTests {
         let home = try makePolicyHome()
         defer { try? FileManager.default.removeItem(atPath: home) }
         let presence = RecordingPresence()
-        let (output, transcript) = try await Self.allow([], answers: ["1", "\r", "1", "\r", "1", "1", "\r"], context: { terminal in
+        let (output, transcript) = try await Self.allow([], answers: ["1", "\r", "1", "\r", "1", "1", "\r", "\r"], context: { terminal in
             Self.context(home: home, seal: MemorySeal(), terminal: terminal, devices: { [Self.row, Self.androidRow] }, teams: { [SigningTeam(id: "ABCDE12345", name: "Example Team")] }, apps: { _ in [] })
         }, presence: presence)
         let entries = try Self.entries(home)
@@ -486,7 +486,7 @@ struct DeviceAccessCommandTests {
         let home = try makePolicyHome()
         defer { try? FileManager.default.removeItem(atPath: home) }
         let terminal = try AccessTerminal()
-        terminal.type(["1", "\r", "1", "\r", "1", "1", "\r"])
+        terminal.type(["1", "\r", "1", "\r", "1", "1", "\r", "\r"])
         let context = Self.context(home: home, seal: MemorySeal(), terminal: terminal, devices: { [Self.row, Self.androidRow] }, teams: { [SigningTeam(id: "ABCDE12345", name: "Example Team")] })
         let interrupted = await #expect(throws: DeviceAccessAllow.Interrupted.self) {
             try await PersonPresence.$terminal.withValue({ true }) {
@@ -507,7 +507,7 @@ struct DeviceAccessCommandTests {
     func teamSkippedForLaterPhone() async throws {
         let home = try makePolicyHome()
         defer { try? FileManager.default.removeItem(atPath: home) }
-        let (output, _) = try await Self.allow(["--team", "ABCDE12345", "--expires", "2h"], answers: ["1", "1", "1", "1"], context: { terminal in
+        let (output, _) = try await Self.allow(["--team", "ABCDE12345", "--expires", "2h"], answers: ["1", "1", "1", "1", "\r"], context: { terminal in
             Self.context(home: home, seal: MemorySeal(), terminal: terminal, devices: { [Self.row, Self.androidRow] })
         })
         let entries = try Self.entries(home)
@@ -524,7 +524,7 @@ struct DeviceAccessCommandTests {
         let phone = DeviceSummary(
             id: PolicyFixtures.serial, platform: .android, state: "device", name: "Test\u{1B}[2J\nPixel", osVersion: "Android 16", deviceType: "Pixel 9", kind: .physical, connection: "usb"
         )
-        let (output, transcript) = try await Self.allow([], answers: ["1", "1", "\r"], context: { terminal in
+        let (output, transcript) = try await Self.allow([], answers: ["1", "1", "\r", "\r"], context: { terminal in
             Self.context(home: home, seal: MemorySeal(), terminal: terminal, devices: { [phone] }, apps: { _ in [InstalledApp(id: "com.example.evil", name: "Evil\u{1B}]0;title\u{07}\nApp\u{202E}")] })
         })
         let lines = transcript.components(separatedBy: CharacterSet(charactersIn: "\r\n"))
@@ -570,12 +570,12 @@ struct DeviceAccessCommandTests {
         #expect(!alone.contains(AllowScreen.anotherQuestion))
     }
 
-    @Test("a phone with no team step: three steps, and a failed app listing falls back to typing without failing the allow")
+    @Test("a phone has a Metro step in place of the team step, and a failed app listing falls back to typing without failing the allow")
     func androidSkipsTeamAndSurvivesListingFailure() async throws {
         let home = try makePolicyHome()
         defer { try? FileManager.default.removeItem(atPath: home) }
         let teamsRead = CallCounter()
-        let (_, transcript) = try await Self.allow([], answers: ["1", "\r", "\r"], context: { terminal in
+        let (_, transcript) = try await Self.allow([], answers: ["1", "\r", "\r", "\r"], context: { terminal in
             Self.context(
                 home: home, seal: MemorySeal(), terminal: terminal, devices: { [Self.androidRow] },
                 teams: { _ = teamsRead.tick(); return [] },
@@ -586,12 +586,72 @@ struct DeviceAccessCommandTests {
         #expect(entry.platform == .android)
         #expect(entry.apps.isEmpty)
         #expect(entry.team == nil)
-        #expect(transcript.contains("1/3 \(AllowScreen.deviceQuestion)"))
-        #expect(transcript.contains("2/3 App ID (Return for any app): "))
-        #expect(transcript.contains("3/3 \(AllowScreen.expiryQuestion)"))
+        #expect(entry.metroPorts.isEmpty)
+        #expect(transcript.contains("1/4 \(AllowScreen.deviceQuestion)"))
+        #expect(transcript.contains("2/4 App ID (Return for any app): "))
+        #expect(transcript.contains("3/4 \(AllowScreen.metroQuestion)"))
+        #expect(transcript.contains("Metro     none"))
+        #expect(transcript.contains("4/4 \(AllowScreen.expiryQuestion)"))
         #expect(!transcript.contains("Team"))
         #expect(teamsRead.count == 0)
         #expect(transcript.contains("Could not read its apps (The phone is locked)."))
+    }
+
+    @Test("choosing 8081 at the Metro step saves it, shows it before Touch ID and names it in the confirmation")
+    func metroPortChosen() async throws {
+        let home = try makePolicyHome()
+        defer { try? FileManager.default.removeItem(atPath: home) }
+        let presence = RecordingPresence()
+        let (output, transcript) = try await Self.allow(["--app", "com.example.app", "--expires", "2h"], answers: ["1", "2"], context: { terminal in
+            Self.context(home: home, seal: MemorySeal(), terminal: terminal, devices: { [Self.androidRow] })
+        }, presence: presence)
+        #expect(try Self.entries(home).map(\.metroPorts) == [[8081]])
+        #expect(transcript.contains("\(AllowScreen.noMetro)  \(AllowScreen.noMetroDetail) (Recommended)"))
+        #expect(transcript.contains("8081  \(AllowScreen.metroPortDetail)"))
+        #expect(transcript.contains("Metro on 8081"))
+        #expect(presence.reasons == ["allow Offsider to drive Test Pixel (\(PolicyFixtures.serial)) and let its apps reach Metro on 8081"])
+        #expect(output.contains("Allowed Test Pixel until") && output.contains("com.example.app only, Metro on 8081."))
+    }
+
+    @Test("typed ports are checked and asked again until each is a Metro port, and saved in order")
+    func metroPortsTyped() async throws {
+        let home = try makePolicyHome()
+        defer { try? FileManager.default.removeItem(atPath: home) }
+        let (_, transcript) = try await Self.allow(["--app", "com.example.app", "--expires", "2h"], answers: ["1", "3", "5037\r", "8742, 8081\r"], context: { terminal in
+            Self.context(home: home, seal: MemorySeal(), terminal: terminal, devices: { [Self.androidRow] })
+        })
+        #expect(transcript.contains("Port 5037 belongs to adb or an emulator, never Metro."))
+        #expect(try Self.entries(home).map(\.metroPorts) == [[8081, 8742]])
+    }
+
+    @Test("--metro-port skips the step for a phone, none saves no port, and an iPhone refuses it", arguments: [
+        (["--metro-port", "8081", "--metro-port", "8742"], [8081, 8742]),
+        (["--metro-port", "none"], []),
+    ] as [([String], [Int])])
+    func metroPortFlag(arguments: [String], ports: [Int]) async throws {
+        let home = try makePolicyHome()
+        defer { try? FileManager.default.removeItem(atPath: home) }
+        let (_, transcript) = try await Self.allow(["--app", "com.example.app", "--expires", "2h"] + arguments, answers: ["1"], context: { terminal in
+            Self.context(home: home, seal: MemorySeal(), terminal: terminal, devices: { [Self.androidRow] })
+        })
+        #expect(!transcript.contains(AllowScreen.metroQuestion))
+        #expect(try Self.entries(home).map(\.metroPorts) == [ports])
+
+        let iPhone = try makePolicyHome()
+        defer { try? FileManager.default.removeItem(atPath: iPhone) }
+        await #expect(throws: CLIError.self) {
+            _ = try await Self.allow(["--app", "com.example.app", "--expires", "2h", "--team", "ABCDE12345"] + arguments, answers: ["1"], context: { terminal in
+                Self.context(home: iPhone, seal: MemorySeal(), terminal: terminal)
+            })
+        }
+        #expect(try Self.entries(iPhone).isEmpty)
+    }
+
+    @Test("--metro-port refuses adb's port, a low port, a word, a repeat and none beside a port", arguments: [
+        ["5037"], ["80"], ["metro"], ["8081", "8081"], ["none", "8081"],
+    ])
+    func metroPortValidated(values: [String]) {
+        #expect(throws: (any Error).self) { try DeviceAccessAllow.parse(values.flatMap { ["--metro-port", $0] }) }
     }
 
     @Test("with no device on USB it waits; R looks again and the device found then is allowed")
@@ -710,7 +770,7 @@ struct DeviceAccessCommandTests {
         defer { try? FileManager.default.removeItem(atPath: home) }
         let seal = MemorySeal()
         try Self.seed(home, seal: seal, [PolicyFixtures.entry()])
-        let (output, transcript) = try await Self.allow(["--expires", "2h"], answers: ["1", "\r", "\r"], context: { terminal in
+        let (output, transcript) = try await Self.allow(["--expires", "2h"], answers: ["1", "\r", "\r", "\r"], context: { terminal in
             Self.context(home: home, seal: seal, terminal: terminal, devices: { [Self.row, Self.androidRow] })
         })
         #expect(transcript.contains("Test iPhone  allowed · any app · until 15:13") || transcript.contains("Test iPhone  allowed - any app - until 15:13"))
@@ -840,7 +900,7 @@ struct DeviceAccessCommandTests {
     func pinnedByDefault() async throws {
         let home = try makePolicyHome()
         defer { try? FileManager.default.removeItem(atPath: home) }
-        _ = try await Self.allow(["--expires", "2h"], answers: ["1", "\r"], context: { terminal in
+        _ = try await Self.allow(["--expires", "2h"], answers: ["1", "\r", "\r"], context: { terminal in
             var context = Self.context(home: home, seal: MemorySeal(), terminal: terminal, devices: { [Self.androidRow] }, apps: { _ in Self.apps })
             context.frontApp = { _ in "com.mpalmes.offsider.playground.rn" }
             return context
@@ -849,7 +909,7 @@ struct DeviceAccessCommandTests {
 
         let other = try makePolicyHome()
         defer { try? FileManager.default.removeItem(atPath: other) }
-        _ = try await Self.allow(["--expires", "2h"], answers: ["1", "4"], context: { terminal in
+        _ = try await Self.allow(["--expires", "2h"], answers: ["1", "4", "\r"], context: { terminal in
             Self.context(home: other, seal: MemorySeal(), terminal: terminal, devices: { [Self.androidRow] }, apps: { _ in Self.apps })
         })
         #expect(try Self.entries(other).map(\.apps) == [[DeviceAllowance.wholeDevicePin]])

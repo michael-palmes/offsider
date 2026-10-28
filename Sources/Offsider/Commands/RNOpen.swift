@@ -13,8 +13,10 @@ struct RNOpen: AsyncParsableCommand {
         second; an empty app window, as while the bundle loads, never counts). It resends \
         the link at most every 10 s, three times, while the launcher shows. Every 2 s it also checks the app's \
         process: one seen running and then gone or replaced on two checks a second apart is a crash. An Android \
-        emulator reaches Metro at 10.0.2.2 unless an adb reverse maps the port; a phone needs that reverse, which \
-        Offsider reads but never sets. Exits 9 (metro_not_running) when Metro does not answer, 1 (rn_load_failed) \
+        emulator reaches Metro at 10.0.2.2 unless an adb reverse maps the port. A USB phone needs that reverse: rn open \
+        sets tcp:<port> tcp:<port> only when the person allowed --port in devices add and the Metro that answers runs \
+        as this user (else exit 7, metro_port_not_allowed, or 9), and session stop removes it. \
+        Exits 9 (metro_not_running) when Metro does not answer, 1 (rn_load_failed) \
         when the app shows a load error, 1 (app_crashed) when its process stops, naming the iOS crash report or \
         the Android exception class or signal, and 5 at --timeout. --restart stops the app first (simctl \
         terminate or am force-stop), so the link opens it fresh; use it when a timeout reports a blank screen.
@@ -131,7 +133,7 @@ struct RNOpen: AsyncParsableCommand {
             } else {
                 chosen = try ExpoDevClient.singleScheme(try await opener.devClientSchemes(bundleID, on: device), appID: bundleID)
             }
-            host = try await opener.metroHost(port: port, on: device)
+            host = try await reachMetro(opener, route: route, metro: metro)
             url = ExpoDevClient.devClientURL(scheme: chosen, host: host, port: port)
         } catch let error as ExpoDevClientError {
             throw CLIError(errorDescription: error.message, reason: .expoDevClientFailed)
@@ -262,6 +264,33 @@ struct RNOpen: AsyncParsableCommand {
             reason: .conditionNotMet,
             hint: "offsider describe-ui --summary --device \(device.rawValue)"
         )
+    }
+
+    /// The host the device reaches Metro on; a phone without a reverse gets one only for an allowed port whose Metro runs as this user.
+    @MainActor
+    func reachMetro(_ opener: any ExpoDevClientOpening, route: DeviceRouter.Route, metro: MetroStatus) async throws -> String {
+        let device = route.device
+        do {
+            return try await opener.metroHost(port: port, on: device)
+        } catch let error as ExpoDevClientError where error.kind == .noRoute {
+            guard let setter = route.backend as? any MetroReverseSetting, let allowance = route.allowance, allowance.platform == .android else { throw error }
+            guard allowance.metroPorts.contains(port) else {
+                let step = ErrorAudience.current.personStep("offsider devices add", agentTail: ", choose \(allowance.name) and Metro port \(port); an agent cannot allow a port")
+                throw CLIError(
+                    errorDescription: "\(device.rawValue) has no adb reverse for port \(port), and port \(port) is not a Metro port allowed on \(allowance.name), so Offsider set none.\(step)",
+                    reason: .metroPortNotAllowed,
+                    hint: "offsider devices add"
+                )
+            }
+            guard await metro.ownedByThisUser(port) else {
+                throw CLIError(
+                    errorDescription: "The Metro answering on 127.0.0.1:\(port) does not run as this user, so Offsider set no adb reverse to it. Ask the user to stop it and start their own (npx expo start --dev-client --port \(port)).",
+                    reason: .metroNotRunning
+                )
+            }
+            try await setter.addMetroReverse(port: port, on: device)
+            return try await opener.metroHost(port: port, on: device)
+        }
     }
 
     static func shellWord(_ text: String) -> String {
