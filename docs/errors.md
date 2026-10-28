@@ -121,7 +121,8 @@ A `--verify --json` report also carries `ignored` (`{node, reason}` entries left
 | `device_restarted` | 1 | The simulator restarted while Offsider connected | Retry |
 | `device_unresponsive` | 1 | The device stopped answering | `offsider doctor --device <ID>`, or restart the device |
 | `device_control_failed` | 1 | A device setting could not be read or changed | Check the device is booted |
-| `app_not_installed` | 1 | `logs --app` or an Android permission command names an app that is not installed | Install it (the `hint` names the SDK's `adb -s <serial> install <path-to-apk>` on Android), or drop `--app` |
+| `app_not_installed` | 1 | `logs --app`, an `app` command or an Android permission command names an app that is not installed | Install it (the `hint` names the SDK's `adb -s <serial> install <path-to-apk>` on Android), or drop `--app` |
+| `link_not_handled` | 1 | `app open` sent a link no screen of the app takes (Android resolved no activity in the package, or on a simulator no app or another app claimed it) | Check the link's scheme and host against the app's URL types or intent filters, or send the app's own scheme |
 | `log_stream_failed` | 1 | The device's log could not be read | Retry |
 | `video_failed` | 1 | Recording or streaming video failed, `--output` names something other than a video file you own, the device could not be marked as recording, or a stop came before the first frame, so nothing was recorded | Check the output path and the private directory, then retry |
 | `video_unmasked` | 1 | `record-video` or `stream-video` was asked for tree masks, the evidence run masks emails or ids, or a password field is on screen (or the screen could not be read) as it starts | Use `screenshot` for masked evidence, or pass `--unmasked` to record anyway |

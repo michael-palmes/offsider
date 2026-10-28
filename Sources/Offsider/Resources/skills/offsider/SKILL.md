@@ -9,9 +9,9 @@ Offsider drives iOS Simulators, Android Emulators and USB phones and iPads from 
 ## Every session
 
 1. Find the device with `offsider devices`: iOS simulators, USB iPhones and iPads by UDID, running Android emulators and USB phones by serial, and shut-down AVDs by name. `--json` adds each device's `kind` and `connection` (`guide android`). Never choose a `physical` device yourself: drive a phone only when the user names its serial or UDID, and a physical one needs the user to run `offsider devices add` (`guide ios-device`).
-2. Boot with `DEVICE=$(offsider boot <AVD, simulator name or UDID>)` (`--headless` hides an emulator): it waits until booted, prints the serial or UDID and never starts a running device again. Never start emulators with `emulator -port` or `-grpc` yourself.
+2. Boot with `DEVICE=$(offsider boot <AVD, simulator name or UDID>)` (`--headless` hides an emulator): it waits until booted and prints the serial or UDID. Never start emulators with `emulator -port` or `-grpc` yourself.
 3. Run `offsider doctor --device <DEVICE_ID> --json` at the start of a session and when input seems ignored. Exit 0 is clean, 3 means warnings and 4 means failures; read each check's `status` and follow its `hint` (`guide errors`).
-4. Pass `--device <DEVICE_ID>` to every device command: an `export` may not reach your next shell. `devices`, `boot`, `init`, `guide` and `doctor` do not need it.
+4. Pass `--device <DEVICE_ID>` to every device command: an `export` may not reach your next shell.
 5. If the repository has an `OFFSIDER.md`, read `offsider guide --project .` first.
 
 ## Stop and ask
@@ -30,7 +30,6 @@ offsider tap --id <identifier> --verify --json --device <DEVICE_ID>
 offsider type --replace 'new text' --device <DEVICE_ID>
 offsider wait --id <identifier> --device <DEVICE_ID>
 offsider assert --id <identifier> --has-value <text> --device <DEVICE_ID>
-offsider describe-ui --diff --device <DEVICE_ID>
 ```
 
 ## Rules
@@ -55,7 +54,7 @@ Every input command takes `--json` (`guide verify`); a failure prints `exitCode`
 
 ## Commands
 
-`doctor`, `init`, `guide`, `boot`, `devices` (`add`, `remove`, `status`), `describe-ui`, `tap`, `turnstile`, `login`, `credential`, `slider`, `swipe`, `drag`, `gesture`, `touch`, `type`, `button`, `key`, `key-sequence`, `key-combo`, `wait`, `assert`, `batch`, `run`, `screenshot`, `logs`, `appearance`, `content-size`, `permission`, `status-bar`, `biometric`, `stay-awake`, `wake`, `unlock-code`, `lease`, `orientation`, `displays`, `posture`, `shake`, `rn` (`prepare`, `open`, `logbox`, `devmenu`, `tools off`), `record-video`, `stream-video`, `runner`, `session`. `offsider <command> --help` lists every option; `guide selectors` lists `button` names.
+`doctor`, `init`, `guide`, `boot`, `devices` (`add`, `remove`, `status`), `describe-ui`, `tap`, `turnstile`, `login`, `credential`, `slider`, `swipe`, `drag`, `gesture`, `touch`, `type`, `button`, `key`, `key-sequence`, `key-combo`, `wait`, `assert`, `batch`, `run`, `screenshot`, `logs`, `appearance`, `content-size`, `permission`, `app`, `status-bar`, `biometric`, `stay-awake`, `wake`, `unlock-code`, `lease`, `orientation`, `displays`, `posture`, `shake`, `rn` (`prepare`, `open`, `logbox`, `devmenu`, `tools off`), `record-video`, `stream-video`, `runner`, `session`. `offsider <command> --help` lists every option; `guide selectors` lists `button` names.
 
 ## Topics
 
@@ -77,6 +76,7 @@ Every input command takes `--json` (`guide verify`); a failure prints `exitCode`
 | `evidence` | You need numbered screenshots and logs for a report, masked or redacted, a pixel diff, or log entries as JSON |
 | `describe-ui` | You need more than `--summary`: JSON, filters, the byte budget or `--diff` |
 | `device-state` | You change appearance, text size, orientation, permissions, the status bar or biometrics, or keep an Android screen awake and unlocked |
+| `apps` | You read an app's version, or launch, stop or deep-link it |
 | `migrate` | You know idb, Maestro or agent-device and want the Offsider equivalent |
 
 ## Before finishing
