@@ -319,6 +319,22 @@ struct WakeCommandTests {
         #expect(locked.stateCalls.isEmpty)
     }
 
+    @Test("no window on an unlocked screen with an app in front is app_not_responding, not a hint to unlock; the home screen in front keeps no_window")
+    func hungAppHint() async throws {
+        let noWindow = CLIError(errorDescription: "Offsider found no window on ZY22FAKE01. Unlock it and bring an app to the front.", reason: .noWindow)
+        let home = "com.example.launcher/com.example.launcher.Home"
+        let hung = Self.backend()
+        hung.foregrounds = [ForegroundActivities(top: "com.example.app/com.example.app.MainActivity", home: home)]
+        let annotated = try #require(await ScreenStateHint.annotate(noWindow, routes: Self.route(hung)) as? CLIError)
+        #expect(annotated.reason == .appNotResponding)
+        #expect(annotated.userFacingDescription == "com.example.app is in front on ZY22FAKE01, but Android lists no window for it, so the app is not responding or still starting. Wait a moment and retry; if it lasts, close the app and open it again.")
+        #expect(hung.stateCalls == ["awake read"])
+
+        let launcher = Self.backend()
+        launcher.foregrounds = [ForegroundActivities(top: home, home: home)]
+        #expect((await ScreenStateHint.annotate(noWindow, routes: Self.route(launcher)) as? CLIError)?.reason == .noWindow)
+    }
+
     @Test("the screen check runs once per command, so an early report and the final error share one probe")
     func hintOncePerCommand() async {
         let backend = Self.backend(Self.locked)

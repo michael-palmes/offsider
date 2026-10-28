@@ -327,6 +327,13 @@ public enum ExpoDevLauncher {
         texts(in: tree).contains { $0.hasPrefix("Bundling") || $0.hasPrefix("Downloading") }
     }
 
+    /// The dev menu's first-launch intro, which `rn prepare` marks as seen.
+    public static func isDevMenuIntro(_ tree: UITree) -> Bool {
+        let nodes = tree.roots.flatMap { $0.flattened() }
+        return nodes.contains { shownText($0).contains { $0.hasPrefix("This is the developer menu") } }
+            && nodes.contains { $0.role == .button && shownText($0) == ["Continue"] }
+    }
+
     private static func texts(in tree: UITree) -> [String] {
         tree.roots.flatMap { $0.flattened() }.flatMap { [$0.label, $0.value] }.compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
     }

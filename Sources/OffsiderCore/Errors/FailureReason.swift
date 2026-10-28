@@ -64,6 +64,7 @@ public enum FailureReason: String, CaseIterable, Sendable {
     case metroNotRunning = "metro_not_running"
     case rnLoadFailed = "rn_load_failed"
     case appCrashed = "app_crashed"
+    case appNotResponding = "app_not_responding"
     case logBoxInspectorOpen = "logbox_inspector_open"
     case appNotAllowed = "app_not_allowed"
     case personRequired = "person_required"

@@ -96,6 +96,13 @@ extension AndroidBackend {
     }
 }
 
+extension AndroidBackend: AppTargetSelecting {
+    @discardableResult
+    public func selectApp(_ appID: String, on id: DeviceID) -> Bool {
+        selectApp(appID, on: id.rawValue)
+    }
+}
+
 /// Set by an input session around its foreground check, so every input step on a phone reads the front app again.
 enum AndroidForegroundCheck {
     @TaskLocal static var beforeInput = false

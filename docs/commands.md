@@ -47,7 +47,7 @@ Every device command takes `--device <id>`, using an ID from `offsider devices`:
 | `posture` | Read a foldable's posture (`closed`, `half-opened`, `open`) and its active display, or set it, waiting until the display has swapped (`--angle 0-180`, `--timeout`, `--json`; [foldables](device-state.md#foldables)) |
 | `shake` | Send the shake gesture (iOS only; on Android, `rn devmenu` or `button menu` opens a React Native dev menu); [`--json`](input.md#json-results) |
 | `rn logbox` | Read, open or clear React Native LogBox toasts without tapping blind ([React Native](react-native.md)) |
-| `rn open` | Load an Expo dev client's bundle from Metro on this Mac and wait until the app is up ([React Native](react-native.md)) |
+| `rn open` | Load an Expo dev client's bundle from Metro on this Mac and wait until the app is up, stopping early when a system prompt, the dev menu intro, a hung app or another screen keeps it from showing ([React Native](react-native.md)) |
 | `rn devmenu` | Open a React Native debug build's dev menu, list its items or choose one ([React Native](react-native.md)) |
 | `rn tools off` | Turn off the element inspector and the performance monitor when they show, through the dev menu (`--json`) |
 | `rn prepare` | Before a fresh Expo dev client (debug build) first launches: mark its dev menu intro as seen and stop the menu opening at launch (`--bundle-id`); stops the app first if it is running |
