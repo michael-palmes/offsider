@@ -9,6 +9,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ### Added
 
 - `batch` takes a `drag` step, written and limited like `offsider drag`.
+- `swipe` and `drag` take `--screenshot-at <ms>` (0 to 10000, up to 10 times): a screenshot that many milliseconds after the finger comes to rest at the end, before it lifts, masked as `screenshot` masks from a tree read during the hold. `--output` names the file or folder (several to one path are numbered `-1`, `-2`), and `--json` adds `holdMs` and `screenshots`, each with its timing and `screenshot --json`'s fields. Without `--hold-end` the finger rests until the last screenshot. Another command cannot capture during a held gesture, which holds the device; on Android the gesture is sent in parts around each screenshot, so its screen read fits on the one UiAutomation helper.
 - `rn devmenu` lists the items an app registers (`registerDevMenuItems`, or `DevSettings.addMenuItem` in React Native's own Android menu), marked `"custom":true` in `--json` and tagged for a person; `--label` already chose them, and now prefers the menu's item over an app button behind it with the same label. Expo's custom heading also counts as menu evidence, so a menu whose tools those items push off screen is still read.
 
 ### Changed

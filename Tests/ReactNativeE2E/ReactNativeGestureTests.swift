@@ -44,6 +44,32 @@ struct ReactNativeGestureTests {
         #expect(try await Self.drag(app, "--hold-ms 800") == "Zone: B")
     }
 
+    @Test("drag --screenshot-at captures the tile still lifted over zone B, then the drop still lands", arguments: RNPlatform.enabled)
+    func screenshotDuringHold(platform: RNPlatform) async throws {
+        let app = RNApp(platform)
+        try await app.open("hold-drag")
+        let tile = try await app.centre(of: "hold-drag-tile")
+        let zone = try await app.centre(of: "hold-drag-zone-b")
+        let held = FileManager.default.temporaryDirectory.appendingPathComponent("offsider-hold-\(UUID().uuidString).png").path
+        defer { try? FileManager.default.removeItem(atPath: held) }
+
+        let result = try await app.run(
+            "drag --start-x \(tile.x) --start-y \(tile.y) --end-x \(zone.x) --end-y \(zone.y) --hold-ms 800 --hold-end 1500 --screenshot-at 300 --output \(held) --json"
+        )
+
+        let report = try #require(try JSONSerialization.jsonObject(with: Data(result.stdout.utf8)) as? [String: Any])
+        let shots = try #require(report["screenshots"] as? [[String: Any]])
+        #expect(shots.count == 1)
+        #expect(shots.first?["path"] as? String == held)
+        #expect((shots.first?["startMs"] as? Int ?? -1) >= 300)
+        #expect((report["holdMs"] as? Int ?? 0) >= 1500)
+        _ = try await app.waitForLabel(of: "hold-drag-zone") { $0 == "Zone: B" }
+        // Dropped, the tile is opaque at the centre of zone B; the screenshot from the hold shows it lifted, so the two differ.
+        let compare = try await app.offsider("screenshot --compare \(held) --json")
+        #expect(compare.exitCode == 0, "\(compare.stderr)")
+        #expect(compare.stdout.contains(#""changed":true"#))
+    }
+
     @Test("gesture long-press-drag drops the tile in zone B", arguments: RNPlatform.enabled)
     func longPressDragPreset(platform: RNPlatform) async throws {
         let app = RNApp(platform)
