@@ -24,13 +24,40 @@ extension InputEvent {
         initialHold: TimeInterval,
         finalHold: TimeInterval
     ) throws -> InputEvent {
+        guard finalHold >= 0 else {
+            throw CLIError(errorDescription: "Drag hold durations must be non-negative.", reason: .usage)
+        }
+        var events = try pressEvents(from: start, to: end, duration: duration, steps: steps, initialHold: initialHold)
+        events.append(.delay(finalHold))
+        events.append(.touch(direction: .up, x: end.x, y: end.y))
+        return .composite(events)
+    }
+
+    /// `compositeDrag` up to its end hold: touch down, hold, the moves, leaving the finger down at `end`.
+    static func compositeDragPress(
+        from start: (x: Double, y: Double),
+        to end: (x: Double, y: Double),
+        duration: TimeInterval,
+        steps: Int,
+        initialHold: TimeInterval
+    ) throws -> InputEvent {
+        .composite(try pressEvents(from: start, to: end, duration: duration, steps: steps, initialHold: initialHold))
+    }
+
+    private static func pressEvents(
+        from start: (x: Double, y: Double),
+        to end: (x: Double, y: Double),
+        duration: TimeInterval,
+        steps: Int,
+        initialHold: TimeInterval
+    ) throws -> [InputEvent] {
         guard duration >= 0 else {
             throw CLIError(errorDescription: "Drag duration must be non-negative.", reason: .usage)
         }
         guard steps > 0 else {
             throw CLIError(errorDescription: "Drag steps must be greater than 0.", reason: .usage)
         }
-        guard initialHold >= 0, finalHold >= 0 else {
+        guard initialHold >= 0 else {
             throw CLIError(errorDescription: "Drag hold durations must be non-negative.", reason: .usage)
         }
 
@@ -46,10 +73,7 @@ extension InputEvent {
             events.append(.touch(direction: .down, x: point.x, y: point.y))
         }
 
-        events.append(.delay(finalHold))
-        events.append(.touch(direction: .up, x: end.x, y: end.y))
-
-        return .composite(events)
+        return events
     }
 
     static func compositeDragMovePoints(
