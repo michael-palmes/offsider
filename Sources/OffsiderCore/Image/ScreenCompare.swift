@@ -93,6 +93,8 @@ public struct ScreenshotReport: Equatable, Sendable {
     public var posture: Posture?
     public var upright: Bool
     public var format: ImageFormat?
+    /// How the device captured it, such as `stream` or `devicectl` on an iPhone or iPad; nil where there is one way.
+    public var captureSource: String?
     public var comparison: ScreenCompare.Result?
     /// Rectangles painted per kind asked for; nil unless a mask was asked for.
     public var maskedBy: [MaskKind: Int]?
@@ -203,6 +205,9 @@ public struct ScreenshotReport: Equatable, Sendable {
             ("upright", .bool(upright)),
             ("format", .optional(format?.name, OrderedJSON.string)),
         ]
+        if let captureSource {
+            members.append(("capture", .string(captureSource)))
+        }
         if let comparison {
             members += [
                 ("changed", .bool(comparison.outcome == .changed)),

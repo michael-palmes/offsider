@@ -105,16 +105,28 @@ public struct VideoRecordingReport: Equatable, Sendable {
     public var path: String
     public var frames: Int
     public var heldFrames: Int
+    /// From the first frame to the last, as they were taken.
+    public var seconds: Double
     /// Rectangles painted on every frame; zero without `--mask-region`.
     public var regions: Int
     public var unmasked: Bool
 
-    public init(path: String, frames: Int, heldFrames: Int, regions: Int, unmasked: Bool) {
+    public init(path: String, frames: Int, heldFrames: Int, seconds: Double, regions: Int, unmasked: Bool) {
         self.path = path
         self.frames = frames
         self.heldFrames = heldFrames
+        self.seconds = seconds
         self.regions = regions
         self.unmasked = unmasked
+    }
+
+    /// The rate the frames were taken at; nil with fewer than two frames.
+    public static func framesPerSecond(frames: Int, seconds: Double) -> Double? {
+        frames > 1 && seconds > 0 ? Double(frames - 1) / seconds : nil
+    }
+
+    private static func tenths(_ value: Double) -> Double {
+        (value * 10).rounded() / 10
     }
 
     public func jsonLine() -> String {
@@ -124,6 +136,8 @@ public struct VideoRecordingReport: Equatable, Sendable {
             ("path", .string(path)),
             ("frames", .integer(frames)),
             ("heldFrames", .integer(heldFrames)),
+            ("seconds", .number(Self.tenths(seconds))),
+            ("fps", .optional(Self.framesPerSecond(frames: frames, seconds: seconds).map(Self.tenths), OrderedJSON.number)),
             ("maskedBy", .object(maskedBy)),
             ("unmasked", .bool(unmasked)),
         ]).rendered(compact: true)
