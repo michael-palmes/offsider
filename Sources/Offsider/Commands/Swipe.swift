@@ -11,9 +11,14 @@ struct Swipe: AsyncParsableCommand {
         at the end for that many milliseconds before it lifts, sent as a drag, so the motion stops first, \
         as when you pause before letting go.
 
+        --screenshot-at takes a screenshot that many milliseconds after the finger comes to rest at the end, \
+        before it lifts, masked as `screenshot` masks; the hold lasts until the last one unless --hold-end is set, \
+        and a screenshot that runs past --hold-end keeps the finger down until it is done.
+
         Examples:
           offsider swipe --start-x 200 --start-y 600 --end-x 200 --end-y 200 --device DEVICE_ID
           offsider swipe --start-x 200 --start-y 600 --end-x 200 --end-y 200 --duration 0.3 --hold-end 400 --device DEVICE_ID
+          offsider swipe --start-x 200 --start-y 600 --end-x 200 --end-y 200 --screenshot-at 300 --output scrub.png --device DEVICE_ID
         """
     )
 
@@ -46,6 +51,9 @@ struct Swipe: AsyncParsableCommand {
 
     @Option(name: .customLong("hold-end"), help: ArgumentHelp("Hold still this many milliseconds at the end before lifting, from 0 to 10000, so the motion stops before the release; sends the swipe as a drag.", valueName: "ms"))
     var holdEnd: Int?
+
+    @OptionGroup
+    var holdShots: HoldScreenshotOptions
     
     @OptionGroup
     var jsonOption: InputJSONOption
@@ -90,6 +98,7 @@ struct Swipe: AsyncParsableCommand {
         if let holdEnd, !(0...10_000).contains(holdEnd) {
             throw ValidationError("--hold-end must be from 0 to 10000; got \(holdEnd).")
         }
+        try holdShots.check(holdEnd: holdEnd)
         
         // Validate delays if provided
         if let preDelay = preDelay {
@@ -106,7 +115,10 @@ struct Swipe: AsyncParsableCommand {
     }
 
     func run() async throws {
-        try await InputOutput.reporting(command: "swipe", target: target, json: jsonOption.json) { _ in try await swipe() }
+        try await InputOutput.reporting(command: "swipe", target: target, json: jsonOption.json) { details in
+            if holdShots.isRequested { try await holdShots.prepare(command: "swipe") }
+            try await swipe(details)
+        }
     }
 
     /// `(100, 600) to (100, 200)`.
@@ -114,7 +126,7 @@ struct Swipe: AsyncParsableCommand {
         VerifyOutput.segmentDescription(from: (startX, startY), to: (endX, endY))
     }
 
-    private func swipe() async throws {
+    private func swipe(_ details: InputDetails) async throws {
         let logger = OffsiderLogger()
         let route = try await DeviceRouter.routeForInput(deviceOption, logger: logger)
         await appOption.apply(to: route)
@@ -155,9 +167,25 @@ struct Swipe: AsyncParsableCommand {
             logger.info().log("Post-delay: \(postDelay)s")
         }
 
-        let finalEvent = InputEvent.delayed(try swipeEvent(from: physicalPoints[0], to: physicalPoints[1]), pre: preDelay, post: postDelay)
-
-        try await Console.current.progress("Swiping") { try await backend.performTracked(finalEvent, on: device) }
+        if holdShots.isRequested {
+            let end = physicalPoints[1]
+            try await Console.current.progress("Swiping") {
+                try await holdShots.perform(
+                    press: .delayed(try pressEvent(from: physicalPoints[0], to: end), pre: preDelay, post: nil),
+                    lift: .touch(direction: .up, x: end.x, y: end.y),
+                    holdEnd: holdShots.holdEnd(given: holdEnd, fallback: 0),
+                    on: route,
+                    details: details
+                )
+            }
+            if let postDelay, postDelay > 0 {
+                try await Task.sleep(for: .seconds(postDelay))
+            }
+            HoldScreenshotOptions.noteOverrun(held: details.holdMs, asked: holdEnd)
+        } else {
+            let finalEvent = InputEvent.delayed(try swipeEvent(from: physicalPoints[0], to: physicalPoints[1]), pre: preDelay, post: postDelay)
+            try await Console.current.progress("Swiping") { try await backend.performTracked(finalEvent, on: device) }
+        }
 
         logger.info().log("Swipe gesture completed successfully")
         Console.current.show(InputPersonView.receipt(receiptHeadline))
@@ -177,16 +205,24 @@ extension Swipe {
         guard let holdEnd else {
             return .swipe(start.x, yStart: start.y, xEnd: end.x, yEnd: end.y, delta: swipeDelta, duration: swipeDuration)
         }
-        // Steps follow the points the caller gave, as a swipe's delta does, not the backend's input space.
-        let distance = hypot(endX - startX, endY - startY)
         return try InputEvent.compositeDrag(
             from: start,
             to: end,
             duration: swipeDuration,
-            steps: PixelMath.swipeSteps(distance / swipeDelta),
+            steps: dragSteps,
             initialHold: 0,
             finalHold: Double(holdEnd) / 1000
         )
+    }
+
+    /// The drag form of the swipe up to its end hold, leaving the finger down at `end`, for --screenshot-at.
+    func pressEvent(from start: (x: Double, y: Double), to end: (x: Double, y: Double)) throws -> InputEvent {
+        try InputEvent.compositeDragPress(from: start, to: end, duration: duration ?? Self.defaultDuration, steps: dragSteps, initialHold: 0)
+    }
+
+    /// Steps follow the points the caller gave, as a swipe's delta does, not the backend's input space.
+    private var dragSteps: Int {
+        PixelMath.swipeSteps(hypot(endX - startX, endY - startY) / (delta ?? Self.defaultDelta))
     }
 }
 

@@ -14,6 +14,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - `record-video --duration <seconds>` stops and saves by itself that long after the first frame, and its `--json` adds `seconds` (first frame to last) and `fps` (the rate frames were taken at).
 - `login --app <package>` names the app on an Android phone allowed for any app, as other commands take it; one the `offsider.login.json` in use does not name exits 64 with nothing typed.
 - `screenshot --json` adds `capture` on an iPhone or iPad: `stream` or `devicectl`, the path that took the shot.
+- `swipe` and `drag` take `--screenshot-at <ms>` (0 to 10000, up to 10 times): a screenshot that many milliseconds after the finger comes to rest at the end, before it lifts, masked as `screenshot` masks from a tree read during the hold. `--output` names the file or folder (several to one path are numbered `-1`, `-2`), and `--json` adds `holdMs` and `screenshots`, each with its timing and `screenshot --json`'s fields. Without `--hold-end` the finger rests until the last screenshot. Another command cannot capture during a held gesture, which holds the device; on Android the gesture is sent in parts around each screenshot, so its screen read fits on the one UiAutomation helper.
 
 ### Changed
 
