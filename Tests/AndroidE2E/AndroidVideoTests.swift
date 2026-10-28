@@ -43,7 +43,7 @@ struct AndroidVideoTests {
         }
     }
 
-    @Test("record-video writes an MP4 and names the source a device")
+    @Test("record-video writes an MP4 and names the source an emulator")
     func record() async throws {
         let serial = try await AndroidE2E.serial()
         let output = AndroidE2E.temporaryFile("video.mp4")
@@ -53,9 +53,91 @@ struct AndroidVideoTests {
         let status = try await running.interruptAndWait()
 
         #expect(status == 0, "stderr: \(running.stderrText)")
-        #expect(running.stderrText.contains("Recording device \(serial)"))
+        #expect(running.stderrText.contains("Recording emulator \(serial)"))
         let size = (try FileManager.default.attributesOfItem(atPath: output.path)[.size] as? Int) ?? 0
         #expect(size > 10_000)
+    }
+
+    @Test("describe-ui, screenshot and tap run on the device while record-video records it, and the recording still saves")
+    func readsAndInputWhileRecording() async throws {
+        let serial = try await AndroidE2E.serial()
+        let output = AndroidE2E.temporaryFile("video.mp4")
+        defer { try? FileManager.default.removeItem(at: output) }
+        let running = try Running(["record-video", "--output", output.path, "--json", "--device", serial])
+        try await Task.sleep(for: .seconds(4))
+
+        let tree = try await AndroidE2E.offsider("describe-ui --summary")
+        let shot = AndroidE2E.temporaryFile("shot.png")
+        defer { try? FileManager.default.removeItem(at: shot) }
+        let screenshot = try await AndroidE2E.offsider("screenshot --output '\(shot.path)'")
+        let tap = try await AndroidE2E.offsider("tap -x 1 -y 1")
+        let status = try await running.interruptAndWait()
+
+        #expect(tree.exitCode == 0, "describe-ui: \(tree.stderr)")
+        #expect(screenshot.exitCode == 0, "screenshot: \(screenshot.stderr)")
+        #expect(tap.exitCode == 0, "tap: \(tap.stderr)")
+        #expect(status == 0, "stderr: \(running.stderrText)")
+        #expect(FileManager.default.fileExists(atPath: output.path))
+    }
+
+    @Test("a recording whose output pipe closes keeps going, and SIGHUP saves it with nothing left beside the file")
+    func closedPipeThenHangUp() async throws {
+        let serial = try await AndroidE2E.serial()
+        let folder = AndroidE2E.temporaryFile("video-folder")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: try TestHelpers.getOffsiderPath())
+        process.arguments = ["record-video", "--output", folder.appendingPathComponent("clip.mp4").path, "--json", "--device", serial]
+        process.environment = TestHelpers.childEnvironment()
+        let stderr = Pipe()
+        process.standardError = stderr
+        process.standardOutput = FileHandle.nullDevice
+        try process.run()
+        try await Task.sleep(for: .seconds(4))
+        try stderr.fileHandleForReading.close()
+        try await Task.sleep(for: .seconds(3))
+        #expect(process.isRunning, "record-video ended when its stderr closed")
+
+        kill(process.processIdentifier, SIGHUP)
+        let deadline = Date().addingTimeInterval(30)
+        while process.isRunning, Date() < deadline {
+            try await Task.sleep(for: .milliseconds(100))
+        }
+        if process.isRunning { process.terminate() }
+        process.waitUntilExit()
+
+        #expect(process.terminationStatus == 0)
+        #expect(try FileManager.default.contentsOfDirectory(atPath: folder.path) == ["clip.mp4"])
+    }
+
+    @Test("one SIGINT ends a recording started with SIGINT ignored, as a shell's background job is, even before its first frame")
+    func stopsWhenStartedInTheBackground() async throws {
+        let serial = try await AndroidE2E.serial()
+        let folder = AndroidE2E.temporaryFile("video-folder")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/bin/sh")
+        process.arguments = ["-c", #"trap '' INT; exec "$0" record-video --output "$1" --device "$2""#, try TestHelpers.getOffsiderPath(), folder.appendingPathComponent("clip.mp4").path, serial]
+        process.environment = TestHelpers.childEnvironment()
+        process.standardOutput = FileHandle.nullDevice
+        process.standardError = FileHandle.nullDevice
+        try process.run()
+        try await Task.sleep(for: .milliseconds(300))
+
+        kill(process.processIdentifier, SIGINT)
+        let deadline = Date().addingTimeInterval(20)
+        while process.isRunning, Date() < deadline {
+            try await Task.sleep(for: .milliseconds(100))
+        }
+        let ended = !process.isRunning
+        if !ended { process.terminate() }
+        process.waitUntilExit()
+
+        #expect(ended, "record-video kept recording after SIGINT")
+        let left = try FileManager.default.contentsOfDirectory(atPath: folder.path)
+        #expect(process.terminationStatus == 0 ? left == ["clip.mp4"] : (process.terminationStatus == 1 && left.isEmpty), "exit \(process.terminationStatus), left \(left)")
     }
 
     @Test("stream-video --format bgra sends a full frame of width x height x 4 bytes")

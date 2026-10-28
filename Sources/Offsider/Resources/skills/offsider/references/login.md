@@ -76,7 +76,7 @@ Once login reaches the email field, a failure still prints that object, with `ok
 
 ## An app can pin its fields
 
-`offsider.login.json`, found like `OFFSIDER.md` (`--project <path>` names where to search; a missing file is not an error), overrides detection for one app. It names the app with `bundleId`, `package` or both, and one must be the app in front, or nothing is typed. A pinned control is still hit-tested: covered is a refusal. `"webLogin": true` (default false) is half of the web view opt-in above; a `turnstile` key is ignored with a warning.
+`offsider.login.json`, found like `OFFSIDER.md` (`--project <path>` names where to search; a missing file is not an error), overrides detection for one app. It names the app with `bundleId`, `package` or both, and one must be the app in front, or nothing is typed. On a phone allowed for any app, its `package` is the app `login` drives; `--app <package>` names it too, and an `--app` the file does not name exits 64. A pinned control is still hit-tested: covered is a refusal. `"webLogin": true` (default false) is half of the web view opt-in above; a `turnstile` key is ignored with a warning.
 
 ```json
 {
