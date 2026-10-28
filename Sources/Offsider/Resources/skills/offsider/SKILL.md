@@ -55,7 +55,7 @@ Every input command takes `--json` (`guide verify`); a failure prints `exitCode`
 
 ## Commands
 
-`doctor`, `init`, `guide`, `boot`, `devices` (`add`, `remove`, `status`), `describe-ui`, `tap`, `turnstile`, `login`, `credential`, `slider`, `swipe`, `drag`, `gesture`, `touch`, `type`, `button`, `key`, `key-sequence`, `key-combo`, `wait`, `assert`, `batch`, `run`, `screenshot`, `logs`, `appearance`, `content-size`, `permission`, `status-bar`, `biometric`, `stay-awake`, `wake`, `unlock-code`, `lease`, `orientation`, `displays`, `posture`, `shake`, `rn` (`prepare`, `open`, `logbox`, `devmenu`, `tools off`), `record-video`, `stream-video`, `runner`, `session`. Run `offsider <command> --help` for every option; `guide selectors` lists `button` names.
+`doctor`, `init`, `guide`, `boot`, `devices` (`add`, `remove`, `status`), `describe-ui`, `tap`, `turnstile`, `login`, `credential`, `slider`, `swipe`, `drag`, `gesture`, `touch`, `type`, `button`, `key`, `key-sequence`, `key-combo`, `wait`, `assert`, `batch`, `run`, `screenshot`, `logs`, `notifications`, `appearance`, `content-size`, `permission`, `status-bar`, `biometric`, `stay-awake`, `wake`, `unlock-code`, `lease`, `orientation`, `displays`, `posture`, `shake`, `rn` (`prepare`, `open`, `logbox`, `devmenu`, `tools off`), `record-video`, `stream-video`, `runner`, `session`. Run `offsider <command> --help` for every option.
 
 ## Topics
 

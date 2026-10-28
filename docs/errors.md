@@ -89,7 +89,7 @@ A `--verify --json` report also carries `ignored` (`{node, reason}` entries left
 | `secure_field_argument` | 64 | `type` or a batch `type` step aimed text from the command line at a password field | Sign in with `login` and a saved test user, or pass the text with `--stdin` |
 | `input_file_refused` | 64 | `type --file` or `batch --file` named a file Offsider will not read: not a regular file, over 64 KiB, or under a credentials folder such as `~/.ssh` | Pass a regular text file; `--allow-path` reads a refused location once a person confirms it |
 | `not_verified` | 5 | `--verify` saw no change after the input (reports only) | Check the screen before sending again |
-| `condition_not_met` | 5 | A `wait`, `assert`, `login` or `screenshot --compare` condition was not met | Read the message. For `login`, the submit button stayed disabled |
+| `condition_not_met` | 5 | A `wait`, `assert`, `login`, `notifications --wait` or `screenshot --compare` condition was not met | Read the message. For `login`, the submit button stayed disabled |
 | `command_failed` | 1 | Any failure without a more specific reason | Read `message` |
 | `internal_error` | 1 | Offsider reached a state it should not | Report it |
 | `input_failed` | 1 | Sending input failed | Read `dispatched` before resending |

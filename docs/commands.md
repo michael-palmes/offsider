@@ -32,6 +32,7 @@ Every device command takes `--device <id>`, using an ID from `offsider devices`:
 | `batch` | Run a whole case in one device session from `--step`, `--file` or `--stdin` ([batches](input.md#waits-assertions-and-batches)) |
 | `screenshot` | Save a PNG or JPEG of the active display, with password fields masked by default, cropped, scaled, compared with a baseline or masked further as asked; without `--output`, named `Simulator Screenshot`, `Emulator Screenshot` or, from a physical device, `Screenshot`, then the device name and time ([screenshots](capture.md#screenshots-and-video)) |
 | `logs` | Print recent device log entries, or collect live ones, with redaction; the app `offsider.login.json` names by default, `--all` for the whole device ([logs](capture.md#logs)) |
+| `notifications` | List the notifications one Android app has posted, picked on the device so no other app's text leaves it, with one-time codes hidden; `--wait <text>` polls until one holds it (`--timeout`, `--json`; [notifications](android.md#notifications)) |
 | `run` | `start <dir>`, `stop` or `status` an evidence run that numbers this session's captures into one folder ([evidence runs](capture.md#evidence-runs)) |
 | `appearance` | Read or set light or dark appearance; on Android a reading can be `auto` or `custom` when night mode follows a schedule |
 | `content-size` | Read or set the text size: a Dynamic Type category on iOS, the matching font scale on Android; `reset` restores `large` |

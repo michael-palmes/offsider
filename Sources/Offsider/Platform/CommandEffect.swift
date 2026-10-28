@@ -52,6 +52,7 @@ enum CommandEffect: String, Sendable {
         "record-video": .none,
         "screenshot": .read,
         "logs": .none,
+        "notifications": .none,
         "wait": .read,
         "assert": .read,
         "batch": .input,

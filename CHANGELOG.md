@@ -8,6 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Added
 
+- `notifications --app <package>` lists one Android app's posted notifications (title, text, big text, sub-text, channel, post time), picked on the device so no other app's text crosses the cable, with one-time codes and card numbers hidden; `--wait <text>` polls until one holds it, exiting 5 at `--timeout`. On a phone the app must be one the allowance permits.
 - `batch` takes a `drag` step, written and limited like `offsider drag`.
 - `app_not_responding` (exit 1): on Android, when the app in front on an unlocked screen has no window the tree can read, as when its main thread is stuck, `describe-ui` and other reads say so instead of telling you to unlock the device.
 - `rn devmenu` lists the items an app registers (`registerDevMenuItems`, or `DevSettings.addMenuItem` in React Native's own Android menu), marked `"custom":true` in `--json` and tagged for a person; `--label` already chose them, and now prefers the menu's item over an app button behind it with the same label. Expo's custom heading also counts as menu evidence, so a menu whose tools those items push off screen is still read.
