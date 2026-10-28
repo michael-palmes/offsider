@@ -11,16 +11,19 @@ struct PostureCommand: AsyncParsableCommand {
         a value, prints the current posture and the active display. A device with one display is not foldable. \
         On an iOS simulator Offsider moves the hinge as Device Hub's slider does (closed 0, half-opened 120, open \
         180 degrees); --angle sets another angle. Telling half-opened from open needs a hinge reading, which takes \
-        a moment.
+        a moment. On an Android emulator without gRPC, and on an allowed USB foldable phone, a posture is a \
+        `cmd device_state` override that stays until `posture reset` (or a reboot) drops it and the hinge decides \
+        again; on a phone Offsider records it, and `session stop` and `devices remove` take it off.
 
         Examples:
           offsider posture --device DEVICE_ID
           offsider posture open --device DEVICE_ID
           offsider posture --angle 90 --device DEVICE_ID
+          offsider posture reset --device DEVICE_ID
         """
     )
 
-    @Argument(help: ArgumentHelp("The posture to set; omit to read the current one.", valueName: "closed|half-opened|open"))
+    @Argument(help: ArgumentHelp("The posture to set, or reset to drop an Android override; omit to read the current one.", valueName: "closed|half-opened|open|reset"))
     var value: String?
 
     @Option(help: ArgumentHelp("The hinge angle to move to, from 0 (closed) to 180 (open); iOS simulators only.", valueName: "degrees"))
@@ -37,7 +40,13 @@ struct PostureCommand: AsyncParsableCommand {
 
     static let settable: [Posture] = [.closed, .halfOpened, .open]
 
+    var isReset: Bool { value?.trimmingCharacters(in: .whitespaces).lowercased() == "reset" }
+
     func validate() throws {
+        if isReset {
+            guard angle == nil else { throw ValidationError("Give reset or --angle, not both.") }
+            return
+        }
         _ = try target()
         guard (0.5...60).contains(timeout) else {
             throw ValidationError("--timeout must be from 0.5 to 60 seconds; got \(DeviceSettingsReport.number(timeout)).")
@@ -62,6 +71,7 @@ struct PostureCommand: AsyncParsableCommand {
     }
 
     func run() async throws {
+        if isReset { return try await reset() }
         let target = try target()
         let watchdog = DeviceWatchdog()
         let logger = OffsiderLogger()
@@ -83,7 +93,36 @@ struct PostureCommand: AsyncParsableCommand {
             result.current, previous: result.previous, screen: result.screen, platform: result.platform, state: result.state, angle: angle,
             setting: target != nil || angle != nil
         )
-        DevicePersonView.emit(result.text(json: json), json: json, person: person, console: console)
+        DevicePersonView.emit(result.text(json: json), json: json, person: person, notices: Self.notices(result, set: target != nil, on: route.device), console: console)
+    }
+
+    /// After folding an allowed phone, how a person takes the override off; it outlives the command.
+    static func notices(_ result: Result, set: Bool, on device: DeviceID) -> [Notice] {
+        guard set, device.isPhysicalAndroidDevice, result.state != nil, result.previous != result.current else { return [] }
+        let undo = "offsider posture reset --device \(device.rawValue)"
+        return [DevicePersonView.lasting("The fold stays until reset", undo: undo, label: "Reset", agent: "Note: the posture stays \(result.current.rawValue) on \(device.rawValue) until `\(undo)` or a reboot; `session stop` also resets it.")]
+    }
+
+    /// Drops an Android device-state override, then reads the posture the hinge gives.
+    private func reset() async throws {
+        let route = try await DeviceRouter.routeForInput(deviceOption.id, logger: OffsiderLogger())
+        let console = Console.current
+        let (dropped, current, state) = try await console.progress("Resetting the posture") {
+            guard route.device.platform == .android, let folder = route.backend as? any PostureResetting else {
+                throw CLIError(errorDescription: "posture reset is Android only: an iOS simulator's hinge has no override. Set a posture instead.", reason: .notSupported)
+            }
+            try await route.backend.prepare()
+            let device = try await route.backend.requireBootedDevice(route.device).id
+            let dropped = try await folder.resetPosture(on: device)
+            let current = try await folder.posture(of: device) ?? .unknown
+            return (dropped, current, await (folder as? any PostureStateNaming)?.postureStateName(of: device))
+        }
+        let headline = dropped ? "Posture reset, now \(current.rawValue)" : "No posture override was set"
+        let detail = state.map { "device state \($0)" }
+        let text = json
+            ? DisplayReport.postureResetJSON(reset: dropped, current: current, state: state)
+            : "\(headline) on \(route.device.rawValue)" + (detail.map { " (\($0))" } ?? "") + "."
+        DevicePersonView.emit(text, json: json, person: DevicePersonView.receipt(headline, aside: detail), console: console)
     }
 
     /// The posture after the command, and what the device read beside it; `previous` only when the command set one.
@@ -218,7 +257,7 @@ struct PostureCommand: AsyncParsableCommand {
     }
 
     static func timeoutMessage(target: Posture, timeout: TimeInterval, platform: DevicePlatform, device: String) -> String {
-        let noun = platform == .ios ? "simulator" : "emulator"
+        let noun = platform == .ios ? "simulator" : DeviceID(rawValue: device, platform: .android).isPhysicalAndroidDevice ? "phone" : "emulator"
         return "The \(noun) did not report \(target.rawValue) within \(DeviceSettingsReport.number(timeout)) s. Check with `offsider posture --device \(device)`."
     }
 }

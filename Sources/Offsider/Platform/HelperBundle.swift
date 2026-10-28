@@ -35,6 +35,7 @@ extension AndroidHost {
         var host = AndroidHost.live(helperDex: { try HelperBundle.load() }, timing: Timings.android)
         host.claimDevice = { serial in try await DeviceClaims.current.claim(DeviceLockKey(platform: .android, id: serial)) }
         host.displayCacheDirectory = AndroidHost.privateDisplayCache(environment: host.environment)
+        host.postureRecordDirectory = AndroidHost.privatePostureRecords
         host.helperBroker = AndroidHost.detachedHelperBroker(environment: host.environment)
         return host
     }

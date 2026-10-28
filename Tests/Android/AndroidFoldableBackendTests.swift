@@ -297,7 +297,7 @@ struct AndroidFoldableBackendTests {
         #expect(rig.shellCommands.contains { $0.contains("input") })
     }
 
-    @Test("setting a physical foldable's posture is refused before any adb call; reading it works")
+    @Test("a physical foldable's posture reads, and with nowhere to record an override it is refused with nothing set")
     func physicalFoldable() async throws {
         let fold = Fold(emulator: nil, closed: false)
         let server = FakeAdbServer(handler: FakeAdbServer.devices(
@@ -309,11 +309,9 @@ struct AndroidFoldableBackendTests {
         let phone = DeviceID(rawValue: "R58M123ABC", platform: .android)
 
         #expect(try await backend.posture(of: phone) == .open)
-        let before = server.requests.count
         let error = await #expect(throws: AndroidError.self) { try await backend.requestPosture(.closed, on: phone) }
-        #expect(error?.kind == .unsupportedDevice)
-        #expect(error?.message.contains("Fold the phone by hand") == true)
-        #expect(server.requests.count == before)
+        #expect(error?.kind == .postureFailed)
+        #expect(error?.message.contains("record") == true)
         #expect(fold.overrideState == nil)
     }
 

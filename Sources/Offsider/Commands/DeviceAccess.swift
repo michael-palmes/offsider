@@ -123,11 +123,12 @@ extension DeviceAccess {
         }
     }
 
-    /// Stops the runner and session broker serving an iPhone or iPad, clearing its screen-sharing indicator, or a phone's warm helper.
+    /// Stops the runner and session broker serving an iPhone or iPad, clearing its screen-sharing indicator, or a phone's warm helper and posture override.
     @MainActor
     static func stopSessions(udid: String) async -> [String] {
         if case .androidName = DeviceIDClassifier.classify(udid) {
-            return await AndroidBackend.stopWarmHelpers(host: .cli(), serial: udid).isEmpty ? [] : ["warm helper"]
+            let helper = await AndroidBackend.stopWarmHelpers(host: .cli(), serial: udid).isEmpty ? [] : ["warm helper"]
+            return helper + (await AndroidBackend.resetRecordedPostures(host: .cli(), serial: udid).isEmpty ? [] : ["posture override"])
         }
         var stopped: [String] = []
         let brokers = DeviceSessions.records(device: udid)

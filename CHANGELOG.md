@@ -8,6 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Added
 
+- `posture closed|half-opened|open` sets an allowed USB foldable phone's posture through a `cmd device_state` override, recorded first with the phone's boot id; `posture reset` drops an Android override so the hinge decides again, and `session stop` and `devices remove` reset one Offsider set while it is still in place.
 - `batch` takes a `drag` step, written and limited like `offsider drag`.
 - `app_not_responding` (exit 1): on Android, when the app in front on an unlocked screen has no window the tree can read, as when its main thread is stuck, `describe-ui` and other reads say so instead of telling you to unlock the device.
 - `rn devmenu` lists the items an app registers (`registerDevMenuItems`, or `DevSettings.addMenuItem` in React Native's own Android menu), marked `"custom":true` in `--json` and tagged for a person; `--label` already chose them, and now prefers the menu's item over an app button behind it with the same label. Expo's custom heading also counts as menu evidence, so a menu whose tools those items push off screen is still read.
