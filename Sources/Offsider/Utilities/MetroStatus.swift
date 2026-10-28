@@ -1,4 +1,5 @@
 import Foundation
+import OffsiderCore
 
 /// Asks Metro on this Mac whether it is running, at `http://127.0.0.1:<port>/status`; the host is fixed to loopback.
 struct MetroStatus {
@@ -10,6 +11,8 @@ struct MetroStatus {
     static let runningBody = "packager-status:running"
 
     var fetch: Fetch = MetroStatus.liveFetch
+    /// Whether a process of this user accepts connections to 127.0.0.1 on the port, as it must before `rn open` maps a phone to it.
+    var ownedByThisUser: @Sendable (Int) async -> Bool = MetroStatus.liveOwned
 
     static func url(port: Int) -> URL {
         URL(string: "http://\(host):\(port)/status")!
@@ -26,6 +29,10 @@ struct MetroStatus {
         } catch {
             return "nothing answered within \(Int(Self.timeout)) s"
         }
+    }
+
+    static let liveOwned: @Sendable (Int) async -> Bool = { port in
+        await Task.detached { LoopbackOwner.acceptedByUser(port: port) }.value
     }
 
     static let liveFetch: Fetch = { url, timeout in

@@ -91,6 +91,33 @@ struct DeviceAllowListTests {
         #expect(throws: DeviceAllowListError.self) { try DeviceAllowList.parse(Data(text.utf8)) }
     }
 
+    @Test("a phone's Metro ports round-trip, and a list without them encodes exactly as before")
+    func metroPortsRoundTrip() throws {
+        let phone = DeviceAllowance(platform: .android, key: PolicyFixtures.serial, name: "Test Pixel", added: PolicyFixtures.added, expires: nil, apps: [], metroPorts: [8081, 8742])
+        let list = DeviceAllowList(entries: [phone])
+        let parsed = try DeviceAllowList.parse(list.encoded())
+        #expect(parsed.entries.first?.metroPorts == [8081, 8742])
+        #expect(parsed == list)
+
+        let without = DeviceAllowList(entries: [PolicyFixtures.entry(.android, key: PolicyFixtures.serial)])
+        #expect(!String(decoding: without.encoded(), as: UTF8.self).contains("metroPorts"))
+    }
+
+    @Test("Metro ports on an iPhone, adb's or an emulator's port, a low port, a repeat, disorder or a flag refuse the file", arguments: [
+        #"{"version":1,"devices":[{"platform":"ios","id":"00008130-0000000000000ABC","name":"A","added":"2026-09-21T14:13:20Z","expires":null,"apps":[],"metroPorts":[8081]}]}"#,
+        #"{"version":1,"devices":[{"platform":"android","id":"R58M123ABC","name":"A","added":"2026-09-21T14:13:20Z","expires":null,"apps":[],"metroPorts":[5037]}]}"#,
+        #"{"version":1,"devices":[{"platform":"android","id":"R58M123ABC","name":"A","added":"2026-09-21T14:13:20Z","expires":null,"apps":[],"metroPorts":[5555]}]}"#,
+        #"{"version":1,"devices":[{"platform":"android","id":"R58M123ABC","name":"A","added":"2026-09-21T14:13:20Z","expires":null,"apps":[],"metroPorts":[22]}]}"#,
+        #"{"version":1,"devices":[{"platform":"android","id":"R58M123ABC","name":"A","added":"2026-09-21T14:13:20Z","expires":null,"apps":[],"metroPorts":[8081,8081]}]}"#,
+        #"{"version":1,"devices":[{"platform":"android","id":"R58M123ABC","name":"A","added":"2026-09-21T14:13:20Z","expires":null,"apps":[],"metroPorts":[8742,8081]}]}"#,
+        #"{"version":1,"devices":[{"platform":"android","id":"R58M123ABC","name":"A","added":"2026-09-21T14:13:20Z","expires":null,"apps":[],"metroPorts":[true]}]}"#,
+        #"{"version":1,"devices":[{"platform":"android","id":"R58M123ABC","name":"A","added":"2026-09-21T14:13:20Z","expires":null,"apps":[],"metroPorts":[8081.5]}]}"#,
+        #"{"version":1,"devices":[{"platform":"android","id":"R58M123ABC","name":"A","added":"2026-09-21T14:13:20Z","expires":null,"apps":[],"metroPorts":[]}]}"#,
+    ])
+    func metroPortsRefused(text: String) {
+        #expect(throws: DeviceAllowListError.self) { try DeviceAllowList.parse(Data(text.utf8)) }
+    }
+
     @Test("an expired entry stays in the file but is not active, and pruning drops it")
     func expiry() {
         let list = DeviceAllowList(entries: [PolicyFixtures.entry(expires: PolicyFixtures.added)])

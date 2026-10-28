@@ -4,6 +4,7 @@ import Foundation
 public struct DeviceAllowance: Equatable, Sendable {
     public static let maximumNameLength = 120
     public static let maximumApps = 32
+    public static let maximumMetroPorts = 8
 
     public let platform: DevicePlatform
     /// The stable key: an uppercased UDID or a phone serial.
@@ -14,8 +15,10 @@ public struct DeviceAllowance: Equatable, Sendable {
     public let apps: [String]
     /// The Apple development team that signs the runner for this iPhone or iPad; nil leaves it to `OFFSIDER_IOS_TEAM_ID`.
     public let team: String?
+    /// The ports `rn open` may map with `adb reverse tcp:<port> tcp:<port>` on this Android phone, ascending; empty for none.
+    public let metroPorts: [Int]
 
-    public init(platform: DevicePlatform, key: String, name: String, added: Date, expires: Date?, apps: [String], team: String? = nil) {
+    public init(platform: DevicePlatform, key: String, name: String, added: Date, expires: Date?, apps: [String], team: String? = nil, metroPorts: [Int] = []) {
         self.platform = platform
         self.key = key
         self.name = name
@@ -23,6 +26,7 @@ public struct DeviceAllowance: Equatable, Sendable {
         self.expires = expires
         self.apps = apps
         self.team = team
+        self.metroPorts = metroPorts
     }
 
     public func isActive(now: Date) -> Bool {
@@ -80,7 +84,7 @@ public struct DeviceAllowList: Equatable, Sendable {
     public static let version = 1
     public static let maximumEntries = 64
     static let topKeys: Set<String> = ["version", "devices"]
-    static let entryKeys: Set<String> = ["platform", "id", "name", "added", "expires", "apps", "team"]
+    static let entryKeys: Set<String> = ["platform", "id", "name", "added", "expires", "apps", "team", "metroPorts"]
 
     public let entries: [DeviceAllowance]
 
@@ -179,7 +183,21 @@ public struct DeviceAllowList: Equatable, Sendable {
         case let text as String where platform == .ios && DeviceAllowance.isTeamID(text): team = text
         default: throw DeviceAllowListError("\(at).team must be a 10-character Apple team ID on an iOS entry")
         }
-        return DeviceAllowance(platform: platform, key: key, name: name, added: added, expires: expires, apps: appIDs, team: team)
+        let metroPorts: [Int]
+        switch fields["metroPorts"] {
+        case nil: metroPorts = []
+        case let rows as [Any] where platform == .android && (1...DeviceAllowance.maximumMetroPorts).contains(rows.count):
+            metroPorts = try rows.map { row -> Int in
+                guard let number = row as? NSNumber, !isBool(number), let port = Int(exactly: number.doubleValue), MetroReverse.refusal(port: port) == nil else {
+                    throw DeviceAllowListError("\(at).metroPorts holds something that is not a Metro port")
+                }
+                return port
+            }
+            guard metroPorts == Array(Set(metroPorts)).sorted() else { throw DeviceAllowListError("\(at).metroPorts must be ascending, each port once") }
+        default:
+            throw DeviceAllowListError("\(at).metroPorts must be 1 to \(DeviceAllowance.maximumMetroPorts) ports on an Android entry")
+        }
+        return DeviceAllowance(platform: platform, key: key, name: name, added: added, expires: expires, apps: appIDs, team: team, metroPorts: metroPorts)
     }
 
     private static func isBool(_ number: NSNumber) -> Bool {
@@ -197,8 +215,9 @@ public struct DeviceAllowList: Equatable, Sendable {
                 ("expires", .optional(entry.expires) { .string(ProcessStamp.timestamp($0)) }),
                 ("apps", .array(entry.apps.map { .string($0) })),
             ]
-            // Written only when set, so a list without teams stays byte-identical to version 1 files.
+            // Written only when set, so a list without teams or ports stays byte-identical to version 1 files.
             if let team = entry.team { fields.append(("team", .string(team))) }
+            if !entry.metroPorts.isEmpty { fields.append(("metroPorts", .array(entry.metroPorts.map { .integer($0) }))) }
             return .object(fields)
         }
         let object = OrderedJSON.object([("version", .integer(Self.version)), ("devices", .array(rows))])

@@ -16,6 +16,7 @@ public enum DeviceAccessReport {
                     ("apps", .array(entry.apps.map { .string($0) })),
                 ]
                 if let team = entry.team { fields.append(("team", .string(team))) }
+                if !entry.metroPorts.isEmpty { fields.append(("metroPorts", .array(entry.metroPorts.map { .integer($0) }))) }
                 return .object(fields)
             }),
             ("stopped", .array(stopped.map { .string($0) })),
@@ -52,7 +53,8 @@ public enum DeviceAccessReport {
             }
             let apps = entry.apps.isEmpty ? "" : entry.allowsWholeDevice && entry.pinnedApps.isEmpty ? ", any app and all logs" : ", apps \(entry.apps.joined(separator: ", "))"
             let team = entry.team.map { ", runner team \($0)" } ?? ""
-            lines.append("\(entry.platform.rawValue)  \(entry.key)  \(entry.name): \(state)\(apps)\(team)")
+            let metro = entry.metroPorts.isEmpty ? "" : ", Metro ports \(entry.metroPorts.map(String.init).joined(separator: ", "))"
+            lines.append("\(entry.platform.rawValue)  \(entry.key)  \(entry.name): \(state)\(apps)\(team)\(metro)")
         }
         return lines.joined(separator: "\n") + "\n"
     }

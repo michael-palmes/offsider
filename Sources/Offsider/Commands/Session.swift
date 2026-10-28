@@ -14,7 +14,8 @@ struct SessionCommand: AsyncParsableCommand {
         An Android emulator keeps its UiAutomation helper warm, which holds the device's UiAutomation slot until it stops \
         by itself after 60 idle seconds (OFFSIDER_ANDROID_SESSION_IDLE; OFFSIDER_ANDROID_SESSION=off keeps none). \
         A simulator keeps its input session warm, which stops by itself after 60 idle seconds \
-        (OFFSIDER_SIMULATOR_SESSION_IDLE; OFFSIDER_SIMULATOR_SESSION=off opens one per command).
+        (OFFSIDER_SIMULATOR_SESSION_IDLE; OFFSIDER_SIMULATOR_SESSION=off opens one per command). \
+        A USB Android phone keeps each adb reverse rn open set for Metro until stop removes it; stop leaves every other reverse alone.
         """,
         subcommands: [SessionStatus.self, SessionStop.self]
     )
@@ -57,7 +58,7 @@ struct SessionStatus: AsyncParsableCommand {
 struct SessionStop: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "stop",
-        abstract: "Stop the runner, session broker, warm helper or input session on one device, or on every device when --device is left out."
+        abstract: "Stop the runner, session broker, warm helper or input session on one device, and remove the adb reverses rn open set, or on every device when --device is left out."
     )
 
     @Option(name: .customLong("device"), help: ArgumentHelp("The device whose sessions to stop.", valueName: "id"))
@@ -100,8 +101,9 @@ struct SessionStop: AsyncParsableCommand {
             }
             let serial = await AndroidWarmHelpers.serial(for: device).serial
             let helpers = await AndroidBackend.stopWarmHelpers(host: .cli(), serial: serial)
+            let reverses = await AndroidBackend.removeMetroReverses(host: .cli(), serial: serial)
             let inputs = await SimulatorInputSessions.stop(device: device)
-            let stopped = DeviceSessionRow.stopped(runners: runners.map(\.udid), brokers: brokers.map(\.udid), helpers: helpers, inputs: inputs)
+            let stopped = DeviceSessionRow.stopped(runners: runners.map(\.udid), brokers: brokers.map(\.udid), helpers: helpers, inputs: inputs, reverses: reverses)
             var cleaned: RunnerCleanupReport?
             if let cleanUDID {
                 console.relabel("Uninstalling the runner")
@@ -338,10 +340,13 @@ struct DeviceSessionRow: Equatable {
         let broker: Bool
         var helper = false
         var input = false
+        /// The phone ports whose adb reverse Offsider set and removed.
+        var reverses: [Int] = []
 
-        /// `runner`, `session broker`, `warm helper` and `input session`, those that stopped.
+        /// `runner`, `session broker`, `warm helper`, `input session` and `adb reverse tcp:8081`, those that stopped.
         var parts: [String] {
             [runner ? "runner" : nil, broker ? "session broker" : nil, helper ? "warm helper" : nil, input ? "input session" : nil].compactMap { $0 }
+                + reverses.map { "adb reverse tcp:\($0)" }
         }
     }
 
@@ -351,15 +356,18 @@ struct DeviceSessionRow: Equatable {
         return stopped.map { "Stopped the \($0.parts.joined(separator: " and ")) on \($0.device).\n" }.joined()
     }
 
-    static func stopped(runners: [String], brokers: [String], helpers: [String] = [], inputs: [String] = []) -> [Stopped] {
-        Set(runners + brokers + helpers + inputs).sorted().map {
-            Stopped(device: $0, runner: runners.contains($0), broker: brokers.contains($0), helper: helpers.contains($0), input: inputs.contains($0))
+    static func stopped(runners: [String], brokers: [String], helpers: [String] = [], inputs: [String] = [], reverses: [MetroReverseRemoval] = []) -> [Stopped] {
+        Set(runners + brokers + helpers + inputs + reverses.map(\.serial)).sorted().map { device in
+            Stopped(
+                device: device, runner: runners.contains(device), broker: brokers.contains(device), helper: helpers.contains(device), input: inputs.contains(device),
+                reverses: reverses.filter { $0.serial == device }.flatMap(\.ports)
+            )
         }
     }
 
     static func stoppedJSON(_ stopped: [Stopped], clean: [String: Any]? = nil) -> String {
         let entries: [[String: Any]] = stopped.map {
-            ["device": $0.device, "runner": $0.runner, "broker": $0.broker, "helper": $0.helper, "input": $0.input]
+            ["device": $0.device, "runner": $0.runner, "broker": $0.broker, "helper": $0.helper, "input": $0.input, "reverses": $0.reverses]
         }
         var object: [String: Any] = ["stopped": entries]
         if let clean { object["clean"] = clean }
