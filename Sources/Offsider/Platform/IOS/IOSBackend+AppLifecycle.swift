@@ -80,13 +80,22 @@ extension IOSBackend: AppLifecycleControlling {
                 if streak >= Self.frontChecks.reads { return }
             } else {
                 streak = 0
-                other = front
+                other = ExpoDevLauncher.openLinkPrompt(in: tree).flatMap { _ in Self.promptTitle(in: tree) }.map { "a prompt, \(TerminalText.quoted($0))" } ?? TerminalText.quoted(front)
             }
         }
         guard let other else {
             throw AppLifecycleError(.failed, "iOS opened the link on simulator \(id.rawValue), but Offsider could not read which app is in front to confirm \(bundleID) took it. Check with `offsider describe-ui --device \(id.rawValue)`.")
         }
-        throw AppLifecycleError(.linkNotHandled, "iOS opened the link in \(TerminalText.quoted(other)), not \(bundleID), on simulator \(id.rawValue). Send a link only \(bundleID) claims, such as its own scheme.")
+        if other.hasPrefix("a prompt, ") {
+            throw AppLifecycleError(.linkNotHandled, "iOS answered the link with \(other), which does not name \(name ?? bundleID), so Offsider left it for a person on simulator \(id.rawValue). Send a link only \(bundleID) claims, such as its own scheme.")
+        }
+        throw AppLifecycleError(.linkNotHandled, "iOS opened the link in \(other), not \(bundleID), on simulator \(id.rawValue). Send a link only \(bundleID) claims, such as its own scheme.")
+    }
+
+    /// The `Open in “…”?` label of a link prompt on screen.
+    private static func promptTitle(in tree: UITree) -> String? {
+        tree.roots.flatMap { $0.flattened() }.compactMap { $0.label?.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .first { $0.hasPrefix("Open in “") && $0.hasSuffix("”?") }
     }
 
     private func requireInstalled(_ bundleID: String, on id: DeviceID) async throws {

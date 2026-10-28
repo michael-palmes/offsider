@@ -65,7 +65,7 @@ extension AndroidBackend: AppLifecycleControlling {
     }
 
     private func requireStarted(_ reply: AndroidAppPackage.StartReply, package: String, on id: DeviceID, what: String) throws -> AndroidAppPackage.StartReply {
-        guard reply.error == nil, reply.status == nil || reply.status == "ok" else {
+        guard reply.error == nil, reply.status == "ok" else {
             let detail = reply.error ?? "status \(reply.status ?? "unknown")"
             throw AppLifecycleError(.failed, "Android did not \(what) \(package) on \(id.rawValue): \(TerminalText.line(detail, cap: 300)).")
         }

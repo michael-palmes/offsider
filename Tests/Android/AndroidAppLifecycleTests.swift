@@ -105,6 +105,13 @@ struct AndroidAppLifecycleTests {
         #expect(info.version == "1.0.0 (beta)")
     }
 
+    @Test("a package header outside the Packages section is not read as the app's")
+    func headerBeforePackagesIgnored() throws {
+        let dump = "Hidden-ish:\n  Package [\(Self.package)] (1):\n    versionName=9.9.9\n" + Self.android16Dump
+        let info = try #require(AndroidAppPackage.info(Self.infoReply(dump, zone: "Etc/UTC", sdk: 36), package: Self.package))
+        #expect(info.version == "1.0.0 (beta)")
+    }
+
     @Test("another package's section is never read as this app's")
     func otherPackageIgnored() {
         let dump = Self.android16Dump.replacingOccurrences(of: "Package [\(Self.package)]", with: "Package [com.example.other]")
@@ -186,6 +193,24 @@ struct AndroidAppLifecycleTests {
         let error = await #expect(throws: AppLifecycleError.self) { _ = try await backend.launchApp(Self.package, restart: false, on: Self.device) }
         #expect(error?.kind == .noLauncher)
         #expect(error?.message.contains("offsider app open") == true)
+    }
+
+    @Test("launch --restart looks for the launcher before it stops the app, so a refusal stops nothing")
+    func restartChecksLauncherFirst() async throws {
+        let (backend, server) = try Self.setUp { _ in FakeAdbServer.shell(stdout: "offsider: running\noffsider: no-launcher\n") }
+        await #expect(throws: AppLifecycleError.self) { _ = try await backend.launchApp(Self.package, restart: true, on: Self.device) }
+        let script = try #require(Self.shellCommands(server).last)
+        let resolve = try #require(script.range(of: "resolve-activity"))
+        let stop = try #require(script.range(of: "am force-stop"))
+        #expect(resolve.lowerBound < stop.lowerBound)
+        #expect(script.contains("echo 'offsider: no-launcher'; exit 0"))
+    }
+
+    @Test("a launch whose am start printed no Status is a failure, not a launch")
+    func launchWithoutStatusFails() async throws {
+        let (backend, _) = try Self.setUp { _ in FakeAdbServer.shell(stdout: "offsider: stopped\n") }
+        let error = await #expect(throws: AppLifecycleError.self) { _ = try await backend.launchApp(Self.package, restart: false, on: Self.device) }
+        #expect(error?.kind == .failed)
     }
 
     @Test("an app that is not installed is app_not_installed, and nothing is started")

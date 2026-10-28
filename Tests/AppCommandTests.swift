@@ -97,6 +97,7 @@ struct AppCommandTests {
         let info = try #require(SimulatorApps.info(Self.simctlAppInfo, bundleID: "com.mpalmes.offsider.playground"))
         #expect(info == AppInfo(app: "com.mpalmes.offsider.playground", name: "Offsider Playground", version: "1.0", build: "12"))
         #expect(SimulatorApps.info(Self.simctlAppInfo, bundleID: "com.example.other") == nil)
+        #expect(SimulatorApps.info(Self.simctlAppInfo, bundleID: "com.mpalmes.Offsider.Playground")?.version == "1.0")
     }
 
     @Test("launchctl list finds only the app's own running process")

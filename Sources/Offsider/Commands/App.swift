@@ -50,9 +50,9 @@ enum AppTarget {
         profile: () -> LoginProfile? = { (try? LoginProfiles.load(project: nil, warn: { _ in })) ?? nil }
     ) throws -> String {
         let platform = route.device.platform
-        let fromProfile = profile().flatMap { platform == .ios ? $0.bundleID : $0.package }.flatMap { $0.isEmpty ? nil : $0 }
         let pinned = route.allowance.flatMap { $0.pinnedApps.count == 1 ? $0.pinnedApps[0] : nil }
-        guard let app = option.bundleID ?? fromProfile ?? pinned else {
+        let named = option.bundleID ?? profile().flatMap { platform == .ios ? $0.bundleID : $0.package }.flatMap { $0.isEmpty ? nil : $0 }
+        guard let app = named ?? pinned else {
             throw CLIError(
                 errorDescription: "app \(command) needs the app: pass --app <\(platform == .ios ? "bundle-id" : "package")>, or name it in offsider.login.json.",
                 reason: .usage,

@@ -21,12 +21,14 @@ enum AndroidAppPackage {
         """
     }
 
-    /// The launcher's own intent and flags, so a running app's task comes to the front as a tap on its icon brings it.
+    /// The launcher's own intent and flags, so a running app's task comes to the front as a tap on its icon brings it; no launcher stops nothing.
     static func launchScript(package: String, restart: Bool) -> String {
-        preamble(ExpoDevClient.shellQuote(package), stop: restart) + """
+        preamble(ExpoDevClient.shellQuote(package), stop: false) + """
 
         c=$(cmd package resolve-activity --brief -a android.intent.action.MAIN -c android.intent.category.LAUNCHER "$p" 2>/dev/null | tail -n 1)
-        case "$c" in "$p"/*) am start -W -f 0x10200000 -a android.intent.action.MAIN -c android.intent.category.LAUNCHER -n "$c" ;; *) echo '\(marker) no-launcher' ;; esac
+        case "$c" in "$p"/*) ;; *) echo '\(marker) no-launcher'; exit 0 ;; esac
+        \(restart ? "am force-stop \"$p\"" : ":")
+        am start -W -f 0x10200000 -a android.intent.action.MAIN -c android.intent.category.LAUNCHER -n "$c"
         """
     }
 
@@ -145,8 +147,8 @@ enum AndroidAppPackage {
     static func section(of package: String, in dump: String) -> [Substring]? {
         let lines = dump.split(separator: "\n", omittingEmptySubsequences: false)
         let header = "Package [\(package)]"
-        let start = lines.firstIndex { $0.trimmingCharacters(in: .whitespaces).hasPrefix(header) }
-        guard let start else { return nil }
+        let packages = lines.firstIndex { $0.trimmingCharacters(in: .whitespaces) == "Packages:" } ?? lines.startIndex
+        guard let start = lines[packages...].firstIndex(where: { $0.trimmingCharacters(in: .whitespaces).hasPrefix(header) }) else { return nil }
         let indent = lines[start].prefix { $0 == " " }.count
         var body: [Substring] = []
         for line in lines[(start + 1)...] {

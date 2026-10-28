@@ -18,7 +18,7 @@ public enum SimulatorApps {
     public static func info(_ output: String, bundleID: String) -> AppInfo? {
         guard let data = output.data(using: .utf8),
               let plist = try? PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any],
-              plist["CFBundleIdentifier"] as? String == bundleID else { return nil }
+              (plist["CFBundleIdentifier"] as? String)?.lowercased() == bundleID.lowercased() else { return nil }
         let text: (String) -> String? = { key in (plist[key] as? String).flatMap { $0.isEmpty ? nil : $0 } }
         return AppInfo(
             app: bundleID,
