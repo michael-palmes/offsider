@@ -44,7 +44,13 @@ enum AndroidInputLowering {
             touchIsDown = false
             return [.touch(.up, AndroidPoint(x: x, y: y))]
         case let .twoFingerTouch(direction, x1, y1, x2, y2):
-            return [.touches(direction == .down ? .down : .up, [AndroidPoint(x: x1, y: y1), AndroidPoint(x: x2, y: y2)])]
+            let fingers = [AndroidPoint(x: x1, y: y1), AndroidPoint(x: x2, y: y2)]
+            guard direction == .down else {
+                touchIsDown = false
+                return [.touches(.up, fingers)]
+            }
+            defer { touchIsDown = true }
+            return [.touches(touchIsDown ? .move : .down, fingers)]
         case let .swipe(xStart, yStart, xEnd, yEnd, delta, duration):
             let distance = hypot(xEnd - xStart, yEnd - yStart)
             let spacing = delta * scale

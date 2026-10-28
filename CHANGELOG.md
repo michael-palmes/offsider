@@ -20,6 +20,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - `offsider guide apps` covers them.
 - `notifications --app <package>` lists one Android app's posted notifications (title, text, big text, sub-text, channel, post time), picked on the device so no other app's text crosses the cable, with one-time codes and card numbers hidden; `--wait <text>` polls until one holds it (`--new`: one that arrives during the wait), exiting 5 at `--timeout`. On a phone the app must be one the allowance permits.
 - `posture closed|half-opened|open` sets an allowed USB foldable phone's posture through a `cmd device_state` override, recorded first with the phone's boot id; `posture reset` drops an Android override so the hinge decides again, and `session stop` and `devices remove` reset one Offsider set while it is still in place.
+- `gesture pinch --from <points> --to <points>` moves two fingers apart (zoom in) or together (zoom out) about `--x`,`--y`, or the app frame's middle, over `--duration`, on simulators, Android emulators and Android phones; also a `batch` step.
 
 ### Changed
 
