@@ -111,6 +111,35 @@ struct AndroidVideoTests {
         #expect(try FileManager.default.contentsOfDirectory(atPath: folder.path) == ["clip.mp4"])
     }
 
+    @Test("one SIGINT ends a recording started with SIGINT ignored, as a shell's background job is, even before its first frame")
+    func stopsWhenStartedInTheBackground() async throws {
+        let serial = try await AndroidE2E.serial()
+        let folder = AndroidE2E.temporaryFile("video-folder")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/bin/sh")
+        process.arguments = ["-c", #"trap '' INT; exec "$0" record-video --output "$1" --device "$2""#, try TestHelpers.getOffsiderPath(), folder.appendingPathComponent("clip.mp4").path, serial]
+        process.environment = TestHelpers.childEnvironment()
+        process.standardOutput = FileHandle.nullDevice
+        process.standardError = FileHandle.nullDevice
+        try process.run()
+        try await Task.sleep(for: .milliseconds(300))
+
+        kill(process.processIdentifier, SIGINT)
+        let deadline = Date().addingTimeInterval(20)
+        while process.isRunning, Date() < deadline {
+            try await Task.sleep(for: .milliseconds(100))
+        }
+        let ended = !process.isRunning
+        if !ended { process.terminate() }
+        process.waitUntilExit()
+
+        #expect(ended, "record-video kept recording after SIGINT")
+        let left = try FileManager.default.contentsOfDirectory(atPath: folder.path)
+        #expect(process.terminationStatus == 0 ? left == ["clip.mp4"] : (process.terminationStatus == 1 && left.isEmpty), "exit \(process.terminationStatus), left \(left)")
+    }
+
     @Test("stream-video --format bgra sends a full frame of width x height x 4 bytes")
     func bgraFrame() async throws {
         let serial = try await AndroidE2E.serial()

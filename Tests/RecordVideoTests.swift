@@ -6,9 +6,9 @@ import Testing
 
 @Suite("Record Video Command Tests", .serialized, .enabled(if: isE2EEnabled))
 struct RecordVideoTests {
-    @Test("Record video writes an MP4 file with default options")
+    @Test("Record video stopped with SIGINT after its first frame writes an MP4 file with default options")
     func recordVideoDefault() async throws {
-        let result = try await invokeRecordVideo(duration: 3.0)
+        let result = try await invokeRecordVideo(duration: 3.0, stop: .interrupt)
         defer { try? FileManager.default.removeItem(at: result.outputURL) }
 
         #expect(result.exitCode == 0)
@@ -109,11 +109,18 @@ struct RecordVideoTests {
         let exitCode: Int32
     }
 
+    /// `--duration`, or SIGINT once the first frame is taken; a stop before the first frame records nothing.
+    private enum Stop {
+        case duration
+        case interrupt
+    }
+
     private func invokeRecordVideo(
         fps: Int = 10,
         quality: Int = 80,
         scale: Double = 1.0,
         duration: TimeInterval = 2.0,
+        stop: Stop = .duration,
         outputPath: String? = nil,
         extraArguments: [String] = []
     ) async throws -> RecordingResult {
@@ -133,7 +140,7 @@ struct RecordVideoTests {
             "--quality", "\(quality)",
             "--scale", "\(scale)",
             "--output", configuredOutputPath
-        ] + extraArguments
+        ] + (stop == .duration ? ["--duration", "\(duration)"] : []) + extraArguments
         process.environment = TestHelpers.childEnvironment()
 
         let stdoutPipe = Pipe()
@@ -143,13 +150,22 @@ struct RecordVideoTests {
 
         try process.run()
 
-        try await Task.sleep(nanoseconds: UInt64(duration * 1_000_000_000))
-
-        process.interrupt()
+        if stop == .interrupt {
+            var isDirectory: ObjCBool = false
+            let folder = FileManager.default.fileExists(atPath: configuredOutputPath, isDirectory: &isDirectory) && isDirectory.boolValue
+                ? configuredOutputPath : (configuredOutputPath as NSString).deletingLastPathComponent
+            let deadline = Date().addingTimeInterval(30)
+            while process.isRunning, Date() < deadline,
+                  !((try? FileManager.default.contentsOfDirectory(atPath: folder)) ?? []).contains(where: { $0.hasPrefix(".offsider-staging-") }) {
+                try await Task.sleep(for: .milliseconds(50))
+            }
+            try await Task.sleep(nanoseconds: UInt64(duration * 1_000_000_000))
+            process.interrupt()
+        }
         try await TestHelpers.waitForProcessExit(
             process,
-            timeout: 10.0,
-            description: "record-video process did not exit after interrupt"
+            timeout: duration + 30,
+            description: "record-video process did not exit"
         )
 
         let stdoutData = stdoutPipe.fileHandleForReading.readDataToEndOfFile()
@@ -330,13 +346,23 @@ struct VideoRecordingFileTests {
         return count
     }
 
-    /// Stops the recording from inside its sixth capture, so the test does not depend on how fast frames come.
+    /// Counts the times a stop ended the command before its first frame, which outside a test exits.
+    final class EarlyStops: @unchecked Sendable {
+        private let lock = NSLock()
+        private var count = 0
+        var value: Int { lock.withLock { count } }
+        func add() { lock.withLock { count += 1 } }
+    }
+
+    /// Asks the recording to stop from inside one capture, so the test does not depend on how fast frames come.
     final class StoppingBackend: FakeDeviceBackend {
-        let stop = CancellationFlag()
+        let early = EarlyStops()
+        lazy var stop = RecordingStop { [early] in early.add() }
+        var stopAt = 6
 
         override func screenshotPNG(for id: DeviceID) async throws -> Data {
             let data = try await super.screenshotPNG(for: id)
-            if screenshotReads == 6 { await stop.cancel() }
+            if screenshotReads == stopAt { stop.request() }
             return data
         }
     }
@@ -355,10 +381,31 @@ struct VideoRecordingFileTests {
 
         #expect(saved.path == target.path)
         #expect(saved.frames == 6)
+        #expect(backend.early.value == 0)
         #expect(try await Self.samples(in: target) == saved.frames)
         let length = try await AVURLAsset(url: target).load(.duration).seconds
         #expect(saved.seconds > 0.3 && length >= saved.seconds, "MP4 \(length) s, reported \(saved.seconds) s")
         #expect(try FileManager.default.contentsOfDirectory(atPath: folder.path) == ["clip.mp4"])
+    }
+
+    @Test("a stop during the first capture ends the command at once, and nothing is written beside the target")
+    func stopBeforeFirstFrame() async throws {
+        let folder = try Self.folder()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let backend = StoppingBackend(platform: .android, trees: [], screenshots: [try VideoMaskTests.whitePNG(width: 120, height: 260)])
+        backend.stopAt = 1
+
+        let error = await #expect(throws: CLIError.self) {
+            _ = try await RecordVideo.record(
+                from: VideoFrameSource(backend: backend, device: Self.device, scale: 1, regions: []), to: (folder.appendingPathComponent("clip.mp4"), true),
+                fps: 10, quality: 50, scale: 1, duration: nil, stop: backend.stop
+            )
+        }
+
+        #expect(backend.early.value == 1)
+        #expect(error?.reason == .videoFailed)
+        #expect(error?.userFacingDescription == "record-video was stopped before its first frame, so nothing was recorded.")
+        #expect(try FileManager.default.contentsOfDirectory(atPath: folder.path).isEmpty)
     }
 
     @Test("--duration stops the recording by itself after that much video")
@@ -368,7 +415,7 @@ struct VideoRecordingFileTests {
         let started = ContinuousClock.now
         let saved = try await RecordVideo.record(
             from: Self.source([try VideoMaskTests.whitePNG(width: 120, height: 260)]), to: (folder.appendingPathComponent("clip.mp4"), true),
-            fps: 10, quality: 50, scale: 1, duration: 1, stop: CancellationFlag()
+            fps: 10, quality: 50, scale: 1, duration: 1, stop: RecordingStop { Issue.record("stopped before the first frame") }
         )
         let took = ContinuousClock.now - started
 
@@ -383,7 +430,7 @@ struct VideoRecordingFileTests {
         defer { try? FileManager.default.removeItem(at: folder) }
         let error = await #expect(throws: CLIError.self) {
             _ = try await RecordVideo.record(
-                from: Self.source([]), to: (folder.appendingPathComponent("clip.mp4"), true), fps: 10, quality: 50, scale: 1, duration: nil, stop: CancellationFlag()
+                from: Self.source([]), to: (folder.appendingPathComponent("clip.mp4"), true), fps: 10, quality: 50, scale: 1, duration: nil, stop: RecordingStop { Issue.record("stopped before the first frame") }
             )
         }
 

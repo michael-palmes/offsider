@@ -19,7 +19,7 @@ struct RecordVideo: AsyncParsableCommand {
         `screenshot` or screenshot steps in a batch. Only that read holds the device, so other commands can read and \
         drive it while it records; a recording sends no input. It records until --duration runs out or it gets Ctrl+C, SIGINT, \
         SIGTERM or SIGHUP, then saves every captured frame at the times they were taken and leaves nothing else beside \
-        the file; a closed output pipe does not stop it.
+        the file; a stop before the first frame ends it with nothing recorded (exit 1), and a closed output pipe does not stop it.
         """
     )
 
@@ -73,6 +73,11 @@ struct RecordVideo: AsyncParsableCommand {
 
     @MainActor
     func run() async throws {
+        let stop = RecordingStop()
+        signal(SIGPIPE, SIG_IGN)
+        let signalObserver = SignalObserver(signals: Self.stopSignals) { stop.request() }
+        defer { signalObserver.invalidate() }
+
         let checksSecureField = try masks.requireMaskable(command: "record-video")
         let regions = try masks.regions()
         let logger = OffsiderLogger()
@@ -88,15 +93,6 @@ struct RecordVideo: AsyncParsableCommand {
         let recording = StartPersonView.recordingLabel(device: device.rawValue, elapsed: 0)
         console.step("Recording \(booted.videoSourceNoun) \(device.rawValue) to \(target.url.path)", label: recording)
         console.step("Press Ctrl+C or run `kill -INT \(getpid())` to stop recording; every captured frame is saved", label: recording)
-
-        let stop = CancellationFlag()
-        signal(SIGPIPE, SIG_IGN)
-        let signalObserver = SignalObserver(signals: Self.stopSignals) {
-            Task {
-                await stop.cancel()
-            }
-        }
-        defer { signalObserver.invalidate() }
 
         let source = VideoFrameSource(backend: backend, device: device, scale: scale, regions: regions)
         let saved = try await console.progress(recording) {
@@ -130,7 +126,8 @@ struct RecordVideo: AsyncParsableCommand {
         }
     }
 
-    /// Records into a private staging folder beside `target` until `stop` or `duration`, then moves the MP4 into place; the folder goes on every path.
+    /// Takes the first frame, then records into a private staging folder beside `target` until `stop` or `duration` and moves the MP4 into place;
+    /// the folder goes on every path, and none exists before the first frame.
     @MainActor
     static func record(
         from source: VideoFrameSource,
@@ -139,8 +136,19 @@ struct RecordVideo: AsyncParsableCommand {
         quality: Int,
         scale: Double,
         duration: TimeInterval?,
-        stop: CancellationFlag
+        stop: RecordingStop
     ) async throws -> SavedRecording {
+        let initialImage: CGImage
+        do {
+            initialImage = try await source.start()
+        } catch let failure as CLIError where failure.reason == .maskUnproven {
+            throw failure
+        } catch {
+            throw CLIError(errorDescription: "Failed to record video: \(TerminalText.line(error.localizedDescription))", reason: .videoFailed)
+        }
+        guard stop.beginCapturing() else {
+            throw CLIError(errorDescription: RecordingStop.earlyMessage, reason: .videoFailed)
+        }
         let staging: String
         do {
             staging = try OutputFile.stagingDirectory(for: target.url.path)
@@ -151,7 +159,9 @@ struct RecordVideo: AsyncParsableCommand {
         let staged = URL(fileURLWithPath: staging).appendingPathComponent("recording.mp4")
         let written: (frames: Int, held: Int, seconds: TimeInterval)
         do {
-            written = try await capture(from: source, outputURL: staged, fps: fps, quality: quality, scale: scale, duration: duration, stop: stop)
+            written = try await capture(
+                initialImage, from: source, outputURL: staged, fps: fps, quality: quality, scale: scale, duration: duration, stop: stop
+            )
         } catch let failure as CLIError where failure.reason == .maskUnproven {
             throw failure
         } catch {
@@ -167,16 +177,15 @@ struct RecordVideo: AsyncParsableCommand {
 
     @MainActor
     private static func capture(
+        _ initialImage: CGImage,
         from source: VideoFrameSource,
         outputURL: URL,
         fps: Int,
         quality: Int,
         scale: Double,
         duration: TimeInterval?,
-        stop: CancellationFlag
+        stop: RecordingStop
     ) async throws -> (frames: Int, held: Int, seconds: TimeInterval) {
-        let initialImage = try await source.start()
-
         let dimensions = VideoFrameUtilities.computeDimensions(for: initialImage, scale: source.scalesItself ? 1.0 : scale)
         let recorder = try H264StreamRecorder(
             outputURL: outputURL,
@@ -201,7 +210,7 @@ struct RecordVideo: AsyncParsableCommand {
             if Task.isCancelled {
                 break
             }
-            if await stop.isCancelled() {
+            if stop.isRequested {
                 break
             }
             if let duration, Date().timeIntervalSince(writerStartTime) >= duration {
@@ -349,4 +358,37 @@ struct RecordVideo: AsyncParsableCommand {
         }
         return (baseURL, userNamed)
     }
+}
+
+/// A stop signal before the first frame ends the command at once, since nothing is written yet; after it, the recording stops and saves.
+/// Listening from the command's start matters: a recording started in the background ignores SIGINT until a handler is installed.
+final class RecordingStop: @unchecked Sendable {
+    static let earlyMessage = "record-video was stopped before its first frame, so nothing was recorded."
+
+    private let lock = NSLock()
+    private var requested = false
+    private var capturing = false
+    private let endNow: @Sendable () -> Void
+
+    init(endNow: @escaping @Sendable () -> Void = { ErrorReporter.exitFromTimer(reason: .videoFailed, message: RecordingStop.earlyMessage, hint: nil) }) {
+        self.endNow = endNow
+    }
+
+    func request() {
+        let early = lock.withLock { () -> Bool in
+            requested = true
+            return !capturing
+        }
+        if early { endNow() }
+    }
+
+    /// Marks the first frame as taken; false when a stop came before it.
+    func beginCapturing() -> Bool {
+        lock.withLock {
+            capturing = true
+            return !requested
+        }
+    }
+
+    var isRequested: Bool { lock.withLock { requested } }
 }
