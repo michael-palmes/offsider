@@ -101,7 +101,10 @@ struct SessionStop: AsyncParsableCommand {
             }
             let serial = await AndroidWarmHelpers.serial(for: device).serial
             let helpers = await AndroidBackend.stopWarmHelpers(host: .cli(), serial: serial)
-            let postures = await AndroidBackend.resetRecordedPostures(host: .cli(), serial: serial)
+            // Unnamed, only phones still allowed; a named one, or `devices remove`, undoes Offsider's own override regardless.
+            let postures = await AndroidBackend.resetRecordedPostures(host: .cli(), serial: serial, permits: { phone in
+                serial != nil || { if case .allowed = DevicePolicyGate.current.decision(platform: .android, key: phone) { return true } else { return false } }()
+            })
             let inputs = await SimulatorInputSessions.stop(device: device)
             let stopped = DeviceSessionRow.stopped(runners: runners.map(\.udid), brokers: brokers.map(\.udid), helpers: helpers, inputs: inputs, postures: postures)
             var cleaned: RunnerCleanupReport?

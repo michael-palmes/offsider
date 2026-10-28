@@ -274,17 +274,20 @@ extension AndroidBackend: PostureControlling, PostureResetting, PostureStateNami
         guard try await deviceStates(serial).count >= 2 else { throw AndroidError.notFoldable(serial) }
         defer { forgetDisplay(of: serial) }
         let reading = try await deviceStateReading(serial)
-        postureRecords(create: false)?.remove(serial: serial)
-        guard reading.override != nil else { return false }
+        guard reading.override != nil else {
+            postureRecords(create: false)?.remove(serial: serial)
+            return false
+        }
         _ = try await settingsShell(AndroidDeviceState.resetState, on: serial)
+        postureRecords(create: false)?.remove(serial: serial)
         return true
     }
 
     /// Resets each recorded override still in place on the same boot, never starting adb; an unplugged phone keeps its record, a rebooted one loses it.
-    public static func resetRecordedPostures(host: AndroidHost, serial: String? = nil) async -> [String] {
+    public static func resetRecordedPostures(host: AndroidHost, serial: String? = nil, permits: (String) -> Bool = { _ in true }) async -> [String] {
         guard let directory = host.postureRecordDirectory(false) else { return [] }
         let store = AndroidPostureRecordStore(directory: directory)
-        let records = serial.map { store.load(serial: $0).map { [$0] } ?? [] } ?? store.all()
+        let records = (serial.map { store.load(serial: $0).map { [$0] } ?? [] } ?? store.all()).filter { permits($0.serial) }
         guard !records.isEmpty, let endpoint = try? LoopbackEndpoint.adbServer(environment: host.environment) else { return [] }
         let client = AdbClient(endpoint: endpoint, connector: host.adbConnector, timing: host.timing)
         guard let rows = try? await client.devices() else { return [] }

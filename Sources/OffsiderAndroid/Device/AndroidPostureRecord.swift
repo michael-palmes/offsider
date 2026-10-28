@@ -1,4 +1,3 @@
-import CryptoKit
 import Foundation
 import OffsiderCore
 
@@ -14,9 +13,9 @@ struct AndroidPostureRecord: Equatable, Sendable {
     let identifier: Int
     let name: String
 
-    /// `<first 16 hex of SHA-256 of "android:serial">.json`, so a serial never reaches a file name.
+    /// Named as the display cache names a phone, so a serial never reaches a file name.
     static func fileName(serial: String) -> String {
-        SHA256.hash(data: Data("android:\(serial)".utf8)).prefix(8).map { String(format: "%02x", $0) }.joined() + ".json"
+        AndroidDisplayCacheEntry.fileName(serial: serial)
     }
 
     /// A boot id is a UUID; anything else is not one this phone printed.

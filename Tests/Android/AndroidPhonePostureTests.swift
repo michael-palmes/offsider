@@ -146,6 +146,18 @@ struct AndroidPhonePostureTests {
         #expect(store.load(serial: Self.serial) == ours)
     }
 
+    @Test("a phone the caller does not permit is sent nothing and keeps its record")
+    func unpermittedPhoneUntouched() async throws {
+        let records = try Self.directory()
+        let store = AndroidPostureRecordStore(directory: records)
+        let ours = AndroidPostureRecord(serial: Self.serial, bootID: Self.boot, identifier: 0, name: "CLOSE")
+        try store.save(ours)
+        let phone = Phone(override: 0)
+        #expect(await AndroidBackend.resetRecordedPostures(host: try Self.host(phone, records: records), permits: { _ in false }).isEmpty)
+        #expect(phone.currentOverride == 0 && phone.commands.isEmpty)
+        #expect(store.load(serial: Self.serial) == ours)
+    }
+
     @Test("a record names its phone only through a hash, and a tampered or foreign one is not read")
     func recordFile() throws {
         let records = try Self.directory()

@@ -45,6 +45,7 @@ struct PostureCommand: AsyncParsableCommand {
     func validate() throws {
         if isReset {
             guard angle == nil else { throw ValidationError("Give reset or --angle, not both.") }
+            guard timeout == 10 else { throw ValidationError("posture reset takes no --timeout: it drops the override and reads the posture once.") }
             return
         }
         _ = try target()
@@ -120,7 +121,7 @@ struct PostureCommand: AsyncParsableCommand {
         let headline = dropped ? "Posture reset, now \(current.rawValue)" : "No posture override was set"
         let detail = state.map { "device state \($0)" }
         let text = json
-            ? DisplayReport.postureResetJSON(reset: dropped, current: current, state: state)
+            ? DisplayReport.postureResetJSON(reset: dropped, current: current, state: state, on: route.device)
             : "\(headline) on \(route.device.rawValue)" + (detail.map { " (\($0))" } ?? "") + "."
         DevicePersonView.emit(text, json: json, person: DevicePersonView.receipt(headline, aside: detail), console: console)
     }

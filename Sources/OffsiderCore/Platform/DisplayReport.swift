@@ -77,9 +77,9 @@ public enum DisplayReport {
     }
 
     /// `posture reset --json`: whether an override was dropped, and the posture the hinge then gives.
-    public static func postureResetJSON(reset: Bool, current: Posture, state: String?) -> String {
+    public static func postureResetJSON(reset: Bool, current: Posture, state: String?, on device: DeviceID) -> String {
         OrderedJSON.object([
-            ("version", .integer(1)), ("action", .string("reset")), ("reset", .bool(reset)),
+            ("version", .integer(1)), ("action", .string("reset")), ("device", .string(device.rawValue)), ("platform", .string(device.platform.rawValue)), ("reset", .bool(reset)),
             ("posture", .string(current.rawValue)), ("state", .optional(state) { .string($0) }),
         ]).rendered(compact: true)
     }
