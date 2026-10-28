@@ -194,8 +194,10 @@ struct ScreenshotCompareTests {
     func jsonReport() throws {
         let screen = try capture(TestImages.make(width: 1206, height: 2622), screen: portrait)
         let rendered = try ScreenCapture.render(screen, request: ScreenshotRequest(scale: .points, region: PointRegion(x: 0, y: 100, width: 402, height: 50)))
-        let line = rendered.report(path: "/tmp/a.png", format: .png, capture: screen).jsonLine()
-        #expect(line == #"{"path":"/tmp/a.png","width":402,"height":50,"pixelsPerPoint":1,"region":{"x":0,"y":100,"width":402,"height":50},"orientation":"portrait","rotation":0,"display":{"id":"main","platformId":"1"},"posture":null,"upright":true,"format":"png"}"#)
+        var report = rendered.report(path: "/tmp/a.png", format: .png, capture: screen)
+        #expect(report.jsonLine() == #"{"path":"/tmp/a.png","width":402,"height":50,"pixelsPerPoint":1,"region":{"x":0,"y":100,"width":402,"height":50},"orientation":"portrait","rotation":0,"display":{"id":"main","platformId":"1"},"posture":null,"upright":true,"format":"png"}"#)
+        report.captureSource = "devicectl"
+        #expect(report.jsonLine().hasSuffix(#""upright":true,"format":"png","capture":"devicectl"}"#))
     }
 
     @Test("The JSON report names a foldable's display and posture")

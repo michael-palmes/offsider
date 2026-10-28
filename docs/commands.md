@@ -51,7 +51,7 @@ Every device command takes `--device <id>`, using an ID from `offsider devices`:
 | `rn devmenu` | Open a React Native debug build's dev menu, list its items or choose one ([React Native](react-native.md)) |
 | `rn tools off` | Turn off the element inspector and the performance monitor when they show, through the dev menu (`--json`) |
 | `rn prepare` | Before a fresh Expo dev client (debug build) first launches: mark its dev menu intro as seen and stop the menu opening at launch (`--bundle-id`); stops the app first if it is running |
-| `record-video` | Record the display to an H.264 MP4 until Ctrl+C ([video](capture.md#screenshots-and-video)) |
+| `record-video` | Record the display to an H.264 MP4 until Ctrl+C, SIGINT or `--duration` runs out ([video](capture.md#screenshots-and-video)) |
 | `stream-video` | Stream frames to stdout as `mjpeg`, `raw`, `ffmpeg` or `bgra` ([video](capture.md#screenshots-and-video)) |
 | `runner` | `status` lists the XCUITest runner sessions that read physical iPhones and iPads, `stop` stops one (`--device`, `--clean` to uninstall it too) or all, and `build --device <UDID>` builds the runner (`--register-device`, for a person at a terminal); `--json` |
 | `session` | `status` lists each device's background sessions, an iPhone or iPad's runner and session broker, an Android emulator's warm helper or a simulator's input session, without starting any; `stop` stops them on one device (`--device`, `--clean` to uninstall the runner and delete its builds and logs) or all, and removes the adb reverses `rn open` set; `--json` ([iPhones](ios-devices.md), [Android](android.md#screen-reads-and-the-helper), [simulators](input.md#simulator-input-session)) |

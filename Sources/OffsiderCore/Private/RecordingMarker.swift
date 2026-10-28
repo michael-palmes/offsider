@@ -3,8 +3,8 @@ import Foundation
 
 /// `locks/<platform>-<id>.recording`: present and `flock`ed while `record-video` records the device, so `login` can refuse to type a password into the video.
 public final class RecordingMarker: @unchecked Sendable {
-    /// Commands that may put a password on screen; `record-video` refuses while one holds the device lock.
-    public static let refusedHolderCommands: Set<String> = ["login", "wake"]
+    /// Commands that may type a secret; `record-video` refuses while one holds the device lock.
+    public static let refusedHolderCommands: Set<String> = ["login", "wake", "type"]
 
     public let path: String
     private var descriptor: Int32

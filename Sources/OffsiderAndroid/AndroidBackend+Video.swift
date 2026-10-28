@@ -29,6 +29,8 @@ extension AndroidBackend: FrameCapturing {
     }
 }
 
+extension AndroidBackend: TreeReadReleasing {}
+
 extension AndroidBackend: RawVideoStreaming {
     /// `streamScreenshot` as RGBA, turned upright and swapped to BGRA, at most `fps` frames a second; gRPC only.
     public func streamBGRA(
