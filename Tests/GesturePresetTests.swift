@@ -301,6 +301,7 @@ struct GestureRotatedInputTests {
         let error = await #expect(throws: CLIError.self) { _ = try await offscreen.toBatchPrimitives(context: context, logger: OffsiderLogger()) }
         #expect(error?.reason == .usage)
         #expect(error?.userFacingDescription.contains("off the screen") == true)
+        #expect(error?.userFacingDescription.contains("--from and --to") == true)
     }
 
     @Test("a tree without an application frame fails with an actionable error")

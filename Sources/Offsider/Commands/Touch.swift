@@ -118,14 +118,14 @@ struct Touch: AsyncParsableCommand {
     }
 
     /// The two fingers, left then right of the centre; a finger off the screen is a usage error naming it.
-    static func fingerPoints(x: Double, y: Double, spread: Double, screen: UISize?) throws -> [(x: Double, y: Double)] {
+    static func fingerPoints(x: Double, y: Double, spread: Double, screen: UISize?, fix: String = "Move -x or lower --spread.") throws -> [(x: Double, y: Double)] {
         let points = [(x: x - spread / 2, y: y), (x: x + spread / 2, y: y)]
         for (index, point) in points.enumerated() {
             let inside = point.x >= 0 && point.y >= 0 && screen.map { point.x <= $0.width && point.y <= $0.height } ?? true
             guard inside else {
                 let size = screen.map { " on a \($0.width.formatted()) x \($0.height.formatted()) screen" } ?? ""
                 throw CLIError(
-                    errorDescription: "Finger \(index + 1) at (\(point.x.formatted()), \(point.y.formatted())) is off the screen\(size). Move -x or lower --spread.",
+                    errorDescription: "Finger \(index + 1) at (\(point.x.formatted()), \(point.y.formatted())) is off the screen\(size). \(fix)",
                     reason: .usage
                 )
             }

@@ -246,7 +246,7 @@ struct Gesture: AsyncParsableCommand {
         }
         let screen = try await backend.screenSize(for: device)
         for spread in [from ?? 0, to ?? 0] {
-            _ = try Touch.fingerPoints(x: centre.x, y: centre.y, spread: spread, screen: screen)
+            _ = try Touch.fingerPoints(x: centre.x, y: centre.y, spread: spread, screen: screen, fix: "Move --x, or bring --from and --to closer together.")
         }
         let duration = duration ?? preset.defaultDuration
         let frames = GesturePreset.pinchFrames(centre: centre, from: from ?? 0, to: to ?? 0, moves: GesturePreset.pinchMoves(duration: duration))
