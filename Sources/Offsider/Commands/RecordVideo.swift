@@ -126,8 +126,7 @@ struct RecordVideo: AsyncParsableCommand {
         }
     }
 
-    /// Takes the first frame, then records into a private staging folder beside `target` until `stop` or `duration` and moves the MP4 into place;
-    /// the folder goes on every path, and none exists before the first frame.
+    /// Stages the MP4 beside `target` from the first frame until `stop` or `duration`, then moves it into place; the folder goes on every path.
     @MainActor
     static func record(
         from source: VideoFrameSource,
@@ -147,7 +146,7 @@ struct RecordVideo: AsyncParsableCommand {
             throw CLIError(errorDescription: "Failed to record video: \(TerminalText.line(error.localizedDescription))", reason: .videoFailed)
         }
         guard stop.beginCapturing() else {
-            throw CLIError(errorDescription: RecordingStop.earlyMessage, reason: .videoFailed)
+            throw CLIError(errorDescription: RecordingStop.earlyMessage("record-video"), reason: .videoFailed)
         }
         let staging: String
         do {
@@ -271,8 +270,7 @@ struct RecordVideo: AsyncParsableCommand {
         throw DeviceBusy(device: device, command: command, holder: current, waited: nil)
     }
 
-    /// The booted device and its recording marker, for `record-video` and `stream-video` alike; nothing is captured before this returns.
-    /// Frames need neither the tree reader nor the device lock its read took, so both go, and other commands can read and drive the device meanwhile.
+    /// The booted device and its marker for both video commands; frames need neither the tree reader nor its lock, so both go before any frame.
     @MainActor
     static func start(
         command: String, backend: any DeviceBackend, device: DeviceID, checksSecureField: Bool,
@@ -360,18 +358,19 @@ struct RecordVideo: AsyncParsableCommand {
     }
 }
 
-/// A stop signal before the first frame ends the command at once, since nothing is written yet; after it, the recording stops and saves.
-/// Listening from the command's start matters: a recording started in the background ignores SIGINT until a handler is installed.
+/// Heard from the command's start, as a background job ignores SIGINT until then: before the first frame a stop ends it at once, after it the loop stops.
 final class RecordingStop: @unchecked Sendable {
-    static let earlyMessage = "record-video was stopped before its first frame, so nothing was recorded."
+    static func earlyMessage(_ command: String) -> String {
+        "\(command) was stopped before its first frame, so nothing was recorded."
+    }
 
     private let lock = NSLock()
     private var requested = false
     private var capturing = false
     private let endNow: @Sendable () -> Void
 
-    init(endNow: @escaping @Sendable () -> Void = { ErrorReporter.exitFromTimer(reason: .videoFailed, message: RecordingStop.earlyMessage, hint: nil) }) {
-        self.endNow = endNow
+    init(command: String = "record-video", endNow: (@Sendable () -> Void)? = nil) {
+        self.endNow = endNow ?? { ErrorReporter.exitFromTimer(reason: .videoFailed, message: RecordingStop.earlyMessage(command), hint: nil) }
     }
 
     func request() {

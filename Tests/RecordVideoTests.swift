@@ -357,7 +357,7 @@ struct VideoRecordingFileTests {
     /// Asks the recording to stop from inside one capture, so the test does not depend on how fast frames come.
     final class StoppingBackend: FakeDeviceBackend {
         let early = EarlyStops()
-        lazy var stop = RecordingStop { [early] in early.add() }
+        lazy var stop = RecordingStop(endNow: { [early] in early.add() })
         var stopAt = 6
 
         override func screenshotPNG(for id: DeviceID) async throws -> Data {
@@ -415,7 +415,7 @@ struct VideoRecordingFileTests {
         let started = ContinuousClock.now
         let saved = try await RecordVideo.record(
             from: Self.source([try VideoMaskTests.whitePNG(width: 120, height: 260)]), to: (folder.appendingPathComponent("clip.mp4"), true),
-            fps: 10, quality: 50, scale: 1, duration: 1, stop: RecordingStop { Issue.record("stopped before the first frame") }
+            fps: 10, quality: 50, scale: 1, duration: 1, stop: RecordingStop(endNow: { Issue.record("stopped before the first frame") })
         )
         let took = ContinuousClock.now - started
 
@@ -430,7 +430,7 @@ struct VideoRecordingFileTests {
         defer { try? FileManager.default.removeItem(at: folder) }
         let error = await #expect(throws: CLIError.self) {
             _ = try await RecordVideo.record(
-                from: Self.source([]), to: (folder.appendingPathComponent("clip.mp4"), true), fps: 10, quality: 50, scale: 1, duration: nil, stop: RecordingStop { Issue.record("stopped before the first frame") }
+                from: Self.source([]), to: (folder.appendingPathComponent("clip.mp4"), true), fps: 10, quality: 50, scale: 1, duration: nil, stop: RecordingStop(endNow: { Issue.record("stopped before the first frame") })
             )
         }
 

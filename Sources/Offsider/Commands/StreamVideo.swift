@@ -67,6 +67,16 @@ struct StreamVideo: AsyncParsableCommand {
 
     @MainActor
     func run() async throws {
+        let cancellationFlag = CancellationFlag()
+        let stop = RecordingStop(command: "stream-video")
+        let signalObserver = SignalObserver(signals: [SIGINT, SIGTERM]) {
+            stop.request()
+            Task {
+                await cancellationFlag.cancel()
+            }
+        }
+        defer { signalObserver.invalidate() }
+
         let checksSecureField = try masks.requireMaskable(command: "stream-video")
         let regions = try masks.regions()
         let logger = OffsiderLogger()
@@ -76,14 +86,7 @@ struct StreamVideo: AsyncParsableCommand {
         let (booted, marker) = try await RecordVideo.start(command: "stream-video", backend: backend, device: route.device, checksSecureField: checksSecureField)
         let device = booted.id
         defer { marker.remove() }
-
-        let cancellationFlag = CancellationFlag()
-        let signalObserver = SignalObserver(signals: [SIGINT, SIGTERM]) {
-            Task {
-                await cancellationFlag.cancel()
-            }
-        }
-        defer { signalObserver.invalidate() }
+        guard stop.beginCapturing() else { return }
 
         switch format {
         case .bgra:
