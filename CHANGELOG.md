@@ -8,6 +8,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Added
 
+- `app info|launch|stop|open --app <id>`: read one installed app's version, build and install details (on Android also the installer, install and update times, whether it is debuggable and its notification permission), launch it (`--restart` for a cold start, reporting `cold` or `warm` and Android's launch time), stop it, or send it a deep link that reaches that app alone. On a physical device the app must be one the allowance permits, and browsers and system apps are refused; on an iPhone or iPad they use `devicectl` alone. A link the app has no screen for exits 1 with the new reason `link_not_handled`.
+- `offsider guide apps` covers them.
 - `batch` takes a `drag` step, written and limited like `offsider drag`.
 - `app_not_responding` (exit 1): on Android, when the app in front on an unlocked screen has no window the tree can read, as when its main thread is stuck, `describe-ui` and other reads say so instead of telling you to unlock the device.
 - `rn devmenu` lists the items an app registers (`registerDevMenuItems`, or `DevSettings.addMenuItem` in React Native's own Android menu), marked `"custom":true` in `--json` and tagged for a person; `--label` already chose them, and now prefers the menu's item over an app button behind it with the same label. Expo's custom heading also counts as menu evidence, so a menu whose tools those items push off screen is still read.

@@ -34,6 +34,7 @@ public enum FailureReason: String, CaseIterable, Sendable {
     case deviceUnresponsive = "device_unresponsive"
     case deviceControlFailed = "device_control_failed"
     case appNotInstalled = "app_not_installed"
+    case linkNotHandled = "link_not_handled"
     case logStreamFailed = "log_stream_failed"
     case videoFailed = "video_failed"
     case videoUnmasked = "video_unmasked"

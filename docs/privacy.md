@@ -51,5 +51,5 @@ Offsider enforces, whatever the agent does:
 - `login` types a password only into the app it was saved or linked for, refuses browsers, system apps and web views (unless a person opts in), stops when another app comes to the front, and never taps Cloudflare Turnstile.
 - `type` refuses argument text aimed at a password field, and `--file` refuses credential folders and files such as `~/.ssh`, `.env` and `~/.android/adbkey` unless a person confirms `--allow-path` with Touch ID or the login password.
 - Screenshots mask password fields by default; video refuses a screen with one; logs are redacted; screen text is escaped and capped.
-- On an Android phone, `permission ... all` is refused, `permission --app` and `logs` reach only allowed apps, and browsers, system apps or the notification shade in front stop screen reads and input.
+- On an Android phone, `permission ... all` is refused, `permission --app`, `app` and `logs` reach only allowed apps, and browsers, system apps or the notification shade in front stop screen reads and input.
 - Its brokers serve only the Offsider build they run from, checked by code signature, and the iPhone session broker stops within 30 s of an allowance lapsing.

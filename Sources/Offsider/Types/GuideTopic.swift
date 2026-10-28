@@ -15,6 +15,7 @@ enum GuideTopic: String, CaseIterable, ExpressibleByArgument {
     case evidence
     case describeUI = "describe-ui"
     case deviceState = "device-state"
+    case apps
     case migrate
 
     var readItWhen: String {
@@ -33,6 +34,7 @@ enum GuideTopic: String, CaseIterable, ExpressibleByArgument {
         case .evidence: "You need numbered screenshots and logs for a report, masked or redacted, a pixel diff, or log entries as JSON"
         case .describeUI: "You need more than `--summary`: JSON, filters, the byte budget or `--diff`"
         case .deviceState: "You change appearance, text size, orientation, permissions, the status bar or biometrics, or keep an Android screen awake and unlocked"
+        case .apps: "You read an app's version, or launch, stop or deep-link it"
         case .migrate: "You know idb, Maestro or agent-device and want the Offsider equivalent"
         }
     }
