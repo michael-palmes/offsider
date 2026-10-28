@@ -15,7 +15,8 @@ struct Type: AsyncParsableCommand, VerifiableCommand {
         Password fields: text given as an argument is refused (exit 64, secure_field_argument) when the field it
         names with --into-id, --into-label or --into-label-contains, or the field with focus, is a password field;
         use `offsider login`, or --stdin. An iOS simulator does not report focus, so without a named field the
-        argument is typed there.
+        argument is typed there. While record-video or stream-video records the device, --stdin and --file text is
+        refused (exit 8, device_busy) when a password field is on screen or the screen cannot be read.
 
         Replacing a field's text:
         • offsider type --replace "new text" --device DEVICE_ID sets the focused field to exactly "new text"
@@ -256,6 +257,16 @@ struct Type: AsyncParsableCommand, VerifiableCommand {
         return "Replaced the text in " + (field ?? "the focused field")
     }
 
+    /// While a recording runs, text from stdin or a file is not typed with a password field on screen (or an unreadable screen), where it can show on camera.
+    @MainActor
+    static func refuseSecretDuringRecording(
+        backend: any DeviceBackend, device: DeviceID, recordingLive: (DeviceLockKey) -> Bool = { RecordingMarker.isLive($0) }
+    ) async throws {
+        guard recordingLive(DeviceLockKey(platform: device.platform, id: device.rawValue)) else { return }
+        if let tree = try? await backend.accessibilityTree(for: device), !VideoMaskPolicy.showsSecureField(tree) { return }
+        try RecordingMarker.refuseTyping("with a password field on screen", command: "type", on: device, recordingLive: recordingLive)
+    }
+
     /// Text typed as an argument stays in shell history and process lists, so it never goes into a password field.
     static func secureFieldRefusal(device: DeviceID, batch: Bool = false) -> CLIError {
         let login = "offsider login --device \(device.rawValue)"
@@ -279,6 +290,9 @@ struct Type: AsyncParsableCommand, VerifiableCommand {
         try await backend.prepare()
 
         let inputText = try resolvedText()
+        if useStdin || inputFile != nil {
+            try await Self.refuseSecretDuringRecording(backend: backend, device: device)
+        }
         let throughSession = device.platform == .android || device.isPhysicalIOSDevice
         let hidEvents = throughSession ? [] : try Self.checkedIOSEvents(for: inputText, replacing: replace, logger: logger)
         let secureRefusal = refusingSecureArgument ? Self.secureFieldRefusal(device: device) : nil

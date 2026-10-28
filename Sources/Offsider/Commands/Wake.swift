@@ -125,13 +125,7 @@ struct Wake: AsyncParsableCommand {
         func locked(_ message: String, hint: String? = nil) -> CLIError {
             CLIError(errorDescription: message, reason: .deviceLocked, hint: hint)
         }
-        // The caller holds the device lock, and a recording marks the device before it checks the holder, so none can start after this.
-        if recordingLive(DeviceLockKey(platform: device.platform, id: device.rawValue)) {
-            throw CLIError(
-                errorDescription: "A recording is running on \(name) (record-video or stream-video), so wake will not type its unlock code until it stops. Stop the recording, then retry. Nothing was typed.",
-                reason: .deviceBusy
-            )
-        }
+        try RecordingMarker.refuseTyping("its unlock code", command: "wake", on: device, name: name, recordingLive: recordingLive)
         guard let key else {
             throw locked("Offsider could not read the AVD name of \(name), which its saved code is kept under. Unlock it on the device.")
         }

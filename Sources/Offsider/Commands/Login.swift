@@ -169,13 +169,7 @@ struct LoginCommand: AsyncParsableCommand {
         keychainDidRead: () -> Void = {},
         recordingLive: (DeviceLockKey) -> Bool = { RecordingMarker.isLive($0) }
     ) async throws -> LoginReport {
-        // The caller holds the device lock, so no recording can start after this check.
-        if recordingLive(DeviceLockKey(platform: route.device.platform, id: route.device.rawValue)) {
-            throw CLIError(
-                errorDescription: "A recording is running on \(route.device.rawValue) (record-video or stream-video), so login will not type a password until it stops. Stop the recording, then retry. Nothing was typed.",
-                reason: .deviceBusy
-            )
-        }
+        try RecordingMarker.refuseTyping("a password", command: "login", on: route.device, recordingLive: recordingLive)
         try await route.backend.prepare()
         onPrepared()
         let tree = try await route.backend.accessibilityTree(for: route.device)

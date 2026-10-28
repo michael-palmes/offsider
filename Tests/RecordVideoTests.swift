@@ -201,7 +201,7 @@ struct RecordVideoTests {
 struct RecordVideoSignInTests {
     static let key = DeviceLockKey(platform: .ios, id: "SIM-1")
 
-    @Test("recording is refused with device_busy (exit 8) while login or wake holds the device", arguments: ["login", "wake", "wake --unlock"])
+    @Test("recording is refused with device_busy (exit 8) while login, wake or type holds the device", arguments: ["login", "wake", "wake --unlock", "type"])
     func refusedDuringSignIn(command: String) {
         let holder = DeviceLockHolder(pid: 4242, command: command, startedAt: nil)
         let error = #expect(throws: DeviceBusy.self) { try RecordVideo.refuseDuringSignIn(Self.key, device: "SIM-1", holder: { _ in holder }) }
