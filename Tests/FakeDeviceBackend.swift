@@ -72,6 +72,9 @@ class FakeDeviceBackend: DeviceBackend {
     /// `rn open`: the schemes the app registers, the Metro host, and every link sent.
     var expoSchemes = ["exp+playground"]
     var metroHostAnswer = "127.0.0.1"
+    /// Thrown by `metroHost` until a reverse is set for the port, as a phone without one does.
+    var metroHostError: ExpoDevClientError?
+    private(set) var reversesSet: [Int] = []
     private(set) var openedURLs: [String] = []
     /// `rn open`'s stops and links in order, as `stop <app>` and `open <url>`.
     private(set) var devClientCalls: [String] = []
@@ -410,13 +413,20 @@ extension FakeDeviceBackend: AwakeControlling {
 
 extension FakeDeviceBackend: ExpoDevClientOpening {
     func devClientSchemes(_ appID: String, on id: DeviceID) async throws -> [String] { expoSchemes }
-    func metroHost(port: Int, on id: DeviceID) async throws -> String { metroHostAnswer }
+    func metroHost(port: Int, on id: DeviceID) async throws -> String {
+        if let metroHostError, !reversesSet.contains(port) { throw metroHostError }
+        return metroHostAnswer
+    }
     func openURL(_ url: String, appID: String, on id: DeviceID) async throws {
         openedURLs.append(url)
         devClientCalls.append("open \(url)")
     }
 
     func stopApp(_ appID: String, on id: DeviceID) async throws { devClientCalls.append("stop \(appID)") }
+}
+
+extension FakeDeviceBackend: MetroReverseSetting {
+    func addMetroReverse(port: Int, on id: DeviceID) async throws { reversesSet.append(port) }
 }
 
 extension FakeDeviceBackend: AppLivenessReading {
