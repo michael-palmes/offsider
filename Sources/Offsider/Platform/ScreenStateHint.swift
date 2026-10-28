@@ -7,6 +7,7 @@ enum ScreenStateHint {
     static let reasons: Set<FailureReason> = [.selectorNotFound, .selectorFilteredByType, .targetOffScreen, .noWindow, .notVerified, .conditionNotMet]
 
     /// One state read, only after these failures on a command that drove one Android device; a probe failure leaves `error` as it was.
+    /// On a usable screen, `no_window` with an app in front (one foreground read) is `app_not_responding`.
     /// `wait`, `assert` and `screenshot --compare` have printed their own failure, so they get a `Note:` line on stderr instead.
     @MainActor
     static func annotate(_ error: any Error, routes: [DeviceRouter.Route], note: (String) -> Void = { writeNote($0) }) async -> any Error {
@@ -21,22 +22,32 @@ enum ScreenStateHint {
             return error
         }
         guard let failure = error as? any OffsiderFailure, reasons.contains(failure.reason),
-              let (serial, name, reading) = await obstructed(routes) else {
+              let (route, name, reading) = await screenState(routes) else {
             return error
         }
-        return ScreenStateFailure(underlying: failure, device: serial, name: name, reading: reading)
+        guard reading.isUsable else {
+            return ScreenStateFailure(underlying: failure, device: route.device.rawValue, name: name, reading: reading)
+        }
+        guard failure.reason == .noWindow, let package = await AppNotResponding.frontApp(on: route, awake: reading) else { return error }
+        return AppNotResponding.failure(package: package, device: route.device)
     }
 
-    /// The serial, the device's name from what the command already read (no extra round trip), and the reading.
+    /// The serial, the device's name from what the command already read (no extra round trip), and the reading, when the screen is off or locked.
     @MainActor
     private static func obstructed(_ routes: [DeviceRouter.Route]) async -> (String, String, AwakeReading)? {
+        guard let (route, name, reading) = await screenState(routes), !reading.isUsable else { return nil }
+        return (route.device.rawValue, name, reading)
+    }
+
+    @MainActor
+    private static func screenState(_ routes: [DeviceRouter.Route]) async -> (DeviceRouter.Route, String, AwakeReading)? {
         guard routes.count == 1, let route = routes.first, route.device.platform == .android,
               let backend = route.backend as? any AwakeControlling,
-              let reading = try? await backend.awakeState(on: route.device), !reading.isUsable else {
+              let reading = try? await backend.awakeState(on: route.device) else {
             return nil
         }
         let serial = route.device.rawValue
-        return (serial, DeviceName.android(serial: serial, listed: backend.listedName(of: route.device), maker: reading.maker), reading)
+        return (route, DeviceName.android(serial: serial, listed: backend.listedName(of: route.device), maker: reading.maker), reading)
     }
 
     static func sentence(serial: String, name: String, reading: AwakeReading) -> String {

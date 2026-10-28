@@ -138,10 +138,10 @@ struct VideoMaskTests {
 
     @Test("the recording report keeps its schema order and counts regions under maskedBy")
     func report() {
-        #expect(VideoRecordingReport(path: "/tmp/a.mp4", frames: 31, heldFrames: 4, regions: 2, unmasked: false).jsonLine()
-            == #"{"version":1,"path":"/tmp/a.mp4","frames":31,"heldFrames":4,"maskedBy":{"region":2},"unmasked":false}"#)
-        #expect(VideoRecordingReport(path: "/tmp/a.mp4", frames: 1, heldFrames: 0, regions: 0, unmasked: true).jsonLine()
-            == #"{"version":1,"path":"/tmp/a.mp4","frames":1,"heldFrames":0,"maskedBy":{},"unmasked":true}"#)
+        #expect(VideoRecordingReport(path: "/tmp/a.mp4", frames: 31, heldFrames: 4, seconds: 3.04, regions: 2, unmasked: false).jsonLine()
+            == #"{"version":1,"path":"/tmp/a.mp4","frames":31,"heldFrames":4,"seconds":3,"fps":9.9,"maskedBy":{"region":2},"unmasked":false}"#)
+        #expect(VideoRecordingReport(path: "/tmp/a.mp4", frames: 1, heldFrames: 0, seconds: 0, regions: 0, unmasked: true).jsonLine()
+            == #"{"version":1,"path":"/tmp/a.mp4","frames":1,"heldFrames":0,"seconds":0,"fps":null,"maskedBy":{},"unmasked":true}"#)
     }
 
     // MARK: - Frames

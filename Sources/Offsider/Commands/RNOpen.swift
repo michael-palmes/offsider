@@ -13,10 +13,16 @@ struct RNOpen: AsyncParsableCommand {
         second; an empty app window, as while the bundle loads, never counts). It resends \
         the link at most every 10 s, three times, while the launcher shows. Every 2 s it also checks the app's \
         process: one seen running and then gone or replaced on two checks a second apart is a crash. An Android \
-        emulator reaches Metro at 10.0.2.2 unless an adb reverse maps the port; a phone needs that reverse, which \
-        Offsider reads but never sets. Exits 9 (metro_not_running) when Metro does not answer, 1 (rn_load_failed) \
+        emulator reaches Metro at 10.0.2.2 unless an adb reverse maps the port. A USB phone needs that reverse: rn open \
+        sets tcp:<port> tcp:<port> only when the person allowed --port in devices add and the Metro that answers runs \
+        as this user (else exit 7, metro_port_not_allowed, or 9), and session stop removes it. \
+        Exits 9 (metro_not_running) when Metro does not answer, 1 (rn_load_failed) \
         when the app shows a load error, 1 (app_crashed) when its process stops, naming the iOS crash report or \
-        the Android exception class or signal, and 5 at --timeout. --restart stops the app first (simctl \
+        the Android exception class or signal, and 5 at --timeout. It stops early with exit 5 when the app holds \
+        a screen without --wait-id for 15 s (naming the screen) or shows Expo's dev menu intro, 1 (person_required) \
+        when a system prompt covers the app on an iOS simulator (it never answers one), and with the read's own \
+        error when tree reads fail for 10 s (on Android, app_not_responding when the app in front has no window). \
+        On a phone allowed for any app it reads only --bundle-id. --restart stops the app first (simctl \
         terminate or am force-stop), so the link opens it fresh; use it when a timeout reports a blank screen.
 
         Example:
@@ -52,6 +58,9 @@ struct RNOpen: AsyncParsableCommand {
     static let maxResends = 3
     static let quietFor: TimeInterval = 1
     static let poll: Duration = .milliseconds(500)
+    static let failingFor: TimeInterval = 10
+    static let otherScreenFor: TimeInterval = 15
+    static let coveredFor: TimeInterval = 1
 
     struct Report: Equatable {
         var bundleID: String
@@ -63,10 +72,12 @@ struct RNOpen: AsyncParsableCommand {
         var waitID: String?
         var elapsedMs: Int
         var bundleMs: Int
+        /// Whether this run set the phone's adb reverse for the port.
+        var reverseSet = false
 
         func jsonLine() -> String {
             let waited = waitID.map { "\"\(Self.escape($0))\"" } ?? "null"
-            return #"{"version":1,"bundleId":"\#(Self.escape(bundleID))","url":"\#(Self.escape(url))","host":"\#(host)","port":\#(port),"metro":"running","sends":\#(sends),"launcherSeen":\#(launcherSeen),"waitId":\#(waited),"elapsedMs":\#(elapsedMs),"bundleMs":\#(bundleMs)}"#
+            return #"{"version":1,"bundleId":"\#(Self.escape(bundleID))","url":"\#(Self.escape(url))","host":"\#(host)","port":\#(port),"metro":"running","sends":\#(sends),"launcherSeen":\#(launcherSeen),"waitId":\#(waited),"elapsedMs":\#(elapsedMs),"bundleMs":\#(bundleMs),"reverseSet":\#(reverseSet)}"#
         }
 
         private static func escape(_ text: String) -> String {
@@ -98,13 +109,15 @@ struct RNOpen: AsyncParsableCommand {
         let report = try await console.progress("Loading \(bundleID) from Metro") { try await open(on: route, metro: MetroStatus(), clock: .live) }
         let took = WaitLoop.seconds(Double(report.elapsedMs) / 1000)
         let sends = "\(report.sends) send\(report.sends == 1 ? "" : "s")"
-        let line = "✓ \(bundleID) loaded from Metro on port \(port) in \(took) (\(sends)\(report.launcherSeen ? ", launcher seen" : ""))"
+        let reverse = report.reverseSet ? "; set adb reverse tcp:\(port), which `offsider session stop --device \(route.device.rawValue)` removes" : ""
+        let line = "✓ \(bundleID) loaded from Metro on port \(port) in \(took) (\(sends)\(report.launcherSeen ? ", launcher seen" : ""))\(reverse)"
         if json {
             console.data(report.jsonLine() + "\n")
             console.data(line + "\n", to: .err)
         } else {
             let details = "Port \(port), \(took), \(sends)" + (report.launcherSeen ? ", launcher seen" : "")
-            console.show(InputPersonView.receipt("\(bundleID) loaded from Metro", details: [details], agent: line + "\n"))
+            let undo = report.reverseSet ? ["set adb reverse tcp:\(port); offsider session stop --device \(route.device.rawValue) removes it"] : []
+            console.show(InputPersonView.receipt("\(bundleID) loaded from Metro", details: [details] + undo, agent: line + "\n"))
         }
     }
 
@@ -115,6 +128,8 @@ struct RNOpen: AsyncParsableCommand {
         guard let opener = route.backend as? any ExpoDevClientOpening, !device.isPhysicalIOSDevice else {
             throw CLIError(errorDescription: "rn open works on iOS simulators and Android devices; \(device.rawValue) is a physical iPhone or iPad. Open the app's dev client link there yourself.", reason: .notSupported)
         }
+        // A phone allowed for any app reads only the app a command names.
+        (route.backend as? any AppTargetSelecting)?.selectApp(bundleID, on: device)
         if let problem = await metro.problem(port: port) {
             throw CLIError(
                 errorDescription: "Metro is not running on 127.0.0.1:\(port) (\(problem)). Ask the user to start it (npx expo start --dev-client --port \(port)), then try again.",
@@ -124,6 +139,7 @@ struct RNOpen: AsyncParsableCommand {
         try await opener.prepare()
         let url: String
         let host: String
+        let reverseSet: Bool
         do {
             let chosen: String
             if let scheme {
@@ -131,7 +147,7 @@ struct RNOpen: AsyncParsableCommand {
             } else {
                 chosen = try ExpoDevClient.singleScheme(try await opener.devClientSchemes(bundleID, on: device), appID: bundleID)
             }
-            host = try await opener.metroHost(port: port, on: device)
+            (host, reverseSet) = try await reachMetro(opener, route: route, metro: metro)
             url = ExpoDevClient.devClientURL(scheme: chosen, host: host, port: port)
         } catch let error as ExpoDevClientError {
             throw CLIError(errorDescription: error.message, reason: .expoDevClientFailed)
@@ -183,11 +199,28 @@ struct RNOpen: AsyncParsableCommand {
         }
         try await send()
 
+        var failing: (since: TimeInterval, error: any Error)?
+        var anyRead = false
+        var shown: (name: String, since: TimeInterval)?
+        var coveredSince: TimeInterval?
         while clock.now() < deadline {
             try await clock.sleep(Self.poll)
-            let read = try? await route.backend.accessibilityTree(for: device)
-            try await watchApp(read)
-            guard let tree = read else { continue }
+            let readStart = clock.now()
+            let tree: UITree
+            do {
+                tree = try await route.backend.accessibilityTree(for: device)
+            } catch is CancellationError {
+                throw CancellationError()
+            } catch {
+                try await watchApp(nil)
+                let since = failing?.since ?? readStart
+                failing = (since, error)
+                if clock.now() - since >= Self.failingFor { throw await readFailure(error, failingFor: clock.now() - since, on: route) }
+                continue
+            }
+            failing = nil
+            anyRead = true
+            try await watchApp(tree)
             blank = ExpoDevLauncher.isBlank(tree)
             bare = ExpoDevLauncher.isBare(tree)
             loading = ExpoDevLauncher.isLoading(tree)
@@ -198,13 +231,15 @@ struct RNOpen: AsyncParsableCommand {
                     hint: "offsider logs --rn --device \(device.rawValue)"
                 )
             }
-            if let open = ExpoDevLauncher.openLinkPrompt(in: tree), let frame = open.frame {
+            // Only the prompt for the link just sent is answered; a later one, perhaps for another app, is reported below.
+            if let open = ExpoDevLauncher.openLinkPrompt(in: tree), let frame = open.frame, clock.now() - lastSend <= Self.resendEvery {
                 let point = try await route.backend.deviceCoordinates(for: [(x: frame.center.x, y: frame.center.y)], tree: tree, on: device)[0]
                 try await route.backend.performTracked(.tapAt(x: point.x, y: point.y), on: device)
                 continue
             }
             if ExpoDevLauncher.isLauncher(tree) {
                 launcherSeen = true
+                shown = nil
                 if clock.now() - lastSend >= Self.resendEvery, sends <= Self.maxResends {
                     try await send()
                 }
@@ -212,11 +247,31 @@ struct RNOpen: AsyncParsableCommand {
             }
             if loading {
                 quietSince = nil
+                shown = nil
                 continue
             }
             let now = clock.now()
+            let app = watch.hasPendingMiss ? nil : watch.seen
+            let found = waitID.map { Verifier.isOnScreen($0, in: tree) } ?? false
+            if !found, let cover = await Self.cover(over: tree, app: app, on: route) {
+                quietSince = nil
+                previous = nil
+                shown = nil
+                let since = coveredSince ?? now
+                coveredSince = since
+                if now - since >= Self.coveredFor { throw covered(by: cover, device: device) }
+                continue
+            }
+            coveredSince = nil
             if let waitID {
-                guard Verifier.isOnScreen(waitID, in: tree) else { continue }
+                guard found else {
+                    let name = blank || bare || Self.isForeign(tree, app: app) ? nil : Self.topElement(of: tree)
+                    shown = name.map { (name: $0, since: shown?.name == $0 ? shown?.since ?? now : now) }
+                    if let shown, now - shown.since >= Self.otherScreenFor {
+                        throw otherScreen(shown.name, waitID: waitID, after: "it has shown it for \(WaitLoop.seconds(Self.otherScreenFor)), so rn open stopped waiting", device: device)
+                    }
+                    continue
+                }
             } else {
                 guard !bare else {
                     quietSince = nil
@@ -237,8 +292,14 @@ struct RNOpen: AsyncParsableCommand {
             }
             return Report(
                 bundleID: bundleID, url: url, host: host, port: port, sends: sends, launcherSeen: launcherSeen, waitID: waitID,
-                elapsedMs: Int(((now - start) * 1000).rounded()), bundleMs: Int(((now - lastSend) * 1000).rounded())
+                elapsedMs: Int(((now - start) * 1000).rounded()), bundleMs: Int(((now - lastSend) * 1000).rounded()), reverseSet: reverseSet
             )
+        }
+        if let failing, !anyRead || clock.now() - failing.since >= Self.failingFor / 2 {
+            throw await readFailure(failing.error, failingFor: clock.now() - failing.since, on: route)
+        }
+        if let waitID, let shown {
+            throw otherScreen(shown.name, waitID: waitID, after: "it did not appear within \(WaitLoop.seconds(timeout))", device: device)
         }
         if loading || bare {
             let seen = loading
@@ -254,7 +315,7 @@ struct RNOpen: AsyncParsableCommand {
             throw CLIError(
                 errorDescription: "\(bundleID) did not finish loading from Metro on \(host):\(port) within \(WaitLoop.seconds(timeout)): the app showed a blank screen. Run rn open again with --restart to stop the app and open it fresh.",
                 reason: .conditionNotMet,
-                hint: "offsider rn open --port \(port) --bundle-id \(bundleID)\(waitID.map { " --wait-id \(Self.shellWord($0))" } ?? "") --restart --device \(device.rawValue)"
+                hint: restartCommand(device: device)
             )
         }
         throw CLIError(
@@ -264,8 +325,111 @@ struct RNOpen: AsyncParsableCommand {
         )
     }
 
+    /// The host the device reaches Metro on; a phone without a reverse gets one only for an allowed port whose Metro runs as this user.
+    @MainActor
+    func reachMetro(_ opener: any ExpoDevClientOpening, route: DeviceRouter.Route, metro: MetroStatus) async throws -> (host: String, reverseSet: Bool) {
+        let device = route.device
+        do {
+            return (try await opener.metroHost(port: port, on: device), false)
+        } catch let error as ExpoDevClientError where error.kind == .noRoute {
+            guard let setter = route.backend as? any MetroReverseSetting, let allowance = route.allowance, allowance.platform == .android else { throw error }
+            guard allowance.metroPorts.contains(port) else {
+                let step = ErrorAudience.current.personStep("offsider devices add", agentTail: ", choose \(allowance.name) and Metro port \(port); an agent cannot allow a port")
+                throw CLIError(
+                    errorDescription: "\(device.rawValue) has no adb reverse for port \(port), and port \(port) is not a Metro port allowed on \(allowance.name), so Offsider set none.\(step)",
+                    reason: .metroPortNotAllowed,
+                    hint: "offsider devices add"
+                )
+            }
+            guard await metro.ownedByThisUser(port) else {
+                throw CLIError(
+                    errorDescription: "Offsider could not confirm that the Metro answering on 127.0.0.1:\(port) runs as this user (another user's, or it did not accept a connection within a second), so it set no adb reverse to it. Try again; if it repeats, ask the user to start their own Metro (npx expo start --dev-client --port \(port)).",
+                    reason: .metroNotRunning
+                )
+            }
+            try await setter.addMetroReverse(port: port, on: device)
+            return (try await opener.metroHost(port: port, on: device), true)
+        }
+    }
+
     static func shellWord(_ text: String) -> String {
         text.range(of: #"^[A-Za-z0-9._-]+$"#, options: .regularExpression) != nil ? text : ExpoDevClient.shellQuote(text)
+    }
+
+    func restartCommand(device: DeviceID) -> String {
+        "offsider rn open --port \(port) --bundle-id \(bundleID)\(scheme.map { " --scheme \($0)" } ?? "")\(waitID.map { " --wait-id \(Self.shellWord($0))" } ?? "") --restart --device \(device.rawValue)"
+    }
+
+    /// The read's own error; Android's `no_window` with an app in front on a usable screen is `app_not_responding`.
+    @MainActor
+    func readFailure(_ error: any Error, failingFor seconds: TimeInterval, on route: DeviceRouter.Route) async -> any Error {
+        guard (error as? any OffsiderFailure)?.reason == .noWindow, let package = await AppNotResponding.frontApp(on: route) else { return error }
+        guard package == bundleID else { return AppNotResponding.failure(package: package, device: route.device) }
+        return CLIError(
+            errorDescription: "\(bundleID) is in front on \(route.device.rawValue), but Android has listed no window for it for \(WaitLoop.seconds(seconds)), so the app is not responding. Run rn open again with --restart to stop it and open it fresh.",
+            reason: .appNotResponding,
+            hint: restartCommand(device: route.device)
+        )
+    }
+
+    enum Cover {
+        case devMenuIntro
+        case prompt(SystemPrompt, buttons: [String])
+    }
+
+    /// What hides the app: the dev menu's intro, or on an iOS simulator a system prompt, which another process draws.
+    @MainActor
+    static func cover(over tree: UITree, app: AppProcess?, on route: DeviceRouter.Route) async -> Cover? {
+        if ExpoDevLauncher.isDevMenuIntro(tree) { return .devMenuIntro }
+        if isForeign(tree, app: app), let pid = SimulatorAppLiveness.applicationPID(in: tree), let alert = SystemPrompt.alert(in: tree) {
+            let process = await (route.backend as? any PointHitTesting)?.processName(of: pid, on: route.device)
+            return .prompt(SystemPrompt(title: alert.title, process: process, pid: pid), buttons: alert.buttons)
+        }
+        return await SystemPromptProbe.find(in: tree, backend: route.backend, device: route.device).map { .prompt($0, buttons: []) }
+    }
+
+    /// True when an iOS tree comes from another process than the app's, as SpringBoard's does while it shows an alert.
+    static func isForeign(_ tree: UITree, app: AppProcess?) -> Bool {
+        guard let app, let pid = SimulatorAppLiveness.applicationPID(in: tree) else { return false }
+        return pid != app.pid
+    }
+
+    /// The first element on screen with an id, else with a label, as tree output shows it.
+    static func topElement(of tree: UITree) -> String? {
+        let nodes = tree.roots.flatMap { $0.flattened() }.filter { node in
+            node.role != .application && node.role != .window && (tree.viewport.map { node.frame?.isVisible(in: $0) == true } ?? true)
+        }
+        if let id = nodes.lazy.compactMap(\.normalizedID).first {
+            return "id=\(TerminalText.field(id))"
+        }
+        let label = nodes.lazy.filter { $0.normalizedLabel != nil }.compactMap { OutputMasks.current.mask.shownLabel(of: $0) }.first
+        return label.map { TerminalText.quoted(SelectorText.truncated($0)) }
+    }
+
+    func covered(by cover: Cover, device: DeviceID) -> CLIError {
+        switch cover {
+        case .devMenuIntro:
+            return CLIError(
+                errorDescription: "Expo's dev menu intro is over \(bundleID), so rn open stopped waiting. Run rn prepare once to mark it seen, then rn open again with --restart.",
+                reason: .conditionNotMet,
+                hint: "offsider rn prepare --bundle-id \(bundleID) --device \(device.rawValue)"
+            )
+        case .prompt(let prompt, let buttons):
+            let choices = buttons.isEmpty ? "" : " (\(buttons.map { TerminalText.quoted(SelectorText.truncated($0)) }.joined(separator: ", ")))"
+            return CLIError(
+                errorDescription: "\(bundleID) is behind \(prompt.summary)\(choices), so rn open stopped waiting. It never answers a system prompt: ask the user which to choose, answer it, then run rn open again.",
+                reason: .personRequired,
+                hint: buttons.isEmpty ? "offsider screenshot --device \(device.rawValue)" : "offsider describe-ui --summary --device \(device.rawValue)"
+            )
+        }
+    }
+
+    func otherScreen(_ name: String, waitID: String, after: String, device: DeviceID) -> CLIError {
+        CLIError(
+            errorDescription: "\(bundleID) shows the screen with \(name), and --wait-id \(Self.shellWord(waitID)) is not on it: \(after). Pass --wait-id with an element of the screen the app opens on, or bring the app to that screen first.",
+            reason: .conditionNotMet,
+            hint: "offsider describe-ui --summary --device \(device.rawValue)"
+        )
     }
 
     static func crashed(_ bundleID: String, process: AppProcess, report: AppCrashReport?, metro: String, device: DeviceID) -> CLIError {

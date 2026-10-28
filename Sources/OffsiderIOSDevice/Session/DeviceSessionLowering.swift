@@ -57,8 +57,8 @@ struct DeviceSessionLowering {
     )
 
     static let twoFingers = IOSDeviceError.notSupportedOnDevice(
-        "A two-finger touch",
-        instead: "Open the app's menu another way, or use an iOS simulator for `touch --fingers 2`."
+        "A two-finger touch or pinch",
+        instead: "Use an iOS simulator for `touch --fingers 2` and `gesture pinch`, or reach the screen another way."
     )
 
     private static func leaves(of event: InputEvent) -> [InputEvent] {

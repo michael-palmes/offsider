@@ -505,6 +505,7 @@ final class AndroidInputSession: InputSession, TextInputSession {
         guard !heldFingers.isEmpty, let route = resolvedRoute else { return }
         let fingers = heldFingers
         heldFingers = []
+        touchIsDown = false
         do {
             switch route.executor {
             case .adb: return

@@ -148,6 +148,32 @@ struct WakeCommandTests {
         }
     }
 
+    @Test("--unlock refuses with device_busy (exit 8) while a recording runs on the device, before reading the saved code or typing")
+    func unlockRefusedWhileRecording() async throws {
+        try await Self.withLedger { (ledger: UnlockAttemptLedger) async throws in
+            let root = try RecordingMarkerTests.root()
+            defer { try? FileManager.default.removeItem(atPath: root) }
+            let marker = try RecordingMarker.create(DeviceLockKey(platform: .android, id: Self.phone.rawValue), root: root)
+            defer { marker.remove() }
+            let backend = Self.backend(Self.locked, afterWake: AwakeReading(screen: .on, lockScreen: .secure, credential: "pin"))
+            let store = try Self.store("2580")
+
+            let error = await #expect(throws: CLIError.self) {
+                _ = try await Wake.report(
+                    unlock: true, json: false, booted: Self.booted, backend: backend, store: store, ledger: ledger,
+                    recordingLive: { RecordingMarker.isLive($0, root: root) }
+                )
+            }
+
+            #expect(error?.reason == .deviceBusy)
+            #expect(error?.reason.exitCode.rawValue == 8)
+            #expect(error?.failureMessage.contains("A recording is running on Motorola moto g (ZY22FAKE01) (record-video or stream-video), so wake will not type its unlock code") == true)
+            #expect(backend.enteredCodes.isEmpty)
+            #expect(store.reads == 0)
+            #expect(!ledger.hasFailed("ZY22FAKE01"))
+        }
+    }
+
     @Test("the failure marker is written before the first key, so a run that dies mid-code never types it again")
     func markerBeforeTyping() async throws {
         try await Self.withLedger { (ledger: UnlockAttemptLedger) async throws in
@@ -317,6 +343,22 @@ struct WakeCommandTests {
         #expect(await ScreenStateHint.annotate(busy, routes: Self.route(locked)) is CLIError)
         #expect(await ScreenStateHint.annotate(notFound, routes: Self.route(locked) + Self.route(locked)) is CLIError)
         #expect(locked.stateCalls.isEmpty)
+    }
+
+    @Test("no window on an unlocked screen with an app in front is app_not_responding, not a hint to unlock; the home screen in front keeps no_window")
+    func hungAppHint() async throws {
+        let noWindow = CLIError(errorDescription: "Offsider found no window on ZY22FAKE01. Unlock it and bring an app to the front.", reason: .noWindow)
+        let home = "com.example.launcher/com.example.launcher.Home"
+        let hung = Self.backend()
+        hung.foregrounds = [ForegroundActivities(top: "com.example.app/com.example.app.MainActivity", home: home)]
+        let annotated = try #require(await ScreenStateHint.annotate(noWindow, routes: Self.route(hung)) as? CLIError)
+        #expect(annotated.reason == .appNotResponding)
+        #expect(annotated.userFacingDescription == "com.example.app is in front on ZY22FAKE01, but Android lists no window for it, so the app is not responding or still starting. Wait a moment and retry; if it lasts, close the app and open it again.")
+        #expect(hung.stateCalls == ["awake read"])
+
+        let launcher = Self.backend()
+        launcher.foregrounds = [ForegroundActivities(top: home, home: home)]
+        #expect((await ScreenStateHint.annotate(noWindow, routes: Self.route(launcher)) as? CLIError)?.reason == .noWindow)
     }
 
     @Test("the screen check runs once per command, so an early report and the final error share one probe")

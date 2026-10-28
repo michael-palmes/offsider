@@ -12,10 +12,15 @@ struct Drag: AsyncParsableCommand {
         the same with an 800 ms hold. Raise --hold-end so a list stops without a fling, or a dragged item \
         settles over its drop target before the release.
 
+        --screenshot-at takes a screenshot that many milliseconds after the finger comes to rest at the end, \
+        before it lifts, masked as `screenshot` masks; the hold lasts until the last one unless --hold-end is set, \
+        and a screenshot that runs past --hold-end keeps the finger down until it is done.
+
         Examples:
           offsider drag --start-x 100 --start-y 300 --end-x 100 --end-y 600 --device DEVICE_ID
           offsider drag --start-x 100 --start-y 300 --end-x 100 --end-y 600 --hold-ms 800 --device DEVICE_ID
           offsider drag --start-x 100 --start-y 300 --end-x 100 --end-y 600 --hold-end 500 --device DEVICE_ID
+          offsider drag --start-x 100 --start-y 300 --end-x 100 --end-y 600 --hold-ms 800 --screenshot-at 400 --output drop.png --device DEVICE_ID
         """
     )
 
@@ -47,14 +52,17 @@ struct Drag: AsyncParsableCommand {
     @Option(name: .customLong("hold-ms"), help: ArgumentHelp("Milliseconds to hold at the start before moving, from 0 to 10000; 500 or more starts a long-press drag.", valueName: "ms"))
     var holdMs: Int = Self.defaultHoldMilliseconds
 
-    @Option(name: .customLong("hold-end"), help: ArgumentHelp("Milliseconds to hold still at the end before lifting, from 0 to 10000.", valueName: "ms"))
-    var holdEnd: Int = Self.defaultHoldEndMilliseconds
+    @Option(name: .customLong("hold-end"), help: ArgumentHelp("Milliseconds to hold still at the end before lifting, from 0 to 10000 (default 50, or until the last --screenshot-at).", valueName: "ms"))
+    var holdEnd: Int?
 
     @Option(name: .customLong("pre-delay"), help: "Delay before starting the drag in seconds.")
     var preDelay: Double?
 
     @Option(name: .customLong("post-delay"), help: "Delay after completing the drag in seconds.")
     var postDelay: Double?
+
+    @OptionGroup
+    var holdShots: HoldScreenshotOptions
 
     @OptionGroup
     var jsonOption: InputJSONOption
@@ -87,9 +95,10 @@ struct Drag: AsyncParsableCommand {
         guard (0...10_000).contains(holdMs) else {
             throw ValidationError("--hold-ms must be from 0 to 10000; got \(holdMs).")
         }
-        guard (0...10_000).contains(holdEnd) else {
+        if let holdEnd, !(0...10_000).contains(holdEnd) {
             throw ValidationError("--hold-end must be from 0 to 10000; got \(holdEnd).")
         }
+        try holdShots.check(holdEnd: holdEnd)
         if let preDelay {
             guard preDelay >= 0 && preDelay <= 10.0 else {
                 throw ValidationError("Pre-delay must be between 0 and 10 seconds.")
@@ -103,7 +112,10 @@ struct Drag: AsyncParsableCommand {
     }
 
     func run() async throws {
-        try await InputOutput.reporting(command: "drag", target: target, json: jsonOption.json) { _ in try await drag() }
+        try await InputOutput.reporting(command: "drag", target: target, json: jsonOption.json) { details in
+            if holdShots.isRequested { try await holdShots.prepare(command: "drag") }
+            try await drag(details)
+        }
     }
 
     /// `(100, 300) to (100, 600)`.
@@ -111,7 +123,7 @@ struct Drag: AsyncParsableCommand {
         VerifyOutput.segmentDescription(from: (startX, startY), to: (endX, endY))
     }
 
-    private func drag() async throws {
+    private func drag(_ details: InputDetails) async throws {
         let logger = OffsiderLogger()
         let route = try await DeviceRouter.routeForInput(deviceOption, logger: logger)
         await appOption.apply(to: route)
@@ -133,8 +145,22 @@ struct Drag: AsyncParsableCommand {
             on: device
         )
 
-        let dragEvent = try dragEvent(from: physicalPoints[0], to: physicalPoints[1])
-        try await Console.current.progress("Dragging") { try await backend.performTracked(dragEvent, on: device) }
+        if holdShots.isRequested {
+            let end = physicalPoints[1]
+            try await Console.current.progress("Dragging") {
+                try await holdShots.perform(
+                    press: try pressEvent(from: physicalPoints[0], to: end),
+                    lift: .touch(direction: .up, x: end.x, y: end.y),
+                    holdEnd: finalHoldMilliseconds,
+                    on: route,
+                    details: details
+                )
+            }
+            HoldScreenshotOptions.noteOverrun(held: details.holdMs, asked: holdEnd)
+        } else {
+            let dragEvent = try dragEvent(from: physicalPoints[0], to: physicalPoints[1])
+            try await Console.current.progress("Dragging") { try await backend.performTracked(dragEvent, on: device) }
+        }
 
         if let postDelay, postDelay > 0 {
             logger.info().log("Post-delay: \(postDelay)s")
@@ -158,7 +184,17 @@ struct Drag: AsyncParsableCommand {
             duration: duration,
             steps: steps,
             initialHold: Double(holdMs) / 1000,
-            finalHold: Double(holdEnd) / 1000
+            finalHold: Double(finalHoldMilliseconds) / 1000
         )
+    }
+
+    /// Down, the --hold-ms hold and the moves, leaving the finger down at `end`, for --screenshot-at.
+    func pressEvent(from start: (x: Double, y: Double), to end: (x: Double, y: Double)) throws -> InputEvent {
+        try InputEvent.compositeDragPress(from: start, to: end, duration: duration, steps: steps, initialHold: Double(holdMs) / 1000)
+    }
+
+    /// --hold-end, else the default stretched to reach the last --screenshot-at.
+    var finalHoldMilliseconds: Int {
+        holdShots.holdEnd(given: holdEnd, fallback: Self.defaultHoldEndMilliseconds)
     }
 }

@@ -8,6 +8,13 @@ public protocol PermissionControlling: DeviceBackend {
     func applyPermission(_ action: PermissionAction, _ targets: [PermissionTarget], app: String, on id: DeviceID) async throws -> PermissionChange
 }
 
+/// Optional capability: whether an app may draw over other apps, which React Native's performance monitor needs on Android.
+@MainActor
+public protocol OverlayPermissionReading: DeviceBackend {
+    /// Nil when the device does not say.
+    func canDrawOverlays(_ package: String, on id: DeviceID) async throws -> Bool?
+}
+
 /// Optional capability: a clean status bar for screenshots.
 @MainActor
 public protocol StatusBarControlling: DeviceBackend {

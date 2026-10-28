@@ -258,6 +258,7 @@ struct IOSDeviceSessionScreenshotTests {
         backend.input.coreDeviceVersion = { CoreDeviceVersion("651.13.4") }
         #expect(try await backend.screenshotPNG(for: Self.phone) == Data([0x89, 0x50]))
         #expect(!devicectl.calls.contains { $0.contains("capture") })
+        #expect(backend.captureSource(for: Self.phone) == "stream")
     }
 
     @Test("when the stream cannot serve a frame, devicectl captures it, with one notice per command")
@@ -280,5 +281,7 @@ struct IOSDeviceSessionScreenshotTests {
         #expect(try await backend.screenshotPNG(for: Self.phone) == IOSDeviceScreenTests.png)
         #expect(notices.values.count == 1)
         #expect(notices.values.first?.contains("No desktop session.") == true)
+        #expect(notices.values.first?.contains("staged status bar") == true)
+        #expect(backend.captureSource(for: Self.phone) == "devicectl")
     }
 }

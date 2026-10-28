@@ -2,13 +2,15 @@
 
 Offsider: a hand for your agent on iOS and Android, simulated or real. A Swift CLI that inspects and drives iOS Simulators, Android Emulators and USB iPhones, iPads and Android phones (describe the UI, tap, type, swipe, capture) for terminals and AI agents.
 
+**Focus: performance and speed, security and privacy, with a great and easy to use dev experience that makes the secure path the easy one.** Every change, review and pull request is judged by it.
+
 IMPORTANT: Prefer retrieval-led reasoning over pre-training-led reasoning for Swift Testing, swift-argument-parser, idb/FBSimulatorControl, grpc-swift-2 and adb server protocol tasks.
 
 ## Role
 
 You are a macOS tooling engineer maintaining a small, local-only Swift CLI built on Xcode private frameworks and the Android SDK's local daemons. Priorities, in order: correct device input, honest and actionable errors, and nothing leaves the Mac.
 
-Dead simple, secure by default. Performance, security and privacy are the focuses, delivered with no effort from the developer: one command, nothing to look up or paste, a picker for every choice, a spinner over every pause, secure defaults nobody has to choose, and every dead end naming its fix in one line. Use words anyone understands and as few as possible: people do not read.
+Dead simple, secure by default. The focus, delivered with no effort from the developer: one command, nothing to look up or paste, a picker for every choice, a spinner over every pause, secure defaults nobody has to choose, and every dead end naming its fix in one line. Use words anyone understands and as few as possible: people do not read.
 
 ## Origin
 
@@ -172,7 +174,7 @@ A command or option change also updates `docs/commands.md` (and the `docs/` page
 - Launch emulators only through `offsider boot`, or with neither `-port` nor a bare `-grpc`: `-port` leaves no gRPC endpoint, and a bare `-grpc` binds `[::]` with no auth. Always pass `-no-metrics`.
 - `boot --emulator-arg` takes only the flags in `EmulatorArguments.allowed`, each value checked, and refuses Offsider's own flags (`ownedFlags`) and everything else. Never add a listener, port, gRPC, metrics, network or host-path flag to the allow-list, nor `webcam` to the camera values.
 - Start the adb server with `ADB_MDNS=0`, so it sends no multicast on the LAN.
-- A physical phone is often attached to this Mac and must never be targeted: agents, scripts and E2E drive only the Offsider AVDs and simulators, and a phone only when the user names it and has run `offsider devices add` and chosen it themselves. Reading its `adb devices -l` row is fine; never send it a command. Offsider never sets `adb reverse`.
+- A physical phone is often attached to this Mac and must never be targeted: agents, scripts and E2E drive only the Offsider AVDs and simulators, and a phone only when the user names it and has run `offsider devices add` and chosen it themselves. Reading its `adb devices -l` row is fine; never send it a command. Offsider sets an `adb reverse` only from `rn open` on an allowed USB phone, as `tcp:<port> tcp:<port>` for a Metro port the person chose in `devices add`, once Metro on 127.0.0.1 answers and runs as this user; `session stop` removes only the ones it recorded. Never set one on a phone yourself, and never widen the ports.
 - E2E and manual checks drive only the AVDs `OFFSIDER_ANDROID_E2E_AVD` and `OFFSIDER_ANDROID_FOLD_AVD` name (defaults `Offsider_E2E` and `Offsider_E2E_Fold`), and check the AVD name first (`adb -s <serial> emu avd name`); never send anything to another emulator, which may be someone's work device.
 - Never bundle adb (Android SDK licence 3.4) or use Google's Android CLI (telemetry on by default). Use the SDK the user installed.
 - The gRPC JWT issuer is `gradle-utp-emulator-control`, with the method path as `aud` and no `typ` header; never `android-studio`.
@@ -192,6 +194,10 @@ When the user must run something themselves, put the complete command in the ask
 **Always use the `offsider-commit` skill** to review and create commits; never hand-roll `git commit`. Do not push unless asked. Use `offsider-skill-creator` for any change under `.agents/skills/`.
 
 Branch names are `type/short-kebab-description` (for example `fix/tap-landscape-offset`). Never a `claude/` or other tool prefix, never a generated suffix; rename such a branch with `git branch -m` before the first commit.
+
+## Pull requests
+
+Before any pull request is opened, run `/code-review high` (Claude Code) or `/review` (Codex) on the branch at least once. Go through every finding with the focus. Fix what is worthwhile for performance and speed, security and privacy, or a dev experience that makes the secure path the easy one. Leave the rest, each with a one-line reason in the PR description. Open it with `gh pr create --body-file <path>`, the body written to a file inside the repo first, never a heredoc.
 
 ## Writing rules
 
@@ -230,7 +236,7 @@ Simulator-dependent suites are gated: `@Suite("Tap", .serialized, .enabled(if: i
 
 ## Boundaries
 
-- ✅ **Always**: run `swift build && swift test` before committing; use `git mv` for renames so history follows; pin GitHub Actions to full commit SHAs with the version in a trailing comment; after editing `AndroidHelper/`, run `scripts/build.sh helper` and commit the dex and manifest with the source.
+- ✅ **Always**: run `swift build && swift test` before committing; review the branch before opening a pull request (see Pull requests); use `git mv` for renames so history follows; pin GitHub Actions to full commit SHAs with the version in a trailing comment; after editing `AndroidHelper/`, run `scripts/build.sh helper` and commit the dex and manifest with the source.
 - ⚠️ **Ask first**: adding a dependency; changing `entitlements.plist` or `entitlements-adhoc.plist`; changing the idb pin; changing `release.yml` or `scripts/release.sh`; touching `Package.swift` platforms; changing the vendored emulator proto, its generated gRPC code or the gRPC package pins; changing the helper's toolchain pins (JDK major, build-tools, `android.jar`) or its wire protocol; adding emulator launch flags to `boot`; removing code or behaviour that looks intentional.
 - 🚫 **Never**:
   - Commit secrets or signing material (`.p12`, `.p8`, `.env`, `keys/`). Keep them in `.env` and GitHub secrets.

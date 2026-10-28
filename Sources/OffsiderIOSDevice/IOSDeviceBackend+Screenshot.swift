@@ -12,6 +12,7 @@ final class IOSDeviceState {
     var sessionFailures: [String: Error] = [:]
     var sessionConnector: (any DeviceSessionConnecting)?
     var streamNoticeShown = false
+    var captureSources: [String: String] = [:]
     var pinPolicy: (@MainActor (String) -> String?)?
     var pinConfirmed: [String: Date] = [:]
     /// Devices sent input since their pinned app was last confirmed in front; their next check is timed as `foreground-recheck`.
@@ -27,23 +28,36 @@ extension IOSDeviceBackend {
         try await requirePinnedAppInFront(id, maxAge: 2)
         if hostHasHID, sessionsAvailable {
             do {
-                return try await host.timing.measure("stream-capture") {
+                let png = try await host.timing.measure("stream-capture") {
                     try await session(for: id).frame(.png).data
                 }
+                state.captureSources[id.rawValue] = Self.streamCapture
+                return png
             } catch {
                 if !state.streamNoticeShown {
                     state.streamNoticeShown = true
-                    log(.notice, "The screen stream is unavailable (\((error as? IOSDeviceError)?.message ?? error.localizedDescription)); capturing with devicectl instead.")
+                    log(.notice, "The screen stream is unavailable (\((error as? IOSDeviceError)?.message ?? error.localizedDescription)); capturing with devicectl instead, which is slower and draws a staged status bar (9:41, full signal).")
                 }
             }
         }
-        return try await host.timing.measure("capture") {
+        let png = try await host.timing.measure("capture") {
             try await IOSDeviceScreenshot.capture(udid: id.rawValue, directory: directory, root: host.privateRoot)
         }
+        state.captureSources[id.rawValue] = Self.devicectlCapture
+        return png
     }
+
+    public static let streamCapture = "stream"
+    public static let devicectlCapture = "devicectl"
 
     public func screenInfo(for id: DeviceID) async throws -> UIScreenInfo? {
         try await geometry(for: id).screenInfo
+    }
+}
+
+extension IOSDeviceBackend: CaptureSourceReporting {
+    public func captureSource(for id: DeviceID) -> String? {
+        state.captureSources[id.rawValue]
     }
 }
 

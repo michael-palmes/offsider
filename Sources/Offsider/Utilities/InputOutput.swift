@@ -7,6 +7,8 @@ final class InputDetails: @unchecked Sendable {
     var point: UIPoint?
     var percent: Double?
     var value: String?
+    var holdMs: Int?
+    var screenshots: [HeldScreenshot] = []
 }
 
 /// `--json` without `--verify`: one `InputReport` line on stdout, also on a failure, and the command's own lines on stderr.
@@ -29,6 +31,7 @@ enum InputOutput {
             InputReport(
                 command: command, target: target, dispatched: DispatchTracker.current.state,
                 point: details.point, percent: details.percent, value: details.value,
+                holdMs: details.holdMs, screenshots: details.screenshots,
                 elapsed: ProcessInfo.processInfo.systemUptime - startedAt, error: error
             )
         }

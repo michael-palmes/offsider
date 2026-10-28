@@ -9,6 +9,15 @@ public protocol RunnerConnecting: AnyObject, Sendable {
 
 extension RunnerSessionManager: RunnerConnecting {}
 
+extension IOSDeviceBackend: AppTargetSelecting {
+    @discardableResult
+    public func selectApp(_ appID: String, on id: DeviceID) -> Bool {
+        guard targetApp != appID else { return false }
+        targetApp = appID
+        return true
+    }
+}
+
 extension IOSDeviceBackend {
     /// The app `--app` named; the runner reads it instead of the frontmost app and remembers it.
     public var targetApp: String? {

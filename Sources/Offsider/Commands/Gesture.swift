@@ -17,6 +17,7 @@ struct Gesture: AsyncParsableCommand {
           swipe-from-top-right-edge (Control Centre)
           swipe-from-bottom-edge (home on Android)
           long-press-drag (needs --x, --y, --to-x and --to-y)
+          pinch (needs --from and --to)
 
         Scroll presets are named for the finger's direction, not the content's:
           scroll-up: swipe up, moving content up to reveal what is below
@@ -37,9 +38,18 @@ struct Gesture: AsyncParsableCommand {
         long-press-drag presses at --x,--y, holds for --hold-ms (default 800), then drags to --to-x,--to-y \
         over --duration (default 0.6 s), for lists that reorder or tiles that move only after a long press.
 
+        pinch puts two fingers --from points apart on a horizontal line through --x,--y (default the middle of \
+        the app's frame), moves them to --to points apart over --duration (default 0.5 s, from 0.1 to 10) and \
+        lifts them: --to above --from spreads them (zoom in), below squeezes them (zoom out). Spreads are 20 to \
+        600 points, and both fingers must stay on the screen. An iOS simulator's main display and Android \
+        emulators and phones take it (gRPC, or the UiAutomation helper); a physical iPhone and the iPhone Duo's \
+        inner display refuse it.
+
         Examples:
           offsider gesture scroll-up --device DEVICE_ID
           offsider gesture long-press-drag --x 200 --y 300 --to-x 200 --to-y 600 --device DEVICE_ID
+          offsider gesture pinch --from 60 --to 240 --device DEVICE_ID
+          offsider gesture pinch --from 240 --to 60 --x 200 --y 400 --duration 0.8 --device DEVICE_ID
           offsider gesture scroll-down --duration 1.5 --device DEVICE_ID
           offsider gesture swipe-from-top-right-edge --device DEVICE_ID
           offsider gesture swipe-from-left-edge --screen-width 430 --screen-height 932 --device DEVICE_ID
@@ -61,11 +71,17 @@ struct Gesture: AsyncParsableCommand {
     @Option(name: .customLong("delta"), help: "Distance in points (dp on Android) between touch points (uses preset default if not specified).")
     var delta: Double?
     
-    @Option(name: .customLong("x"), help: "long-press-drag: the X coordinate to press.")
+    @Option(name: .customLong("x"), help: "long-press-drag: the X coordinate to press; pinch: the centre's (default the app frame's middle).")
     var startX: Double?
 
-    @Option(name: .customLong("y"), help: "long-press-drag: the Y coordinate to press.")
+    @Option(name: .customLong("y"), help: "long-press-drag: the Y coordinate to press; pinch: the centre's (default the app frame's middle).")
     var startY: Double?
+
+    @Option(help: ArgumentHelp("pinch: points between the fingers at the start, from 20 to 600.", valueName: "points"))
+    var from: Double?
+
+    @Option(help: ArgumentHelp("pinch: points between the fingers at the end, from 20 to 600; above --from zooms in.", valueName: "points"))
+    var to: Double?
 
     @Option(name: .customLong("to-x"), help: "long-press-drag: the X coordinate to drag to.")
     var endX: Double?
@@ -134,7 +150,26 @@ struct Gesture: AsyncParsableCommand {
         }
     }
 
+    private func validatePinch() throws {
+        for (name, isSet) in [("--to-x", endX != nil), ("--to-y", endY != nil), ("--hold-ms", holdMs != nil), ("--delta", delta != nil), ("--screen-width", screenWidth != nil), ("--screen-height", screenHeight != nil)] where isSet {
+            throw ValidationError("\(name) does not apply to pinch.")
+        }
+        guard let from, let to else { throw ValidationError("pinch needs --from and --to, the points between the fingers at the start and end.") }
+        if let problem = Coordinates.problem([("--from", from), ("--to", to), ("--x", startX), ("--y", startY)]) { throw ValidationError(problem) }
+        for (name, value) in [("--from", from), ("--to", to)] where !GesturePreset.pinchSpreads.contains(value) {
+            throw ValidationError("\(name) must be from 20 to 600 points; got \(value.formatted()).")
+        }
+        guard from != to else { throw ValidationError("--from and --to must differ: the fingers move apart or together.") }
+        guard (startX == nil) == (startY == nil) else { throw ValidationError("Give both --x and --y for the pinch's centre, or neither.") }
+        guard (startX ?? 0) >= 0, (startY ?? 0) >= 0 else { throw ValidationError("Coordinates must be non-negative values.") }
+        if let duration, !GesturePreset.pinchDurations.contains(duration) {
+            throw ValidationError("--duration must be from 0.1 to 10 seconds for pinch; got \(duration.formatted()).")
+        }
+    }
+
     private func validatePoints() throws {
+        if preset.kind == .pinch { return try validatePinch() }
+        if from != nil || to != nil { throw ValidationError("--from and --to apply to pinch only.") }
         let points = [("--x", startX), ("--y", startY), ("--to-x", endX), ("--to-y", endY)]
         guard preset.kind == .longPressDrag else {
             for (name, value) in points where value != nil {
@@ -167,6 +202,7 @@ struct Gesture: AsyncParsableCommand {
     /// The preset's input: a sized swipe, or a held press and drag between the given points.
     @MainActor
     func presetEvent(tree: @MainActor () async throws -> UITree, backend: any DeviceBackend, device: DeviceID, logger: OffsiderLogger) async throws -> InputEvent {
+        if preset.kind == .pinch { return try await presetPinch(tree: tree, backend: backend, device: device) }
         guard preset.kind == .longPressDrag else {
             // Sizing to the screen and mapping the points then read the simulator's orientation once.
             return try await SimulatorOrientationReader.$sharedReadings.withValue(SimulatorOrientationReader.SharedReadings()) {
@@ -191,6 +227,32 @@ struct Gesture: AsyncParsableCommand {
             initialHold: Double(holdMs ?? GesturePreset.defaultHoldMilliseconds) / 1000,
             finalHold: 0.05
         )
+    }
+
+    /// Two fingers about the centre, each frame checked on screen, then mapped to the backend's input space in one call.
+    @MainActor
+    func presetPinch(tree: @MainActor () async throws -> UITree, backend: any DeviceBackend, device: DeviceID) async throws -> InputEvent {
+        let centre: UIPoint
+        if let startX, let startY {
+            centre = UIPoint(x: startX, y: startY)
+        } else {
+            guard let frame = try await tree().applicationFrame else {
+                throw CLIError(
+                    errorDescription: "Unable to centre the pinch because the accessibility tree has no application frame. Pass --x and --y, or check an app is in the foreground.",
+                    reason: .treeReadFailed
+                )
+            }
+            centre = UIPoint(x: frame.x + frame.width / 2, y: frame.y + frame.height / 2)
+        }
+        let screen = try await backend.screenSize(for: device)
+        for spread in [from ?? 0, to ?? 0] {
+            _ = try Touch.fingerPoints(x: centre.x, y: centre.y, spread: spread, screen: screen, fix: "Move --x, or bring --from and --to closer together.")
+        }
+        let duration = duration ?? preset.defaultDuration
+        let frames = GesturePreset.pinchFrames(centre: centre, from: from ?? 0, to: to ?? 0, moves: GesturePreset.pinchMoves(duration: duration))
+        let mapped = try await backend.deviceCoordinates(for: frames.flatMap { [(x: $0.0.x, y: $0.0.y), (x: $0.1.x, y: $0.1.y)] }, tree: nil, on: device)
+        let pairs = stride(from: 0, to: mapped.count - 1, by: 2).map { (first: mapped[$0], second: mapped[$0 + 1]) }
+        return InputEvent.compositePinch(frames: pairs, duration: duration)
     }
 
     func run() async throws {
@@ -223,8 +285,11 @@ struct Gesture: AsyncParsableCommand {
         Console.current.show(InputPersonView.receipt("Sent \(preset.rawValue)", aside: receiptAside))
     }
 
-    /// long-press-drag names its two points; a swipe preset sizes itself, so it needs none.
+    /// long-press-drag names its two points and pinch its spreads; a swipe preset sizes itself, so it needs none.
     var receiptAside: String? {
+        if preset.kind == .pinch, let from, let to {
+            return "\(VerifyOutput.number(from)) to \(VerifyOutput.number(to)) points apart" + (startX.flatMap { x in startY.map { " at \(VerifyOutput.pointDescription(x: x, y: $0))" } } ?? "")
+        }
         guard preset.kind == .longPressDrag, let startX, let startY, let endX, let endY else { return nil }
         return "\(VerifyOutput.pointDescription(x: startX, y: startY)) to \(VerifyOutput.pointDescription(x: endX, y: endY))"
     }

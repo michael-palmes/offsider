@@ -1,5 +1,6 @@
 import ArgumentParser
 import Foundation
+import OffsiderAndroid
 import OffsiderCore
 
 struct LoginCommand: AsyncParsableCommand {
@@ -34,6 +35,9 @@ struct LoginCommand: AsyncParsableCommand {
     @OptionGroup
     var deviceOption: DeviceOption
 
+    @OptionGroup
+    var appOption: AppOption
+
     static let defaultTimeout: Double = 15
 
     var timeout: Double { timeoutOption ?? Self.defaultTimeout }
@@ -57,8 +61,8 @@ struct LoginCommand: AsyncParsableCommand {
         )
         let logger = OffsiderLogger()
         let watchdog = DeviceWatchdog()
-        let route = try await DeviceRouter.routeForInput(deviceOption.id, logger: logger, watchdog: watchdog)
         let profile = try LoginProfiles.load(project: project)
+        let route = try await Self.route(deviceOption.id, profile: profile, app: appOption, logger: logger, watchdog: watchdog)
         let filter = try Self.whereTags(filters, named: key != nil)
         let console = Console.current
         // A person's spinner asks for the prompt in place of the agent's line.
@@ -105,6 +109,27 @@ struct LoginCommand: AsyncParsableCommand {
         }
     }
 
+    /// Routes and locks the device; a phone allowed for any app drives `--app`, else the package of the `offsider.login.json` login read.
+    @MainActor
+    static func route(
+        _ rawID: String, profile: LoginProfile?, app: AppOption, logger: OffsiderLogger, watchdog: DeviceWatchdog,
+        host: AndroidHost = .cli(), claims: DeviceClaims = .current
+    ) async throws -> DeviceRouter.Route {
+        let package = profile?.package
+        let route = try await DeviceRouter.$profilePackage.withValue({ package }) {
+            try await DeviceRouter.routeForInput(rawID, logger: logger, watchdog: watchdog, host: host, claims: claims)
+        }
+        // Simulators and emulators ignore --app, as every command does.
+        if route.device.isPhysicalAndroidDevice, let chosen = app.bundleID, let profile, profile.package != chosen {
+            throw CLIError(
+                errorDescription: "--app \(chosen) is not the package offsider.login.json names (\(profile.package ?? "it names none")). Pass the same app, or point --project at that app's offsider.login.json. Nothing was typed.",
+                reason: .usage
+            )
+        }
+        app.apply(to: route)
+        return route
+    }
+
     static let signingInLabel = "Signing in"
     static let keychainWaitLabel = "Answer the macOS prompt to read the saved login"
 
@@ -144,13 +169,7 @@ struct LoginCommand: AsyncParsableCommand {
         keychainDidRead: () -> Void = {},
         recordingLive: (DeviceLockKey) -> Bool = { RecordingMarker.isLive($0) }
     ) async throws -> LoginReport {
-        // The caller holds the device lock, so no recording can start after this check.
-        if recordingLive(DeviceLockKey(platform: route.device.platform, id: route.device.rawValue)) {
-            throw CLIError(
-                errorDescription: "A recording is running on \(route.device.rawValue) (record-video or stream-video), so login will not type a password until it stops. Stop the recording, then retry. Nothing was typed.",
-                reason: .deviceBusy
-            )
-        }
+        try RecordingMarker.refuseTyping("a password", command: "login", on: route.device, recordingLive: recordingLive)
         try await route.backend.prepare()
         onPrepared()
         let tree = try await route.backend.accessibilityTree(for: route.device)

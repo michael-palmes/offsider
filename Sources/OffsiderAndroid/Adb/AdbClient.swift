@@ -80,6 +80,16 @@ actor AdbClient {
         }
     }
 
+    /// A device service that answers with one status, such as `reverse:killforward:tcp:8081`; a `FAIL` throws with adb's message.
+    func deviceCommand(_ service: String, on serial: String, timeout: Duration = .seconds(5)) async throws {
+        let connection = try await openDevice(serial, service: service, label: service, timeout: timeout)
+        try await closing(connection, serial: serial, command: service, timeout: timeout) {
+            if case .fail(let message) = try await connection.readStatus() {
+                throw AndroidError.adbCommandFailed(serial: serial, command: service, detail: message)
+            }
+        }
+    }
+
     /// `host:transport:<serial>`, then `shell,v2,raw:<command>`; reads until the exit packet.
     /// `label` names the command in errors when the script itself is too long to quote.
     func shell(_ command: String, on serial: String, timeout: Duration = .seconds(10), label: String? = nil) async throws -> AdbShellResult {

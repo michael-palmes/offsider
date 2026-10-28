@@ -108,6 +108,21 @@ extension DeviceAccess {
         return seconds
     }
 
+    /// `8081`, `8081 8742` or `8081,8742`: ports Metro may listen on, ascending; empty for none.
+    static func metroPorts(_ text: String) throws -> [Int] {
+        let words = text.split { $0 == "," || $0 == " " }.map(String.init)
+        guard words.count <= DeviceAllowance.maximumMetroPorts else {
+            throw ValidationError("At most \(DeviceAllowance.maximumMetroPorts) Metro ports.")
+        }
+        let ports = try words.map { word -> Int in
+            guard let port = Int(word) else { throw ValidationError("Type ports as numbers, such as 8081 8742; '\(word)' is not one.") }
+            if let problem = MetroReverse.refusal(port: port) { throw ValidationError(problem) }
+            return port
+        }
+        guard Set(ports).count == ports.count else { throw ValidationError("A Metro port is named twice.") }
+        return ports.sorted()
+    }
+
     /// The stable key for a physical device ID; refuses simulators, emulators and anything else.
     static func physicalKey(_ raw: String) throws -> (platform: DevicePlatform, key: String) {
         let id = raw.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -123,11 +138,14 @@ extension DeviceAccess {
         }
     }
 
-    /// Stops the runner and session broker serving an iPhone or iPad, clearing its screen-sharing indicator, or a phone's warm helper.
+    /// Stops the runner and session broker serving an iPhone or iPad, clearing its screen-sharing indicator, or a phone's warm helper, the adb reverses Offsider set and its posture override.
     @MainActor
     static func stopSessions(udid: String) async -> [String] {
         if case .androidName = DeviceIDClassifier.classify(udid) {
-            return await AndroidBackend.stopWarmHelpers(host: .cli(), serial: udid).isEmpty ? [] : ["warm helper"]
+            let helper = await AndroidBackend.stopWarmHelpers(host: .cli(), serial: udid).isEmpty ? [] : ["warm helper"]
+            let reverses = await AndroidBackend.removeMetroReverses(host: .cli(), serial: udid).flatMap(\.ports).map { "adb reverse tcp:\($0)" }
+            let posture = await AndroidBackend.resetRecordedPostures(host: .cli(), serial: udid).isEmpty ? [] : ["posture override"]
+            return helper + reverses + posture
         }
         var stopped: [String] = []
         let brokers = DeviceSessions.records(device: udid)
@@ -166,6 +184,14 @@ struct DeviceAccessAllow: AsyncParsableCommand {
     @Option(name: .customLong("team"), help: ArgumentHelp("For an iPhone or iPad: the Apple development team ID that signs Offsider's runner app on it; without it, choose from your Keychain's teams. OFFSIDER_IOS_TEAM_ID wins over it.", valueName: "id"))
     var team: String?
 
+    @Option(name: .customLong("metro-port"), help: ArgumentHelp("For an Android phone: a port of Metro on this Mac that rn open may map to it with adb reverse (repeatable), or none; without it, choose. Every app on the phone can reach Metro while the reverse is set.", valueName: "port|none"))
+    var metroPortArguments: [String] = []
+
+    /// `--metro-port` as ports, empty for `none`; nil when it was not given, so the step asks.
+    var metroPorts: [Int]? {
+        metroPortArguments.isEmpty ? nil : metroPortArguments == ["none"] ? [] : try? DeviceAccess.metroPorts(metroPortArguments.joined(separator: " "))
+    }
+
     @OptionGroup var output: DeviceJSONOption
 
     var json: Bool { output.json }
@@ -182,6 +208,14 @@ struct DeviceAccessAllow: AsyncParsableCommand {
             throw ValidationError("--app takes a bundle id or package name, such as com.example.app; '\(app)' is not one.")
         }
         guard Set(apps).count == apps.count else { throw ValidationError("--app names the same app twice.") }
+        if !metroPortArguments.isEmpty, metroPortArguments != ["none"] {
+            guard !metroPortArguments.contains("none") else { throw ValidationError("--metro-port none stands alone, without ports.") }
+            do {
+                _ = try DeviceAccess.metroPorts(metroPortArguments.joined(separator: " "))
+            } catch let error as ValidationError {
+                throw ValidationError("--metro-port: \(error.message)")
+            }
+        }
     }
 
     /// What the person chose; `lifetime` nil means until removed.
@@ -191,6 +225,7 @@ struct DeviceAccessAllow: AsyncParsableCommand {
         let team: String?
         let apps: [String]
         let lifetime: TimeInterval?
+        var metroPorts: [Int] = []
     }
 
     /// A person reading the menus may step away for Touch ID, so a key may be minutes coming.
@@ -270,11 +305,11 @@ struct DeviceAccessAllow: AsyncParsableCommand {
                 if droppedTampered {
                     prompt.lines(TerminalUI.warning(Self.droppedTampered, width: prompt.width, style: prompt.style))
                 }
-                prompt.lines(AllowScreen.allowed(name: name, key: choice.key, until: until, apps: choice.apps, width: prompt.width, style: prompt.style))
+                prompt.lines(AllowScreen.allowed(name: name, key: choice.key, until: until, apps: choice.apps, metroPorts: choice.metroPorts, width: prompt.width, style: prompt.style))
                 prompt.settle()
                 reports.append(json
                     ? DeviceAccessReport.changeJSON(action: "allow", platform: choice.row.platform, key: choice.key, allowance: entry)
-                    : AllowScreen.allowed(name: name, key: choice.key, until: until, apps: choice.apps, width: .max, style: .detect(isTerminal: false)).joined(separator: "\n"))
+                    : AllowScreen.allowed(name: name, key: choice.key, until: until, apps: choice.apps, metroPorts: choice.metroPorts, width: .max, style: .detect(isTerminal: false)).joined(separator: "\n"))
                 allowedNow.insert(choice.key)
                 savedNames.append(name)
                 guard named == nil, !json else { return }
@@ -323,7 +358,8 @@ struct DeviceAccessAllow: AsyncParsableCommand {
                 added: Date(timeIntervalSince1970: now.timeIntervalSince1970.rounded(.down)),
                 expires: chosen.lifetime.map { Date(timeIntervalSince1970: now.addingTimeInterval($0).timeIntervalSince1970.rounded(.down)) },
                 apps: chosen.apps,
-                team: chosen.team
+                team: chosen.team,
+                metroPorts: chosen.metroPorts
             )
             return list.pruned(now: now).adding(entry)
         }, commit: { try context.seal.seal($0) })
@@ -337,14 +373,18 @@ struct DeviceAccessAllow: AsyncParsableCommand {
     ]
     static let recommendedExpiry = 1
 
-    /// The steps after the device is known: team, app, how long, the summary and Touch ID.
+    /// The steps after the device is known: team, app, Metro, how long, the summary and Touch ID.
     @MainActor
-    /// `later` marks a device after the first: there `--team` applies only to an iPhone or iPad, and is skipped for a phone.
+    /// `later` marks a device after the first: there `--team` applies only to an iPhone or iPad and `--metro-port` only to a phone, and each is skipped for the other.
     private func complete(_ row: DeviceSummary, on prompt: TerminalPrompt, context: DeviceAccessContext, policy: PhysicalDevicePolicy, later: Bool = false) async throws -> Choice {
         let key = StableDeviceKey.of(row) ?? row.id
         let team = row.platform == .ios || !later ? self.team : nil
         if team != nil, row.platform != .ios {
             throw CLIError(errorDescription: "--team is for an iPhone or iPad, and \(key) is an Android phone. Nothing was saved.", reason: .usage)
+        }
+        let metroPorts = row.platform == .android || !later ? self.metroPorts : nil
+        if let metroPorts, !metroPorts.isEmpty, row.platform != .android {
+            throw CLIError(errorDescription: "--metro-port is for an Android phone, and \(key) is an iPhone or iPad. Nothing was saved.", reason: .usage)
         }
         if case .refused(let refusal) = policy.decision(platform: row.platform, key: key), refusal.isManaged {
             throw CLIError.deviceNotAllowed(name: row.name, key: key, refusal: refusal)
@@ -375,6 +415,10 @@ struct DeviceAccessAllow: AsyncParsableCommand {
         if apps.isEmpty {
             chosenApps = try await step("App") { try await pickApp(on: prompt, row: row, context: context, policy: policy, step: $0) }.value
         }
+        var chosenPorts = metroPorts ?? []
+        if row.platform == .android, metroPorts == nil {
+            chosenPorts = try await step("Metro") { try pickMetroPorts(on: prompt, step: $0) }.value
+        }
         let lifetime: TimeInterval?
         if let expires {
             lifetime = try DeviceAccess.expiry(expires)
@@ -383,11 +427,12 @@ struct DeviceAccessAllow: AsyncParsableCommand {
         }
         let name = AllowScreen.name(row)
         let start = prompt.mark
-        prompt.lines([""] + AllowScreen.summary(row, apps: chosenApps, lifetime: lifetime, team: shownTeam, width: prompt.width, style: prompt.style))
+        prompt.lines([""] + AllowScreen.summary(row, apps: chosenApps, lifetime: lifetime, team: shownTeam, metroPorts: chosenPorts, width: prompt.width, style: prompt.style))
         prompt.lines([prompt.style.dim(AllowScreen.confirm)])
-        try await PersonPresence.confirm(reason: "allow Offsider to drive \(name) (\(PromptScreen.visible(key)))")
+        let reach = chosenPorts.isEmpty ? "" : " and let its apps reach \(AllowScreen.metro(chosenPorts))"
+        try await PersonPresence.confirm(reason: "allow Offsider to drive \(name) (\(PromptScreen.visible(key)))\(reach)")
         prompt.rewind(to: start)
-        return Choice(row: row, key: key, team: chosenTeam, apps: chosenApps, lifetime: lifetime)
+        return Choice(row: row, key: key, team: chosenTeam, apps: chosenApps, lifetime: lifetime, metroPorts: chosenPorts)
     }
 
     /// The steps this run shows, in order; a flag given on the command line skips its step.
@@ -396,6 +441,7 @@ struct DeviceAccessAllow: AsyncParsableCommand {
         if device == nil { names.append("Device") }
         if platform == .ios, team == nil { names.append("Team") }
         if apps.isEmpty { names.append("App") }
+        if platform == .android, metroPortArguments.isEmpty { names.append("Metro") }
         if expires == nil { names.append("How long") }
         return names
     }
@@ -430,8 +476,8 @@ struct DeviceAccessAllow: AsyncParsableCommand {
             let wired = zip(usb, allowances).filter { $0.1 == nil }.map(\.0)
             let allowed = zip(usb, allowances).compactMap { row, entry in entry.map { (row, $0) } }
             let wireless = rows.filter { $0.connection == "network" }
-            // The count is the longest run any connected device could take; an Android pick renumbers from step 2.
-            let total = stepNames(platform: wired.contains { $0.platform == .ios } ? .ios : .android).count
+            // The count is the longest run any connected device could take; the pick renumbers from step 2.
+            let total = Set(wired.map(\.platform)).map { stepNames(platform: $0).count }.max() ?? 1
             let allAllowed = wired.isEmpty && !allowed.isEmpty
             let menu = wired.map { AllowScreen.deviceRow($0, key: StableDeviceKey.of($0) ?? $0.id, style: prompt.style) }
                 + allowed.map { AllowScreen.allowedRow($0.0, detail: AccessStatusScreen.detail($0.1, now: now, timeZone: context.timeZone, team: false, style: prompt.style), style: prompt.style) }
@@ -551,6 +597,35 @@ struct DeviceAccessAllow: AsyncParsableCommand {
             return Self.appProblem(text, platform: platform, policy: policy)
         }.trimmingCharacters(in: .whitespaces)
         return answer.isEmpty ? ([], AllowScreen.apps([])) : ([answer], answer)
+    }
+
+    /// None first and chosen by default: a reverse opens Metro to every app on the phone.
+    @MainActor
+    private func pickMetroPorts(on prompt: TerminalPrompt, step: String?) throws -> (value: [Int], shown: String) {
+        let rows = [
+            MenuRow(.lock, [AllowScreen.noMetro, AllowScreen.noMetroDetail], recommended: true),
+            MenuRow(.link, ["8081", AllowScreen.metroPortDetail]),
+            MenuRow(.type, [AllowScreen.typePorts]),
+        ]
+        let index = try prompt.choose(AllowScreen.metroQuestion, step: step, rows: rows, selected: 0, keepsChoice: false)
+        let ports: [Int]
+        switch index {
+        case 0: ports = []
+        case 1: ports = [8081]
+        default:
+            let typed = try prompt.ask("  Ports (such as 8081 8742, Return for none): ") { answer in
+                do {
+                    _ = try DeviceAccess.metroPorts(answer)
+                    return nil
+                } catch let error as ValidationError {
+                    return error.message
+                } catch {
+                    return "\(error)"
+                }
+            }
+            ports = try DeviceAccess.metroPorts(typed)
+        }
+        return (ports, ports.isEmpty ? "none" : ports.map(String.init).joined(separator: ", "))
     }
 
     @MainActor

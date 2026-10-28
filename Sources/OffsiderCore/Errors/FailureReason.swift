@@ -34,6 +34,7 @@ public enum FailureReason: String, CaseIterable, Sendable {
     case deviceUnresponsive = "device_unresponsive"
     case deviceControlFailed = "device_control_failed"
     case appNotInstalled = "app_not_installed"
+    case linkNotHandled = "link_not_handled"
     case logStreamFailed = "log_stream_failed"
     case videoFailed = "video_failed"
     case videoUnmasked = "video_unmasked"
@@ -62,8 +63,10 @@ public enum FailureReason: String, CaseIterable, Sendable {
     case focusMismatch = "focus_mismatch"
     case textNotAccepted = "text_not_accepted"
     case metroNotRunning = "metro_not_running"
+    case metroPortNotAllowed = "metro_port_not_allowed"
     case rnLoadFailed = "rn_load_failed"
     case appCrashed = "app_crashed"
+    case appNotResponding = "app_not_responding"
     case logBoxInspectorOpen = "logbox_inspector_open"
     case appNotAllowed = "app_not_allowed"
     case personRequired = "person_required"
@@ -132,7 +135,7 @@ public enum FailureReason: String, CaseIterable, Sendable {
         case .selectorAmbiguous, .selectorAmbiguousSwitch, .userAmbiguous:
             return .ambiguousSelector
         case .deviceNotFound, .deviceNotBooted, .deviceNotReady, .deviceUnauthorised, .deviceLocked, .deviceAmbiguous, .avdNotFound,
-             .deviceNotWired, .deviceUntrusted, .developerModeOff, .devicePreparing, .uiAutomationOff, .deviceNotAllowed:
+             .deviceNotWired, .deviceUntrusted, .developerModeOff, .devicePreparing, .uiAutomationOff, .deviceNotAllowed, .metroPortNotAllowed:
             return .deviceUnavailable
         case .deviceBusy, .uiautomationBusy, .deviceLeased:
             return .deviceBusy

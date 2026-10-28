@@ -197,7 +197,9 @@ public struct AndroidDoctorProbe {
         let lines = await readDeviceScript(Self.phoneScript, into: &facts, serial: serial, client: client, skipping: 2)
         facts.apiLevel = lines.first.flatMap { Int($0) }
         facts.release = lines.count > 1 && !lines[1].isEmpty ? lines[1] : nil
-        return await finishDeviceFacts(facts, serial: serial, client: client)
+        var finished = await finishDeviceFacts(facts, serial: serial, client: client)
+        finished.offsiderReverses = host.recordedMetroPorts(serial: serial, transportId: phone.transportId)
+        return finished
     }
 
     /// Runs the getprop and settings script; returns its trimmed lines, empty when the shell failed.
