@@ -317,17 +317,18 @@ struct AppLivenessTests {
         #expect(await replaced.read(seen: AppProcess(pid: 4100, started: 7), tree: Self.tree(pid: 4200), mayList: false) == .running(AppProcess(pid: 4200, started: 8)))
     }
 
-    @Test("before the iOS app is seen, launchctl runs only when the tree has no pid and a listing is allowed")
-    func iosListingOnlyWithoutATreePid() async {
+    @Test("before the iOS app is seen, launchctl runs when a listing is allowed and the tree is not the app's, as under SpringBoard's alert")
+    func iosListingWithoutTheAppsTree() async {
         let probe = Probe()
         probe.listing = "PID\tStatus\tLabel\n4100\t0\tUIKitApplication:com.example.app[5f1e][rb-legacy]\n"
-        #expect(await probe.read(seen: nil, tree: Self.tree(pid: 900), mayList: true) == .unknown)
+        #expect(await probe.read(seen: nil, tree: Self.tree(pid: 900), mayList: false) == .unknown)
         #expect(await probe.read(seen: nil, tree: Self.tree(pid: nil), mayList: false) == .unknown)
         #expect(probe.listings == 0)
+        #expect(await probe.read(seen: nil, tree: Self.tree(pid: 900), mayList: true) == .running(AppProcess(pid: 4100, started: 7)))
         #expect(await probe.read(seen: nil, tree: Self.tree(pid: nil), mayList: true) == .running(AppProcess(pid: 4100, started: 7)))
         probe.listing = "PID\tStatus\tLabel\n-\t0\tUIKitApplication:com.example.app[5f1e][rb-legacy]\n"
         #expect(await probe.read(seen: nil, tree: nil, mayList: true) == .notRunning)
-        #expect(probe.listings == 2)
+        #expect(probe.listings == 3)
     }
 
     @Test("pidof's one pid is running, an empty answer with status 1 is not, and anything else is unknown")

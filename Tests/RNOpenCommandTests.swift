@@ -102,8 +102,7 @@ struct RNOpenCommandTests {
         #expect(error?.reason == .rnLoadFailed && error?.exitCode == .failure)
     }
 
-    static let phone = DeviceID(rawValue: "R58M123ABC", platform: .android)
-    static let noRoute = ExpoDevClientError(.noRoute, "R58M123ABC is a phone with no adb reverse for port 8742, so it cannot reach Metro on this Mac.")
+    static let noRoute = ExpoDevClientError(.noRoute, "R58MFAKE01 is a phone with no adb reverse for port 8742, so it cannot reach Metro on this Mac.")
 
     /// Runs `rn open` on a phone without a reverse, allowed `ports` (no allowance when nil), with Metro owned by this user or not.
     static func openOnPhone(ports: [Int]?, owned: Bool = true) async throws -> (Result<RNOpen.Report, CLIError>, FakeDeviceBackend) {
@@ -286,8 +285,220 @@ struct RNOpenCommandTests {
         #expect(!launching.userFacingDescription.contains("blank screen"))
     }
 
+    // MARK: Dead waits
+
+    static let phone = DeviceID(rawValue: "R58MFAKE01", platform: .android)
+    static let emulator = DeviceID(rawValue: "emulator-5554", platform: .android)
+
+    /// A phone allowed for any app: each tree read is refused until the command names its app.
+    final class AnyAppPhone: FakeDeviceBackend, AppTargetSelecting {
+        private(set) var selected: String?
+
+        func selectApp(_ appID: String, on id: DeviceID) -> Bool {
+            defer { selected = appID }
+            return selected != appID
+        }
+
+        override func accessibilityTree(for id: DeviceID, point: UIPoint?) async throws -> UITree {
+            guard selected != nil else {
+                throw CLIError(errorDescription: "\(id.rawValue) is allowed for any app, so each command names the app it drives, and none was named.", reason: .appNotAllowed)
+            }
+            return try await super.accessibilityTree(for: id, point: point)
+        }
+    }
+
+    /// Fails the first `failures` tree reads with `error`, then serves its trees.
+    final class FailingReads: FakeDeviceBackend {
+        var error: any Error = CLIError(errorDescription: "The tree read failed.", reason: .treeReadFailed)
+        var failures = Int.max
+        private(set) var failed = 0
+
+        override func accessibilityTree(for id: DeviceID, point: UIPoint?) async throws -> UITree {
+            guard failed >= failures else {
+                failed += 1
+                throw error
+            }
+            return try await super.accessibilityTree(for: id, point: point)
+        }
+    }
+
+    /// Runs `rn open` on `backend`, returning the outcome and the seconds it took on the scripted clock.
+    static func run(_ arguments: [String], on backend: FakeDeviceBackend, device: DeviceID = device) async throws -> (Result<RNOpen.Report, CLIError>, TimeInterval) {
+        let clock = ScriptedClock()
+        let command = try RNOpen.parse(["--port", "8742", "--bundle-id", "com.example.app"] + arguments + ["--device", device.rawValue])
+        do {
+            return (.success(try await command.open(on: DeviceRouter.Route(backend: backend, device: device), metro: running, clock: clock.poll)), clock.now)
+        } catch let error as CLIError {
+            return (.failure(error), clock.now)
+        }
+    }
+
+    @Test("on a phone allowed for any app the wait reads --bundle-id's tree, so the wait id ends it")
+    func anyAppPhoneReadsTheBundle() async throws {
+        let phone = AnyAppPhone(platform: .android, trees: [Self.bundling, Self.app])
+        let (result, _) = try await Self.run(["--wait-id", "menu-title", "--timeout", "600"], on: phone, device: Self.phone)
+        #expect(try result.get().waitID == "menu-title")
+        #expect(phone.selected == "com.example.app")
+    }
+
+    @Test("tree reads failing for 10 s end the wait with the read's own error, not a Metro timeout")
+    func failingReadsStopWithTheirError() async throws {
+        let backend = FailingReads(platform: .android, trees: [Self.app])
+        backend.error = CLIError(errorDescription: "R58MFAKE01 is allowed for any app, so each command names the app it drives, and none was named.", reason: .appNotAllowed)
+        let (result, seconds) = try await Self.run(["--wait-id", "menu-title", "--timeout", "600"], on: backend, device: Self.phone)
+        guard case .failure(let error) = result else { Issue.record("expected the read's error"); return }
+        #expect(error.reason == .appNotAllowed)
+        #expect(!error.userFacingDescription.contains("did not finish loading"))
+        #expect(seconds <= 11)
+    }
+
+    @Test("a few failed reads while the app starts are not the end of the wait")
+    func briefFailuresKeepWaiting() async throws {
+        let backend = FailingReads(platform: .android, trees: [Self.bundling, Self.app])
+        backend.failures = 6
+        let (result, _) = try await Self.run(["--wait-id", "menu-title"], on: backend, device: Self.emulator)
+        #expect(try result.get().waitID == "menu-title")
+    }
+
+    static let hung = ForegroundActivities(top: "com.example.app/com.example.app.MainActivity", home: "com.example.launcher/com.example.launcher.Home")
+    static let noWindow = CLIError(errorDescription: "Offsider found no window on emulator-5554. Unlock the emulator and bring an app to the front.", reason: .noWindow)
+
+    @Test("no window for the app in front on an unlocked Android screen is app_not_responding after 10 s, with --restart as the fix")
+    func hungAppIsNotResponding() async throws {
+        let backend = FailingReads(platform: .android, trees: [])
+        backend.error = Self.noWindow
+        backend.foregrounds = [Self.hung]
+        let (result, seconds) = try await Self.run(["--scheme", "exp+playground", "--timeout", "600"], on: backend, device: Self.emulator)
+        guard case .failure(let error) = result else { Issue.record("expected app_not_responding"); return }
+        #expect(error.reason == .appNotResponding && error.exitCode == .failure)
+        #expect(error.userFacingDescription.hasPrefix("com.example.app is in front on emulator-5554, but Android has listed no window for it for 10 s"))
+        #expect(!error.userFacingDescription.contains("Unlock"))
+        #expect(error.hint == "offsider rn open --port 8742 --bundle-id com.example.app --scheme exp+playground --restart --device emulator-5554")
+        #expect(seconds <= 11)
+    }
+
+    @Test("no window on a locked screen, or with the home screen in front, stays no_window")
+    func noWindowWithoutAHungApp() async throws {
+        let locked = FailingReads(platform: .android, trees: [])
+        locked.error = Self.noWindow
+        locked.foregrounds = [Self.hung]
+        locked.awake = AwakeReading(screen: .on, lockScreen: .secure)
+        let (lockedResult, _) = try await Self.run(["--timeout", "600"], on: locked, device: Self.emulator)
+        #expect(lockedResult.failure?.reason == .noWindow)
+
+        let home = FailingReads(platform: .android, trees: [])
+        home.error = Self.noWindow
+        home.foregrounds = [ForegroundActivities(top: Self.hung.home, home: Self.hung.home)]
+        let (homeResult, _) = try await Self.run(["--timeout", "600"], on: home, device: Self.emulator)
+        #expect(homeResult.failure?.reason == .noWindow)
+    }
+
+    static let settings = FakeUI.tree([FakeUI.node(.other, id: "settings-screen", label: "Settings", frame: FakeUI.frame(0, 0, 402, 874))])
+
+    @Test("a loaded screen without --wait-id ends the wait after 15 s, naming the screen's first id")
+    func otherScreenStopsEarly() async throws {
+        let (result, seconds) = try await Self.run(["--wait-id", "home-screen", "--timeout", "600"], on: FakeDeviceBackend(trees: [Self.bundling, Self.app]))
+        guard case .failure(let error) = result else { Issue.record("expected the other screen"); return }
+        #expect(error.reason == .conditionNotMet && error.exitCode == .unverified)
+        #expect(error.userFacingDescription == #"com.example.app shows the screen with id="menu-title", and --wait-id home-screen is not on it: it has shown it for 15 s, so rn open stopped waiting. Pass --wait-id with an element of the screen the app opens on, or bring the app to that screen first."#)
+        #expect(seconds < 20)
+    }
+
+    @Test("a screen that keeps changing waits for --timeout, then names the last screen instead of blaming Metro")
+    func changingScreensTimeOut() async throws {
+        let (result, seconds) = try await Self.run(["--wait-id", "home-screen", "--timeout", "30"], on: FakeDeviceBackend(trees: Array(repeating: [Self.app, Self.settings], count: 40).flatMap { $0 }))
+        guard case .failure(let error) = result else { Issue.record("expected a timeout"); return }
+        #expect(error.userFacingDescription.contains("and --wait-id home-screen is not on it: it did not appear within 30 s."))
+        #expect(seconds >= 30)
+    }
+
+    /// Serves its trees, then fails every read after `goodReads`.
+    final class LastReadFails: FakeDeviceBackend {
+        var goodReads = 0
+
+        override func accessibilityTree(for id: DeviceID, point: UIPoint?) async throws -> UITree {
+            guard treeReads < goodReads else { throw CLIError(errorDescription: "The tree read failed.", reason: .treeReadFailed) }
+            return try await super.accessibilityTree(for: id, point: point)
+        }
+    }
+
+    @Test("one failed read just before --timeout does not hide what the wait saw")
+    func lastFailedReadKeepsTheTimeoutReason() async throws {
+        let backend = LastReadFails(trees: [Self.app, Self.settings])
+        backend.goodReads = 19
+        let (result, _) = try await Self.run(["--wait-id", "home-screen", "--timeout", "10"], on: backend)
+        #expect(result.failure?.userFacingDescription.contains("--wait-id home-screen is not on it: it did not appear within 10 s.") == true)
+    }
+
+    static let appPID = 4100
+    static let springBoardPID = 4300
+
+    /// SpringBoard's tree while its permission alert covers the app: its own application, the alert's title and two buttons.
+    static func permissionAlert() -> UITree {
+        let alert = FakeUI.node(.other, label: "“Playground” Would Like to Send You Notifications", frame: FakeUI.frame(41, 300, 320, 240), pid: springBoardPID, children: [
+            FakeUI.node(.text, label: "Notifications may include alerts, sounds and icon badges.", frame: FakeUI.frame(61, 360, 280, 60), pid: springBoardPID),
+            FakeUI.node(.button, label: "Don’t Allow", frame: FakeUI.frame(41, 440, 160, 48), pid: springBoardPID),
+            FakeUI.node(.button, label: "Allow", frame: FakeUI.frame(201, 440, 160, 48), pid: springBoardPID),
+        ])
+        let root = FakeUI.node(.application, label: " ", frame: FakeUI.frame(0, 0, 402, 874), pid: springBoardPID, children: [alert])
+        return UITree(platform: .ios, device: device.rawValue, roots: [root])
+    }
+
+    @Test("a system alert over the running app ends the wait as person_required, naming it and its buttons, and taps nothing", arguments: [
+        ["--wait-id", "menu-title", "--timeout", "600"], ["--timeout", "600"],
+    ])
+    func systemPromptIsReported(arguments: [String]) async throws {
+        let backend = HitTestingFakeBackend(trees: [Self.permissionAlert()])
+        backend.processNames = [Self.springBoardPID: "SpringBoard"]
+        backend.livenessReadings = [.running(AppProcess(pid: Self.appPID, started: 1))]
+        let (result, seconds) = try await Self.run(arguments, on: backend)
+        guard case .failure(let error) = result else { Issue.record("expected person_required"); return }
+        #expect(error.reason == .personRequired)
+        #expect(error.userFacingDescription == #"com.example.app is behind the system prompt "“Playground” Would Like to Send You Notifications" from SpringBoard ("Don’t Allow", "Allow"), so rn open stopped waiting. It never answers a system prompt: ask the user which to choose, answer it, then run rn open again."#)
+        #expect(backend.session.calls.isEmpty)
+        #expect(seconds < 5)
+    }
+
+    @Test("an Open in prompt long after the last link is reported as a system prompt and never tapped")
+    func lateOpenPromptIsNotAnswered() async throws {
+        let pid = Self.springBoardPID
+        let prompt = FakeUI.node(.other, label: "Open in “Maps”?", frame: FakeUI.frame(41, 388, 320, 126), pid: pid, children: [
+            FakeUI.node(.button, label: "Cancel", frame: FakeUI.frame(57, 450, 140, 48), pid: pid),
+            FakeUI.node(.button, label: "Open", frame: FakeUI.frame(205, 450, 140, 48), pid: pid),
+        ])
+        let late = UITree(platform: .ios, device: Self.device.rawValue, roots: [
+            FakeUI.node(.application, label: " ", frame: FakeUI.frame(0, 0, 402, 874), pid: pid, children: [prompt]),
+        ])
+        let backend = HitTestingFakeBackend(trees: Array(repeating: Self.bundling, count: 24) + [late])
+        backend.livenessReadings = [.running(AppProcess(pid: Self.appPID, started: 1))]
+        let (result, _) = try await Self.run(["--wait-id", "menu-title", "--timeout", "600"], on: backend)
+        #expect(result.failure?.reason == .personRequired)
+        #expect(result.failure?.userFacingDescription.contains(#""Open in “Maps”?""#) == true)
+        #expect(backend.session.calls.isEmpty)
+    }
+
+    @Test("Expo's dev menu intro over the app ends the wait with rn prepare as the fix")
+    func devMenuIntroNamesPrepare() async throws {
+        let intro = FakeUI.tree([
+            FakeUI.node(.text, label: "This is the developer menu. It gives you access to useful tools in your development builds.", frame: FakeUI.frame(40, 700, 330, 34)),
+            FakeUI.node(.button, label: "Continue", frame: FakeUI.frame(40, 790, 330, 48)),
+        ])
+        let (result, seconds) = try await Self.run(["--wait-id", "menu-title", "--timeout", "600"], on: FakeDeviceBackend(trees: [Self.bundling, intro]))
+        guard case .failure(let error) = result else { Issue.record("expected the intro"); return }
+        #expect(error.reason == .conditionNotMet)
+        #expect(error.hint == "offsider rn prepare --bundle-id com.example.app --device \(Self.device.rawValue)")
+        #expect(seconds < 5)
+    }
+
     @Test("--port and --timeout are checked", arguments: [["--port", "0"], ["--timeout", "5"], ["--scheme", "not a scheme"]])
     func validation(extra: [String]) {
         #expect(throws: (any Error).self) { try RNOpen.parse(["--port", "8742", "--bundle-id", "com.example.app"] + extra + ["--device", Self.device.rawValue]) }
+    }
+}
+
+private extension Result {
+    var failure: Failure? {
+        guard case .failure(let error) = self else { return nil }
+        return error
     }
 }
