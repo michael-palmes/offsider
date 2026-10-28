@@ -224,7 +224,8 @@ struct RNOpen: AsyncParsableCommand {
                     hint: "offsider logs --rn --device \(device.rawValue)"
                 )
             }
-            if let open = ExpoDevLauncher.openLinkPrompt(in: tree), let frame = open.frame {
+            // Only the prompt for the link just sent is answered; a later one, perhaps for another app, is reported below.
+            if let open = ExpoDevLauncher.openLinkPrompt(in: tree), let frame = open.frame, clock.now() - lastSend <= Self.resendEvery {
                 let point = try await route.backend.deviceCoordinates(for: [(x: frame.center.x, y: frame.center.y)], tree: tree, on: device)[0]
                 try await route.backend.performTracked(.tapAt(x: point.x, y: point.y), on: device)
                 continue

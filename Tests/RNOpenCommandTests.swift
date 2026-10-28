@@ -406,6 +406,24 @@ struct RNOpenCommandTests {
         #expect(seconds < 5)
     }
 
+    @Test("an Open in prompt long after the last link is reported as a system prompt and never tapped")
+    func lateOpenPromptIsNotAnswered() async throws {
+        let pid = Self.springBoardPID
+        let prompt = FakeUI.node(.other, label: "Open in “Maps”?", frame: FakeUI.frame(41, 388, 320, 126), pid: pid, children: [
+            FakeUI.node(.button, label: "Cancel", frame: FakeUI.frame(57, 450, 140, 48), pid: pid),
+            FakeUI.node(.button, label: "Open", frame: FakeUI.frame(205, 450, 140, 48), pid: pid),
+        ])
+        let late = UITree(platform: .ios, device: Self.device.rawValue, roots: [
+            FakeUI.node(.application, label: " ", frame: FakeUI.frame(0, 0, 402, 874), pid: pid, children: [prompt]),
+        ])
+        let backend = HitTestingFakeBackend(trees: Array(repeating: Self.bundling, count: 24) + [late])
+        backend.livenessReadings = [.running(AppProcess(pid: Self.appPID, started: 1))]
+        let (result, _) = try await Self.run(["--wait-id", "menu-title", "--timeout", "600"], on: backend)
+        #expect(result.failure?.reason == .personRequired)
+        #expect(result.failure?.userFacingDescription.contains(#""Open in “Maps”?""#) == true)
+        #expect(backend.session.calls.isEmpty)
+    }
+
     @Test("Expo's dev menu intro over the app ends the wait with rn prepare as the fix")
     func devMenuIntroNamesPrepare() async throws {
         let intro = FakeUI.tree([
