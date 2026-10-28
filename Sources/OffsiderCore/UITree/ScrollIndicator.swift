@@ -40,8 +40,13 @@ public enum ScrollIndicator {
         return found
     }
 
+    /// A physical iPhone lists the indicator as a labelled element of no known type rather than a slider.
+    private static func hasIndicatorRole(_ node: UINode) -> Bool {
+        node.role == .slider || (node.role == .other && node.normalizedLabel != nil)
+    }
+
     private static func lies(_ node: UINode, along edges: UIFrame) -> Bool {
-        guard node.role == .slider, node.normalizedID == nil, let frame = node.frame, frame.width > 0, frame.height > 0 else { return false }
+        guard hasIndicatorRole(node), node.normalizedID == nil, let frame = node.frame, frame.width > 0, frame.height > 0 else { return false }
         if frame.width <= frame.height {
             return frame.width <= maximumThickness && abs(edges.x + edges.width - (frame.x + frame.width)) <= edgeTolerance
         }

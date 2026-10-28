@@ -97,6 +97,10 @@ extension DescribeUI: BatchReadable {
             tree = try await context.accessibilityTree()
             tree.systemPrompt = await SystemPromptProbe.find(in: tree, backend: context.backend, device: context.device)
         }
+        let options = try output.renderOptions()
+        if try parsedPoint() == nil, options.filter.onScreen {
+            await FrontJudge.read(Self.listed(tree, filter: options.filter), in: &tree, backend: context.backend, device: context.device)
+        }
         let described = try await Self.shown(await Self.withScreen(tree, on: context.route), on: context.route)
         let rendered = String(decoding: try output.render(described), as: UTF8.self)
         return BatchReadResult(detail: .describe(described, try output.renderOptions()), output: rendered)

@@ -59,7 +59,7 @@ struct ReactNativeStickyFooterTests {
         }
     }
 
-    @Test("a row under the floating footer is refused as covered and nothing is pressed", arguments: RNPlatform.enabled)
+    @Test("a row under the floating footer is never tapped through it: refused on Android, tapped beside the footer on a simulator", arguments: RNPlatform.enabled)
     func rowUnderFloatingFooterRefused(platform: RNPlatform) async throws {
         let app = RNApp(platform)
         try await app.open(Self.route)
@@ -74,9 +74,16 @@ struct ReactNativeStickyFooterTests {
 
         let result = try await app.offsider("tap --id \(row) --fail-if-covered")
 
-        #expect(result.exitCode != 0)
-        #expect(result.stderr.contains("covered by"), "\(result.stderr)")
         try await Task.sleep(for: .seconds(1))
-        #expect(try await app.label(of: "sticky-footer-test-pressed") == Self.untouched)
+        let pressed = try await app.label(of: "sticky-footer-test-pressed")
+        #expect(pressed != "Sticky Footer Pressed: Footer")
+        if platform == .ios {
+            #expect(result.exitCode == 0 && result.stderr.contains("tapping the part that shows"), "\(result.stderr)")
+            #expect(pressed == "Sticky Footer Pressed: Row \(row.split(separator: "-").last ?? "")")
+        } else {
+            #expect(result.exitCode != 0)
+            #expect(result.stderr.contains("covered by"), "\(result.stderr)")
+            #expect(pressed == Self.untouched)
+        }
     }
 }

@@ -89,6 +89,11 @@ public enum CoverJudge {
         return context.guess(viewport: context.viewport).map { context.verdict($0, .treeOrder, confident: false) }
     }
 
+    /// True only when the simulator's hit-test at `point` answered with the target or something inside it. Android's drawing order is no proof, as React Native leaves an opaque page's background out of the tree.
+    public static func surelyReaches(target: UINode, matched: UINode, point: UIPoint, roots: [UINode], viewport: UIFrame, stack: ScreenStack, hit: UINode) -> Bool {
+        Context(target: target, matched: matched, point: point, candidates: [], roots: roots, viewport: viewport, stack: stack).isOwnHit(hit)
+    }
+
     /// What Android's drawing order surely draws over target at point: the cover a selector tap refuses outright; nil when the point reaches it or the order cannot tell.
     public static func drawnCover(of target: UINode, at point: UIPoint, roots: [UINode], viewport: UIFrame, stack: ScreenStack) -> UINode? {
         guard target.isAndroidNode else { return nil }
@@ -116,9 +121,14 @@ public enum CoverJudge {
         var remaining = roots
         for _ in 0..<8 {
             guard let chain = drawnChain(at: point, in: remaining), let top = chain.last else { return nil }
+            let holdsTarget = targets.contains { target in top.flattened().contains { $0.isSameElement(as: target) } }
+            // In Compose a node that takes no taps hands the touch to what lies beneath it, as a row's text does to the button beside it.
+            if chain.count > 1, !holdsTarget, !top.isActionable, isComposeNode(in: chain) {
+                remaining = remaining.map { $0.removing(top) }
+                continue
+            }
             guard chain.count > 1, !isPlausibleOccluder(top), passesTouch(top, in: chain, roots: roots, stack: stack, targetsPage: targetsPage),
-                  let frame = top.frame, spans(frame, viewport),
-                  !targets.contains(where: { target in top.flattened().contains { $0.isSameElement(as: target) } }) else {
+                  let frame = top.frame, spans(frame, viewport), !holdsTarget else {
                 return top
             }
             remaining = remaining.map { $0.removing(top) }
@@ -136,6 +146,11 @@ public enum CoverJudge {
         return !react && !(index.map { index in stack.pages.contains { $0.content.contains(index) } } ?? false)
     }
 
+    /// A node of a Jetpack Compose host, which takes touches only where a modifier handles them.
+    static func isComposeNode(in chain: [UINode]) -> Bool {
+        chain.contains { $0.androidClassName?.hasPrefix("androidx.compose.") == true }
+    }
+
     /// The classes Android names a React Native view by: `ReactViewGroup`'s own, or a role's.
     private static let reactViewClasses: Set<String> = ["android.view.ViewGroup", "android.view.View"]
 
@@ -143,7 +158,7 @@ public enum CoverJudge {
     static func isReactView(_ node: UINode, in chain: [UINode]) -> Bool {
         guard let className = node.androidClassName else { return false }
         if className.hasPrefix("com.facebook.react.") { return true }
-        return reactViewClasses.contains(className) && !chain.contains { $0.androidClassName?.hasPrefix("androidx.compose.") == true }
+        return reactViewClasses.contains(className) && !isComposeNode(in: chain)
     }
 
     private static let containerRoles: Set<UIRole> = [.window, .application, .scrollView, .list]
@@ -163,6 +178,19 @@ public enum CoverJudge {
     /// A control, or labelled content that is not a container: something a tap on it would visibly reach. Unlabelled groups wrap content rather than draw over it.
     public static func isPlausibleOccluder(_ node: UINode) -> Bool {
         node.role.isActionable || (node.normalizedLabel != nil && !containerRoles.contains(node.role))
+    }
+
+    /// An unlabelled group holding controls, such as a tab bar or a footer bar, whose padding takes a touch though nothing in it is labelled there.
+    public static func isBar(_ node: UINode) -> Bool {
+        !node.role.isActionable && node.normalizedLabel == nil && !containerRoles.contains(node.role) && node.role != .keyboard
+            && node.children.contains { $0.flattened().contains { $0.role.isActionable } }
+    }
+
+    /// A bar at `point`, nearly as wide as the screen and at most a quarter of its height, that does not lie inside `target`: something drawn over the target there.
+    public static func isBar(_ node: UINode, over target: UINode, at point: UIPoint, viewport: UIFrame) -> Bool {
+        guard isBar(node), let frame = node.frame, frame.contains(point),
+              frame.width >= 0.8 * viewport.width, frame.height <= viewport.height / 4 else { return false }
+        return target.frame.map { !$0.encloses(frame, tolerance: TransitionGuard.frameTolerance) } ?? true
     }
 
     enum HitJudgement {
@@ -223,7 +251,7 @@ public enum CoverJudge {
 
         /// The page drawn over the target's screen, if the stack shows one.
         private var pageOverTarget: ScreenStack.Page? {
-            [target, matched].lazy.compactMap { ScreenStack.index(of: $0, in: roots) }.compactMap(stack.page(over:)).first
+            [target, matched].lazy.compactMap { stack.page(over: $0, in: roots) }.first
         }
 
         /// The smallest plausible occluder on the page over the point, else the page itself.
@@ -253,6 +281,11 @@ public enum CoverJudge {
                 guard node.normalizedID == nil, let mine = node.frame, let theirs = hit.frame else { return false }
                 return mine.isWithinTolerance(of: theirs)
             }
+        }
+
+        /// The hit is the target or inside it.
+        func isOwnHit(_ hit: UINode) -> Bool {
+            isOwn(hit) || isOwnHit(hit, placed: placed(hit))
         }
 
         /// An unplaced hit of the target's role over most of its frame, with no other id: maybe the target moved, so never a confident cover.
@@ -286,6 +319,11 @@ public enum CoverJudge {
             if isOwn(hit) || isOwnHit(hit, placed: placed) {
                 return .clear
             }
+            // An unlabelled container holds what lies inside its frame, which an iOS simulator lists beside it rather than within.
+            if !target.isActionable, target.normalizedLabel == nil, pageOverTarget == nil, let mine = target.frame, let theirs = (placed ?? hit).frame,
+               mine.encloses(theirs, tolerance: TransitionGuard.frameTolerance) {
+                return .clear
+            }
             if isIndicator(hit, placed: placed) {
                 return .undecided
             }
@@ -296,8 +334,10 @@ public enum CoverJudge {
                 return controlOverPoint().map { .guess($0) } ?? .clear
             }
             if let label = hit.normalizedLabel, let frame = hit.frame {
+                // An ancestor of the target holds it, so it never covers it, whatever label it merges.
                 let carriers = flat.filter { node in
                     !(placed.map { node.isSameElement(as: $0) } ?? false)
+                        && ![target, matched].contains(where: { isAncestor(node, of: $0) })
                         && (node.role.isActionable || isOwn(node))
                         && node.frame.map { $0.encloses(frame, tolerance: TransitionGuard.frameTolerance) } == true
                         && node.normalizedLabel.map { $0 == label || $0.contains(label) } == true
@@ -310,6 +350,9 @@ public enum CoverJudge {
                 }
             }
             let node = placed ?? hit
+            if let placed, ![target, matched].contains(where: { isAncestor(placed, of: $0) }), CoverJudge.isBar(placed, over: target, at: point, viewport: viewport) {
+                return .cover(placed, confident: true)
+            }
             if let placed, [target, matched].contains(where: { isAncestor(placed, of: $0) }) {
                 if !candidates.contains(where: { isAncestor(placed, of: $0) }), pageOverTarget == nil {
                     return .clear

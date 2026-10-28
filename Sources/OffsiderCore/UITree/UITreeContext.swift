@@ -165,13 +165,25 @@ public struct UITreeContext: Equatable, Sendable {
         }
         self.init(
             window: window,
-            keyboard: tree.roots.contains { $0.flattened().contains { $0.role == .keyboard } },
+            keyboard: Self.showsKeyboard(tree),
             logBox: logBox,
             presented: tree.presented,
             staleFrame: tree.staleFrame,
             hidden: tree.hiddenBranches,
             hiddenBranches: tree.namedHiddenBranches
         )
+    }
+
+    /// A keyboard whose frame meets the screen, as one left below the screen after a fold or with a hardware keyboard draws nothing.
+    static func showsKeyboard(_ tree: UITree) -> Bool {
+        let rect = tree.visibleRect
+        return tree.roots.contains { root in
+            root.flattened().contains { node in
+                guard node.role == .keyboard else { return false }
+                guard let frame = node.frame, let rect else { return true }
+                return frame.isVisible(in: rect)
+            }
+        }
     }
 
     /// The active window (else the focused one); a modal when an application window sits lower, or when it has no title.

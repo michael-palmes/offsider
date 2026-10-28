@@ -64,6 +64,7 @@ struct Assert: AsyncParsableCommand {
         try await route.backend.prepare()
         onPrepared()
         var sources = Wait.sources(on: route, tree: tree)
+        sources.tree = selector.judging(sources.tree, queries: [query], on: route)
         if probesOnMiss {
             sources.probe = Wait.presentationProbe(on: route)
         }
@@ -101,7 +102,7 @@ struct Assert: AsyncParsableCommand {
     /// Turns a loop reason such as "not found" into the end of a sentence: "was not found".
     static func predicate(_ reason: String) -> String {
         if reason == "not found" || reason.hasPrefix("not found;") { return "was \(reason)" }
-        if reason.hasPrefix("off screen") || reason.hasPrefix("still") { return "is \(reason)" }
+        if ["off screen", "still", "under ", "beneath "].contains(where: reason.hasPrefix) { return "is \(reason)" }
         return reason
     }
 }

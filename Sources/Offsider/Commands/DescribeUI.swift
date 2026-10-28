@@ -102,6 +102,10 @@ struct DescribeUI: AsyncParsableCommand {
             if let centre {
                 tree.apply(PresentationCheck.finding(for: tree, hit: centre.hit))
             }
+            let options = try output.renderOptions()
+            if point == nil, options.filter.onScreen {
+                await FrontJudge.read(Self.listed(tree, filter: options.filter), in: &tree, backend: route.backend, device: route.device)
+            }
             let shown = Timings.measure("redact") { tree.redacted(mask) }
             return String(decoding: try output.render(shown), as: UTF8.self)
         }
@@ -117,6 +121,20 @@ struct DescribeUI: AsyncParsableCommand {
         }
         guard let counts = shown.redaction, !counts.isEmpty, !rendered.hasSuffix(counts.footer + "\n") else { return rendered }
         return rendered + counts.footer + "\n"
+    }
+
+    /// Pre-order indexes of the elements `--on-screen` output would list and a selector could name: labelled, identified or actionable.
+    /// Scroll indicators take no taps, so they are never judged.
+    static func listed(_ tree: UITree, filter: UITreeFilter) -> [Int] {
+        let rect = tree.visibleRect
+        var telling = filter
+        telling.labelled = true
+        let indicators = ScrollIndicator.all(in: tree.roots)
+        return tree.roots.flatMap { $0.flattened() }.enumerated().compactMap { index, node in
+            guard telling.matches(node, visibleRect: rect) || (node.isActionable && filter.matches(node, visibleRect: rect)),
+                  !indicators.contains(where: { $0.isSameElement(as: node) }) else { return nil }
+            return index
+        }
     }
 
     /// What hides values in this device's tree output: `offsider.mask.json`, the run's masks and revealed password fields.

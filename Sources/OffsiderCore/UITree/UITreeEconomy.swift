@@ -45,6 +45,16 @@ public enum UITreeEconomy {
         "# off-screen: \(count) element\(count == 1 ? "" : "s") folded into runs; check one with assert --label-contains <text> --allow-offscreen"
     }
 
+    /// Covered elements a closing line names before it counts the rest.
+    static let coveredNamed = 5
+
+    /// `# covered: 3 elements under others: id=row-1, id=row-2, "Inbox"`: elements a touch at their point would not reach, left out of on-screen text.
+    public static func coveredLine(count: Int, names: [String]) -> String {
+        let shown = names.prefix(coveredNamed).joined(separator: ", ")
+        let more = count > min(names.count, coveredNamed) ? ", and \(count - min(names.count, coveredNamed)) more" : ""
+        return "# covered: \(count) element\(count == 1 ? "" : "s") under others: \(shown)\(more)"
+    }
+
     /// `# beneath: "Products" (42 elements) under "Kettle"`: a screen a page covers, left out of on-screen text.
     public static func beneathLine(_ screen: ScreenStack.Beneath) -> String {
         let count = "\(screen.elements) element\(screen.elements == 1 ? "" : "s")"
@@ -57,18 +67,19 @@ public enum UITreeEconomy {
         _ options: UITreeRenderOptions,
         fields: Set<UIField>,
         render: @escaping (UINode, _ label: String?, _ value: String?) -> String
-    ) -> (lines: [UITextLine], folded: Int, beneath: [ScreenStack.Beneath], offScreen: Int) {
+    ) -> (lines: [UITextLine], folded: Int, beneath: [ScreenStack.Beneath], offScreen: Int, covered: [String]) {
         var walker = Walker(tree: tree, options: options, fields: fields, render: render)
         for root in tree.roots {
             walker.visit(root, depth: 0, ancestorLabel: nil, ancestor: .absent)
         }
         walker.flushRun()
-        return (walker.lines, walker.folded, walker.beneath, walker.offScreen)
+        return (walker.lines, walker.folded, walker.beneath, walker.offScreen, walker.coveredNames)
     }
 
     /// The header, the lines that fit `maxBytes` (nil for all) with a cut marker, then the closing notes, which the budget never cuts.
     static func budgeted(
-        _ lines: [UITextLine], header: String, folded: Int, sourceTruncated: Bool, maxBytes: Int?, beneath: [ScreenStack.Beneath] = [], offScreen: Int = 0
+        _ lines: [UITextLine], header: String, folded: Int, sourceTruncated: Bool, maxBytes: Int?, beneath: [ScreenStack.Beneath] = [], offScreen: Int = 0,
+        covered: [String] = []
     ) -> String {
         let rendered = lines.map { String(repeating: "  ", count: min($0.depth, maxIndent)) + $0.text + "\n" }
         var closing = ""
@@ -76,6 +87,7 @@ public enum UITreeEconomy {
         if folded > 0 { closing += foldedLine(folded) + "\n" }
         if offScreen > 0 { closing += offScreenLine(offScreen) + "\n" }
         for screen in beneath { closing += beneathLine(screen) + "\n" }
+        if !covered.isEmpty { closing += coveredLine(count: covered.count, names: covered) + "\n" }
         let head = header + "\n"
         let total = rendered.reduce(head.utf8.count + closing.utf8.count) { $0 + $1.utf8.count }
         guard let maxBytes, total > maxBytes else {
@@ -123,6 +135,10 @@ public enum UITreeEconomy {
         /// Screens a page covers, which on-screen output leaves out; and their elements' pre-order indexes.
         let beneath: [ScreenStack.Beneath]
         let covered: Set<Int>
+        /// Elements the front reading says a touch would not reach, outside the screens beneath.
+        let unreached: Set<Int>
+        /// The names of those that would otherwise be listed, in tree order.
+        var coveredNames: [String] = []
         /// Nested output keeps the ancestors of matches, by pre-order index.
         var kept: [Bool] = []
         var index = 0
@@ -144,6 +160,7 @@ public enum UITreeEconomy {
             summarisesRuns = options.filter.onScreen && rect != nil
             beneath = summarisesRuns ? ScreenStack.build(roots: tree.roots, viewport: tree.viewport).beneath : []
             covered = Set(beneath.flatMap(\.indexes))
+            unreached = summarisesRuns ? Set(tree.front.map { Array($0.covered.keys) } ?? []).subtracting(covered) : []
             if !options.flat {
                 for root in tree.roots {
                     _ = mark(root)
@@ -154,7 +171,7 @@ public enum UITreeEconomy {
         private mutating func mark(_ node: UINode) -> Bool {
             let position = kept.count
             kept.append(false)
-            var any = !covered.contains(position) && options.filter.matches(node, visibleRect: rect)
+            var any = !covered.contains(position) && !unreached.contains(position) && options.filter.matches(node, visibleRect: rect)
             for child in node.children where mark(child) {
                 any = true
             }
@@ -166,7 +183,10 @@ public enum UITreeEconomy {
         mutating func visit(_ node: UINode, depth: Int, ancestorLabel: String?, ancestor: Ancestor, owner: Int? = nil) {
             let position = index
             index += 1
-            let isCovered = covered.contains(position)
+            let isCovered = covered.contains(position) || unreached.contains(position)
+            if unreached.contains(position), otherFilters.matches(node, visibleRect: rect) {
+                coveredNames.append(Self.name(node))
+            }
             let matches = !isCovered && options.filter.matches(node, visibleRect: rect)
             let shown = options.flat ? matches : kept[position]
             let passesOthers = !isCovered && otherFilters.matches(node, visibleRect: rect)

@@ -197,6 +197,7 @@ struct Wait: AsyncParsableCommand {
         try await route.backend.prepare()
         onPrepared()
         var sources = try await liveSources(on: route, tree: tree, clock: clock)
+        sources.tree = selector.judging(sources.tree, queries: waitsForAny ? selector.queries : [selector.query].compactMap { $0 }, on: route)
         if probesOnMiss {
             sources.probe = Self.presentationProbe(on: route)
         }

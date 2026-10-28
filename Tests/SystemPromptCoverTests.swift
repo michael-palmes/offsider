@@ -200,13 +200,14 @@ struct SystemPromptCoverTests {
         #expect(backend.session.calls.isEmpty)
     }
 
-    @Test("describe-ui names the prompt as a system window from one read at the middle of the screen")
+    @Test("describe-ui names the prompt as a system window from one read at the middle of the screen, and folds the app's elements under it as covered")
     func describeNamesPrompt() async throws {
         let backend = Self.prompting([Self.signedIn(prompt: true)])
 
         let summary = try await Self.describe(["--summary"], on: backend)
         #expect(summary.hasPrefix("# ios fake-device\n# window: Save Password? (system)\n"), "\(summary)")
-        #expect(backend.hitPoints == [UIPoint(x: 201, y: 437)])
+        #expect(backend.hitPoints.first == UIPoint(x: 201, y: 437))
+        #expect(summary.hasSuffix("# covered: 2 elements under others: id=session, id=sign-out\n"), "\(summary)")
 
         let json = try await Self.describe([], on: Self.prompting([Self.signedIn(prompt: true)]))
         let object = try #require(try JSONSerialization.jsonObject(with: Data(json.utf8)) as? [String: Any])

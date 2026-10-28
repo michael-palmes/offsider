@@ -145,6 +145,15 @@ struct ElementSelectorOptions: ParsableArguments {
                 let more = found.matches.count > 1 ? " (and \(found.matches.count - 1) more)" : ""
                 return absent((place ?? "has no usable frame") + more)
             }
+            if !allowOffscreen, let front = tree.front, !front.isEmpty {
+                let reasons = pool.map { front.reason(for: $0, in: tree.roots) }
+                let reached = zip(pool, reasons).filter { $0.1 == nil }.map(\.0)
+                guard !reached.isEmpty else {
+                    let more = pool.count > 1 ? " (and \(pool.count - 1) more)" : ""
+                    return absent("\(reasons[0] ?? "covered")\(more), so a tap would not reach it")
+                }
+                pool = reached
+            }
             if let hasValue {
                 let valued = pool.filter { Self.value(of: $0, equals: hasValue) }
                 guard !valued.isEmpty else {
@@ -171,5 +180,17 @@ struct ElementSelectorOptions: ParsableArguments {
     var presentState: String {
         let place = allowOffscreen ? "present" : "on screen"
         return hasValue.map { "\(place) with value '\($0)'" } ?? place
+    }
+
+    /// `source` with the shared on-screen judgement read for the on-screen matches of `queries`, so a match a touch would not reach does not count; unchanged with `--allow-offscreen`.
+    @MainActor
+    func judging(_ source: @escaping Wait.TreeSource, queries: [AccessibilityQuery], on route: DeviceRouter.Route) -> Wait.TreeSource {
+        guard !allowOffscreen, !queries.isEmpty else { return source }
+        let elementType = elementType
+        return {
+            var tree = try await source()
+            await FrontJudge.read(matching: queries, elementType: elementType, in: &tree, backend: route.backend, device: route.device)
+            return tree
+        }
     }
 }

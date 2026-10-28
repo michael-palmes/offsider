@@ -86,12 +86,18 @@ public protocol PointHitTesting: DeviceBackend {
     /// The element a touch at `point` reaches, as the platform reports it; nil when nothing answers there.
     /// An empty screen-sized group from a process outside a non-empty `appPIDs`, such as a prompt's backdrop, is answered at once.
     func hitTest(at point: UIPoint, on id: DeviceID, appPIDs: Set<Int>) async throws -> UINode?
+    /// One read at `point` with no retry, for the many points the on-screen judgement reads at once, where an answer read too soon only leaves an element counted.
+    func quickHitTest(at point: UIPoint, on id: DeviceID) async throws -> UINode?
     /// The name of the process a hit's `pid` belongs to, such as `SafariViewService`; nil when it cannot tell.
     func processName(of pid: Int, on id: DeviceID) async -> String?
 }
 
 extension PointHitTesting {
     public func hitTest(at point: UIPoint, on id: DeviceID) async throws -> UINode? {
+        try await hitTest(at: point, on: id, appPIDs: [])
+    }
+
+    public func quickHitTest(at point: UIPoint, on id: DeviceID) async throws -> UINode? {
         try await hitTest(at: point, on: id, appPIDs: [])
     }
 }

@@ -54,14 +54,26 @@ public struct ScreenStack: Equatable, Sendable {
         return pages.last { $0.content.contains(index) }?.name
     }
 
-    /// `isBeneath(index:)` for a node of `roots`; false when it is not there.
+    /// `isBeneath(index:)` for a node of `roots`; false when it is not there, or when an identical copy of it, such as the same Back button on the page above, is not beneath.
     public func isBeneath(_ node: UINode, in roots: [UINode]) -> Bool {
-        Self.index(of: node, in: roots).map(isBeneath(index:)) ?? false
+        page(over: node, in: roots) != nil
+    }
+
+    /// The page drawn over `node`, when every identical copy of it the tree holds lies beneath one; nil otherwise.
+    public func page(over node: UINode, in roots: [UINode]) -> Page? {
+        let positions = Self.indexes(of: node, in: roots)
+        guard let first = positions.first, positions.allSatisfy(isBeneath(index:)) else { return nil }
+        return page(over: first)
     }
 
     /// The node's pre-order index over `roots`, as `flattened()` lists them; nil when it is not there.
     public static func index(of node: UINode, in roots: [UINode]) -> Int? {
         roots.flatMap { $0.flattened() }.firstIndex { $0.isSameElement(as: node) }
+    }
+
+    /// Every pre-order index holding a node identical to `node`, which a physical iPhone's tree can list twice on two pages.
+    public static func indexes(of node: UINode, in roots: [UINode]) -> [Int] {
+        roots.flatMap { $0.flattened() }.indices(where: { $0.isSameElement(as: node) }).ranges.flatMap { Array($0) }
     }
 
     /// Covers at least half the viewport, the smallest page.

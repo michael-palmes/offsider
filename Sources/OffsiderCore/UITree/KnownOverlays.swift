@@ -87,11 +87,12 @@ public enum KnownOverlays {
 
     /// One LogBox toast by its frame, then its `!, ` or `n, ` label; nil for anything else, such as a full-width call to action.
     public static func logBoxToast(_ node: UINode, viewport: UIFrame) -> LogBoxToast? {
-        guard let frame = node.frame, let count = logBoxCount(node.label),
+        guard let frame = node.frame,
               abs(frame.x - viewport.x - toastInset) <= toastInsetTolerance,
               abs(frame.width - (viewport.width - 2 * toastInset)) <= toastWidthTolerance,
               toastHeights.contains(frame.height),
-              frame.y + frame.height >= viewport.y + viewport.height - bottomBand else {
+              frame.y + frame.height >= viewport.y + viewport.height - bottomBand,
+              let count = logBoxCount(node.label) else {
             return nil
         }
         return LogBoxToast(count: count, frame: frame, message: logBoxMessage(node.label) ?? "")

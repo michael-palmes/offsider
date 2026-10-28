@@ -148,7 +148,8 @@ public enum UITreeRenderer {
             sourceTruncated: tree.sourceTruncated,
             maxBytes: options.maxBytes,
             beneath: result.beneath,
-            offScreen: result.offScreen
+            offScreen: result.offScreen,
+            covered: result.covered
         )
         guard let redaction = tree.redaction, !redaction.isEmpty else { return body }
         return body + redaction.footer + "\n"
