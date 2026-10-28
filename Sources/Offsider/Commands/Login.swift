@@ -115,15 +115,16 @@ struct LoginCommand: AsyncParsableCommand {
         _ rawID: String, profile: LoginProfile?, app: AppOption, logger: OffsiderLogger, watchdog: DeviceWatchdog,
         host: AndroidHost = .cli(), claims: DeviceClaims = .current
     ) async throws -> DeviceRouter.Route {
-        if let chosen = app.bundleID, let profile, !profile.isFor(chosen) {
+        let package = profile?.package
+        let route = try await DeviceRouter.$profilePackage.withValue({ package }) {
+            try await DeviceRouter.routeForInput(rawID, logger: logger, watchdog: watchdog, host: host, claims: claims)
+        }
+        // Simulators and emulators ignore --app, as every command does.
+        if route.device.isPhysicalAndroidDevice, let chosen = app.bundleID, let profile, !profile.isFor(chosen) {
             throw CLIError(
                 errorDescription: "--app \(chosen) is not an app offsider.login.json names (\(profile.appIDs.joined(separator: " and "))). Pass the same app, or point --project at that app's offsider.login.json. Nothing was typed.",
                 reason: .usage
             )
-        }
-        let package = profile?.package
-        let route = try await DeviceRouter.$profilePackage.withValue({ package }) {
-            try await DeviceRouter.routeForInput(rawID, logger: logger, watchdog: watchdog, host: host, claims: claims)
         }
         app.apply(to: route)
         return route

@@ -69,6 +69,7 @@ struct CLIErrorTests {
         #expect(noun(IOSDeviceFixtures.phone, .ios, "Apple iPhone 16 Pro (\(IOSDeviceFixtures.phone))") == "iPhone")
         #expect(noun(IOSDeviceFixtures.iPad, .ios, "Apple iPad Pro 11-inch (M4) (\(IOSDeviceFixtures.iPad))") == "iPad")
         #expect(noun(IOSDeviceFixtures.iPad, .ios, "Apple iPad16,3 (\(IOSDeviceFixtures.iPad))") == "iPad")
+        #expect(noun(IOSDeviceFixtures.iPad, .ios, IOSDeviceFixtures.iPad) == "iPhone or iPad")
         #expect(noun("emulator-5554", .android, "Offsider_E2E") == "emulator")
         #expect(noun("ZY22FAKE01", .android, "moto g") == "phone")
     }

@@ -53,7 +53,7 @@ struct LoginRoutingTests {
         #expect(try await Self.route(project: project, app: ["--app", Self.package]) == Self.package)
     }
 
-    @Test("--app naming another app than the file's is a usage error (exit 64) before the device is routed or locked")
+    @Test("--app naming another app than the file's is a usage error (exit 64) before anything reaches the phone")
     func appOtherThanTheFile() async throws {
         let project = try Self.project(package: "com.example.other")
         defer { try? FileManager.default.removeItem(atPath: project) }
