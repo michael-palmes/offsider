@@ -35,6 +35,8 @@ public struct ExpoDevClientError: Error, CustomStringConvertible, LocalizedError
         case writeFailed
         case noScheme
         case noRoute
+        /// A reverse on the phone's port maps to another port on the Mac.
+        case reverseMismatch
     }
 
     public let kind: Kind
@@ -251,9 +253,9 @@ public enum ExpoDevClient {
         return schemes[0]
     }
 
-    /// Loopback when `adb reverse` maps the port (lines such as `emulator-5554 tcp:8081 tcp:8081`), else the emulator's alias for the Mac; nil for a phone without one.
+    /// Loopback when `adb reverse` maps the port to the same port (`emulator-5554 tcp:8081 tcp:8081`), else the emulator's alias for the Mac; nil for a phone without one.
     public static func androidMetroHost(reverseList: String, port: Int, isEmulator: Bool) -> String? {
-        if MetroReverse.phoneListens(reverseList, port: port) { return loopback }
+        if MetroReverse.mapsSamePort(reverseList, port: port) { return loopback }
         return isEmulator ? emulatorHostAlias : nil
     }
 

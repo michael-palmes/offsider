@@ -13,15 +13,16 @@ struct MetroReverseTests {
         #expect((MetroReverse.refusal(port: port) == nil) == allowed)
     }
 
-    @Test("a reverse counts as Offsider's shape only when both sides name the same port; any phone-side match routes the dev client")
+    @Test("only a reverse naming the same port on both sides routes the dev client to Metro over loopback")
     func listingShapes() {
         let listing = "host-27 tcp:8081 tcp:8081\nhost-27 tcp:8742 tcp:9000\n"
         #expect(MetroReverse.mapsSamePort(listing, port: 8081))
         #expect(!MetroReverse.mapsSamePort(listing, port: 8742))
         #expect(MetroReverse.phoneListens(listing, port: 8742))
         #expect(!MetroReverse.phoneListens(listing, port: 9000))
-        #expect(ExpoDevClient.androidMetroHost(reverseList: listing, port: 8742, isEmulator: false) == ExpoDevClient.loopback)
-        #expect(ExpoDevClient.androidMetroHost(reverseList: listing, port: 9000, isEmulator: false) == nil)
+        #expect(ExpoDevClient.androidMetroHost(reverseList: listing, port: 8081, isEmulator: false) == ExpoDevClient.loopback)
+        #expect(ExpoDevClient.androidMetroHost(reverseList: listing, port: 8742, isEmulator: false) == nil)
+        #expect(ExpoDevClient.androidMetroHost(reverseList: listing, port: 8742, isEmulator: true) == ExpoDevClient.emulatorHostAlias)
     }
 
     @Test("a record whose file name does not match its serial, or holds a port Metro never uses, is ignored")

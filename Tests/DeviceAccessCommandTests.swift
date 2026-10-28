@@ -624,7 +624,7 @@ struct DeviceAccessCommandTests {
         #expect(try Self.entries(home).map(\.metroPorts) == [[8081, 8742]])
     }
 
-    @Test("--metro-port skips the step for a phone, none saves no port, and an iPhone refuses it", arguments: [
+    @Test("--metro-port skips the step for a phone and none saves no port; an iPhone refuses a port but takes none", arguments: [
         (["--metro-port", "8081", "--metro-port", "8742"], [8081, 8742]),
         (["--metro-port", "none"], []),
     ] as [([String], [Int])])
@@ -639,12 +639,18 @@ struct DeviceAccessCommandTests {
 
         let iPhone = try makePolicyHome()
         defer { try? FileManager.default.removeItem(atPath: iPhone) }
-        await #expect(throws: CLIError.self) {
+        let allowIPhone = {
             _ = try await Self.allow(["--app", "com.example.app", "--expires", "2h", "--team", "ABCDE12345"] + arguments, answers: ["1"], context: { terminal in
                 Self.context(home: iPhone, seal: MemorySeal(), terminal: terminal)
             })
         }
-        #expect(try Self.entries(iPhone).isEmpty)
+        if ports.isEmpty {
+            try await allowIPhone()
+            #expect(try Self.entries(iPhone).map(\.metroPorts) == [[]])
+        } else {
+            await #expect(throws: CLIError.self) { try await allowIPhone() }
+            #expect(try Self.entries(iPhone).isEmpty)
+        }
     }
 
     @Test("--metro-port refuses adb's port, a low port, a word, a repeat and none beside a port", arguments: [

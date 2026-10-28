@@ -316,11 +316,7 @@ public enum AndroidDoctorRules {
     /// Information only: marks the reverses `rn open` set (`offsider`), which `session stop` removes; it never touches another.
     public static func metroReverse(_ lines: [String]?, offsider: [Int] = []) -> Verdict {
         guard let lines else { return (.pass, "Could not read the reverse list", nil) }
-        let pairs = lines.compactMap { line -> String? in
-            let fields = line.split(whereSeparator: \.isWhitespace)
-            guard fields.count >= 2 else { return nil }
-            let remote = fields[fields.count - 2]
-            let local = fields[fields.count - 1]
+        let pairs = MetroReverse.mappings(lines.joined(separator: "\n")).map { remote, local in
             let set = offsider.contains { remote == "tcp:\($0)" && local == "tcp:\($0)" }
             let note = set ? " (set by Offsider until session stop)" : remote == "tcp:\(metroPort)" ? " (Metro)" : ""
             return "\(remote) to \(local)\(note)"

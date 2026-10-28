@@ -19,7 +19,7 @@ extension AndroidBackend: MetroReverseSetting {
         if case .tcp(_, let server) = try LoopbackEndpoint.adbServer(environment: host.environment), Int(server) == port {
             throw ExpoDevClientError(.noRoute, "Port \(port) is the adb server's own, never Metro.")
         }
-        guard let directory = host.metroReverseDirectory() else {
+        guard let directory = host.metroReverseDirectory(true) else {
             throw ExpoDevClientError(.noRoute, "Offsider has no private folder to record an adb reverse in, so it set none.")
         }
         let phone = try await requireConnectedPhone(serial)
@@ -42,7 +42,7 @@ extension AndroidBackend: MetroReverseSetting {
 
     /// Takes off the reverses Offsider recorded on `serial` (every phone without one) and no other; a phone gone or reconnected only loses its record.
     public static func removeMetroReverses(host: AndroidHost, serial: String? = nil) async -> [MetroReverseRemoval] {
-        guard let directory = host.metroReverseDirectory() else { return [] }
+        guard let directory = host.metroReverseDirectory(false) else { return [] }
         let store = MetroReverseStore(directory: directory)
         let records = serial.map { store.load(serial: $0).map { [$0] } ?? [] } ?? store.all()
         guard !records.isEmpty, let endpoint = try? LoopbackEndpoint.adbServer(environment: host.environment) else { return [] }
@@ -57,33 +57,39 @@ extension AndroidBackend: MetroReverseSetting {
         }
         var removed: [MetroReverseRemoval] = []
         for record in records {
-            var left = record
             guard rows.contains(where: { $0.serial == record.serial && $0.properties["transport_id"] == record.transportId }) else {
-                left.ports = []
-                try? store.save(left)
+                Self.forget(record.ports, of: record, in: store)
                 continue
             }
             guard let listing = try? await client.deviceQuery("reverse:list-forward", on: record.serial) else { continue }
             var ports: [Int] = []
+            var handled: [Int] = []
             for port in record.ports {
                 // A port listed otherwise was rebound by someone else, so it is theirs now.
                 if MetroReverse.mapsSamePort(listing, port: port) {
                     guard (try? await client.deviceCommand(MetroReverse.removeService(port: port), on: record.serial)) != nil else { continue }
                     ports.append(port)
                 }
-                left.ports.removeAll { $0 == port }
+                handled.append(port)
             }
-            try? store.save(left)
+            Self.forget(handled, of: record, in: store)
             if !ports.isEmpty { removed.append(MetroReverseRemoval(serial: record.serial, ports: ports)) }
         }
         return removed
+    }
+
+    /// Drops `ports` from the record as it now stands, so a port `rn open` recorded meanwhile stays.
+    private static func forget(_ ports: [Int], of record: MetroReverseRecord, in store: MetroReverseStore) {
+        guard var current = store.load(serial: record.serial), current.transportId == record.transportId else { return }
+        current.ports.removeAll { ports.contains($0) }
+        try? store.save(current)
     }
 }
 
 extension AndroidHost {
     /// The ports Offsider recorded on `serial` for its current connection, for `doctor`.
     func recordedMetroPorts(serial: String, transportId: String?) -> [Int] {
-        guard let transportId, let directory = metroReverseDirectory(),
+        guard let transportId, let directory = metroReverseDirectory(false),
               let record = MetroReverseStore(directory: directory).load(serial: serial), record.transportId == transportId else { return [] }
         return record.ports
     }

@@ -55,6 +55,12 @@ extension AndroidBackend: ExpoDevClientOpening {
         let isEmulator: Bool
         if case .androidSerial = DeviceIDClassifier.classify(id.rawValue) { isEmulator = true } else { isEmulator = false }
         guard let host = ExpoDevClient.androidMetroHost(reverseList: listing, port: port, isEmulator: isEmulator) else {
+            if let other = MetroReverse.mappings(listing).first(where: { $0.phone == "tcp:\(port)" }) {
+                throw ExpoDevClientError(
+                    .reverseMismatch,
+                    "\(id.rawValue) has an adb reverse from its port \(port) to \(other.mac) on this Mac, not to Metro on port \(port), so Offsider left it alone. Ask the user to remove it (adb -s \(id.rawValue) reverse --remove tcp:\(port)), then try again."
+                )
+            }
             throw ExpoDevClientError(.noRoute, "\(id.rawValue) is a phone with no adb reverse for port \(port), so it cannot reach Metro on this Mac.")
         }
         return host

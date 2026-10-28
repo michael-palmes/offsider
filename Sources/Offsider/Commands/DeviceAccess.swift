@@ -382,7 +382,7 @@ struct DeviceAccessAllow: AsyncParsableCommand {
             throw CLIError(errorDescription: "--team is for an iPhone or iPad, and \(key) is an Android phone. Nothing was saved.", reason: .usage)
         }
         let metroPorts = row.platform == .android || !later ? self.metroPorts : nil
-        if metroPorts != nil, row.platform != .android {
+        if let metroPorts, !metroPorts.isEmpty, row.platform != .android {
             throw CLIError(errorDescription: "--metro-port is for an Android phone, and \(key) is an iPhone or iPad. Nothing was saved.", reason: .usage)
         }
         if case .refused(let refusal) = policy.decision(platform: row.platform, key: key), refusal.isManaged {

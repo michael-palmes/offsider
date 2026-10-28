@@ -74,7 +74,7 @@ struct AndroidMetroReverseTests {
 
     static func host(_ server: FakeAdbServer, directory: String?, environment: [String: String] = [:]) throws -> AndroidHost {
         var host = AndroidTestHost.make(home: try AndroidTestHost.homeWithSDK(), environment: environment, adb: server)
-        host.metroReverseDirectory = { directory }
+        host.metroReverseDirectory = { _ in directory }
         return host
     }
 
@@ -96,6 +96,20 @@ struct AndroidMetroReverseTests {
         #expect(reverses.listed == ["tcp:8081 tcp:8081"])
         #expect(MetroReverseStore(directory: directory).load(serial: Self.serial) == MetroReverseRecord(serial: Self.serial, transportId: "2", ports: [8081]))
         #expect(try await backend.metroHost(port: 8081, on: Self.phone) == ExpoDevClient.loopback)
+    }
+
+    @Test("a reverse from the phone's port to another Mac port is named and left alone, never treated as Metro")
+    func mismatchedReverse() async throws {
+        let directory = try Self.privateDirectory()
+        defer { try? FileManager.default.removeItem(atPath: directory) }
+        let server = Self.server(FakeReverses([("tcp:8081", "tcp:9000")]))
+        let backend = AndroidBackend(host: try Self.host(server, directory: directory)) { _, _ in }
+
+        let error = await #expect(throws: ExpoDevClientError.self) { _ = try await backend.metroHost(port: 8081, on: Self.phone) }
+
+        #expect(error?.kind == .reverseMismatch)
+        #expect(error?.message.contains("to tcp:9000 on this Mac, not to Metro on port 8081") == true)
+        #expect(Self.reverseRequests(server).isEmpty)
     }
 
     @Test("a reverse adb refuses leaves no record behind, so session stop never takes off one Offsider did not set")

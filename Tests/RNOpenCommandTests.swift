@@ -126,7 +126,8 @@ struct RNOpenCommandTests {
         let (result, backend) = try await Self.openOnPhone(ports: [8081, 8742])
         let report = try result.get()
         #expect(backend.reversesSet == [8742])
-        #expect(report.host == "127.0.0.1")
+        #expect(report.host == "127.0.0.1" && report.reverseSet)
+        #expect(report.jsonLine().hasSuffix(#""reverseSet":true}"#))
         #expect(backend.openedURLs == ["exp+playground://expo-development-client/?url=http%3A%2F%2F127.0.0.1%3A8742"])
     }
 

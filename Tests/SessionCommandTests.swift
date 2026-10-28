@@ -127,6 +127,18 @@ struct SessionCommandTests {
         #expect(RunnerSessions.stoppedText([], device: nil) == "No runner is running.\n")
     }
 
+    @Test("stop names each adb reverse it removed beside the phone's warm helper, in text and JSON")
+    func stopNamesReverses() throws {
+        let stopped = DeviceSessionRow.stopped(
+            runners: [], brokers: [], helpers: ["R58M123ABC"], reverses: [MetroReverseRemoval(serial: "R58M123ABC", ports: [8081, 8742])]
+        )
+        #expect(DeviceSessionRow.stoppedText(stopped, device: nil) == "Stopped the warm helper and adb reverse tcp:8081 and adb reverse tcp:8742 on R58M123ABC.\n")
+        let object = try #require(try JSONSerialization.jsonObject(with: Data(DeviceSessionRow.stoppedJSON(stopped).utf8)) as? [String: Any])
+        let entry = try #require((object["stopped"] as? [[String: Any]])?.first)
+        #expect(entry["reverses"] as? [Int] == [8081, 8742])
+        #expect(entry["helper"] as? Bool == true)
+    }
+
     @Test("nested session commands keep their parent in the command path")
     func paths() throws {
         #expect(CommandPath.of(try SessionStatus.parse([])) == "session status")
