@@ -126,6 +126,31 @@ struct SwipeTests {
         #expect(UIStateParser.findElementContainingLabel(in: try await TestHelpers.getUIState(), containing: "End:")?.label == "End: (300, 400)")
     }
 
+    @Test("--screenshot-at captures the screen while the finger rests, and the swipe still lifts once, still")
+    func screenshotsDuringHold() async throws {
+        try await TestHelpers.launchPlaygroundApp(to: "swipe-test")
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("offsider-hold-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: folder) }
+
+        let result = try await TestHelpers.runOffsiderCommandSeparated(
+            "swipe --start-x 100 --start-y 400 --end-x 300 --end-y 400 --duration 0.3 --delta 10 --hold-end 1500 --screenshot-at 200 --screenshot-at 700 --output \(folder.path)/held.png --json",
+            simulatorUDID: defaultSimulatorUDID
+        )
+
+        #expect(result.exitCode == 0, "\(result.stderr)")
+        let report = try #require(try JSONSerialization.jsonObject(with: Data(result.stdout.utf8)) as? [String: Any])
+        let shots = try #require(report["screenshots"] as? [[String: Any]])
+        #expect(shots.compactMap { $0["path"] as? String } == ["\(folder.path)/held-1.png", "\(folder.path)/held-2.png"])
+        #expect(shots.compactMap { $0["atMs"] as? Int } == [200, 700])
+        #expect((report["holdMs"] as? Int ?? 0) >= 1500)
+        let release = try await TestHelpers.waitForLabel(containing: "Release:", timeout: 3) { _ in true }
+        #expect(release == "Release: still")
+        #expect(UIStateParser.findElementContainingLabel(in: try await TestHelpers.getUIState(), containing: "Count:")?.label == "Count: 1")
+        // The lift draws the finished swipe and counts it, so the screen now differs from the one held before it.
+        let compare = try await TestHelpers.runOffsiderCommandAllowFailure("screenshot --compare \(folder.path)/held-2.png --json", simulatorUDID: defaultSimulatorUDID)
+        #expect(compare.exitCode == 0, "\(compare.output)")
+    }
+
     @Test("Landscape coordinate swipe preserves translated start and end", .enabled(if: isLandscapeE2EEnabled))
     func landscapeCoordinateSwipePreservesTranslatedStartAndEnd() async throws {
         try await TestHelpers.launchPlaygroundApp(to: "landscape-coordinate-test")

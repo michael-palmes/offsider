@@ -59,6 +59,12 @@ public protocol CaptureSourceReporting: AnyObject {
 public protocol MaskTreeReading: AnyObject {
     /// The frontmost app's tree for painting masks; never cached or shown.
     func maskTree(for id: DeviceID) async throws -> UITree
+    /// Starts what `maskTree` reads through, so a read inside a held gesture does not wait for it.
+    func prepareMaskTree(for id: DeviceID) async throws
+}
+
+extension MaskTreeReading {
+    public func prepareMaskTree(for id: DeviceID) async throws {}
 }
 
 extension DeviceBackend {
