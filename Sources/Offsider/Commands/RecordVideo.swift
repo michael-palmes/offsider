@@ -122,7 +122,7 @@ struct RecordVideo: AsyncParsableCommand {
         /// `248 frames over 25.6 s (9.7 FPS)`, as the frames were taken.
         var summary: String {
             let rate = VideoRecordingReport.framesPerSecond(frames: frames, seconds: seconds).map { String(format: " (%.1f FPS)", $0) } ?? ""
-            return String(format: "%d frame%@ over %.1f s", frames, frames == 1 ? "" : "s", seconds) + rate
+            return "\(frames) frame\(frames == 1 ? "" : "s") over " + String(format: "%.1f s", seconds) + rate
         }
     }
 
@@ -236,7 +236,7 @@ struct RecordVideo: AsyncParsableCommand {
                 if frameCount - lastLogFrame >= Int64(fps) {
                     lastLogFrame = frameCount
                     let elapsed = Date().timeIntervalSince(startTime)
-                    let actualFPS = Double(frameCount) / max(elapsed, 0.0001)
+                    let actualFPS = VideoRecordingReport.framesPerSecond(frames: Int(frameCount), seconds: presentationTime.seconds) ?? 0
                     Console.current.step(
                         String(format: "Captured %lld frames (%.1f FPS actual)", frameCount, actualFPS),
                         label: StartPersonView.recordingLabel(device: source.device.rawValue, elapsed: elapsed)
@@ -361,7 +361,7 @@ struct RecordVideo: AsyncParsableCommand {
 /// Heard from the command's start, as a background job ignores SIGINT until then: before the first frame a stop ends it at once, after it the loop stops.
 final class RecordingStop: @unchecked Sendable {
     static func earlyMessage(_ command: String) -> String {
-        "\(command) was stopped before its first frame, so nothing was recorded."
+        "\(command) was stopped before its first frame, so nothing was \(command == "stream-video" ? "streamed" : "recorded")."
     }
 
     private let lock = NSLock()

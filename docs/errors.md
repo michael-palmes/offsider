@@ -123,7 +123,7 @@ A `--verify --json` report also carries `ignored` (`{node, reason}` entries left
 | `device_control_failed` | 1 | A device setting could not be read or changed | Check the device is booted |
 | `app_not_installed` | 1 | `logs --app` or an Android permission command names an app that is not installed | Install it (the `hint` names the SDK's `adb -s <serial> install <path-to-apk>` on Android), or drop `--app` |
 | `log_stream_failed` | 1 | The device's log could not be read | Retry |
-| `video_failed` | 1 | Recording or streaming video failed, `--output` names something other than a video file you own, or the device could not be marked as recording, so nothing was recorded | Check the output path and the private directory, then retry |
+| `video_failed` | 1 | Recording or streaming video failed, `--output` names something other than a video file you own, the device could not be marked as recording, or a stop came before the first frame, so nothing was recorded | Check the output path and the private directory, then retry |
 | `video_unmasked` | 1 | `record-video` or `stream-video` was asked for tree masks, the evidence run masks emails or ids, or a password field is on screen (or the screen could not be read) as it starts | Use `screenshot` for masked evidence, or pass `--unmasked` to record anyway |
 | `helper_failed` | 1 | The UiAutomation helper stopped or failed | Retry; the `hint` names the log to read |
 | `helper_timed_out` | 1 | The UiAutomation helper did not answer in time | Retry when the emulator responds |

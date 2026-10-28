@@ -127,8 +127,10 @@ struct RecordVideoTests {
         let udid = try TestHelpers.requireSimulatorUDID()
         let offsiderPath = try TestHelpers.getOffsiderPath()
 
-        let defaultOutputURL = FileManager.default.temporaryDirectory
-            .appendingPathComponent("offsider-record-test-\(UUID().uuidString).mp4")
+        // Its own folder, so the staging folder the SIGINT wait looks for can only be this recording's.
+        let defaultFolder = FileManager.default.temporaryDirectory.appendingPathComponent("offsider-record-test-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: defaultFolder, withIntermediateDirectories: true)
+        let defaultOutputURL = defaultFolder.appendingPathComponent("clip.mp4")
         let configuredOutputPath = outputPath ?? defaultOutputURL.path
 
         let process = Process()
@@ -183,9 +185,7 @@ struct RecordVideoTests {
             fileSize = sizeNumber.intValue
         }
 
-        if outputPath == nil {
-            try? FileManager.default.removeItem(at: resolvedURL)
-        }
+        try? FileManager.default.removeItem(at: defaultFolder)
 
         return RecordingResult(
             outputURL: resolvedURL,

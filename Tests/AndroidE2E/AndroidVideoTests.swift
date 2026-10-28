@@ -70,7 +70,7 @@ struct AndroidVideoTests {
         let shot = AndroidE2E.temporaryFile("shot.png")
         defer { try? FileManager.default.removeItem(at: shot) }
         let screenshot = try await AndroidE2E.offsider("screenshot --output '\(shot.path)'")
-        let tap = try await AndroidE2E.offsider("tap -x 5 -y 300")
+        let tap = try await AndroidE2E.offsider("tap -x 1 -y 1")
         let status = try await running.interruptAndWait()
 
         #expect(tree.exitCode == 0, "describe-ui: \(tree.stderr)")

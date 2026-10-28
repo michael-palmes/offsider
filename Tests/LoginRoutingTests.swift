@@ -63,6 +63,6 @@ struct LoginRoutingTests {
 
         #expect(error?.reason == .usage)
         #expect(error?.exitCode.rawValue == 64)
-        #expect(error?.userFacingDescription.contains("--app \(Self.package) is not an app offsider.login.json names (com.example.other)") == true)
+        #expect(error?.userFacingDescription.contains("--app \(Self.package) is not the package offsider.login.json names (com.example.other)") == true)
     }
 }
