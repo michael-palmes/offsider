@@ -23,8 +23,10 @@ struct DevMenuDriver {
     }
 
     /// The menu, opening it first; a menu that never shows is `state_not_reached`, as in a Release build.
-    func open() async throws -> (DevMenu.State, UITree) {
+    /// `check` runs after the first read, which refuses an app a phone is not allowed for, and before any input.
+    func open(check: (() async throws -> Void)? = nil) async throws -> (DevMenu.State, UITree) {
         let tree = try await read()
+        try await check?()
         if let state = DevMenu.read(tree) { return (state, tree) }
         if route.device.platform == .android {
             try await perform(.shortButtonPress(.menu))
@@ -57,6 +59,20 @@ struct DevMenuDriver {
             errorDescription: "The React Native dev menu did not open on \(route.device.rawValue) within \(Int(Self.openWait)) s. \(cause)",
             reason: .stateNotReached,
             hint: "offsider describe-ui --summary --device \(route.device.rawValue)"
+        )
+    }
+
+    /// Without Android's Display over other apps, React Native opens that settings page instead of its performance monitor.
+    func requireOverlayPermission() async throws {
+        guard route.device.platform == .android,
+              let reader = route.backend as? any OverlayPermissionReading,
+              let foreground = route.backend as? any ForegroundReading,
+              let top = try? await foreground.foreground(on: route.device).top,
+              let package = top.split(separator: "/").first.map(String.init),
+              (try? await reader.canDrawOverlays(package, on: route.device)) == false else { return }
+        throw CLIError(
+            errorDescription: "\(package) may not display over other apps, so its performance monitor would open Android's settings instead of showing. Offsider sent nothing. Ask the user to turn on Display over other apps for it (Settings > Apps > Special app access; Samsung calls it Appear on top), then run this again.",
+            reason: .personRequired
         )
     }
 
@@ -190,7 +206,8 @@ struct RNDevMenu: AsyncParsableCommand {
         closing it after a switch. React Native's own menu on Android has no close control, so there `close` \
         presses Back and checks the menu went. Exits 2 when the menu has no such item (the items are the candidates) or the item is \
         off screen (nothing is tapped; the hint is the swipe that scrolls the menu to it), 1 when \
-        the menu never opens (a Release build has none) and 5 when it stays open. On Android an Expo dev client \
+        the menu never opens (a Release build has none) and 5 when it stays open. On Android, `perf-monitor` first \
+        checks the app may display over other apps and exits 1 with `person_required` when it may not. On Android an Expo dev client \
         keeps the menu key from its menu while a text field has focus, and the error then says so: move focus \
         out of the field, or open Expo's menu with its Tools button, then run this again. In batch, `rn devmenu` is \
         an input step that needs an item or --label.
@@ -275,7 +292,9 @@ struct RNDevMenu: AsyncParsableCommand {
     func perform(on route: DeviceRouter.Route, clock: PollClock, send: (@MainActor (InputEvent) async throws -> Void)? = nil) async throws -> Outcome {
         try await route.backend.prepare()
         let driver = DevMenuDriver(route: route, clock: clock, send: send)
-        let (state, tree) = try await driver.open()
+        let perfMonitor = item == .perfMonitor || label.map { label in DevMenu.Item.perfMonitor.labels.contains { $0.caseInsensitiveCompare(label) == .orderedSame } } == true
+        let check: (() async throws -> Void)? = perfMonitor ? { try await driver.requireOverlayPermission() } : nil
+        let (state, tree) = try await driver.open(check: check)
         guard item != nil || label != nil else { return .listed(state) }
         let tapped = try await driver.choose(item, label: label, state: state, tree: tree)
         return .chose(menu: state.menu, item: item, label: tapped)
