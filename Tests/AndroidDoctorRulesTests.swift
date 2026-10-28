@@ -100,6 +100,16 @@ struct AndroidDoctorRulesTests {
         #expect(verdict.hint?.contains("arm64-v8a") == true)
     }
 
+    @Test("a phone without arm64-v8a warns that its ABI is untested, with no system image to swap")
+    func phoneABI() {
+        let verdict = AndroidDoctorRules.image(apiLevel: 30, release: "11", abi: "armeabi-v7a", isPhysical: true)
+        #expect(verdict.status == .warn)
+        #expect(verdict.detail.contains("untested"))
+        #expect(verdict.detail.contains("helper and input do not depend on the ABI"))
+        #expect(verdict.hint?.contains("system image") == false)
+        #expect(AndroidDoctorRules.image(apiLevel: 36, release: "16", abi: "arm64-v8a", isPhysical: true).status == .pass)
+    }
+
     @Test("an emulator without a discovery file warns that commands use adb")
     func noDiscoveryFile() {
         let verdict = AndroidDoctorRules.grpc(.noDiscoveryFile(forced: false))
@@ -258,10 +268,22 @@ struct AndroidDoctorRulesTests {
         }, hostBlocker: nil)
         let check = Self.check(.androidDeviceLock, in: secure)
         #expect(check?.status == .fail)
-        #expect(check?.detail.hasPrefix("PIN, pattern or password set; waiting for its first unlock since boot") == true)
+        #expect(check?.detail.hasPrefix("PIN, pattern or password set (Android does not say which here; unlock-code takes a PIN or password only); waiting for its first unlock since boot") == true)
+        let unlocked = AwakeReading(screen: .on, lockScreen: .hidden, userUnlocked: true, keyguardSecure: true)
+        #expect(AndroidDoctorRules.lock(unlocked, unlockCode: nil, deviceID: "x").detail.contains("unlock-code takes a PIN or password only"))
         let open = AwakeReading(screen: .on, lockScreen: .hidden, credential: "none", keyguardSecure: false)
         #expect(AndroidDoctorRules.lock(open, unlockCode: nil, deviceID: "x") == (.pass, "No PIN, pattern or password", nil))
         #expect(LockReport(AwakeReading(screen: .on, lockScreen: .hidden, keyguardSecure: true), savedCode: false, lastAttemptFailed: false).type == nil)
+    }
+
+    @Test("a pattern lock never points at unlock-code, which types only a PIN or password")
+    func patternLock() {
+        let showing = AndroidDoctorRules.screen(AwakeReading(screen: .on, lockScreen: .secure, credential: "pattern"), deviceID: "P")
+        #expect(showing.hint?.contains("unlock-code") == false)
+        #expect(showing.hint?.contains("never a pattern") == true)
+        let waiting = AndroidDoctorRules.lock(AwakeReading(screen: .on, lockScreen: .secure, credential: "pattern", userUnlocked: false), unlockCode: nil, deviceID: "P")
+        #expect(waiting.status == .fail)
+        #expect(waiting.hint?.contains("unlock-code") == false)
     }
 
     @Test("a screen that is off or locked warns and names the command that helps")

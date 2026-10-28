@@ -1,6 +1,37 @@
 import Foundation
 import OffsiderCore
 
+extension AndroidBackend: OverlayPermissionReading {
+    public func canDrawOverlays(_ package: String, on id: DeviceID) async throws -> Bool? {
+        guard let script = AndroidOverlayPermission.readScript(package: package) else { return nil }
+        let result = try await requireClient().shell(script, on: id.rawValue, timeout: .seconds(10), label: "appops get SYSTEM_ALERT_WINDOW")
+        return result.status == 0 ? AndroidOverlayPermission.parse(result.stdoutText) : nil
+    }
+}
+
+/// `Settings.canDrawOverlays`: the app op decides, and its default falls back to a permission granted at install.
+enum AndroidOverlayPermission {
+    static let grantedMarker = "offsider-overlay-granted"
+
+    /// Nil for a name that is not a package, which never reaches the shell.
+    static func readScript(package: String) -> String? {
+        guard !package.isEmpty, package.allSatisfy({ $0.isASCII && ($0.isLetter || $0.isNumber || $0 == "." || $0 == "_") }) else { return nil }
+        return "appops get \(package) SYSTEM_ALERT_WINDOW; dumpsys package \(package) | grep -q -E '^ +android.permission.SYSTEM_ALERT_WINDOW: granted=true' && echo \(grantedMarker); true"
+    }
+
+    /// `allow` and `foreground` grant, `deny`, `ignore` and `errored` refuse, and `default` or no entry (`No operations.`) leaves it to the install-time grant.
+    static func parse(_ output: String) -> Bool? {
+        let modes = output.split(whereSeparator: \.isNewline).compactMap { line -> String? in
+            guard let range = line.range(of: "SYSTEM_ALERT_WINDOW:") else { return nil }
+            return line[range.upperBound...].split(whereSeparator: { $0 == ";" || $0.isWhitespace }).first.map { $0.lowercased() }
+        }
+        if modes.contains(where: { ["deny", "ignore", "errored"].contains($0) }) { return false }
+        if modes.contains(where: { ["allow", "foreground"].contains($0) }) { return true }
+        guard modes.allSatisfy({ $0 == "default" }), modes.isEmpty == false || output.contains("No operations") else { return nil }
+        return output.contains(grantedMarker)
+    }
+}
+
 extension AndroidBackend: PermissionControlling {
     public func permissions(of app: String, on id: DeviceID) async throws -> AndroidPackagePermissions {
         let client = try requireClient()
