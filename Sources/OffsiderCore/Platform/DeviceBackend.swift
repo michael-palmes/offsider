@@ -47,6 +47,13 @@ public protocol DeviceBackend: AnyObject {
     func close() async
 }
 
+/// A backend with more than one way to capture a device's screen, which says how it took the latest screenshot.
+@MainActor
+public protocol CaptureSourceReporting: AnyObject {
+    /// `stream` or `devicectl` on an iPhone or iPad; nil before the first capture.
+    func captureSource(for id: DeviceID) -> String?
+}
+
 /// A backend whose screenshot masks read more of the screen than its tree output shows.
 @MainActor
 public protocol MaskTreeReading: AnyObject {

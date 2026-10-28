@@ -145,6 +145,12 @@ extension AndroidBackend {
     }
 
     /// The helper this command already started on `serial`, for callers that must never start one.
+    /// Closes this command's helper on `id`, freeing the UiAutomation slot on a phone; the next tree read chooses a source again.
+    public func releaseTreeReads(on id: DeviceID) async {
+        guard case .helper(let session) = treeSources.removeValue(forKey: id.rawValue) else { return }
+        await session.close()
+    }
+
     func runningHelper(for serial: String) -> HelperSession? {
         guard case .helper(let session) = treeSources[serial] else { return nil }
         return session
