@@ -1,6 +1,5 @@
 import ArgumentParser
-import OffsiderAndroid
-import OffsiderIOSDevice
+import OffsiderCore
 
 /// `--app`: the one app a physical iPhone, iPad or Android phone is driven inside, checked in front before every frame and input.
 struct AppOption: ParsableArguments {
@@ -17,13 +16,8 @@ struct AppOption: ParsableArguments {
     @MainActor
     @discardableResult
     func apply(to route: DeviceRouter.Route) -> Bool {
-        guard let bundleID else { return false }
-        if let android = route.backend as? AndroidBackend {
-            return android.selectApp(bundleID, on: route.device.rawValue)
-        }
-        guard let phone = route.backend as? IOSDeviceBackend, phone.targetApp != bundleID else { return false }
-        phone.targetApp = bundleID
-        return true
+        guard let bundleID, let phone = route.backend as? any AppTargetSelecting else { return false }
+        return phone.selectApp(bundleID, on: route.device)
     }
 }
 

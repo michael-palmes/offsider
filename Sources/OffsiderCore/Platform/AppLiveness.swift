@@ -141,8 +141,8 @@ public enum SimulatorAppLiveness {
             }
             return .notRunning
         }
-        if let treePID {
-            guard bundleOf(treePID) == bundleID, let found = process(treePID) else { return .unknown }
+        // A tree from another process, such as SpringBoard's alert over the app, says nothing about the app.
+        if let treePID, bundleOf(treePID) == bundleID, let found = process(treePID) {
             return .running(found)
         }
         guard mayList, let text = await listing() else { return .unknown }

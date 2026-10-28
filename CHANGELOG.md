@@ -8,11 +8,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Added
 
+- `batch` takes a `drag` step, written and limited like `offsider drag`.
+- `app_not_responding` (exit 1): on Android, when the app in front on an unlocked screen has no window the tree can read, as when its main thread is stuck, `describe-ui` and other reads say so instead of telling you to unlock the device.
+- `rn devmenu` lists the items an app registers (`registerDevMenuItems`, or `DevSettings.addMenuItem` in React Native's own Android menu), marked `"custom":true` in `--json` and tagged for a person; `--label` already chose them, and now prefers the menu's item over an app button behind it with the same label. Expo's custom heading also counts as menu evidence, so a menu whose tools those items push off screen is still read.
 - `record-video --duration <seconds>` stops and saves by itself that long after the first frame, and its `--json` adds `seconds` (first frame to last) and `fps` (the rate frames were taken at).
 - `login --app <package>` names the app on an Android phone allowed for any app, as other commands take it; one the `offsider.login.json` in use does not name exits 64 with nothing typed.
 - `screenshot --json` adds `capture` on an iPhone or iPad: `stream` or `devicectl`, the path that took the shot.
-- `batch` takes a `drag` step, written and limited like `offsider drag`.
-- `rn devmenu` lists the items an app registers (`registerDevMenuItems`, or `DevSettings.addMenuItem` in React Native's own Android menu), marked `"custom":true` in `--json` and tagged for a person; `--label` already chose them, and now prefers the menu's item over an app button behind it with the same label. Expo's custom heading also counts as menu evidence, so a menu whose tools those items push off screen is still read.
 
 ### Changed
 
@@ -22,6 +23,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Fixed
 
+- `rn open` on a phone allowed for any app reads the tree of `--bundle-id`, as `--app` does elsewhere; every read was refused for naming no app, so `--wait-id` waited out `--timeout` and blamed Metro although the app was up. Tree reads that keep failing for 10 s now end the wait with the read's own error.
+- `rn open` stops early instead of waiting out `--timeout` and blaming Metro: exit 5 when the app holds a screen without the `--wait-id` element for 15 s, naming the screen's first id (a timeout on a screen names it too), or shows Expo's dev menu intro (the hint is `rn prepare`); exit 1 `person_required` when a system prompt such as a permission alert covers the app on an iOS simulator, naming it and its buttons, which `rn open` never answers (without `--wait-id` it no longer reports such a screen as the app up); and `app_not_responding` after 10 s on Android when the app is in front but has no window, with `rn open --restart` as the fix.
+- `rn open` taps Open on an iOS simulator's `Open in` prompt only within 10 s of sending its own link; a later one, which may be for another app, is reported as a system prompt instead of answered.
 - On an iPhone or iPad, stream screenshots are cropped to the decoded frame's clean aperture, the panel's own size that `devicectl` shots have, where they could come out a few pixels larger, and the fallback notice says a `devicectl` shot has a staged status bar. A Mac display that is asleep no longer reads as no desktop session: the stream opens again once it wakes, and the reason names `caffeinate -d`.
 - `login --project <dir>` on an Android phone allowed for any app drives the `package` of the `offsider.login.json` it found there, where the phone check read only the current folder's file and refused with `app_not_allowed`.
 - `wake --unlock` no longer types a device's unlock code while `record-video` or `stream-video` records it, and `type --stdin` or `--file` no longer types while one records with a password field on screen: each exits 8 (`device_busy`) with nothing typed, as `login` does for a password, and a recording refuses to start while `type` holds the device. An Android recording with `--unmasked` or `OFFSIDER_MASK_SECURE=0` never took the device lock, so the code could be typed on camera.
