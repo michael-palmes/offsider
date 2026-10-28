@@ -6,15 +6,16 @@ enum AndroidNotifications {
     static let keysMarker = "offsider: keys"
     static let dumpMarker = "offsider: dump"
     static let recordMarker = "offsider: record"
+    static let listMarker = "offsider: list"
     static let maximumValue = 4_096
 
     /// Android 11 and later pick each record by its key (`list`, then `get`); before that a filter keeps the package's blocks of the active list.
     static func script(package: String) -> String {
         """
         p=\(ExpoDevClient.shellQuote(package))
-        if cmd notification list >/dev/null 2>&1; then
+        if keys=$(cmd notification list 2>/dev/null); then
           echo '\(keysMarker)'
-          cmd notification list 2>/dev/null | while IFS= read -r k; do
+          printf '%s\\n' "$keys" | while IFS= read -r k; do
             r="${k#*"|"}"
             case "$r" in "$p|"*) echo '\(recordMarker)'; cmd notification get "$k" </dev/null 2>/dev/null ;; esac
           done
@@ -22,7 +23,7 @@ enum AndroidNotifications {
           echo '\(dumpMarker)'
           dumpsys notification --noredact 2>/dev/null | while IFS= read -r l; do
             case "$l" in
-              "  Notification List:"*) s=1; o=0; continue ;;
+              "  Notification List:"*) s=1; o=0; echo '\(listMarker)'; continue ;;
               "    NotificationRecord("*) o=0; if [ "$s" = 1 ]; then case "$l" in *" pkg=$p "*) o=1; echo '\(recordMarker)' ;; esac; fi ;;
               "  "[!\\ ]*:|" "[!\\ ]*:|[!\\ ]*:) o=0; s=0 ;;
             esac
@@ -32,13 +33,13 @@ enum AndroidNotifications {
         """
     }
 
-    /// The records the script printed, each checked again to belong to `package`; group summaries Android makes, and records with no text, are left out.
+    /// The app's checked records without Android's own group summaries or empty ones; nil when no list was found, which is not "none posted".
     static func parse(_ output: String, package: String) -> NotificationSnapshot? {
         let lines = output.components(separatedBy: "\n")
         let source: NotificationSnapshot.Source
         if lines.contains(keysMarker) {
             source = .keys
-        } else if lines.contains(dumpMarker) {
+        } else if lines.contains(dumpMarker), lines.contains(listMarker) {
             source = .dump
         } else {
             return nil

@@ -121,9 +121,11 @@ struct AndroidNotificationsTests {
         #expect(notifications.first?.ongoing == true)
     }
 
-    @Test("output without the script's own marker is not read as an empty list")
+    @Test("output without the script's own marker, or a dump with no active list, is not read as an empty list")
     func noMarkerIsAnError() {
         #expect(AndroidNotifications.parse("/system/bin/sh: cmd: not found\n", package: Self.package) == nil)
+        #expect(AndroidNotifications.parse("\(AndroidNotifications.dumpMarker)\n", package: Self.package) == nil)
+        #expect(AndroidNotifications.parse("\(AndroidNotifications.dumpMarker)\n\(AndroidNotifications.listMarker)\n", package: Self.package)?.notifications == [])
     }
 
     @Test("one-time codes are hidden and counted, and --wait matches the hidden text, so it cannot probe for a code")

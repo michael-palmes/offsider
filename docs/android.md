@@ -59,10 +59,10 @@ A name close to an AVD's exits 7 `avd_not_found` naming the closest, with `Try: 
 
 ## Notifications
 
-`offsider notifications --app <package> --device <DEVICE_ID>` lists the notifications one app has posted and still shows: each one's title, text, big text, sub-text, channel, post time and whether it is ongoing. `--wait <text>` polls once a second until a title or text holds that text, ignoring case, and exits 5 (`condition_not_met`) at `--timeout` (1 to 600 s, default 30). It reads and never locks the device.
+`offsider notifications --app <package> --device <DEVICE_ID>` lists the notifications one app has posted and still shows: each one's title, text, big text, sub-text, channel, post time and whether it is ongoing. `--wait <text>` polls once a second until a title or text holds that text, ignoring case, and exits 5 (`condition_not_met`) at `--timeout` (1 to 600 s, default 30). With `--new`, only a notification that appears or changes after the wait starts counts, so one already showing cannot pass it: use it to prove a push arrived. It reads and never locks the device.
 
 ```bash
-offsider notifications --app com.example.app --wait 'Order filled' --timeout 60 --device <DEVICE_ID> --json
+offsider notifications --app com.example.app --wait 'Order filled' --new --timeout 60 --device <DEVICE_ID> --json
 ```
 
 - The app's records are picked on the device, so no other app's notification text crosses the cable. On Android 11 and later the device lists the keys (`cmd notification list`), keeps those whose package field is the app's, and prints each with `cmd notification get`; a key is never matched by its tag. On Android 8 to 10 the device runs `dumpsys notification --noredact` through a shell filter that keeps the app's records in the active list. A notification whose own text is laid out to look like another app's record header can carry its later lines past that filter, so on Android 8 to 10 treat a record's text as the app's at best. `--json` names the path taken in `source` (`keys` or `dump`).

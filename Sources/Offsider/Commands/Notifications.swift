@@ -12,23 +12,27 @@ struct NotificationsCommand: AsyncParsableCommand {
         filter `dumpsys notification --noredact` on the device to the app's records. It prints each one's title, \
         text, big text, sub-text, channel and post time, with one-time codes, card numbers, wallet addresses and \
         recovery phrases hidden as describe-ui hides them. --wait polls once a second until a title or text holds \
-        the given text (case-insensitive, matched after hiding), exiting 5 at --timeout. On a physical phone the \
+        the given text (case-insensitive, matched after hiding), exiting 5 at --timeout; with --new, only a \
+        notification that appears or changes after the wait starts counts. On a physical phone the \
         app must be one the allowance permits. iOS offers no way to read posted notifications (not_supported).
 
         Examples:
           offsider notifications --app com.example.app --device DEVICE_ID --json
-          offsider notifications --app com.example.app --wait 'Order filled' --timeout 60 --device DEVICE_ID
+          offsider notifications --app com.example.app --wait 'Order filled' --new --timeout 60 --device DEVICE_ID
         """
     )
 
     @Option(
         name: .customLong("app"),
-        help: ArgumentHelp("The app's package (default offsider.login.json's, else a phone's only pinned app).", valueName: "bundle-id")
+        help: ArgumentHelp("The app's package (default offsider.login.json's, else a phone's only pinned app).", valueName: "package")
     )
     var app: String?
 
     @Option(help: ArgumentHelp("Wait until a notification's title or text holds this text, ignoring case.", valueName: "text"))
     var wait: String?
+
+    @Flag(help: "With --wait: count only a notification that appears or changes after the wait starts, so an earlier one cannot pass it.")
+    var new = false
 
     @Option(help: ArgumentHelp("With --wait: seconds to wait, from 1 to 600 (default 30).", valueName: "seconds"))
     var timeout: Double?
@@ -52,6 +56,7 @@ struct NotificationsCommand: AsyncParsableCommand {
         if let wait, wait.trimmingCharacters(in: .whitespaces).isEmpty {
             throw ValidationError("--wait needs text to look for.")
         }
+        if new, wait == nil { throw ValidationError("--new needs --wait.") }
         guard let timeout else { return }
         guard wait != nil else { throw ValidationError("--timeout needs --wait.") }
         guard timeout.isFinite, (1...600).contains(timeout) else {
@@ -75,11 +80,15 @@ struct NotificationsCommand: AsyncParsableCommand {
             }
             try await route.backend.prepare()
             let id = try await route.backend.requireBootedDevice(route.device).id
+            var earlier: Set<PostedNotification>?
             while true {
                 let snapshot = try await reader.notifications(of: app, on: id)
                 let hidden = snapshot.notifications.map { $0.redacted() }
                 guard let wait else { return (snapshot, hidden) }
-                if let match = hidden.first(where: { $0.notification.contains(wait) }) { return (snapshot, [match]) }
+                let baseline = earlier ?? (new ? Set(snapshot.notifications) : [])
+                earlier = baseline
+                let fresh = zip(snapshot.notifications, hidden).filter { !baseline.contains($0.0) }.map(\.1)
+                if let match = fresh.first(where: { $0.notification.contains(wait) }) { return (snapshot, [match]) }
                 guard clock.now + .seconds(1) < deadline else {
                     throw CLIError(
                         errorDescription: "No notification from \(app) held \(TerminalText.quoted(wait)) within \(DeviceSettingsReport.number(limit)) s (\(hidden.count) posted). Check that the app may post (`offsider permission show --app \(app) --device \(route.device.rawValue)` on Android 13 and later) and that the push was sent.",

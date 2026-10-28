@@ -24,7 +24,7 @@ public struct NotificationSnapshot: Equatable, Sendable {
     }
 }
 
-public struct PostedNotification: Equatable, Sendable {
+public struct PostedNotification: Hashable, Sendable {
     public var key: String
     public var id: Int?
     public var tag: String?

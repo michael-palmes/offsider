@@ -31,6 +31,23 @@ struct AndroidNotificationsE2ETests {
         #expect(keys.allSatisfy { $0.split(separator: "|").dropFirst().first == Substring(Self.shell) })
     }
 
+    @Test("with --new a notification already showing does not pass the wait, and one posted during it does")
+    func newIgnoresEarlier() async throws {
+        guard try await AndroidE2E.apiLevel() >= 29 else { return }
+        let tag = "offsider-new-\(UUID().uuidString.prefix(8).lowercased())"
+        _ = try await AndroidE2E.shell("cmd notification post -t 'Offsider new \(tag)' \(tag)-old 'earlier'")
+        try await AndroidE2E.run("notifications --app \(Self.shell) --wait 'Offsider new \(tag)' --timeout 10")
+        let stale = try await AndroidE2E.offsider("notifications --app \(Self.shell) --wait 'Offsider new \(tag)' --new --timeout 3")
+        #expect(stale.exitCode == 5)
+
+        async let found = AndroidE2E.offsider("notifications --app \(Self.shell) --wait 'Offsider new \(tag)' --new --timeout 30 --json")
+        try await Task.sleep(for: .seconds(2))
+        _ = try await AndroidE2E.shell("cmd notification post -t 'Offsider new \(tag)' \(tag)-fresh 'later'")
+        let result = try await found
+        #expect(result.exitCode == 0, "\(result.stderr)")
+        #expect((try Self.json(result.stdout)["notifications"] as? [[String: Any]])?.first?["tag"] as? String == "\(tag)-fresh")
+    }
+
     @Test("a wait for text no notification holds exits 5 at its timeout")
     func waitTimesOut() async throws {
         let result = try await AndroidE2E.offsider("notifications --app \(AndroidE2E.package) --wait 'never posted text' --timeout 2")
