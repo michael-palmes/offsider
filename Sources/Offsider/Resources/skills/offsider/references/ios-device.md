@@ -63,11 +63,12 @@ offsider session stop --device <UDID> --clean
 
 - `screenshot` takes the broker's latest stream frame, about 230 ms; without the broker it uses `devicectl device capture screenshot`, about 2.3 s. The first one after the broker starts waits for the stream to settle, about 1.5 s more. `--verify` may take several screenshots, so prefer `wait` or `assert` when the tree shows the effect.
 - Screen comparisons (`--verify`, `wait` screen checks, `screenshot --compare`) average 8 by 8 pixel blocks and ignore drifts of a few colour units, the stream's compression noise; a caret, a toggle or new text still counts as a change. `screenshot --compare` counts changed pixels, and `--diff-output` marks them, by those blocks too.
+- `app info`, `launch`, `stop` and `open` go through `devicectl` alone, with no runner, for an app the allowance permits (`guide apps`).
 - `appearance` and `content-size` go through `devicectl`; set them back when done. `orientation` waits for the screen to turn, which needs the device awake and unlocked and an app that supports the orientation.
 
 ## Refused on a device
 
-`permission`, `status-bar`, `biometric`, `shake`, `posture`, `stream-video --format bgra`, `logs`, `rn prepare`, `wake`, `stay-awake`, `unlock-code`, `login` and `credential` (when it would read the device) and a `touch --down` without `--up` exit 1 with `not_supported`, most naming an alternative; `boot`, `button apple-pay` and `button app-switch` exit 64. Use an iOS simulator for permissions, the status bar, biometrics, logs and sign-in, and install and launch apps with `xcrun devicectl`. `record-video` and the other `stream-video` formats build each frame from a screenshot, so their frame rate is low. `credential --app <bundle-id>` saves or describes a test user without reading the device.
+`permission`, `status-bar`, `biometric`, `shake`, `posture`, `stream-video --format bgra`, `logs`, `rn prepare`, `wake`, `stay-awake`, `unlock-code`, `login` and `credential` (when it would read the device) and a `touch --down` without `--up` exit 1 with `not_supported`, most naming an alternative; `boot`, `button apple-pay` and `button app-switch` exit 64. Use an iOS simulator for permissions, the status bar, biometrics, logs and sign-in, and install apps with `xcrun devicectl`. `record-video` and the other `stream-video` formats build each frame from a screenshot, so their frame rate is low. `credential --app <bundle-id>` saves or describes a test user without reading the device.
 
 ## Errors
 

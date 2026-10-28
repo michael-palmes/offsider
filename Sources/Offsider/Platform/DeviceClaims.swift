@@ -91,6 +91,9 @@ extension PermissionCommand: LockingCommand {
 }
 
 extension AppearanceCommand: DeviceOptionCommand {}
+extension AppLaunchCommand: DeviceOptionCommand {}
+extension AppOpenCommand: DeviceOptionCommand {}
+extension AppStopCommand: DeviceOptionCommand {}
 extension Assert: DeviceOptionCommand {}
 extension Batch: DeviceOptionCommand {}
 extension BiometricCommand: DeviceOptionCommand {}
