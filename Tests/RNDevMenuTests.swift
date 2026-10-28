@@ -243,6 +243,44 @@ struct RNDevMenuTests {
         #expect(DevMenu.tools(in: menu) == (inspector: false, perfMonitor: false))
     }
 
+    @Test("perf-monitor on Android stops with person_required before anything is sent when the app may not draw over other apps", arguments: [
+        ["perf-monitor"], ["--label", "Toggle Performance Monitor"],
+    ])
+    func perfMonitorNeedsOverlay(arguments: [String]) async throws {
+        let backend = OverlayFakeBackend(platform: .android, trees: [Self.expoMenu(), Self.app])
+        backend.foregrounds = [ForegroundActivities(top: "com.example.app/.MainActivity", home: nil)]
+        backend.overlayAllowed = false
+
+        let error = await #expect(throws: CLIError.self) {
+            _ = try await RNDevMenu.parse(arguments + ["--device", Self.device.rawValue])
+                .perform(on: DeviceRouter.Route(backend: backend, device: Self.device), clock: ScriptedClock().poll)
+        }
+
+        #expect(error?.reason == .personRequired)
+        #expect(error?.userFacingDescription.contains("com.example.app may not display over other apps") == true)
+        #expect(error?.userFacingDescription.contains("Display over other apps") == true)
+        #expect(backend.overlayChecks == ["com.example.app"])
+        #expect(backend.session.calls.isEmpty)
+        #expect(backend.treeReads == 1)
+    }
+
+    @Test("perf-monitor goes ahead when the app may draw over other apps or the device does not say, and other items never ask", arguments: [
+        (["perf-monitor"], Bool?.some(true), 1),
+        (["perf-monitor"], Bool?.none, 1),
+        (["reload"], Bool?.some(false), 0),
+    ])
+    func perfMonitorAllowed(arguments: [String], allowed: Bool?, checks: Int) async throws {
+        let backend = OverlayFakeBackend(platform: .android, trees: [Self.expoMenu(), Self.app], advanceTreeOnInput: true)
+        backend.foregrounds = [ForegroundActivities(top: "com.example.app/.MainActivity", home: nil)]
+        backend.overlayAllowed = allowed
+
+        _ = try await RNDevMenu.parse(arguments + ["--device", Self.device.rawValue])
+            .perform(on: DeviceRouter.Route(backend: backend, device: Self.device), clock: ScriptedClock().poll)
+
+        #expect(backend.overlayChecks.count == checks)
+        #expect(!backend.session.calls.isEmpty)
+    }
+
     @Test("fast-refresh holds its switch rather than tapping it, since the Expo switch ignores a quick tap, and counts the hold as sent")
     func fastRefreshHoldsSwitch() async throws {
         let menu = try Self.captured("devmenu-expo-ios")
@@ -648,4 +686,16 @@ private final class UnreadableBackend: ReactNativeDevMenuOpening {
     func screenshotPNG(for id: DeviceID) async throws -> Data { Data() }
     func volatileScreenBands(for id: DeviceID) async -> ScreenBands { ScreenBands(top: 0, bottom: 0) }
     func openDevMenu(_ id: DeviceID) async throws { opens += 1 }
+}
+
+/// Answers whether the app in front may draw over other apps.
+@MainActor
+private final class OverlayFakeBackend: FakeDeviceBackend, OverlayPermissionReading {
+    var overlayAllowed: Bool?
+    private(set) var overlayChecks: [String] = []
+
+    func canDrawOverlays(_ package: String, on id: DeviceID) async throws -> Bool? {
+        overlayChecks.append(package)
+        return overlayAllowed
+    }
 }

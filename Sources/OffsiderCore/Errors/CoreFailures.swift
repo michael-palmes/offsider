@@ -36,6 +36,18 @@ extension ExpoDevClientError: OffsiderFailure {
     public var failureMessage: String { description }
 }
 
+extension AppLifecycleError: OffsiderFailure {
+    public var reason: FailureReason {
+        switch kind {
+        case .notInstalled: return .appNotInstalled
+        case .noLauncher: return .notSupported
+        case .linkNotHandled: return .linkNotHandled
+        case .failed: return .commandFailed
+        }
+    }
+    public var failureMessage: String { message }
+}
+
 extension DeviceSettingsError: OffsiderFailure {
     public var reason: FailureReason { .deviceControlFailed }
     public var failureMessage: String { description }
