@@ -14,6 +14,10 @@ public struct InputReport: Equatable, Sendable {
     public var percent: Double?
     /// The slider's value as its accessibility element reads it.
     public var value: String?
+    /// How long a swipe or drag rested at its end before lifting, with `--screenshot-at`.
+    public var holdMs: Int?
+    /// What `--screenshot-at` captured, in order.
+    public var screenshots: [HeldScreenshot]
     /// From the command's start to the report, in seconds.
     public let elapsed: TimeInterval
     public let error: ErrorPayload?
@@ -21,6 +25,7 @@ public struct InputReport: Equatable, Sendable {
     public init(
         command: String, target: String, dispatched: DispatchState,
         point: UIPoint? = nil, percent: Double? = nil, value: String? = nil,
+        holdMs: Int? = nil, screenshots: [HeldScreenshot] = [],
         elapsed: TimeInterval = 0, error: ErrorPayload? = nil
     ) {
         self.command = command
@@ -29,6 +34,8 @@ public struct InputReport: Equatable, Sendable {
         self.point = point
         self.percent = percent
         self.value = value
+        self.holdMs = holdMs
+        self.screenshots = screenshots
         self.elapsed = elapsed
         self.error = error
     }
@@ -52,6 +59,8 @@ public struct InputReport: Equatable, Sendable {
         }
         if let percent { members.append(("percent", .number(Self.rounded(percent)))) }
         if let value { members.append(("value", .string(value))) }
+        if let holdMs { members.append(("holdMs", .integer(holdMs))) }
+        if !screenshots.isEmpty { members.append(("screenshots", .array(screenshots.map(\.jsonValue)))) }
         members += [
             ("elapsedMs", .integer(VerifyPhases.milliseconds(elapsed))),
             ("exitCode", .integer(Int(exitCode.rawValue))),
@@ -63,5 +72,25 @@ public struct InputReport: Equatable, Sendable {
     /// To 0.01, the precision of describe-ui frames.
     private static func rounded(_ value: Double) -> Double {
         (value * 100).rounded() / 100
+    }
+}
+
+/// A screenshot taken while a gesture's finger rested at its end, timed in milliseconds from when it came to rest.
+public struct HeldScreenshot: Equatable, Sendable {
+    /// The `--screenshot-at` it answers.
+    public let atMs: Int
+    public let startMs: Int
+    public let endMs: Int
+    public let report: ScreenshotReport
+
+    public init(atMs: Int, startMs: Int, endMs: Int, report: ScreenshotReport) {
+        self.atMs = atMs
+        self.startMs = startMs
+        self.endMs = endMs
+        self.report = report
+    }
+
+    var jsonValue: OrderedJSON {
+        .object([("atMs", .integer(atMs)), ("startMs", .integer(startMs)), ("endMs", .integer(endMs))] + report.jsonMembers)
     }
 }

@@ -26,8 +26,25 @@ Every input command takes `--json`: `tap`, `type`, `key`, `key-sequence`, `key-c
 - `target` is what the command line named: a selector, a point, `(x, y) to (x, y)`, a key or button, a preset. `type` says `text` and `key-sequence` says `keys`, never what they typed.
 - `dispatched` is `yes`, `no` (nothing was sent, so a resend is safe) or `unknown` (a send began and failed: check the screen first). `ok` and exit 0 never mean the input worked, and a `slider` already at its value sends nothing (`dispatched` `no`).
 - `tap` adds `point`, where it tapped (or, on a failure, aimed) in points; `slider` adds `percent`, the value it reached, and `value`, as its element reads it (listed in `untrusted`).
+- `swipe` and `drag` with `--screenshot-at` add `holdMs`, how long the finger rested at the end, and `screenshots`: one object per screenshot, with `atMs` (the offset asked for), `startMs` and `endMs` (when it ran, from the moment the finger came to rest) and `screenshot --json`'s fields. A failure still lists the screenshots already written.
 - A failure sets `ok` to false and carries the [JSON error object](errors.md#json-errors) in `error`, with `exitCode` to match. A usage error (exit 64) prints the plain error envelope, with nothing sent.
 - With `--verify`, `tap`, `type`, `key` and `button` print the [verify report](errors.md#verify-reports) instead.
+
+### Screenshots during a hold
+
+Another command cannot capture the screen while a gesture holds the device: `screenshot` exits 8 (`device_busy`) until the finger lifts, and by then a chart's scrub or a dragged item's hover has gone. Take the screenshot inside the gesture instead:
+
+```bash
+offsider swipe --start-x 40 --start-y 500 --end-x 300 --end-y 500 --hold-end 1500 --screenshot-at 300 --screenshot-at 1000 --output scrub.png --device <DEVICE_ID>
+offsider drag --start-x 100 --start-y 300 --end-x 100 --end-y 600 --hold-ms 800 --screenshot-at 400 --output drop.png --device <DEVICE_ID>
+```
+
+- `--screenshot-at <ms>` (0 to 10000, up to 10 times) takes a screenshot that many milliseconds after the finger comes to rest at the end, before it lifts. Without `--hold-end` the finger rests until the last screenshot is done; with it, every `--screenshot-at` must fall within it.
+- Each screenshot is masked as `screenshot` masks by default: password fields, `offsider.mask.json` and the evidence run's masks, from a tree read while the finger is down, just before the pixels. When a password field cannot be located, the image is withheld, the finger lifts and the command fails.
+- `--output` takes a path or a folder, as `screenshot --output` does; several screenshots to one path are numbered `scrub-1.png`, `scrub-2.png`. Without it, each lands in the current folder under `screenshot`'s default name. In an evidence run, each is also numbered into the run.
+- A screenshot takes time (about 0.1 to 0.5 s on a simulator or emulator, more on a phone), so it can start after its offset when the one before ran long, and when one runs past `--hold-end`, the finger stays down until it is done; a person sees a note, and `holdMs` says how long it rested.
+- On Android the gesture goes as separate requests around each screenshot, so the screen read fits between them on the one UiAutomation helper; the helper keeps the finger down throughout, but sends no resting reports while a screenshot runs. A phone's helper starts before the finger goes down, so the first screenshot does not wait for it.
+- Batch `swipe` and `drag` steps do not take `--screenshot-at`; run the gesture on its own.
 
 ## Selectors and taps
 

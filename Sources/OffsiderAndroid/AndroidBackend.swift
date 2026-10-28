@@ -168,6 +168,11 @@ public final class AndroidBackend: DeviceBackend, AccessibilityActionPerforming,
         return try await readTree(id, point: nil, checkingWindows: true, everyView: true)
     }
 
+    /// Starts the helper (or settles on uiautomator) now, so a phone's helper start never lands inside a held gesture.
+    public func prepareMaskTree(for id: DeviceID) async throws {
+        _ = try await treeSource(for: id.rawValue)
+    }
+
     /// The tree without the phone deny-list check, for the lock screen `wake --unlock` reads.
     func readTree(_ id: DeviceID, point: UIPoint?, checkingWindows: Bool = false, everyView: Bool = false) async throws -> UITree {
         let serial = id.rawValue
