@@ -5,7 +5,7 @@ Every device command takes `--device <id>`, using an ID from `offsider devices`:
 | Command | What it does |
 | --- | --- |
 | `devices` | List iOS simulators (iPhone and iPad), allowed iPhones, iPads and USB Android phones, running Android emulators and shut-down AVDs with their IDs as a table, booted and booting ones first on each platform, or as [JSON](#device-list-json) with `--json`; `--platform ios\|android` filters, `--booted` keeps only booted and booting devices, and `--physical` lists every connected physical device, allowed or not, for a person; beside `add`, `remove` or `status` these three exit 64 naming the listing command. A person sees rows grouped by kind behind status dots, ending with a `Next` command on stderr ([first run](getting-started.md#first-run)) |
-| `devices add` | Let agents drive a physical iPhone, iPad or Android phone: a person at a terminal picks the device, team, app and how long from menus, then Touch ID (`--device`, `--app`, `--expires`, `--team` skip a step; [physical devices](device-access.md)) |
+| `devices add` | Let agents drive a physical iPhone, iPad or Android phone: a person at a terminal picks the device, team, app and how long from menus, then Touch ID; a phone also gets the Metro ports `rn open` may reverse (`--device`, `--app`, `--expires`, `--team`, `--metro-port` skip a step; [physical devices](device-access.md)) |
 | `devices remove` | Withdraw one, picked from a menu on a terminal or named with `--device`, and stop its runner and session broker (`--json`) |
 | `devices status` | The phones and tablets agents may drive, until when, and any managed policy; `--device` exits 7 unless that one is allowed (`--json`) |
 | `boot` | Start an Android emulator by AVD name, or an iOS simulator by name or UDID, wait until it has booted and print its serial or UDID; a device that is already running is not started again ([starting an emulator](android.md#starting-an-emulator)) |
@@ -54,7 +54,7 @@ Every device command takes `--device <id>`, using an ID from `offsider devices`:
 | `record-video` | Record the display to an H.264 MP4 until Ctrl+C, SIGINT or `--duration` runs out ([video](capture.md#screenshots-and-video)) |
 | `stream-video` | Stream frames to stdout as `mjpeg`, `raw`, `ffmpeg` or `bgra` ([video](capture.md#screenshots-and-video)) |
 | `runner` | `status` lists the XCUITest runner sessions that read physical iPhones and iPads, `stop` stops one (`--device`, `--clean` to uninstall it too) or all, and `build --device <UDID>` builds the runner (`--register-device`, for a person at a terminal); `--json` |
-| `session` | `status` lists each device's background sessions, an iPhone or iPad's runner and session broker, an Android emulator's warm helper or a simulator's input session, without starting any; `stop` stops them on one device (`--device`, `--clean` to uninstall the runner and delete its builds and logs) or all; `--json` ([iPhones](ios-devices.md), [Android](android.md#screen-reads-and-the-helper), [simulators](input.md#simulator-input-session)) |
+| `session` | `status` lists each device's background sessions, an iPhone or iPad's runner and session broker, an Android emulator's warm helper or a simulator's input session, without starting any; `stop` stops them on one device (`--device`, `--clean` to uninstall the runner and delete its builds and logs) or all, and removes the adb reverses `rn open` set; `--json` ([iPhones](ios-devices.md), [Android](android.md#screen-reads-and-the-helper), [simulators](input.md#simulator-input-session)) |
 
 ## Device list JSON
 

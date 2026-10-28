@@ -16,7 +16,8 @@ public enum AccessStatusScreen {
 
     /// `any app · until 22:14`, `com.example.app · until removed`, with `· team ABCDE12345` when `team` is on and the entry has one.
     public static func detail(_ entry: DeviceAllowance, now: Date, timeZone: TimeZone, team: Bool, style: TerminalStyle) -> String {
-        ([apps(entry), until(entry, now: now, timeZone: timeZone)] + (team ? entry.team.map { ["team \(PromptScreen.visible($0))"] } ?? [] : [])).joined(separator: " \(style.dot) ")
+        let metro = entry.metroPorts.isEmpty ? [] : [AllowScreen.metro(entry.metroPorts)]
+        return ([apps(entry)] + metro + [until(entry, now: now, timeZone: timeZone)] + (team ? entry.team.map { ["team \(PromptScreen.visible($0))"] } ?? [] : [])).joined(separator: " \(style.dot) ")
     }
 
     static func apps(_ entry: DeviceAllowance) -> String {
