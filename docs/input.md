@@ -46,6 +46,19 @@ offsider drag --start-x 100 --start-y 300 --end-x 100 --end-y 600 --hold-ms 800 
 - On Android the gesture goes as separate requests around each screenshot, so the screen read fits between them on the one UiAutomation helper; the helper keeps the finger down throughout, but sends no resting reports while a screenshot runs. A phone's helper starts before the finger goes down, so the first screenshot does not wait for it.
 - Batch `swipe` and `drag` steps do not take `--screenshot-at`; run the gesture on its own.
 
+### Two fingers and pinch
+
+`touch -x <X> -y <Y> --fingers 2 --hold <ms>` holds two fingers still, and `gesture pinch` moves them:
+
+```bash
+offsider gesture pinch --from 60 --to 240 --device <DEVICE_ID>                            # spread: zoom in
+offsider gesture pinch --from 240 --to 60 --x 200 --y 400 --duration 0.8 --device <DEVICE_ID>  # squeeze: zoom out
+```
+
+- The fingers sit on a horizontal line through `--x`,`--y` (default the middle of the app's frame), start `--from` points apart and end `--to` apart (each 20 to 600), moving about 60 times a second over `--duration` (0.1 to 10 s, default 0.5), then lift together. A finger that would leave the screen at either spread is a usage error, with nothing sent.
+- An iOS simulator's main display takes it through its input session, and Android emulators through gRPC or, without gRPC, the UiAutomation helper, as Android phones do (the helper starts for the command). A physical iPhone and the iPhone Duo's inner display refuse two fingers, and `OFFSIDER_ANDROID_INPUT=input` refuses them on Android.
+- It is a `batch` step too (`--step 'gesture pinch --from 60 --to 240'`). As with other input, check the effect: a screenshot, or a value the app shows.
+
 ## Selectors and taps
 
 ![Four phones: a target on screen is tapped, while a target parked below the screen, one covered by a pushed page and one under the keyboard are each refused and nothing is tapped.](assets/tap-guard.png)

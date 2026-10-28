@@ -255,6 +255,54 @@ struct GestureRotatedInputTests {
         #expect(abs(moves.reduce(0, +) - 0.6) < 1e-9)
     }
 
+    @Test("pinch puts two fingers --from apart about the centre, moves them to --to over the duration in about 60 moves a second, then lifts both")
+    func pinch() async throws {
+        let device = DeviceID(rawValue: "LANDSCAPE", platform: .ios)
+        let context = BatchContext(backend: LandscapeBackend(applicationFrame: nil), device: device, axCachePolicy: .perBatch, typeSubmissionMode: .composite, typeChunkSize: 1)
+        let gesture = try Gesture.parse(["pinch", "--from", "60", "--to", "240", "--x", "300", "--y", "200", "--duration", "0.5", "--device", device.rawValue])
+        let primitives = try await gesture.toBatchPrimitives(context: context, logger: OffsiderLogger())
+        guard primitives.count == 1, case .hidMergeable(.composite(let events)) = primitives[0] else {
+            Issue.record("expected one composite, got \(primitives)")
+            return
+        }
+        func physical(_ x: Double, _ y: Double) -> (x: Double, y: Double) {
+            OrientationCoordinateMath.translateToPhysical(x: x, y: y, orientation: .landscape, portraitWidth: 402, portraitHeight: 874)
+        }
+        let (a, b) = (physical(270, 200), physical(330, 200))
+        let (c, d) = (physical(180, 200), physical(420, 200))
+        #expect(events.first == .twoFingerTouch(direction: .down, x1: a.x, y1: a.y, x2: b.x, y2: b.y))
+        #expect(events.last == .twoFingerTouch(direction: .up, x1: c.x, y1: c.y, x2: d.x, y2: d.y))
+        let downs = events.filter { if case .twoFingerTouch(.down, _, _, _, _) = $0 { return true } else { return false } }
+        #expect(downs.count == 31)
+        #expect(downs.last == .twoFingerTouch(direction: .down, x1: c.x, y1: c.y, x2: d.x, y2: d.y))
+        let pauses = events.compactMap { if case .delay(let seconds) = $0 { return seconds } else { return nil } }
+        #expect(abs(pauses.reduce(0, +) - 0.5) < 1e-9)
+    }
+
+    @Test("pinch centres on the app frame's middle by default, and a finger off the screen is a usage error before anything is sent")
+    func pinchCentreAndBounds() async throws {
+        let frames = GesturePreset.pinchFrames(centre: UIPoint(x: 100, y: 50), from: 40, to: 20, moves: 2)
+        #expect(frames.map { $0.0.x } == [80, 85, 90] && frames.map { $0.1.x } == [120, 115, 110])
+        #expect(GesturePreset.pinchMoves(duration: 0.1) == 10 && GesturePreset.pinchMoves(duration: 10) == 240)
+
+        let device = DeviceID(rawValue: "LANDSCAPE", platform: .ios)
+        let backend = LandscapeBackend(applicationFrame: UIFrame(x: 0, y: 0, width: 874, height: 402), screen: UISize(width: 874, height: 402))
+        let context = BatchContext(backend: backend, device: device, axCachePolicy: .perBatch, typeSubmissionMode: .composite, typeChunkSize: 1)
+        let centred = try Gesture.parse(["pinch", "--from", "100", "--to", "50", "--device", device.rawValue])
+        guard case .hidMergeable(.composite(let events)) = try await centred.toBatchPrimitives(context: context, logger: OffsiderLogger()).first else {
+            Issue.record("expected a composite")
+            return
+        }
+        let (left, right) = (OrientationCoordinateMath.translateToPhysical(x: 387, y: 201, orientation: .landscape, portraitWidth: 402, portraitHeight: 874),
+                             OrientationCoordinateMath.translateToPhysical(x: 487, y: 201, orientation: .landscape, portraitWidth: 402, portraitHeight: 874))
+        #expect(events.first == .twoFingerTouch(direction: .down, x1: left.x, y1: left.y, x2: right.x, y2: right.y))
+
+        let offscreen = try Gesture.parse(["pinch", "--from", "60", "--to", "500", "--x", "100", "--y", "100", "--device", device.rawValue])
+        let error = await #expect(throws: CLIError.self) { _ = try await offscreen.toBatchPrimitives(context: context, logger: OffsiderLogger()) }
+        #expect(error?.reason == .usage)
+        #expect(error?.userFacingDescription.contains("off the screen") == true)
+    }
+
     @Test("a tree without an application frame fails with an actionable error")
     func missingApplicationFrameFails() async throws {
         let error = await #expect(throws: CLIError.self) {
@@ -275,6 +323,14 @@ struct GestureOptionTests {
         (["long-press-drag", "--x", "1", "--y", "2", "--to-x", "3", "--to-y", "4", "--hold-ms", "10001"], "--hold-ms must be from 0 to 10000"),
         (["long-press-drag", "--x", "1", "--y", "2", "--to-x", "3", "--to-y", "4", "--delta", "5"], "--delta applies to swipe presets only"),
         (["long-press-drag", "--x", "1", "--y", "2", "--to-x", "1", "--to-y", "2"], "must be different"),
+        (["pinch", "--from", "60"], "pinch needs --from and --to"),
+        (["pinch", "--from", "60", "--to", "60"], "must differ"),
+        (["pinch", "--from", "10", "--to", "200"], "--from must be from 20 to 600"),
+        (["pinch", "--from", "60", "--to", "700"], "--to must be from 20 to 600"),
+        (["pinch", "--from", "60", "--to", "200", "--x", "100"], "both --x and --y"),
+        (["pinch", "--from", "60", "--to", "200", "--to-x", "100"], "--to-x does not apply to pinch"),
+        (["pinch", "--from", "60", "--to", "200", "--duration", "0.05"], "from 0.1 to 10 seconds"),
+        (["scroll-up", "--from", "60"], "--from and --to apply to pinch only"),
     ])
     func validation(arguments: [String], message: String) {
         let error = #expect(throws: (any Error).self) { try Gesture.parse(arguments + ["--device", "emulator-5554"]) }
