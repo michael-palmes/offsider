@@ -40,7 +40,7 @@ offsider assert --id <identifier> --has-value <text> --device <DEVICE_ID>
 - For a report, `run start <dir>` numbers screenshots and logs into one folder, masking password fields and emails by default; video refuses tree masks (`guide evidence`).
 - Use `--retries 0` with `--verify` for submit, send or delete: a late effect plus a retry would act twice.
 - One agent per device: input commands lock the device. Exit 8 (`device_busy`) names the holder's pid; wait, or rerun with `--wait-lock <seconds>`. Never resend in a loop, never kill the holder (`guide errors`).
-- Screenshots are in pixels; taps and frames are in points (dp on Android). Capture with `screenshot --scale points` to tap what you see.
+- Screenshots are in pixels; taps and frames are in points (dp on Android). `screenshot --scale points` makes them match.
 - `appearance`, `content-size`, `orientation`, `permission`, `status-bar`, `biometric` and `stay-awake` change the device and stay changed: read the current value first, and set it back when done (`guide device-state`).
 - A physical iPhone or iPad works over USB only, unlocked, with UI Automation on, inside one app: pass `--app` to every screen command. Input starts a background session: run `offsider session stop --device <UDID> --clean` when done (`guide ios-device`).
 - React Native debug builds: `rn open` (Metro, `--restart`), `rn logbox status|open|dismiss` (`--index n`), `rn devmenu` (also a batch step), `logs --rn --app <id>` (`guide react-native`). `logs` reads the project's app; `--all` reads every app.
@@ -54,7 +54,7 @@ Every input command takes `--json` (`guide verify`); a failure prints `exitCode`
 
 ## Commands
 
-`doctor`, `init`, `guide`, `boot`, `devices` (`add`, `remove`, `status`), `describe-ui`, `tap`, `turnstile`, `login`, `credential`, `slider`, `swipe`, `drag`, `gesture`, `touch`, `type`, `button`, `key`, `key-sequence`, `key-combo`, `wait`, `assert`, `batch`, `run`, `screenshot`, `logs`, `appearance`, `content-size`, `permission`, `app`, `status-bar`, `biometric`, `stay-awake`, `wake`, `unlock-code`, `lease`, `orientation`, `displays`, `posture`, `shake`, `rn` (`prepare`, `open`, `logbox`, `devmenu`, `tools off`), `record-video`, `stream-video`, `runner`, `session`. Run `offsider <command> --help` for every option; `guide selectors` lists `button` names.
+`doctor`, `init`, `guide`, `boot`, `devices` (`add`, `remove`, `status`), `describe-ui`, `tap`, `turnstile`, `login`, `credential`, `slider`, `swipe`, `drag`, `gesture`, `touch`, `type`, `button`, `key`, `key-sequence`, `key-combo`, `wait`, `assert`, `batch`, `run`, `screenshot`, `logs`, `appearance`, `content-size`, `permission`, `app`, `status-bar`, `biometric`, `stay-awake`, `wake`, `unlock-code`, `lease`, `orientation`, `displays`, `posture`, `shake`, `rn` (`prepare`, `open`, `logbox`, `devmenu`, `tools off`), `record-video`, `stream-video`, `runner`, `session`. `offsider <command> --help` lists every option; `guide selectors` lists `button` names.
 
 ## Topics
 
@@ -72,7 +72,7 @@ Every input command takes `--json` (`guide verify`); a failure prints `exitCode`
 | `login` | You sign in, choose or switch test users, or save or describe one |
 | `foldables` | The device folds or has more than one display |
 | `batch` | A flow has three or more steps |
-| `screenshots` | You need pixels: charts, maps, web views, masked secure fields or video |
+| `screenshots` | You need pixels: charts, maps, web views, a frame mid-swipe, masked secure fields or video |
 | `evidence` | You need numbered screenshots and logs for a report, masked or redacted, a pixel diff, or log entries as JSON |
 | `describe-ui` | You need more than `--summary`: JSON, filters, the byte budget or `--diff` |
 | `device-state` | You change appearance, text size, orientation, permissions, the status bar or biometrics, or keep an Android screen awake and unlocked |

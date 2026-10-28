@@ -30,7 +30,7 @@ enum GuideTopic: String, CaseIterable, ExpressibleByArgument {
         case .login: "You sign in, choose or switch test users, or save or describe one"
         case .foldables: "The device folds or has more than one display"
         case .batch: "A flow has three or more steps"
-        case .screenshots: "You need pixels: charts, maps, web views, masked secure fields or video"
+        case .screenshots: "You need pixels: charts, maps, web views, a frame mid-swipe, masked secure fields or video"
         case .evidence: "You need numbered screenshots and logs for a report, masked or redacted, a pixel diff, or log entries as JSON"
         case .describeUI: "You need more than `--summary`: JSON, filters, the byte budget or `--diff`"
         case .deviceState: "You change appearance, text size, orientation, permissions, the status bar or biometrics, or keep an Android screen awake and unlocked"
