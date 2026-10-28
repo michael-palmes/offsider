@@ -184,6 +184,7 @@ struct AndroidDeviceStateTests {
     @Test("the overlay app op decides, and its default falls back to a permission granted at install")
     func overlayPermission() throws {
         #expect(AndroidOverlayPermission.parse("SYSTEM_ALERT_WINDOW: allow; time=+1h ago\n") == true)
+        #expect(AndroidOverlayPermission.parse("SYSTEM_ALERT_WINDOW: foreground\n") == true)
         #expect(AndroidOverlayPermission.parse("SYSTEM_ALERT_WINDOW: deny\n\(AndroidOverlayPermission.grantedMarker)\n") == false)
         #expect(AndroidOverlayPermission.parse("Uid mode: SYSTEM_ALERT_WINDOW: ignore\nSYSTEM_ALERT_WINDOW: allow\n") == false)
         #expect(AndroidOverlayPermission.parse("No operations.\n") == false)

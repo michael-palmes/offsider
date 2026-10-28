@@ -19,14 +19,14 @@ enum AndroidOverlayPermission {
         return "appops get \(package) SYSTEM_ALERT_WINDOW; dumpsys package \(package) | grep -q -E '^ +android.permission.SYSTEM_ALERT_WINDOW: granted=true' && echo \(grantedMarker); true"
     }
 
-    /// `allow` grants, `deny`, `ignore` and `errored` refuse, and `default` or no entry (`No operations.`) leaves it to the install-time grant.
+    /// `allow` and `foreground` grant, `deny`, `ignore` and `errored` refuse, and `default` or no entry (`No operations.`) leaves it to the install-time grant.
     static func parse(_ output: String) -> Bool? {
         let modes = output.split(whereSeparator: \.isNewline).compactMap { line -> String? in
             guard let range = line.range(of: "SYSTEM_ALERT_WINDOW:") else { return nil }
             return line[range.upperBound...].split(whereSeparator: { $0 == ";" || $0.isWhitespace }).first.map { $0.lowercased() }
         }
         if modes.contains(where: { ["deny", "ignore", "errored"].contains($0) }) { return false }
-        if modes.contains("allow") { return true }
+        if modes.contains(where: { ["allow", "foreground"].contains($0) }) { return true }
         guard modes.allSatisfy({ $0 == "default" }), modes.isEmpty == false || output.contains("No operations") else { return nil }
         return output.contains(grantedMarker)
     }

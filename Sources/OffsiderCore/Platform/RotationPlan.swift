@@ -95,7 +95,7 @@ public struct RotationPlan: Equatable, Sendable {
             recordToWrite: recordToWrite,
             deleteRecord: true,
             restoreAccelerometer: current.accelerometerRotation,
-            restoreUserRotation: current.accelerometerRotation == 0 ? nil : current.userRotation,
+            restoreUserRotation: current.accelerometerRotation == 0 || !(0...3).contains(current.userRotation) ? nil : current.userRotation,
             sendsTurn: true
         )
     }

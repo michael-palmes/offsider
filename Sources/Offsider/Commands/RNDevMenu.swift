@@ -23,8 +23,10 @@ struct DevMenuDriver {
     }
 
     /// The menu, opening it first; a menu that never shows is `state_not_reached`, as in a Release build.
-    func open() async throws -> (DevMenu.State, UITree) {
+    /// `check` runs after the first read, which refuses an app a phone is not allowed for, and before any input.
+    func open(check: (() async throws -> Void)? = nil) async throws -> (DevMenu.State, UITree) {
         let tree = try await read()
+        try await check?()
         if let state = DevMenu.read(tree) { return (state, tree) }
         if route.device.platform == .android {
             try await perform(.shortButtonPress(.menu))
@@ -290,10 +292,9 @@ struct RNDevMenu: AsyncParsableCommand {
     func perform(on route: DeviceRouter.Route, clock: PollClock, send: (@MainActor (InputEvent) async throws -> Void)? = nil) async throws -> Outcome {
         try await route.backend.prepare()
         let driver = DevMenuDriver(route: route, clock: clock, send: send)
-        if item == .perfMonitor || label.map(DevMenu.Item.perfMonitor.labels.contains) == true {
-            try await driver.requireOverlayPermission()
-        }
-        let (state, tree) = try await driver.open()
+        let perfMonitor = item == .perfMonitor || label.map { label in DevMenu.Item.perfMonitor.labels.contains { $0.caseInsensitiveCompare(label) == .orderedSame } } == true
+        let check: (() async throws -> Void)? = perfMonitor ? { try await driver.requireOverlayPermission() } : nil
+        let (state, tree) = try await driver.open(check: check)
         guard item != nil || label != nil else { return .listed(state) }
         let tapped = try await driver.choose(item, label: label, state: state, tree: tree)
         return .chose(menu: state.menu, item: item, label: tapped)

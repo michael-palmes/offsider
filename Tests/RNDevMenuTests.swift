@@ -244,7 +244,7 @@ struct RNDevMenuTests {
     }
 
     @Test("perf-monitor on Android stops with person_required before anything is sent when the app may not draw over other apps", arguments: [
-        ["perf-monitor"], ["--label", "Toggle performance monitor"],
+        ["perf-monitor"], ["--label", "Toggle Performance Monitor"],
     ])
     func perfMonitorNeedsOverlay(arguments: [String]) async throws {
         let backend = OverlayFakeBackend(platform: .android, trees: [Self.expoMenu(), Self.app])
@@ -261,6 +261,7 @@ struct RNDevMenuTests {
         #expect(error?.userFacingDescription.contains("Display over other apps") == true)
         #expect(backend.overlayChecks == ["com.example.app"])
         #expect(backend.session.calls.isEmpty)
+        #expect(backend.treeReads == 1)
     }
 
     @Test("perf-monitor goes ahead when the app may draw over other apps or the device does not say, and other items never ask", arguments: [

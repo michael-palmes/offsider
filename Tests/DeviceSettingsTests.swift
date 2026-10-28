@@ -329,6 +329,8 @@ struct RotationPlanTests {
         let plan = RotationPlan.make(before: nil, target: .portrait, record: record, bootMarker: Self.boot, turning: false)
         #expect(plan?.restoreAccelerometer == 0)
         #expect(plan?.restoreUserRotation == nil)
+        let corrupt = RotationRecord(accelerometerRotation: 1, userRotation: 7, bootMarker: Self.boot)
+        #expect(RotationPlan.make(before: nil, target: .portrait, record: corrupt, bootMarker: Self.boot, turning: false)?.restoreUserRotation == nil)
     }
 
     @Test("a turn to portrait with no record first records auto-rotate, then writes it back")
