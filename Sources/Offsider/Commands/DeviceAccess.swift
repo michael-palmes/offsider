@@ -138,13 +138,14 @@ extension DeviceAccess {
         }
     }
 
-    /// Stops the runner and session broker serving an iPhone or iPad, clearing its screen-sharing indicator, or a phone's warm helper and the adb reverses Offsider set.
+    /// Stops the runner and session broker serving an iPhone or iPad, clearing its screen-sharing indicator, or a phone's warm helper, the adb reverses Offsider set and its posture override.
     @MainActor
     static func stopSessions(udid: String) async -> [String] {
         if case .androidName = DeviceIDClassifier.classify(udid) {
             let helper = await AndroidBackend.stopWarmHelpers(host: .cli(), serial: udid).isEmpty ? [] : ["warm helper"]
             let reverses = await AndroidBackend.removeMetroReverses(host: .cli(), serial: udid).flatMap(\.ports).map { "adb reverse tcp:\($0)" }
-            return helper + reverses
+            let posture = await AndroidBackend.resetRecordedPostures(host: .cli(), serial: udid).isEmpty ? [] : ["posture override"]
+            return helper + reverses + posture
         }
         var stopped: [String] = []
         let brokers = DeviceSessions.records(device: udid)

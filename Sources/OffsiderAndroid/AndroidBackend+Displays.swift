@@ -205,7 +205,7 @@ extension AndroidBackend: ScreenStatusPrefetching {
     }
 }
 
-extension AndroidBackend: PostureControlling, PostureStateNaming {
+extension AndroidBackend: PostureControlling, PostureResetting, PostureStateNaming {
     /// `cmd device_state state`; nil when `print-states` lists fewer than two states.
     public func posture(of id: DeviceID) async throws -> Posture? {
         let serial = id.rawValue
@@ -223,17 +223,9 @@ extension AndroidBackend: PostureControlling, PostureStateNaming {
         forgetDisplay(of: id.rawValue)
     }
 
-    /// gRPC `setPosture` moves the hinge as the extended controls do; without gRPC, a `cmd device_state` override.
+    /// gRPC `setPosture` moves the hinge as the extended controls do; without gRPC, as on a phone, a `cmd device_state` override.
     public func requestPosture(_ posture: Posture, on id: DeviceID) async throws {
         let serial = id.rawValue
-        guard !id.isPhysicalAndroidDevice else {
-            throw AndroidError.emulatorOnly(
-                "Setting the posture",
-                serial: serial,
-                model: phones[serial]?.model,
-                alternative: "Fold the phone by hand; `offsider posture --device \(serial)` reads its posture."
-            )
-        }
         let states = try await deviceStates(serial)
         guard states.count >= 2 else { throw AndroidError.notFoldable(serial) }
         let reading = try await deviceStateReading(serial)
@@ -260,18 +252,78 @@ extension AndroidBackend: PostureControlling, PostureStateNaming {
         }
     }
 
-    /// `state reset` when the target is the hinge's own state, else an override; it lasts until reset or reboot.
+    /// `state reset` when the target is the hinge's own state, else an override that lasts until reset or reboot, recorded first on a phone.
     private func overrideState(_ state: AndroidDeviceState.State, reading: AndroidDeviceState.Reading, on serial: String) async throws {
-        let command = reading.override != nil && reading.base?.identifier == state.identifier
-            ? AndroidDeviceState.resetState
-            : AndroidDeviceState.setState(state)
+        let resets = reading.override != nil && reading.base?.identifier == state.identifier
+        let command = resets ? AndroidDeviceState.resetState : AndroidDeviceState.setState(state)
+        let phone = DeviceID(rawValue: serial, platform: .android).isPhysicalAndroidDevice
+        if phone, !resets { try await recordOverride(state, on: serial) }
         let result = try await requireClient().shell(command, on: serial, label: command)
+        if phone, resets || result.status != 0 { postureRecords(create: false)?.remove(serial: serial) }
         guard result.status == 0 else {
             let detail = (result.stderrText.isEmpty ? result.stdoutText : result.stderrText)
                 .split(whereSeparator: \.isNewline).first.map(String.init) ?? "exit status \(result.status)"
             throw AndroidError.postureFailed(serial, path: "adb `\(command)`", detail: detail)
         }
         log(.debug, "Asked \(serial) for \(state.name) with `\(command)`")
+    }
+
+    /// `state reset`, whoever set the override; the record goes with it.
+    public func resetPosture(on id: DeviceID) async throws -> Bool {
+        let serial = id.rawValue
+        guard try await deviceStates(serial).count >= 2 else { throw AndroidError.notFoldable(serial) }
+        defer { forgetDisplay(of: serial) }
+        let reading = try await deviceStateReading(serial)
+        guard reading.override != nil else {
+            postureRecords(create: false)?.remove(serial: serial)
+            return false
+        }
+        _ = try await settingsShell(AndroidDeviceState.resetState, on: serial)
+        postureRecords(create: false)?.remove(serial: serial)
+        return true
+    }
+
+    /// Resets each recorded override still in place on the same boot, never starting adb; an unplugged phone keeps its record, a rebooted one loses it.
+    public static func resetRecordedPostures(host: AndroidHost, serial: String? = nil, permits: (String) -> Bool = { _ in true }) async -> [String] {
+        guard let directory = host.postureRecordDirectory(false) else { return [] }
+        let store = AndroidPostureRecordStore(directory: directory)
+        let records = (serial.map { store.load(serial: $0).map { [$0] } ?? [] } ?? store.all()).filter { permits($0.serial) }
+        guard !records.isEmpty, let endpoint = try? LoopbackEndpoint.adbServer(environment: host.environment) else { return [] }
+        let client = AdbClient(endpoint: endpoint, connector: host.adbConnector, timing: host.timing)
+        guard let rows = try? await client.devices() else { return [] }
+        var reset: [String] = []
+        for record in records where rows.contains(where: { $0.serial == record.serial && $0.state == .device }) {
+            let script = "\(AndroidPostureRecord.bootIDScript); \(AndroidDeviceState.readState)"
+            guard let output = try? await client.shell(script, on: record.serial, label: "cmd device_state state"), output.status == 0 else { continue }
+            let boot = output.stdoutText.split(whereSeparator: \.isNewline).first.map { $0.trimmingCharacters(in: .whitespaces) }
+            let reading = AndroidDeviceState.parseReading(output.stdoutText)
+            if boot == record.bootID, reading?.override?.identifier == record.identifier {
+                guard (try? await client.shell(AndroidDeviceState.resetState, on: record.serial, label: AndroidDeviceState.resetState))?.status == 0 else { continue }
+                reset.append(record.serial)
+            }
+            store.remove(serial: record.serial)
+        }
+        return reset
+    }
+
+    private func postureRecords(create: Bool) -> AndroidPostureRecordStore? {
+        host.postureRecordDirectory(create).map(AndroidPostureRecordStore.init(directory:))
+    }
+
+    /// The boot id comes first, so an override is never set without a record that names this boot.
+    private func recordOverride(_ state: AndroidDeviceState.State, on serial: String) async throws {
+        guard let store = postureRecords(create: true) else {
+            throw AndroidError.postureFailed(serial, path: "a device-state override", detail: "Offsider has no private folder to record it in, so it set none")
+        }
+        let boot = try await settingsShell(AndroidPostureRecord.bootIDScript, on: serial).trimmingCharacters(in: .whitespacesAndNewlines)
+        guard AndroidPostureRecord.isBootID(boot) else {
+            throw AndroidError.postureFailed(serial, path: "a device-state override", detail: "the phone's boot id could not be read, so Offsider set none")
+        }
+        do {
+            try store.save(AndroidPostureRecord(serial: serial, bootID: boot, identifier: state.identifier, name: state.name))
+        } catch {
+            throw AndroidError.postureFailed(serial, path: "a device-state override", detail: "Offsider could not record it (\(error)), so it set none")
+        }
     }
 
     static func emulatorPosture(_ posture: Posture) -> EmulatorPosture {

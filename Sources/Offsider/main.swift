@@ -19,14 +19,14 @@ struct OffsiderCommand: AsyncParsableCommand {
         groupedSubcommands: [
             CommandGroup(name: "Start", subcommands: [ListDevices.self, Doctor.self, Init.self, Guide.self, Boot.self]),
             CommandGroup(name: "Read", subcommands: [
-                DescribeUI.self, Screenshot.self, Logs.self, Wait.self, Assert.self, Displays.self, RecordVideo.self, StreamVideo.self,
+                DescribeUI.self, Screenshot.self, Logs.self, NotificationsCommand.self, Wait.self, Assert.self, Displays.self, RecordVideo.self, StreamVideo.self,
             ]),
             CommandGroup(name: "Input", subcommands: [
                 Tap.self, Type.self, Swipe.self, Drag.self, Touch.self, Gesture.self, Key.self, KeySequence.self, KeyCombo.self,
                 Button.self, Slider.self, Shake.self, Turnstile.self, LoginCommand.self, CredentialCommand.self, Batch.self, RN.self,
             ]),
             CommandGroup(name: "Device state", subcommands: [
-                OrientationCommand.self, PostureCommand.self, AppearanceCommand.self, ContentSizeCommand.self, PermissionCommand.self,
+                AppCommand.self, OrientationCommand.self, PostureCommand.self, AppearanceCommand.self, ContentSizeCommand.self, PermissionCommand.self,
                 StatusBarCommand.self, BiometricCommand.self, StayAwakeCommand.self, Wake.self, UnlockCodeCommand.self,
             ]),
             CommandGroup(name: "Physical devices", subcommands: [RunnerCommand.self]),

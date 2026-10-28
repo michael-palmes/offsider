@@ -627,8 +627,8 @@ public struct AndroidError: LocalizedError, CustomStringConvertible, Equatable, 
     static func displayOff(_ serial: String, display: DisplayDescriptor, posture: Posture?, phone: Bool = false) -> AndroidError {
         let state = "The \(display.role.rawValue) display (\(display.platformId)) of \(serial) is off (posture \(posture?.rawValue ?? "unknown")), so it has nothing to capture."
         switch display.role {
-        case .cover where phone: return AndroidError(.displayOff, "\(state) Fold the phone, then retry.")
-        case .inner where phone: return AndroidError(.displayOff, "\(state) Unfold the phone, then retry.")
+        case .cover where phone: return AndroidError(.displayOff, "\(state) Fold the phone, or run `offsider posture closed --device \(serial)`, then retry.")
+        case .inner where phone: return AndroidError(.displayOff, "\(state) Unfold the phone, or run `offsider posture open --device \(serial)`, then retry.")
         case .cover: return AndroidError(.displayOff, "\(state) Fold the emulator with `offsider posture closed --device \(serial)`, then retry.")
         case .inner: return AndroidError(.displayOff, "\(state) Unfold the emulator with `offsider posture open --device \(serial)`, then retry.")
         case .main, .external: return AndroidError(.displayOff, "\(state) Turn it on, then retry.")
@@ -642,7 +642,7 @@ public struct AndroidError: LocalizedError, CustomStringConvertible, Equatable, 
     static func postureUnavailable(_ serial: String, posture: Posture, states: [String], reason: AdbReason) -> AndroidError {
         AndroidError(
             .postureUnavailable,
-            "Cannot set \(serial) to \(posture.rawValue): its gRPC endpoint \(reason.clause), and `cmd device_state print-states` lists no matching state (\(states.joined(separator: ", "))). Fold it in the emulator's extended controls instead."
+            "Cannot set \(serial) to \(posture.rawValue): its gRPC endpoint \(reason.clause), and `cmd device_state print-states` lists no matching state (\(states.joined(separator: ", "))). \(DeviceID(rawValue: serial, platform: .android).isPhysicalAndroidDevice ? "Fold the phone by hand instead." : "Fold it in the emulator's extended controls instead.")"
         )
     }
 
