@@ -190,7 +190,11 @@ struct LoginCommand: AsyncParsableCommand {
             readTurnstile: { tree in await Turnstile.phase(in: tree, on: route) },
             clock: .live,
             foregroundApp: { tree in try ForegroundAppLookup.identifier(in: tree, forLogin: true) },
-            bundleForPID: ForegroundAppLookup.bundleIdentifier(pid:)
+            bundleForPID: ForegroundAppLookup.bundleIdentifier(pid:),
+            hitTest: { point in
+                guard route.device.platform == .ios, let tester = route.backend as? any PointHitTesting else { return nil }
+                return try? await tester.hitTest(at: point, on: route.device, appPIDs: [])
+            }
         )
         let deviceID = route.device.rawValue
         var report: LoginReport

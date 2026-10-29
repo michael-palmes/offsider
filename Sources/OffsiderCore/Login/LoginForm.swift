@@ -63,13 +63,16 @@ public enum LoginForm {
 
     /// Pinned profile fields win. Anything omitted is detected. A covered control is refused.
     /// With `origin`, the package and process checks run as well as the structural web-view checks.
-    public static func detect(in tree: UITree, profile: LoginProfile? = nil, origin: Origin? = nil) throws -> Found {
+    /// `reachable` holds controls a hit-test at their own point found, which count as in front whatever the tree's order says.
+    public static func detect(in tree: UITree, profile: LoginProfile? = nil, origin: Origin? = nil, reachable: [UINode] = []) throws -> Found {
+        let front = { (node: UINode) in isFrontmost(node, in: tree) || reachable.contains { sameIdentity($0, node) && $0.role == node.role } }
         let identity = try resolve(
             profile?.identity,
             roles: [.textField, .searchField],
             allowDisabled: false,
             named: isIdentityName,
             in: tree,
+            front: front,
             what: "email or username field",
             missing: "No email or username field is in front.",
             noneKind: .noForm
@@ -80,6 +83,7 @@ public enum LoginForm {
             allowDisabled: false,
             named: { _ in true },
             in: tree,
+            front: front,
             what: "password field",
             missing: "No password field is in front."
         )
@@ -90,6 +94,7 @@ public enum LoginForm {
             named: isSubmitName,
             below: password.frame,
             in: tree,
+            front: front,
             what: "submit button",
             missing: "No Log in, Sign in, Continue or Next button is in front below the password field."
         )
@@ -158,6 +163,31 @@ public enum LoginForm {
         return native.pid
     }
 
+    /// On-screen sign-in candidates the tree places behind another node, for a hit-test at each one's own point: a view drawn by another
+    /// process inside the form, such as a web widget, can sit last in the tree with a frame that reaches over the fields.
+    public static func hiddenCandidates(in tree: UITree, profile: LoginProfile? = nil, limit: Int = 6) -> [UINode] {
+        let pinned = [profile?.identity, profile?.password, profile?.submit].compactMap { $0 }
+        let viewport = tree.viewport
+        let found = visibleControls(in: tree).filter { node in
+            guard let frame = node.frame, frame.width > 0, frame.height > 0, viewport.map(frame.isVisible(in:)) != false else { return false }
+            guard node.id?.isEmpty == false || node.label?.isEmpty == false, !isFrontmost(node, in: tree) else { return false }
+            if pinned.contains(where: { field in (field.id == nil || node.id == field.id) && (field.label == nil || node.label == field.label) }) { return true }
+            switch node.role {
+            case .textField, .searchField: return isIdentityName(node)
+            case .secureTextField: return true
+            case .button: return isSubmitName(node)
+            default: return false
+            }
+        }
+        return Array(found.prefix(limit))
+    }
+
+    /// A hit-test's answer is `node`, or something it holds such as a button's own label.
+    public static func isHit(_ hit: UINode, on node: UINode) -> Bool {
+        guard let frame = node.frame, let hitFrame = hit.frame, frame.encloses(hitFrame, tolerance: 1) else { return false }
+        return node.flattened().contains { $0.role == hit.role && sameIdentity($0, hit) }
+    }
+
     /// The email and password fields are on screen. The submit button may still be under the keyboard.
     public static func credentialsAreVisible(in tree: UITree, profile: LoginProfile? = nil) -> Bool {
         do {
@@ -206,18 +236,20 @@ public enum LoginForm {
         named: (UINode) -> Bool,
         below limit: UIFrame? = nil,
         in tree: UITree,
+        front: ((UINode) -> Bool)? = nil,
         what: String,
         missing: String,
         noneKind: LoginFormError.Kind = .missing
     ) throws -> UINode {
+        let front = front ?? { isFrontmost($0, in: tree) }
         if let pinned {
-            return try pinnedField(pinned, roles: roles, allowDisabled: allowDisabled, in: tree, what: what)
+            return try pinnedField(pinned, roles: roles, allowDisabled: allowDisabled, in: tree, front: front, what: what)
         }
         let matches = visibleControls(in: tree).filter { node in
             guard roles.contains(node.role), named(node) else { return false }
             if !allowDisabled, node.enabled == false { return false }
             if let limit, let frame = node.frame, frame.center.y <= limit.y + limit.height { return false }
-            return isFrontmost(node, in: tree)
+            return front(node)
         }
         guard let only = matches.first, matches.count == 1 else {
             if matches.isEmpty {
@@ -229,7 +261,7 @@ public enum LoginForm {
         return only
     }
 
-    private static func pinnedField(_ field: LoginField, roles: Set<UIRole>, allowDisabled: Bool, in tree: UITree, what: String) throws -> UINode {
+    private static func pinnedField(_ field: LoginField, roles: Set<UIRole>, allowDisabled: Bool, in tree: UITree, front: (UINode) -> Bool, what: String) throws -> UINode {
         let matches = visibleControls(in: tree).filter { node in
             if let id = field.id, node.id != id { return false }
             if let label = field.label, node.label != label { return false }
@@ -242,7 +274,7 @@ public enum LoginForm {
             throw LoginFormError(kind: .missing, message: "\(field.described) is a \(matches[0].role.rawValue), not a \(what). Nothing was typed.")
         }
         let front = matches.filter { node in
-            roles.contains(node.role) && (allowDisabled || node.enabled != false) && isFrontmost(node, in: tree)
+            roles.contains(node.role) && (allowDisabled || node.enabled != false) && front(node)
         }
         guard let only = front.first, front.count == 1 else {
             if front.isEmpty {

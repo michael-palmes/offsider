@@ -53,13 +53,27 @@ public enum PresentationProbe {
         let foreign = hit.iosPID != nil && host != nil && hit.iosPID != host
         if foreign || (placed == nil && isUnlisted(hit, in: flat)) {
             let process = hit.iosPID.flatMap(processPath).map { URL(fileURLWithPath: $0).lastPathComponent }.flatMap { $0.isEmpty ? nil : $0 }
-            finding.presented = UITreeContext.Presented(label: shownLabel(of: hit), role: hit.role, process: process)
+            if !(foreign && isHostedWebContent(hit, process: process, in: flat, hostPID: host, viewport: tree.viewport)) {
+                finding.presented = UITreeContext.Presented(label: shownLabel(of: hit), role: hit.role, process: process)
+            }
         }
         if let placed, let viewport = tree.viewport {
             finding.staleFrame = staleFrame(holding: placed, in: tree.roots, viewport: viewport)
         }
         return finding
     }
+
+    /// WebKit draws an app's own web view, such as a widget inside a form, from its web content process: a container of the app's smaller than the screen holds it.
+    static func isHostedWebContent(_ hit: UINode, process: String?, in flat: [UINode], hostPID: Int?, viewport: UIFrame?) -> Bool {
+        guard let process, process.hasPrefix(webContentProcess), let hostPID, let frame = hit.frame, let viewport else { return false }
+        return flat.contains { node in
+            guard node.iosPID == hostPID, [.group, .other, .scrollView].contains(node.role), let host = node.frame else { return false }
+            let screenSized = host.width >= screenShare * viewport.width && host.height >= screenShare * viewport.height
+            return !screenSized && host.encloses(frame, tolerance: 1)
+        }
+    }
+
+    static let webContentProcess = "com.apple.WebKit.WebContent"
 
     /// A labelled or identified hit no element of the tree shares, wherever it lies; an unlabelled container or a row that scrolled between the two reads says nothing.
     static func isUnlisted(_ hit: UINode, in flat: [UINode]) -> Bool {
