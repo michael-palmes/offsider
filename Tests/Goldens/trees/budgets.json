@@ -17,7 +17,7 @@
     "android/switch-test": { "summary": 704, "text": 704 },
     "android/tab-view-test": { "summary": 704, "text": 704 },
     "android/tap-test": { "summary": 384, "text": 384 },
-    "android/text-input@keyboard": { "summary": 5184, "text": 5184 },
+    "android/text-input@keyboard": { "summary": 5248, "text": 5248 },
     "android/toolbar-picker-test": { "summary": 768, "text": 768 },
     "android/toolbar-picker-test@unread": { "summary": 768, "text": 768 },
     "ios/batch-login-flow": { "summary": 1984, "text": 3648 },

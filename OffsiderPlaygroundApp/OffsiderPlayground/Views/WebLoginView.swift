@@ -36,7 +36,7 @@ struct WebLoginView: View {
 }
 
 /// Loads `html` with no base URL and blocks every navigation, so the page never reaches the network.
-private struct LocalWebView: UIViewRepresentable {
+struct LocalWebView: UIViewRepresentable {
     let html: String
 
     func makeCoordinator() -> Coordinator { Coordinator() }

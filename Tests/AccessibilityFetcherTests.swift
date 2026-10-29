@@ -30,7 +30,7 @@ struct AccessibilityFetcherTests {
         #expect(root["elements"] == nil)
     }
 
-    @Test("Requests the complete legacy key set, traits included, so a Selected trait reaches state.selected")
+    @Test("Requests the complete legacy key set, traits included, so a Selected trait reaches state.selected, and focus, so typing can check a field has it")
     func requestsLegacyAccessibilityCompatibilityKeys() {
         #expect(AccessibilityFetcher.accessibilityOutputKeys == [
             .label,
@@ -49,6 +49,7 @@ struct AccessibilityFetcherTests {
             .contentRequired,
             .pid,
             .traits,
+            .focused,
         ])
     }
 

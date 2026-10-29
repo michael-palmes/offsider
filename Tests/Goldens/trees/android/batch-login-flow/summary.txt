@@ -7,7 +7,7 @@ application "OffsiderPlaygroundRN" (0,0 411.4x923.4)
   text "Current Screen: Email" id=batch-login-current-screen (16,153.9 379.4x23.2)
   textField id=batch-login-email-field (16,221.3 379.4x44.2) focused
   button "Continue" id=batch-login-continue (16,277.7 379.4x44.2)
-keyboard "Gboard" (0,54.1 411.4x869.3)
+keyboard "Gboard" (12.2,352.4 48x255.2)
   button "Voice typing disabled" id=com.google.android.inputmethod.latin:id/0_resource_name_obfuscated (12.2,352.4 48x48)
   button "Delete" (12.2,404.2 48x48)
   button "Done" (12.2,456 48x48)

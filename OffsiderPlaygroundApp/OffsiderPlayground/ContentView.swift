@@ -95,6 +95,8 @@ struct ContentView: View {
             KeySequenceView()
         case "web-login":
             WebLoginView()
+        case "widget-login":
+            WidgetLoginView()
             
         // Hardware
         case "button-test":
@@ -128,7 +130,8 @@ struct MainMenuView: View {
             ("text-input", "Text Input", "Text typed by CLI commands"),
             ("key-press", "Key Press", "Detects CLI key events"),
             ("key-sequence", "Key Sequence", "Detects CLI key sequences"),
-            ("web-login", "Web Login", "Sign-in form inside a web view, local HTML only")
+            ("web-login", "Web Login", "Sign-in form inside a web view, local HTML only"),
+            ("widget-login", "Widget Login", "Native sign-in form, web view at the centre")
         ]),
         ("Hardware", [
             ("button-test", "Button Test", "Hardware button press detection")

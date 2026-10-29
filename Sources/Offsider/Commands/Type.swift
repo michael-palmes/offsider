@@ -12,11 +12,14 @@ struct Type: AsyncParsableCommand, VerifiableCommand {
         3. From file: offsider type --file text.txt --device DEVICE_ID (a regular UTF-8 file of at most 64 KiB;
            files under ~/.ssh, ~/.aws, ~/.config and similar, and names such as .env or id_rsa, need --allow-path, which a person confirms at a terminal with Touch ID or the password)
 
+        Focus: with no named field, text is typed only when a text field has focus (or a keyboard shows); otherwise
+        nothing is sent (exit 1, no_focused_field), since keys that reach no field can act as app shortcuts, and a
+        React Native dev build reloads on r. Tap the field first, or name it with --into-id.
+
         Password fields: text given as an argument is refused (exit 64, secure_field_argument) when the field it
         names with --into-id, --into-label or --into-label-contains, or the field with focus, is a password field;
-        use `offsider login`, or --stdin. An iOS simulator does not report focus, so without a named field the
-        argument is typed there. While record-video or stream-video records the device, --stdin and --file text is
-        refused (exit 8, device_busy) when a password field is on screen or the screen cannot be read.
+        use `offsider login`, or --stdin. While record-video or stream-video records the device, --stdin and --file
+        text is refused (exit 8, device_busy) when a password field is on screen or the screen cannot be read.
 
         Replacing a field's text:
         • offsider type --replace "new text" --device DEVICE_ID sets the focused field to exactly "new text"
@@ -38,17 +41,16 @@ struct Type: AsyncParsableCommand, VerifiableCommand {
         • Not supported: International characters (£€¥), accented letters (éñü), etc.
         • This is a limitation of the underlying HID keyboard protocol
         
-        Note: iOS may apply smart punctuation spacing to some characters.
+        Note: iOS may apply smart punctuation spacing to some characters. On an iOS simulator, keys into a React Native
+        app go 30 ms apart, so a field that sets its text from each change keeps up.
 
         Typing into a named field:
         • offsider type --into-id email-field --replace "a@b.c" --device DEVICE_ID taps the field, waits up to 2 s
-          until it has focus (on an iOS simulator, until the keyboard shows), then types; no text is sent when it
-          never does (exit 5, focus_not_confirmed), and nothing at all when the keyboard covers the field (exit 1,
-          target_under_keyboard). --into-label works the same by label, and --into-label-contains by
-          part of a label. When the keyboard is
-          already up for another field, a simulator cannot prove focus: Offsider taps, types and prints a warning.
+          until it has focus, then types; no text is sent when it never does (exit 5, focus_not_confirmed), and
+          nothing at all when the keyboard covers the field (exit 1, target_under_keyboard). --into-label works the
+          same by label, and --into-label-contains by part of a label.
         • --require-focus-id email-field types only when that field already has focus (exit 2, focus_mismatch,
-          otherwise); the iOS simulator's tree does not report focus, so use --into-id there.
+          otherwise).
         • On a physical iPhone or iPad, --app <bundle-id> names the app whose field these find and the text goes to.
 
         Android emulators: printable ASCII, newlines and tabs are typed as key events. Text with any other
@@ -81,7 +83,7 @@ struct Type: AsyncParsableCommand, VerifiableCommand {
     @Option(name: .customLong("into-label-contains"), help: ArgumentHelp("Like --into-id, for the field whose label holds this text, in the same case.", valueName: "text"))
     var intoLabelContains: String?
 
-    @Option(name: .customLong("require-focus-id"), help: ArgumentHelp("Type only when the field with this id already has focus; exit 2 otherwise. Not on iOS simulators.", valueName: "id"))
+    @Option(name: .customLong("require-focus-id"), help: ArgumentHelp("Type only when the field with this id already has focus; exit 2 otherwise.", valueName: "id"))
     var requireFocusID: String?
     
     @OptionGroup
@@ -123,8 +125,13 @@ struct Type: AsyncParsableCommand, VerifiableCommand {
     static let focusTimeout: TimeInterval = 2
     static let focusPoll: Duration = .milliseconds(250)
 
-    /// `--into-*` taps the field and waits for focus; `--require-focus-id` checks it. Either throws before any text is sent.
-    /// Returns the password-field verdict of a read with no tap after it, for the input session to reuse; nil when there was none.
+    /// What `ensureFocus` learnt: the password-field verdict of a read with no tap after it, for the input session to reuse, and the last tree it read.
+    struct FocusCheck {
+        var secure: KnownSecureFocus?
+        var tree: UITree?
+    }
+
+    /// `--into-*` taps the field and waits for focus, `--require-focus-id` checks it, and plain text needs one; each throws before sending.
     @MainActor
     @discardableResult
     func ensureFocus(
@@ -136,22 +143,14 @@ struct Type: AsyncParsableCommand, VerifiableCommand {
         beforeTap: @MainActor (UITree) throws -> Void = { _ in },
         refusingSecureTarget secureRefusal: CLIError? = nil,
         tap: @MainActor (InputEvent) async throws -> Void
-    ) async throws -> KnownSecureFocus? {
+    ) async throws -> FocusCheck {
         let simulator = device.platform == .ios && !device.isPhysicalIOSDevice
         guard requireFocusID != nil || intoQuery != nil else {
-            // An unreadable screen does not block typing: Android still sends a password field's text through the helper.
-            guard let secureRefusal, !simulator else { return nil }
-            guard let tree = try? await backend.accessibilityTree(for: device) else { return .unknown }
-            if tree.secureFocus == .secureFocused { throw secureRefusal }
-            return .notSecure
+            return try await Self.checkTextFocus(
+                readTree: { try await backend.accessibilityTree(for: device) }, device: device, clock: clock, warn: warn, refusingSecureTarget: secureRefusal
+            )
         }
         if let requireFocusID {
-            guard !simulator else {
-                throw CLIError(
-                    errorDescription: "--require-focus-id needs the field's focus state, which an iOS simulator's tree does not report. Use --into-id \(requireFocusID) to tap the field and wait for the keyboard.",
-                    reason: .notSupported
-                )
-            }
             let tree = try await backend.accessibilityTree(for: device)
             let focused = Self.focusedField(in: tree)
             guard focused?.normalizedID == requireFocusID else {
@@ -165,15 +164,17 @@ struct Type: AsyncParsableCommand, VerifiableCommand {
                 )
             }
             if let secureRefusal, focused?.isSecure == true { throw secureRefusal }
-            return nil
+            return FocusCheck(tree: tree)
         }
-        guard let query = intoQuery else { return nil }
+        guard let query = intoQuery else { return FocusCheck() }
         let cover = TapCover(override: "tap the field with `offsider tap --allow-covered` and type without --into-id")
         let polled = try await AccessibilityPoller.resolveWithPolling(
             query: query, on: backend, device: device, waitTimeout: 0, pollInterval: 0.25,
             settle: .guarded(record: await TreeCache.load(for: device, backend: backend)),
             coverCheck: { resolution, tree in
-                try await cover.check(resolution, selector: query.selectorDescription, tree: tree, backend: backend, device: device)
+                try await Tap.withKeyboardAdvice({
+                    try await cover.check(resolution, selector: query.selectorDescription, tree: tree, backend: backend, device: device)
+                }, selector: query.selectorDescription, at: resolution.point, device: device, tree: tree)
             },
             logger: logger
         )
@@ -183,23 +184,87 @@ struct Type: AsyncParsableCommand, VerifiableCommand {
         let keyboardAlreadyUp = simulator && polled.tree.roots.flatMap { $0.flattened() }.contains { $0.role == .keyboard }
         try beforeTap(polled.tree)
         try await tap(.tapAt(x: point.x, y: point.y))
-        if keyboardAlreadyUp {
-            try await clock.sleep(Self.focusPoll)
-            warn("the keyboard was already up, so the iOS simulator cannot confirm which field has focus; check with assert --has-value.")
-            logger.info().log("Tapped \(query.selectorDescription); focusCheck: unproven")
-            return nil
-        }
         let deadline = clock.now() + Self.focusTimeout
+        var last: UITree?
         repeat {
             try await clock.sleep(Self.focusPoll)
-            if let tree = try? await backend.accessibilityTree(for: device), Self.hasFocus(field, query: query, in: tree, keyboardOnly: simulator) {
-                logger.info().log("\(query.selectorDescription) has focus")
-                return nil
+            if let tree = try? await backend.accessibilityTree(for: device) {
+                last = tree
+                if Self.hasFocus(field, query: query, in: tree, keyboardOnly: simulator && !keyboardAlreadyUp) {
+                    logger.info().log("\(query.selectorDescription) has focus")
+                    return FocusCheck(tree: tree)
+                }
             }
         } while clock.now() < deadline
+        // A tree that names no focused element at all cannot tell which field the tap focused.
+        if keyboardAlreadyUp, let last, !last.roots.flatMap({ $0.flattened() }).contains(where: { $0.state.focused == true }) {
+            warn("the keyboard was already up, so the iOS simulator cannot confirm which field has focus; check with assert --has-value.")
+            logger.info().log("Tapped \(query.selectorDescription); focusCheck: unproven")
+            return FocusCheck(tree: last)
+        }
+        let noKeyboard = simulator && !keyboardAlreadyUp
+            ? " (no keyboard appeared, and the field does not report focus; with the simulator's hardware keyboard connected, no keyboard shows)"
+            : ""
         throw CLIError(
-            errorDescription: "Tapped \(query.selectorDescription), but it did not take focus within \(Int(Self.focusTimeout)) s\(simulator ? " (no keyboard appeared)" : ""). No text was typed.",
+            errorDescription: "Tapped \(query.selectorDescription), but it did not take focus within \(Int(Self.focusTimeout)) s\(noKeyboard). No text was typed.",
             reason: .focusNotConfirmed,
+            hint: "offsider describe-ui --summary --device \(device.rawValue)"
+        )
+    }
+
+    /// Nothing goes out unless a field has focus; a physical iPhone's runner refuses that itself, so only its password field is checked.
+    @MainActor
+    static func checkTextFocus(
+        readTree: @MainActor () async throws -> UITree,
+        device: DeviceID,
+        clock: PollClock,
+        warn: @MainActor (String) -> Void,
+        refusingSecureTarget secureRefusal: CLIError?,
+        keys: Bool = false
+    ) async throws -> FocusCheck {
+        if device.isPhysicalIOSDevice {
+            guard let secureRefusal else { return FocusCheck() }
+            guard let tree = try? await readTree() else { return FocusCheck(secure: .unknown) }
+            if tree.secureFocus == .secureFocused { throw secureRefusal }
+            return FocusCheck(secure: .notSecure, tree: tree)
+        }
+        var tree: UITree
+        do {
+            tree = try await readTree()
+        } catch where device.platform == .android {
+            // An unreadable screen does not block typing: Android still sends a password field's text through the helper.
+            warn("Offsider could not read the screen to check that a field has focus, so the \(keys ? "keys" : "text") went out unchecked.")
+            return FocusCheck(secure: secureRefusal == nil ? nil : .unknown)
+        }
+        // A field a tap has just focused can take a moment to say so.
+        let deadline = clock.now() + focusTimeout / 2
+        while !TextFocus.read(tree).takesText, clock.now() < deadline {
+            try await clock.sleep(focusPoll)
+            guard let next = try? await readTree() else { break }
+            tree = next
+        }
+        let secure = tree.secureFocus == .secureFocused
+        if let secureRefusal, secure { throw secureRefusal }
+        let focus = TextFocus.read(tree)
+        guard focus.takesText else { throw noFocusRefusal(focus, in: tree, device: device, keys: keys) }
+        return FocusCheck(secure: secure ? .secure : .notSecure, tree: tree)
+    }
+
+    /// Keys with no field to take them can reach the app as shortcuts: a React Native dev build reloads on r.
+    static func noFocusRefusal(_ focus: TextFocus, in tree: UITree, device: DeviceID, keys: Bool = false) -> CLIError {
+        let sent = keys ? "pressed no keys" : "typed nothing"
+        let what: String
+        switch focus {
+        case .notEditable(let node):
+            what = "Input focus is on \(MatchSummary(node, viewport: tree.viewport).text), which takes no text (an app's own keypad takes taps, not keys)"
+        case .unlisted:
+            what = "The keyboard is up, but no text field the screen lists has focus (an app's own keypad often hides its field, and takes taps, not keys)"
+        default:
+            what = "No text field has focus"
+        }
+        return CLIError(
+            errorDescription: "\(what), so Offsider \(sent): keys that reach no field can act as app shortcuts, and a React Native dev build reloads on r. Tap the field first, or use `offsider type --into-id <id>`.",
+            reason: .noFocusedField,
             hint: "offsider describe-ui --summary --device \(device.rawValue)"
         )
     }
@@ -210,20 +275,20 @@ struct Type: AsyncParsableCommand, VerifiableCommand {
         return focused.first { $0.role.isTextInput } ?? focused.first
     }
 
-    /// The field, or a focused field inside its frame, has focus; on an iOS simulator a keyboard shows while the field is still on screen.
+    /// The field, or a focused field in its frame, has focus; with `keyboardOnly` and no element focused, a keyboard over the field still there counts.
     static func hasFocus(_ field: UINode?, query: AccessibilityQuery, in tree: UITree, keyboardOnly: Bool) -> Bool {
         let nodes = tree.roots.flatMap { $0.flattened() }
-        if keyboardOnly {
-            let keyboard = nodes.contains { $0.role == .keyboard }
-            let stillThere = !AccessibilityTargetResolver.candidates(roots: tree.roots, query: query, elementType: nil).onScreen.isEmpty
-            return keyboard && stillThere
-        }
-        return nodes.contains { node in
-            guard node.state.focused == true else { return false }
+        let focused = nodes.filter { $0.state.focused == true }
+        let fieldFocused = focused.contains { node in
             if let id = field?.normalizedID { return node.normalizedID == id }
             guard let frame = field?.frame, let focusedFrame = node.frame else { return query.field(of: node) != nil }
             return frame.intersection(focusedFrame) != nil
         }
+        if fieldFocused { return true }
+        guard keyboardOnly, focused.isEmpty else { return false }
+        let keyboard = nodes.contains { $0.role == .keyboard }
+        let stillThere = !AccessibilityTargetResolver.candidates(roots: tree.roots, query: query, elementType: nil).onScreen.isEmpty
+        return keyboard && stillThere
     }
 
     func run() async throws {
@@ -294,9 +359,9 @@ struct Type: AsyncParsableCommand, VerifiableCommand {
             try await Self.refuseSecretDuringRecording(backend: backend, device: device)
         }
         let throughSession = device.platform == .android || device.isPhysicalIOSDevice
-        let hidEvents = throughSession ? [] : try Self.checkedIOSEvents(for: inputText, replacing: replace, logger: logger)
+        if !throughSession { try Self.checkIOSText(inputText, logger: logger) }
         let secureRefusal = refusingSecureArgument ? Self.secureFieldRefusal(device: device) : nil
-        let knownFocus = try await ensureFocus(backend: backend, device: device, logger: logger, beforeTap: { tree in
+        let focus = try await ensureFocus(backend: backend, device: device, logger: logger, beforeTap: { tree in
             if progress != nil, case .appearing(let id) = verification.mode {
                 try Verifier.refuseIfOnScreen(id, in: tree)
             }
@@ -307,14 +372,16 @@ struct Type: AsyncParsableCommand, VerifiableCommand {
 
         if throughSession {
             try await InputSecrecy.$fromArgument.withValue(refusingSecureArgument) {
-                try await InputSecrecy.$knownFocus.withValue(knownFocus) {
+                try await InputSecrecy.$knownFocus.withValue(focus.secure) {
                     try await typeThroughSession(inputText, backend: backend, device: device, progress: progress)
                 }
             }
             return
         }
 
-        logger.info().log("Performing HID event sequence for text typing")
+        let paced = ReactNativeBundle.isFront(in: focus.tree)
+        let hidEvents = try Self.iosEvents(for: inputText, replacing: replace, paced: paced)
+        logger.info().log("Performing HID event sequence for text typing\(paced ? ", paced for React Native" : "")")
 
         if let progress {
             let target = "text (\(inputText.count) character\(inputText.count == 1 ? "" : "s"))"
@@ -385,22 +452,30 @@ struct Type: AsyncParsableCommand, VerifiableCommand {
     /// A person's verify lines name the input, never how long the text was.
     static let personSubject = "Typed text"
 
-    /// The simulator's key events, checked before any focus tap so text the HID keyboard cannot type sends nothing.
-    static func checkedIOSEvents(for text: String, replacing: Bool, logger: OffsiderLogger) throws -> [InputEvent] {
+    /// Checked before any focus tap, so text the HID keyboard cannot type sends nothing.
+    static func checkIOSText(_ text: String, logger: OffsiderLogger) throws {
         do {
             try TextToHIDEvents.checkSupported(text)
-            let events = try iosEvents(for: text, replacing: replacing)
-            logger.info().log("Converted text to \(events.count) HID events")
-            return events
         } catch {
             logger.error().log("Text conversion failed: \(error.localizedDescription)")
             throw error
         }
     }
 
-    /// iOS key events: with `replacing`, Command-A and Backspace first, in the same composite as the typing.
-    static func iosEvents(for text: String, replacing: Bool) throws -> [InputEvent] {
-        let typed = try TextToHIDEvents.convertTextToHIDEvents(text)
+    /// A React Native field that sets its text from each change can drop or reorder keys that arrive faster than its JavaScript runs.
+    static let reactNativeKeyGap: TimeInterval = 0.03
+
+    /// iOS key events: with `replacing`, Command-A and Backspace first, in the same composite as the typing; `paced` waits between characters.
+    static func iosEvents(for text: String, replacing: Bool, paced: Bool = false) throws -> [InputEvent] {
+        let typed: [InputEvent]
+        if paced {
+            try TextToHIDEvents.checkSupported(text)
+            typed = try text.enumerated().flatMap { index, character in
+                (index > 0 ? [InputEvent.delay(reactNativeKeyGap)] : []) + (try TextToHIDEvents.convertTextToHIDEvents(String(character)))
+            }
+        } else {
+            typed = try TextToHIDEvents.convertTextToHIDEvents(text)
+        }
         return replacing ? [InputEvent.selectAllAndDelete(modifier: InputEvent.commandKey, settle: InputEvent.iosClearSettle)] + typed : typed
     }
 

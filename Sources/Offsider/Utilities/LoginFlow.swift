@@ -18,6 +18,8 @@ enum LoginFlow {
         var foregroundApp: (_ tree: UITree) throws -> String
         /// The bundle id of an iOS process, for the web-content check.
         var bundleForPID: (Int) -> String? = { _ in nil }
+        /// The element a touch at a point reaches, as the platform reports it; nil where it cannot say.
+        var hitTest: (_ point: UIPoint) async -> UINode? = { _ in nil }
     }
 
     /// How long after the submit tap Turnstile is read once more.
@@ -52,7 +54,15 @@ enum LoginFlow {
         var tree = try await services.readTree()
         tree = try await revealSubmit(in: tree, profile: profile, services: services)
         let origin = LoginForm.Origin(foreground: app, bundleForPID: services.bundleForPID)
-        let form = try detect(in: tree, profile: profile, origin: origin, afterTyping: false, lastSignIn: lastSignIn)
+        var reachable: [UINode] = []
+        let form: LoginForm.Found
+        do {
+            form = try detect(in: tree, profile: profile, origin: origin, afterTyping: false, lastSignIn: lastSignIn)
+        } catch {
+            reachable = await reachableByHitTest(in: tree, profile: profile, services: services)
+            guard !reachable.isEmpty else { throw error }
+            form = try detect(in: tree, profile: profile, origin: origin, afterTyping: false, reachable: reachable, lastSignIn: lastSignIn)
+        }
         try refuseWebForm(form, app: app, key: key, profile: profile, webLogin: webLogin)
         try requireName(form.identity, what: "email or username")
         try requireName(form.password, what: "password")
@@ -96,11 +106,13 @@ enum LoginFlow {
             passwordProgress = .filled
             let submitNow = LoginForm.match(form.submit, in: tree) ?? form.submit
             tree = try await dismissKeyboard(in: tree, submit: submitNow, shell: form.turnstileShell, fields: [form.identity, form.password], services: services)
-            if (try? LoginForm.detect(in: tree, profile: profile)) == nil {
+            if (try? LoginForm.detect(in: tree, profile: profile, reachable: reachable)) == nil {
                 // A read taken while the keyboard animates away can miss the form for a moment.
-                tree = try await readUntil({ (try? LoginForm.detect(in: $0, profile: profile)) != nil }, services: services)
+                tree = try await readUntil({ (try? LoginForm.detect(in: $0, profile: profile, reachable: reachable)) != nil }, services: services)
             }
-            let filled = try detect(in: tree, profile: profile, afterTyping: true)
+            // A widget can open over the form after typing, so what a hit-test reached before is checked again.
+            let reachableNow = (try? LoginForm.detect(in: tree, profile: profile)) == nil ? await reachableByHitTest(in: tree, profile: profile, services: services) : []
+            let filled = try detect(in: tree, profile: profile, afterTyping: true, reachable: reachableNow)
             let step = try await settleTurnstile(in: tree, timeout: timeout, services: services)
             report = try await waitUntilEnabled(filled.submit, app: app, key: key, turnstile: step, timeout: timeout, services: services)
         } catch {
@@ -206,10 +218,11 @@ enum LoginFlow {
 
     /// Only `noForm` reads `lastSignIn`, to name who Offsider last signed in here.
     private static func detect(
-        in tree: UITree, profile: LoginProfile?, origin: LoginForm.Origin? = nil, afterTyping: Bool, lastSignIn: () -> LastSignIn? = { nil }
+        in tree: UITree, profile: LoginProfile?, origin: LoginForm.Origin? = nil, afterTyping: Bool, reachable: [UINode] = [],
+        lastSignIn: () -> LastSignIn? = { nil }
     ) throws -> LoginForm.Found {
         do {
-            return try LoginForm.detect(in: tree, profile: profile, origin: origin)
+            return try LoginForm.detect(in: tree, profile: profile, origin: origin, reachable: reachable)
         } catch let error as LoginFormError {
             let reason: FailureReason = error.kind == .ambiguous ? .selectorAmbiguous : .selectorNotFound
             if afterTyping {
@@ -227,6 +240,16 @@ enum LoginFlow {
                 hint: "offsider credential signed-out --device \(last.deviceID)"
             )
         }
+    }
+
+    /// A hit-test at each hidden control's own point, as `tap --fail-if-covered` makes, says what a touch there reaches.
+    private static func reachableByHitTest(in tree: UITree, profile: LoginProfile?, services: Services) async -> [UINode] {
+        var reachable: [UINode] = []
+        for node in LoginForm.hiddenCandidates(in: tree, profile: profile) {
+            guard let frame = node.frame, let hit = await services.hitTest(frame.center), LoginForm.isHit(hit, on: node) else { continue }
+            reachable.append(node)
+        }
+        return reachable
     }
 
     /// Names who Offsider last signed in here, and how to switch users.

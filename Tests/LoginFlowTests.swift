@@ -445,6 +445,69 @@ struct LoginFlowTests {
         }
     }
 
+    /// A web widget's content from another process, listed last, with a frame that reaches over the whole form.
+    private func underWidget(_ tree: UITree) -> UITree {
+        var tree = tree
+        tree.roots[0].children.append(FakeUI.node(.group, frame: FakeUI.frame(0, 0, 402, 874), pid: 200, children: [
+            FakeUI.node(.text, label: "Confirm you are here", frame: FakeUI.frame(16, 405, 370, 64), pid: 200),
+        ]))
+        return tree
+    }
+
+    @Test("a web widget the tree lists over the form does not hide fields a hit-test at their own points reaches")
+    func widgetOverFormHitTested() async throws {
+        let script = script(buttonEnabled: true)
+        script.trees = script.trees.map(underWidget)
+        let controls = SignInFixture.tree().roots[0].flattened()
+        script.hit = { point in controls.last { $0.role != .application && $0.frame?.contains(point) == true } }
+
+        let report = try await run(script)
+
+        #expect(script.typed == [username, password])
+        #expect(script.taps.count == 1)
+        #expect(report.submitLabel == "Log in")
+        #expect(script.hitTests <= 12)
+    }
+
+    @Test("with no hit-test, or one that reaches the widget, the covered form is still refused with nothing typed")
+    func widgetOverFormRefused() async throws {
+        for answersWidget in [false, true] {
+            let script = script(buttonEnabled: true)
+            script.trees = script.trees.map(underWidget)
+            if answersWidget {
+                script.hit = { _ in FakeUI.node(.text, label: "Confirm you are here", frame: FakeUI.frame(16, 405, 370, 64), pid: 200) }
+            }
+            let error = try #require(await #expect(throws: CLIError.self) { try await self.run(script) })
+            #expect(error.reason == .selectorNotFound)
+            #expect(script.typed.isEmpty)
+        }
+    }
+
+    @Test("a widget that opens over the submit button after typing is hit-tested again, and the covered submit is not tapped")
+    func widgetOverSubmitAfterTyping() async throws {
+        let script = script(buttonEnabled: true)
+        script.trees = script.trees.map(underWidget)
+        let controls = SignInFixture.tree().roots[0].flattened()
+        let challenge = FakeUI.node(.text, label: "Confirm you are here", frame: FakeUI.frame(16, 405, 370, 64), pid: 200)
+        script.hit = { point in
+            if script.typed.count == 2, point.y > 700 { return challenge }
+            return controls.last { $0.role != .application && $0.frame?.contains(point) == true }
+        }
+
+        let stopped = try #require(await #expect(throws: LoginFailure.self) { try await self.run(script) })
+
+        #expect(stopped.reason == .selectorNotFound)
+        #expect(script.typed == [username, password])
+        #expect(script.taps.allSatisfy { $0.y < 700 })
+    }
+
+    @Test("a form the tree shows in front makes no hit-test")
+    func frontFormNoHitTest() async throws {
+        let script = script(buttonEnabled: true)
+        _ = try await run(script)
+        #expect(script.hitTests == 0)
+    }
+
     private var square: TurnstileTarget {
         TurnstileTarget(frame: UIFrame(x: 18, y: 400, width: 30, height: 30))
     }
@@ -500,6 +563,9 @@ final class LoginScript {
     var advanceOnSleep = false
     var advanceOnTap = false
     var time: TimeInterval = 0
+    /// What a hit-test at each point reaches; nil where nothing answers.
+    var hit: (UIPoint) -> UINode? = { _ in nil }
+    var hitTests = 0
 
     init(trees: [UITree]) {
         self.trees = trees
@@ -546,7 +612,11 @@ final class LoginScript {
                 self.foregroundIndex += 1
                 return app
             },
-            bundleForPID: { $0 == 100 ? "com.example.app" : nil }
+            bundleForPID: { $0 == 100 ? "com.example.app" : nil },
+            hitTest: { point in
+                self.hitTests += 1
+                return self.hit(point)
+            }
         )
     }
 }

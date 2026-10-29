@@ -371,20 +371,38 @@ struct Tap: AsyncParsableCommand, VerifiableCommand {
     func coverCheck(selector: String, backend: any DeviceBackend, device: DeviceID) -> AccessibilityPoller.CoverCheck {
         let cover = TapCover(allowCovered: allowCovered, failIfCovered: failIfCovered)
         return { resolution, tree in
-            try await cover.check(resolution, selector: selector, tree: tree, backend: backend, device: device)
+            try await Self.withKeyboardAdvice({
+                try await cover.check(resolution, selector: selector, tree: tree, backend: backend, device: device)
+            }, selector: selector, at: resolution.point, device: device, tree: tree)
         }
     }
 
-    /// A tap there would press a key instead, so `tap` and `type --into-id` refuse before sending anything.
-    static func keyboardCoverError(selector: String, at point: (x: Double, y: Double), device: DeviceID) -> CLIError {
+    /// `tap` and `type --into-id` refuse; with `tree`, Back is offered only over docked keys, as over a toolbar it goes to the app.
+    static func keyboardCoverError(selector: String, at point: (x: Double, y: Double), device: DeviceID, tree: UITree? = nil) -> CLIError {
         let pointText = VerifyOutput.pointDescription(x: point.x, y: point.y)
-        let android = device.platform == .android
-        let hide = android ? "Hide the keyboard with `offsider button back`" : "Dismiss the keyboard in the app"
+        let back = device.platform == .android && tree.map(KeyboardDismiss.showsKeys(in:)) != false
+        let hide: String
+        if back {
+            hide = "Hide the keyboard with `offsider button back` (or scroll the target above it)"
+        } else if device.platform == .android {
+            hide = "Scroll the target clear of the keyboard's toolbar (Back would go to the app, as only the toolbar shows)"
+        } else {
+            hide = "Dismiss the keyboard in the app (or scroll the target above it)"
+        }
         return CLIError(
-            errorDescription: "The keyboard covers \(selector) at \(pointText), so the tap would press a key. \(hide) (or scroll the target above it), then retry. Nothing was sent.",
+            errorDescription: "The keyboard covers \(selector) at \(pointText), so the tap would press a key. \(hide), then retry. Nothing was sent.",
             reason: .targetUnderKeyboard,
-            hint: android ? "offsider button back --device \(device.rawValue)" : "offsider describe-ui --summary --device \(device.rawValue)"
+            hint: back ? "offsider button back --device \(device.rawValue)" : "offsider describe-ui --summary --device \(device.rawValue)"
         )
+    }
+
+    /// The cover check's keyboard refusal again with the tree it read, so its advice fits the keyboard on screen.
+    static func withKeyboardAdvice(_ check: @MainActor () async throws -> Void, selector: String, at point: (x: Double, y: Double), device: DeviceID, tree: UITree) async throws {
+        do {
+            try await check()
+        } catch let error as CLIError where error.reason == .targetUnderKeyboard {
+            throw keyboardCoverError(selector: selector, at: point, device: device, tree: tree)
+        }
     }
 
     /// `✓ Tap at (x, y) ...` for coordinates; `✓ Tap on id=X at (x, y) ...` for a selector.
