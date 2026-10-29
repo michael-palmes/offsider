@@ -18,6 +18,35 @@ struct ReactNativeGestureTests {
         #expect(ms >= 900, "\(held)")
     }
 
+    /// Spreads or squeezes two fingers over the multi-touch area, then reads the spread the app saw at the start and end.
+    private static func pinch(_ app: RNApp, from: Int, to: Int, environment: [String: String]? = nil) async throws {
+        try await app.open("multi-touch")
+        let centre = try await app.centre(of: "multi-touch-area")
+        let arguments = "gesture pinch --from \(from) --to \(to) --x \(centre.x) --y \(centre.y)"
+        if let environment, app.platform == .android {
+            try await AndroidE2E.run(arguments, environment: environment)
+        } else {
+            try await app.run(arguments)
+        }
+        _ = try await app.waitForLabel(of: "multi-touch-fingers") { $0 == "Fingers: 2" }
+        let start = try await app.waitForLabel(of: "multi-touch-spread-start") { $0 != "Spread from: 0" }
+        let end = try await app.waitForLabel(of: "multi-touch-spread-end") { $0 != "Spread to: 0" }
+        let number = { (text: String) in Int(text.split(separator: " ").last ?? "") ?? -1 }
+        #expect(abs(number(start) - from) <= 2, "\(start)")
+        #expect(abs(number(end) - to) <= 2, "\(end)")
+    }
+
+    @Test("a pinch spreads two fingers from one distance to another, and squeezes them back", arguments: RNPlatform.enabled)
+    func pinchSpreadsAndSqueezes(platform: RNPlatform) async throws {
+        try await Self.pinch(RNApp(platform), from: 60, to: 240)
+        try await Self.pinch(RNApp(platform), from: 200, to: 50)
+    }
+
+    @Test("over adb, a pinch goes through the UiAutomation helper", .enabled(if: isAndroidE2EEnabled))
+    func pinchThroughHelper() async throws {
+        try await Self.pinch(RNApp(.android), from: 50, to: 200, environment: ["OFFSIDER_ANDROID_TRANSPORT": "adb"])
+    }
+
     @Test("two fingers go down together and stay down for the hold", arguments: RNPlatform.enabled)
     func twoFingers(platform: RNPlatform) async throws {
         try await Self.holdTwoFingers(RNApp(platform))
@@ -42,6 +71,32 @@ struct ReactNativeGestureTests {
         let app = RNApp(platform)
         #expect(try await Self.drag(app, "") == "Zone: A")
         #expect(try await Self.drag(app, "--hold-ms 800") == "Zone: B")
+    }
+
+    @Test("drag --screenshot-at captures the tile still lifted over zone B, then the drop still lands", arguments: RNPlatform.enabled)
+    func screenshotDuringHold(platform: RNPlatform) async throws {
+        let app = RNApp(platform)
+        try await app.open("hold-drag")
+        let tile = try await app.centre(of: "hold-drag-tile")
+        let zone = try await app.centre(of: "hold-drag-zone-b")
+        let held = FileManager.default.temporaryDirectory.appendingPathComponent("offsider-hold-\(UUID().uuidString).png").path
+        defer { try? FileManager.default.removeItem(atPath: held) }
+
+        let result = try await app.run(
+            "drag --start-x \(tile.x) --start-y \(tile.y) --end-x \(zone.x) --end-y \(zone.y) --hold-ms 800 --hold-end 1500 --screenshot-at 300 --output \(held) --json"
+        )
+
+        let report = try #require(try JSONSerialization.jsonObject(with: Data(result.stdout.utf8)) as? [String: Any])
+        let shots = try #require(report["screenshots"] as? [[String: Any]])
+        #expect(shots.count == 1)
+        #expect(shots.first?["path"] as? String == held)
+        #expect((shots.first?["startMs"] as? Int ?? -1) >= 300)
+        #expect((report["holdMs"] as? Int ?? 0) >= 1500)
+        _ = try await app.waitForLabel(of: "hold-drag-zone") { $0 == "Zone: B" }
+        // Dropped, the tile is opaque at the centre of zone B; the screenshot from the hold shows it lifted, so the two differ.
+        let compare = try await app.offsider("screenshot --compare \(held) --json")
+        #expect(compare.exitCode == 0, "\(compare.stderr)")
+        #expect(compare.stdout.contains(#""changed":true"#))
     }
 
     @Test("gesture long-press-drag drops the tile in zone B", arguments: RNPlatform.enabled)

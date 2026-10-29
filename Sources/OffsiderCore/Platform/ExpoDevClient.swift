@@ -18,6 +18,13 @@ public protocol ExpoDevClientOpening: DeviceBackend {
     func stopApp(_ appID: String, on id: DeviceID) async throws
 }
 
+/// Optional capability: the `adb reverse` a USB phone needs to reach Metro, set only after the caller checked the person allowed the port.
+@MainActor
+public protocol MetroReverseSetting: DeviceBackend {
+    /// Maps the phone's `tcp:<port>` to the Mac's same port and records it for `session stop`; refuses anything but a USB phone.
+    func addMetroReverse(port: Int, on id: DeviceID) async throws
+}
+
 public struct ExpoDevClientError: Error, CustomStringConvertible, LocalizedError, Equatable, Sendable {
     public enum Kind: Equatable, Sendable {
         case invalidAppID
@@ -28,6 +35,8 @@ public struct ExpoDevClientError: Error, CustomStringConvertible, LocalizedError
         case writeFailed
         case noScheme
         case noRoute
+        /// A reverse on the phone's port maps to another port on the Mac.
+        case reverseMismatch
     }
 
     public let kind: Kind
@@ -244,12 +253,9 @@ public enum ExpoDevClient {
         return schemes[0]
     }
 
-    /// Loopback when `adb reverse` maps the port (lines such as `emulator-5554 tcp:8081 tcp:8081`), else the emulator's alias for the Mac; nil for a phone without one.
+    /// Loopback when `adb reverse` maps the port to the same port (`emulator-5554 tcp:8081 tcp:8081`), else the emulator's alias for the Mac; nil for a phone without one.
     public static func androidMetroHost(reverseList: String, port: Int, isEmulator: Bool) -> String? {
-        let mapped = reverseList.split(whereSeparator: \.isNewline).contains { line in
-            line.split(separator: " ").dropFirst().first == "tcp:\(port)"
-        }
-        if mapped { return loopback }
+        if MetroReverse.mapsSamePort(reverseList, port: port) { return loopback }
         return isEmulator ? emulatorHostAlias : nil
     }
 
@@ -279,11 +285,13 @@ public enum ExpoDevLauncher {
     }
 
     /// The Open button of the `Open in “App”?` alert an iOS 27 simulator shows before it follows a custom-scheme link.
-    public static func openLinkPrompt(in tree: UITree) -> UINode? {
+    /// With `appName`, only the prompt that names that app.
+    public static func openLinkPrompt(in tree: UITree, appName: String? = nil) -> UINode? {
         let nodes = tree.roots.flatMap { $0.flattened() }
         guard let alert = nodes.first(where: { node in
             let text = node.label?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-            return text.hasPrefix("Open in “") && text.hasSuffix("”?")
+            guard let appName else { return text.hasPrefix("Open in “") && text.hasSuffix("”?") }
+            return text == "Open in “\(appName)”?"
         }), let box = alert.frame else { return nil }
         return nodes.first { node in
             guard node.role == .button, node.label == "Open", let frame = node.frame else { return false }

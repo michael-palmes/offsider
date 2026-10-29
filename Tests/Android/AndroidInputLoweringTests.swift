@@ -30,6 +30,20 @@ struct AndroidInputLoweringTests {
         #expect(!up.down)
     }
 
+    @Test("two fingers go down once, a later two-finger down while they are down moves both, and up lifts them")
+    func twoFingerMoves() throws {
+        let down = try Self.lower(.twoFingerTouch(direction: .down, x1: 10, y1: 20, x2: 30, y2: 20))
+        #expect(down.steps == [.touches(.down, [AndroidPoint(x: 10, y: 20), AndroidPoint(x: 30, y: 20)])] && down.down)
+        let move = try Self.lower(.twoFingerTouch(direction: .down, x1: 5, y1: 20, x2: 35, y2: 20), down: true)
+        #expect(move.steps == [.touches(.move, [AndroidPoint(x: 5, y: 20), AndroidPoint(x: 35, y: 20)])])
+        let up = try Self.lower(.twoFingerTouch(direction: .up, x1: 5, y1: 20, x2: 35, y2: 20), down: true)
+        #expect(up.steps == [.touches(.up, [AndroidPoint(x: 5, y: 20), AndroidPoint(x: 35, y: 20)])] && !up.down)
+        let hold = try Self.lower(.composite([
+            .twoFingerTouch(direction: .down, x1: 1, y1: 2, x2: 3, y2: 2), .delay(1), .twoFingerTouch(direction: .up, x1: 1, y1: 2, x2: 3, y2: 2),
+        ]))
+        #expect(hold.steps.map { if case .touches(let phase, _) = $0 { return "\(phase)" } else { return "pause" } } == ["down", "pause", "up"])
+    }
+
     @Test("a drag composite keeps its order: down, holds and moves, up")
     func drag() throws {
         let event = InputEvent.composite([

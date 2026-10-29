@@ -180,4 +180,25 @@ struct AndroidDeviceStateTests {
         #expect(error?.message.contains("R58M123ABC is a physical device") == true)
         #expect(processes.calls.allSatisfy { !$0.arguments.contains("emu") })
     }
+
+    @Test("the overlay app op decides, and its default falls back to a permission granted at install")
+    func overlayPermission() throws {
+        #expect(AndroidOverlayPermission.parse("SYSTEM_ALERT_WINDOW: allow; time=+1h ago\n") == true)
+        #expect(AndroidOverlayPermission.parse("SYSTEM_ALERT_WINDOW: foreground\n") == true)
+        #expect(AndroidOverlayPermission.parse("SYSTEM_ALERT_WINDOW: deny\n\(AndroidOverlayPermission.grantedMarker)\n") == false)
+        #expect(AndroidOverlayPermission.parse("Uid mode: SYSTEM_ALERT_WINDOW: ignore\nSYSTEM_ALERT_WINDOW: allow\n") == false)
+        #expect(AndroidOverlayPermission.parse("No operations.\n") == false)
+        #expect(AndroidOverlayPermission.parse("SYSTEM_ALERT_WINDOW: default\n") == false)
+        #expect(AndroidOverlayPermission.parse("No operations.\n\(AndroidOverlayPermission.grantedMarker)\n") == true)
+        #expect(AndroidOverlayPermission.parse("Error: Unknown package\n") == nil)
+        #expect(AndroidOverlayPermission.parse("") == nil)
+    }
+
+    @Test("a name that is not a package never reaches the shell")
+    func overlayScriptRefusesShellText() {
+        #expect(AndroidOverlayPermission.readScript(package: "com.example.app; reboot") == nil)
+        #expect(AndroidOverlayPermission.readScript(package: "") == nil)
+        #expect(AndroidOverlayPermission.readScript(package: "com.example.app")?.hasPrefix("appops get com.example.app SYSTEM_ALERT_WINDOW;") == true)
+    }
+
 }

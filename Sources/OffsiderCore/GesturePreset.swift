@@ -11,16 +11,23 @@ public enum GesturePreset: String, CaseIterable, Sendable {
     case swipeFromTopRightEdge = "swipe-from-top-right-edge"
     case swipeFromBottomEdge = "swipe-from-bottom-edge"
     case longPressDrag = "long-press-drag"
+    case pinch
 
     public enum Kind: Sendable {
         /// A swipe sized to the screen.
         case swipe
         /// A held press then a drag between points the caller gives.
         case longPressDrag
+        /// Two fingers moving apart or together about a centre.
+        case pinch
     }
 
     public var kind: Kind {
-        self == .longPressDrag ? .longPressDrag : .swipe
+        switch self {
+        case .longPressDrag: return .longPressDrag
+        case .pinch: return .pinch
+        default: return .swipe
+        }
     }
 
     public static var swipes: [GesturePreset] { allCases.filter { $0.kind == .swipe } }
@@ -29,7 +36,7 @@ public enum GesturePreset: String, CaseIterable, Sendable {
     public var spansScreen: Bool {
         switch self {
         case .swipeFromTopEdge, .swipeFromTopRightEdge, .swipeFromBottomEdge: return true
-        case .swipeFromLeftEdge, .swipeFromRightEdge, .scrollUp, .scrollDown, .scrollLeft, .scrollRight, .longPressDrag: return false
+        case .swipeFromLeftEdge, .swipeFromRightEdge, .scrollUp, .scrollDown, .scrollLeft, .scrollRight, .longPressDrag, .pinch: return false
         }
     }
 
@@ -73,6 +80,8 @@ public enum GesturePreset: String, CaseIterable, Sendable {
             return "Swipe up from the bottom edge (Android's home gesture)"
         case .longPressDrag:
             return "Press and hold, then drag to another point"
+        case .pinch:
+            return "Two fingers move apart (zoom in) or together (zoom out)"
         }
     }
 
@@ -86,6 +95,8 @@ public enum GesturePreset: String, CaseIterable, Sendable {
             return 0.2
         case .longPressDrag:
             return 0.6
+        case .pinch:
+            return 0.5
         }
     }
 
@@ -93,7 +104,7 @@ public enum GesturePreset: String, CaseIterable, Sendable {
         switch self {
         case .scrollUp, .scrollDown, .scrollLeft, .scrollRight:
             return 25.0
-        case .swipeFromLeftEdge, .swipeFromRightEdge, .swipeFromTopEdge, .swipeFromTopRightEdge, .swipeFromBottomEdge, .longPressDrag:
+        case .swipeFromLeftEdge, .swipeFromRightEdge, .swipeFromTopEdge, .swipeFromTopRightEdge, .swipeFromBottomEdge, .longPressDrag, .pinch:
             return 50.0
         }
     }
@@ -143,8 +154,27 @@ public enum GesturePreset: String, CaseIterable, Sendable {
             return (UIPoint(x: x, y: topY), UIPoint(x: x, y: screen.y + screen.height * Self.topEdgeEndFraction))
         case .swipeFromBottomEdge:
             return (UIPoint(x: centerX, y: bottomY), UIPoint(x: centerX, y: screen.y + screen.height * Self.bottomEdgeEndFraction))
-        case .longPressDrag:
+        case .longPressDrag, .pinch:
             return (UIPoint(x: centerX, y: centerY), UIPoint(x: centerX, y: centerY))
+        }
+    }
+
+    // MARK: Pinch
+
+    /// Points between the two fingers at the start or end of a pinch.
+    public static let pinchSpreads: ClosedRange<Double> = 20...600
+    public static let pinchDurations: ClosedRange<Double> = 0.1...10
+
+    /// About 60 moves a second, so a pinch reads as smooth to a gesture recogniser, from 10 to 240.
+    public static func pinchMoves(duration: Double) -> Int {
+        min(240, max(10, Int((duration * 60).rounded())))
+    }
+
+    /// The fingers left then right of `centre` on a horizontal line, from `from` to `to` points apart; the first and last frames are the spreads themselves.
+    public static func pinchFrames(centre: UIPoint, from: Double, to: Double, moves: Int) -> [(UIPoint, UIPoint)] {
+        (0...max(1, moves)).map { step in
+            let spread = from + (to - from) * Double(step) / Double(max(1, moves))
+            return (UIPoint(x: centre.x - spread / 2, y: centre.y), UIPoint(x: centre.x + spread / 2, y: centre.y))
         }
     }
 }

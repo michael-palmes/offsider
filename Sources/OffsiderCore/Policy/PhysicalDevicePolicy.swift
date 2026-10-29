@@ -130,6 +130,7 @@ public struct PhysicalDevicePolicy: Equatable, Sendable {
                 ("apps", .array(entry.apps.map { .string($0) })),
             ]
             if let team = entry.team { fields.append(("team", .string(team))) }
+            if !entry.metroPorts.isEmpty { fields.append(("metroPorts", .array(entry.metroPorts.map { .integer($0) }))) }
             fields.append(("active", .bool(decision(platform: entry.platform, key: entry.key, now: now) == .allowed(entry))))
             return .object(fields)
         }

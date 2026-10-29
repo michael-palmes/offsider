@@ -47,6 +47,11 @@ final class DeviceClaims {
         try await claim(DeviceLockKey(platform: device.platform, id: device.rawValue))
     }
 
+    /// Lets go of one device before the command ends; claiming it again locks it again.
+    func release(_ key: DeviceLockKey) {
+        held.removeValue(forKey: key)?.release()
+    }
+
     func releaseAll() {
         for lock in held.values { lock.release() }
         held.removeAll()
@@ -86,6 +91,9 @@ extension PermissionCommand: LockingCommand {
 }
 
 extension AppearanceCommand: DeviceOptionCommand {}
+extension AppLaunchCommand: DeviceOptionCommand {}
+extension AppOpenCommand: DeviceOptionCommand {}
+extension AppStopCommand: DeviceOptionCommand {}
 extension Assert: DeviceOptionCommand {}
 extension Batch: DeviceOptionCommand {}
 extension BiometricCommand: DeviceOptionCommand {}

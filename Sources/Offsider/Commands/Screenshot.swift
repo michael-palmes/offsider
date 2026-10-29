@@ -190,10 +190,12 @@ struct Screenshot: AsyncParsableCommand {
     /// Standalone: a tree mask reads one fresh tree; without one, no tree is read. `plain` allows writing the device's PNG as it came.
     @MainActor
     func take(_ request: ScreenshotRequest, on route: DeviceRouter.Route, masks: MaskPlan, plain: Bool = false) async throws -> ScreenshotReport {
-        try await take(request, on: route, masks: masks, plain: plain) {
+        var report = try await take(request, on: route, masks: masks, plain: plain) {
             guard let reader = route.backend as? any MaskTreeReading else { return try await route.backend.accessibilityTree(for: route.device) }
             return try await reader.maskTree(for: route.device)
         }
+        report.captureSource = (route.backend as? any CaptureSourceReporting)?.captureSource(for: route.device)
+        return report
     }
 
     /// An Android PNG at native scale with nothing to crop, paint or compare is written as the device sent it, sized from its header, with no screen read.

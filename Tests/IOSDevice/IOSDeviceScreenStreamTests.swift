@@ -1,4 +1,6 @@
+import CoreVideo
 import Foundation
+import ImageIO
 @testable import OffsiderIOSDevice
 import Testing
 
@@ -180,5 +182,60 @@ struct IOSDeviceScreenStreamTests {
         }
         #expect(try device("fd91:a2af:5418::1")?.tunnelAddress == "fd91:a2af:5418::1")
         #expect(try device("<scrubbed>")?.tunnelAddress == nil)
+    }
+}
+
+@Suite("iOS device stream frames")
+@MainActor
+struct IOSDeviceStreamFrameTests {
+    /// A white BGRA buffer padded past `clean`, the screen inside it, as a decoder hands out a frame of a size its blocks do not divide.
+    static func padded(width: Int, height: Int, clean: (width: Int, height: Int)?) throws -> CVPixelBuffer {
+        var made: CVPixelBuffer?
+        #expect(CVPixelBufferCreate(nil, width, height, kCVPixelFormatType_32BGRA, nil, &made) == kCVReturnSuccess)
+        let buffer = try #require(made)
+        CVPixelBufferLockBaseAddress(buffer, [])
+        memset(CVPixelBufferGetBaseAddress(buffer), 0xFF, CVPixelBufferGetBytesPerRow(buffer) * height)
+        CVPixelBufferUnlockBaseAddress(buffer, [])
+        if let clean {
+            let aperture: [CFString: Any] = [
+                kCVImageBufferCleanApertureWidthKey: clean.width, kCVImageBufferCleanApertureHeightKey: clean.height,
+                kCVImageBufferCleanApertureHorizontalOffsetKey: -Double(width - clean.width) / 2,
+                kCVImageBufferCleanApertureVerticalOffsetKey: -Double(height - clean.height) / 2,
+            ]
+            CVBufferSetAttachment(buffer, kCVImageBufferCleanApertureKey, aperture as CFDictionary, .shouldPropagate)
+        }
+        return buffer
+    }
+
+    static func size(of png: Data) throws -> (Int, Int) {
+        let source = try #require(CGImageSourceCreateWithData(png as CFData, nil))
+        let image = try #require(CGImageSourceCreateImageAtIndex(source, 0, nil))
+        return (image.width, image.height)
+    }
+
+    @Test("a padded stream frame comes out at the clean aperture's size, the screen's own, in every format")
+    func croppedToCleanAperture() throws {
+        let buffer = try Self.padded(width: 48, height: 96, clean: (43, 87))
+        let png = try #require(IOSDeviceScreenStream.encode(buffer, as: .png))
+        let bgra = try #require(IOSDeviceScreenStream.encode(buffer, as: .bgra))
+
+        #expect((png.width, png.height) == (43, 87))
+        #expect(try Self.size(of: png.data) == (43, 87))
+        #expect((bgra.width, bgra.height) == (43, 87))
+        #expect(bgra.data.count == 43 * 87 * 4)
+    }
+
+    @Test("a frame without a clean aperture keeps its whole size")
+    func uncroppedWithoutAperture() throws {
+        let png = try #require(IOSDeviceScreenStream.encode(try Self.padded(width: 48, height: 96, clean: nil), as: .png))
+        #expect(try Self.size(of: png.data) == (48, 96))
+    }
+
+    @Test("an asleep display is told apart from no display at all, which only a desktop session cures")
+    func displays() {
+        #expect(IOSDeviceScreenStream.Displays(active: 1, online: 1) == .awake)
+        #expect(IOSDeviceScreenStream.Displays(active: 0, online: 2) == .asleep)
+        #expect(IOSDeviceScreenStream.Displays(active: 0, online: 0) == .none)
+        #expect(IOSDeviceScreenStream.Displays(active: nil, online: nil) == .none)
     }
 }

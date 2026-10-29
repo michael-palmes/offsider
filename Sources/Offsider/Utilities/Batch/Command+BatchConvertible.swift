@@ -121,6 +121,7 @@ extension Tap: BatchConvertible {
 
 extension Swipe: BatchConvertible {
     func toBatchPrimitives(context: BatchContext, logger: OffsiderLogger) async throws -> [BatchPrimitive] {
+        guard !holdShots.isRequested else { throw ValidationError(HoldScreenshotOptions.batchMessage) }
         let physicalPoints = try await context.backend.deviceCoordinates(
             for: [(x: startX, y: startY), (x: endX, y: endY)],
             tree: nil,
@@ -133,6 +134,7 @@ extension Swipe: BatchConvertible {
 
 extension Drag: BatchConvertible {
     func toBatchPrimitives(context: BatchContext, logger: OffsiderLogger) async throws -> [BatchPrimitive] {
+        guard !holdShots.isRequested else { throw ValidationError(HoldScreenshotOptions.batchMessage) }
         let physicalPoints = try await context.backend.deviceCoordinates(
             for: [(x: startX, y: startY), (x: endX, y: endY)],
             tree: nil,
