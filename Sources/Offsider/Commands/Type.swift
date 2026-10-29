@@ -40,7 +40,8 @@ struct Type: AsyncParsableCommand, VerifiableCommand {
         • Not supported: International characters (£€¥), accented letters (éñü), etc.
         • This is a limitation of the underlying HID keyboard protocol
         
-        Note: iOS may apply smart punctuation spacing to some characters.
+        Note: iOS may apply smart punctuation spacing to some characters. On an iOS simulator, keys into a React Native
+        app go 30 ms apart, so a field that sets its text from each change keeps up.
 
         Typing into a named field:
         • offsider type --into-id email-field --replace "a@b.c" --device DEVICE_ID taps the field, waits up to 2 s
@@ -347,7 +348,7 @@ struct Type: AsyncParsableCommand, VerifiableCommand {
 
         let inputText = try resolvedText()
         let throughSession = device.platform == .android || device.isPhysicalIOSDevice
-        let hidEvents = throughSession ? [] : try Self.checkedIOSEvents(for: inputText, replacing: replace, logger: logger)
+        if !throughSession { try Self.checkIOSText(inputText, logger: logger) }
         let secureRefusal = refusingSecureArgument ? Self.secureFieldRefusal(device: device) : nil
         let focus = try await ensureFocus(backend: backend, device: device, logger: logger, beforeTap: { tree in
             if progress != nil, case .appearing(let id) = verification.mode {
@@ -367,7 +368,9 @@ struct Type: AsyncParsableCommand, VerifiableCommand {
             return
         }
 
-        logger.info().log("Performing HID event sequence for text typing")
+        let paced = ReactNativeBundle.isFront(in: focus.tree)
+        let hidEvents = try Self.iosEvents(for: inputText, replacing: replace, paced: paced)
+        logger.info().log("Performing HID event sequence for text typing\(paced ? ", paced for React Native" : "")")
 
         if let progress {
             let target = "text (\(inputText.count) character\(inputText.count == 1 ? "" : "s"))"
@@ -438,22 +441,30 @@ struct Type: AsyncParsableCommand, VerifiableCommand {
     /// A person's verify lines name the input, never how long the text was.
     static let personSubject = "Typed text"
 
-    /// The simulator's key events, checked before any focus tap so text the HID keyboard cannot type sends nothing.
-    static func checkedIOSEvents(for text: String, replacing: Bool, logger: OffsiderLogger) throws -> [InputEvent] {
+    /// Checked before any focus tap, so text the HID keyboard cannot type sends nothing.
+    static func checkIOSText(_ text: String, logger: OffsiderLogger) throws {
         do {
             try TextToHIDEvents.checkSupported(text)
-            let events = try iosEvents(for: text, replacing: replacing)
-            logger.info().log("Converted text to \(events.count) HID events")
-            return events
         } catch {
             logger.error().log("Text conversion failed: \(error.localizedDescription)")
             throw error
         }
     }
 
-    /// iOS key events: with `replacing`, Command-A and Backspace first, in the same composite as the typing.
-    static func iosEvents(for text: String, replacing: Bool) throws -> [InputEvent] {
-        let typed = try TextToHIDEvents.convertTextToHIDEvents(text)
+    /// A React Native field that sets its text from each change can drop or reorder keys that arrive faster than its JavaScript runs.
+    static let reactNativeKeyGap: TimeInterval = 0.03
+
+    /// iOS key events: with `replacing`, Command-A and Backspace first, in the same composite as the typing; `paced` waits between characters.
+    static func iosEvents(for text: String, replacing: Bool, paced: Bool = false) throws -> [InputEvent] {
+        let typed: [InputEvent]
+        if paced {
+            try TextToHIDEvents.checkSupported(text)
+            typed = try text.enumerated().flatMap { index, character in
+                (index > 0 ? [InputEvent.delay(reactNativeKeyGap)] : []) + (try TextToHIDEvents.convertTextToHIDEvents(String(character)))
+            }
+        } else {
+            typed = try TextToHIDEvents.convertTextToHIDEvents(text)
+        }
         return replacing ? [InputEvent.selectAllAndDelete(modifier: InputEvent.commandKey, settle: InputEvent.iosClearSettle)] + typed : typed
     }
 

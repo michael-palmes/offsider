@@ -75,6 +75,12 @@ export const routeInfo = {
     menuTitle: 'Key Sequence',
     subtitle: 'Detects CLI key sequences',
   },
+  'controlled-search-test': {
+    section: 'Input & Text',
+    title: 'Controlled Search',
+    menuTitle: 'Controlled Search',
+    subtitle: 'Search field that renders on every key',
+  },
   'keypad-test': {
     section: 'Input & Text',
     title: 'Keypad Test',
