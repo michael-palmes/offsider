@@ -41,13 +41,11 @@ struct Type: AsyncParsableCommand, VerifiableCommand {
 
         Typing into a named field:
         • offsider type --into-id email-field --replace "a@b.c" --device DEVICE_ID taps the field, waits up to 2 s
-          until it has focus (on an iOS simulator, until the keyboard shows), then types; no text is sent when it
-          never does (exit 5, focus_not_confirmed), and nothing at all when the keyboard covers the field (exit 1,
-          target_under_keyboard). --into-label works the same by label, and --into-label-contains by
-          part of a label. When the keyboard is
-          already up for another field, a simulator cannot prove focus: Offsider taps, types and prints a warning.
+          until it has focus, then types; no text is sent when it never does (exit 5, focus_not_confirmed), and
+          nothing at all when the keyboard covers the field (exit 1, target_under_keyboard). --into-label works the
+          same by label, and --into-label-contains by part of a label.
         • --require-focus-id email-field types only when that field already has focus (exit 2, focus_mismatch,
-          otherwise); the iOS simulator's tree does not report focus, so use --into-id there.
+          otherwise).
         • On a physical iPhone or iPad, --app <bundle-id> names the app whose field these find and the text goes to.
 
         Android emulators: printable ASCII, newlines and tabs are typed as key events. Text with any other
@@ -80,7 +78,7 @@ struct Type: AsyncParsableCommand, VerifiableCommand {
     @Option(name: .customLong("into-label-contains"), help: ArgumentHelp("Like --into-id, for the field whose label holds this text, in the same case.", valueName: "text"))
     var intoLabelContains: String?
 
-    @Option(name: .customLong("require-focus-id"), help: ArgumentHelp("Type only when the field with this id already has focus; exit 2 otherwise. Not on iOS simulators.", valueName: "id"))
+    @Option(name: .customLong("require-focus-id"), help: ArgumentHelp("Type only when the field with this id already has focus; exit 2 otherwise.", valueName: "id"))
     var requireFocusID: String?
     
     @OptionGroup
@@ -145,12 +143,6 @@ struct Type: AsyncParsableCommand, VerifiableCommand {
             return .notSecure
         }
         if let requireFocusID {
-            guard !simulator else {
-                throw CLIError(
-                    errorDescription: "--require-focus-id needs the field's focus state, which an iOS simulator's tree does not report. Use --into-id \(requireFocusID) to tap the field and wait for the keyboard.",
-                    reason: .notSupported
-                )
-            }
             let tree = try await backend.accessibilityTree(for: device)
             let focused = Self.focusedField(in: tree)
             guard focused?.normalizedID == requireFocusID else {
@@ -184,22 +176,29 @@ struct Type: AsyncParsableCommand, VerifiableCommand {
         let keyboardAlreadyUp = simulator && polled.tree.roots.flatMap { $0.flattened() }.contains { $0.role == .keyboard }
         try beforeTap(polled.tree)
         try await tap(.tapAt(x: point.x, y: point.y))
-        if keyboardAlreadyUp {
+        let deadline = clock.now() + Self.focusTimeout
+        var last: UITree?
+        repeat {
             try await clock.sleep(Self.focusPoll)
+            if let tree = try? await backend.accessibilityTree(for: device) {
+                last = tree
+                if Self.hasFocus(field, query: query, in: tree, keyboardOnly: simulator && !keyboardAlreadyUp) {
+                    logger.info().log("\(query.selectorDescription) has focus")
+                    return nil
+                }
+            }
+        } while clock.now() < deadline
+        // A tree that names no focused element at all cannot tell which field the tap focused.
+        if keyboardAlreadyUp, let last, !last.roots.flatMap({ $0.flattened() }).contains(where: { $0.state.focused == true }) {
             warn("the keyboard was already up, so the iOS simulator cannot confirm which field has focus; check with assert --has-value.")
             logger.info().log("Tapped \(query.selectorDescription); focusCheck: unproven")
             return nil
         }
-        let deadline = clock.now() + Self.focusTimeout
-        repeat {
-            try await clock.sleep(Self.focusPoll)
-            if let tree = try? await backend.accessibilityTree(for: device), Self.hasFocus(field, query: query, in: tree, keyboardOnly: simulator) {
-                logger.info().log("\(query.selectorDescription) has focus")
-                return nil
-            }
-        } while clock.now() < deadline
+        let noKeyboard = simulator && !keyboardAlreadyUp
+            ? " (no keyboard appeared, and the field does not report focus; with the simulator's hardware keyboard connected, no keyboard shows)"
+            : ""
         throw CLIError(
-            errorDescription: "Tapped \(query.selectorDescription), but it did not take focus within \(Int(Self.focusTimeout)) s\(simulator ? " (no keyboard appeared)" : ""). No text was typed.",
+            errorDescription: "Tapped \(query.selectorDescription), but it did not take focus within \(Int(Self.focusTimeout)) s\(noKeyboard). No text was typed.",
             reason: .focusNotConfirmed,
             hint: "offsider describe-ui --summary --device \(device.rawValue)"
         )
@@ -211,20 +210,21 @@ struct Type: AsyncParsableCommand, VerifiableCommand {
         return focused.first { $0.role.isTextInput } ?? focused.first
     }
 
-    /// The field, or a focused field inside its frame, has focus; on an iOS simulator a keyboard shows while the field is still on screen.
+    /// The field, or a focused field inside its frame, has focus. With `keyboardOnly`, on an iOS simulator whose tree names no focused element,
+    /// a keyboard that shows while the field is still on screen counts too.
     static func hasFocus(_ field: UINode?, query: AccessibilityQuery, in tree: UITree, keyboardOnly: Bool) -> Bool {
         let nodes = tree.roots.flatMap { $0.flattened() }
-        if keyboardOnly {
-            let keyboard = nodes.contains { $0.role == .keyboard }
-            let stillThere = !AccessibilityTargetResolver.candidates(roots: tree.roots, query: query, elementType: nil).onScreen.isEmpty
-            return keyboard && stillThere
-        }
-        return nodes.contains { node in
-            guard node.state.focused == true else { return false }
+        let focused = nodes.filter { $0.state.focused == true }
+        let fieldFocused = focused.contains { node in
             if let id = field?.normalizedID { return node.normalizedID == id }
             guard let frame = field?.frame, let focusedFrame = node.frame else { return query.field(of: node) != nil }
             return frame.intersection(focusedFrame) != nil
         }
+        if fieldFocused { return true }
+        guard keyboardOnly, focused.isEmpty else { return false }
+        let keyboard = nodes.contains { $0.role == .keyboard }
+        let stillThere = !AccessibilityTargetResolver.candidates(roots: tree.roots, query: query, elementType: nil).onScreen.isEmpty
+        return keyboard && stillThere
     }
 
     func run() async throws {

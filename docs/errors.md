@@ -145,7 +145,7 @@ A `--verify --json` report also carries `ignored` (`{node, reason}` entries left
 | `runner_unavailable` | 1 | The iPhone runner did not answer; no input was sent | Retry; `offsider doctor --device <UDID>` |
 | `run_active` | 1 | `run start` named another folder while this session's run is active | `offsider run stop`, then start the new run |
 | `run_unavailable` | 1 | The run folder cannot be written and it would hold the only copy, the recorded folder is no longer a private directory of yours holding its `run.json`, `OFFSIDER_RUN` names an unusable folder or is `off`, or the session cannot be found | Fix the folder, `offsider run status`, or set `OFFSIDER_RUN=<dir>` |
-| `focus_not_confirmed` | 5 | `type --into-id` tapped the field but it never took focus; no text was sent | Check the field with `describe-ui`, then retry |
+| `focus_not_confirmed` | 5 | `type --into-id` tapped the field but it never took focus; no text was sent. On an iOS simulator the message says when no keyboard appeared, as with its hardware keyboard connected | Check the field with `describe-ui`, then retry |
 | `text_not_accepted` | 5 | `type --replace` on Android left the field empty or shorter than the text, or a paste did not leave exactly the text: the app filters it, or focus moved | Check the field with `describe-ui`; type what it accepts |
 | `focus_mismatch` | 2 | `type --require-focus-id` found another field (or none) focused; no text was sent | Tap the field, or use `--into-id` |
 | `metro_not_running` | 9 | `rn open` found no Metro answering on 127.0.0.1 at `--port` | Start Metro on that port, then retry |

@@ -439,6 +439,7 @@ struct AccessibilityFetcher {
         .contentRequired,
         .pid,
         .traits,
+        .focused,
     ]
 }
 

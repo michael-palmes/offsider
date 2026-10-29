@@ -112,13 +112,50 @@ struct TypeIntoTests {
         #expect(try await Self.focus(["--require-focus-id", "first-field"], trees: [Self.form(focused: "first-field")]).isEmpty)
     }
 
-    @Test("--require-focus-id on an iOS simulator is not supported and points to --into-id")
+    @Test("--require-focus-id on an iOS simulator reads the field's own focus")
     func requireFocusOnSimulator() async throws {
+        #expect(try await Self.focus(["--require-focus-id", "first-field"], trees: [Self.form(focused: "first-field", platform: .ios)], device: Self.simulator).isEmpty)
         let error = await #expect(throws: CLIError.self) {
             _ = try await Self.focus(["--require-focus-id", "first-field"], trees: [Self.form(focused: nil, platform: .ios)], device: Self.simulator)
         }
-        #expect(error?.reason == .notSupported)
-        #expect(error?.userFacingDescription.contains("--into-id first-field") == true)
+        #expect(error?.reason == .focusMismatch)
+    }
+
+    @Test("on an iOS simulator the field's own focus confirms the tap with no keyboard, as with a hardware keyboard connected")
+    func simulatorFieldFocusWithoutKeyboard() async throws {
+        let warnings = Box<[String]>([])
+        let sent = try await Self.focus(
+            ["--into-id", "second-field"], trees: [Self.form(focused: nil, platform: .ios), Self.form(focused: "second-field", platform: .ios)],
+            device: Self.simulator, warnings: warnings
+        )
+        #expect(sent == [.tapAt(x: 200, y: 322)])
+        #expect(warnings.value.isEmpty)
+    }
+
+    @Test("on an iOS simulator with the keyboard already up, the field's own focus confirms the tap with no warning; another field's focus refuses")
+    func simulatorKeyboardUpFieldFocus() async throws {
+        let warnings = Box<[String]>([])
+        let sent = try await Self.focus(
+            ["--into-id", "second-field"],
+            trees: [Self.form(focused: "first-field", keyboard: true, platform: .ios), Self.form(focused: "second-field", keyboard: true, platform: .ios)],
+            device: Self.simulator, warnings: warnings
+        )
+        #expect(sent.count == 1)
+        #expect(warnings.value.isEmpty)
+
+        let error = await #expect(throws: CLIError.self) {
+            _ = try await Self.focus(["--into-id", "second-field"], trees: [Self.form(focused: "first-field", keyboard: true, platform: .ios)], device: Self.simulator)
+        }
+        #expect(error?.reason == .focusNotConfirmed)
+    }
+
+    @Test("a simulator field that never takes focus names the hardware keyboard as a reason no keyboard showed")
+    func simulatorNoFocusMessage() async throws {
+        let error = await #expect(throws: CLIError.self) {
+            _ = try await Self.focus(["--into-id", "second-field"], trees: [Self.form(focused: nil, platform: .ios)], device: Self.simulator)
+        }
+        #expect(error?.reason == .focusNotConfirmed)
+        #expect(error?.userFacingDescription.contains("hardware keyboard") == true)
     }
 
     static let iPhone = DeviceID(rawValue: IOSDeviceFixtures.phone, platform: .ios)
