@@ -47,7 +47,7 @@ When only tree order suggests a cover (a physical iPhone or iPad, an Android dum
 
 A React Native LogBox toast takes touches beyond the frame the tree gives it: from a point above its top edge (on Android, when the app draws under the status bar, the status bar's height higher still, as LogBox's toast list pads itself by it) to the bottom of the screen. A target whose point falls there is refused with `evidence` `logBoxTouchArea` on both platforms, and one whose frame only reaches that area warns (or, with `--fail-if-covered`, is refused).
 
-When the on-screen keyboard covers the target, `tap` and `type --into-id` always refuse with `target_under_keyboard` and send nothing, since the tap would press a key: hide the keyboard (on Android, `offsider button back`) or scroll the target above it, then retry. On Android the keyboard's own keys and buttons, inside its window, decide, as its root view in `describe-ui` (and a floating toolbar keyboard's window) spans the screen.
+When the on-screen keyboard covers the target, `tap` and `type --into-id` always refuse with `target_under_keyboard` and send nothing, since the tap would press a key: hide the keyboard (on Android, `offsider button back`) or scroll the target above it, then retry. On Android the keyboard's own keys and buttons decide: `describe-ui` frames the keyboard by them, not by its window, which spans the screen around a floating or compact keyboard. When only a keyboard toolbar shows, as Gboard does with a hardware keyboard connected, the advice never names `button back`, which would go to the app and can leave the screen.
 
 ### Moving targets
 

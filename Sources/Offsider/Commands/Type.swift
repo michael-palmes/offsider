@@ -172,7 +172,9 @@ struct Type: AsyncParsableCommand, VerifiableCommand {
             query: query, on: backend, device: device, waitTimeout: 0, pollInterval: 0.25,
             settle: .guarded(record: await TreeCache.load(for: device, backend: backend)),
             coverCheck: { resolution, tree in
-                try await cover.check(resolution, selector: query.selectorDescription, tree: tree, backend: backend, device: device)
+                try await Tap.withKeyboardAdvice({
+                    try await cover.check(resolution, selector: query.selectorDescription, tree: tree, backend: backend, device: device)
+                }, selector: query.selectorDescription, at: resolution.point, device: device, tree: tree)
             },
             logger: logger
         )

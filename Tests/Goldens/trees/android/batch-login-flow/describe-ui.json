@@ -288,10 +288,10 @@
       "label": "Gboard",
       "value": null,
       "frame": {
-        "x": 0,
-        "y": 54.1,
-        "width": 411.43,
-        "height": 869.33
+        "x": 12.19,
+        "y": 352.38,
+        "width": 48,
+        "height": 255.24
       },
       "enabled": true,
       "state": {
