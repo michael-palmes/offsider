@@ -13,6 +13,10 @@ struct KeySequence: AsyncParsableCommand {
           offsider key-sequence 11,8,15,15,18 --device DEVICE_ID    # Type "hello" (h=11, e=8, l=15, l=15, o=18)
           offsider key-sequence 40,40,40 --device DEVICE_ID          # Press Enter 3 times
           offsider key-sequence 224,4,225 --device DEVICE_ID        # Ctrl+A (Ctrl=224, A=4, release Ctrl=225)
+
+        Letters, digits, space and punctuation (the keypad's too) need a text field with focus: with none, nothing is pressed (exit 1,
+        no_focused_field), since keys that reach no field can act as app shortcuts. Return, Tab, arrows and other
+        keys go out unchecked.
         """
     )
     
@@ -76,6 +80,11 @@ struct KeySequence: AsyncParsableCommand {
         }
     }
 
+    /// Letters, digits, space, punctuation and the keypad's digits and operators type text; Return, Tab, arrows and modifiers do not.
+    static func typesText(_ keycodes: [Int]) -> Bool {
+        keycodes.contains { (4...39).contains($0) || (44...56).contains($0) || (84...87).contains($0) || (89...99).contains($0) }
+    }
+
     @MainActor
     func perform(on route: DeviceRouter.Route, logger: OffsiderLogger) async throws {
         let backend = route.backend
@@ -83,6 +92,13 @@ struct KeySequence: AsyncParsableCommand {
         let parsedKeycodes = try parseCommaSeparatedIntsStrict(keycodesString, fieldName: "keycodes")
         try systemKeys.check(parsedKeycodes, on: device)
         try await backend.prepare()
+
+        if Self.typesText(parsedKeycodes) {
+            try await Type.checkTextFocus(
+                readTree: { try await backend.accessibilityTree(for: device) }, device: device, clock: .live,
+                warn: { Console.current.notice(.warning(InputPersonView.sentence($0), agent: $0)) }, refusingSecureTarget: nil, keys: true
+            )
+        }
 
         let keyDelay = delay ?? 0.1  // Default 100ms delay between keys
         

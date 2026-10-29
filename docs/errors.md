@@ -101,7 +101,7 @@ A `--verify --json` report also carries `ignored` (`{node, reason}` entries left
 | `not_a_slider` | 1 | `slider` matched something that is not a slider | Use `--element-type slider` or a narrower selector |
 | `slider_unreadable` | 1 | The slider exposes no numeric value | Use `tap` or `drag` instead |
 | `slider_unverified` | 1 | The slider did not reach the value | Retry, or read its value with `describe-ui` |
-| `no_focused_field` | 1 | `type --replace` found no focused text field | Tap the field first |
+| `no_focused_field` | 1 | `type` (`--replace` too) or a `key-sequence` of letters, digits or punctuation found no text field with focus, or focus on something that takes no text, such as an app's own keypad; nothing was sent | Tap the field first, or use `type --into-id`; tap an app keypad's keys |
 | `field_not_editable` | 1 | The focused element is not a text field | Tap the text field first |
 | `unsupported_text` | 1 | The text has characters the device cannot type | Remove them, or use `type --replace` on Android |
 | `secure_paste_refused` | 1 | Typing into a password field would use the clipboard | Use `type --replace` |
@@ -146,7 +146,7 @@ A `--verify --json` report also carries `ignored` (`{node, reason}` entries left
 | `runner_unavailable` | 1 | The iPhone runner did not answer; no input was sent | Retry; `offsider doctor --device <UDID>` |
 | `run_active` | 1 | `run start` named another folder while this session's run is active | `offsider run stop`, then start the new run |
 | `run_unavailable` | 1 | The run folder cannot be written and it would hold the only copy, the recorded folder is no longer a private directory of yours holding its `run.json`, `OFFSIDER_RUN` names an unusable folder or is `off`, or the session cannot be found | Fix the folder, `offsider run status`, or set `OFFSIDER_RUN=<dir>` |
-| `focus_not_confirmed` | 5 | `type --into-id` tapped the field but it never took focus; no text was sent | Check the field with `describe-ui`, then retry |
+| `focus_not_confirmed` | 5 | `type --into-id` tapped the field but it never took focus; no text was sent. On an iOS simulator the message says when no keyboard appeared, as with its hardware keyboard connected | Check the field with `describe-ui`, then retry |
 | `text_not_accepted` | 5 | `type --replace` on Android left the field empty or shorter than the text, or a paste did not leave exactly the text: the app filters it, or focus moved | Check the field with `describe-ui`; type what it accepts |
 | `focus_mismatch` | 2 | `type --require-focus-id` found another field (or none) focused; no text was sent | Tap the field, or use `--into-id` |
 | `metro_port_not_allowed` | 7 | `rn open` found no `adb reverse` for `--port` on a USB phone, and the phone's allowance lists no such Metro port, so it set none | Ask the user to run `offsider devices add` and choose that phone and the port under Metro |

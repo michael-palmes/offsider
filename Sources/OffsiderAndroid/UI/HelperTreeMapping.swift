@@ -105,13 +105,28 @@ enum HelperTreeMapping {
         ]
         for keyboard in dump.windows where keyboard.type == "inputMethod" {
             guard let root = keyboard.root else { continue }
-            trees.append((root, AndroidTreeMapping.node(from: rawNode(root), scale: scale, rootRole: .keyboard, rootLabel: keyboard.title, windowLayer: keyboard.layer)))
+            let mapped = AndroidTreeMapping.node(from: rawNode(root), scale: scale, rootRole: .keyboard, rootLabel: keyboard.title, windowLayer: keyboard.layer)
+            trees.append((root, fittedToKeys(mapped)))
         }
         var entries: [HelperTreeEntry] = []
         for (helperRoot, mappedRoot) in trees {
             index(helperRoot, mappedRoot, generation: dump.generation, into: &entries)
         }
         return (trees.map(\.1), HelperTreeIndex(pid: pid, generation: dump.generation, entries: entries))
+    }
+
+    /// A floating keyboard's window and views span the screen around its keys, so each keyboard view is framed by what it holds.
+    static func fittedToKeys(_ node: UINode) -> UINode {
+        var fitted = node
+        fitted.children = node.children.map(fittedToKeys)
+        let drawn = fitted.children.compactMap(\.frame).filter { $0.width > 0 && $0.height > 0 }
+        guard let first = drawn.first else { return fitted }
+        let box = drawn.dropFirst().reduce(first) { box, frame in
+            let left = min(box.x, frame.x), top = min(box.y, frame.y)
+            return UIFrame(x: left, y: top, width: max(box.x + box.width, frame.x + frame.width) - left, height: max(box.y + box.height, frame.y + frame.height) - top)
+        }
+        fitted.frame = node.frame.flatMap { $0.intersection(box) } ?? box
+        return fitted
     }
 
     private static func index(_ helper: HelperNode, _ mapped: UINode, generation: Int, into entries: inout [HelperTreeEntry]) {

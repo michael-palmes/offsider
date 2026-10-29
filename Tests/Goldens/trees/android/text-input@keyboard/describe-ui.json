@@ -360,10 +360,10 @@
       "label": "Password keyboard",
       "value": null,
       "frame": {
-        "x": 0,
-        "y": 54.1,
-        "width": 411.43,
-        "height": 869.33
+        "x": 1.9,
+        "y": 587.05,
+        "width": 407.62,
+        "height": 336.38
       },
       "enabled": true,
       "state": {
@@ -395,10 +395,10 @@
           "label": null,
           "value": null,
           "frame": {
-            "x": 0,
-            "y": 54.1,
-            "width": 411.43,
-            "height": 869.33
+            "x": 1.9,
+            "y": 587.05,
+            "width": 407.62,
+            "height": 288.38
           },
           "enabled": true,
           "state": {

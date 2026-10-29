@@ -231,7 +231,15 @@ extension KeySequence: BatchConvertible {
             }
         }
 
-        return [.hidMergeable(InputEvent.composite(events))]
+        guard KeySequence.typesText(parsedKeycodes) else { return [.hidMergeable(InputEvent.composite(events))] }
+        let focus = BatchPrimitive.run { _ in
+            try await context.awaitInputDrawn()
+            try await Type.checkTextFocus(
+                readTree: { try await context.accessibilityTree(forceRefresh: true) }, device: context.device, clock: .live,
+                warn: { Console.current.notice(.warning(InputPersonView.sentence($0), agent: $0)) }, refusingSecureTarget: nil, keys: true
+            )
+        }
+        return [focus, .hidMergeable(InputEvent.composite(events))]
     }
 }
 
@@ -255,60 +263,63 @@ extension KeyCombo: BatchConvertible {
 
 extension Type: BatchConvertible {
     func toBatchPrimitives(context: BatchContext, logger: OffsiderLogger) async throws -> [BatchPrimitive] {
-        let typed = try await typingPrimitives(context: context)
+        let inputText = try resolvedText()
+        let throughSession = context.device.platform == .android || context.device.isPhysicalIOSDevice
+        if !throughSession { try TextToHIDEvents.checkSupported(inputText) }
         // A step's text sits in the batch's steps, so it never goes into a password field, whatever its source.
         let clearing = text?.isEmpty == true
-        let refusal = typed.isEmpty || clearing ? nil : Type.secureFieldRefusal(device: context.device, batch: true)
-        guard intoQuery != nil || requireFocusID != nil else {
-            let simulator = context.device.platform == .ios && !context.device.isPhysicalIOSDevice
-            guard let refusal, !simulator else { return typed }
-            let check = BatchPrimitive.run { _ in
-                if (try? await context.accessibilityTree())?.secureFocus == .secureFocused { throw refusal }
-            }
-            return [check] + typed
-        }
+        let sends = replace || !inputText.isEmpty
+        let refusal = !sends || clearing ? nil : Type.secureFieldRefusal(device: context.device, batch: true)
+        let focusTree = FocusTreeBox()
         let focus = BatchPrimitive.run { session in
-            try await ensureFocus(backend: context.backend, device: context.device, logger: logger, refusingSecureTarget: refusal) { event in
-                try await session.perform(event)
+            if intoQuery != nil || requireFocusID != nil {
+                focusTree.tree = try await ensureFocus(backend: context.backend, device: context.device, logger: logger, refusingSecureTarget: refusal) { event in
+                    try await session.perform(event)
+                }.tree
+                context.invalidateTree(sentInput: DispatchTracker.current.state != .no)
+                return
             }
-            context.invalidateTree(sentInput: DispatchTracker.current.state != .no)
+            guard sends else { return }
+            try await context.awaitInputDrawn()
+            focusTree.tree = try await Type.checkTextFocus(
+                readTree: { try await context.accessibilityTree(forceRefresh: true) }, device: context.device, clock: .live,
+                warn: { Console.current.notice(.warning(InputPersonView.sentence($0), agent: $0)) }, refusingSecureTarget: refusal
+            ).tree
         }
-        return [focus] + typed
+        if throughSession {
+            if replace {
+                return [focus, .text(inputText, replace: true)]
+            }
+            return inputText.isEmpty && intoQuery == nil && requireFocusID == nil ? [] : [focus] + (inputText.isEmpty ? [] : [.text(inputText, replace: false)])
+        }
+        return [focus] + typingPrimitives(inputText, context: context, focusTree: focusTree)
     }
 
-    private func typingPrimitives(context: BatchContext) async throws -> [BatchPrimitive] {
-        let inputText = try resolvedText()
+    /// The tree a step's focus check read, for the typing after it to pace a React Native app.
+    final class FocusTreeBox {
+        var tree: UITree?
+    }
 
-        if context.device.platform == .android || context.device.isPhysicalIOSDevice {
-            if replace {
-                return [.text(inputText, replace: true)]
+    private func typingPrimitives(_ inputText: String, context: BatchContext, focusTree: FocusTreeBox) -> [BatchPrimitive] {
+        guard !inputText.isEmpty || replace else { return [] }
+        let chunked = context.typeSubmissionMode == .chunked
+        let chunkSize = max(1, context.typeChunkSize)
+        let replacing = replace
+        return [.run { session in
+            let events = try Type.iosEvents(for: inputText, replacing: false, paced: ReactNativeBundle.isFront(in: focusTree.tree))
+            let clear = replacing ? InputEvent.selectAllAndDelete(modifier: InputEvent.commandKey, settle: InputEvent.iosClearSettle) : nil
+            guard chunked else {
+                try await session.perform(.composite((clear.map { [$0] } ?? []) + events))
+                return
             }
-            return inputText.isEmpty ? [] : [.text(inputText, replace: false)]
-        }
-
-        try TextToHIDEvents.checkSupported(inputText)
-
-        let hidEvents = try TextToHIDEvents.convertTextToHIDEvents(inputText)
-        let clear = replace ? InputEvent.selectAllAndDelete(modifier: InputEvent.commandKey, settle: InputEvent.iosClearSettle) : nil
-        guard !hidEvents.isEmpty || clear != nil else {
-            return []
-        }
-
-        switch context.typeSubmissionMode {
-        case .composite:
-            return [.hidMergeable(InputEvent.composite((clear.map { [$0] } ?? []) + hidEvents))]
-        case .chunked:
-            let chunkSize = max(1, context.typeChunkSize)
-            var primitives: [BatchPrimitive] = clear.map { [.hidBarrier($0)] } ?? []
+            if let clear { try await session.perform(clear) }
             var start = 0
-            while start < hidEvents.count {
-                let end = min(start + chunkSize, hidEvents.count)
-                let chunkEvents = Array(hidEvents[start..<end])
-                primitives.append(.hidBarrier(InputEvent.composite(chunkEvents)))
+            while start < events.count {
+                let end = min(start + chunkSize, events.count)
+                try await session.perform(.composite(Array(events[start..<end])))
                 start = end
             }
-            return primitives
-        }
+        }]
     }
 }
 

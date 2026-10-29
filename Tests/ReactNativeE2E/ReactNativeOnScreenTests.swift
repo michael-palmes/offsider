@@ -71,29 +71,29 @@ struct ReactNativeOnScreenTests {
     @Test("a key of the app's keypad over its amount field is tapped without a cover warning", arguments: RNPlatform.enabled)
     func keypadKeyOverField(platform: RNPlatform) async throws {
         let app = RNApp(platform)
-        try await app.open("keypad-test")
-        try await app.run("tap --id keypad-test-amount")
-        _ = try await app.waitForNode { $0["id"] as? String == "keypad-test-key-5" }
+        try await app.open("cover-test")
+        try await app.run("tap --id cover-test-amount")
+        _ = try await app.waitForNode { $0["id"] as? String == "cover-test-key-5" }
 
-        let result = try await app.run("tap --id keypad-test-key-5 --fail-if-covered")
+        let result = try await app.run("tap --id cover-test-key-5 --fail-if-covered")
 
         #expect(!result.stderr.contains("covered"), "\(result.stderr)")
-        _ = try await app.waitForLabel(of: "keypad-test-amount") { $0 == "Amount, 5, Points" }
+        _ = try await app.waitForLabel(of: "cover-test-amount") { $0 == "Amount, 5, Points" }
     }
 
     @Test("--label Back with the notes page over the details page pops only the top page, warning of nothing", arguments: RNPlatform.enabled)
     func backOverBack(platform: RNPlatform) async throws {
         let app = RNApp(platform)
-        try await app.open("keypad-test")
-        try await app.run("tap --id keypad-test-open-details")
-        try await app.run("tap --id keypad-test-open-notes")
-        _ = try await app.waitForNode { $0["id"] as? String == "keypad-test-notes-title" }
+        try await app.open("cover-test")
+        try await app.run("tap --id cover-test-open-details")
+        try await app.run("tap --id cover-test-open-notes")
+        _ = try await app.waitForNode { $0["id"] as? String == "cover-test-notes-title" }
 
         let result = try await app.run("tap --label Back --element-type button --fail-if-covered")
 
         #expect(!result.stderr.contains("covered"), "\(result.stderr)")
-        try await app.run("wait --id keypad-test-notes-title --gone --timeout 5")
-        try await app.run("assert --id keypad-test-details-title")
+        try await app.run("wait --id cover-test-notes-title --gone --timeout 5")
+        try await app.run("assert --id cover-test-details-title")
     }
 
     /// The first Home row whose top lies at or below the tab bar's top edge, so none of it shows.

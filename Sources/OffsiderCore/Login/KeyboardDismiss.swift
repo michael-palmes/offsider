@@ -70,6 +70,12 @@ public enum KeyboardDismiss {
         coverageFrames(in: tree).contains { $0.contains(point) }
     }
 
+    /// Keys spanning most of the screen's width and a fifth of its height, as docked keys do and a hardware keyboard's toolbar does not.
+    public static func showsKeys(in tree: UITree) -> Bool {
+        guard let viewport = tree.viewport, viewport.width > 0, viewport.height > 0 else { return true }
+        return coverageFrames(in: tree).contains { $0.width >= 0.6 * viewport.width && $0.height >= 0.2 * viewport.height }
+    }
+
     static func coverageFrames(in tree: UITree) -> [UIFrame] {
         let keyboards = tree.roots.flatMap { $0.flattened() }.filter { $0.role == .keyboard && ($0.frame?.height ?? 0) > 0 }
         guard let viewport = tree.viewport else { return keyboards.compactMap(\.frame) }

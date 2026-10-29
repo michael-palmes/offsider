@@ -372,10 +372,11 @@ struct TypeSecureFieldTests {
         #expect(backend.session.calls.count == 2)
     }
 
-    @Test("an iOS simulator reports no focus, so without --into-* argument text is typed")
-    func simulatorFailsOpen() async throws {
-        let backend = try await Self.type(["abc"], on: Self.simulator, trees: [Self.form(focusedPassword: true, platform: .ios)])
-        #expect(backend.session.calls.count == 1)
+    @Test("an iOS simulator reports the focused password field, so argument text without --into-* is refused with nothing sent")
+    func simulatorFocusedPassword() async throws {
+        let (error, backend) = try await Self.refusal(["abc"], on: Self.simulator, trees: [Self.form(focusedPassword: true, platform: .ios)])
+        #expect(error?.reason == .secureFieldArgument)
+        #expect(backend.session.calls.isEmpty)
     }
 
     @Test("login's own typing, which never passes the refusal, still reaches a password field")

@@ -1,139 +1,79 @@
-import { useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useRef, useState } from 'react';
+import { Pressable, StyleSheet, TextInput, View } from 'react-native';
 
-import { colours, fixtureLog, FullPage, Readout, Screen, Target, useHardwareBack } from '../fixtures';
+import { colours, Readout, Screen, Target } from '../fixtures';
 
-const keys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '0'] as const;
+const keys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0', 'Delete'];
 
+/** A price field fed only by the app's own keypad: typed keys never reach its state, and the wrapper hides the input from the tree. */
 export function KeypadTestScreen() {
-  const insets = useSafeAreaInsets();
   const [amount, setAmount] = useState('');
-  const [keypad, setKeypad] = useState(false);
-  const [pressed, setPressed] = useState('None');
-  const [pages, setPages] = useState(0);
+  const [open, setOpen] = useState(false);
+  const field = useRef<TextInput>(null);
 
-  const press = (what: string) => {
-    fixtureLog('keypad-test', `pressed ${what}`);
-    setPressed(what);
+  const press = (key: string) => {
+    setAmount((current) => {
+      if (key === 'Delete') {
+        return current.slice(0, -1);
+      }
+      if (key === '.' && current.includes('.')) {
+        return current;
+      }
+      return current + key;
+    });
   };
 
-  useHardwareBack(pages > 0, () => setPages((current) => current - 1));
-
   return (
-    <View style={styles.root}>
-      <Screen route="keypad-test">
-        <Readout id="keypad-test-pressed" label={`Keypad Pressed: ${pressed}`} value={pressed} style={styles.readout} />
-        <Pressable
-          testID="keypad-test-copy-row"
-          accessibilityRole="button"
-          accessibilityLabel="Copy Reference, Reference Info"
-          onPress={() => press('Copy Row')}
-          style={styles.copyRow}
-        >
-          <Text importantForAccessibility="no" style={styles.copyText}>
-            Copy Reference
-          </Text>
-          <Target id="keypad-test-copy-info" label="Reference Info" onPress={() => press('Reference Info')} style={styles.info} />
-        </Pressable>
-        <Target id="keypad-test-open-details" label="Open Details" onPress={() => setPages(1)} style={styles.action} />
-        <Pressable
-          testID="keypad-test-amount"
-          accessibilityRole="button"
-          accessibilityLabel={`Amount, ${amount || '0'}, Points`}
-          onPress={() => {
-            fixtureLog('keypad-test', 'amount pressed');
-            setKeypad(true);
-          }}
-          style={styles.amount}
-        >
-          <Text importantForAccessibility="no" style={styles.amountText}>
-            {amount || '0'} pts
-          </Text>
-        </Pressable>
-      </Screen>
-      {keypad && (
-        <View testID="keypad-test-keypad" style={[styles.keypad, { paddingBottom: insets.bottom + 8 }]}>
+    <Screen route="keypad-test" style={styles.content}>
+      <Pressable
+        testID="keypad-test-price"
+        accessible
+        accessibilityRole="button"
+        accessibilityLabel={`Price, ${amount || '0.00'}`}
+        onPress={() => {
+          setOpen(true);
+          field.current?.focus();
+        }}
+        style={styles.price}
+      >
+        <View importantForAccessibility="no-hide-descendants" accessibilityElementsHidden pointerEvents="none">
+          <TextInput
+            ref={field}
+            value={amount}
+            placeholder="0.00"
+            placeholderTextColor={colours.secondary}
+            showSoftInputOnFocus={false}
+            onChangeText={() => {}}
+            style={styles.field}
+          />
+        </View>
+      </Pressable>
+      <Readout id="keypad-test-value" label={`Amount: ${amount || 'empty'}`} value={amount || 'empty'} />
+      {open && (
+        <View testID="keypad-test-keys" style={styles.keys}>
           {keys.map((key) => (
-            <Pressable
-              key={key}
-              testID={`keypad-test-key-${key}`}
-              accessibilityRole="keyboardkey"
-              accessibilityLabel={key}
-              onPress={() => {
-                fixtureLog('keypad-test', `key ${key}`);
-                setAmount((current) => (current + key).slice(0, 9));
-              }}
-              style={({ pressed: down }) => [styles.key, down && styles.keyDown]}
-            >
-              <Text importantForAccessibility="no" style={styles.keyText}>
-                {key}
-              </Text>
-            </Pressable>
+            <Target key={key} id={`keypad-key-${key.toLowerCase()}`} label={key} onPress={() => press(key)} style={styles.key} />
           ))}
-          <Target id="keypad-test-done" label="Done" onPress={() => setKeypad(false)} style={styles.done} />
+          <Target
+            id="keypad-test-done"
+            label="Done"
+            onPress={() => {
+              setOpen(false);
+              field.current?.blur();
+            }}
+            style={styles.done}
+          />
         </View>
       )}
-      {pages >= 1 && (
-        <FullPage
-          id="keypad-test-details"
-          backId="keypad-test-details-back"
-          titleId="keypad-test-details-title"
-          title="Details"
-          onBack={() => setPages(0)}
-        >
-          <View style={styles.pageBody}>
-            <Target id="keypad-test-open-notes" label="Open Notes" onPress={() => setPages(2)} />
-          </View>
-        </FullPage>
-      )}
-      {pages >= 2 && (
-        <FullPage
-          id="keypad-test-notes"
-          backId="keypad-test-notes-back"
-          titleId="keypad-test-notes-title"
-          title="Notes"
-          onBack={() => setPages(1)}
-        />
-      )}
-    </View>
+    </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1 },
-  readout: { padding: 16, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colours.separator },
-  copyRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginHorizontal: 16,
-    marginTop: 16,
-    paddingLeft: 16,
-    paddingRight: 8,
-    height: 64,
-    borderRadius: 10,
-    backgroundColor: colours.panel,
-  },
-  copyText: { fontSize: 17, color: colours.text },
-  info: { width: 120, minHeight: 40 },
-  action: { marginHorizontal: 16, marginTop: 16 },
-  amount: { flex: 1, margin: 16, alignItems: 'center', paddingTop: 48, borderRadius: 10, backgroundColor: colours.panel },
-  amountText: { fontSize: 40, fontWeight: '600', color: colours.text },
-  keypad: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    bottom: 0,
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    paddingHorizontal: 8,
-    paddingTop: 8,
-    backgroundColor: colours.separator,
-  },
-  key: { width: '33.33%', height: 56, alignItems: 'center', justifyContent: 'center' },
-  keyDown: { opacity: 0.5 },
-  keyText: { fontSize: 24, color: colours.text },
-  done: { width: '66.66%', height: 56 },
-  pageBody: { padding: 16, gap: 16 },
+  content: { padding: 16, gap: 16 },
+  price: { borderRadius: 8, borderWidth: 1, borderColor: colours.separator },
+  field: { height: 48, paddingHorizontal: 12, fontSize: 22, color: colours.text },
+  keys: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, justifyContent: 'center' },
+  key: { width: '30%', height: 52, alignItems: 'center', justifyContent: 'center', borderRadius: 8, backgroundColor: colours.panel },
+  done: { width: '94%', height: 48, alignItems: 'center', justifyContent: 'center', borderRadius: 8 },
 });

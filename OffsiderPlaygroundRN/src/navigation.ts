@@ -75,6 +75,18 @@ export const routeInfo = {
     menuTitle: 'Key Sequence',
     subtitle: 'Detects CLI key sequences',
   },
+  'controlled-search-test': {
+    section: 'Input & Text',
+    title: 'Controlled Search',
+    menuTitle: 'Controlled Search',
+    subtitle: 'Search field that renders on every key',
+  },
+  'keypad-test': {
+    section: 'Input & Text',
+    title: 'Keypad Test',
+    menuTitle: 'Keypad Test',
+    subtitle: 'Price field fed by an in-app keypad',
+  },
   'button-test': {
     section: 'Hardware',
     title: 'Button Test',
@@ -207,11 +219,11 @@ export const routeInfo = {
     menuTitle: 'Tab Bar Test',
     subtitle: 'A list under a tab bar, a footer bar and a mounted tab',
   },
-  'keypad-test': {
+  'cover-test': {
     section: 'Real-world RN',
-    title: 'Keypad',
-    menuTitle: 'Keypad Test',
-    subtitle: 'An app keypad over a field, a button in a button',
+    title: 'Cover',
+    menuTitle: 'Cover Test',
+    subtitle: 'An app keypad over a field, stacked pages',
   },
   'user-switch-test': {
     section: 'Real-world RN',

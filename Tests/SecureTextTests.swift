@@ -9,6 +9,8 @@ import Testing
 struct SecureTextTests {
     static let sentinel = "S3NT1NEL"
     static let device = DeviceID(rawValue: "fake-device", platform: .ios)
+    /// A screen whose text field has focus, so plain typing goes ahead.
+    static let focusedField = FakeUI.tree([FakeUI.node(.textField, id: "field", frame: FakeUI.frame(20, 200, 360, 44), state: UIState(focused: true))])
 
     static func passwordField(value: String? = "••••••••", frame: UIFrame? = FakeUI.frame(16, 270, 361, 44), focused: Bool? = nil, platform: DevicePlatform = .ios) -> UINode {
         FakeUI.node(.secureTextField, id: "password-field", label: "Password", value: value, frame: frame, state: UIState(focused: focused), platform: platform)
@@ -138,7 +140,7 @@ struct SecureTextTests {
 
     @Test("type logs only the character count")
     func typeLogsCount() async throws {
-        let backend = FakeDeviceBackend(trees: [])
+        let backend = FakeDeviceBackend(trees: [Self.focusedField])
         let (logger, lines) = Self.capturingLogger()
         try await Type.parse([Self.sentinel, "--device", Self.device.rawValue])
             .execute(on: DeviceRouter.Route(backend: backend, device: Self.device), progress: nil, logger: logger)
@@ -196,7 +198,7 @@ struct SecureTextTests {
 
     @Test("batch --json masks the text of a type step and keeps its flags")
     func batchMasksType() async throws {
-        let backend = FakeDeviceBackend(trees: [FakeUI.tree()])
+        let backend = FakeDeviceBackend(trees: [Self.focusedField])
         let result = try await Self.batch(["type \(Self.sentinel) --replace"], on: backend)
 
         #expect(result.records.map(\.line) == ["type <8 characters> --replace"])
@@ -278,7 +280,7 @@ struct SecureTextTests {
 
     @Test("a batch type step after -- types dash-leading text")
     func batchTerminatedText() async throws {
-        let backend = FakeDeviceBackend(trees: [FakeUI.tree()])
+        let backend = FakeDeviceBackend(trees: [Self.focusedField])
         let result = try await Self.batch(["type -- -\(Self.sentinel)"], on: backend)
         #expect(result.records.map(\.ok) == [true])
         #expect(result.records.map(\.line) == ["type -- <9 characters>"])

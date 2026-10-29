@@ -7,6 +7,8 @@ import { BatchTestScreen } from './BatchTestScreen';
 import { ButtonTestScreen } from './ButtonTestScreen';
 import { ChoiceTestScreen } from './ChoiceTestScreen';
 import { ContextMenuTestScreen } from './ContextMenuTestScreen';
+import { ControlledSearchTestScreen } from './ControlledSearchTestScreen';
+import { CoverTestScreen } from './CoverTestScreen';
 import { DrawerTestScreen } from './DrawerTestScreen';
 import { EnvironmentTestScreen } from './EnvironmentTestScreen';
 import { GesturePresetsScreen } from './GesturePresetsScreen';
@@ -51,6 +53,8 @@ export const screens: Record<RouteId, ComponentType> = {
   'text-input': TextInputScreen,
   'key-press': KeyPressScreen,
   'key-sequence': KeySequenceScreen,
+  'controlled-search-test': ControlledSearchTestScreen,
+  'keypad-test': KeypadTestScreen,
   'button-test': ButtonTestScreen,
   'batch-test': BatchTestScreen,
   'batch-login-flow': BatchLoginFlowScreen,
@@ -73,6 +77,6 @@ export const screens: Record<RouteId, ComponentType> = {
   'live-ticker': LiveTickerTestScreen,
   'drawer-test': DrawerTestScreen,
   'tab-bar-test': TabBarTestScreen,
-  'keypad-test': KeypadTestScreen,
+  'cover-test': CoverTestScreen,
   'user-switch-test': UserSwitchTestScreen,
 };
