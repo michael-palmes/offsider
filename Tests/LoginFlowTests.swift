@@ -466,7 +466,7 @@ struct LoginFlowTests {
         #expect(script.typed == [username, password])
         #expect(script.taps.count == 1)
         #expect(report.submitLabel == "Log in")
-        #expect(script.hitTests <= 6)
+        #expect(script.hitTests <= 12)
     }
 
     @Test("with no hit-test, or one that reaches the widget, the covered form is still refused with nothing typed")
@@ -481,6 +481,24 @@ struct LoginFlowTests {
             #expect(error.reason == .selectorNotFound)
             #expect(script.typed.isEmpty)
         }
+    }
+
+    @Test("a widget that opens over the submit button after typing is hit-tested again, and the covered submit is not tapped")
+    func widgetOverSubmitAfterTyping() async throws {
+        let script = script(buttonEnabled: true)
+        script.trees = script.trees.map(underWidget)
+        let controls = SignInFixture.tree().roots[0].flattened()
+        let challenge = FakeUI.node(.text, label: "Confirm you are here", frame: FakeUI.frame(16, 405, 370, 64), pid: 200)
+        script.hit = { point in
+            if script.typed.count == 2, point.y > 700 { return challenge }
+            return controls.last { $0.role != .application && $0.frame?.contains(point) == true }
+        }
+
+        let stopped = try #require(await #expect(throws: LoginFailure.self) { try await self.run(script) })
+
+        #expect(stopped.reason == .selectorNotFound)
+        #expect(script.typed == [username, password])
+        #expect(script.taps.allSatisfy { $0.y < 700 })
     }
 
     @Test("a form the tree shows in front makes no hit-test")

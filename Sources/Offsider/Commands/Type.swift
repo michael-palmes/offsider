@@ -131,8 +131,7 @@ struct Type: AsyncParsableCommand, VerifiableCommand {
         var tree: UITree?
     }
 
-    /// `--into-*` taps the field and waits for focus; `--require-focus-id` checks it; plain text needs a field with focus.
-    /// Each throws before any text is sent.
+    /// `--into-*` taps the field and waits for focus, `--require-focus-id` checks it, and plain text needs one; each throws before sending.
     @MainActor
     @discardableResult
     func ensureFocus(
@@ -213,8 +212,7 @@ struct Type: AsyncParsableCommand, VerifiableCommand {
         )
     }
 
-    /// Plain text: a password field refuses an argument, and nothing goes out unless a field has focus, since keys reaching no field can act as app shortcuts.
-    /// A physical iPhone's runner refuses typing with no keyboard focus itself, so only its password field is checked here.
+    /// Nothing goes out unless a field has focus; a physical iPhone's runner refuses that itself, so only its password field is checked.
     @MainActor
     static func checkTextFocus(
         readTree: @MainActor () async throws -> UITree,
@@ -277,8 +275,7 @@ struct Type: AsyncParsableCommand, VerifiableCommand {
         return focused.first { $0.role.isTextInput } ?? focused.first
     }
 
-    /// The field, or a focused field inside its frame, has focus. With `keyboardOnly`, on an iOS simulator whose tree names no focused element,
-    /// a keyboard that shows while the field is still on screen counts too.
+    /// The field, or a focused field in its frame, has focus; with `keyboardOnly` and no element focused, a keyboard over the field still there counts.
     static func hasFocus(_ field: UINode?, query: AccessibilityQuery, in tree: UITree, keyboardOnly: Bool) -> Bool {
         let nodes = tree.roots.flatMap { $0.flattened() }
         let focused = nodes.filter { $0.state.focused == true }

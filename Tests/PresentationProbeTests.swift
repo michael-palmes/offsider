@@ -72,18 +72,18 @@ struct PresentationProbeTests {
         PresentationProbe.finding(in: tree, hit: hit) { pid in pid == webContentPID ? "/System/Library/Frameworks/WebKit.framework/XPCServices/com.apple.WebKit.WebContent.xpc/Contents/MacOS/com.apple.WebKit.WebContent" : nil }
     }
 
-    @Test("web content inside a view of the app's smaller than the screen, as a widget in a form, presents nothing")
+    @Test("web content inside the app's own web view smaller than the screen, as a widget in a form, presents nothing")
     func hostedWebContentIsNotPresented() {
         let form = Self.screen([
             Self.node(.textField, id: "email", frame: FakeUI.frame(16, 300, 370, 34)),
-            Self.node(.group, id: "widget", frame: FakeUI.frame(16, 405, 370, 64)),
+            Self.node(.group, id: "widget", frame: FakeUI.frame(16, 405, 370, 64), children: [Self.node(.scrollView, frame: FakeUI.frame(16, 405, 370, 64))]),
         ])
         let hit = Self.node(.text, label: "Confirm you are here", frame: FakeUI.frame(40, 420, 200, 20), pid: Self.webContentPID)
 
         #expect(Self.webFinding(form, hit: hit) == PresentationFinding())
     }
 
-    @Test("web content with no small app container around it, only a control, or from another process than WebKit's, is still presented")
+    @Test("web content with no small scroll view of the app around it, only a card or a control, or from another process than WebKit's, is still presented")
     func unhostedWebContentIsPresented() throws {
         let hit = Self.node(.text, label: "Confirm you are here", frame: FakeUI.frame(40, 420, 200, 20), pid: Self.webContentPID)
         let screenSized = Self.screen([Self.node(.group, id: "page", frame: FakeUI.frame(0, 0, 402, 874))])
@@ -91,8 +91,11 @@ struct PresentationProbeTests {
         #expect(try #require(Self.webFinding(screenSized, hit: hit).presented).process == "com.apple.WebKit.WebContent")
         #expect(try #require(Self.webFinding(Self.home, hit: hit).presented).label == "Confirm you are here")
 
+        let card = Self.screen([Self.node(.group, id: "card", frame: FakeUI.frame(16, 300, 370, 300))])
+        #expect(Self.webFinding(card, hit: hit).presented != nil)
+
         let picker = Self.node(.button, label: "Cancel", frame: FakeUI.frame(40, 420, 200, 20), pid: Self.foreignPID)
-        let form = Self.screen([Self.node(.group, id: "widget", frame: FakeUI.frame(16, 405, 370, 64))])
+        let form = Self.screen([Self.node(.scrollView, id: "widget", frame: FakeUI.frame(16, 405, 370, 64))])
         #expect(Self.finding(form, hit: picker).presented?.process == "PickerService")
     }
 

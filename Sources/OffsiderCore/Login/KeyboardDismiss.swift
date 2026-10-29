@@ -70,8 +70,7 @@ public enum KeyboardDismiss {
         coverageFrames(in: tree).contains { $0.contains(point) }
     }
 
-    /// True when the keys span most of the screen's width and a fifth of its height, as a docked keyboard's do; a toolbar shown for a
-    /// hardware keyboard does not, and Back then goes to the app instead of hiding it.
+    /// Keys spanning most of the screen's width and a fifth of its height, as docked keys do and a hardware keyboard's toolbar does not.
     public static func showsKeys(in tree: UITree) -> Bool {
         guard let viewport = tree.viewport, viewport.width > 0, viewport.height > 0 else { return true }
         return coverageFrames(in: tree).contains { $0.width >= 0.6 * viewport.width && $0.height >= 0.2 * viewport.height }

@@ -377,8 +377,7 @@ struct Tap: AsyncParsableCommand, VerifiableCommand {
         }
     }
 
-    /// A tap there would press a key instead, so `tap` and `type --into-id` refuse before sending anything.
-    /// With `tree`, Android's Back is offered only for docked keys: with just a toolbar shown, Back goes to the app and can leave the screen.
+    /// `tap` and `type --into-id` refuse; with `tree`, Back is offered only over docked keys, as over a toolbar it goes to the app.
     static func keyboardCoverError(selector: String, at point: (x: Double, y: Double), device: DeviceID, tree: UITree? = nil) -> CLIError {
         let pointText = VerifyOutput.pointDescription(x: point.x, y: point.y)
         let back = device.platform == .android && tree.map(KeyboardDismiss.showsKeys(in:)) != false

@@ -14,7 +14,7 @@ struct KeySequence: AsyncParsableCommand {
           offsider key-sequence 40,40,40 --device DEVICE_ID          # Press Enter 3 times
           offsider key-sequence 224,4,225 --device DEVICE_ID        # Ctrl+A (Ctrl=224, A=4, release Ctrl=225)
 
-        Letters, digits, space and punctuation need a text field with focus: with none, nothing is pressed (exit 1,
+        Letters, digits, space and punctuation (the keypad's too) need a text field with focus: with none, nothing is pressed (exit 1,
         no_focused_field), since keys that reach no field can act as app shortcuts. Return, Tab, arrows and other
         keys go out unchecked.
         """
@@ -80,9 +80,9 @@ struct KeySequence: AsyncParsableCommand {
         }
     }
 
-    /// Letters, digits, space and punctuation type text, so they need a field with focus; Return, Tab, arrows and modifiers do not.
+    /// Letters, digits, space, punctuation and the keypad's digits and operators type text; Return, Tab, arrows and modifiers do not.
     static func typesText(_ keycodes: [Int]) -> Bool {
-        keycodes.contains { (4...39).contains($0) || (44...56).contains($0) }
+        keycodes.contains { (4...39).contains($0) || (44...56).contains($0) || (84...87).contains($0) || (89...99).contains($0) }
     }
 
     @MainActor

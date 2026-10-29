@@ -110,7 +110,9 @@ enum LoginFlow {
                 // A read taken while the keyboard animates away can miss the form for a moment.
                 tree = try await readUntil({ (try? LoginForm.detect(in: $0, profile: profile, reachable: reachable)) != nil }, services: services)
             }
-            let filled = try detect(in: tree, profile: profile, afterTyping: true, reachable: reachable)
+            // A widget can open over the form after typing, so what a hit-test reached before is checked again.
+            let reachableNow = (try? LoginForm.detect(in: tree, profile: profile)) == nil ? await reachableByHitTest(in: tree, profile: profile, services: services) : []
+            let filled = try detect(in: tree, profile: profile, afterTyping: true, reachable: reachableNow)
             let step = try await settleTurnstile(in: tree, timeout: timeout, services: services)
             report = try await waitUntilEnabled(filled.submit, app: app, key: key, turnstile: step, timeout: timeout, services: services)
         } catch {
@@ -240,8 +242,7 @@ enum LoginFlow {
         }
     }
 
-    /// The tree's order can put a view from another process, such as a web widget inside the form, over the fields; a hit-test at
-    /// each field's own point, as `tap --fail-if-covered` makes, says what a touch there reaches.
+    /// A hit-test at each hidden control's own point, as `tap --fail-if-covered` makes, says what a touch there reaches.
     private static func reachableByHitTest(in tree: UITree, profile: LoginProfile?, services: Services) async -> [UINode] {
         var reachable: [UINode] = []
         for node in LoginForm.hiddenCandidates(in: tree, profile: profile) {

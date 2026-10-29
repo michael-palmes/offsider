@@ -163,15 +163,14 @@ public enum LoginForm {
         return native.pid
     }
 
-    /// On-screen sign-in candidates the tree places behind another node, for a hit-test at each one's own point: a view drawn by another
-    /// process inside the form, such as a web widget, can sit last in the tree with a frame that reaches over the fields.
+    /// Sign-in controls the tree places behind another node, such as a web widget's content listed last over the form, for a hit-test each.
     public static func hiddenCandidates(in tree: UITree, profile: LoginProfile? = nil, limit: Int = 6) -> [UINode] {
         let pinned = [profile?.identity, profile?.password, profile?.submit].compactMap { $0 }
         let viewport = tree.viewport
         let found = visibleControls(in: tree).filter { node in
             guard let frame = node.frame, frame.width > 0, frame.height > 0, viewport.map(frame.isVisible(in:)) != false else { return false }
             guard node.id?.isEmpty == false || node.label?.isEmpty == false, !isFrontmost(node, in: tree) else { return false }
-            if pinned.contains(where: { field in (field.id == nil || node.id == field.id) && (field.label == nil || node.label == field.label) }) { return true }
+            if pinned.contains(where: { field in (field.id != nil || field.label != nil) && (field.id == nil || node.id == field.id) && (field.label == nil || node.label == field.label) }) { return true }
             switch node.role {
             case .textField, .searchField: return isIdentityName(node)
             case .secureTextField: return true

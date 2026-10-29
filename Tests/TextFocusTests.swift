@@ -36,6 +36,13 @@ struct TextFocusTests {
         #expect(node.id == "price")
     }
 
+    @Test("an Android web view holding input focus takes text, as its page's input does")
+    func androidWebView() {
+        let web = UINode(role: .group, id: "page", frame: FakeUI.frame(0, 100, 402, 600), state: UIState(focused: true),
+                         native: .android(AndroidNativeAttributes(className: "android.webkit.WebView")))
+        #expect(TextFocus.read(FakeUI.tree(platform: .android, [web])).takesText)
+    }
+
     @Test("a text field inside the keyboard, such as its own search box, is not the app's focus")
     func keyboardFieldIgnored() {
         let gboard = FakeUI.node(.keyboard, frame: FakeUI.frame(0, 0, 402, 874), platform: .android, children: [
@@ -137,7 +144,8 @@ struct TextFocusTests {
     func keySequence() async throws {
         #expect(KeySequence.typesText([34, 36, 39]))
         #expect(KeySequence.typesText([224, 4, 225]))
-        #expect(!KeySequence.typesText([40, 41, 42, 43, 79, 80, 81, 82]))
+        #expect(KeySequence.typesText([89, 90, 91]))
+        #expect(!KeySequence.typesText([40, 41, 42, 43, 79, 80, 81, 82, 88]))
 
         let tree = FakeUI.tree(platform: .android, [Self.field("search", platform: .android)])
         let backend = FakeDeviceBackend(platform: .android, trees: [tree])

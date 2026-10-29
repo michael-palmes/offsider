@@ -115,8 +115,7 @@ enum HelperTreeMapping {
         return (trees.map(\.1), HelperTreeIndex(pid: pid, generation: dump.generation, entries: entries))
     }
 
-    /// A floating or compact keyboard's window, and the views holding its keys, span the screen around a strip of keys,
-    /// so each keyboard view's frame becomes the box around what it holds.
+    /// A floating keyboard's window and views span the screen around its keys, so each keyboard view is framed by what it holds.
     static func fittedToKeys(_ node: UINode) -> UINode {
         var fitted = node
         fitted.children = node.children.map(fittedToKeys)

@@ -63,11 +63,11 @@ public enum PresentationProbe {
         return finding
     }
 
-    /// WebKit draws an app's own web view, such as a widget inside a form, from its web content process: a container of the app's smaller than the screen holds it.
+    /// WebKit draws an app's own web view, such as a widget in a form, from its web content process inside the view's scroll view, smaller than the screen.
     static func isHostedWebContent(_ hit: UINode, process: String?, in flat: [UINode], hostPID: Int?, viewport: UIFrame?) -> Bool {
         guard let process, process.hasPrefix(webContentProcess), let hostPID, let frame = hit.frame, let viewport else { return false }
         return flat.contains { node in
-            guard node.iosPID == hostPID, [.group, .other, .scrollView].contains(node.role), let host = node.frame else { return false }
+            guard node.iosPID == hostPID, node.role == .scrollView, let host = node.frame else { return false }
             let screenSized = host.width >= screenShare * viewport.width && host.height >= screenShare * viewport.height
             return !screenSized && host.encloses(frame, tolerance: 1)
         }
