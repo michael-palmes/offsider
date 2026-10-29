@@ -10,6 +10,7 @@ import { ContextMenuTestScreen } from './ContextMenuTestScreen';
 import { EnvironmentTestScreen } from './EnvironmentTestScreen';
 import { GesturePresetsScreen } from './GesturePresetsScreen';
 import { HoldDragScreen } from './HoldDragScreen';
+import { KeypadTestScreen } from './KeypadTestScreen';
 import { KeyPressScreen } from './KeyPressScreen';
 import { KeySequenceScreen } from './KeySequenceScreen';
 import { LiveTickerTestScreen } from './LiveTickerTestScreen';
@@ -48,6 +49,7 @@ export const screens: Record<RouteId, ComponentType> = {
   'text-input': TextInputScreen,
   'key-press': KeyPressScreen,
   'key-sequence': KeySequenceScreen,
+  'keypad-test': KeypadTestScreen,
   'button-test': ButtonTestScreen,
   'batch-test': BatchTestScreen,
   'batch-login-flow': BatchLoginFlowScreen,

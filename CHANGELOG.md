@@ -18,6 +18,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - `credential` takes its action first and exactly as written (exit 64 otherwise), so those rules see every write.
 - `wait --any` with one selector is a plain wait for it rather than exit 64.
 - On an iOS simulator `describe-ui` reports `state.focused` on the field with keyboard focus, so `type --require-focus-id` works there.
+- Plain `type`, with no `--into-*` or `--require-focus-id`, sends nothing unless a text field has focus (or an iOS simulator shows a keyboard) and exits 1 `no_focused_field`: keys that reached no field could act as app shortcuts, and a React Native dev build reloaded on `r`. Focus on something that takes no text, such as the button of an app's own number keypad, refuses too, as does an Android keyboard up for a field hidden from accessibility, where `type` and `key-sequence` used to report `ok` with nothing landed. `key-sequence` with letters, digits, space or punctuation and batch `type` steps follow the same rule. On an iOS simulator the check reads the screen first, about 0.6 s. Argument text into the focused password field is refused on an iOS simulator too, as on Android.
 
 ### Fixed
 

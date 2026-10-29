@@ -75,6 +75,12 @@ export const routeInfo = {
     menuTitle: 'Key Sequence',
     subtitle: 'Detects CLI key sequences',
   },
+  'keypad-test': {
+    section: 'Input & Text',
+    title: 'Keypad Test',
+    menuTitle: 'Keypad Test',
+    subtitle: 'Price field fed by an in-app keypad',
+  },
   'button-test': {
     section: 'Hardware',
     title: 'Button Test',

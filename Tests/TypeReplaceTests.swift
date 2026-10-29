@@ -43,39 +43,42 @@ struct TypeReplaceTests {
         #expect(try Type.iosEvents(for: "", replacing: true) == [Self.iosClear])
     }
 
-    @Test("an iOS composite batch step puts the clear and the typing in one mergeable composite")
-    func iosBatchComposite() async throws {
-        let primitives = try await Self.primitives(["--replace", "bye"], Self.context(.ios))
-        guard primitives.count == 1, case .hidMergeable(.composite(let events)) = primitives[0] else {
-            Issue.record("expected one mergeable composite, got \(primitives)")
-            return
+    /// What an iOS batch step sends once it runs, on a screen whose field has focus.
+    static func iosBatchSent(_ arguments: [String], mode: TypeSubmissionMode) async throws -> [InputEvent] {
+        let session = RecordingInputSession()
+        let focused = FakeUI.tree([FakeUI.node(.textField, id: "field", frame: FakeUI.frame(20, 200, 360, 44), state: UIState(focused: true))])
+        let backend = FakeDeviceBackend(platform: .ios, trees: [focused], session: session)
+        let context = BatchContext(
+            backend: backend, device: DeviceID(rawValue: UUID().uuidString, platform: .ios), axCachePolicy: .perBatch, typeSubmissionMode: mode, typeChunkSize: 2
+        )
+        let primitives = try await Self.primitives(arguments, context)
+        try await BatchPlanRunner(session: session, logger: OffsiderLogger()).run(BatchPlan(primitives: primitives))
+        return session.calls.compactMap { call in
+            guard case .perform(let event) = call else { return nil }
+            return event
         }
-        #expect(events == (try Type.iosEvents(for: "bye", replacing: true)))
     }
 
-    @Test("an iOS chunked batch step sends the clear as its own barrier first")
+    @Test("an iOS composite batch step sends the clear and the typing in one composite")
+    func iosBatchComposite() async throws {
+        #expect(try await Self.iosBatchSent(["--replace", "bye"], mode: .composite) == [.composite(try Type.iosEvents(for: "bye", replacing: true))])
+    }
+
+    @Test("an iOS chunked batch step sends the clear on its own first, then the typing in chunks")
     func iosBatchChunked() async throws {
-        let primitives = try await Self.primitives(["--replace", "bye"], Self.context(.ios, mode: .chunked))
-        guard case .hidBarrier(let clear) = primitives.first else {
-            Issue.record("expected the clear first, got \(primitives)")
-            return
-        }
-        #expect(clear == Self.iosClear)
-        let typed = primitives.dropFirst().flatMap { primitive -> [InputEvent] in
-            guard case .hidBarrier(.composite(let events)) = primitive else { return [] }
+        let sent = try await Self.iosBatchSent(["--replace", "bye"], mode: .chunked)
+        #expect(sent.first == Self.iosClear)
+        let typed = sent.dropFirst().flatMap { event -> [InputEvent] in
+            guard case .composite(let events) = event else { return [] }
             return events
         }
         #expect(typed == (try Type.iosEvents(for: "bye", replacing: false)))
+        #expect(sent.count > 2)
     }
 
     @Test("an iOS batch --replace with empty text still clears")
     func iosBatchClearOnly() async throws {
-        let primitives = try await Self.primitives(["--replace", ""], Self.context(.ios, mode: .chunked))
-        guard primitives.count == 1, case .hidBarrier(let clear) = primitives[0] else {
-            Issue.record("expected the clear alone, got \(primitives)")
-            return
-        }
-        #expect(clear == Self.iosClear)
+        #expect(try await Self.iosBatchSent(["--replace", ""], mode: .chunked) == [Self.iosClear])
     }
 
     @Test("an Android batch step replaces, even with empty text, and plain type does not (past its password-field check)")

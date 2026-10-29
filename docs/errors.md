@@ -101,7 +101,7 @@ A `--verify --json` report also carries `ignored` (`{node, reason}` entries left
 | `not_a_slider` | 1 | `slider` matched something that is not a slider | Use `--element-type slider` or a narrower selector |
 | `slider_unreadable` | 1 | The slider exposes no numeric value | Use `tap` or `drag` instead |
 | `slider_unverified` | 1 | The slider did not reach the value | Retry, or read its value with `describe-ui` |
-| `no_focused_field` | 1 | `type --replace` found no focused text field | Tap the field first |
+| `no_focused_field` | 1 | `type` (`--replace` too) or a `key-sequence` of letters, digits or punctuation found no text field with focus, or focus on something that takes no text, such as an app's own keypad; nothing was sent | Tap the field first, or use `type --into-id`; tap an app keypad's keys |
 | `field_not_editable` | 1 | The focused element is not a text field | Tap the text field first |
 | `unsupported_text` | 1 | The text has characters the device cannot type | Remove them, or use `type --replace` on Android |
 | `secure_paste_refused` | 1 | Typing into a password field would use the clipboard | Use `type --replace` |

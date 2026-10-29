@@ -229,7 +229,15 @@ extension KeySequence: BatchConvertible {
             }
         }
 
-        return [.hidMergeable(InputEvent.composite(events))]
+        guard KeySequence.typesText(parsedKeycodes) else { return [.hidMergeable(InputEvent.composite(events))] }
+        let focus = BatchPrimitive.run { _ in
+            try await context.awaitInputDrawn()
+            try await Type.checkTextFocus(
+                readTree: { try await context.accessibilityTree(forceRefresh: true) }, device: context.device, clock: .live,
+                warn: { Console.current.notice(.warning(InputPersonView.sentence($0), agent: $0)) }, refusingSecureTarget: nil, keys: true
+            )
+        }
+        return [focus, .hidMergeable(InputEvent.composite(events))]
     }
 }
 
@@ -253,35 +261,40 @@ extension KeyCombo: BatchConvertible {
 
 extension Type: BatchConvertible {
     func toBatchPrimitives(context: BatchContext, logger: OffsiderLogger) async throws -> [BatchPrimitive] {
-        let typed = try await typingPrimitives(context: context)
+        let inputText = try resolvedText()
+        let throughSession = context.device.platform == .android || context.device.isPhysicalIOSDevice
         // A step's text sits in the batch's steps, so it never goes into a password field, whatever its source.
         let clearing = text?.isEmpty == true
-        let refusal = typed.isEmpty || clearing ? nil : Type.secureFieldRefusal(device: context.device, batch: true)
-        guard intoQuery != nil || requireFocusID != nil else {
-            let simulator = context.device.platform == .ios && !context.device.isPhysicalIOSDevice
-            guard let refusal, !simulator else { return typed }
-            let check = BatchPrimitive.run { _ in
-                if (try? await context.accessibilityTree())?.secureFocus == .secureFocused { throw refusal }
-            }
-            return [check] + typed
-        }
+        let sends = replace || !inputText.isEmpty
+        let refusal = !sends || clearing ? nil : Type.secureFieldRefusal(device: context.device, batch: true)
+        let typed = try typingPrimitives(inputText, context: context)
         let focus = BatchPrimitive.run { session in
-            try await ensureFocus(backend: context.backend, device: context.device, logger: logger, refusingSecureTarget: refusal) { event in
-                try await session.perform(event)
+            if intoQuery != nil || requireFocusID != nil {
+                try await ensureFocus(backend: context.backend, device: context.device, logger: logger, refusingSecureTarget: refusal) { event in
+                    try await session.perform(event)
+                }
+                context.invalidateTree(sentInput: DispatchTracker.current.state != .no)
+                return
             }
-            context.invalidateTree(sentInput: DispatchTracker.current.state != .no)
+            guard sends else { return }
+            try await context.awaitInputDrawn()
+            try await Type.checkTextFocus(
+                readTree: { try await context.accessibilityTree(forceRefresh: true) }, device: context.device, clock: .live,
+                warn: { Console.current.notice(.warning(InputPersonView.sentence($0), agent: $0)) }, refusingSecureTarget: refusal
+            )
+        }
+        if throughSession {
+            if replace {
+                return [focus, .text(inputText, replace: true)]
+            }
+            return inputText.isEmpty && intoQuery == nil && requireFocusID == nil ? [] : [focus] + (inputText.isEmpty ? [] : [.text(inputText, replace: false)])
         }
         return [focus] + typed
     }
 
-    private func typingPrimitives(context: BatchContext) async throws -> [BatchPrimitive] {
-        let inputText = try resolvedText()
-
+    private func typingPrimitives(_ inputText: String, context: BatchContext) throws -> [BatchPrimitive] {
         if context.device.platform == .android || context.device.isPhysicalIOSDevice {
-            if replace {
-                return [.text(inputText, replace: true)]
-            }
-            return inputText.isEmpty ? [] : [.text(inputText, replace: false)]
+            return []
         }
 
         try TextToHIDEvents.checkSupported(inputText)
