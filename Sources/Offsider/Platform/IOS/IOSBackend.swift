@@ -11,6 +11,9 @@ final class IOSBackend: DeviceBackend {
     private var simulators: [String: FBSimulator] = [:]
     /// The last whole tree's application frame, which tells a foldable's displays apart when devicectl cannot.
     private(set) var applicationFrames: [String: UIFrame] = [:]
+    /// From the last full read, for the hit-tests that follow it; never set on a foldable.
+    private var displayZooms: [String: DisplayZoom] = [:]
+    private var zoomChecked: Set<String> = []
     private var bootMarkers: [String: String] = [:]
     /// Kept for the command, so a resend or a turn back pays no second activation floor.
     private var vendorLinks: [String: SimulatorDTUHID] = [:]
@@ -107,25 +110,49 @@ final class IOSBackend: DeviceBackend {
 
     private func accessibilityTree(for id: DeviceID, point: UIPoint?, appPIDs: Set<Int>) async throws -> UITree {
         let startedAt = Date()
-        let simulator = try await simulator(for: id)
-        let jsonData = try await AccessibilityFetcher.fetchAccessibilityInfoJSONData(
-            from: simulator,
-            point: point.map { AccessibilityPoint(x: $0.x, y: $0.y) },
-            appPIDs: appPIDs,
-            logger: logger
-        )
-        var tree = UITree(platform: .ios, device: id.rawValue, roots: try IOSAccessibilityMapping.roots(fromJSON: jsonData))
-        if displayCatalog.isFoldable(simulator),
-           let active = await displayCatalog.activeDisplay(of: simulator, applicationFrame: tree.applicationFrame),
-           let geometry = await panelGeometry(on: active, of: simulator) {
-            tree.roots = UITree.correctingSidewaysApplicationFrame(in: tree.roots, screenWidth: geometry.width, screenHeight: geometry.height)
-            tree.roots = UITree.clippingApplicationFrame(in: tree.roots, screenWidth: geometry.width, screenHeight: geometry.height)
-        }
+        let tree = try await screenPointTree(for: id, point: point, appPIDs: appPIDs)
         if point == nil {
             if let frame = tree.applicationFrame {
                 applicationFrames[id.rawValue] = frame
             }
             DeviceActivityLedger.current.recordTreeRead(tree, on: id, startedAt: startedAt)
+        }
+        return tree
+    }
+
+    /// The tree with its frames in the screen points input and captures use.
+    private func screenPointTree(for id: DeviceID, point: UIPoint?, appPIDs: Set<Int>) async throws -> UITree {
+        let simulator = try await simulator(for: id)
+        let foldable = displayCatalog.isFoldable(simulator)
+        // `describe-ui --point` comes with no tree read before it.
+        if point != nil, !foldable, !zoomChecked.contains(id.rawValue) {
+            _ = try await screenPointTree(for: id, point: nil, appPIDs: [])
+        }
+        let layoutPoint = point.map { displayZooms[id.rawValue]?.layoutPoint($0) ?? $0 }
+        let jsonData = try await AccessibilityFetcher.fetchAccessibilityInfoJSONData(
+            from: simulator,
+            point: layoutPoint.map { AccessibilityPoint(x: $0.x, y: $0.y) },
+            appPIDs: appPIDs,
+            logger: logger
+        )
+        var tree = UITree(platform: .ios, device: id.rawValue, roots: try IOSAccessibilityMapping.roots(fromJSON: jsonData))
+        if foldable {
+            if let active = await displayCatalog.activeDisplay(of: simulator, applicationFrame: tree.applicationFrame),
+               let geometry = await panelGeometry(on: active, of: simulator) {
+                tree.roots = UITree.correctingSidewaysApplicationFrame(in: tree.roots, screenWidth: geometry.width, screenHeight: geometry.height)
+                tree.roots = UITree.clippingApplicationFrame(in: tree.roots, screenWidth: geometry.width, screenHeight: geometry.height)
+            }
+            return tree
+        }
+        if point == nil {
+            zoomChecked.insert(id.rawValue)
+        }
+        if point == nil, tree.roots.contains(where: { $0.role == .application }), let screen = simulator.screenInfo, screen.scale > 0 {
+            let scale = Double(screen.scale)
+            displayZooms[id.rawValue] = DisplayZoom(in: tree.roots, screenWidth: Double(screen.widthPixels) / scale, screenHeight: Double(screen.heightPixels) / scale)
+        }
+        if let zoom = displayZooms[id.rawValue] {
+            tree.roots = zoom.screenRoots(tree.roots)
         }
         return tree
     }
@@ -195,7 +222,8 @@ final class IOSBackend: DeviceBackend {
                 logger: logger
             )
         }
-        return try await OrientationAwareCoordinates.translateBatch(points: points, for: id.rawValue, logger: logger)
+        let frame = try await screenPointTree(for: id, point: nil, appPIDs: []).applicationFrame
+        return try await OrientationAwareCoordinates.translateBatch(points: points, applicationFrame: frame, for: id.rawValue, logger: logger)
     }
 
     func openInputSession(for id: DeviceID) async throws -> any InputSession {
@@ -327,8 +355,11 @@ extension IOSBackend: PointHitTesting {
 
 extension IOSBackend: PresentationProbing {
     func probe(at point: UIPoint, on id: DeviceID) async throws -> UINode? {
-        let data = try await AccessibilityFetcher.probeAccessibilityJSONData(from: try await simulator(for: id), at: AccessibilityPoint(x: point.x, y: point.y))
-        return try IOSAccessibilityMapping.roots(fromJSON: data).first
+        let zoom = displayZooms[id.rawValue]
+        let layoutPoint = zoom?.layoutPoint(point) ?? point
+        let data = try await AccessibilityFetcher.probeAccessibilityJSONData(from: try await simulator(for: id), at: AccessibilityPoint(x: layoutPoint.x, y: layoutPoint.y))
+        let roots = try IOSAccessibilityMapping.roots(fromJSON: data)
+        return (zoom?.screenRoots(roots) ?? roots).first
     }
 }
 

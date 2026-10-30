@@ -137,6 +137,16 @@ struct LogBoxDetectionTests {
         #expect(KnownOverlays.logBoxMessage("3 unread, 2 new") == nil)
     }
 
+    @Test("a toast under the largest Display Zoom, in screen points, is still a toast, and a full-width button there is not")
+    func toastUnderDisplayZoom() {
+        let viewport = FakeUI.frame(0, 0, 393, 852)
+        let toast = FakeUI.node(.other, label: "2, OffsiderFixture error", frame: FakeUI.frame(12.28, 790, 368.44, 59))
+        let button = FakeUI.node(.button, label: "10, pcs", frame: FakeUI.frame(19.65, 790, 353.7, 59))
+
+        #expect(KnownOverlays.logBoxToast(toast, viewport: viewport)?.count == 2)
+        #expect(KnownOverlays.logBoxToast(button, viewport: viewport) == nil)
+    }
+
     @Test("a selector's text is found in a toast whatever its spacing and case, and short or absent text is not")
     func containing() {
         let warning = FakeUI.node(.other, label: "!, OffsiderFixture\nwarn from live ticker", frame: FakeUI.frame(10, 754, 382, 48))

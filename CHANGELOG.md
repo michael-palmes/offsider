@@ -83,6 +83,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - `rn logbox dismiss` taps nothing while Expo's dev menu intro covers the logs and says how to close it (`coveredBy` in `--json`), where it exited 5 with no reason. `rn logbox` reads try once more when a window change, such as an unlock, left no window to read.
 - A `batch` with a screenshot step starts a USB phone's helper before its first step, so its start, about 0.5 s, no longer lands between a tap and the screenshot after it.
 - `wake` waits about 6 s for the screen to turn on, not 3 s, and sends the wake key once more halfway, for phones whose screen is slow to come on.
+- With Display Zoom on, an iOS simulator's `describe-ui` frames are in screen points, where they were in the app's smaller layout space, so a selector tap no longer lands up and to the left of its target (on the row above in a list), tree masks cover what they name, and `rn logbox` and `login` reach their fields and buttons. `describe-ui --raw-source` still prints the simulator's own numbers.
+- `login` on an iOS simulator no longer taps the keyboard's Passwords bar while closing the keyboard, where it reported `submitted` with the sign-in tap lost to that bar (seen on most runs).
 
 ## [0.14.0] - 2026-10-22
 
