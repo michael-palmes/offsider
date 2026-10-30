@@ -119,12 +119,7 @@ enum HelperTreeMapping {
     static func fittedToKeys(_ node: UINode) -> UINode {
         var fitted = node
         fitted.children = node.children.map(fittedToKeys)
-        let drawn = fitted.children.compactMap(\.frame).filter { $0.width > 0 && $0.height > 0 }
-        guard let first = drawn.first else { return fitted }
-        let box = drawn.dropFirst().reduce(first) { box, frame in
-            let left = min(box.x, frame.x), top = min(box.y, frame.y)
-            return UIFrame(x: left, y: top, width: max(box.x + box.width, frame.x + frame.width) - left, height: max(box.y + box.height, frame.y + frame.height) - top)
-        }
+        guard let box = UIFrame.union(of: fitted.children.compactMap(\.frame).filter({ $0.width > 0 && $0.height > 0 })) else { return fitted }
         fitted.frame = node.frame.flatMap { $0.intersection(box) } ?? box
         return fitted
     }

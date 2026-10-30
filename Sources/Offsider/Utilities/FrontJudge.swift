@@ -19,9 +19,8 @@ enum FrontJudge {
             let contested = Array((everyPoint ? plan.unblocked : plan.contested).prefix(hitLimit))
             // A tap aims at the part of a covered element beside its cover, so that part is read in the same round as the centre.
             let parts = reader == nil ? [] : contested.compactMap { entry -> (Int, TapCover.Judging)? in
-                let covers = entry.judging.candidates.compactMap(\.frame)
-                guard let first = covers.first,
-                      let moved = TapCover.clearParts(of: entry.resolution, beside: covers.dropFirst().reduce(first, Self.bounds), in: judged).first,
+                guard let covers = UIFrame.union(of: entry.judging.candidates.compactMap(\.frame)),
+                      let moved = TapCover.clearParts(of: entry.resolution, beside: covers, in: judged).first,
                       let judging = TapCover.Judging(moved, in: judged, beneath: false), judging.keyboard == nil else { return nil }
                 return (entry.index, judging)
             }
@@ -34,12 +33,6 @@ enum FrontJudge {
             }
         }
         tree.front = reading
-    }
-
-    /// The smallest frame holding both.
-    private static func bounds(_ a: UIFrame, _ b: UIFrame) -> UIFrame {
-        let left = min(a.x, b.x), top = min(a.y, b.y)
-        return UIFrame(x: left, y: top, width: max(a.x + a.width, b.x + b.width) - left, height: max(a.y + a.height, b.y + b.height) - top)
     }
 
     /// One read per point on a simulator, with no retry: an answer read too soon only leaves an element counted.
