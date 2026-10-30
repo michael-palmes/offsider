@@ -8,7 +8,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Added
 
-- `make build` signs the debug `offsider` when `.env` names `OFFSIDER_DEV_SIGNING_IDENTITY`, an Apple Development identity (off until set), so a login a signed build saved reads with no Keychain prompt after any rebuild, in any worktree. `./scripts/build.sh dev-sign` runs the step alone. It signs the executable only, hardened, and refuses a Developer ID identity; brokers still admit only the exact build.
 - `batch` takes a `drag` step, written and limited like `offsider drag`.
 - `app_not_responding` (exit 1): on Android, when the app in front on an unlocked screen has no window the tree can read, as when its main thread is stuck, `describe-ui` and other reads say so instead of telling you to unlock the device.
 - `rn devmenu` lists the items an app registers (`registerDevMenuItems`, or `DevSettings.addMenuItem` in React Native's own Android menu), marked `"custom":true` in `--json` and tagged for a person; `--label` already chose them, and now prefers the menu's item over an app button behind it with the same label. Expo's custom heading also counts as menu evidence, so a menu whose tools those items push off screen is still read.
@@ -26,6 +25,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - `assert` and `wait` take `--enabled` and `--disabled`. Among matches they judge the control a tap would: a button over plain text with its label, the deepest of controls nested in each other, and text inside a disabled button reads disabled. `--json`'s `match` now names that element, with its `enabled`, where it was null for a button and the text inside it.
 - `doctor`'s `android-device.webview` warns when the system WebView is older than version 80, which cannot run web widgets such as Cloudflare Turnstile.
 - `screenshot --json` and a batch screenshot step report `treeReadMs` (the mask's tree read) beside `captureMs`.
+- `make build` signs the debug `offsider` when `.env` names `OFFSIDER_DEV_SIGNING_IDENTITY`, an Apple Development identity (off until set), so a login a signed build saved reads with no Keychain prompt after any rebuild, in any worktree. `./scripts/build.sh dev-sign` runs the step alone. It signs the executable only, hardened, and refuses a Developer ID identity; brokers still admit only the exact build.
 
 ### Changed
 
@@ -84,6 +84,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - `rn logbox dismiss` taps nothing while Expo's dev menu intro covers the logs and says how to close it (`coveredBy` in `--json`), where it exited 5 with no reason. `rn logbox` reads try once more when a window change, such as an unlock, left no window to read.
 - A `batch` with a screenshot step starts a USB phone's helper before its first step, so its start, about 0.5 s, no longer lands between a tap and the screenshot after it.
 - `wake` waits about 6 s for the screen to turn on, not 3 s, and sends the wake key once more halfway, for phones whose screen is slow to come on.
+- With Display Zoom on, an iOS simulator's `describe-ui` frames are in screen points, where they were in the app's smaller layout space, so a selector tap no longer lands up and to the left of its target (on the row above in a list), tree masks cover what they name, and `rn logbox` and `login` reach their fields and buttons. `describe-ui --raw-source` still prints the simulator's own numbers.
+- `login` on an iOS simulator no longer taps the keyboard's Passwords bar while closing the keyboard, where it reported `submitted` with the sign-in tap lost to that bar (seen on most runs).
 
 ## [0.14.0] - 2026-10-22
 

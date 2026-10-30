@@ -334,32 +334,7 @@ struct OrientationAwareCoordinates {
         return applyMapping(mapping, to: point, logger: logger)
     }
 
-    /// Translates multiple logical points using a single detection round-trip.
-    ///
-    /// Prefer this over calling `translate(point:for:orientationOverride:logger:)` in a loop when
-    /// translating several points for the same simulator state (e.g. swipe start and end).
-    ///
-    /// - Parameters:
-    ///   - points: Logical (x, y) pairs in the current UI orientation.
-    ///   - simulatorUDID: Target simulator UDID.
-    ///   - orientationOverride: Optional explicit orientation for the rotated device case.
-    ///   - logger: Offsider logger instance.
-    /// - Returns: Physical (x, y) pairs ready for FBSimulatorHIDEvent, in the same order as input.
-    static func translateBatch(
-        points: [(x: Double, y: Double)],
-        for simulatorUDID: String,
-        orientationOverride: SimulatorOrientation? = nil,
-        logger: OffsiderLogger
-    ) async throws -> [(x: Double, y: Double)] {
-        let mapping = try await detectMapping(
-            for: simulatorUDID,
-            orientationOverride: orientationOverride,
-            logger: logger
-        )
-
-        return points.map { applyMapping(mapping, to: $0, logger: logger) }
-    }
-
+    /// Translates several logical points using a single detection round-trip.
     static func translateBatch(
         points: [(x: Double, y: Double)],
         applicationFrame: UIFrame?,

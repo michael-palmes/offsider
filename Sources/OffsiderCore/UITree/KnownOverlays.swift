@@ -80,7 +80,8 @@ public enum KnownOverlays {
     /// on iOS and up to 64 on Android, where the frame takes in the container's padding.
     static let toastInset = 10.0
     static let toastInsetTolerance = 3.0
-    static let toastWidthTolerance = 4.0
+    /// The 10 pt inset grows to about 12.3 pt each side under the largest Display Zoom.
+    static let toastWidthTolerance = 5.0
     static let toastHeights = 44.0...68.0
     /// Toasts and the inspector's buttons sit within this many points of the bottom.
     static let bottomBand = 160.0
