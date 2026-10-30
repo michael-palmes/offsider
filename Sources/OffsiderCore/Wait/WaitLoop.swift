@@ -9,19 +9,23 @@ public struct WaitSources {
     public var now: @MainActor () -> TimeInterval
     /// Read once when an element condition is not met, on the last tree, to explain the miss; nil never reads.
     public var probe: (@MainActor (UITree) async -> PresentationFinding?)?
+    /// Called once, the first time another app in front holds a wait up.
+    public var onOtherApp: (@MainActor () -> Void)?
 
     public init(
         tree: @escaping @MainActor () async throws -> UITree,
         fingerprint: @escaping @MainActor () async throws -> ImageFingerprint,
         sleep: @escaping @MainActor (Duration) async throws -> Void,
         now: @escaping @MainActor () -> TimeInterval,
-        probe: (@MainActor (UITree) async -> PresentationFinding?)? = nil
+        probe: (@MainActor (UITree) async -> PresentationFinding?)? = nil,
+        onOtherApp: (@MainActor () -> Void)? = nil
     ) {
         self.tree = tree
         self.fingerprint = fingerprint
         self.sleep = sleep
         self.now = now
         self.probe = probe
+        self.onOtherApp = onOtherApp
     }
 }
 
@@ -73,6 +77,12 @@ extension WaitCondition {
         }
     }
 
+    /// A `--region --changed` wait compares with its first capture, however long another app was in front.
+    var keepsBaseline: Bool {
+        if case .region(.changed, _, _) = self { return true }
+        return false
+    }
+
     var explain: ((UITree) -> WaitNearMiss?)? {
         switch self {
         case .element(_, _, _, let explain), .anyElement(_, _, let explain): explain
@@ -86,8 +96,9 @@ public enum WaitCondition {
     case element(probe: (UITree) -> ElementProbe, gone: Bool, stableFor: TimeInterval = 0, explain: ((UITree) -> WaitNearMiss?)? = nil)
     /// Met when the first of several selectors, in order, is present; each entry names its selector for the report.
     case anyElement([(selector: WaitMatch, probe: (UITree) -> ElementProbe)], stableFor: TimeInterval = 0, explain: ((UITree) -> WaitNearMiss?)? = nil)
-    /// With `ignoreValues`, label and value changes do not count; with `gate`, a pass waits for a recent input's effect.
-    case settled(by: SettleSource, quiet: TimeInterval, ignoreValues: Bool = false, gate: SettleGate? = nil)
+    /// With `ignoreValues`, label and value changes do not count; with `gate`, a pass waits for a recent input's effect; `leaveOut` does not count at all.
+    /// With `drawHold`, a tree-only wait whose input changed the tree also waits for the pixels to hold still, for at most that long after the tree last changed.
+    case settled(by: SettleSource, quiet: TimeInterval, ignoreValues: Bool = false, gate: SettleGate? = nil, leaveOut: SettleLeaveOut = .none, drawHold: TimeInterval? = nil)
     case region(mode: RegionMode, quiet: TimeInterval, threshold: Double)
     case duration(TimeInterval)
 }
@@ -120,6 +131,8 @@ public struct WaitOutcome: Equatable, Sendable {
     public var onlyTextMoved = false
     /// For a selector that timed out not found: the closest elements on the last read.
     public var nearMiss: WaitNearMiss?
+    /// For `--settled`: the part of the screen that kept moving, which `--ignore-id` or `--ignore-region` leaves out.
+    public var movingPart: MovingPart?
 
     public init(met: Bool, elapsed: TimeInterval, reason: String, match: UINode? = nil, matched: WaitMatch? = nil) {
         self.met = met
@@ -152,12 +165,13 @@ public struct SettleGate: Equatable, Sendable {
     /// How long after the input the gate opens by itself.
     public var limit: TimeInterval { before == nil ? Self.floor : Self.hold }
 
-    /// True when `tree`, masked as the cache masks it, differs from the screen before the input, compared without native types.
-    public func showsEffect(in tree: UITree, ignoreValues: Bool) -> Bool {
+    /// True when `tree`, masked as the cache masks it, differs from the screen before the input, compared without native types; `leaveOut` counts on neither side.
+    public func showsEffect(in tree: UITree, ignoreValues: Bool, leaveOut: SettleLeaveOut = .none) -> Bool {
         guard let before else { return false }
-        let detector = ChangeDetector(options: .init(ignoreText: ignoreValues))
+        let detector = ChangeDetector(options: .init(ignoredIdentifiers: leaveOut.detectorIDs, ignoreText: ignoreValues))
         let masked = tree.redacted(OutputMasks.current.mask, scope: .cache)
-        if case .changed = detector.compare(before, AccessibilitySnapshot(tree: masked, native: false)) {
+        let now = AccessibilitySnapshot(tree: masked, native: false).leavingOut(leaveOut.regions)
+        if case .changed = detector.compare(before.leavingOut(leaveOut.regions), now) {
             return true
         }
         return false
@@ -175,6 +189,24 @@ public struct SettleGate: Equatable, Sendable {
         case .read?, nil:
             return SettleGate(sinceInput: since, before: nil)
         }
+    }
+}
+
+/// What a `--settled` wait does not count: elements by id and rectangles, each with everything under it.
+public struct SettleLeaveOut: Equatable, Sendable {
+    public var ids: Set<String>
+    public var regions: [PointRegion]
+
+    public init(ids: Set<String> = [], regions: [PointRegion] = []) {
+        self.ids = ids
+        self.regions = regions
+    }
+
+    public static let none = SettleLeaveOut()
+
+    /// As the detector's keys write them, with a UUID in an id reduced to `<uuid>`.
+    var detectorIDs: Set<String> {
+        Set(ids.compactMap(ChangeDetector.normalisedIdentifier))
     }
 }
 
@@ -208,8 +240,10 @@ public enum WaitLoop {
         let deadline = start + timeout
         var state = State()
         state.start = start
+        state.deadline = deadline
         var lastReason = "not checked"
         var lastTransient: Error?
+        var otherApp: Error?
         var succeededOnce = false
         var lastBlock: LogBoxBlock?
         let gone = if case .element(_, let isGone, _, _) = condition { isGone } else { false }
@@ -218,11 +252,21 @@ public enum WaitLoop {
             do {
                 let step = try await evaluate(condition, state: &state, sources: sources)
                 succeededOnce = true
+                otherApp = nil
                 if step.met {
                     return WaitOutcome(met: true, elapsed: sources.now() - start, reason: step.reason, match: step.match, matched: step.matched)
                 }
                 lastReason = step.reason
                 lastBlock = try holdBlock(step.block, gone: gone, state: &state, sources: sources)
+            } catch where error.isOtherAppInFront {
+                if otherApp == nil, timeout > 0, !state.notedOtherApp {
+                    state.notedOtherApp = true
+                    sources.onOtherApp?()
+                }
+                otherApp = error
+                state.forgetReads(keepingBaseline: condition.keepsBaseline, now: sources.now())
+                lastBlock = nil
+                lastReason = error.localizedDescription
             } catch where error.isTransientFailure {
                 state.metSince = nil
                 state.metReads = 0
@@ -230,6 +274,7 @@ public enum WaitLoop {
                 state.blockedReads = 0
                 lastBlock = nil
                 state.missed = false
+                otherApp = nil
                 lastTransient = error
                 lastReason = error.localizedDescription
             }
@@ -239,6 +284,9 @@ public enum WaitLoop {
             try await sources.sleep(.milliseconds(Int((min(interval, remaining) * 1000).rounded())))
         }
 
+        if let otherApp {
+            throw otherApp
+        }
         if !succeededOnce, let lastTransient {
             throw lastTransient
         }
@@ -254,6 +302,9 @@ public enum WaitLoop {
         }
         var outcome = WaitOutcome(met: false, elapsed: elapsed, reason: lastReason)
         outcome.onlyTextMoved = state.treeChanges > 0 && !state.structureMoved
+        if case .settled(_, _, let ignoreValues, _, let leaveOut, _) = condition, state.moves >= 2, let move = state.lastMove {
+            outcome.movingPart = ChangeDetector(options: .init(ignoredIdentifiers: leaveOut.detectorIDs, ignoreText: ignoreValues)).movingPart(move.before, move.after)
+        }
         if state.missed, let tree = state.lastTree {
             outcome.nearMiss = condition.explain?(tree)
         }
@@ -294,12 +345,34 @@ public enum WaitLoop {
         var gateOpen = false
         var treeChanges = 0
         var structureMoved = false
+        /// When the tree last changed, and whether the gate's before read shows the input changed it.
+        var treeChangedAt: TimeInterval?
+        var inputChangedTree = false
+        var deadline: TimeInterval = 0
+        /// How many reads saw an element move, and the last two reads that did.
+        var moves = 0
+        var lastMove: (before: AccessibilitySnapshot, after: AccessibilitySnapshot)?
+        var notedOtherApp = false
         /// When the LogBox inspector began to hide the app, and the reads since.
         var blockedSince: TimeInterval?
         var blockedReads = 0
         /// The last tree an element condition read, and whether a selector found nothing on it.
         var lastTree: UITree?
         var missed = false
+
+        /// Another app was in front, so what the earlier reads saw no longer counts; a `--changed` wait keeps its first capture.
+        mutating func forgetReads(keepingBaseline: Bool, now: TimeInterval) {
+            snapshot = nil
+            if !keepingBaseline { fingerprint = nil }
+            quietSince = nil
+            treeChangedAt = now
+            reads = 0
+            metSince = nil
+            metReads = 0
+            blockedSince = nil
+            blockedReads = 0
+            missed = false
+        }
     }
 
     private static func evaluate(_ condition: WaitCondition, state: inout State, sources: WaitSources) async throws -> Step {
@@ -354,14 +427,15 @@ public enum WaitLoop {
             state.metSelector = step.matched
             return dwell(step, stableFor: stableFor, gone: false, state: &state, sources: sources)
 
-        case .settled(let source, let quiet, let ignoreValues, let gate):
+        case .settled(let source, let quiet, let ignoreValues, let gate, let leaveOut, let drawHold):
             var change: String?
-            let detector = ChangeDetector(options: .init(ignoreText: ignoreValues))
+            let detector = ChangeDetector(options: .init(ignoredIdentifiers: leaveOut.detectorIDs, ignoreText: ignoreValues))
             if source != .screen {
                 let tree = try await sources.tree()
-                let snapshot = AccessibilitySnapshot(tree: tree)
+                let whole = AccessibilitySnapshot(tree: tree)
+                let snapshot = whole.leavingOut(leaveOut.regions)
                 state.treeReads += 1
-                state.readableTree = state.readableTree || snapshot.isKnown
+                state.readableTree = state.readableTree || whole.isKnown
                 if let previous = state.snapshot {
                     switch detector.compare(previous, snapshot) {
                     case .unchanged: break
@@ -369,22 +443,46 @@ public enum WaitLoop {
                     case .changed(let summary):
                         change = "tree still changing (\(summary))"
                         state.treeChanges += 1
-                        if ChangeDetector(options: .init(ignoreText: true)).compare(previous, snapshot) != .unchanged {
+                        state.treeChangedAt = sources.now()
+                        if ChangeDetector(options: .init(ignoredIdentifiers: leaveOut.detectorIDs, ignoreText: true)).compare(previous, snapshot) != .unchanged {
                             state.structureMoved = true
+                            state.moves += 1
+                            state.lastMove = (previous, snapshot)
                         }
                     }
                 }
-                if let gate, !state.gateOpen, gate.showsEffect(in: tree, ignoreValues: ignoreValues) {
+                if let gate, !state.gateOpen, gate.showsEffect(in: tree, ignoreValues: ignoreValues, leaveOut: leaveOut) {
                     state.gateOpen = true
+                    state.inputChangedTree = true
                 }
                 state.snapshot = snapshot
             }
+            // With no read from before the input, its effect may already have landed, so a tree that looks still proves nothing.
+            let watchesDraw = source == .tree && drawHold != nil && (state.inputChangedTree || gate?.before == nil)
+            var drawing = false
             if source != .tree {
                 let fingerprint = try await sources.fingerprint()
                 if change == nil, let previous = state.fingerprint, previous.changedTiles(comparedTo: fingerprint)?.isEmpty != true {
                     change = "screen still changing"
                 }
                 state.fingerprint = fingerprint
+            } else if watchesDraw {
+                // A frame taken while the tree moves proves nothing, and a capture is the slow part on a phone.
+                let fingerprint = change == nil ? try await drawnFrame(sources) : nil
+                if let fingerprint, let previous = state.fingerprint, previous.changedTiles(comparedTo: fingerprint)?.isEmpty != true {
+                    drawing = true
+                }
+                state.fingerprint = fingerprint
+            }
+            if watchesDraw, change == nil, let drawHold {
+                let now = sources.now()
+                let treeQuietSince = state.treeChangedAt ?? state.start
+                // Pixels never fail a tree wait: a chart or a caret never stops, so past the hold, or at the deadline, the tree alone decides.
+                if now - treeQuietSince + 1e-9 >= drawHold || now + 1e-9 >= state.deadline {
+                    state.quietSince = treeQuietSince
+                } else if drawing {
+                    change = "screen still drawing"
+                }
             }
             let step = quietStep(change: change, quiet: quiet, met: "settled", state: &state, sources: sources)
             guard step.met, let gate, !state.gateOpen else { return step }
@@ -421,6 +519,15 @@ public enum WaitLoop {
 
         case .duration:
             return Step(met: true, reason: "waited")
+        }
+    }
+
+    /// One frame for the draw hold; nil when it cannot be read, since pixels never fail a tree wait. Another app in front still counts as that.
+    private static func drawnFrame(_ sources: WaitSources) async throws -> ImageFingerprint? {
+        do {
+            return try await sources.fingerprint()
+        } catch where !error.isOtherAppInFront {
+            return nil
         }
     }
 

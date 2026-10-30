@@ -1,14 +1,18 @@
 import Foundation
+import OffsiderCore
 
 /// Ends the process when a device read hangs past a command's own bound, which an in-loop deadline cannot catch on a blocked main actor.
 final class DeviceWatchdog: @unchecked Sendable {
     static let grace: TimeInterval = 15
     /// The bound for routing and `prepare`: a cold emulator's adb server, helper push and first dump can pass the grace alone.
     static let setupBound: TimeInterval = 45
+    /// The bound for one read of a screen or tree: 30 s with the grace, past the slowest healthy read with every hit-test.
+    static let readBound: TimeInterval = 15
 
     private let queue = DispatchQueue(label: "offsider.device-watchdog")
     private let grace: TimeInterval
     private let setupBound: TimeInterval
+    private let readBound: TimeInterval
     private let fire: @Sendable (String) -> Void
     private var timer: DispatchSourceTimer?
 
@@ -36,10 +40,12 @@ final class DeviceWatchdog: @unchecked Sendable {
     init(
         grace: TimeInterval = DeviceWatchdog.grace,
         setupBound: TimeInterval = DeviceWatchdog.setupBound,
+        readBound: TimeInterval = DeviceWatchdog.readBound,
         fire: (@Sendable (String) -> Void)? = nil
     ) {
         self.grace = grace
         self.setupBound = setupBound
+        self.readBound = readBound
         if let fire {
             action = nil
             self.fire = fire
@@ -87,6 +93,12 @@ final class DeviceWatchdog: @unchecked Sendable {
     /// Runs routing, `prepare` or opening a session with the watchdog armed for the setup bound.
     func guardingSetup<T>(device: String, _ body: () async throws -> T) async rethrows -> T {
         try await guarding(bound: setupBound, device: device, body)
+    }
+
+    /// Runs one read of a simulator or emulator armed for `readBound` plus `extra`; a physical device has limits of its own, and a first iPhone read can build the runner.
+    func guardingRead<T>(of device: DeviceID, extra: TimeInterval = 0, _ body: () async throws -> T) async rethrows -> T {
+        guard !device.isPhysicalAndroidDevice, !device.isPhysicalIOSDevice else { return try await body() }
+        return try await guarding(bound: readBound + extra, device: device.rawValue, body)
     }
 
     /// Runs `body` armed for the setup bound until it calls `ready` (after routing and `prepare`), then for `bound`.

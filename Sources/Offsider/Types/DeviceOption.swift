@@ -28,6 +28,17 @@ struct DeviceOption: RequiredDeviceOption {
     func validate() throws { try validateDevice() }
 }
 
+/// `--device` plus `--wait-lock`, for a command that decides for itself whether it needs a device: it calls `validateDevice()` when it does.
+struct OptionalDeviceLockOption: RequiredDeviceOption {
+    @Option(name: .customLong("device"), help: ArgumentHelp("The device ID from `offsider devices` (default OFFSIDER_DEVICE, which never names a physical device).", valueName: "id"))
+    var explicitID: String?
+
+    @OptionGroup
+    var lock: WaitLockOption
+
+    var waitLock: Double? { lock.waitLock }
+}
+
 /// `--device` alone, for commands that never lock the device.
 struct ReadDeviceOption: RequiredDeviceOption {
     @Option(name: .customLong("device"), help: ArgumentHelp("The device ID from `offsider devices` (default OFFSIDER_DEVICE, which never names a physical device).", valueName: "id"))

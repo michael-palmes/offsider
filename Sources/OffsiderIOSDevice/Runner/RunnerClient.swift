@@ -171,7 +171,7 @@ public struct RunnerClient: Sendable {
         case "secure_field":
             throw IOSDeviceError(.secureFieldRefused, "The focused field on \(udid) is a secure field, and Offsider does not replace its text. Clear it in the app, or type without --replace.")
         case "app_not_in_front":
-            throw IOSDeviceError(.appNotAllowed, "The app this command may drive is not in front on \(udid), so Offsider did not read or touch it. \(ErrorAudience.current == .person ? "Open it" : "Ask the user to open it"), then retry.")
+            throw IOSDeviceError(.otherAppInFront, "The app this command may drive is not in front on \(udid), so Offsider did not read or touch it. \(ErrorAudience.current == .person ? "Open it" : "Ask the user to open it"), then retry.")
         default:
             throw IOSDeviceError(.runnerFailed, "The runner on \(udid) could not complete \(path): \(message) (\(code)). Retry; if it persists, run `offsider runner stop --device \(udid)`.")
         }

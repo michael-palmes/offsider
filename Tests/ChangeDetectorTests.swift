@@ -252,4 +252,92 @@ struct ChangeDetectorLiveTests {
         let diff = TreeDiff.diff(old: detector.maskingLive(tree("61 bpm", alerts: false), live: live), new: detector.maskingLive(tree("67 bpm", alerts: true), live: live))
         #expect(diff.entries.map(\.key) == ["#alerts"])
     }
+
+    private static func group(id: String? = nil, _ frame: AccessibilitySnapshot.Frame, children: [AccessibilitySnapshot.Node] = []) -> AccessibilitySnapshot.Node {
+        AccessibilitySnapshot.Node(type: "Group", identifier: id, frame: frame, children: children)
+    }
+
+    private static func page(_ children: [AccessibilitySnapshot.Node]) -> AccessibilitySnapshot {
+        AccessibilitySnapshot(roots: [group(.init(x: 0, y: 0, width: 400, height: 800), children: children)])
+    }
+
+    private static let rest = group(id: "rest", .init(x: 0, y: 700, width: 400, height: 50))
+
+    @Test("the moving part is the nearest element holding every change, named by its id")
+    func movingPartNamesTheHolder() {
+        let before = Self.page([Self.group(id: "chart", .init(x: 20, y: 100, width: 300, height: 200), children: [
+            Self.group(.init(x: 30, y: 110, width: 20, height: 50)),
+            Self.group(.init(x: 60, y: 110, width: 20, height: 50)),
+        ]), Self.rest])
+        let after = Self.page([Self.group(id: "chart", .init(x: 20, y: 100, width: 300, height: 200), children: [
+            Self.group(.init(x: 30, y: 120, width: 20, height: 40)),
+            Self.group(.init(x: 60, y: 90, width: 20, height: 70)),
+        ]), Self.rest])
+
+        let part = ChangeDetector().movingPart(before, after)
+
+        #expect(part == .id("chart"))
+        #expect(part?.flag == "--ignore-id chart")
+    }
+
+    @Test("with no id a command line can carry, the moving part is a rectangle of whole points around the changes, on the screen", arguments: [nil, "Bar chart", "--force", "bad\nid"])
+    func movingPartFallsBackToARegion(id: String?) {
+        let before = Self.page([Self.group(id: id, .init(x: 20.4, y: 100.6, width: 300, height: 200)), Self.rest])
+        let after = Self.page([Self.group(id: id, .init(x: 20.4, y: 110.2, width: 399.8, height: 200)), Self.rest])
+
+        let part = ChangeDetector().movingPart(before, after)
+
+        #expect(part?.flag == "--ignore-region 20,100,380,211")
+    }
+
+    @Test("a change across most of the screen offers no flag, since leaving it out would leave nothing to wait for")
+    func movingPartRefusesMostOfTheScreen() {
+        let before = Self.page([Self.group(id: "main", .init(x: 0, y: 0, width: 400, height: 780))])
+        let after = Self.page([Self.group(id: "main", .init(x: 0, y: 10, width: 400, height: 780))])
+        #expect(ChangeDetector().movingPart(before, after) == nil)
+    }
+
+    @Test("two changes with no element holding both give the rectangle around them")
+    func movingPartAcrossSiblings() {
+        let before = Self.page([Self.group(.init(x: 10, y: 10, width: 50, height: 50)), Self.group(.init(x: 100, y: 200, width: 50, height: 50)), Self.rest])
+        let after = Self.page([Self.group(.init(x: 12, y: 10, width: 50, height: 50)), Self.group(.init(x: 102, y: 200, width: 50, height: 50)), Self.rest])
+        #expect(ChangeDetector().movingPart(before, after)?.flag == "--ignore-region 10,10,142,240")
+    }
+
+    @Test("a masked id is never printed in the flag")
+    func movingPartHidesAMaskedID() async throws {
+        let mask = TreeValueMask(ids: ["secret-chart"])
+        let before = Self.page([Self.group(id: "secret-chart", .init(x: 20, y: 100, width: 300, height: 200)), Self.rest])
+        let after = Self.page([Self.group(id: "secret-chart", .init(x: 20, y: 110, width: 300, height: 200)), Self.rest])
+        await OutputMasks.$current.withValue(OutputMasks { mask }) {
+            #expect(ChangeDetector().movingPart(before, after)?.flag == "--ignore-region 20,100,300,210")
+        }
+    }
+
+    @Test("a region never leaves out the page holding it, or the root, however much of them it covers")
+    func regionKeepsContainers() throws {
+        let bar = Self.group(id: "bar", .init(x: 0, y: 150, width: 50, height: 50))
+        let far = Self.group(id: "far", .init(x: 0, y: 700, width: 50, height: 50))
+        let snapshot = Self.page([Self.group(id: "content", .init(x: 0, y: 100, width: 400, height: 660), children: [bar, far])])
+
+        let kept = snapshot.leavingOut([PointRegion(x: 0, y: 100, width: 400, height: 500)])
+
+        let content = try #require(kept.roots.first?.children.first)
+        #expect(content.identifier == "content")
+        #expect(content.children.map(\.identifier) == ["far"])
+    }
+
+    @Test("a region leaves out elements at least half inside it with everything under them, and keeps the rest")
+    func regionLeavesOut() throws {
+        let inside = Self.group(id: "half", .init(x: 0, y: 150, width: 100, height: 100), children: [Self.group(id: "child-far-away", .init(x: 300, y: 600, width: 10, height: 10))])
+        let less = Self.group(id: "less", .init(x: 0, y: 170, width: 100, height: 100))
+        let flat = Self.group(id: "flat", .init(x: 10, y: 110, width: 0, height: 0))
+        let snapshot = Self.page([inside, less, flat, Self.rest])
+
+        let kept = snapshot.leavingOut([PointRegion(x: 0, y: 100, width: 100, height: 100)])
+
+        let ids = try #require(kept.roots.first).children.map(\.identifier)
+        #expect(ids == ["less", "flat", "rest"])
+        #expect(snapshot.leavingOut([]) == snapshot)
+    }
 }

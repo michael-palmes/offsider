@@ -1,5 +1,50 @@
 import Foundation
 
+/// The part of the screen that kept moving, as the flag a `--settled` wait takes to leave it out.
+public enum MovingPart: Equatable, Sendable {
+    case id(String)
+    case region(PointRegion)
+
+    /// A flag leaving out this share of the screen or more would leave nothing worth waiting for.
+    static let mostOfScreen = 0.8
+
+    /// `--ignore-id chart` or `--ignore-region 0,210,390,280`.
+    public var flag: String {
+        switch self {
+        case .id(let id):
+            return "--ignore-id \(id)"
+        case .region(let region):
+            return "--ignore-region \(Int(region.x)),\(Int(region.y)),\(Int(region.width)),\(Int(region.height))"
+        }
+    }
+
+    /// Letters, digits and `._:/-`, not starting with a dash, so the flag pastes as it prints.
+    static func fitsCommandLine(_ id: String) -> Bool {
+        !id.isEmpty && id.count <= 100 && !id.hasPrefix("-")
+            && id.unicodeScalars.allSatisfy { $0.isASCII && (CharacterSet.alphanumerics.contains($0) || "._:/-".unicodeScalars.contains($0)) }
+    }
+
+    /// The whole points around `frames`, inside `screen` when it is known; nil when nothing is left on it.
+    static func bounds(of frames: [AccessibilitySnapshot.Frame], within screen: AccessibilitySnapshot.Frame?) -> AccessibilitySnapshot.Frame? {
+        var left = Double.infinity, top = Double.infinity, right = -Double.infinity, bottom = -Double.infinity
+        for frame in frames where frame.width > 0 && frame.height > 0 {
+            left = min(left, frame.x)
+            top = min(top, frame.y)
+            right = max(right, frame.x + frame.width)
+            bottom = max(bottom, frame.y + frame.height)
+        }
+        left = max(left, screen?.x ?? 0, 0)
+        top = max(top, screen?.y ?? 0, 0)
+        if let screen {
+            right = min(right, screen.x + screen.width)
+            bottom = min(bottom, screen.y + screen.height)
+        }
+        guard left.isFinite, top.isFinite, right > left, bottom > top else { return nil }
+        let (x, y) = (left.rounded(.down), top.rounded(.down))
+        return AccessibilitySnapshot.Frame(x: x, y: y, width: (right - x).rounded(.up), height: (bottom - y).rounded(.up))
+    }
+}
+
 /// Compares two accessibility snapshots. Each node is keyed by its path of `type#identifier[n]`
 /// components, with UUID-shaped identifier text normalised to `<uuid>` and `n` the ordinal among
 /// siblings sharing that type and identifier. A shared key changes when its role, subrole, label,
@@ -209,6 +254,42 @@ public struct ChangeDetector: Sendable {
     }
 
     static let livePlaceholder = "(live)"
+
+    /// What changed between the reads, as one flag to leave it out: the nearest element holding every change that has an id a command line can carry, else a rectangle around the changes; nil when that would be most of the screen.
+    public func movingPart(_ before: AccessibilitySnapshot, _ after: AccessibilitySnapshot) -> MovingPart? {
+        let old = entries(before)
+        let new = entries(after)
+        let oldByKey = Dictionary(old.map { ($0.key, $0) }, uniquingKeysWith: { first, _ in first })
+        let newByKey = Dictionary(new.map { ($0.key, $0) }, uniquingKeysWith: { first, _ in first })
+        let changed = new.filter { entry in
+            oldByKey[entry.key].map { describeDifference(from: $0, to: entry, live: false) != nil } ?? true
+        } + old.filter { newByKey[$0.key] == nil }
+        guard !changed.isEmpty else { return nil }
+
+        let screen = after.roots.compactMap(\.frame).max { $0.width * $0.height < $1.width * $1.height }
+        let isMostOfScreen = { (frame: AccessibilitySnapshot.Frame) -> Bool in
+            screen.map { frame.width * frame.height >= $0.width * $0.height * MovingPart.mostOfScreen } ?? false
+        }
+        for key in Self.sharedAncestors(of: changed.map(\.key)) {
+            guard let holder = newByKey[key] else { continue }
+            if let frame = holder.node.frame, isMostOfScreen(frame) { break }
+            if let id = holder.identifier, MovingPart.fitsCommandLine(id), !Self.isMasked(holder.node) { return .id(id) }
+        }
+        let sweep = changed.flatMap { [$0.node.frame, oldByKey[$0.key]?.node.frame] }.compactMap { $0 }
+        guard let bounds = MovingPart.bounds(of: sweep, within: screen), !isMostOfScreen(bounds) else { return nil }
+        return .region(PointRegion(x: bounds.x, y: bounds.y, width: bounds.width, height: bounds.height))
+    }
+
+    /// The keys every one of `keys` sits at or under, deepest first.
+    private static func sharedAncestors(of keys: [String]) -> [String] {
+        // Each key ends `[n]`, so the components split cleanly at `]/`.
+        let separator = "]/"
+        let paths = keys.map { $0.dropLast().components(separatedBy: separator) }
+        guard let first = paths.first else { return [] }
+        let depth = paths.dropFirst().reduce(first.count) { depth, path in min(depth, zip(first, path).prefix { $0 == $1 }.count) }
+        guard depth > 0 else { return [] }
+        return (1...depth).reversed().map { first.prefix($0).joined(separator: separator) + "]" }
+    }
 
     public func compare(
         _ before: AccessibilitySnapshot,

@@ -9,6 +9,13 @@ struct RNLogBox: AsyncParsableCommand {
         subcommands: [RNLogBoxStatus.self, RNLogBoxOpen.self, RNLogBoxDismiss.self]
     )
 
+    /// Prepares under the setup bound, then runs `body` under the read bound plus `extra` seconds of the command's own waits.
+    @MainActor
+    static func guarding<T>(on route: DeviceRouter.Route, watchdog: DeviceWatchdog, extra: TimeInterval = 0, _ body: () async throws -> T) async throws -> T {
+        try await watchdog.guardingSetup(device: route.device.rawValue) { try await route.backend.prepare() }
+        return try await watchdog.guardingRead(of: route.device, extra: extra, body)
+    }
+
     /// No toast numbered `index`: exit 2, with the toasts on screen as the candidates.
     static func noToast(_ index: Int, in state: LogBoxState, device: String) -> CLIError {
         let have = state.toasts.isEmpty ? "there are none on screen" : "there \(state.toasts.count == 1 ? "is 1" : "are \(state.toasts.count)")"
@@ -46,13 +53,15 @@ struct RNLogBoxStatus: AsyncParsableCommand {
 
     func run() async throws {
         let logger = OffsiderLogger()
+        let watchdog = DeviceWatchdog()
         let locking = DeviceIDClassifier.classify(deviceOption.id).platform == .android
-        let route = try await DeviceRouter.routeForInput(deviceOption, logger: logger, locking: locking)
+        let route = try await DeviceRouter.routeForInput(deviceOption.id, logger: logger, watchdog: watchdog, locking: locking)
         await appOption.apply(to: route)
         let console = Console.current
         let state: LogBoxState = try await console.progress("Reading LogBox") {
-            try await route.backend.prepare()
-            return LogBoxState(tree: try await route.backend.accessibilityTree(for: route.device))
+            try await RNLogBox.guarding(on: route, watchdog: watchdog) {
+                LogBoxState(tree: try await route.backend.accessibilityTree(for: route.device))
+            }
         }
         guard !json else { return console.data(state.jsonLine(redacts: !noRedact) + "\n") }
         console.show(InputPersonView.logBox(state, redacts: !noRedact, device: route.device.rawValue))
@@ -99,10 +108,13 @@ struct RNLogBoxOpen: AsyncParsableCommand {
 
     func run() async throws {
         let logger = OffsiderLogger()
-        let route = try await DeviceRouter.routeForInput(deviceOption, logger: logger)
+        let watchdog = DeviceWatchdog()
+        let route = try await DeviceRouter.routeForInput(deviceOption.id, logger: logger, watchdog: watchdog)
         await appOption.apply(to: route)
         let console = Console.current
-        let opened = try await console.progress("Opening the LogBox inspector") { try await open(on: route) }
+        let opened = try await console.progress("Opening the LogBox inspector") {
+            try await RNLogBox.guarding(on: route, watchdog: watchdog, extra: Self.inspectorWait) { try await open(on: route) }
+        }
         guard !json else { return console.data(opened.jsonLine(redacts: !noRedact) + "\n") }
         console.show(Self.page(opened, redacts: !noRedact))
     }
@@ -200,10 +212,13 @@ struct RNLogBoxDismiss: AsyncParsableCommand {
 
     func run() async throws {
         let logger = OffsiderLogger()
-        let route = try await DeviceRouter.routeForInput(deviceOption, logger: logger)
+        let watchdog = DeviceWatchdog()
+        let route = try await DeviceRouter.routeForInput(deviceOption.id, logger: logger, watchdog: watchdog)
         await appOption.apply(to: route)
         let console = Console.current
-        let outcome = try await console.progress("Clearing LogBox logs") { try await dismiss(on: route) }
+        let outcome = try await console.progress("Clearing LogBox logs") {
+            try await RNLogBox.guarding(on: route, watchdog: watchdog, extra: timeout) { try await dismiss(on: route) }
+        }
         let device = route.device.rawValue
         let line = Self.line(outcome, index: index, device: device)
         if json {

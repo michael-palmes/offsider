@@ -8,3 +8,14 @@ extension Error {
         (self as? any TransientFailure)?.isTransient == true
     }
 }
+
+/// A refusal only because another app is in front: it clears when the app under test comes back, and nothing was read from the other app.
+public protocol OtherAppFailure: Error {
+    var isOtherAppInFront: Bool { get }
+}
+
+extension Error {
+    public var isOtherAppInFront: Bool {
+        (self as? any OtherAppFailure)?.isOtherAppInFront == true
+    }
+}

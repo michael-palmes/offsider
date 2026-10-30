@@ -99,6 +99,33 @@ public struct AccessibilitySnapshot: Equatable, Sendable {
         }
         return nil
     }
+
+    /// Without each element at least half inside one of `regions` and no bigger than it, and everything under it: a moving group that pokes out still counts as left out, the page holding it does not.
+    public func leavingOut(_ regions: [PointRegion]) -> AccessibilitySnapshot {
+        guard !regions.isEmpty else { return self }
+        return AccessibilitySnapshot(roots: roots.compactMap { $0.leavingOut(regions) })
+    }
+}
+
+extension AccessibilitySnapshot.Frame {
+    /// True when at least half of this frame's area is inside `region` and it has no more area than `region`; a frame with no area is in none.
+    func isHalfInside(_ region: PointRegion) -> Bool {
+        let area = width * height
+        guard area > 0, area <= region.width * region.height else { return false }
+        let overlapWidth = min(x + width, region.x + region.width) - max(x, region.x)
+        let overlapHeight = min(y + height, region.y + region.height) - max(y, region.y)
+        guard overlapWidth > 0, overlapHeight > 0 else { return false }
+        return overlapWidth * overlapHeight * 2 >= area
+    }
+}
+
+extension AccessibilitySnapshot.Node {
+    fileprivate func leavingOut(_ regions: [PointRegion]) -> AccessibilitySnapshot.Node? {
+        if let frame, regions.contains(where: frame.isHalfInside) { return nil }
+        var kept = self
+        kept.children = children.compactMap { $0.leavingOut(regions) }
+        return kept
+    }
 }
 
 extension AccessibilitySnapshot.Node {

@@ -25,6 +25,12 @@ public struct PointRegion: Equatable, Sendable, CustomStringConvertible {
         self.height = height
     }
 
+    /// The smallest rectangle holding both.
+    public func union(_ other: PointRegion) -> PointRegion {
+        let (left, top) = (min(x, other.x), min(y, other.y))
+        return PointRegion(x: left, y: top, width: max(x + width, other.x + other.width) - left, height: max(y + height, other.y + other.height) - top)
+    }
+
     /// Parses "x,y,width,height": a non-negative origin and a positive size; `option` names the flag in errors.
     public static func parse(_ text: String, option: String = "--region") throws -> PointRegion {
         let parts = text.split(separator: ",", omittingEmptySubsequences: false)

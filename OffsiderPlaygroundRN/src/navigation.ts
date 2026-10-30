@@ -207,6 +207,18 @@ export const routeInfo = {
     menuTitle: 'Live Ticker Test',
     subtitle: 'Ticking values, a delayed push and two log toasts',
   },
+  'live-chart': {
+    section: 'Real-world RN',
+    title: 'Live Chart',
+    menuTitle: 'Live Chart Test',
+    subtitle: 'A chart whose groups keep moving on a page at rest',
+  },
+  'late-draw': {
+    section: 'Real-world RN',
+    title: 'Late Draw',
+    menuTitle: 'Late Draw Test',
+    subtitle: 'A page the tree lists before its pixels arrive',
+  },
   'drawer-test': {
     section: 'Real-world RN',
     title: 'Side Drawer',
