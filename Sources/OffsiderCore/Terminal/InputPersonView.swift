@@ -73,11 +73,12 @@ public enum InputPersonView {
     public static func turnstile(_ status: TurnstileStatus) -> Page {
         let line = status.textLine()
         let lead = "Turnstile: \(status.state.rawValue)"
-        let place = line.hasPrefix(lead) ? String(line.dropFirst(lead.count)).trimmingCharacters(in: .whitespaces) : ""
+        let place = status.frame != nil && line.hasPrefix(lead) ? String(line.dropFirst(lead.count)).trimmingCharacters(in: .whitespaces) : ""
         var person: [Block] = [.fields([Field("Turnstile", Table.Cell(status.state.rawValue, tag: place.isEmpty ? nil : place))])]
         switch status.state {
         case .checkbox: person.append(.prose("A person must tick it; Offsider never does. Run this again once they have."))
         case .challenge: person.append(.prose("A person must solve the challenge; Offsider never does. Run this again once they have."))
+        case .unknown: person.append(.prose(TurnstileStatus.unknownNote))
         case .verifying, .passed, .absent: break
         }
         return Page([.person(person), .agent(line + "\n")])
@@ -133,6 +134,7 @@ public enum InputPersonView {
         var details = ["\(TerminalText.field(report.app, profile: .person)): \(button)"]
         if !report.filter.isEmpty { details.append("Chosen by --where \(report.filter.map(\.rawValue).joined(separator: " "))") }
         details.append("Server answer not checked")
+        if report.turnstile == .unknown { details.append(TurnstileStatus.unknownNote) }
         return receipt(headline, details: details, agent: report.textLine() + "\n")
     }
 }

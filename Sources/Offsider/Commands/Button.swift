@@ -104,6 +104,9 @@ struct Button: AsyncParsableCommand, VerifiableCommand {
         key was ignored, and still sends the key when it cannot read the foreground. --verify reports that check,
         and --verify-timeout sets how long it waits for the launcher (default 2 s). It verifies by the foreground
         activity, so --verify-id and --verify-ignore-text are refused and --retries does not apply.
+
+        iOS simulator home with --verify: Offsider checks what answers at the screen's centre, so it returns as soon \
+        as SpringBoard is in front; --verify-id or --verify-ignore-text compare the tree instead.
         """
     )
 
@@ -217,6 +220,67 @@ struct Button: AsyncParsableCommand, VerifiableCommand {
         }
         try await VerifyOutput.reportingFailures(command: "button", target: buttonType.rawValue, options: verification) { progress in
             try await execute(progress: progress)
+        }
+    }
+
+    /// Prints the verify report: exit 0 once SpringBoard answers at the screen's centre, exit 5 when it never does.
+    /// Lines go to `writeOutput` and `writeError` as an agent reads them; without them, through `Console`, which shows a person their own view.
+    @MainActor
+    static func pressSimulatorHome(
+        on backend: any PresentationProbing,
+        device: DeviceID,
+        centre: UIPoint,
+        verification: VerificationOptions,
+        sleep: (Duration) async throws -> Void = { try await Task.sleep(for: $0) },
+        now: () -> TimeInterval = { ProcessInfo.processInfo.systemUptime },
+        processPath: (Int) -> String? = { Int32(exactly: $0).flatMap(ProcessPath.of(pid:)) },
+        writeOutput: ((String) -> Void)? = nil,
+        writeError: ((String) -> Void)? = nil
+    ) async throws {
+        let outcome = try await SimulatorHomePress.run(
+            isHome: {
+                guard let hit = try? await backend.probe(at: centre, on: device), case .ios(let native) = hit.native,
+                      let pid = native.pid, let path = processPath(pid) else { return nil }
+                return SimulatorHomePress.isSpringBoard(path: path)
+            },
+            press: { try await backend.performTracked(.shortButtonPress(.home), on: device) },
+            sleep: sleep,
+            now: now,
+            attempts: 1 + verifyRetries(.home, verification),
+            window: verification.verifyTimeout ?? SimulatorHomePress.window
+        )
+        let attempts: Int
+        let reached: Bool
+        let line: String
+        let detail: String
+        switch outcome {
+        case .reached(let presses):
+            (attempts, reached, detail) = (presses, true, "SpringBoard came to the front")
+            line = "✓ Home button verified: SpringBoard is in front, attempt \(presses) of \(presses)"
+        case .notReached(let presses):
+            (attempts, reached, detail) = (presses, false, "SpringBoard did not come to the front")
+            line = "✗ Home button not verified: SpringBoard did not come to the front after \(presses) press\(presses == 1 ? "" : "es")."
+        case .unreadable(let presses):
+            (attempts, reached, detail) = (presses, false, "Could not read what is in front")
+            line = "✗ Home button not verified: Offsider sent \(presses) press\(presses == 1 ? "" : "es") but could not read what is in front. Run offsider doctor --device \(device.rawValue)."
+        }
+        let report = VerifyReport(command: "button", target: "home", dispatched: .yes, verified: reached, attempts: attempts, change: reached ? .activity : .none)
+        let console = Console.current
+        if verification.json {
+            if let writeError { writeError(line) } else { console.data(line + "\n", to: .err) }
+            let json = String(decoding: try report.jsonData(), as: UTF8.self)
+            if let writeOutput { writeOutput(json) } else { console.data(json + "\n") }
+        } else if reached {
+            if let writeOutput { writeOutput(line) } else {
+                console.show(Page([.person([.outcome(.done("Home button verified", details: [detail]))]), .agent(line + "\n")]))
+            }
+        } else if let writeError {
+            writeError(line)
+        } else {
+            console.line(line, person: .failed("Home button not verified", details: [detail], try: ["offsider describe-ui --summary --device \(device.rawValue)"]))
+        }
+        if report.exitCode != .success {
+            throw ExitCode(report.exitCode.rawValue)
         }
     }
 
@@ -350,6 +414,12 @@ struct Button: AsyncParsableCommand, VerifiableCommand {
         let buttonEvent = Self.pressEvent(buttonType, duration: duration, on: device.platform)
 
         if let progress {
+            if Self.isShortHome(buttonType, duration: duration), verification.verifyID == nil, !verification.ignoreText,
+               let prober = backend as? any PresentationProbing, let size = try? await backend.screenSize(for: device), size.width > 0, size.height > 0 {
+                progress.attempts = 1
+                try await Self.pressSimulatorHome(on: prober, device: device, centre: UIPoint(x: size.width / 2, y: size.height / 2), verification: verification)
+                return
+            }
             let request = VerifyRequest(
                 command: "button",
                 subject: buttonType.description,

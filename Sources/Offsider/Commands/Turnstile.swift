@@ -7,10 +7,12 @@ struct Turnstile: AsyncParsableCommand {
         commandName: "turnstile",
         abstract: "Read the state of a Cloudflare Turnstile widget. It never taps the widget.",
         discussion: """
-        Prints one state: checkbox, verifying, passed, challenge or absent, and exits 0 (6 when several \
+        Prints one state: checkbox, verifying, passed, challenge, absent or unknown, and exits 0 (6 when several \
         checkboxes are on screen). It finds a cf-chl-widget container, or a checkbox labelled Verify you are \
         human. On iOS the web view leaves the checkbox out of the tree, so the command reads points in the \
-        short web view. --id limits the search to one element, such as the app's wrapper around the widget.
+        short web view. --id limits the search to one element, such as the app's wrapper around the widget. \
+        unknown means an element named for Turnstile is on screen with no widget in it: the widget failed to \
+        run, or runs invisibly.
 
         Offsider never ticks Turnstile. A checkbox or a challenge is for a person: hand the device to them, \
         then carry on once this command reads passed.
@@ -88,7 +90,7 @@ struct Turnstile: AsyncParsableCommand {
     @MainActor
     private static func read(_ tree: UITree, on route: DeviceRouter.Route, scopeID: String?) async -> (phase: TurnstilePhase, source: TurnstileStatus.Source) {
         let phase = TurnstileWidget.phase(in: tree.roots, viewport: tree.viewport, scopeID: scopeID)
-        if phase == .absent || phase == .checking {
+        if phase == .absent || phase == .checking || phase == .noWidget {
             let shell = await shellPhase(in: tree, on: route, scopeID: scopeID)
             if shell != .absent { return (shell, .webViewPoints) }
         }

@@ -205,6 +205,11 @@ struct Screenshot: AsyncParsableCommand {
         return report
     }
 
+    private static func milliseconds(since start: ContinuousClock.Instant) -> Int {
+        let elapsed = (ContinuousClock.now - start).components
+        return Int(elapsed.seconds) * 1000 + Int(elapsed.attoseconds / 1_000_000_000_000_000)
+    }
+
     /// An Android PNG at native scale with nothing to crop, paint or compare is written as the device sent it, sized from its header, with no screen read.
     func isPlain(_ request: ScreenshotRequest, masks: MaskPlan, platform: DevicePlatform) -> Bool {
         platform == .android && request.format == .png && request.scale == .native && request.region == nil
@@ -231,9 +236,12 @@ struct Screenshot: AsyncParsableCommand {
 
         var devicePNG: Data?
         if plain, isPlain(request, masks: masks, platform: route.device.platform) {
+            let started = ContinuousClock.now
             let png = try await backend.screenshotPNG(for: booted.id)
             if let size = PNGHeader.size(of: png) {
-                return try writePlain(png, size: size, booted: booted, token: token, recorder: recorder)
+                var report = try writePlain(png, size: size, booted: booted, token: token, recorder: recorder)
+                report.captureMs = Self.milliseconds(since: started)
+                return report
             }
             devicePNG = png
         }
@@ -241,14 +249,18 @@ struct Screenshot: AsyncParsableCommand {
         let baseline = try compare.map(ScreenCapture.readBaseline)
         let selected = try await displayOption.resolve(on: backend, device: booted.id, deviceName: deviceOption.id)
         var tree: UITree?
+        var treeReadMs: Int?
         if masks.needsTree {
             if let selected, !selected.display.active {
                 throw MaskUnproven(detail: "The \(selected.display.descriptor.screenDisplay.id) display is not active and the accessibility tree describes the active display only")
             }
             // Read before the capture, so the frames describe the screen the pixels show.
+            let started = ContinuousClock.now
             tree = try await Timings.measure("accessibility") { try await treeSource() }
+            treeReadMs = Self.milliseconds(since: started)
         }
         let revealed = tree != nil && masks.secure ? await TreeCache.revealedSecrets(for: booted.id, backend: backend) : nil
+        let captureStarted = ContinuousClock.now
         var capture: CapturedScreen
         if let devicePNG {
             capture = try ScreenCapture.make(png: devicePNG, platform: route.device.platform, screen: try? await backend.screenInfo(for: booted.id))
@@ -260,6 +272,7 @@ struct Screenshot: AsyncParsableCommand {
         } else {
             capture = try await ScreenCapture.capture(backend, device: booted.id)
         }
+        let captureMs = Self.milliseconds(since: captureStarted)
         var masked: ScreenCapture.MaskResult?
         if !masks.isEmpty {
             var result = try Timings.measure("mask") { try ScreenCapture.masking(capture, plan: masks, tree: tree, revealed: revealed) }
@@ -326,6 +339,8 @@ struct Screenshot: AsyncParsableCommand {
         guard let compare, let baseline else {
             var report = rendered.report(path: path, format: request.format, capture: capture, masks: masked)
             report.runFile = runFile
+            report.treeReadMs = treeReadMs
+            report.captureMs = captureMs
             return report
         }
 
@@ -341,6 +356,8 @@ struct Screenshot: AsyncParsableCommand {
         result.expected = expect ?? .changed
         var report = rendered.report(path: path, format: path == nil ? nil : request.format, capture: capture, comparison: result, masks: masked)
         report.runFile = runFile
+        report.treeReadMs = treeReadMs
+        report.captureMs = captureMs
         recorder.update(token) { entry in
             entry.changed = result.outcome == .changed
             entry.expect = result.expected.rawValue

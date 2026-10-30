@@ -35,7 +35,7 @@ public struct LogCollector {
 
     public static func compile(_ pattern: String, option: String = "--grep") throws -> NSRegularExpression {
         do {
-            return try NSRegularExpression(pattern: pattern, options: [.caseInsensitive])
+            return try NSRegularExpression(pattern: pattern, options: [.caseInsensitive, .dotMatchesLineSeparators, .anchorsMatchLines])
         } catch {
             throw LogOptionError("Invalid \(option) pattern: \(pattern). Use an ICU regular expression, and escape characters such as ( [ . * with a backslash to match them literally.")
         }

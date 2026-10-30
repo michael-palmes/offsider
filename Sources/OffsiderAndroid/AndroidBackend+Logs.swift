@@ -20,6 +20,9 @@ extension AndroidBackend: LogReading {
             }
             if let entry { onEntry(entry) }
         }
+        let finish: @MainActor () -> Void = {
+            if let entry = stream.finish() { onEntry(entry) }
+        }
         log(.debug, "Reading logs on \(serial): \(script)")
 
         guard case .live(let duration) = query.window else {
@@ -27,6 +30,7 @@ extension AndroidBackend: LogReading {
             for line in result.stdoutText.split(separator: "\n", omittingEmptySubsequences: false) {
                 try deliver(String(line))
             }
+            finish()
             guard result.status == 0 else {
                 throw AndroidError.adbCommandFailed(serial: serial, command: "logcat -d", detail: Self.firstLine(result.stderrText) ?? "exit status \(result.status)")
             }
@@ -35,16 +39,18 @@ extension AndroidBackend: LogReading {
         let opened = try await client.openService("shell,v2,raw:" + script, on: serial, timeout: .seconds(10))
         let shell = ShellStream(opened, serial: serial, label: "logcat")
         do {
-            try await Self.follow(shell, until: duration.map { ContinuousClock.now + $0 }, serial: serial, deliver: deliver)
+            try await Self.follow(shell, until: duration.map { ContinuousClock.now + $0 }, serial: serial, deliver: deliver, quiet: finish)
         } catch {
+            finish()
             await shell.close()
             throw error
         }
+        finish()
         await shell.close()
     }
 
-    /// Reads in short slices so cancellation is noticed; ends at `end`, on cancellation or when logcat exits.
-    private static func follow(_ shell: ShellStream, until end: ContinuousClock.Instant?, serial: String, deliver: @MainActor (String) throws -> Void) async throws {
+    /// Reads in short slices so cancellation is noticed; ends at `end`, on cancellation or when logcat exits. A silent slice calls `quiet`, so a live entry never waits for the next one.
+    private static func follow(_ shell: ShellStream, until end: ContinuousClock.Instant?, serial: String, deliver: @MainActor (String) throws -> Void, quiet: @MainActor () -> Void) async throws {
         while !Task.isCancelled {
             let now = ContinuousClock.now
             if let end, now >= end { return }
@@ -61,7 +67,7 @@ extension AndroidBackend: LogReading {
                     return
                 }
             } catch AdbConnectError.timedOut {
-                continue
+                quiet()
             }
         }
     }

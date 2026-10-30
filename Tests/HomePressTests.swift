@@ -191,3 +191,86 @@ struct HomePressTests {
         #expect(slept == .seconds(waited))
     }
 }
+
+@Suite("iOS simulator home press")
+@MainActor
+struct SimulatorHomePressTests {
+    static let simulator = DeviceID(rawValue: "00000000-0000-0000-0000-000000000001", platform: .ios)
+    static let springBoardPID = 100
+    static let appPID = 200
+
+    /// Answers each centre read from `answers`, holding the last; a nil answer is a read that failed.
+    final class Prober: FakeDeviceBackend, PresentationProbing {
+        var answers: [Int?] = []
+        func probe(at point: UIPoint, on id: DeviceID) async throws -> UINode? {
+            let pid = answers.count > 1 ? answers.removeFirst() : answers.first ?? nil
+            guard let pid else { throw CLIError(errorDescription: "no answer", reason: .commandFailed) }
+            return FakeUI.node(.button, frame: FakeUI.frame(0, 0, 10, 10), pid: pid)
+        }
+    }
+
+    private static func press(_ answers: [Int?], arguments: [String] = ["--verify", "--json"]) async throws -> (out: [String], err: [String], exit: Int32?, keys: Int, seconds: TimeInterval) {
+        let backend = Prober(trees: [])
+        backend.answers = answers
+        var out: [String] = []
+        var err: [String] = []
+        var exit: Int32?
+        var clock: TimeInterval = 0
+        do {
+            try await Button.pressSimulatorHome(
+                on: backend, device: simulator, centre: UIPoint(x: 200, y: 400), verification: try VerificationOptions.parse(arguments),
+                sleep: { _ in clock += 0.6 }, now: { clock }, processPath: { $0 == springBoardPID ? "/Library/Runtime/CoreServices/SpringBoard.app/SpringBoard" : "/Library/Runtime/Apps/Example.app/Example" },
+                writeOutput: { out.append($0) }, writeError: { err.append($0) }
+            )
+        } catch let code as ExitCode {
+            exit = code.rawValue
+        }
+        return (out, err, exit, backend.session.calls.count, clock)
+    }
+
+    @Test("an app that leaves is verified as soon as SpringBoard answers, after one press")
+    func reached() async throws {
+        let result = try await Self.press([Self.appPID, Self.appPID, Self.springBoardPID])
+        #expect(result.exit == nil)
+        #expect(result.err == ["✓ Home button verified: SpringBoard is in front, attempt 1 of 1"])
+        #expect(result.keys == 1)
+        let json = result.out.joined()
+        #expect(json.contains(#""verified": true"#))
+        #expect(json.contains("activity"))
+    }
+
+    @Test("SpringBoard answering before the press still presses, since it also hosts alerts over an app")
+    func alertOverApp() async throws {
+        let result = try await Self.press([Self.springBoardPID])
+        #expect(result.exit == nil)
+        #expect(result.keys == 1)
+    }
+
+    @Test("an app that never leaves exits 5 after the press and its one retry, each within its window however slow the reads")
+    func neverReached() async throws {
+        let result = try await Self.press([Self.appPID], arguments: ["--verify"])
+        #expect(result.exit == OffsiderExitCode.unverified.rawValue)
+        #expect(result.keys == 2)
+        #expect(result.seconds <= 2 * (SimulatorHomePress.window + 0.6))
+        #expect(result.err == ["✗ Home button not verified: SpringBoard did not come to the front after 2 presses."])
+    }
+
+    @Test("no read answering says so, not that the app stayed")
+    func unreadable() async throws {
+        let result = try await Self.press([nil], arguments: ["--verify", "--retries", "0"])
+        #expect(result.exit == OffsiderExitCode.unverified.rawValue)
+        #expect(result.err.first?.contains("could not read what is in front") == true)
+    }
+
+    @Test("--retries 0 presses once")
+    func noRetry() async throws {
+        let result = try await Self.press([Self.appPID], arguments: ["--verify", "--retries", "0"])
+        #expect(result.err == ["✗ Home button not verified: SpringBoard did not come to the front after 1 press."])
+    }
+
+    @Test("only SpringBoard's own path counts")
+    func springBoardPath() {
+        #expect(SimulatorHomePress.isSpringBoard(path: "/Library/CoreServices/SpringBoard.app/SpringBoard"))
+        #expect(!SimulatorHomePress.isSpringBoard(path: "/Applications/SpringBoardLike.app/SpringBoardLike"))
+    }
+}

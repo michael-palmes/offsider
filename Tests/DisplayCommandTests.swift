@@ -66,6 +66,30 @@ struct DisplayCommandTests {
         #expect(backend.requestedPostures.isEmpty)
     }
 
+    @Test("a request the hinge service refuses still succeeds once the device reads the posture")
+    func refusedRequestThatFolded() async throws {
+        let backend = Self.folded()
+        backend.postureRequestError = CLIError(errorDescription: IOSBackend.postureUnavailable(device: "SIM"), reason: .notSupported)
+        backend.postures = [.closed, .closed, .closed, .open]
+
+        let text = try await posture(.open, on: backend)
+
+        #expect(text.hasPrefix("Posture: open"))
+        #expect(backend.requestedPostures == [.open])
+    }
+
+    @Test("a resend the hinge service refuses does not end the wait for the first request")
+    func refusedResend() async throws {
+        let backend = Self.folded()
+        backend.postureRequestErrors = [nil, CLIError(errorDescription: IOSBackend.postureUnavailable(device: "SIM"), reason: .notSupported)]
+        backend.postures = [.closed] + Array(repeating: .closed, count: 60) + [.open]
+
+        let text = try await posture(.open, on: backend)
+
+        #expect(text.hasPrefix("Posture: open"))
+        #expect(backend.requestedPostures == [.open, .open])
+    }
+
     @Test("a simulator without the hinge service refuses to set the posture and says how to fold it")
     func iosRefuses() async {
         let backend = Self.folded()

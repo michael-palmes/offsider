@@ -63,15 +63,17 @@ struct AccessibilityFetcher {
         recoveryDependencies: AccessibilityRecoveryDependencies = .live
     ) async throws -> Data {
         try await Timings.measure("accessibility") {
-            try await retryingAfterTestManagerRecovery(
-                simulatorUDID: target.udid,
-                logger: logger,
-                dependencies: recoveryDependencies
-            ) {
-                if let point {
-                    return try await fetchAccessibilityInfoJSONData(from: target, at: point, appPIDs: appPIDs)
+            try await retryingStartupFailure(simulatorUDID: target.udid, frontmost: point == nil, logger: logger) {
+                try await retryingAfterTestManagerRecovery(
+                    simulatorUDID: target.udid,
+                    logger: logger,
+                    dependencies: recoveryDependencies
+                ) {
+                    if let point {
+                        return try await fetchAccessibilityInfoJSONData(from: target, at: point, appPIDs: appPIDs)
+                    }
+                    return try await fetchFrontmostAccessibilityInfoJSONData(from: target)
                 }
-                return try await fetchFrontmostAccessibilityInfoJSONData(from: target)
             }
         }
     }
@@ -179,6 +181,37 @@ struct AccessibilityFetcher {
         traits.triedWithoutTraits(full: full)
         Timings.record("accessibility-without-traits", seconds: ProcessInfo.processInfo.systemUptime - started)
         return full ? plain : latestData
+    }
+
+    /// A simulator can take over 5 s to open the session a read starts with, or have no screen to answer just after a boot, and the next try works; two in a row say so, with the fix.
+    static func retryingStartupFailure<T>(
+        simulatorUDID: String,
+        frontmost: Bool,
+        logger: OffsiderLogger,
+        sleep: @MainActor (Duration) async throws -> Void = { try await Task.sleep(for: $0) },
+        operation: @MainActor () async throws -> T
+    ) async throws -> T {
+        do {
+            return try await operation()
+        } catch where isStartupFailure(error, frontmost: frontmost) {
+            logger.info().log("The simulator's accessibility service did not answer; retrying once")
+            try await sleep(.seconds(1))
+            do {
+                return try await operation()
+            } catch where isStartupFailure(error, frontmost: frontmost) {
+                throw CLIError(
+                    errorDescription: "The simulator's accessibility service did not answer, twice, so its screen could not be read. Run this again; if it keeps failing, shut the simulator down and boot it.",
+                    reason: .commandFailed,
+                    hint: "offsider doctor --device \(simulatorUDID)"
+                )
+            }
+        }
+    }
+
+    /// idb's bootstrap errors for a session not created, or an accessibility load never answered, in time; for a whole-screen read, also no answer at all, which a point read gets for a bad point.
+    static func isStartupFailure(_ error: Error, frontmost: Bool) -> Bool {
+        if frontmost, case FBAccessibilityError.noTranslationObject = error { return true }
+        return errorChain(from: error).contains { $0.domain == "com.facebook.FBSimulatorControl.AccessibilityBootstrap" && [4, 8].contains($0.code) }
     }
 
     static func retryingAfterTestManagerRecovery<T>(

@@ -3,7 +3,7 @@
 **Prefer `offsider batch`** for multi-step flows. Batch runs input steps (`drag` and `rn devmenu <item>` among them), `sleep`, and the read steps `wait`, `assert`, `screenshot` and `describe-ui`, written like the standalone commands without `--device`, in a single process:
 
 - One tool call and one agent turn instead of many, which cuts latency and cost.
-- One HID session serves every step. On Android one UiAutomation helper serves every step, so several reads pay its start once.
+- One HID session serves every step. On Android one UiAutomation helper serves every step, so several reads pay its start once; with a `screenshot` step, a phone pays it before the first step, not between a tap and its screenshot.
 - Steps run in order, each before the next is resolved, so earlier taps can trigger navigation and later selector taps find newly appeared elements (with `--wait-timeout`).
 - `batch` takes the device lock once for all its steps.
 

@@ -34,13 +34,15 @@ struct LogcatStream {
     private(set) var started = false
     private var listing: [String] = []
     private var parser = LogcatParser()
+    /// The entry being read, and its header: logcat prints each line of a multi-line message as its own line, so it is finished only when another begins.
+    private var pending: (entry: LogEntry, header: String?)?
 
     init(source: LogSource, serial: String) {
         self.source = source
         self.serial = serial
     }
 
-    /// The entry a line adds, nil for the preamble, separators and lines the source leaves out; `now` is this Mac's clock.
+    /// The entry a line finishes, nil for the preamble, separators, lines the source leaves out and lines of an entry still being read; `now` is this Mac's clock. `finish` hands over the last one.
     mutating func consume(_ line: String, now: Date = Date()) throws -> LogEntry? {
         guard started else {
             try readPreamble(line.trimmingCharacters(in: .whitespacesAndNewlines), now: now)
@@ -56,7 +58,21 @@ struct LogcatStream {
         case .all, .reactNative(nil):
             break
         }
-        return entry
+        let header = parser.lastHeader
+        if var whole = pending?.entry, header == nil || header == pending?.header {
+            whole.message += "\n" + entry.message
+            whole.raw = [whole.raw, entry.raw].compactMap { $0 }.joined(separator: "\n")
+            pending?.entry = whole
+            return nil
+        }
+        defer { pending = (entry, header) }
+        return pending?.entry
+    }
+
+    /// The entry still being read, once the output ends or goes quiet.
+    mutating func finish() -> LogEntry? {
+        defer { pending = nil }
+        return pending?.entry
     }
 
     private mutating func readPreamble(_ line: String, now: Date) throws {

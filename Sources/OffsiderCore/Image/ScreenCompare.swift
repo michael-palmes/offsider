@@ -95,6 +95,10 @@ public struct ScreenshotReport: Equatable, Sendable {
     public var format: ImageFormat?
     /// How the device captured it, such as `stream` or `devicectl` on an iPhone or iPad; nil where there is one way.
     public var captureSource: String?
+    /// Milliseconds the mask's tree read took; nil when no mask read a tree.
+    public var treeReadMs: Int?
+    /// Milliseconds the device took to hand over the image.
+    public var captureMs: Int?
     public var comparison: ScreenCompare.Result?
     /// Rectangles painted per kind asked for; nil unless a mask was asked for.
     public var maskedBy: [MaskKind: Int]?
@@ -207,6 +211,12 @@ public struct ScreenshotReport: Equatable, Sendable {
         ]
         if let captureSource {
             members.append(("capture", .string(captureSource)))
+        }
+        if let treeReadMs {
+            members.append(("treeReadMs", .integer(treeReadMs)))
+        }
+        if let captureMs {
+            members.append(("captureMs", .integer(captureMs)))
         }
         if let comparison {
             members += [
