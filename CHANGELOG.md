@@ -75,6 +75,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - `button home --verify` on an iOS simulator checks what answers at the screen's centre, so it returns as soon as SpringBoard is in front, rather than after several tree reads.
 - `posture` on an iOS simulator trusts what the device reads: a hinge request refused while the device moves no longer exits `not_supported` when the fold happened, and a refused resend no longer ends the wait for the first request.
 - `rn logbox dismiss` taps nothing while Expo's dev menu intro covers the logs and says how to close it (`coveredBy` in `--json`), where it exited 5 with no reason. `rn logbox` reads try once more when a window change, such as an unlock, left no window to read.
+- A `batch` with a screenshot step starts a USB phone's helper before its first step, so its start, about 0.5 s, no longer lands between a tap and the screenshot after it.
 - `wake` waits about 6 s for the screen to turn on, not 3 s, and sends the wake key once more halfway, for phones whose screen is slow to come on.
 
 ## [0.14.0] - 2026-10-22

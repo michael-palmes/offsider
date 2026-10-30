@@ -170,6 +170,7 @@ struct Batch: AsyncParsableCommand {
             )
         }
 
+        try? await watchdog.guardingSetup(device: device.rawValue) { await Self.prepareScreenshots(stepLines, maskSecure: maskSecure, backend: backend, device: device) }
         let session = try await watchdog.guardingSetup(device: device.rawValue) { try await backend.openInputSession(for: device) }
         let output = BatchOutput.console(json: json)
         let clock = ContinuousClock()
@@ -191,6 +192,14 @@ struct Batch: AsyncParsableCommand {
         await session.close()
 
         output.completed(steps: stepLines.count, elapsed: Self.seconds(clock.now - started))
+    }
+
+    /// Starts what a screenshot step's mask reads through before the first step, so a phone's helper start, about 0.5 s, never lands between a tap and the screenshot after it.
+    @MainActor
+    static func prepareScreenshots(_ stepLines: [String], maskSecure: Bool?, backend: any DeviceBackend, device: DeviceID) async {
+        guard maskSecure != false, let reader = backend as? any MaskTreeReading,
+              stepLines.contains(where: { (try? ShellTokenizer.tokenize($0))?.first == BatchStepKind.screenshot.rawValue }) else { return }
+        try? await reader.prepareMaskTree(for: device)
     }
 
     /// Runs every step (or up to the first failure), reporting each through `output`; throws exit 1 or 5 as the help describes.
