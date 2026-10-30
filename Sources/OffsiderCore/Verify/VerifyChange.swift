@@ -40,6 +40,10 @@ public enum VerifyNote: String, Sendable {
     case homeIntent = "home_intent"
     /// The React Native LogBox inspector opened over the app, so the input's own effect cannot be seen.
     case logBoxOpened = "logbox_opened"
+    /// The screen did not settle after the input, so the input was watched instead of sent again.
+    case unsettled
+    /// `--verify-id`: nothing on screen changed after the input, so it may not have landed.
+    case screenUnchanged = "screen_unchanged"
 }
 
 /// An element whose change a verified command left out: text that changed with no input, a node that moved between the reads before the input, or a LogBox toast.

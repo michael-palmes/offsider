@@ -11,7 +11,7 @@ struct VerificationOptions: ParsableArguments {
     @Flag(name: .customLong("verify"), help: "Check for an observable change after the input; exit 5 if there is none.")
     var verifyFlag = false
 
-    @Option(name: .customLong("verify-id"), help: ArgumentHelp("Verify that this describe-ui id is on screen after the input (implies --verify; default --retries 0 and --verify-timeout 10). Refused when it is already on screen.", valueName: "id"))
+    @Option(name: .customLong("verify-id"), help: ArgumentHelp("Verify that this describe-ui id comes to the front after the input (implies --verify; default --retries 0 and --verify-timeout 10). Refused when it is already in front; one beneath a pushed page counts once that page goes.", valueName: "id"))
     var verifyID: String?
 
     @Flag(name: .customLong("verify-ignore-text"), help: "Verify, ignoring text and frame changes: only added or removed elements, roles, and enabled, checked, selected or focused states count (implies --verify).")
@@ -29,7 +29,7 @@ struct VerificationOptions: ParsableArguments {
     @Option(name: .customLong("verify-timeout"), help: "Seconds to wait for a change per attempt (default: 2).")
     var verifyTimeout: Double?
 
-    @Option(name: .customLong("retries"), help: "Extra attempts when nothing changes, 0 to 3 (default: 1, or 0 for a tap on a switch, checkbox or radio button and for button app-switch). Tap retries switch the tap style.")
+    @Option(name: .customLong("retries"), help: "Extra attempts when nothing changes, 0 to 3 (default: 1, or 0 for a tap on a switch, checkbox or radio button and for button app-switch). Tap retries switch the tap style. None is sent while the screen is still changing.")
     var retries: Int?
 
     @Flag(name: .customLong("json"), help: "Print one JSON result to stdout; human text goes to stderr. With --verify, the verify report.")
