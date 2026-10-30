@@ -12,11 +12,13 @@ final class ProbingFakeBackend: FakeDeviceBackend, PointHitTesting, Presentation
     var probeDelay: Duration?
     private(set) var probes = 0
     private(set) var hitTests = 0
+    private(set) var hitPoints: [UIPoint] = []
     /// How many trees had been read when the first probe began.
     private(set) var treeReadsAtFirstProbe: Int?
 
     func hitTest(at point: UIPoint, on id: DeviceID, appPIDs: Set<Int>) async throws -> UINode? {
         hitTests += 1
+        hitPoints.append(point)
         return try await accessibilityTree(for: id, point: point).roots.first
     }
 
@@ -259,7 +261,8 @@ struct PresentationProbeTests {
 
         let output = try await Self.describe(["--summary"], on: backend)
 
-        #expect(backend.probes + backend.hitTests == 1)
+        #expect(backend.probes == 1)
+        #expect(!backend.hitPoints.contains(UIPoint(x: 201, y: 437)))
         #expect(output.contains("\n# window: Save Password? (system)\n"), "\(output)")
         #expect(!output.contains("# presented"))
     }

@@ -72,6 +72,19 @@ struct PanelGeometryTests {
         #expect(UITree.correctingSidewaysApplicationFrame(in: roots, screenWidth: 669, screenHeight: 951) == roots)
         #expect(UITree.correctingSidewaysApplicationFrame(in: roots, screenWidth: 466, screenHeight: 678) == roots)
     }
+
+    @Test("an app frame taller than the cover display is cut to it, so a button running past the display's bottom is tapped on the part that shows")
+    func appFrameClippedToCoverDisplay() throws {
+        let continueButton = FakeUI.node(.button, label: "Continue", frame: FakeUI.frame(24, 661.7, 342, 46))
+        let roots = [FakeUI.node(.application, label: "Playground", frame: FakeUI.frame(0, 0, 466, 748), children: [continueButton])]
+
+        let clipped = UITree.clippingApplicationFrame(in: roots, screenWidth: 466, screenHeight: 678)
+        let point = try AccessibilityTargetResolver.resolveTapPoint(roots: clipped, query: .label("Continue"))
+
+        #expect(clipped[0].frame == FakeUI.frame(0, 0, 466, 678))
+        #expect(point.x == 195 && point.y > 661.7 && point.y < 678)
+        #expect(UITree.clippingApplicationFrame(in: clipped, screenWidth: 466, screenHeight: 678) == clipped)
+    }
 }
 
 @Suite("Hinge control")

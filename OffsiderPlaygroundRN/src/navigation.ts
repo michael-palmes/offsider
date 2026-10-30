@@ -207,6 +207,24 @@ export const routeInfo = {
     menuTitle: 'Live Ticker Test',
     subtitle: 'Ticking values, a delayed push and two log toasts',
   },
+  'drawer-test': {
+    section: 'Real-world RN',
+    title: 'Side Drawer',
+    menuTitle: 'Side Drawer Test',
+    subtitle: 'A drawer kept mounted beneath the page while closed',
+  },
+  'tab-bar-test': {
+    section: 'Real-world RN',
+    title: 'Tab Bar',
+    menuTitle: 'Tab Bar Test',
+    subtitle: 'A list under a tab bar, a footer bar and a mounted tab',
+  },
+  'cover-test': {
+    section: 'Real-world RN',
+    title: 'Cover',
+    menuTitle: 'Cover Test',
+    subtitle: 'An app keypad over a field, stacked pages',
+  },
   'user-switch-test': {
     section: 'Real-world RN',
     title: 'User Switch',

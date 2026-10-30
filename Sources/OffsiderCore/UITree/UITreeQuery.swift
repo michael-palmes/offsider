@@ -86,48 +86,61 @@ extension UITree {
         guard !filter.isEmpty else {
             return self
         }
-        let rect = visibleRect
+        var matcher = Matcher(tree: self, filter: filter)
         var copy = self
-        copy.roots = roots.compactMap { Self.prune($0, filter, rect) }
+        copy.roots = roots.compactMap { matcher.prune($0) }
         return copy
     }
 
     /// Matching nodes in pre-order (the order of `UINode.flattened()`), each pointing at its nearest kept ancestor.
     public func flatEntries(_ filter: UITreeFilter) -> [UIFlatEntry] {
-        let rect = visibleRect
+        var matcher = Matcher(tree: self, filter: filter)
         var entries: [UIFlatEntry] = []
         for root in roots {
-            Self.collect(root, depth: 0, parent: nil, filter, rect, into: &entries)
+            matcher.collect(root, depth: 0, parent: nil, into: &entries)
         }
         return entries
     }
 
-    private static func prune(_ node: UINode, _ filter: UITreeFilter, _ rect: UIFrame?) -> UINode? {
-        var copy = node
-        copy.children = node.children.compactMap { prune($0, filter, rect) }
-        guard !copy.children.isEmpty || filter.matches(node, visibleRect: rect) else {
-            return nil
-        }
-        return copy
-    }
+    /// The filter over the tree in pre-order; with `onScreen`, an element the front reading says a touch would not reach does not match.
+    private struct Matcher {
+        let filter: UITreeFilter
+        let rect: UIFrame?
+        let unreached: Set<Int>
+        var position = 0
 
-    private static func collect(
-        _ node: UINode,
-        depth: Int,
-        parent: Int?,
-        _ filter: UITreeFilter,
-        _ rect: UIFrame?,
-        into entries: inout [UIFlatEntry]
-    ) {
-        var nearest = parent
-        if filter.matches(node, visibleRect: rect) {
-            var leaf = node
-            leaf.children = []
-            nearest = entries.count
-            entries.append(UIFlatEntry(index: entries.count, parent: parent, depth: depth, node: leaf))
+        init(tree: UITree, filter: UITreeFilter) {
+            self.filter = filter
+            rect = tree.visibleRect
+            unreached = filter.onScreen ? tree.front?.unreached ?? [] : []
         }
-        for child in node.children {
-            collect(child, depth: depth + 1, parent: nearest, filter, rect, into: &entries)
+
+        mutating func matches(_ node: UINode) -> Bool {
+            defer { position += 1 }
+            return !unreached.contains(position) && filter.matches(node, visibleRect: rect)
+        }
+
+        mutating func prune(_ node: UINode) -> UINode? {
+            let matched = matches(node)
+            var copy = node
+            copy.children = node.children.compactMap { prune($0) }
+            guard !copy.children.isEmpty || matched else {
+                return nil
+            }
+            return copy
+        }
+
+        mutating func collect(_ node: UINode, depth: Int, parent: Int?, into entries: inout [UIFlatEntry]) {
+            var nearest = parent
+            if matches(node) {
+                var leaf = node
+                leaf.children = []
+                nearest = entries.count
+                entries.append(UIFlatEntry(index: entries.count, parent: parent, depth: depth, node: leaf))
+            }
+            for child in node.children {
+                collect(child, depth: depth + 1, parent: nearest, into: &entries)
+            }
         }
     }
 }

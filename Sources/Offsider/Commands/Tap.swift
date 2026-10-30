@@ -55,7 +55,7 @@ struct Tap: AsyncParsableCommand, VerifiableCommand {
     @Option(name: .customLong("nth"), help: ArgumentHelp("With several on-screen matches, tap the nth in tree order (1-based) instead of failing as ambiguous.", valueName: "n"))
     var nth: Int?
 
-    @Flag(name: .customLong("topmost"), help: "With several on-screen matches, tap the one drawn on top: the one a hit-test at its point reaches on an iOS simulator, else the one the tree draws on top there (Android drawing order, or tree order).")
+    @Flag(name: .customLong("topmost"), help: "With several on-screen matches, tap the one drawn on top: the only one on the front page when a page is drawn over the others, else the one a hit-test at its point reaches on an iOS simulator, else the one the tree draws on top there (Android drawing order, or tree order).")
     var topmost: Bool = false
 
     @Flag(name: .customLong("no-settle"), help: "Tap a selector's target at once, without waiting out a transition an input under 500 ms ago may have started.")
@@ -233,12 +233,14 @@ struct Tap: AsyncParsableCommand, VerifiableCommand {
                 targetNode: targetNode,
                 beforeAction: { tree in
                     let pick: MatchPick? = await picker?(tree.roots) ?? nil
-                    guard let query, let moved = try? AccessibilityTargetResolver.resolveTap(
+                    guard let query, let found = try? AccessibilityTargetResolver.resolveTap(
                         roots: tree.roots, query: query, elementType: elementType, allowOffscreen: allowOffscreen, explainFailures: false, pick: pick
-                    ), abs(moved.point.x - resolution.point.x) > TransitionGuard.frameTolerance
-                        || abs(moved.point.y - resolution.point.y) > TransitionGuard.frameTolerance else { return }
-                    logger.info().log("\(verifyTarget) moved to \(VerifyOutput.pointDescription(x: moved.point.x, y: moved.point.y)) while settling; tapping there")
-                    physicalPoint = try await backend.deviceCoordinates(for: [moved.point], tree: tree, on: device)[0]
+                    ) else { return }
+                    // Keeps the cover check's aim at the part that shows beside a cover.
+                    let moved = (x: found.point.x + resolution.aim.x, y: found.point.y + resolution.aim.y)
+                    guard abs(moved.x - resolution.point.x) > TransitionGuard.frameTolerance || abs(moved.y - resolution.point.y) > TransitionGuard.frameTolerance else { return }
+                    logger.info().log("\(verifyTarget) moved to \(VerifyOutput.pointDescription(x: moved.x, y: moved.y)) while settling; tapping there")
+                    physicalPoint = try await backend.deviceCoordinates(for: [moved], tree: tree, on: device)[0]
                 }
             )
             try await VerifyOutput.perform(request, progress: progress) { attempt, session in
@@ -334,7 +336,7 @@ struct Tap: AsyncParsableCommand, VerifiableCommand {
         return nil
     }
 
-    /// The first match whose own point hit-tests back to it, else the last; a single match needs no hit-test.
+    /// The only match on the front page when a page is drawn over the others; else the first, front page first, whose own point hit-tests back to it; else the last on the front page.
     static func topmostPick(
         roots: [UINode],
         query: AccessibilityQuery,
@@ -345,7 +347,12 @@ struct Tap: AsyncParsableCommand, VerifiableCommand {
         let found = AccessibilityTargetResolver.candidates(roots: roots, query: query, elementType: elementType)
         guard found.matches.count > 1 else { return .last }
         let pool = allowOffscreen ? found.matches : found.onScreen
-        for index in pool.indices {
+        let stack = ScreenStack.build(roots: roots, viewport: found.viewport)
+        let front = pool.indices.filter { !stack.isBeneath(pool[$0], in: roots) }
+        if front.count == 1 {
+            return .nth(front[0] + 1)
+        }
+        for index in front + pool.indices.filter({ !front.contains($0) }) {
             guard let resolution = try? AccessibilityTargetResolver.resolveTap(
                 roots: roots, query: query, elementType: elementType, allowOffscreen: allowOffscreen, explainFailures: false, pick: .nth(index + 1)
             ), let matched = resolution.matched else { continue }
@@ -354,7 +361,7 @@ struct Tap: AsyncParsableCommand, VerifiableCommand {
                 return .nth(index + 1)
             }
         }
-        return .last
+        return front.last.map { .nth($0 + 1) } ?? .last
     }
 
     /// Warns when a selector's point is outside the screen, which only `--allow-offscreen` lets through.
@@ -397,9 +404,9 @@ struct Tap: AsyncParsableCommand, VerifiableCommand {
     }
 
     /// The cover check's keyboard refusal again with the tree it read, so its advice fits the keyboard on screen.
-    static func withKeyboardAdvice(_ check: @MainActor () async throws -> Void, selector: String, at point: (x: Double, y: Double), device: DeviceID, tree: UITree) async throws {
+    static func withKeyboardAdvice<Checked>(_ check: @MainActor () async throws -> Checked, selector: String, at point: (x: Double, y: Double), device: DeviceID, tree: UITree) async throws -> Checked {
         do {
-            try await check()
+            return try await check()
         } catch let error as CLIError where error.reason == .targetUnderKeyboard {
             throw keyboardCoverError(selector: selector, at: point, device: device, tree: tree)
         }

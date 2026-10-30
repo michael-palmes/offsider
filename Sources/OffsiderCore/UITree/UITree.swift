@@ -103,6 +103,8 @@ public struct UITree: Equatable, Sendable {
     var decodedContext: UITreeContext?
     /// Set by `redacted(_:)` for output: what it hid. JSON carries `redacted` and `revealed` only when either is above zero.
     public var redaction: UITreeRedactionCounts?
+    /// Which of the elements read for it a touch at their point would not reach; nil until a command reads it. JSON does not carry it.
+    public var front: FrontReading?
 
     public var context: UITreeContext { decodedContext ?? UITreeContext(tree: self) }
 

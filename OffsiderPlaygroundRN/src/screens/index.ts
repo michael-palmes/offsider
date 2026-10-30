@@ -8,6 +8,8 @@ import { ButtonTestScreen } from './ButtonTestScreen';
 import { ChoiceTestScreen } from './ChoiceTestScreen';
 import { ContextMenuTestScreen } from './ContextMenuTestScreen';
 import { ControlledSearchTestScreen } from './ControlledSearchTestScreen';
+import { CoverTestScreen } from './CoverTestScreen';
+import { DrawerTestScreen } from './DrawerTestScreen';
 import { EnvironmentTestScreen } from './EnvironmentTestScreen';
 import { GesturePresetsScreen } from './GesturePresetsScreen';
 import { HoldDragScreen } from './HoldDragScreen';
@@ -30,6 +32,7 @@ import { StackTestScreen } from './StackTestScreen';
 import { StickyFooterTestScreen } from './StickyFooterTestScreen';
 import { SwipeTestScreen } from './SwipeTestScreen';
 import { SwitchTestScreen } from './SwitchTestScreen';
+import { TabBarTestScreen } from './TabBarTestScreen';
 import { TabViewTestScreen } from './TabViewTestScreen';
 import { TapTestScreen } from './TapTestScreen';
 import { TextInputScreen } from './TextInputScreen';
@@ -72,5 +75,8 @@ export const screens: Record<RouteId, ComponentType> = {
   'environment-test': EnvironmentTestScreen,
   'permission-state': PermissionStateTestScreen,
   'live-ticker': LiveTickerTestScreen,
+  'drawer-test': DrawerTestScreen,
+  'tab-bar-test': TabBarTestScreen,
+  'cover-test': CoverTestScreen,
   'user-switch-test': UserSwitchTestScreen,
 };

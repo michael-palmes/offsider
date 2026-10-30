@@ -404,6 +404,7 @@ struct AccessibilityTargetResolver {
         allowOffscreen: Bool = false,
         explainFailures: Bool = true,
         pick: MatchPick? = nil,
+        front: FrontReading? = nil,
         logger: OffsiderLogger? = nil
     ) throws -> AccessibilityMatch {
         let found = candidates(roots: roots, query: query, elementType: elementType)
@@ -438,7 +439,8 @@ struct AccessibilityTargetResolver {
             onScreenOnly: !allowOffscreen && found.viewport != nil,
             offScreenIgnored: found.matches.count - pool.count,
             pool: pool,
-            roots: roots
+            roots: roots,
+            front: front
         )
         let element: UINode
         switch (pick, query) {
@@ -473,10 +475,11 @@ struct AccessibilityTargetResolver {
         allowOffscreen: Bool = false,
         explainFailures: Bool = true,
         pick: MatchPick? = nil,
+        front: FrontReading? = nil,
         logger: OffsiderLogger? = nil
     ) throws -> TapResolution {
         let match = try resolveElement(
-            roots: roots, query: query, elementType: elementType, allowOffscreen: allowOffscreen, explainFailures: explainFailures, pick: pick, logger: logger
+            roots: roots, query: query, elementType: elementType, allowOffscreen: allowOffscreen, explainFailures: explainFailures, pick: pick, front: front, logger: logger
         )
 
         let activationElement = try selectActivationElement(
@@ -518,6 +521,23 @@ struct AccessibilityTargetResolver {
         )
     }
 
+    /// The tap a selector on `element` itself would make, for the shared on-screen judgement: its own activation point, what may draw over it, and the pages; nil when no point of it shows.
+    static func resolution(of element: UINode, roots: [UINode], viewport: UIFrame, stack: ScreenStack) -> TapResolution? {
+        guard let frame = element.frame, frame.width > 0, frame.height > 0,
+              let point = try? visiblePoint(activationPoint(for: element, frame: frame), of: element, frame: frame, viewport: viewport, roots: roots, selector: "") else {
+            return nil
+        }
+        let candidates = coverCandidates(of: element, matched: element, at: UIPoint(x: point.x, y: point.y), viewport: viewport, roots: roots)
+        return TapResolution(
+            point: point,
+            isSwitchLikeControl: element.isSwitch,
+            target: element,
+            matched: element,
+            coverCandidates: candidates.isEmpty ? [] : onTopCandidates(candidates, over: element, roots: roots, stack: stack),
+            stack: stack
+        )
+    }
+
     /// Less than this much of an element showing on either axis inside its scroll view is too little to tap safely.
     static let minimumVisibleExtent = 8.0
 
@@ -525,6 +545,34 @@ struct AccessibilityTargetResolver {
     static func visiblePoint(
         _ point: (x: Double, y: Double), of element: UINode, frame: UIFrame, viewport: UIFrame, roots: [UINode], selector: String
     ) throws -> (x: Double, y: Double) {
+        let visible = try shownPart(of: element, frame: frame, viewport: viewport, roots: roots, selector: selector)
+        if visible.contains(UIPoint(x: point.x, y: point.y)) {
+            return point
+        }
+        return (x: visible.center.x, y: visible.center.y)
+    }
+
+    /// What the screen and the scroll views around the element show of `frame`; nil when too little does.
+    static func visibleRegion(of element: UINode, frame: UIFrame, viewport: UIFrame, roots: [UINode]) -> UIFrame? {
+        try? shownPart(of: element, frame: frame, viewport: viewport, roots: roots, selector: "")
+    }
+
+    /// `resolution` moved to `point`, with what may draw over it there.
+    static func resolution(of resolution: TapResolution, at point: UIPoint, roots: [UINode], viewport: UIFrame) -> TapResolution {
+        var moved = TapResolution(
+            point: (x: point.x, y: point.y), isSwitchLikeControl: resolution.isSwitchLikeControl,
+            target: resolution.target, matched: resolution.matched, stack: resolution.stack
+        )
+        moved.aim = UIPoint(x: resolution.aim.x + point.x - resolution.point.x, y: resolution.aim.y + point.y - resolution.point.y)
+        guard let target = resolution.target ?? resolution.matched else { return moved }
+        let candidates = coverCandidates(of: target, matched: resolution.matched ?? target, at: point, viewport: viewport, roots: roots)
+        let stack = resolution.stack ?? ScreenStack.build(roots: roots, viewport: viewport)
+        moved.coverCandidates = candidates.isEmpty ? [] : onTopCandidates(candidates, over: target, roots: roots, stack: stack)
+        moved.stack = stack
+        return moved
+    }
+
+    private static func shownPart(of element: UINode, frame: UIFrame, viewport: UIFrame, roots: [UINode], selector: String) throws -> UIFrame {
         guard frame.isVisible(in: viewport), var visible = frame.intersection(viewport) else {
             throw ElementResolutionError.offScreen(selector: selector, frames: [frame], viewport: viewport)
         }
@@ -540,10 +588,7 @@ struct AccessibilityTargetResolver {
             }
             visible = clipped
         }
-        if visible.contains(UIPoint(x: point.x, y: point.y)) {
-            return point
-        }
-        return (x: visible.center.x, y: visible.center.y)
+        return visible
     }
 
     /// The edge of `shown` that `frame` lies or reaches past.
@@ -567,33 +612,71 @@ struct AccessibilityTargetResolver {
     /// On Android a node in a lower window (the app beneath a keyboard) or not visible to the user cannot cover the target;
     /// Android sorts siblings by position, not drawing order, so a sibling listed first may still be drawn on top. A scroll indicator takes no taps, so it is never one.
     static func coverCandidates(of target: UINode, matched: UINode, at point: UIPoint, viewport: UIFrame, roots: [UINode]) -> [UINode] {
-        let related = family(of: target, in: roots) + family(of: matched, in: roots)
+        let path = UITree.indexPath(to: target, in: roots)
+        let same = matched.isSameElement(as: target)
+        let matchedPath = same ? path : UITree.indexPath(to: matched, in: roots)
+        let lineage = [path, matchedPath].compactMap { $0 }.flatMap { Self.nodes(along: $0, in: roots) }
+        let related = lineage + target.flattened() + (same ? [] : matched.flattened())
+        // Keys sit over the app, its own keypad's as much as the system's, so only another key can cover one.
+        let targetIsKey = path.map { Self.nodes(along: $0, in: roots).contains { $0.role == .keyboard } } ?? isUnderKeyboard(target, in: roots)
         let android = target.isAndroid
-        let targetRoot = roots.firstIndex { root in root.flattened().contains { $0.isSameElement(as: target) || $0.isSameElement(as: matched) } } ?? 0
-        func reaches(_ node: UINode) -> Bool {
+        let targetRoot = (path ?? matchedPath)?.first ?? 0
+        // A simulator lists an app's windows, children of it that fill the screen, bottom first, so one listed before the target's is drawn beneath it.
+        let simulator = target.iosPID != nil
+        func isWindow(_ node: UINode, of parent: UINode) -> Bool {
+            simulator && parent.role == .application && node.frame.map { isBackdrop($0, in: viewport) } == true
+        }
+        let windowPath = path ?? matchedPath
+        let targetWindow = windowPath.flatMap { path -> Int? in
+            guard !android, path.count > 1, roots[path[0]].children.indices.contains(path[1]) else { return nil }
+            return isWindow(roots[path[0]].children[path[1]], of: roots[path[0]]) ? path[1] : nil
+        }
+        // What lies inside an unlabelled container the target is, such as a tab bar listed beside its tabs, is its own content.
+        let content = target.isActionable || target.normalizedLabel != nil ? nil : target.frame
+        func reaches(_ node: UINode, band: ClosedRange<Double>?) -> Bool {
             guard let area = KnownOverlays.logBoxTouchArea(of: node, in: viewport) else {
-                return node.frame.map { $0.contains(point) && $0.isVisible(in: viewport) } ?? false
+                guard let frame = node.frame, frame.contains(point), frame.isVisible(in: viewport) else { return false }
+                return band?.contains(point.y) ?? true
             }
             return area.contains(point) || CoverJudge.reaches(area, target.frame)
         }
         var found: [UINode] = []
-        func visit(_ node: UINode, parent: UINode?, root: Int, underKeyboard: Bool) {
+        func visit(_ node: UINode, parent: UINode?, root: Int, window: Int?, band: ClosedRange<Double>?, underKeyboard: Bool) {
             let underKeyboard = underKeyboard || node.role == .keyboard
-            let beneath = android && (root < targetRoot || node.androidVisibleToUser == false)
-            if !beneath, reaches(node),
-               isPlausibleOccluder(node, underKeyboard: underKeyboard),
+            let beneath = android ? root < targetRoot || node.androidVisibleToUser == false
+                : root == targetRoot && window.map { window in targetWindow.map { window < $0 } ?? false } == true
+            if !beneath, !targetIsKey || underKeyboard, reaches(node, band: band),
+               isPlausibleOccluder(node, underKeyboard: underKeyboard) || CoverJudge.isBar(node, over: target, at: point, viewport: viewport),
                !ScrollIndicator.isIndicator(node, parent: parent),
+               !(content.map { content in node.frame.map { content.encloses($0, tolerance: TransitionGuard.frameTolerance) } ?? false } ?? false),
                !related.contains(where: { $0.isSameElement(as: node) }) {
                 found.append(node)
             }
-            for child in node.children {
-                visit(child, parent: node, root: root, underKeyboard: underKeyboard)
+            // A scroll view or list shows its rows only between its top and bottom.
+            var childBand = band
+            if [.scrollView, .list].contains(node.role), let frame = node.frame, node.hasPositiveFrame {
+                let top = max(band?.lowerBound ?? -.infinity, frame.y), bottom = min(band?.upperBound ?? .infinity, frame.y + frame.height)
+                childBand = top <= bottom ? top...bottom : frame.y...frame.y
+            }
+            for (index, child) in node.children.enumerated() {
+                let childWindow = parent == nil && isWindow(child, of: node) ? index : window
+                visit(child, parent: node, root: root, window: childWindow, band: childBand, underKeyboard: underKeyboard)
             }
         }
         for (index, root) in roots.enumerated() {
-            visit(root, parent: nil, root: index, underKeyboard: false)
+            visit(root, parent: nil, root: index, window: nil, band: nil, underKeyboard: false)
         }
         return found
+    }
+
+    /// The nodes from a root down to the one `path` leads to, both included.
+    static func nodes(along path: [Int], in roots: [UINode]) -> [UINode] {
+        guard let first = path.first, first < roots.count else { return [] }
+        var chain = [roots[first]]
+        for index in path.dropFirst() where index < chain[chain.count - 1].children.count {
+            chain.append(chain[chain.count - 1].children[index])
+        }
+        return chain
     }
 
     /// The roots a cover check judges: on Android the keyboard's window bounds decide, and its root view spans the screen, so it leaves the judging.
@@ -827,6 +910,8 @@ struct AccessibilityTargetResolver {
         /// Every match `--nth` counts, in tree order, and the tree it came from.
         var pool: [UINode] = []
         var roots: [UINode] = []
+        /// The shared on-screen judgement of the matches, when it was read.
+        var front: FrontReading?
 
         func summary(_ node: UINode, stack: ScreenStack) -> MatchSummary {
             let index = pool.firstIndex { $0.isSameElement(as: node) }.map { $0 + 1 }
@@ -843,7 +928,7 @@ struct AccessibilityTargetResolver {
         }
         guard matches.count == 1 else {
             let stack = ScreenStack.build(roots: ambiguity.roots, viewport: ambiguity.viewport)
-            if let chosen = stackedPick(matches, roots: ambiguity.roots, stack: stack, viewport: ambiguity.viewport) {
+            if let chosen = stackedPick(matches, roots: ambiguity.roots, stack: stack, viewport: ambiguity.viewport, front: ambiguity.front) {
                 return chosen
             }
             let hasUniqueIDs = matches.contains {
@@ -863,13 +948,21 @@ struct AccessibilityTargetResolver {
         return matches[0]
     }
 
-    /// Among several matches, the only one not beneath a page; else on Android the only one whose point the tap's cover check lets through; else, when they all share one activation point, the one a touch there reaches.
-    static func stackedPick(_ matches: [UINode], roots: [UINode], stack: ScreenStack, viewport: UIFrame?) -> UINode? {
+    /// Among several matches, the only one not beneath a page; else the only one a touch at its point reaches, by the shared on-screen judgement (`front`, read on a simulator) or on Android its drawing order;
+    /// else, when they all share one activation point, the one a touch there reaches.
+    static func stackedPick(_ matches: [UINode], roots: [UINode], stack: ScreenStack, viewport: UIFrame?, front: FrontReading? = nil) -> UINode? {
         let uncovered = matches.filter { !stack.isBeneath($0, in: roots) }
         if uncovered.count == 1 {
             return uncovered[0]
         }
-        let pool = uncovered.isEmpty ? matches : uncovered
+        var pool = uncovered.isEmpty ? matches : uncovered
+        if let front, !front.isEmpty {
+            let reached = pool.filter { front.reason(for: $0, in: roots) == nil }
+            if reached.count == 1 {
+                return reached[0]
+            }
+            pool = reached.isEmpty ? pool : reached
+        }
         if let viewport, pool.contains(where: \.isAndroid) {
             let judged = coverRoots(roots, android: true)
             let judgedStack = judged.count == roots.count ? stack : ScreenStack.build(roots: judged, viewport: viewport)

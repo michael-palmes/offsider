@@ -22,7 +22,8 @@ KNOWN_SCENARIOS="android-describe android-describe-first android-describe-uiauto
 android-tap-id-verify-live android-batch-describe-5 \
 android-tap-xy android-tap-xy-input android-tap-xy-helper android-tap-physical android-swipe android-type-ascii android-type-ascii-helper \
 android-screenshot android-screenshot-json android-screenshot-raw android-screenshot-helper android-batch-tap-5 android-wait-settled \
-ios-describe ios-tap-id ios-tap-id-first ios-tap-id-verify ios-tap-id-verify-live ios-tap-xy ios-tap-xy-first"
+ios-describe ios-tap-id ios-tap-id-first ios-tap-id-verify ios-tap-id-verify-live ios-tap-xy ios-tap-xy-first \
+android-describe-summary android-describe-summary-drawer ios-describe-summary ios-describe-summary-drawer"
 PLAYGROUND_RN="com.mpalmes.offsider.playground.rn"
 
 usage() {
@@ -236,6 +237,7 @@ open_screen() {
 scenario_screen() {
   case "$1" in
     *-live) echo live-ticker ;;
+    *-drawer) echo drawer-test ;;
     android-type-*) echo text-input ;;
     android-swipe) echo swipe-test ;;
     *) echo tap-test ;;
@@ -358,6 +360,10 @@ commands = {
     "android-type-ascii-helper": (["type", "hello", "--device", device], {"OFFSIDER_ANDROID_INPUT": "helper"}),
     "android-batch-tap-5": (["batch", "--device", device] + ["--step", "tap --id tap-test-area"] * 5, {}),
     "ios-describe": (["describe-ui", "--device", device], {}),
+    "ios-describe-summary": (["describe-ui", "--summary", "--device", device], {}),
+    "ios-describe-summary-drawer": (["describe-ui", "--summary", "--device", device], {}),
+    "android-describe-summary": (["describe-ui", "--summary", "--device", device], {}),
+    "android-describe-summary-drawer": (["describe-ui", "--summary", "--device", device], {}),
     "ios-tap-id": (["tap", "--id", "tap-test-area", "--device", device], {}),
     "ios-tap-id-first": (["tap", "--id", "tap-test-area", "--device", device], {}),
     "ios-tap-id-verify": (["tap", "--id", "tap-test-area", "--verify", "--device", device], {}),

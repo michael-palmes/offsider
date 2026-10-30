@@ -30,6 +30,17 @@ extension UITree {
             return corrected
         }
     }
+
+    /// An app's frame cut to the display it is drawn on, as a foldable's cover display can report a taller frame than it shows: what lies past the display's edge is off screen.
+    public static func clippingApplicationFrame(in roots: [UINode], screenWidth: Double, screenHeight: Double) -> [UINode] {
+        let display = UIFrame(x: 0, y: 0, width: screenWidth, height: screenHeight)
+        return roots.map { root in
+            guard root.role == .application, let frame = root.frame, let shown = frame.intersection(display), shown != frame else { return root }
+            var clipped = root
+            clipped.frame = shown
+            return clipped
+        }
+    }
 }
 
 extension UIFrame {

@@ -29,4 +29,6 @@ struct TapResolution {
     var coverCandidates: [UINode] = []
     /// The pages the tree showed, read only when there were candidates.
     var stack: ScreenStack? = nil
+    /// How far the cover check moved the tap from the target's own point, to the part that shows beside a cover; zero when it did not.
+    var aim = UIPoint(x: 0, y: 0)
 }

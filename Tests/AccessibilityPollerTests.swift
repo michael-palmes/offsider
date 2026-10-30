@@ -45,9 +45,9 @@ struct AccessibilityPollerTests {
         var checks = 0
         init(_ covered: Int) { self.covered = covered }
 
-        func check(_ resolution: TapResolution, _ tree: UITree) throws {
+        func check(_ resolution: TapResolution, _ tree: UITree) throws -> TapResolution {
             checks += 1
-            guard covered > 0 else { return }
+            guard covered > 0 else { return resolution }
             covered -= 1
             throw CLIError(errorDescription: "covered", reason: .targetCovered)
         }
@@ -125,6 +125,7 @@ struct AccessibilityPollerTests {
             coverCheck: { resolution, _ in
                 checks += 1
                 if checks == 1 { throw Tap.keyboardCoverError(selector: "--id 'go'", at: resolution.point, device: device) }
+                return resolution
             },
             logger: OffsiderLogger(), clock: ScriptedClock().poll
         ) {

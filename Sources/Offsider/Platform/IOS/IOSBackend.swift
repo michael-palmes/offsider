@@ -119,6 +119,7 @@ final class IOSBackend: DeviceBackend {
            let active = await displayCatalog.activeDisplay(of: simulator, applicationFrame: tree.applicationFrame),
            let geometry = await panelGeometry(on: active, of: simulator) {
             tree.roots = UITree.correctingSidewaysApplicationFrame(in: tree.roots, screenWidth: geometry.width, screenHeight: geometry.height)
+            tree.roots = UITree.clippingApplicationFrame(in: tree.roots, screenWidth: geometry.width, screenHeight: geometry.height)
         }
         if point == nil {
             if let frame = tree.applicationFrame {
@@ -309,6 +310,10 @@ final class IOSBackend: DeviceBackend {
 extension IOSBackend: PointHitTesting {
     func hitTest(at point: UIPoint, on id: DeviceID, appPIDs: Set<Int>) async throws -> UINode? {
         try await accessibilityTree(for: id, point: point, appPIDs: appPIDs).roots.first
+    }
+
+    func quickHitTest(at point: UIPoint, on id: DeviceID) async throws -> UINode? {
+        try await probe(at: point, on: id)
     }
 
     /// A simulator's processes run on the Mac, so the pid the tree gives is a Mac pid.
