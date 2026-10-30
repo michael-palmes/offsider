@@ -31,6 +31,11 @@ public struct FrontReading: Equatable, Sendable {
     /// Pre-order indexes of every element a touch would not reach.
     public var unreached: Set<Int> { Set(beneath.keys).union(covered.keys) }
 
+    /// True when a touch at the element at `index` lands elsewhere: a sure cover, or anything else the simulator's own hit-test answered with.
+    public func misses(at index: Int) -> Bool {
+        unreached.contains(index) || judged[index]?.verdict?.evidence == .hitTest
+    }
+
     /// Why a touch at the element at `index` would not reach it, such as `beneath "Products"` or `under button "Buy" (16, 790.0) 370x44`; nil when it would.
     public func reason(at index: Int) -> String? {
         if let page = beneath[index] {

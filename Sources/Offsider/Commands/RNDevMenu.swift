@@ -81,8 +81,13 @@ struct DevMenuDriver {
 
     /// Taps the item, closes the menu if a switch left it open, and returns the label tapped once the menu is gone.
     @discardableResult
-    func choose(_ item: DevMenu.Item?, label: String?, state: DevMenu.State, tree: UITree) async throws -> String {
+    func choose(_ item: DevMenu.Item?, label: String?, state: DevMenu.State, tree opened: UITree) async throws -> String {
         let android = route.device.platform == .android
+        var tree = opened
+        let unsure = DevMenu.unsureMatches(for: item, label: label, in: tree)
+        if !unsure.isEmpty {
+            await FrontJudge.read(unsure, in: &tree, backend: route.backend, device: route.device, everyPoint: true)
+        }
         guard let (node, tapped) = DevMenu.match(for: item, label: label, in: tree), let frame = node.frame else {
             // React Native's own menu on Android is a dialog with no close control, which Back dismisses.
             if item == .close, android {
@@ -106,6 +111,14 @@ struct DevMenuDriver {
         // A switch or label can leave the menu open, and a Close tapped while the menu still presents can be ignored.
         if item?.isToggle == true || label != nil || item == .close {
             let fresh = try await read()
+            // Closing the menu now would pass for a choice. The items it lists are real, though React Native draws them as plain text.
+            if label != nil, !state.items.contains(where: { $0.label == tapped }), DevMenu.pressesNothing(node, at: point, in: tree), DevMenu.read(fresh) == state {
+                throw CLIError(
+                    errorDescription: "Tapped \(TerminalText.quoted(tapped)), but nothing happened: it is not a control in the \(state.menu) dev menu, which is still open. Its items: \(state.items.map(\.label).joined(separator: ", ")).",
+                    reason: .notVerified,
+                    hint: "offsider rn devmenu --device \(route.device.rawValue)"
+                )
+            }
             if let close = DevMenu.node(for: .close, label: nil, in: fresh), let closeFrame = close.frame {
                 try await tap(closeFrame.center, tree: nil)
                 if try await closed(leaving: state.menu) { return tapped }
@@ -204,9 +217,10 @@ struct RNDevMenu: AsyncParsableCommand {
         Without an item it prints the items, marking custom those the app registered, and leaves the menu open. With one (reload, home, inspector, \
         perf-monitor, fast-refresh, debugger, close) or --label, it taps it and waits until the menu closes, \
         closing it after a switch. React Native's own menu on Android has no close control, so there `close` \
-        presses Back and checks the menu went. Exits 2 when the menu has no such item (the items are the candidates) or the item is \
-        off screen (nothing is tapped; the hint is the swipe that scrolls the menu to it), 1 when \
-        the menu never opens (a Release build has none) and 5 when it stays open. On Android, `perf-monitor` first \
+        presses Back and checks the menu went. Exits 2 when the menu has no such item, as for a label only the app behind it shows \
+        (the items are the candidates), or the item is off screen (nothing is tapped; the hint is the swipe that scrolls the menu to it), 1 when \
+        the menu never opens (a Release build has none) and 5 when it stays open, as after a --label on something that is no control, such as a \
+        section heading. On Android, `perf-monitor` first \
         checks the app may display over other apps and exits 1 with `person_required` when it may not. On Android an Expo dev client \
         keeps the menu key from its menu while a text field has focus, and the error then says so: move focus \
         out of the field, or open Expo's menu with its Tools button, then run this again. In batch, `rn devmenu` is \

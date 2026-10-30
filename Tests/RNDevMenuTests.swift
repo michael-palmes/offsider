@@ -243,6 +243,123 @@ struct RNDevMenuTests {
         #expect(DevMenu.tools(in: menu) == (inspector: false, perfMonitor: false))
     }
 
+    /// The captured iOS Expo menu with a button of the app's listed before it, in the app's own branch of the tree.
+    static func menu(withAppButton label: String, frame: UIFrame) throws -> UITree {
+        var menu = try Self.captured("devmenu-expo-ios")
+        menu.roots[0].children[0].children.insert(FakeUI.node(.button, id: "app-button", label: label, frame: frame), at: 0)
+        return menu
+    }
+
+    static let iosDevice = DeviceID(rawValue: "IOS-UDID", platform: .ios)
+
+    /// What the Expo sheet's dimmed area above it answers a hit-test with; the tree does not list it.
+    static let dismissArea = FakeUI.node(.button, label: "Activate to dismiss pop-up window.", frame: FakeUI.frame(0, 0, 402, 373))
+
+    @Test("an app button with an item's label is never tapped, wherever it sits behind the menu: the menu's own is, with no hit-test", arguments: [
+        FakeUI.frame(16, 120, 370, 44), FakeUI.frame(16, 480, 370, 44),
+    ])
+    func menusOwnItemOverAppButton(frame: UIFrame) async throws {
+        let menu = try Self.menu(withAppButton: "Reload", frame: frame)
+        let backend = HitTestingFakeBackend(platform: .ios, trees: [menu, Self.app], advanceTreeOnInput: true)
+
+        let outcome = try await RNDevMenu.parse(["reload", "--device", Self.iosDevice.rawValue])
+            .perform(on: DeviceRouter.Route(backend: backend, device: Self.iosDevice), clock: ScriptedClock().poll)
+
+        #expect(outcome == .chose(menu: "expo", item: .reload, label: "Reload"))
+        let own = try #require(try Self.captured("devmenu-expo-ios").roots[0].flattened().first { $0.role == .button && $0.label == "Reload" }?.frame)
+        #expect(backend.session.calls == [.perform(.tapAt(x: own.center.x, y: own.center.y))])
+        #expect(backend.hitTests == 0)
+    }
+
+    @Test("--label naming only a row of the app behind the menu is no item of the menu: nothing is tapped, whatever the hit-test answers", arguments: [
+        (FakeUI.frame(16, 156, 370, 57), Self.dismissArea),
+        (FakeUI.frame(16, 480, 370, 44), FakeUI.node(.group, frame: FakeUI.frame(8, 385, 386, 481))),
+    ])
+    func appRowIsNoItem(frame: UIFrame, hit: UINode) async throws {
+        let backend = HitTestingFakeBackend(platform: .ios, trees: [try Self.menu(withAppButton: "Tap Test", frame: frame)])
+        backend.hits = { _ in hit }
+
+        let error = await #expect(throws: CLIError.self) {
+            _ = try await RNDevMenu.parse(["--label", "Tap Test", "--device", Self.iosDevice.rawValue])
+                .perform(on: DeviceRouter.Route(backend: backend, device: Self.iosDevice), clock: ScriptedClock().poll)
+        }
+
+        #expect(error?.reason == .selectorNotFound)
+        #expect(error?.userFacingDescription.hasPrefix("The expo dev menu has no --label 'Tap Test'.") == true)
+        #expect(backend.session.calls.isEmpty)
+        #expect(backend.hitTests == 1)
+    }
+
+    @Test("Close, listed before the menu's Reload, is still tapped when the hit-test answers with it, and a button of the app with its label is not")
+    func closeByLabelOverAppButton() async throws {
+        let menu = try Self.menu(withAppButton: "Close", frame: FakeUI.frame(16, 120, 370, 44))
+        let close = try #require(menu.roots[0].flattened().last { $0.id == "xmark" })
+        let backend = HitTestingFakeBackend(platform: .ios, trees: [menu, Self.app], advanceTreeOnInput: true)
+        backend.hits = { point in close.frame?.contains(point) == true ? close : Self.dismissArea }
+
+        let outcome = try await RNDevMenu.parse(["--label", "Close", "--device", Self.iosDevice.rawValue])
+            .perform(on: DeviceRouter.Route(backend: backend, device: Self.iosDevice), clock: ScriptedClock().poll)
+
+        let frame = try #require(close.frame)
+        #expect(outcome == .chose(menu: "expo", item: nil, label: "Close"))
+        #expect(backend.session.calls == [.perform(.tapAt(x: frame.center.x, y: frame.center.y))])
+    }
+
+    @Test("Continue on Expo's first-run sheet, drawn after the menu, is tapped whatever a hit-test would answer, as it needs none")
+    func onboardingContinue() async throws {
+        var menu = try Self.captured("devmenu-expo-ios")
+        let continueButton = FakeUI.node(.button, label: "Continue", frame: FakeUI.frame(23, 776, 355, 44))
+        menu.roots[0].children.append(continueButton)
+        let backend = HitTestingFakeBackend(platform: .ios, trees: [menu, menu, Self.app], advanceTreeOnInput: true)
+        backend.hits = { _ in FakeUI.node(.button, label: "Toggle element inspector", frame: FakeUI.frame(23, 682, 355, 54)) }
+
+        let outcome = try await RNDevMenu.parse(["--label", "Continue", "--device", Self.iosDevice.rawValue])
+            .perform(on: DeviceRouter.Route(backend: backend, device: Self.iosDevice), clock: ScriptedClock().poll)
+
+        #expect(outcome == .chose(menu: "expo", item: nil, label: "Continue"))
+        #expect(backend.session.calls.first == .perform(.tapAt(x: 200.5, y: 798)))
+        #expect(backend.hitTests == 0)
+    }
+
+    @Test("--label on a section heading says the tap did nothing and leaves the menu open, rather than closing it and reporting a choice")
+    func headingDoesNothing() async throws {
+        let menu = try Self.captured("devmenu-expo-ios")
+        let backend = FakeDeviceBackend(platform: .ios, trees: [menu])
+
+        let error = await #expect(throws: CLIError.self) {
+            _ = try await RNDevMenu.parse(["--label", "TOOLS", "--device", Self.iosDevice.rawValue])
+                .perform(on: DeviceRouter.Route(backend: backend, device: Self.iosDevice), clock: ScriptedClock().poll)
+        }
+
+        #expect(error?.reason == .notVerified)
+        #expect(error?.reason.exitCode == .unverified)
+        #expect(error?.userFacingDescription.hasPrefix("Tapped \"TOOLS\", but nothing happened: it is not a control in the expo dev menu, which is still open.") == true)
+        #expect(backend.session.calls.count == 1, "the heading's tap, and no Close")
+    }
+
+    /// The Expo menu with `label` as plain text at `frame`, over `control` when one is given.
+    static func expoMenu(text label: String, frame: UIFrame, over control: UINode? = nil) -> UITree {
+        FakeUI.tree(platform: .ios, Self.expoMenu(platform: .ios).roots[0].children + [control].compactMap { $0 } + [FakeUI.node(.text, label: label, frame: frame)])
+    }
+
+    @Test("plain text on a control, or text whose tap changed the menu, may have done something, so the menu still closes as before")
+    func textThatMayHaveActed() async throws {
+        let frame = FakeUI.frame(16, 560, 370, 48)
+        let onControl = Self.expoMenu(text: "Copy", frame: frame, over: FakeUI.node(.button, label: "Copy system info", frame: frame))
+        let changing = Self.expoMenu(text: "SYSTEM", frame: frame)
+        var changed = changing
+        changed.roots[0].children[0].frame = FakeUI.frame(16, 310, 370, 48)
+        for (label, trees) in [("Copy", [onControl, onControl, Self.app]), ("SYSTEM", [changing, changed, Self.app])] {
+            let backend = FakeDeviceBackend(platform: .ios, trees: trees, advanceTreeOnInput: true)
+
+            let outcome = try await RNDevMenu.parse(["--label", label, "--device", Self.iosDevice.rawValue])
+                .perform(on: DeviceRouter.Route(backend: backend, device: Self.iosDevice), clock: ScriptedClock().poll)
+
+            #expect(outcome == .chose(menu: "expo", item: nil, label: label))
+            #expect(backend.session.calls.count == 2, "the text's tap, then Close")
+        }
+    }
+
     @Test("perf-monitor on Android stops with person_required before anything is sent when the app may not draw over other apps", arguments: [
         ["perf-monitor"], ["--label", "Toggle Performance Monitor"],
     ])
