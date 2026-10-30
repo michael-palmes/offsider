@@ -823,6 +823,9 @@ struct DeviceAccessCommandTests {
             ["devices", "add", "--device", "R58M123ABC", "--booted", "--platform=android"],
             "--platform and --booted filter the device list; devices add takes --device <id>. To list: offsider devices --platform android --booted"
         ),
+        (["devices", "status", "--platform", "windows"], "--platform filters the device list; devices status takes --device <id>. To list: offsider devices"),
+        (["devices", "--platform", "windows", "remove"], "--platform filters the device list; devices remove takes --device <id>. To list: offsider devices"),
+        (["devices", "add", "--platform=windows", "--booted"], "--platform and --booted filter the device list; devices add takes --device <id>. To list: offsider devices --booted"),
     ])
     func listFiltersRefused(arguments: [String], message: String) {
         do {
@@ -851,6 +854,18 @@ struct DeviceAccessCommandTests {
             let help = OffsiderCommand.helpMessage(for: subcommand, columns: 200)
             #expect(!help.contains("--platform") && !help.contains("--physical") && !help.contains("--booted"), "\(help)")
         }
+    }
+
+    @Test("the list refuses a platform there is no such thing as when it runs, and its help still lists the ones there are", arguments: ["devices", "list-devices"])
+    func listRefusesUnknownPlatform(name: String) async throws {
+        var command = try #require(try OffsiderCommand.parseAsRoot([name, "--platform", "windows"]) as? any AsyncParsableCommand)
+
+        let error = await #expect(throws: CLIError.self) { try await command.run() }
+
+        #expect(error?.reason == .usage && error?.reason.exitCode == .usage)
+        #expect(error?.userFacingDescription == "--platform takes ios or android; got 'windows'.")
+        let help = OffsiderCommand.helpMessage(for: ListDevices.self, columns: 200)
+        #expect(help.contains("--platform <platform>") && help.contains("(values: ios, android)"), "\(help)")
     }
 
     @Test("device-access names its new command in one line and exits 64")

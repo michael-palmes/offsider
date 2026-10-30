@@ -33,6 +33,7 @@ struct ListDevices: AsyncParsableCommand, RunsWithoutSubcommand {
     }
 
     static func list(_ options: DeviceListOptions) async throws {
+        try options.filters.requirePlatform()
         let console = Console.current
         let (listed, skipped) = try await console.progress("Looking for devices") { try await Self.listDevices(platform: options.platform, logger: OffsiderLogger()) }
         let (shown, hidden) = Self.applyPolicy(listed, physicalOnly: options.physical, gate: DevicePolicyGate.current)
@@ -175,10 +176,26 @@ struct DeviceListOptions: ParsableArguments {
     var booted: Bool { filters.booted }
 }
 
+/// `--platform` as written. `devices` parses it before it knows a subcommand follows, so a wrong value has to get past it to reach that subcommand's refusal; the list checks the value when it runs.
+struct DevicePlatformFilter: ExpressibleByArgument {
+    let written: String
+
+    init?(argument: String) {
+        written = argument
+    }
+
+    var platform: DevicePlatform? { DevicePlatform(rawValue: written) }
+
+    static var allValueStrings: [String] { DevicePlatform.allValueStrings }
+    static var defaultCompletionKind: CompletionKind { DevicePlatform.defaultCompletionKind }
+}
+
 /// The list's filters. `devices` parses them wherever they fall, so its subcommands declare this group too, receive them and refuse them.
 struct DeviceListFilters: ParsableArguments {
-    @Option(name: .customLong("platform"), help: "Only list devices on this platform.")
-    var platform: DevicePlatform?
+    @Option(name: .customLong("platform"), help: ArgumentHelp("Only list devices on this platform.", valueName: "platform"))
+    var platformFilter: DevicePlatformFilter?
+
+    var platform: DevicePlatform? { platformFilter?.platform }
 
     @Flag(name: .customLong("physical"), help: "List only physical devices, including the ones no one has added with `offsider devices add`.")
     var physical = false
@@ -186,10 +203,10 @@ struct DeviceListFilters: ParsableArguments {
     @Flag(name: .customLong("booted"), help: "List only booted or booting devices.")
     var booted = false
 
-    /// A usage error for `devices <subcommand>` when any filter is set, naming the listing command it meant.
+    /// A usage error for `devices <subcommand>` when any filter is set, naming the listing command it meant; a platform there is no such thing as stays out of that command.
     func refuse(in subcommand: any ParsableCommand.Type) throws {
-        let set: [(flag: String, argument: String)?] = [
-            platform.map { ("--platform", "--platform \($0.rawValue)") },
+        let set: [(flag: String, argument: String?)?] = [
+            platformFilter.map { filter in ("--platform", filter.platform.map { "--platform \($0.rawValue)" }) },
             physical ? ("--physical", "--physical") : nil,
             booted ? ("--booted", "--booted") : nil,
         ]
@@ -197,8 +214,15 @@ struct DeviceListFilters: ParsableArguments {
         guard let last = filters.last?.flag else { return }
         let named = filters.count == 1 ? last : filters.dropLast().map(\.flag).joined(separator: ", ") + " and " + last
         throw ValidationError(
-            "\(named) \(filters.count == 1 ? "filters" : "filter") the device list; devices \(subcommand._commandName) takes --device <id>. To list: offsider devices \(filters.map(\.argument).joined(separator: " "))"
+            "\(named) \(filters.count == 1 ? "filters" : "filter") the device list; devices \(subcommand._commandName) takes --device <id>. To list: \((["offsider devices"] + filters.compactMap(\.argument)).joined(separator: " "))"
         )
+    }
+
+    /// The list's check of `--platform`, made when it runs since `validate()` would fire before a subcommand's refusal.
+    func requirePlatform() throws {
+        guard let platformFilter, platformFilter.platform == nil else { return }
+        let platforms = DevicePlatform.allValueStrings.joined(separator: " or ")
+        throw CLIError(errorDescription: "--platform takes \(platforms); got '\(platformFilter.written)'.", reason: .usage)
     }
 }
 
