@@ -86,7 +86,7 @@ public enum DevMenu {
     }
 
     /// The node to tap for `item` or `label`, with the menu label it was found by; a label the app registered is the menu's, never a button behind it.
-    /// A match from the menu's Reload on is the menu's or drawn over it. One listed earlier may be the app behind, so `tree.front`, when read, must say a touch reaches it.
+    /// A match from the menu's Reload on is the menu's or drawn over it. One listed earlier may be the app behind, so it must be on screen and `tree.front`, when read, must say a touch reaches it.
     public static func match(for item: Item?, label: String?, in tree: UITree) -> (node: UINode, label: String)? {
         if let label, let custom = customItems(in: tree).first(where: { $0.label == label && $0.node.frame != nil }) {
             return (custom.node, custom.label)
@@ -95,34 +95,48 @@ public enum DevMenu {
         if item == .close, let xmark = flat.last(where: { $0.id == "xmark" && $0.frame != nil }) {
             return (xmark, trimmedLabel(xmark) ?? "Close")
         }
-        let wanted = label.map { [$0] } ?? item?.labels ?? []
-        let start = menuStart(in: flat)
+        let wanted = labels(for: item, label: label)
+        let start = searchStart(for: item, in: flat)
         let own = flat[start...].filter { $0.frame != nil }
         if let (_, match, text) = best(wanted, in: own) {
             if match.role.isActionable || match.role == .switch { return (match, text) }
             return (rowSwitch(beside: match, in: own) ?? match, text)
         }
-        let earlier = flat[..<start].indices.filter { flat[$0].frame != nil && tree.front?.misses(at: $0) != true }.map { flat[$0] }
-        let matches = earlier.compactMap { node in matchedLabel(node, wanted).map { (node, $0) } }
-        return (matches.last { $0.0.role.isActionable } ?? matches.last).map { (node: $0.0, label: $0.1) }
+        let viewport = tree.viewport
+        let earlier = flat[..<start].indices.filter { index in
+            guard let frame = flat[index].frame else { return false }
+            return viewport.map(frame.isVisible(in:)) != false && tree.front?.misses(at: index) != true
+        }
+        return best(wanted, in: earlier.reversed().map { flat[$0] }).map { (node: $0.node, label: $0.label) }
     }
 
     /// The pre-order indexes `match` needs the front's word on: `item` or `label`'s matches, when all of them are listed before the menu.
     public static func unsureMatches(for item: Item?, label: String?, in tree: UITree) -> [Int] {
         if let label, customItems(in: tree).contains(where: { $0.label == label }) { return [] }
         let flat = tree.roots.flatMap { $0.flattened() }
-        if item == .close, flat.contains(where: { $0.id == "xmark" }) { return [] }
-        let wanted = label.map { [$0] } ?? item?.labels ?? []
-        let start = menuStart(in: flat)
+        let wanted = labels(for: item, label: label)
+        let start = searchStart(for: item, in: flat)
         guard !flat[start...].contains(where: { matchedLabel($0, wanted) != nil }) else { return [] }
         return flat[..<start].indices.filter { matchedLabel(flat[$0], wanted) != nil }
+    }
+
+    private static func labels(for item: Item?, label: String?) -> [String] {
+        label.map { [$0] } ?? item?.labels ?? []
+    }
+
+    /// Where `match` looks first: the menu's Reload, but the whole tree for `close`, whose control a menu lists before Reload.
+    private static func searchStart(for item: Item?, in flat: [UINode]) -> Int {
+        item == .close ? 0 : menuStart(in: flat)
     }
 
     /// True when a tap on `node` at `point` presses nothing: it is no control, and none of the menu's lies under the point.
     public static func pressesNothing(_ node: UINode, at point: UIPoint, in tree: UITree) -> Bool {
         guard !node.isActionable else { return false }
         let flat = tree.roots.flatMap { $0.flattened() }
-        return !flat[menuStart(in: flat)...].contains { $0.isActionable && $0.frame?.contains(point) == true }
+        let indicators = ScrollIndicator.all(in: tree.roots)
+        return !flat[menuStart(in: flat)...].contains { node in
+            node.isActionable && node.frame?.contains(point) == true && !indicators.contains { $0.isSameElement(as: node) }
+        }
     }
 
     /// Where the menu begins in pre-order: its Reload, listed after any an app behind it has, since the menu is drawn over the app. The button is taken over the text inside it.

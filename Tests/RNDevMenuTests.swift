@@ -274,6 +274,7 @@ struct RNDevMenuTests {
     @Test("--label naming only a row of the app behind the menu is no item of the menu: nothing is tapped, whatever the hit-test answers", arguments: [
         (FakeUI.frame(16, 156, 370, 57), Self.dismissArea),
         (FakeUI.frame(16, 480, 370, 44), FakeUI.node(.group, frame: FakeUI.frame(8, 385, 386, 481))),
+        (FakeUI.frame(16, 764, 370, 57), FakeUI.node(.group, frame: FakeUI.frame(0, 0, 402, 874))),
     ])
     func appRowIsNoItem(frame: UIFrame, hit: UINode) async throws {
         let backend = HitTestingFakeBackend(platform: .ios, trees: [try Self.menu(withAppButton: "Tap Test", frame: frame)])
@@ -288,6 +289,35 @@ struct RNDevMenuTests {
         #expect(error?.userFacingDescription.hasPrefix("The expo dev menu has no --label 'Tap Test'.") == true)
         #expect(backend.session.calls.isEmpty)
         #expect(backend.hitTests == 1)
+    }
+
+    @Test("--label naming only an app row off screen behind the menu is no item either, so no swipe is suggested")
+    func offScreenAppRowIsNoItem() async throws {
+        let backend = HitTestingFakeBackend(platform: .ios, trees: [try Self.menu(withAppButton: "Key Press", frame: FakeUI.frame(16, 1000, 370, 57))])
+
+        let error = await #expect(throws: CLIError.self) {
+            _ = try await RNDevMenu.parse(["--label", "Key Press", "--device", Self.iosDevice.rawValue])
+                .perform(on: DeviceRouter.Route(backend: backend, device: Self.iosDevice), clock: ScriptedClock().poll)
+        }
+
+        #expect(error?.reason == .selectorNotFound)
+        #expect(backend.session.calls.isEmpty)
+    }
+
+    @Test("close with no xmark taps the menu's Close, listed before its Reload, not an app's item labelled Dismiss after it")
+    func closeBeforeReload() async throws {
+        let close = FakeUI.node(.button, label: "Close", frame: FakeUI.frame(350, 250, 36, 36), platform: .android)
+        var menu = Self.expoMenu()
+        menu.roots[0].children.removeAll { $0.label == "Close" }
+        menu.roots[0].children.insert(close, at: 0)
+        menu.roots[0].children.append(FakeUI.node(.button, label: "Dismiss", frame: FakeUI.frame(16, 560, 370, 48), platform: .android))
+        let backend = FakeDeviceBackend(platform: .android, trees: [menu, Self.app], advanceTreeOnInput: true)
+
+        let outcome = try await RNDevMenu.parse(["close", "--device", Self.device.rawValue])
+            .perform(on: DeviceRouter.Route(backend: backend, device: Self.device), clock: ScriptedClock().poll)
+
+        #expect(outcome == .chose(menu: "expo", item: .close, label: "Close"))
+        #expect(backend.session.calls == [.perform(.tapAt(x: 368, y: 268))])
     }
 
     @Test("Close, listed before the menu's Reload, is still tapped when the hit-test answers with it, and a button of the app with its label is not")
@@ -335,6 +365,17 @@ struct RNDevMenuTests {
         #expect(error?.reason.exitCode == .unverified)
         #expect(error?.userFacingDescription.hasPrefix("Tapped \"TOOLS\", but nothing happened: it is not a control in the expo dev menu, which is still open.") == true)
         #expect(backend.session.calls.count == 1, "the heading's tap, and no Close")
+    }
+
+    @Test("a heading under the menu's scroll bar presses nothing, as a scroll bar is no control")
+    func headingUnderScrollBar() {
+        let frame = FakeUI.frame(16, 675, 370, 20)
+        let heading = FakeUI.node(.text, label: "SYSTEM", frame: frame)
+        let bar = FakeUI.node(.slider, label: "Horizontal scroll bar, 1 page", frame: FakeUI.frame(0, 670, 402, 30))
+        let scroller = FakeUI.node(.scrollView, frame: FakeUI.frame(0, 300, 402, 400), children: [heading, bar])
+        let menu = FakeUI.tree(platform: .ios, Self.expoMenu(platform: .ios).roots[0].children + [scroller])
+
+        #expect(DevMenu.pressesNothing(heading, at: frame.center, in: menu))
     }
 
     /// The Expo menu with `label` as plain text at `frame`, over `control` when one is given.

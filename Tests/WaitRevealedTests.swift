@@ -25,6 +25,18 @@ struct WaitRevealedTests {
         return RevealedSecrets(record)
     }
 
+    /// The screen as the cache stores it, read just before an input 0.1 s ago.
+    static func cacheScreen(in fixture: TreeCacheFixture, secrets: RevealedSecrets) throws {
+        let record = TreeCacheRecord(
+            platform: .ios, device: device.rawValue, command: "tap", writtenAt: fixture.now,
+            treeReadAt: fixture.now.addingTimeInterval(-0.2), lastInputAt: fixture.now.addingTimeInterval(-0.1), treeRole: .preAction,
+            roots: screen().redacted(TreeValueMask(revealed: secrets), scope: .cache).roots
+        )
+        try OffsiderPrivateDirectory.writeAtomically(
+            record.encoded(), named: TreeCacheRecord.fileName(platform: .ios, device: device.rawValue), in: fixture.directory
+        )
+    }
+
     static func wait(on backend: FakeDeviceBackend, timeout: Int = 3) async throws -> WaitOutcome {
         try await Wait.parse(["--settled", "--timeout", "\(timeout)", "--device", device.rawValue])
             .evaluate(on: DeviceRouter.Route(backend: backend, device: device), logger: OffsiderLogger(), clock: ScriptedClock().poll)
@@ -50,14 +62,7 @@ struct WaitRevealedTests {
     func gateComparesRevealedAlike() async throws {
         let fixture = try TreeCacheFixture()
         let secrets = try Self.revealed(fixture)
-        let record = TreeCacheRecord(
-            platform: .ios, device: Self.device.rawValue, command: "tap", writtenAt: fixture.now,
-            treeReadAt: fixture.now.addingTimeInterval(-0.2), lastInputAt: fixture.now.addingTimeInterval(-0.1), treeRole: .preAction,
-            roots: Self.screen().redacted(TreeValueMask(revealed: secrets), scope: .cache).roots
-        )
-        try OffsiderPrivateDirectory.writeAtomically(
-            record.encoded(), named: TreeCacheRecord.fileName(platform: .ios, device: Self.device.rawValue), in: fixture.directory
-        )
+        try Self.cacheScreen(in: fixture, secrets: secrets)
 
         let outcome = try await fixture.run { try await Self.wait(on: FakeDeviceBackend(trees: [Self.screen()])) }
 
@@ -90,14 +95,7 @@ struct WaitRevealedTests {
     func gateStillSeesTheEffect() async throws {
         let fixture = try TreeCacheFixture()
         let secrets = try Self.revealed(fixture)
-        let record = TreeCacheRecord(
-            platform: .ios, device: Self.device.rawValue, command: "tap", writtenAt: fixture.now,
-            treeReadAt: fixture.now.addingTimeInterval(-0.2), lastInputAt: fixture.now.addingTimeInterval(-0.1), treeRole: .preAction,
-            roots: Self.screen().redacted(TreeValueMask(revealed: secrets), scope: .cache).roots
-        )
-        try OffsiderPrivateDirectory.writeAtomically(
-            record.encoded(), named: TreeCacheRecord.fileName(platform: .ios, device: Self.device.rawValue), in: fixture.directory
-        )
+        try Self.cacheScreen(in: fixture, secrets: secrets)
         let pushed = FakeUI.tree([FakeUI.node(.header, id: "detail", label: "Detail", frame: FakeUI.frame(0, 60, 402, 44))])
 
         let outcome = try await fixture.run { try await Self.wait(on: FakeDeviceBackend(trees: [pushed])) }

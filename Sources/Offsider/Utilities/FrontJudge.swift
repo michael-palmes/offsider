@@ -118,7 +118,7 @@ enum FrontJudge {
                 // A simulator point left unread keeps the tree's word, and a tap there reads it afresh.
                 if hitTested, hits[entry.index] == nil, entry.judging.isContested { continue }
                 let verdict = entry.judging.verdict(hit: hits[entry.index])
-                reading.judged[entry.index] = FrontReading.Judged(point: entry.judging.point, verdict: verdict)
+                reading.judged[entry.index] = FrontReading.Judged(point: entry.judging.point, verdict: verdict, ownHit: hits[entry.index].map(entry.judging.surelyReaches(hit:)))
                 if let verdict, verdict.isConfident {
                     reading.covered[entry.index] = verdict
                 }
