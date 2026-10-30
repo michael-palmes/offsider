@@ -90,11 +90,11 @@ Once login reaches the email field, a failure still prints that object, with `ok
 
 ## What exit 0 means
 
-Exit 0 means the submit button was tapped, not that the server accepted the login. Hand back on exit 1 or 5. Do not loop on it.
+Exit 0 means the submit button was tapped, not that the server accepted the login. On exit 1 or 5, do what the table says, else hand back. Do not loop on it.
 
 | Reason | What happened | What to do |
 | --- | --- | --- |
-| `turnstile_required` | A Turnstile widget needs a person, found before typing, before submit or just after it; `submitted` says whether submit was tapped | Hand back; never tap it (`guide turnstile`) |
+| `turnstile_required` | A Turnstile widget needs a person, found before typing, before submit or just after it; `submitted` says whether submit was tapped | Pass on `error.ask` and run its hint; never tap it (`guide turnstile`) |
 | `foreground_changed` | Another app came to the front before the password or before submit; nothing more was sent | Bring the app back, then run `login` again |
 | `app_not_allowed` | A browser or system app is in front, or the password field is inside a web view | Bring the app under test to the front; web sign-in needs the user's opt-in |
 | `person_required` | Touch ID or the password was cancelled or unavailable (plain ssh), or a link no person confirmed | Hand back; the message names the command for the user |

@@ -90,6 +90,77 @@ struct LoginFlowTests {
         #expect(stopped.report.jsonLine().contains("\"reason\":\"turnstile_required\""))
     }
 
+    @Test("a widget that stops the login asks for the step it needs, and suggests the wait", arguments: [
+        (TurnstilePhase.ready(TurnstileTarget(frame: UIFrame(x: 18, y: 400, width: 30, height: 30))), PersonAsk.tickTurnstile),
+        (TurnstilePhase.visualChallenge, PersonAsk.solveTurnstile),
+        (TurnstilePhase.ambiguous(2), PersonAsk.tickTurnstiles),
+    ])
+    func widgetAsksForItsStep(phase: TurnstilePhase, ask: String) async throws {
+        let script = script(buttonEnabled: true)
+        script.phases = [phase]
+        let error = try #require(await #expect(throws: CLIError.self) { try await self.run(script) })
+        #expect(error.ask == ask)
+        #expect(error.hint == "offsider turnstile --wait 600 --device <DEVICE_ID>")
+        #expect(!error.userFacingDescription.contains("hand the device"))
+    }
+
+    @Test("the device's name is read only when a widget stops the login")
+    func deviceNameIsReadOnlyOnARefusal() async throws {
+        let working = script(buttonEnabled: true)
+        working.phases = [.checking, .passed]
+        _ = try await run(working)
+        #expect(working.deviceNotes == 0)
+
+        let stopped = script(buttonEnabled: true)
+        stopped.phases = [.ready(square)]
+        await #expect(throws: CLIError.self) { try await self.run(stopped) }
+        #expect(stopped.deviceNotes == 1)
+    }
+
+    @Test("a widget still checking at the timeout asks to finish it")
+    func checkingAsksToFinish() async throws {
+        let script = script(buttonEnabled: true)
+        script.phases = [.absent, .checking]
+        let stopped = try #require(await #expect(throws: LoginFailure.self) { try await self.run(script, timeout: 2) })
+        let payload = ErrorReporter.payload(for: stopped, deviceName: "iPhone 17")
+        #expect(payload.ask == "Can you finish the Turnstile check on iPhone 17?")
+        #expect(script.deviceNotes == 1)
+    }
+
+    @Test("a challenge found after typing asks to solve it, through the report login prints")
+    func challengeAfterTypingAsksToSolve() async throws {
+        let script = script(buttonEnabled: true)
+        script.phases = [.absent, .visualChallenge]
+        let stopped = try #require(await #expect(throws: LoginFailure.self) { try await self.run(script) })
+        let payload = ErrorReporter.payload(for: stopped, deviceName: "iPhone 17")
+        #expect(payload.ask == "Can you solve the Turnstile challenge on iPhone 17?")
+    }
+
+    @Test("before submit, login may run once more after it passes; after submit it must not")
+    func whatToDoNextDependsOnSubmit() {
+        let before = LoginFlow.turnstileRequired(.ready(square), stage: .beforeSubmit, audience: .agent)
+        #expect(before.userFacingDescription.contains("Run login once more after it passes."))
+        let after = LoginFlow.turnstileRequired(.ready(square), stage: .afterSubmit, audience: .agent)
+        #expect(after.userFacingDescription.contains("Do not run login again"))
+    }
+
+    @Test("a person at the terminal is told to do the step, never to hand the device to a person", arguments: [
+        LoginFlow.TurnstileStage.beforeTyping, .beforeSubmit, .afterSubmit,
+    ])
+    func personIsTheOneToTick(stage: LoginFlow.TurnstileStage) {
+        let error = LoginFlow.turnstileRequired(.ready(square), stage: stage, audience: .person)
+        #expect(error.userFacingDescription.contains("Tick it on the device"))
+        #expect(!error.userFacingDescription.contains("a person to"))
+        #expect(error.hint == nil)
+    }
+
+    @Test("a person at the terminal finishes a widget still checking themselves")
+    func personFinishesChecking() {
+        let error = LoginFlow.turnstileStillChecking(after: 15, watch: Turnstile.waitCommand(), audience: .person)
+        #expect(error.userFacingDescription.contains("Finish it on the device, then run login again."))
+        #expect(error.hint == nil)
+    }
+
     @Test("another app in front before the password stops with foreground_changed; the password is never typed")
     func foregroundChangesBeforePassword() async throws {
         let script = script(buttonEnabled: true)
@@ -566,6 +637,7 @@ final class LoginScript {
     /// What a hit-test at each point reaches; nil where nothing answers.
     var hit: (UIPoint) -> UINode? = { _ in nil }
     var hitTests = 0
+    var deviceNotes = 0
 
     init(trees: [UITree]) {
         self.trees = trees
@@ -616,7 +688,8 @@ final class LoginScript {
             hitTest: { point in
                 self.hitTests += 1
                 return self.hit(point)
-            }
+            },
+            noteDevice: { self.deviceNotes += 1 }
         )
     }
 }

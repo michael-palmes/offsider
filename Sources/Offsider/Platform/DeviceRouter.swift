@@ -11,6 +11,12 @@ enum DeviceRouter {
         let device: DeviceID
         /// The person's consent for a physical device; nil for simulators and emulators.
         var allowance: DeviceAllowance? = nil
+
+        /// Reads the name a person knows this device by, for an ask. Called on the way to a refusal, so a command that works pays nothing.
+        func noteNameForAsk() async {
+            guard allowance == nil, let devices = try? await backend.listDevices() else { return }
+            ErrorReporter.noteDeviceName(PersonAsk.name(of: device.rawValue, among: devices))
+        }
     }
 
     static func allBackends(logger: OffsiderLogger, host: AndroidHost = .cli(), scope: CommandScope = .current) -> [any DeviceBackend] {
@@ -75,6 +81,7 @@ enum DeviceRouter {
     ) async throws -> Route {
         let route = try await resolve(rawID, logger: logger, host: host, scope: scope, gate: DevicePolicyGate.current)
         scope.noteRoute(route)
+        if let name = route.allowance?.name { ErrorReporter.noteDeviceName(name) }
         return route
     }
 

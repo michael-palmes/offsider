@@ -20,6 +20,10 @@ enum LoginFlow {
         var bundleForPID: (Int) -> String? = { _ in nil }
         /// The element a touch at a point reaches, as the platform reports it; nil where it cannot say.
         var hitTest: (_ point: UIPoint) async -> UINode? = { _ in nil }
+        /// Reads the device's name for the ask, just before a widget stops the login.
+        var noteDevice: () async -> Void = {}
+        /// The command that watches for a person to finish the widget.
+        var turnstileWatch: String = Turnstile.waitCommand()
     }
 
     /// How long after the submit tap Turnstile is read once more.
@@ -66,7 +70,7 @@ enum LoginFlow {
         try refuseWebForm(form, app: app, key: key, profile: profile, webLogin: webLogin)
         try requireName(form.identity, what: "email or username")
         try requireName(form.password, what: "password")
-        try requireNoWidget(try await services.readTurnstile(tree), stage: .beforeTyping)
+        try await requireNoWidget(try await services.readTurnstile(tree), stage: .beforeTyping, services: services)
         var identityProgress = LoginFieldProgress.notFilled
         var passwordProgress = LoginFieldProgress.notFilled
         var report: LoginReport
@@ -123,7 +127,7 @@ enum LoginFlow {
         let after: TurnstilePhase? = try? await services.readTurnstile(try await services.readTree())
         if let after {
             do {
-                try requireNoWidget(after, stage: .afterSubmit)
+                try await requireNoWidget(after, stage: .afterSubmit, services: services)
             } catch {
                 var submitted = report
                 submitted.error = ErrorReporter.payload(for: error)
@@ -133,7 +137,7 @@ enum LoginFlow {
         return report
     }
 
-    /// Where the login was when it read Turnstile, for the hand-back message.
+    /// Where the login was when it read Turnstile, for the refusal's message.
     enum TurnstileStage {
         case beforeTyping
         case beforeSubmit
@@ -141,12 +145,13 @@ enum LoginFlow {
     }
 
     /// A checkbox, a challenge or several checkboxes are for a person; absent, passed, checking and a web view with no widget are not.
-    private static func requireNoWidget(_ phase: TurnstilePhase, stage: TurnstileStage) throws {
+    private static func requireNoWidget(_ phase: TurnstilePhase, stage: TurnstileStage, services: Services) async throws {
         switch phase {
         case .absent, .passed, .checking, .noWidget:
             return
         case .ready, .visualChallenge, .ambiguous:
-            throw turnstileRequired(phase, stage: stage)
+            await services.noteDevice()
+            throw turnstileRequired(phase, stage: stage, watch: services.turnstileWatch)
         }
     }
 
@@ -163,14 +168,12 @@ enum LoginFlow {
             case .noWidget:
                 return .unknown
             case .ready, .visualChallenge, .ambiguous:
-                throw turnstileRequired(phase, stage: .beforeSubmit)
+                await services.noteDevice()
+                throw turnstileRequired(phase, stage: .beforeSubmit, watch: services.turnstileWatch)
             case .checking:
                 if services.clock.now() >= deadline {
-                    throw CLIError(
-                        errorDescription: "The Cloudflare Turnstile widget was still checking after \(seconds(timeout)), so the submit button was not tapped. "
-                            + "Offsider never ticks Turnstile: hand the device to a person to finish it and submit.",
-                        reason: .turnstileRequired
-                    )
+                    await services.noteDevice()
+                    throw turnstileStillChecking(after: timeout, watch: services.turnstileWatch)
                 }
                 try await services.clock.sleep(.milliseconds(250))
                 phase = try await services.readTurnstile(try await services.readTree())
@@ -178,22 +181,40 @@ enum LoginFlow {
         }
     }
 
-    static func turnstileRequired(_ phase: TurnstilePhase, stage: TurnstileStage) -> CLIError {
-        let handBack = "Offsider never ticks Turnstile: hand the device to a person to complete it, and do not retry."
-        if stage == .afterSubmit {
-            return CLIError(
-                errorDescription: "The submit button was tapped, and then a Cloudflare Turnstile widget asked for a person. \(handBack)",
-                reason: .turnstileRequired
-            )
-        }
+    static func turnstileStillChecking(after timeout: TimeInterval, watch: String, audience: ErrorAudience = .current) -> CLIError {
+        let next = audience == .person ? "Finish it on the device, then run login again." : "Offsider never ticks Turnstile. Run login once more after it passes."
+        return CLIError(
+            errorDescription: "The Cloudflare Turnstile widget was still checking after \(seconds(timeout)), so the submit button was not tapped. \(next)",
+            reason: .turnstileRequired,
+            hint: audience == .person ? nil : watch,
+            ask: PersonAsk.finishTurnstile
+        )
+    }
+
+    /// An agent gets the ask and the command that watches for the tick; a person at the terminal is the one to tick it.
+    static func turnstileRequired(_ phase: TurnstilePhase, stage: TurnstileStage, watch: String = Turnstile.waitCommand(), audience: ErrorAudience = .current) -> CLIError {
         let what: String
+        let step: String
+        let ask: String
         switch phase {
-        case .visualChallenge: what = "A Cloudflare Turnstile challenge is on screen"
-        case .ambiguous(let count): what = "\(count) Cloudflare Turnstile checkboxes are on screen"
-        default: what = "A Cloudflare Turnstile checkbox is on screen"
+        case .visualChallenge:
+            (what, step, ask) = ("A Cloudflare Turnstile challenge is on screen", "Solve it", PersonAsk.solveTurnstile)
+        case .ambiguous(let count):
+            (what, step, ask) = ("\(count) Cloudflare Turnstile checkboxes are on screen", "Tick them", PersonAsk.tickTurnstiles)
+        default:
+            (what, step, ask) = ("A Cloudflare Turnstile checkbox is on screen", "Tick it", PersonAsk.tickTurnstile)
         }
-        let outcome = stage == .beforeTyping ? "Nothing was typed." : "The submit button was not tapped."
-        return CLIError(errorDescription: "\(what). \(outcome) \(handBack)", reason: .turnstileRequired)
+        let person = audience == .person
+        let message: String
+        if stage == .afterSubmit {
+            let next = person ? "\(step) on the device; do not run login again, as submit may have gone through." : "Offsider never ticks Turnstile. Do not run login again: read the screen after it passes."
+            message = "The submit button was tapped, and then a Cloudflare Turnstile widget asked for a person. \(next)"
+        } else {
+            let outcome = stage == .beforeTyping ? "Nothing was typed." : "The submit button was not tapped."
+            let next = person ? "\(step) on the device, then run login again." : "Offsider never ticks Turnstile. Run login once more after it passes."
+            message = "\(what). \(outcome) \(next)"
+        }
+        return CLIError(errorDescription: message, reason: .turnstileRequired, hint: person ? nil : watch, ask: ask)
     }
 
     /// Recomputes the app in front from a tree already read. A different app, or none, stops the login.
@@ -424,6 +445,7 @@ struct LoginFailure: LocalizedError, UserFacingError, OffsiderFailure {
         return report.progressNote.map { "\(message) \($0)" } ?? message
     }
     var hint: String? { failure?.hint }
+    var ask: String? { failure?.ask }
     var candidates: [FailureCandidate] { failure?.candidates ?? [] }
     var coveredBy: CoverReport? { failure?.coveredBy }
     var users: [FailureUser] { failure?.users ?? [] }
