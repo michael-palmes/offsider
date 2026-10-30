@@ -24,6 +24,8 @@ struct Turnstile: AsyncParsableCommand {
     /// How long the wait a refusal suggests runs: long enough for someone busy in another session.
     static let suggestedWait = 600
     private static let waitInterval: Duration = .seconds(1)
+    /// A read of a locked iPhone with no runner up starts xcodebuild, so it is tried less often.
+    private static let lockedInterval: Duration = .seconds(15)
 
     @Option(name: .customLong("id"), help: "Only look inside the element with this id, such as the app's wrapper around the widget.")
     var elementID: String?
@@ -91,8 +93,7 @@ struct Turnstile: AsyncParsableCommand {
         throw Self.stepStillOpen(status.state, seconds: waitSeconds, app: appOption.bundleID)
     }
 
-    /// Reads until `passed`, or until a widget stays gone for two reads in a row, so a reload mid-tick does not end the wait; else the last read at the deadline.
-    /// A phone's other app or sleeping screen may be the person on their way, so it holds the wait, and only stands as the answer if still there at the deadline.
+    /// Reads until `passed`, a widget gone for two reads in a row (a reload mid-tick is not gone), or the deadline; another app, a lock screen or several checkboxes hold the wait and are the answer only if still there then.
     @MainActor
     static func waitForPerson(seconds: TimeInterval, clock: PollClock, onOtherApp: () -> Void = {}, read: () async throws -> TurnstileStatus) async throws -> TurnstileStatus {
         let deadline = clock.now() + seconds
@@ -114,7 +115,7 @@ struct Turnstile: AsyncParsableCommand {
                 gone = nil
                 held = nil
                 failure = error
-            } catch where error.isOtherAppInFront || (error as? any OffsiderFailure)?.reason == .deviceLocked {
+            } catch where error.isOtherAppInFront || [.deviceLocked, .selectorAmbiguous].contains((error as? any OffsiderFailure)?.reason) {
                 gone = nil
                 held = error
                 if error.isOtherAppInFront, seconds > 0, !notedOtherApp {
@@ -124,11 +125,12 @@ struct Turnstile: AsyncParsableCommand {
             }
             let remaining = deadline - clock.now()
             guard remaining > 0 else { break }
-            try await clock.sleep(min(waitInterval, .milliseconds(Int((remaining * 1000).rounded()))))
+            let interval = (held as? any OffsiderFailure)?.reason == .deviceLocked ? lockedInterval : waitInterval
+            try await clock.sleep(min(interval, .milliseconds(Int((remaining * 1000).rounded()))))
         }
         if let held { throw held }
         if let last { return last }
-        throw failure ?? CLIError(errorDescription: "Turnstile could not be read within \(String(format: "%g", seconds)) s.", reason: .treeReadFailed)
+        throw failure ?? CLIError(errorDescription: "Turnstile could not be read within \(WaitLoop.seconds(seconds)).", reason: .treeReadFailed)
     }
 
     /// The command a refusal suggests; a phone needs its app named on every command.
@@ -138,7 +140,7 @@ struct Turnstile: AsyncParsableCommand {
 
     /// Says what is still open, so an agent can tell the user plainly and carry on with what needs no sign-in.
     static func stepStillOpen(_ state: TurnstileStatus.State, seconds: TimeInterval, app: String?) -> CLIError {
-        let after = "after \(String(format: "%g", seconds)) s"
+        let after = "after \(WaitLoop.seconds(seconds))"
         let what: String
         let ask: String
         switch state {

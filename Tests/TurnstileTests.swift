@@ -417,6 +417,40 @@ struct TurnstileTests {
         #expect(otherApp || (error as? CLIError)?.reason == .deviceLocked)
     }
 
+    @Test("a locked phone is read less often, since a read may start xcodebuild; another app in front is not")
+    @MainActor
+    func waitBacksOffOnALockedPhone() async throws {
+        for (otherApp, gap) in [(false, 15.0), (true, 1.0)] {
+            let clock = ScriptedClock()
+            var reads = 0
+            _ = try await Turnstile.waitForPerson(seconds: 60, clock: clock.poll) {
+                reads += 1
+                if reads == 1 { throw inTheWay(otherApp: otherApp) }
+                return status(.passed)
+            }
+            #expect(clock.now == gap)
+        }
+    }
+
+    @Test("several checkboxes hold the wait, as login's hint needs, and stand as the answer at the deadline")
+    @MainActor
+    func waitHoldsThroughSeveralCheckboxes() async throws {
+        let several = UITree(platform: .android, device: "emulator-5554", roots: roots([checkboxWidget(), checkboxWidget()]))
+        let route = { (trees: [UITree]) in
+            DeviceRouter.Route(backend: FakeDeviceBackend(trees: trees), device: DeviceID(rawValue: "emulator-5554", platform: .android))
+        }
+        let ticked = UITree(platform: .android, device: "emulator-5554", roots: roots([]))
+        let command = try Turnstile.parse(["--wait", "30", "--device", "emulator-5554"])
+        let status = try await command.readStatus(on: route([several, ticked, ticked]), clock: ScriptedClock().poll)
+        #expect(status.state == .absent)
+
+        let short = try Turnstile.parse(["--wait", "2", "--device", "emulator-5554"])
+        let error = try #require(await #expect(throws: CLIError.self) {
+            _ = try await short.readStatus(on: route([several]), clock: ScriptedClock().poll)
+        })
+        #expect(error.reason == .selectorAmbiguous)
+    }
+
     @Test("another app holding the wait up is said once, and a lock screen or a single read says nothing")
     @MainActor
     func waitNotesAnotherAppOnce() async throws {
