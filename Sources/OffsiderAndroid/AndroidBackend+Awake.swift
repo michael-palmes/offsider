@@ -3,8 +3,10 @@ import OffsiderCore
 
 extension AndroidBackend: AwakeControlling {
     static let awakePollInterval: Duration = .milliseconds(200)
-    /// About 3 s on a phone, where each read takes about 0.2 s.
-    static let wakePolls = 8
+    /// About 6 s on a phone, where each read takes about 0.2 s; some phones take over 3 s to turn their screen on.
+    static let wakePolls = 16
+    /// A screen still dark after this many polls gets the wake key once more.
+    static let wakeResendPoll = 8
     /// A PIN, pattern or password lock screen stays up, so `wake` stops waiting once the screen has been on this many polls.
     static let securePolls = 3
     static let codePolls = 10
@@ -39,11 +41,17 @@ extension AndroidBackend: AwakeControlling {
         _ = try await settingsShell(script, on: serial)
         var current = before
         var securePolls = 0
-        for _ in 0..<Self.wakePolls {
+        for poll in 1...Self.wakePolls {
             try await host.sleep(Self.awakePollInterval)
             current = try await awakeState(on: id)
             if current.isUsable { break }
-            guard current.screen == .on else { continue }
+            guard current.screen == .on else {
+                if poll == Self.wakeResendPoll {
+                    _ = try await settingsShell(AndroidAwakeState.wakeKey, on: serial)
+                    sent.append("KEYCODE_WAKEUP")
+                }
+                continue
+            }
             // A lock screen can appear only once the screen is on.
             if current.lockScreen != .hidden, !sent.contains("dismiss-keyguard") {
                 _ = try await settingsShell("wm dismiss-keyguard", on: serial)

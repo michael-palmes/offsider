@@ -4,12 +4,13 @@ A Turnstile checkbox or challenge is for a person. Offsider never taps it, and n
 
 ## Read the state
 
-`offsider turnstile --device <DEVICE_ID>` reads the widget once and sends nothing. It prints `checkbox`, `verifying`, `passed`, `challenge` or `absent` and exits 0, or 6 when several checkboxes are on screen (pass `--id` for the app's wrapper). `--json` prints `{version, state, source, frame}`; `source` is `web-view-points` when iOS left the widget out of the tree and the state came from points in the web view.
+`offsider turnstile --device <DEVICE_ID>` reads the widget once and sends nothing. It prints `checkbox`, `verifying`, `passed`, `challenge`, `absent` or `unknown` and exits 0, or 6 when several checkboxes are on screen (pass `--id` for the app's wrapper). `--json` prints `{version, state, source, frame}`; `source` is `web-view-points` when iOS left the widget out of the tree and the state came from points in the web view.
 
 ## Hand back
 
 - `checkbox` or `challenge`: stop and ask the user to complete it on the device. Carry on once `turnstile` reads `passed`.
 - `login` stops with `turnstile_required` (exit 1) when a widget needs a person. Before typing, nothing was typed; after typing, the message and `submitted` in `--json` say whether submit was tapped. Hand back and never retry.
+- `unknown`: an element named for Turnstile is on screen with no widget in it, so the widget failed to run or runs invisibly. Do not read it as absent: check `offsider logs --rn --grep turnstile` and `doctor`'s `android-device.webview`. `login` goes on past it and reports `turnstile: unknown`.
 - `verifying`: wait, then read again. Before submit, `login` reads it again until `--timeout`, sending nothing, then hands back.
 
 Offsider never mints, reads or submits a token and never calls Cloudflare.

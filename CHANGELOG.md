@@ -22,6 +22,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - `posture closed|half-opened|open` sets an allowed USB foldable phone's posture through a `cmd device_state` override, recorded first with the phone's boot id; `posture reset` drops an Android override so the hinge decides again, and `session stop` and `devices remove` reset one Offsider set while it is still in place.
 - `gesture pinch --from <points> --to <points>` moves two fingers apart (zoom in) or together (zoom out) about `--x`,`--y`, or the app frame's middle, over `--duration`, on simulators, Android emulators and Android phones; also a `batch` step.
 - `wait --settled` takes `--ignore-id <id>` and `--ignore-region <x,y,w,h>` (both repeatable) to leave out a live chart, carousel or other group that never stops moving, with everything under it. A timeout on a screen that kept moving prints the flag to add, and `--json` adds `leaveOut`.
+- `assert` and `wait` take `--enabled` and `--disabled`. Among matches they judge the control a tap would: a button over plain text with its label, the deepest of controls nested in each other, and text inside a disabled button reads disabled. `--json`'s `match` now names that element, with its `enabled`, where it was null for a button and the text inside it.
+- `doctor`'s `android-device.webview` warns when the system WebView is older than version 80, which cannot run web widgets such as Cloudflare Turnstile.
+- `screenshot --json` and a batch screenshot step report `treeReadMs` (the mask's tree read) beside `captureMs`.
 
 ### Changed
 
@@ -38,6 +41,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - After an input that changed the tree on Android, `wait --settled` also waits up to 2 s for the pixels to hold still, so the next screenshot shows the new screen. About 0.3 s more on an emulator and 2 to 3 s on a slow phone, only after such an input; `--settle-by tree` skips it.
 - `wait --seconds` needs no `--device`, and touches no device even when one is named, so a pause can never fail or be skipped.
 - `describe-ui`, `screenshot` and the `rn logbox` commands exit 1 `device_unresponsive` naming the device after 30 s without an answer from a simulator or emulator, instead of hanging; a `--wait-lock` wait and `rn logbox`'s own waits are added to that. Phones have limits of their own.
+- `logs` on Android joins the lines of one logged message, which logcat prints each under its own header, into one entry: `--grep` and `--exclude` match the whole entry and `.` crosses its lines, `--json` carries it whole, and text output keeps it on one line with `\n`.
 
 ### Fixed
 
@@ -72,6 +76,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - `--verify` no longer sends a retry while the screen is still changing (a change that came and went, a read that failed, or a selector tap's target that moved away), where a navigation tap still on its way was sent again and landed on the next screen's row. It watches one more `--verify-timeout` instead and verifies when the next screen settles, else exits 5 with `note` `unsettled`, sent once.
 - A title under the next page's title, or an element under another page's own screen-sized group, now counts as covered (`wait`, `assert`, `describe-ui --on-screen`, `--verify-id`): an iOS simulator's hit-test and Android's drawing order both found the cover but took it for the target's own content.
 - On a phone, naming an app it may not drive with `--app` is refused at once, naming that app, whichever app is in front.
+- `turnstile` reads `unknown`, not `absent`, when an element named for Turnstile is on screen with no widget in it: the widget failed to run, as on a WebView too old for its script, or runs invisibly. `login` goes on past it, since an invisible widget that passes looks the same, and reports `turnstile: "unknown"`.
+- A tree read on an iOS simulator, and so `screenshot`'s password mask, `wait`, `tap` and the rest, tries once more when the simulator's automation session times out or it has no answer just after a boot, instead of exiting 1. Two in a row say what to do.
+- `button home --verify` on an iOS simulator checks what answers at the screen's centre, so it returns as soon as SpringBoard is in front, rather than after several tree reads.
+- `posture` on an iOS simulator trusts what the device reads: a hinge request refused while the device moves no longer exits `not_supported` when the fold happened, and a refused resend no longer ends the wait for the first request.
+- `rn logbox dismiss` taps nothing while Expo's dev menu intro covers the logs and says how to close it (`coveredBy` in `--json`), where it exited 5 with no reason. `rn logbox` reads try once more when a window change, such as an unlock, left no window to read.
+- A `batch` with a screenshot step starts a USB phone's helper before its first step, so its start, about 0.5 s, no longer lands between a tap and the screenshot after it.
+- `wake` waits about 6 s for the screen to turn on, not 3 s, and sends the wake key once more halfway, for phones whose screen is slow to come on.
 - With Display Zoom on, an iOS simulator's `describe-ui` frames are in screen points, where they were in the app's smaller layout space, so a selector tap no longer lands up and to the left of its target (on the row above in a list), tree masks cover what they name, and `rn logbox` and `login` reach their fields and buttons. `describe-ui --raw-source` still prints the simulator's own numbers.
 - `login` on an iOS simulator no longer taps the keyboard's Passwords bar while closing the keyboard, where it reported `submitted` with the sign-in tap lost to that bar (seen on most runs).
 

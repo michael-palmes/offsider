@@ -15,6 +15,7 @@ struct AndroidDoctorRulesTests {
         facts.uiAutomation = UiAutomationFact(accessibilityEnabled: false, enabledServices: [], offsiderHelperPids: [])
         facts.helper = .ready(launchMilliseconds: 412, pushed: false, helloMilliseconds: 7, pingMilliseconds: 3, protocolVersion: 1, sdkInt: 36)
         facts.reverses = []
+        facts.webViewVersion = "120.0.6099.230"
         facts.awake = AwakeReading(
             screen: .on, lockScreen: .hidden, credential: "none", stayAwake: [.ac, .usb, .wireless, .dock], charging: [.ac],
             screenTimeoutMilliseconds: 1_800_000, userUnlocked: true, memTotalKB: 6_149_664
@@ -187,12 +188,29 @@ struct AndroidDoctorRulesTests {
         #expect(metro.detail == "tcp:8742 to tcp:8742 (Metro)")
     }
 
+    @Test("an old system WebView warns naming what it breaks; a current one passes and an unreadable one skips")
+    func webView() {
+        #expect(AndroidDoctorRules.webViewVersion(fromDump: "Current WebView package (name, version): (com.android.webview, 70.0.3538.110)\n") == "70.0.3538.110")
+        #expect(AndroidDoctorRules.webViewVersion(fromDump: "Fallback logic enabled: true\nCurrent WebView package is null\n") == nil)
+
+        let old = AndroidDoctorRules.webView("70.0.3538.110")
+        #expect(old.status == .warn)
+        #expect(old.detail.contains("Cloudflare Turnstile"))
+        #expect(old.hint != nil)
+        #expect(AndroidDoctorRules.webView("80.0.3987.99").status == .pass)
+        #expect(AndroidDoctorRules.webView("not a number").status == .pass)
+
+        var facts = Self.booted()
+        facts.webViewVersion = nil
+        #expect(AndroidDoctorRules.deviceChecks(facts, hostBlocker: nil).first { $0.id == .androidDeviceWebView }?.status == .skip)
+    }
+
     @Test("a healthy booted emulator passes every device check and skips the phone-only ones")
     func healthyDevice() {
         let checks = AndroidDoctorRules.deviceChecks(Self.booted(), hostBlocker: nil)
         #expect(checks.map(\.id) == [
             .androidDeviceState, .androidDeviceImage, .androidDeviceMemory, .androidDeviceScreen, .androidDeviceLock, .androidDeviceStayAwake,
-            .androidDeviceGrpc, .androidDeviceUiAutomation, .androidDeviceHelper, .androidDeviceMetroReverse, .androidDeviceAdbExpiry, .androidDeviceSystemUpdates,
+            .androidDeviceGrpc, .androidDeviceUiAutomation, .androidDeviceHelper, .androidDeviceMetroReverse, .androidDeviceWebView, .androidDeviceAdbExpiry, .androidDeviceSystemUpdates,
         ])
         #expect(checks.dropLast(2).allSatisfy { $0.status == .pass })
         #expect(checks.suffix(2).allSatisfy { $0.status == .skip && $0.detail == "applies to phones only" })

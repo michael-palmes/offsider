@@ -68,14 +68,24 @@ struct ElementSelectorOptions: ParsableArguments {
     @Option(name: [.customLong("has-value")], help: ArgumentHelp("Also require the element's value to equal this text.", valueName: "text"))
     var hasValue: String?
 
+    @Flag(name: .customLong("enabled"), help: "Also require the element to be enabled.")
+    var enabled = false
+
+    @Flag(name: .customLong("disabled"), help: "Also require the element to be disabled, as a button is until its form is filled.")
+    var disabled = false
+
     @Flag(name: .customLong("allow-offscreen"), help: "Count elements whose frame is outside the screen (off by default: only on-screen matches count).")
     var allowOffscreen: Bool = false
+
+    /// `--enabled` is true, `--disabled` false, neither nil.
+    var requiredEnabled: Bool? { enabled ? true : disabled ? false : nil }
 
     /// The count is left to the command, since only `wait --any` takes several, and one `--id` narrowed by a label or value counts as one.
     func validate() throws {
         try SelectorQuery.validate(ids: elementIDs, labels: elementLabels, labelsContaining: elementLabelsContaining, values: elementValues, allowingSeveral: true)
+        if enabled && disabled { throw ValidationError("Use only one of --enabled or --disabled.") }
         guard query == nil else { return }
-        for (name, isSet) in [("--element-type", elementType != nil), ("--has-value", hasValue != nil), ("--allow-offscreen", allowOffscreen)] where isSet {
+        for (name, isSet) in [("--element-type", elementType != nil), ("--has-value", hasValue != nil), ("--enabled", enabled), ("--disabled", disabled), ("--allow-offscreen", allowOffscreen)] where isSet {
             throw ValidationError("\(name) needs --id, --label, --label-contains or --value.")
         }
     }
@@ -120,6 +130,7 @@ struct ElementSelectorOptions: ParsableArguments {
         let elementType = elementType
         let allowOffscreen = allowOffscreen
         let hasValue = hasValue
+        let requiredEnabled = requiredEnabled
         return { tree in
             let found = AccessibilityTargetResolver.candidates(roots: tree.roots, query: query, elementType: elementType)
             var read: LogBoxInspector??
@@ -165,8 +176,37 @@ struct ElementSelectorOptions: ParsableArguments {
                 }
                 pool = valued
             }
+            pool = Self.controls(pool).map { Self.withEnabledState($0, in: tree.roots) }
+            if let requiredEnabled {
+                let held = pool.filter { $0.enabled == requiredEnabled }
+                guard !held.isEmpty else {
+                    let wanted = requiredEnabled ? "enabled" : "disabled"
+                    return absent(pool[0].enabled == nil ? "does not say whether it is enabled, expected \(wanted)" : "is \(requiredEnabled ? "disabled" : "enabled"), expected \(wanted)")
+                }
+                pool = held
+            }
             return .present(pool.count == 1 ? pool[0] : nil)
         }
+    }
+
+    /// The control among several matches, as a tap chooses: an actionable match over plain text, then of those nested in each other the deepest, which a touch reaches; with no control, the outermost.
+    private static func controls(_ pool: [UINode]) -> [UINode] {
+        guard pool.count > 1 else { return pool }
+        let actionable = pool.filter(\.isActionable)
+        func holds(_ outer: UINode, _ inner: UINode) -> Bool { outer.flattened().dropFirst().contains { $0.isSameElement(as: inner) } }
+        guard actionable.isEmpty else {
+            return actionable.filter { node in !actionable.contains { holds(node, $0) } }
+        }
+        return pool.filter { node in !pool.contains { holds($0, node) } }
+    }
+
+    /// Plain text reads disabled inside a disabled control, since a touch on it goes to that control; a control answers for itself.
+    private static func withEnabledState(_ node: UINode, in roots: [UINode]) -> UINode {
+        guard !node.isActionable, node.enabled != false,
+              AccessibilityTargetResolver.ancestorsOf(node, in: roots).contains(where: { $0.isActionable && $0.enabled == false }) else { return node }
+        var disabled = node
+        disabled.enabled = false
+        return disabled
     }
 
     /// Exact after trimming, then after folding quotes and spaces.
@@ -176,10 +216,11 @@ struct ElementSelectorOptions: ParsableArguments {
         return actual == wanted || SelectorText.folded(actual) == SelectorText.folded(wanted)
     }
 
-    /// "on screen", "present" with --allow-offscreen, plus "with value 'X'" for --has-value.
+    /// "on screen", "present" with --allow-offscreen, plus "with value 'X'" for --has-value and "and enabled" or "and disabled".
     var presentState: String {
         let place = allowOffscreen ? "present" : "on screen"
-        return hasValue.map { "\(place) with value '\($0)'" } ?? place
+        let valued = hasValue.map { "\(place) with value '\($0)'" } ?? place
+        return requiredEnabled.map { "\(valued) and \($0 ? "enabled" : "disabled")" } ?? valued
     }
 
     /// `source` with the shared on-screen judgement read for the on-screen matches of `queries`, so a match a touch would not reach does not count; unchanged with `--allow-offscreen`.

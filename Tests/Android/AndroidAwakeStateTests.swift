@@ -213,6 +213,28 @@ struct AndroidAwakeStateTests {
         #expect(Self.shellCommands(server).filter { $0 != AndroidAwakeState.readScript } == ["input keyevent KEYCODE_WAKEUP; wm dismiss-keyguard"])
     }
 
+    @Test("a screen that takes over 3 s to turn on is waited for, and gets the wake key once more")
+    func wakeSlowScreen() async throws {
+        let asleep = Self.state("Asleep", showing: true)
+        let states = ScriptedOutputs(Array(repeating: asleep, count: 1 + AndroidBackend.wakeResendPoll + 2) + [Self.state(showing: true)])
+        let server = Self.server(states: states)
+        let outcome = try await Self.backend(server).wake(on: Self.device)
+
+        #expect(outcome.current.screen == .on)
+        #expect(outcome.current.lockScreen == .secure)
+        #expect(outcome.sent == ["KEYCODE_WAKEUP", "dismiss-keyguard", "KEYCODE_WAKEUP"])
+    }
+
+    @Test("a screen that never turns on gets the wake key twice, no more, and reads off")
+    func wakeDeadScreen() async throws {
+        let server = Self.server(states: ScriptedOutputs([Self.state("Asleep", showing: true)]))
+        let outcome = try await Self.backend(server).wake(on: Self.device)
+
+        #expect(outcome.current.screen == .off)
+        #expect(Self.shellCommands(server).filter { $0.contains("KEYCODE_WAKEUP") }.count == 2)
+        #expect(Self.shellCommands(server).filter { $0 == AndroidAwakeState.readScript }.count == 1 + AndroidBackend.wakePolls)
+    }
+
     @Test("wake stops waiting for a secure lock screen soon after the screen is on")
     func wakeSecure() async throws {
         let server = Self.server(states: ScriptedOutputs([Self.state("Asleep", showing: true), Self.state(showing: true)]))

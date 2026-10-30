@@ -20,6 +20,8 @@ public enum TurnstilePhase: Equatable, Sendable {
     case visualChallenge
     /// More than one checkbox is on screen.
     case ambiguous(Int)
+    /// An element named for Turnstile is on screen with no widget in it: the widget failed to run, or runs invisibly, which a tree cannot tell apart.
+    case noWidget
 }
 
 /// Finds a Turnstile widget in an accessibility tree and reads its state.
@@ -40,7 +42,8 @@ public enum TurnstileWidget {
 
         let widgets = containers(in: roots, viewport: viewport)
         if widgets.isEmpty {
-            return fallbackCheckbox(in: roots, viewport: viewport)
+            let fallback = fallbackCheckbox(in: roots, viewport: viewport)
+            return fallback == .absent && namesTurnstile(roots, viewport: viewport) ? .noWidget : fallback
         }
 
         let phases = widgets.map { assess($0, viewport: viewport) }
@@ -133,6 +136,13 @@ public enum TurnstileWidget {
             return .ready(TurnstileTarget(frame: frame))
         }
         return .checking
+    }
+
+    /// An app's own web view or wrapper for the widget, on screen.
+    private static func namesTurnstile(_ roots: [UINode], viewport: UIFrame?) -> Bool {
+        roots.flatMap { $0.flattened() }.contains { node in
+            node.id?.range(of: "turnstile", options: .caseInsensitive) != nil && onScreen(node, viewport: viewport)
+        }
     }
 
     /// A checkbox labelled as Turnstile's prompt, for a tree that exposes the control without Cloudflare's container id.
@@ -270,6 +280,8 @@ public struct TurnstileStatus: Equatable, Sendable {
         case passed
         case challenge
         case absent
+        /// A Turnstile web view with no widget: do not read it as absent.
+        case unknown
     }
 
     public enum Source: String, Sendable {
@@ -296,13 +308,17 @@ public struct TurnstileStatus: Equatable, Sendable {
         case .ready(let target): self.init(state: .checkbox, source: source, frame: target.frame)
         case .passed: self.init(state: .passed, source: source)
         case .visualChallenge: self.init(state: .challenge, source: source)
+        case .noWidget: self.init(state: .unknown, source: source)
         case .ambiguous: return nil
         }
     }
 
+    /// What `unknown` means and where to look next.
+    public static let unknownNote = "A Turnstile web view is up with no widget: it failed to run, or runs invisibly. Check the app's log for a Turnstile error, and doctor for an old WebView."
+
     /// `Turnstile: checkbox at (32, 388.95) 163.81x25.14`, or the state alone.
     public func textLine() -> String {
-        guard let frame else { return "Turnstile: \(state.rawValue)" }
+        guard let frame else { return "Turnstile: \(state.rawValue)" + (state == .unknown ? ". \(Self.unknownNote)" : "") }
         return "Turnstile: \(state.rawValue) at (\(Self.format(frame.x)), \(Self.format(frame.y))) \(Self.format(frame.width))x\(Self.format(frame.height))"
     }
 

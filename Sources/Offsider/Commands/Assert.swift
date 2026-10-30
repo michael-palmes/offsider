@@ -5,7 +5,7 @@ import OffsiderCore
 struct Assert: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "assert",
-        abstract: "Check once that an element is on screen (optionally with a value) or gone; exits 5 when it is not",
+        abstract: "Check once that an element is on screen (optionally with a value, enabled or disabled) or gone; exits 5 when it is not",
         discussion: """
         Reads the accessibility tree once. Only on-screen matches count unless --allow-offscreen; several matches still pass. \
         To wait for the state instead, use offsider wait with the same selector. Exits 1 (logbox_inspector_open) when \
@@ -32,6 +32,9 @@ struct Assert: AsyncParsableCommand {
         try selector.validateCount(allowingSeveral: false)
         guard selector.query != nil else {
             throw ValidationError("Provide --id, --label, --label-contains or --value to choose the element to check.")
+        }
+        if gone, selector.requiredEnabled != nil {
+            throw ValidationError("--gone does not take --enabled or --disabled.")
         }
     }
 
