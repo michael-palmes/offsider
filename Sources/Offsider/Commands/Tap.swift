@@ -221,6 +221,18 @@ struct Tap: AsyncParsableCommand, VerifiableCommand {
             let initial: TapDeliveryStyle = style == .physical ? .physical : .simulator
             let subject = pointX != nil ? "Tap at \(verifyTarget)" : "Tap on \(verifyTarget)"
             let targetNode = resolution.target ?? resolution.matched
+            var aimed = resolution.point
+            /// Where the target is in `tree`, aimed at the part beside a cover as the cover check aimed; nil once it is gone.
+            func located(in tree: UITree) async -> (x: Double, y: Double)? {
+                let pick: MatchPick? = await picker?(tree.roots) ?? nil
+                guard let query, let found = try? AccessibilityTargetResolver.resolveTap(
+                    roots: tree.roots, query: query, elementType: elementType, allowOffscreen: allowOffscreen, explainFailures: false, pick: pick
+                ) else { return nil }
+                return (x: found.point.x + resolution.aim.x, y: found.point.y + resolution.aim.y)
+            }
+            func isAimed(_ point: (x: Double, y: Double)) -> Bool {
+                abs(point.x - aimed.x) <= TransitionGuard.frameTolerance && abs(point.y - aimed.y) <= TransitionGuard.frameTolerance
+            }
             let request = VerifyRequest(
                 command: "tap",
                 subject: subject,
@@ -232,16 +244,12 @@ struct Tap: AsyncParsableCommand, VerifiableCommand {
                 initialTree: resolvedTree,
                 targetNode: targetNode,
                 beforeAction: { tree in
-                    let pick: MatchPick? = await picker?(tree.roots) ?? nil
-                    guard let query, let found = try? AccessibilityTargetResolver.resolveTap(
-                        roots: tree.roots, query: query, elementType: elementType, allowOffscreen: allowOffscreen, explainFailures: false, pick: pick
-                    ) else { return }
-                    // Keeps the cover check's aim at the part that shows beside a cover.
-                    let moved = (x: found.point.x + resolution.aim.x, y: found.point.y + resolution.aim.y)
-                    guard abs(moved.x - resolution.point.x) > TransitionGuard.frameTolerance || abs(moved.y - resolution.point.y) > TransitionGuard.frameTolerance else { return }
+                    guard let moved = await located(in: tree), !isAimed(moved) else { return }
                     logger.info().log("\(verifyTarget) moved to \(VerifyOutput.pointDescription(x: moved.x, y: moved.y)) while settling; tapping there")
                     physicalPoint = try await backend.deviceCoordinates(for: [moved], tree: tree, on: device)[0]
-                }
+                    aimed = moved
+                },
+                targetStays: query == nil ? nil : { tree in await located(in: tree).map(isAimed) ?? false }
             )
             try await VerifyOutput.perform(request, progress: progress) { attempt, session in
                 let attemptStyle: TapStyle = attempt.style == .physical ? .physical : .simulator

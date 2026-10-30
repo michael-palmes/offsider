@@ -17,6 +17,8 @@ struct VerifyRequest {
     var targetNode: UINode? = nil
     /// Sees the verifier's last read before the action, so a target that moved since it was resolved is acted on where it is now.
     var beforeAction: (UITree) async throws -> Void = { _ in }
+    /// Whether the target is still where the input aimed; a retry is held when it is not.
+    var targetStays: ((UITree) async -> Bool)? = nil
     /// What a person reads in place of `subject`, which for `type` counts the characters.
     var personSubject: String? = nil
 }
@@ -94,9 +96,13 @@ enum VerifyOutput {
                     mode: request.options.mode,
                     initialTree: request.initialTree,
                     target: request.targetNode,
+                    targetStays: request.targetStays,
                     beforeAction: request.beforeAction,
                     onRetry: { failed, next in
                         Console.current.line(retryLine(failed: failed, next: next), person: .warning(personRetry(failed: failed, next: next)))
+                    },
+                    onHold: { attempt in
+                        Console.current.line(holdLine(attempt, request: request), person: .warning(personHold(request: request)))
                     },
                     action: { attempt in
                         progress.attempts = attempt.number
@@ -222,7 +228,12 @@ enum VerifyOutput {
             return "✗ \(request.subject) was dispatched but the React Native LogBox inspector opened over the app, so its effect cannot be seen. Read the log, then close it with offsider rn logbox dismiss --device \(request.device.rawValue)."
         }
         if let id = request.options.verifyID {
-            return "✗ \(request.subject) was dispatched but --verify-id '\(id)' did not come on screen within \(request.options.resolvedTimeout.formatted()) s after \(outcome.attempts) \(plural). Check the screen with describe-ui --summary."
+            let whereabouts = outcome.summary.map { ": \($0)" } ?? ""
+            let unchanged = outcome.note == .screenUnchanged ? ", and nothing on screen changed, so the input may not have landed" : ""
+            return "✗ \(request.subject) was dispatched but --verify-id '\(id)' did not come on screen within \(request.options.resolvedTimeout.formatted()) s after \(outcome.attempts) \(plural)\(whereabouts)\(unchanged). Check the screen with describe-ui --summary."
+        }
+        if outcome.note == .unsettled {
+            return "✗ \(request.subject) was dispatched but the screen did not settle, so it was not sent again. Check the screen with describe-ui --summary."
         }
         if request.command == "tap", VerificationOptions.retriesUndo(request.targetNode), let node = request.targetNode {
             return "✗ \(request.subject) was dispatched but nothing observable changed after \(outcome.attempts) \(plural)\(styleText).\(ignoredText(outcome.ignored)) "
@@ -265,6 +276,16 @@ enum VerifyOutput {
         text.allSatisfy { $0.isASCII && ($0.isLetter || $0.isNumber || "._-:/".contains($0)) } ? text : DeviceLeaseRules.shellQuoted(text)
     }
 
+    static func holdLine(_ attempt: Verifier.Attempt, request: VerifyRequest) -> String {
+        let state = request.options.verifyID.map { "--verify-id '\($0)' is not in front" } ?? "The screen has not settled"
+        return "! \(state) after attempt \(attempt.number); watching instead of \(resending(request.command))"
+    }
+
+    /// `tapping again`, or `sending it again` for other input.
+    private static func resending(_ command: String) -> String {
+        command == "tap" ? "tapping again" : "sending it again"
+    }
+
     static func retryLine(failed: Verifier.Attempt, next: Verifier.Attempt) -> String {
         if let failedStyle = failed.style, let nextStyle = next.style {
             return "! No observable change after attempt \(failed.number) (\(failedStyle.rawValue) style); retrying with \(nextStyle.rawValue) style"
@@ -282,6 +303,11 @@ enum VerifyOutput {
     static func personRetry(failed: Verifier.Attempt, next: Verifier.Attempt) -> String {
         guard let nextStyle = next.style else { return "Nothing changed after attempt \(failed.number); trying again" }
         return "Nothing changed after attempt \(failed.number); trying \(nextStyle.rawValue) style"
+    }
+
+    static func personHold(request: VerifyRequest) -> String {
+        let state = request.options.verifyID == nil ? "The screen has not settled" : "The element is not in front"
+        return "\(state); watching instead of \(resending(request.command))"
     }
 
     /// `✅ Tap on id=save verified`, what changed, then the attempt and the timings, dim.
@@ -321,7 +347,13 @@ enum VerifyOutput {
         }
         if let id = request.options.verifyID {
             let waited = "\(subject) was sent; waited \(WaitLoop.seconds(request.options.resolvedTimeout)) after \(outcome.attempts) \(plural)"
-            return .failed("--verify-id '\(id)' did not come on screen", details: [waited], try: [look])
+            let whereabouts = outcome.summary.map { [InputPersonView.sentence($0)] } ?? []
+            let unchanged = outcome.note == .screenUnchanged ? ["Nothing on screen changed, so the input may not have landed"] : []
+            return .failed("--verify-id '\(id)' did not come on screen", details: [waited] + whereabouts + unchanged, try: [look])
+        }
+        if outcome.note == .unsettled {
+            let sent = outcome.attempts == 1 ? "once" : "\(outcome.attempts) times"
+            return .failed("The screen did not settle after \(subject)", details: ["Sent \(sent); not sent again"], try: [look])
         }
         let ignored = ignoredText(outcome.ignored).trimmingCharacters(in: .whitespaces)
         if request.command == "tap", VerificationOptions.retriesUndo(request.targetNode), let node = request.targetNode {

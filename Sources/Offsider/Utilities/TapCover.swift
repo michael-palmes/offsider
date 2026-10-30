@@ -69,9 +69,9 @@ struct TapCover {
             CoverJudge.surelyReaches(target: target, matched: matched, point: point, roots: roots, viewport: viewport, stack: stack, hit: hit)
         }
 
-        /// What the tap would reach instead, given the simulator's `hit` if one was read; nil when it reaches the target.
+        /// What the tap would reach instead, given the simulator's `hit` if one was read; nil when it reaches the target, or nothing contests it and no hit was read.
         func verdict(hit: UINode?) -> CoverVerdict? {
-            guard isContested else { return nil }
+            guard isContested || hit != nil else { return nil }
             return CoverJudge.judge(
                 target: target, matched: matched, point: point, candidates: candidates, roots: roots, viewport: viewport, stack: stack, hit: hit,
                 logBoxInset: logBoxInset, otherProcessCovers: promptHost

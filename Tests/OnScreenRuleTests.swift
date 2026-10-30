@@ -253,6 +253,24 @@ struct OnScreenRuleTests {
         #expect(try TapCoverTests.judge(tree, target: "fee-info", hit: nil) == nil)
     }
 
+    @Test("on Android a title under the next page's title, in its place or wider, is covered by drawing order, and the top title is not")
+    func androidTitleUnderNextTitle() throws {
+        func page(_ id: String, title: String, frame: UIFrame, order: Int) -> UINode {
+            FakeUI.node(.group, id: id, frame: FakeUI.frame(0, 0, 411, 923), platform: .android, drawingOrder: order, children: [
+                FakeUI.node(.group, id: "\(id)-title", label: title, frame: frame, platform: .android, drawingOrder: 1),
+            ])
+        }
+        let tree = FakeUI.tree(platform: .android, width: 411, height: 923, [
+            page("keypad", title: "Keypad", frame: FakeUI.frame(60, 64, 291, 23), order: 1),
+            page("details", title: "Details", frame: FakeUI.frame(88, 64, 235, 23), order: 2),
+            page("notes", title: "Notes", frame: FakeUI.frame(88, 64, 235, 23), order: 3),
+        ])
+
+        #expect(try TapCoverTests.judge(tree, target: "details-title", hit: nil)?.cover.normalizedID == "notes-title")
+        #expect(try TapCoverTests.judge(tree, target: "keypad-title", hit: nil)?.cover.normalizedID == "notes-title")
+        #expect(try TapCoverTests.judge(tree, target: "notes-title", hit: nil) == nil)
+    }
+
     @Test("assert does not count an element on a screen beneath a pushed page, so it proves which screen is in front")
     func beneathScreenIsNotOnScreen() async throws {
         let tree = ScreenStackTests.nestedScreens()
@@ -264,6 +282,49 @@ struct OnScreenRuleTests {
 
         #expect(!outcome.met)
         #expect(outcome.reason.hasPrefix("beneath \"Kettle\""), "\(outcome.reason)")
+    }
+
+    /// Two pages as an iOS simulator lists a React Native stack: each page's group childless and screen-sized, its elements flat beside it, both titles in one place.
+    static func flatStack() -> UITree {
+        FakeUI.tree([
+            FakeUI.node(.group, id: "details-page", frame: FakeUI.frame(0, 0, 402, 874)),
+            FakeUI.node(.group, id: "notes-page", frame: FakeUI.frame(0, 0, 402, 874)),
+            FakeUI.node(.header, id: "details-title", label: "Details", frame: FakeUI.frame(88, 74, 226, 20)),
+            FakeUI.node(.header, id: "notes-title", label: "Notes", frame: FakeUI.frame(88, 74, 226, 20)),
+            FakeUI.node(.button, id: "open-notes", label: "Open Notes", frame: FakeUI.frame(16, 122, 370, 44)),
+        ])
+    }
+
+    @Test("a hit-test answering with the next page's title text, in this title's place, covers this title; its own text does not")
+    func otherTitleTextCovers() throws {
+        let tree = Self.flatStack()
+        let notesText = FakeUI.node(.text, label: "Notes", frame: FakeUI.frame(88, 74, 226, 20))
+
+        let verdict = try TapCoverTests.judge(tree, target: "details-title", hit: notesText)
+
+        #expect(verdict?.cover.normalizedID == "notes-title")
+        #expect(verdict?.isConfident == true)
+        #expect(try TapCoverTests.judge(tree, target: "notes-title", hit: notesText) == nil)
+    }
+
+    @Test("a hit-test answering with a longer label that holds this title's, in its place, is no sure cover")
+    func mergedLabelInPlaceIsNoSureCover() throws {
+        let tree = Self.flatStack()
+        let merged = FakeUI.node(.text, label: "Details, 3 notes", frame: FakeUI.frame(88, 74, 226, 20))
+
+        let verdict = try TapCoverTests.judge(tree, target: "details-title", hit: merged)
+
+        #expect(verdict?.isConfident != true)
+    }
+
+    @Test("a hit-test answering with another page's screen-sized group covers what lies under it, the other page's group included")
+    func pageGroupHitCovers() throws {
+        let tree = Self.flatStack()
+        let notesPage = tree.roots[0].children[1]
+
+        #expect(try TapCoverTests.judge(tree, target: "open-notes", hit: notesPage)?.cover.normalizedID == "notes-page")
+        #expect(try TapCoverTests.judge(tree, target: "details-page", hit: notesPage)?.cover.normalizedID == "notes-page")
+        #expect(try TapCoverTests.judge(tree, target: "notes-page", hit: notesPage) == nil)
     }
 
     // MARK: Keyboard

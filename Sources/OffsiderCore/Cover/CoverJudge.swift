@@ -283,6 +283,30 @@ public enum CoverJudge {
             }
         }
 
+        /// Another labelled element in the labelled target's own place, which the hit names: the next page's title over this one's.
+        private func elementNamed(by hit: UINode, placed: UINode?) -> UINode? {
+            guard let label = hit.normalizedLabel, let frame = hit.frame, let targetFrame = target.frame,
+                  let mine = target.normalizedLabel, !mine.contains(label), !label.contains(mine) else { return nil }
+            func isOther(_ node: UINode) -> Bool {
+                !isOwn(node) && ![target, matched].contains(where: { isAncestor(node, of: $0) })
+            }
+            if let placed {
+                return placed.frame.map { $0.isWithinTolerance(of: targetFrame) } == true && isOther(placed) ? placed : nil
+            }
+            return flat.first { node in
+                node.normalizedLabel == label && node.frame.map { $0.isWithinTolerance(of: frame) } == true && isOther(node)
+            }
+        }
+
+        /// A screen-filling group with an id, other than the target and holding neither it nor what it matched: a page whose own area took the touch.
+        private func pageGroup(_ placed: UINode?) -> UINode? {
+            guard let placed, placed.normalizedID != nil, placed.normalizedLabel == nil, !placed.role.isActionable,
+                  !CoverJudge.containerRoles.contains(placed.role), !isOwn(placed),
+                  ![target, matched].contains(where: { isAncestor(placed, of: $0) }),
+                  let frame = placed.frame, CoverJudge.spans(frame, viewport) else { return nil }
+            return placed
+        }
+
         /// The hit is the target or inside it.
         func isOwnHit(_ hit: UINode) -> Bool {
             isOwn(hit) || isOwnHit(hit, placed: placed(hit))
@@ -318,6 +342,12 @@ public enum CoverJudge {
             let placed = placed(hit)
             if isOwn(hit) || isOwnHit(hit, placed: placed) {
                 return .clear
+            }
+            if let other = elementNamed(by: hit, placed: placed) {
+                return .cover(other, confident: true)
+            }
+            if let page = pageGroup(placed) {
+                return .cover(page, confident: true)
             }
             // An unlabelled container holds what lies inside its frame, which an iOS simulator lists beside it rather than within.
             if !target.isActionable, target.normalizedLabel == nil, pageOverTarget == nil, let mine = target.frame, let theirs = (placed ?? hit).frame,
@@ -357,8 +387,9 @@ public enum CoverJudge {
                 if !candidates.contains(where: { isAncestor(placed, of: $0) }), pageOverTarget == nil {
                     return .clear
                 }
-            } else if !node.role.isActionable, let frame = node.frame, let targetFrame = target.frame,
+            } else if !node.role.isActionable, !(placed?.isAndroidNode ?? false), let frame = node.frame, let targetFrame = target.frame,
                       targetFrame.encloses(frame, tolerance: TransitionGuard.frameTolerance) {
+                // An iOS simulator lists what a target draws beside it; Android nests it, so a node placed elsewhere there is never the target's own.
                 let enclosing = candidates.filter { candidate in
                     candidate.role.isActionable && candidate.frame.map { $0.encloses(frame, tolerance: TransitionGuard.frameTolerance) } == true
                 }

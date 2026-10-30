@@ -7,7 +7,8 @@
 Most input commands confirm dispatch, not effect. Add `--verify` to `tap`, `type`, `key` or `button` to wait for an observable change (accessibility tree, then screenshot); the command exits 5 if nothing changes.
 
 - A tap on a switch, checkbox or radio button and `button app-switch` are not retried by default, since a second press would undo a change that lands late; wait for the new state instead.
-- For a tap that navigates, `--verify-id <id>` waits for an element of the next screen instead (default 10 s, no retries). On a screen with ticking text, `--verify-ignore-text` ignores text and frame changes.
+- A retry is never sent while the screen is still changing: a change that came and went, a read that failed, or a selector tap's target that moved away. Offsider watches one more `--verify-timeout` instead and verifies when the next screen settles, else exits 5 with `note` `unsettled`, sent once.
+- For a tap that navigates, `--verify-id <id>` waits for an element of the next screen to come to the front instead (default 10 s, no retries; with `--retries`, one goes only while nothing on screen changed). It judges the front as [`wait` does](reading-the-screen.md#what-counts-as-on-screen), so an id beneath a pushed page, such as the screen `Back` returns to, counts once that page goes. A failure says where the element is and whether anything changed. On a screen with ticking text, `--verify-ignore-text` ignores text and frame changes.
 - Text that changed with no input between the previous command's read and this one (a live price or clock) and React Native LogBox toasts never count. The verified line names up to three changes and ends with its timing, `(settle 0.4 s, tap 0.1 s, verify 1.2 s)`.
 - `slider` always checks its value.
 
