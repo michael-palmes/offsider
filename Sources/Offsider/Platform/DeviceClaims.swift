@@ -57,6 +57,12 @@ final class DeviceClaims {
         held.removeAll()
     }
 
+    /// The longest a claim in this command may wait for the device's lock, in seconds; a bad setting fails the claim itself.
+    var longestWait: TimeInterval {
+        guard let wait = try? Self.resolveWait(option: waitOption, environment: environment) else { return 0 }
+        return Double(wait.components.seconds) + Double(wait.components.attoseconds) / 1e18
+    }
+
     /// `--wait-lock` wins; else `OFFSIDER_WAIT_LOCK`; else no wait.
     nonisolated static func resolveWait(option: Double?, environment: [String: String]) throws -> Duration? {
         if let option {
@@ -125,5 +131,7 @@ extension Touch: DeviceOptionCommand {}
 extension Turnstile: DeviceOptionCommand {}
 extension LoginCommand: DeviceOptionCommand {}
 extension Type: DeviceOptionCommand {}
-extension Wait: DeviceOptionCommand {}
+extension Wait: LockingCommand {
+    var waitLock: Double? { deviceOption.waitLock }
+}
 extension Wake: DeviceOptionCommand {}

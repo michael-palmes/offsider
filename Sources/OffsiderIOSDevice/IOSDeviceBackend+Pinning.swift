@@ -20,7 +20,7 @@ extension IOSDeviceBackend {
             state.pinConfirmed[id.rawValue] = nil
             let active = answer.activeBundleID.map { "\($0) is in front" } ?? "another app or the system is in front"
             throw IOSDeviceError(
-                .appNotAllowed,
+                .otherAppInFront,
                 "\(app) is not the app in front on \(id.rawValue) (\(active)), so Offsider did not read or touch the screen. \(ErrorAudience.current == .person ? "Open" : "Ask the user to open") \(app), then retry."
             )
         }

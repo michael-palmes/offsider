@@ -162,11 +162,18 @@ struct Screenshot: AsyncParsableCommand {
         let request = try request()
         if try !maskPlan(gated: false).secure { try await UnmaskedConsent.confirm(command: "screenshot") }
         let logger = OffsiderLogger()
-        let route = try await DeviceRouter.route(deviceOption.id, logger: logger)
+        let watchdog = DeviceWatchdog()
+        let route = try await DeviceRouter.routeForInput(deviceOption.id, logger: logger, watchdog: watchdog, locking: false)
         await appOption.apply(to: route)
         let console = Console.current
         let masks = try await masksWithRunDefaults(maskPlan())
-        let report = try await console.progress("Capturing the screen") { try await take(request, on: route, masks: masks, plain: !json) }
+        try await watchdog.guardingSetup(device: deviceOption.id) { try await route.backend.prepare() }
+        let report = try await console.progress("Capturing the screen") {
+            // The bound also covers a --wait-lock wait, since an Android mask's tree read takes the device's lock.
+            try await watchdog.guardingRead(of: route.device, extra: DeviceClaims.current.longestWait) {
+                try await take(request, on: route, masks: masks, plain: !json)
+            }
+        }
 
         guard let comparison = report.comparison else {
             if json {

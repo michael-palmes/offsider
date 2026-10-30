@@ -10,14 +10,17 @@ struct Wait: AsyncParsableCommand {
         abstract: "Wait until an element is on screen or gone, the screen settles, a region changes or stays still, or a fixed time passes",
         discussion: """
         Choose one condition: a selector (--id, --label, --label-contains or --value, with --gone to wait for it to leave), --settled, \
-        --region with --changed or --stable, or --seconds. Selectors count only on-screen matches unless --allow-offscreen. \
-        --region watches pixels in points as describe-ui prints them, for content the accessibility tree cannot see such as charts \
-        or web views. Within 2 s of an input, --settled also waits for that input's effect to show (a read that differs from the \
-        screen before it, else 2 s after it, or 1 s when no read from before it was kept), so a delayed push is not missed; an input \
-        checked with --verify needs no such wait. Exits 0 when the condition is met and 5 when --timeout passes first, naming the \
-        nearest element when a selector found nothing; --settled exits 1 when the accessibility tree was never readable, where \
+        --region with --changed or --stable, or --seconds, which needs no device. Selectors count only on-screen matches unless \
+        --allow-offscreen. --region watches pixels in points as describe-ui prints them, for content the accessibility tree cannot \
+        see such as charts or web views. Within 2 s of an input, --settled also waits for that input's effect to show (a read that \
+        differs from the screen before it, else 2 s after it, or 1 s when no read from before it was kept), so a delayed push is not \
+        missed; an input checked with --verify needs no such wait. After an input that changed the tree on Android, it also waits up \
+        to 2 s for the pixels to hold still, so the next capture shows the new screen; --settle-by tree skips that. Exits 0 when the \
+        condition is met and 5 when --timeout passes first, naming the nearest element when a selector found nothing, or the flag \
+        that leaves out what kept moving for --settled; --settled exits 1 when the accessibility tree was never readable, where \
         --settle-by screen still works. A selector exits 1 (logbox_inspector_open) once React Native's LogBox inspector has hidden \
-        the app on Android for 1.5 s, since nothing in the app can match until it closes.
+        the app on Android for 1.5 s, since nothing in the app can match until it closes. On a phone, another app in front counts \
+        as not yet met and nothing is read from it; if it is still in front at --timeout, the wait exits 1 (app_not_allowed).
         """
     )
 
@@ -41,6 +44,12 @@ struct Wait: AsyncParsableCommand {
 
     @Flag(name: .customLong("ignore-values"), help: "With --settled, label and value changes do not count, so a ticking price or clock cannot keep the screen unsettled; moves and elements added or removed still do.")
     var ignoreValues = false
+
+    @Option(name: .customLong("ignore-id"), parsing: .upToNextOption, help: ArgumentHelp("With --settled, this element and everything under it do not count, so a live chart or carousel cannot keep the screen unsettled. Repeatable.", valueName: "id"))
+    var ignoreIDs: [String] = []
+
+    @Option(name: .customLong("ignore-region"), parsing: .upToNextOption, help: ArgumentHelp("With --settled, this rectangle's pixels and the elements at least half inside it and no bigger than it, with everything under them, do not count; points as describe-ui prints them. Repeatable.", valueName: "x,y,w,h"))
+    var ignoreRegions: [String] = []
 
     @Option(name: .customLong("stable-for"), help: ArgumentHelp("With a selector, how long the element must stay on screen (or, with --gone, stay gone) before the wait is met, from 0 to 60000 ms. Default 500 for --gone when --timeout is at least 0.5 s, else 0.", valueName: "ms"))
     var stableForMs: Int?
@@ -73,13 +82,15 @@ struct Wait: AsyncParsableCommand {
     var json = false
 
     @OptionGroup
-    var deviceOption: DeviceOption
+    var deviceOption: OptionalDeviceLockOption
 
     @OptionGroup
     var appOption: AppOption
 
     static let defaultQuietMs = 500
     static let maximumSeconds = 900
+    /// How long after the tree last changed the pixels still hold up a wait that follows an input on Android.
+    static let drawHold: TimeInterval = 2
 
     func validate() throws {
         if waitsForAny {
@@ -124,6 +135,20 @@ struct Wait: AsyncParsableCommand {
         if settleBy != nil && !settled {
             throw ValidationError("--settle-by applies to --settled only.")
         }
+        if !ignoreIDs.isEmpty {
+            guard settled else { throw ValidationError("--ignore-id applies to --settled only.") }
+            if settleBy == .screen {
+                throw ValidationError("--ignore-id reads the accessibility tree, which --settle-by screen does not; use --ignore-region, or --settle-by tree or both.")
+            }
+        }
+        if !ignoreRegions.isEmpty {
+            guard settled else { throw ValidationError("--ignore-region applies to --settled only.") }
+            do {
+                _ = try leaveOut()
+            } catch let error as ScreenRegionError {
+                throw ValidationError(error.message)
+            }
+        }
         if ignoreValues {
             guard settled else { throw ValidationError("--ignore-values applies to --settled only.") }
             if settleBy == .screen {
@@ -161,9 +186,20 @@ struct Wait: AsyncParsableCommand {
         if (settled || stable) && quiet > timeout {
             throw ValidationError("--quiet-ms is longer than --timeout, so the wait could never succeed. Raise --timeout or lower --quiet-ms.")
         }
+        // A fixed pause reads nothing, so it is the one wait that needs no device.
+        if seconds == nil { try deviceOption.validateDevice() }
+    }
+
+    /// `--ignore-id` and `--ignore-region` as the loop takes them.
+    func leaveOut() throws -> SettleLeaveOut {
+        SettleLeaveOut(ids: Set(ignoreIDs), regions: try ignoreRegions.map { try PointRegion.parse($0, option: "--ignore-region") })
     }
 
     func run() async throws {
+        if seconds != nil {
+            let outcome = try await Console.current.progress("Waiting for \(target)") { try await pause() }
+            return try Self.report(outcome, success: successLine(outcome), failure: failureLine(outcome), json: json, person: personOutcome)
+        }
         let logger = OffsiderLogger()
         let watchdog = DeviceWatchdog()
         // An Android tree read locks the device, so the claim (and any --wait-lock) comes before the watchdog's bound.
@@ -171,7 +207,7 @@ struct Wait: AsyncParsableCommand {
         let route = try await DeviceRouter.routeForInput(deviceOption.id, logger: logger, watchdog: watchdog, locking: locking)
         let outcome = try await Console.current.progress("Waiting for \(target)") {
             try await watchdog.guarding(setupThen: watchdogBound, device: deviceOption.id) { ready in
-                try await evaluate(on: route, logger: logger, probesOnMiss: true, onPrepared: ready)
+                try await evaluate(on: route, logger: logger, probesOnMiss: true, notesOtherApp: true, onPrepared: ready)
             }
         }
         let mask = (try? await AmbientMasks.treeMask()) ?? .none
@@ -187,7 +223,15 @@ struct Wait: AsyncParsableCommand {
     /// The longest this wait may legitimately take before the watchdog's grace.
     var watchdogBound: TimeInterval { seconds ?? timeout }
 
-    /// Waits on `route` without printing; a batch step or a test reports the outcome itself. `tree` replaces the device's tree reads; `probesOnMiss` reads the screen's centre once when a selector is not met.
+    /// A fixed pause: it reads nothing and touches no device, even one it names, so it cannot fail or hang.
+    @MainActor
+    func pause(clock: PollClock = .live) async throws -> WaitOutcome {
+        let start = clock.now()
+        try await clock.sleep(.milliseconds(Int(((seconds ?? 0) * 1000).rounded())))
+        return WaitOutcome(met: true, elapsed: clock.now() - start, reason: "waited")
+    }
+
+    /// Waits on `route` without printing; a batch step or a test reports the outcome itself. `tree` replaces the device's tree reads; `probesOnMiss` reads the screen's centre once when a selector is not met; `notesOtherApp` tells the reader once when another app in front holds the wait up.
     @MainActor
     func evaluate(
         on route: DeviceRouter.Route,
@@ -195,19 +239,27 @@ struct Wait: AsyncParsableCommand {
         tree: TreeSource? = nil,
         clock: PollClock = .live,
         probesOnMiss: Bool = false,
+        notesOtherApp: Bool = false,
         onPrepared: @Sendable () -> Void = {}
     ) async throws -> WaitOutcome {
         appOption.apply(to: route)
         try await route.backend.prepare()
         onPrepared()
-        var sources = try await liveSources(on: route, tree: tree, clock: clock)
+        let gate = settled ? await Self.settleGate(for: route) : nil
+        let condition = condition(gate: gate, platform: route.device.platform)
+        var sources = try await liveSources(on: route, condition: condition, tree: tree, clock: clock)
         sources.tree = selector.judging(sources.tree, queries: waitsForAny ? selector.queries : [selector.query].compactMap { $0 }, on: route)
         if probesOnMiss {
             sources.probe = Self.presentationProbe(on: route)
         }
+        if notesOtherApp {
+            let (limit, device) = (WaitLoop.seconds(timeout), route.device.rawValue)
+            sources.onOtherApp = {
+                Console.current.notice(.note("Another app is in front. Waiting up to \(limit) for yours", agent: "another app is in front on \(device), so nothing is read from it; waiting up to \(limit) for the app under test."))
+            }
+        }
         logger.info().log("Waiting for \(target)")
-        let gate = settled ? await Self.settleGate(for: route) : nil
-        return try await WaitLoop.run(condition(gate: gate), timeout: timeout, interval: pollInterval, sources: sources)
+        return try await WaitLoop.run(condition, timeout: timeout, interval: pollInterval, sources: sources)
     }
 
     /// The gate for the device's last input: this process's own when it sent one (a batch step), else the cached record's.
@@ -223,9 +275,10 @@ struct Wait: AsyncParsableCommand {
         return SettleGate.after(await TreeCache.load(for: route.device, backend: route.backend, environment: environment), now: now)
     }
 
-    var condition: WaitCondition { condition(gate: nil) }
+    var condition: WaitCondition { condition(gate: nil, platform: .ios) }
 
-    func condition(gate: SettleGate?) -> WaitCondition {
+    /// `platform` picks the draw hold: Android's tree can change well before its pixels, and an explicit `--settle-by` says what to watch.
+    func condition(gate: SettleGate?, platform: DevicePlatform) -> WaitCondition {
         if waitsForAny {
             let queries = selector.queries
             let selectors = queries.enumerated().map { index, query in
@@ -237,7 +290,12 @@ struct Wait: AsyncParsableCommand {
             return .element(probe: selector.probe(for: query), gone: gone, stableFor: stableFor, explain: SelectorQuery.explain(query))
         }
         if settled {
-            return .settled(by: settleBy ?? .tree, quiet: quiet, ignoreValues: ignoreValues, gate: gate)
+            let holdsDraw = gate != nil && settleBy == nil && platform == .android
+            // validate() has parsed the regions.
+            return .settled(
+                by: settleBy ?? .tree, quiet: quiet, ignoreValues: ignoreValues, gate: gate,
+                leaveOut: (try? leaveOut()) ?? .none, drawHold: holdsDraw ? Self.drawHold : nil
+            )
         }
         if region != nil {
             return .region(mode: stable ? .stable : .changed, quiet: quiet, threshold: threshold ?? 0)
@@ -271,6 +329,7 @@ struct Wait: AsyncParsableCommand {
             var details = ["Last     \(shown.reason)"]
             if let nearest = shown.nearMiss { details.append("Nearest  \(nearest.summary)") }
             if settled, !ignoreValues, shown.onlyTextMoved { details.append("Only text kept changing; --ignore-values lets it settle") }
+            if let moving = shown.movingPart { details.append("Part of it keeps moving; \(moving.flag) leaves it out") }
             return .failed("Timed out after \(WaitLoop.seconds(timeout)) waiting for \(target)", details: details)
         }
         let parts = successParts(shown)
@@ -280,9 +339,14 @@ struct Wait: AsyncParsableCommand {
 
     /// `✗ Timed out after 10 s waiting for --id 'save' (last: off screen at (20, 10700) 350x44).`
     func failureLine(_ outcome: WaitOutcome) -> String {
-        let hint = settled && !ignoreValues && outcome.onlyTextMoved
-            ? " Only text kept changing, as a live price or clock does; add --ignore-values to let it settle."
-            : ""
+        let hint: String
+        if settled, !ignoreValues, outcome.onlyTextMoved {
+            hint = " Only text kept changing, as a live price or clock does; add --ignore-values to let it settle."
+        } else if let moving = outcome.movingPart {
+            hint = " Part of the screen keeps moving; add \(moving.flag) to leave it out."
+        } else {
+            hint = ""
+        }
         let nearest = outcome.nearMiss.map { "; nearest: \($0.summary)" } ?? ""
         return "✗ Timed out after \(WaitLoop.seconds(timeout)) waiting for \(target) (last: \(outcome.reason)\(nearest)).\(hint)"
     }
@@ -334,7 +398,7 @@ struct Wait: AsyncParsableCommand {
     }
 
     @MainActor
-    private func liveSources(on route: DeviceRouter.Route, tree: TreeSource?, clock: PollClock) async throws -> WaitSources {
+    private func liveSources(on route: DeviceRouter.Route, condition: WaitCondition, tree: TreeSource?, clock: PollClock) async throws -> WaitSources {
         let backend = route.backend
         let device = route.device
         if let region {
@@ -345,15 +409,53 @@ struct Wait: AsyncParsableCommand {
                 return try Self.fingerprint(try ScreenCapture.render(capture, request: request), tolerance: tolerance)
             }
         }
-        guard settled, settleBy ?? .tree != .tree else {
+        guard case .settled(let source, _, _, _, let leaveOut, let drawHold) = condition, source != .tree || drawHold != nil else {
             return Self.sources(on: route, tree: tree, clock: clock)
         }
         let bands = await backend.volatileScreenBands(for: device)
-        return Self.sources(on: route, tree: tree, clock: clock) {
-            let capture = try await ScreenCapture.capture(backend, device: device)
+        let leftOut = LeftOutPixels(leaveOut)
+        var sources = Self.sources(on: route, tree: tree, clock: clock) {
+            let capture = try leftOut.painted(try await ScreenCapture.capture(backend, device: device))
             let rendered = try ScreenCapture.render(capture, request: ScreenshotRequest())
             let exclusion = ScreenCapture.bandPixels(rendered, capture: capture, bands: bands)
             return try Self.fingerprint(rendered, excludingTop: exclusion.top, bottom: exclusion.bottom, tolerance: bands.noiseTolerance)
+        }
+        let readTree = sources.tree
+        sources.tree = {
+            let tree = try await readTree()
+            leftOut.note(tree)
+            return tree
+        }
+        return sources
+    }
+
+    /// The pixels a `--settled` wait does not count: its rectangles, and everywhere its ids have been, since a moving element's last frame is stale by the time of the capture.
+    @MainActor
+    private final class LeftOutPixels {
+        private let leaveOut: SettleLeaveOut
+        private var swept: [String: PointRegion] = [:]
+
+        init(_ leaveOut: SettleLeaveOut) {
+            self.leaveOut = leaveOut
+        }
+
+        func note(_ tree: UITree) {
+            guard !leaveOut.ids.isEmpty else { return }
+            for node in tree.roots.flatMap({ $0.flattened() }) {
+                guard let id = node.id, leaveOut.ids.contains(id), let frame = node.frame, frame.width > 0, frame.height > 0 else { continue }
+                let region = PointRegion(x: frame.x, y: frame.y, width: frame.width, height: frame.height)
+                swept[id] = swept[id].map { $0.union(region) } ?? region
+            }
+        }
+
+        func painted(_ capture: CapturedScreen) throws -> CapturedScreen {
+            let regions = leaveOut.regions + swept.keys.sorted().compactMap { swept[$0] }
+            guard !regions.isEmpty else { return capture }
+            do {
+                return try ScreenCapture.masking(capture, plan: MaskPlan(regions: regions), tree: nil).capture
+            } catch is MaskUnproven {
+                throw ImageFailure(detail: "this capture could not be mapped to points, so --ignore-region and --ignore-id cannot leave out its pixels; use --settle-by tree")
+            }
         }
     }
 
@@ -380,6 +482,7 @@ struct Wait: AsyncParsableCommand {
             match: outcome.match.map { redacted($0, mask: mask) }, matched: outcome.matched
         )
         shown.onlyTextMoved = outcome.onlyTextMoved
+        shown.movingPart = outcome.movingPart.flatMap { LogRedactor.redactValue($0.flag).text == $0.flag ? $0 : nil }
         shown.nearMiss = outcome.nearMiss.map { WaitNearMiss(summary: LogRedactor.redactValue($0.summary).text, candidates: $0.candidates) }
         return shown
     }

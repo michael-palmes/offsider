@@ -67,20 +67,24 @@ struct DescribeUI: AsyncParsableCommand {
     func run() async throws {
         if rawSource { try Self.refuseRawSourceForAgent() }
         let logger = OffsiderLogger()
-        let route = try await DeviceRouter.route(deviceOption.id, logger: logger)
+        let watchdog = DeviceWatchdog()
+        let route = try await DeviceRouter.routeForInput(deviceOption.id, logger: logger, watchdog: watchdog, locking: false)
         await appOption.apply(to: route)
-        try await route.backend.prepare()
-        try await Self.requireActive(displayOption, on: route, deviceName: deviceOption.id)
+        try await watchdog.guardingSetup(device: deviceOption.id) { try await route.backend.prepare() }
 
         let console = Console.current
-        if rawSource {
-            console.data(try Self.rawSourceText(try await Self.rawCapture(on: route)) + "\n")
-            return
-        }
-        let described = try await console.progress("Reading the screen") {
-            try await AccessibilityFetcher.$warnsWhenEmpty.withValue(true) { try await describe(on: route) }
-        }
+        let described = try await console.progress("Reading the screen") { try await read(on: route, watchdog: watchdog) }
         console.data(described)
+    }
+
+    /// One read under `watchdog`'s read bound, which also covers a `--wait-lock` wait, since an Android tree read takes the device's lock.
+    @MainActor
+    func read(on route: DeviceRouter.Route, watchdog: DeviceWatchdog) async throws -> String {
+        try await watchdog.guardingRead(of: route.device, extra: DeviceClaims.current.longestWait) {
+            try await Self.requireActive(displayOption, on: route, deviceName: deviceOption.id)
+            if rawSource { return try Self.rawSourceText(try await Self.rawCapture(on: route)) + "\n" }
+            return try await AccessibilityFetcher.$warnsWhenEmpty.withValue(true) { try await describe(on: route) }
+        }
     }
 
     /// The output for one read; with `--diff`, compared against the device's cached tree.

@@ -12,6 +12,11 @@ struct WaitLoopTests {
 
     private struct Broken: Error {}
 
+    private struct OtherApp: OtherAppFailure, LocalizedError {
+        var isOtherAppInFront = true
+        var errorDescription: String? { "com.example.other is in front" }
+    }
+
     /// Scripted reads on a fake clock that only moves when the loop sleeps.
     private final class Script {
         var now: TimeInterval = 0
@@ -295,6 +300,277 @@ struct WaitLoopTests {
         ] + (pushed ? [detail] : [])))
     }
 
+    @Test("another app in front is not yet met: the wait passes once the app returns, and says so once")
+    func otherAppIsNotYetMet() async throws {
+        let script = Script()
+        script.trees = [.failure(OtherApp()), .failure(OtherApp()), .success(Self.screen()), .failure(OtherApp()), .success(Self.screen([Self.save]))]
+        var notes = 0
+        var sources = script.sources
+        sources.onOtherApp = { notes += 1 }
+
+        let outcome = try await WaitLoop.run(.element(probe: Self.probe, gone: false), timeout: 5, interval: 0.25, sources: sources)
+
+        #expect(outcome.met)
+        #expect(outcome.elapsed == 1)
+        #expect(notes == 1)
+    }
+
+    @Test("another app still in front at the timeout fails with its refusal, even after a good read")
+    func otherAppAtTimeoutRethrows() async throws {
+        let script = Script()
+        script.trees = [.success(Self.screen()), .failure(OtherApp())]
+        await #expect(throws: OtherApp.self) {
+            try await WaitLoop.run(.element(probe: Self.probe, gone: false), timeout: 1, interval: 0.25, sources: script.sources)
+        }
+        #expect(script.treeReads == 5, "it read until the timeout")
+    }
+
+    @Test("with no time to wait, as assert has, another app in front fails on the first read and says nothing else")
+    func otherAppWithoutTimeout() async throws {
+        let script = Script()
+        script.trees = [.failure(OtherApp())]
+        var notes = 0
+        var sources = script.sources
+        sources.onOtherApp = { notes += 1 }
+        await #expect(throws: OtherApp.self) {
+            try await WaitLoop.run(.element(probe: Self.probe, gone: false), timeout: 0, interval: 0, sources: sources)
+        }
+        #expect(script.treeReads == 1)
+        #expect(notes == 0)
+    }
+
+    @Test("a refusal another app in front does not explain fails on the first read")
+    func otherRefusalFailsAtOnce() async throws {
+        let script = Script()
+        script.trees = [.failure(OtherApp(isOtherAppInFront: false))]
+        await #expect(throws: OtherApp.self) {
+            try await WaitLoop.run(.element(probe: Self.probe, gone: false), timeout: 5, interval: 0.25, sources: script.sources)
+        }
+        #expect(script.treeReads == 1)
+    }
+
+    @Test("--gone is not met while another app hides the screen")
+    func goneWaitsOutOtherApp() async throws {
+        let script = Script()
+        script.trees = [.failure(OtherApp()), .failure(OtherApp()), .success(Self.screen([Self.save])), .success(Self.screen())]
+        let outcome = try await WaitLoop.run(.element(probe: Self.probe, gone: true, stableFor: 0), timeout: 5, interval: 0.25, sources: script.sources)
+        #expect(outcome.met)
+        #expect(outcome.elapsed == 0.75)
+    }
+
+    @Test("--settled starts its quiet window again when the app returns, comparing nothing from before")
+    func settledRestartsAfterOtherApp() async throws {
+        let script = Script()
+        script.trees = [.success(Self.screen([Self.save])), .failure(OtherApp()), .failure(OtherApp()), .success(Self.screen([Self.save]))]
+        let outcome = try await WaitLoop.run(.settled(by: .tree, quiet: 0.5), timeout: 5, interval: 0.25, sources: script.sources)
+        #expect(outcome.met)
+        #expect(outcome.elapsed == 1.25, "two reads and a full window after the third")
+    }
+
+    @Test("--region --changed keeps its first capture across another app; --stable starts again")
+    func regionAcrossOtherApp() async throws {
+        let still = Self.fingerprint()
+        let moved = Self.fingerprint(marked: [(x: 1, y: 1)])
+        let reads: [Result<ImageFingerprint, Error>] = [.success(still), .failure(OtherApp()), .success(moved)]
+        var read = 0
+        var clock: TimeInterval = 0
+        func sources() -> WaitSources {
+            WaitSources(
+                tree: { Self.screen() },
+                fingerprint: {
+                    defer { read += 1 }
+                    return try reads[min(read, reads.count - 1)].get()
+                },
+                sleep: { clock += Double($0.components.seconds) + Double($0.components.attoseconds) / 1e18 },
+                now: { clock }
+            )
+        }
+        let changed = try await WaitLoop.run(.region(mode: .changed, quiet: 0.5, threshold: 0), timeout: 5, interval: 0.25, sources: sources())
+        #expect(changed.met && changed.elapsed == 0.5)
+
+        read = 0
+        clock = 0
+        let stable = try await WaitLoop.run(.region(mode: .stable, quiet: 0.5, threshold: 0), timeout: 5, interval: 0.25, sources: sources())
+        #expect(stable.met && stable.elapsed == 1, "the capture before the other app is not compared with the one after")
+    }
+
+    /// A page whose `chart` group, with one bar, moves and resizes on every read, while the rest stays still.
+    private static func chartScreen(_ tick: Int, chartID: String? = "chart") -> UITree {
+        let bar = FakeUI.node(.other, label: "Bar", frame: FakeUI.frame(40, 240, 24, Double(60 + tick * 10)))
+        var chart = FakeUI.node(.other, id: chartID, frame: FakeUI.frame(20, Double(200 + tick), 300, 280))
+        chart.children = [bar]
+        return FakeUI.tree(width: 402, height: 874, [chart, Self.save])
+    }
+
+    private static func chartScript() -> Script {
+        let script = Script()
+        script.trees = (0..<40).map { .success(Self.chartScreen($0 % 8)) }
+        return script
+    }
+
+    @Test("a moving group keeps --settled from settling, and the timeout names the flag that leaves it out")
+    func movingGroupNeverSettles() async throws {
+        let outcome = try await WaitLoop.run(.settled(by: .tree, quiet: 0.5, ignoreValues: true), timeout: 2, interval: 0.25, sources: Self.chartScript().sources)
+        #expect(!outcome.met)
+        #expect(outcome.reason.contains("chart moved or resized"))
+        #expect(outcome.movingPart == .id("chart"))
+    }
+
+    @Test("--ignore-id and --ignore-region leave the moving group out; anything else still counts", arguments: [
+        SettleLeaveOut(ids: ["chart"]),
+        SettleLeaveOut(regions: [PointRegion(x: 20, y: 200, width: 300, height: 280)]),
+    ])
+    func leaveOutSettles(leaveOut: SettleLeaveOut) async throws {
+        let settled = try await WaitLoop.run(.settled(by: .tree, quiet: 0.5, leaveOut: leaveOut), timeout: 5, interval: 0.25, sources: Self.chartScript().sources)
+        #expect(settled.met && settled.elapsed == 0.5)
+
+        var moved = Self.save
+        moved.frame = FakeUI.frame(20, 500, 350, 44)
+        let script = Script()
+        script.trees = [.success(Self.chartScreen(0)), .success(Self.chartScreen(1)), .success(FakeUI.tree(width: 402, height: 874, [Self.chartScreen(2).roots[0].children[0], moved]))]
+        let restarted = try await WaitLoop.run(.settled(by: .tree, quiet: 0.5, leaveOut: leaveOut), timeout: 5, interval: 0.25, sources: script.sources)
+        #expect(restarted.elapsed == 1, "the button's move at 0.5 s restarts the window")
+    }
+
+    @Test("a screen whose moves stopped offers no flag")
+    func oneOffMoveOffersNoFlag() async throws {
+        let script = Script()
+        script.trees = [.success(Self.chartScreen(0)), .success(Self.chartScreen(1)), .success(Self.chartScreen(1)), .success(Self.chartScreen(1))]
+        let outcome = try await WaitLoop.run(.settled(by: .tree, quiet: 5, ignoreValues: true), timeout: 5, interval: 0.25, sources: script.sources)
+        #expect(!outcome.met)
+        #expect(outcome.movingPart == nil)
+    }
+
+    @Test("the effect of an input inside a left-out group does not open the settle gate")
+    func leftOutChangeIsNoEffect() async throws {
+        let gate = try #require(SettleGate(sinceInput: 0.1, before: Self.chartScreen(0)))
+        let script = Self.chartScript()
+        let outcome = try await WaitLoop.run(
+            .settled(by: .tree, quiet: 0.5, gate: gate, leaveOut: SettleLeaveOut(ids: ["chart"])), timeout: 5, interval: 0.25, sources: script.sources
+        )
+        #expect(outcome.met)
+        #expect(outcome.elapsed == 2, "the gate opens by time at 2 s after the input, less the 0.1 s already gone, on a 0.25 s read")
+    }
+
+    private static let pushed = Self.screen([FakeUI.node(.header, id: "detail", label: "Detail", frame: FakeUI.frame(0, 60, 402, 44))])
+
+    @Test("after an input that changed the tree, the draw hold waits for pixels that are still arriving")
+    func drawHoldWaitsForPixels() async throws {
+        let before = Self.screen([Self.save])
+        let script = Script()
+        script.trees = [.success(Self.pushed)]
+        script.fingerprints = [Self.fingerprint(), Self.fingerprint(marked: [(x: 1, y: 1)]), Self.fingerprint(marked: [(x: 2, y: 2)])]
+        let gate = try #require(SettleGate(sinceInput: 0.1, before: before))
+        let outcome = try await WaitLoop.run(.settled(by: .tree, quiet: 0.5, gate: gate, drawHold: 2), timeout: 5, interval: 0.25, sources: script.sources)
+        #expect(outcome.met)
+        #expect(outcome.elapsed == 1, "pixels last change at 0.5 s, then a full quiet window")
+    }
+
+    @Test("pixels that never hold still give up 2 s after the tree last changed, and the wait still passes")
+    func drawHoldGivesUp() async throws {
+        let before = Self.screen([Self.save])
+        let script = Script()
+        script.trees = [.success(Self.pushed)]
+        script.fingerprints = (0..<16).map { Self.fingerprint(marked: [(x: $0, y: 0)]) }
+        let gate = try #require(SettleGate(sinceInput: 0.1, before: before))
+        let outcome = try await WaitLoop.run(.settled(by: .tree, quiet: 0.5, gate: gate, drawHold: 2), timeout: 10, interval: 0.25, sources: script.sources)
+        #expect(outcome.met)
+        #expect(outcome.elapsed == 2)
+    }
+
+    @Test("a deadline before the hold ends lets a still tree pass on its own")
+    func drawHoldStopsAtTheDeadline() async throws {
+        let before = Self.screen([Self.save])
+        let script = Script()
+        script.trees = [.success(Self.pushed)]
+        script.fingerprints = (0..<16).map { Self.fingerprint(marked: [(x: $0, y: 0)]) }
+        let gate = try #require(SettleGate(sinceInput: 0.1, before: before))
+        let outcome = try await WaitLoop.run(.settled(by: .tree, quiet: 0.5, gate: gate, drawHold: 2), timeout: 1, interval: 0.25, sources: script.sources)
+        #expect(outcome.met)
+        #expect(outcome.elapsed == 1)
+    }
+
+    @Test("a capture that fails leaves the tree to decide; another app in front is still not yet met")
+    func drawHoldSurvivesAFailedCapture() async throws {
+        let gate = try #require(SettleGate(sinceInput: 0.1, before: Self.screen([Self.save])))
+        var reads = 0
+        var clock: TimeInterval = 0
+        let sources = WaitSources(
+            tree: { Self.pushed },
+            fingerprint: {
+                reads += 1
+                throw Broken()
+            },
+            sleep: { clock += Double($0.components.seconds) + Double($0.components.attoseconds) / 1e18 },
+            now: { clock }
+        )
+        let outcome = try await WaitLoop.run(.settled(by: .tree, quiet: 0.5, gate: gate, drawHold: 2), timeout: 5, interval: 0.25, sources: sources)
+        #expect(outcome.met)
+        #expect(outcome.elapsed == 0.5)
+        #expect(reads > 0)
+
+        var refused = sources
+        refused.fingerprint = { throw OtherApp() }
+        await #expect(throws: OtherApp.self) {
+            try await WaitLoop.run(.settled(by: .tree, quiet: 0.5, gate: gate, drawHold: 2), timeout: 1, interval: 0.25, sources: refused)
+        }
+    }
+
+    @Test("the draw hold reads no pixels while the tree is still moving")
+    func drawHoldSkipsCapturesDuringMoves() async throws {
+        let before = Self.screen([Self.save])
+        let script = Script()
+        script.trees = [.success(Self.pushed), .success(Self.heartRate("1")), .success(Self.heartRate("2")), .success(Self.heartRate("2")), .success(Self.heartRate("2")), .success(Self.heartRate("2"))]
+        script.fingerprints = [Self.fingerprint()]
+        let gate = try #require(SettleGate(sinceInput: 0.1, before: before))
+        let outcome = try await WaitLoop.run(.settled(by: .tree, quiet: 0.5, gate: gate, drawHold: 2), timeout: 5, interval: 0.25, sources: script.sources)
+        #expect(outcome.met)
+        #expect(script.fingerprintReads == 3, "the first read and the two quiet ones after the tree stopped, of \(script.treeReads) reads")
+    }
+
+    @Test("the draw hold starts again when the app returns from behind another app, rather than passing on its old clock")
+    func drawHoldRestartsAfterOtherApp() async throws {
+        let before = Self.screen([Self.save])
+        let script = Script()
+        script.trees = [.success(Self.pushed)] + Array(repeating: .failure(OtherApp()), count: 12) + [.success(Self.pushed)]
+        script.fingerprints = [Self.fingerprint(), Self.fingerprint(marked: [(x: 1, y: 1)]), Self.fingerprint(marked: [(x: 2, y: 2)]), Self.fingerprint(marked: [(x: 2, y: 2)])]
+        let gate = try #require(SettleGate(sinceInput: 0.1, before: before))
+        let outcome = try await WaitLoop.run(.settled(by: .tree, quiet: 0.5, gate: gate, drawHold: 2), timeout: 10, interval: 0.25, sources: script.sources)
+        #expect(outcome.met)
+        #expect(outcome.elapsed >= 3.25 + 0.5, "back at 3.25 s, then pixels that move once and a full quiet window")
+    }
+
+    @Test("a UUID in --ignore-id matches as it does on the screen")
+    func ignoreIDWithUUID() async throws {
+        let id = "chart-00000000-0000-0000-0000-000000000001"
+        let script = Script()
+        script.trees = (0..<8).map { tick in
+            .success(FakeUI.tree(width: 402, height: 874, [FakeUI.node(.other, id: id, frame: FakeUI.frame(20, Double(200 + tick), 300, 280)), Self.save]))
+        }
+        let outcome = try await WaitLoop.run(.settled(by: .tree, quiet: 0.5, leaveOut: SettleLeaveOut(ids: [id])), timeout: 2, interval: 0.25, sources: script.sources)
+        #expect(outcome.met)
+    }
+
+    @Test("an input that changed nothing reads no pixels; with no read from before it, pixels are the only proof")
+    func drawHoldReadsPixelsOnlyWhenTheyCanTell() async throws {
+        let still = Self.screen([Self.save])
+        let unchanged = Script()
+        unchanged.trees = [.success(still)]
+        unchanged.fingerprints = [Self.fingerprint()]
+        let kept = try #require(SettleGate(sinceInput: 0.2, before: still))
+        let quiet = try await WaitLoop.run(.settled(by: .tree, quiet: 0.5, gate: kept, drawHold: 2), timeout: 5, interval: 0.25, sources: unchanged.sources)
+        #expect(quiet.met)
+        #expect(unchanged.fingerprintReads == 0)
+
+        let unknown = Script()
+        unknown.trees = [.success(still)]
+        unknown.fingerprints = [Self.fingerprint()]
+        let lost = try #require(SettleGate(sinceInput: 0.2, before: nil))
+        let drawn = try await WaitLoop.run(.settled(by: .tree, quiet: 0.5, gate: lost, drawHold: 2), timeout: 5, interval: 0.25, sources: unknown.sources)
+        #expect(drawn.met)
+        #expect(unknown.fingerprintReads > 0)
+    }
+
     @Test("the gate follows the last input's record: none after a verified input or an old one, the tree before an unverified one")
     func gateFromRecord() {
         let now = Date(timeIntervalSince1970: 1_800_000_000)
@@ -380,7 +656,7 @@ struct WaitLoopTests {
     @Test("the report is one compact object with the unique match or null")
     func reportShape() {
         let missed = WaitReport(WaitOutcome(met: false, elapsed: 10.0004, reason: "not found")).jsonLine()
-        #expect(missed == #"{"met":false,"elapsedMs":10000,"reason":"not found","match":null,"matched":null,"nearest":[]}"#)
+        #expect(missed == #"{"met":false,"elapsedMs":10000,"reason":"not found","match":null,"matched":null,"nearest":[],"leaveOut":null}"#)
 
         let found = WaitReport(WaitOutcome(met: true, elapsed: 1.2, reason: "on screen", match: Self.save)).jsonLine()
         #expect(found.hasPrefix(#"{"met":true,"elapsedMs":1200,"reason":"on screen","match":{"role":"button","id":"save","label":"Save","#))

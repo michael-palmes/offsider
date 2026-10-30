@@ -17,11 +17,12 @@ public struct WaitReport: Equatable, Sendable {
             ("match", .optional(outcome.match) { .object($0.jsonFields) }),
             ("matched", .optional(outcome.matched) { .object([("by", .string($0.by)), ("text", .string($0.text))]) }),
             ("nearest", Self.nearest(outcome)),
+            ("leaveOut", .optional(outcome.movingPart) { .string($0.flag) }),
         ]), Self.untrustedPaths).rendered(compact: true)
     }
 
-    /// The matched element's text and the near misses'.
-    static let untrustedPaths = UntrustedPaths.under("match", UntrustedPaths.nodeFields) + UntrustedPaths.under("nearest[]", UntrustedPaths.candidateFields)
+    /// The matched element's text, the near misses' and the moving element's id in `leaveOut`.
+    static let untrustedPaths = UntrustedPaths.under("match", UntrustedPaths.nodeFields) + UntrustedPaths.under("nearest[]", UntrustedPaths.candidateFields) + ["leaveOut"]
 
     static func nearest(_ outcome: WaitOutcome) -> OrderedJSON {
         .array((outcome.nearMiss?.candidates ?? []).map(\.jsonValue))
