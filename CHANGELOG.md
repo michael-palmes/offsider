@@ -85,6 +85,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - `wake` waits about 6 s for the screen to turn on, not 3 s, and sends the wake key once more halfway, for phones whose screen is slow to come on.
 - With Display Zoom on, an iOS simulator's `describe-ui` frames are in screen points, where they were in the app's smaller layout space, so a selector tap no longer lands up and to the left of its target (on the row above in a list), tree masks cover what they name, and `rn logbox` and `login` reach their fields and buttons. `describe-ui --raw-source` still prints the simulator's own numbers.
 - `login` on an iOS simulator no longer taps the keyboard's Passwords bar while closing the keyboard, where it reported `submitted` with the sign-in tap lost to that bar (seen on most runs).
+- `wait --settled` no longer prints the text of a password field a show-password toggle revealed: a timeout's reason read `value of <field> changed from "..." to "..."`, in the line and in `--json`. It now sees such a field as `describe-ui` does, as bullets, so the field also stops counting as the last input's effect, which let the wait pass before that effect showed. A batch step's wait compares like with like too, for such a field and for elements `offsider.mask.json` names.
 
 ## [0.14.0] - 2026-10-22
 

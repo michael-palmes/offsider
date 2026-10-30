@@ -245,10 +245,16 @@ struct Wait: AsyncParsableCommand {
         appOption.apply(to: route)
         try await route.backend.prepare()
         onPrepared()
-        let gate = settled ? await Self.settleGate(for: route) : nil
+        let revealed = settled ? await TreeCache.revealedSecrets(for: route.device, backend: route.backend) : nil
+        let gate = settled ? await Self.settleGate(for: route, revealed: revealed) : nil
         let condition = condition(gate: gate, platform: route.device.platform)
         var sources = try await liveSources(on: route, condition: condition, tree: tree, clock: clock)
         sources.tree = selector.judging(sources.tree, queries: waitsForAny ? selector.queries : [selector.query].compactMap { $0 }, on: route)
+        if let revealed {
+            // As the cache stores them, so a change message never prints one and the gate compares like with like.
+            let (mask, read) = (TreeValueMask(revealed: revealed), sources.tree)
+            sources.tree = { try await read().redacted(mask, scope: .cache) }
+        }
         if probesOnMiss {
             sources.probe = Self.presentationProbe(on: route)
         }
@@ -262,13 +268,16 @@ struct Wait: AsyncParsableCommand {
         return try await WaitLoop.run(condition, timeout: timeout, interval: pollInterval, sources: sources)
     }
 
-    /// The gate for the device's last input: this process's own when it sent one (a batch step), else the cached record's.
+    /// The gate for the device's last input: this process's own when it sent one (a batch step), masked here as the cache's is at exit, else the cached record's.
     @MainActor
-    static func settleGate(for route: DeviceRouter.Route) async -> SettleGate? {
+    static func settleGate(for route: DeviceRouter.Route, revealed: RevealedSecrets? = nil) async -> SettleGate? {
         let ledger = DeviceActivityLedger.current
         let environment = TreeCacheEnvironment.current
         let now = environment.now()
-        if let activity = ledger.activity(for: route.device), activity.lastInputAt != nil {
+        if var activity = ledger.activity(for: route.device), activity.lastInputAt != nil {
+            var mask = OutputMasks.current.mask
+            mask.revealed = revealed
+            activity.tree = activity.tree?.redacted(mask, scope: .cache)
             let record = TreeCacheRecord.committing(activity, previous: nil, command: "wait", inputAtEnd: false, bootMarker: nil, now: now)
             return SettleGate.after(record, now: now)
         }
