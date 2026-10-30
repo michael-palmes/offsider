@@ -39,6 +39,8 @@ struct PostureCommand: AsyncParsableCommand {
     var deviceOption: DeviceOption
 
     static let settable: [Posture] = [.closed, .halfOpened, .open]
+    /// How long a refused request waits for the device to read the posture anyway.
+    static let refusedRequestWindow: TimeInterval = 3
 
     var isReset: Bool { value?.trimmingCharacters(in: .whitespaces).lowercased() == "reset" }
 
@@ -178,12 +180,20 @@ struct PostureCommand: AsyncParsableCommand {
             current = try await moveHinge(to: angle, from: previous, timeout: timeout, on: device, folder: folder, deviceName: deviceName, sleep: sleep, now: now)
         } else if let target, target != previous {
             let before = try? await backend.screenInfo(for: device)
-            try await folder.requestPosture(target, on: device)
+            do {
+                try await folder.requestPosture(target, on: device)
+            } catch {
+                // The hinge service can refuse a link while the device is moving, so what the device reads decides.
+                let confirmed = try? await StateWait.run(
+                    target: target, timeout: Self.refusedRequestWindow, read: { try await folder.posture(of: device) }, request: {}, sleep: sleep, now: now
+                )
+                guard confirmed == .reached else { throw error }
+            }
             let outcome = try await StateWait.run(
                 target: target,
                 timeout: timeout,
                 read: { try await folder.posture(of: device) },
-                request: { try await folder.requestPosture(target, on: device) },
+                request: { try? await folder.requestPosture(target, on: device) },
                 sleep: sleep,
                 now: now
             )
@@ -222,12 +232,17 @@ struct PostureCommand: AsyncParsableCommand {
         }
         let readAngle: @MainActor () async throws -> Int? = { try await hinge.hingeAngle(of: device).map { Int($0.rounded()) } }
         if try await readAngle() == angle, HingeControl.panelMatches(previous, angle: angle) { return previous }
-        try await hinge.requestHingeAngle(angle, on: device)
+        do {
+            try await hinge.requestHingeAngle(angle, on: device)
+        } catch {
+            let confirmed = try? await StateWait.run(target: angle, timeout: refusedRequestWindow, read: readAngle, request: {}, sleep: sleep, now: now)
+            guard confirmed == .reached else { throw error }
+        }
         let outcome = try await StateWait.run(
             target: angle,
             timeout: timeout,
             read: readAngle,
-            request: { try await hinge.requestHingeAngle(angle, on: device) },
+            request: { try? await hinge.requestHingeAngle(angle, on: device) },
             sleep: sleep,
             now: now
         )

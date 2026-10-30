@@ -229,6 +229,9 @@ public struct AndroidDoctorProbe {
         if let listing = try? await client.deviceQuery("reverse:list-forward", on: serial) {
             facts.reverses = listing.split(whereSeparator: \.isNewline).map(String.init)
         }
+        if let result = try? await client.shell("dumpsys webviewupdate", on: serial, timeout: .seconds(5), label: "dumpsys webviewupdate") {
+            facts.webViewVersion = AndroidDoctorRules.webViewVersion(fromDump: result.stdoutText)
+        }
         var warm: (status: HelperBrokerWire.Status, milliseconds: Int, socket: String)?
         if let socket = host.warmHelperSocket(for: serial) {
             let start = ContinuousClock.now

@@ -36,6 +36,8 @@ class FakeDeviceBackend: DeviceBackend {
     /// Posture reads in order, holding the last; empty serves `displayList.posture`.
     var postures: [Posture?] = []
     var postureRequestError: (any Error)?
+    /// One outcome per request in order, before `postureRequestError` applies.
+    var postureRequestErrors: [(any Error)?] = []
     private(set) var requestedPostures: [Posture] = []
     /// Hinge readings in order; the last repeats.
     var hingeAngles: [Double] = []
@@ -213,6 +215,7 @@ extension FakeDeviceBackend: DisplayControlling, PostureControlling, HingeContro
 
     func requestPosture(_ posture: Posture, on id: DeviceID) async throws {
         requestedPostures.append(posture)
+        if !postureRequestErrors.isEmpty, let error = postureRequestErrors.removeFirst() { throw error }
         if let postureRequestError { throw postureRequestError }
     }
 

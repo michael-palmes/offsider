@@ -37,11 +37,13 @@ enum AndroidAwakeState {
     /// The HID usage of Return, which submits the code.
     static let enterUsage: UInt32 = 40
 
+    static let wakeKey = "input keyevent KEYCODE_WAKEUP"
+
     static func wakeScript(screenOn: Bool, lockScreen: LockScreen) -> (script: String, sent: [String])? {
         var commands: [String] = []
         var sent: [String] = []
         if !screenOn {
-            commands.append("input keyevent KEYCODE_WAKEUP")
+            commands.append(wakeKey)
             sent.append("KEYCODE_WAKEUP")
         }
         if lockScreen != .hidden {

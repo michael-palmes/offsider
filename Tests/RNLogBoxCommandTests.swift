@@ -27,6 +27,37 @@ struct RNLogBoxCommandTests {
         return (outcome, backend)
     }
 
+    private struct NoWindowYet: TransientFailure, Error {
+        var isTransient: Bool { true }
+    }
+
+    /// Fails the first `failures` tree reads with no window to read, as straight after an unlock.
+    private final class UnlockingBackend: FakeDeviceBackend {
+        var failures = 0
+        override func accessibilityTree(for id: DeviceID, point: UIPoint?) async throws -> UITree {
+            if failures > 0 {
+                failures -= 1
+                throw NoWindowYet()
+            }
+            return try await super.accessibilityTree(for: id, point: point)
+        }
+    }
+
+    @Test("a read with no window yet, as straight after an unlock, is tried once more; a second miss is the error")
+    func readAfterUnlock() async throws {
+        let backend = UnlockingBackend(trees: [FakeUI.tree([Self.toast(1)])])
+        let route = DeviceRouter.Route(backend: backend, device: Self.device)
+
+        backend.failures = 1
+        let tree = try await RNLogBox.readTree(on: route, sleep: { _ in })
+        #expect(LogBoxState(tree: tree).logs == 1)
+
+        backend.failures = 2
+        await #expect(throws: NoWindowYet.self) {
+            try await RNLogBox.readTree(on: route, sleep: { _ in })
+        }
+    }
+
     @Test("a toast whose clear button works takes one tap at its right-hand end, mapped through the first read, and one read to confirm")
     func buttonPath() async throws {
         let (outcome, backend) = try await Self.dismiss([FakeUI.tree([Self.toast(1)]), FakeUI.tree()])
@@ -95,7 +126,21 @@ struct RNLogBoxCommandTests {
         let (outcome, _) = try await Self.dismiss([FakeUI.tree([Self.toast(2)])], timeout: "2")
 
         #expect(outcome.remaining == 2 && outcome.cleared == 0)
-        #expect(outcome.jsonLine() == #"{"version":1,"cleared":0,"remaining":2,"method":"none","emptyDialog":false}"#)
+        #expect(outcome.jsonLine() == #"{"version":1,"cleared":0,"remaining":2,"method":"none","emptyDialog":false,"coveredBy":null}"#)
+    }
+
+    @Test("Expo's dev menu intro over a toast taps nothing and says how to close it")
+    func introCoversToast() async throws {
+        let (outcome, backend) = try await Self.dismiss([FakeUI.tree([
+            Self.toast(2),
+            FakeUI.node(.text, label: "This is the developer menu.", frame: FakeUI.frame(20, 300, 360, 40)),
+            FakeUI.node(.button, label: "Continue", frame: FakeUI.frame(20, 400, 360, 44)),
+        ])])
+
+        #expect(backend.session.calls.isEmpty)
+        #expect(outcome.jsonLine().contains(#""coveredBy":"expo-dev-menu-intro""#))
+        #expect(!outcome.isClear)
+        #expect(RNLogBoxDismiss.line(outcome, index: nil, device: "SIM") == "✗ Expo's dev menu intro covers 2 LogBox logs, so nothing was tapped. Close it with `offsider tap --label Continue --device SIM`, then run this again.")
     }
 
     @Test("a screen without LogBox sends nothing")
@@ -251,7 +296,7 @@ struct RNLogBoxCommandTests {
         #expect(outcome == LogBoxDismissal(cleared: 1, remaining: 0, method: .inspector, emptyDialog: true))
         #expect(backend.session.calls == [.perform(.tapAt(x: 370, y: 830)), .perform(.tapAt(x: 100, y: 847))])
         #expect(clock.now >= RNLogBoxDismiss.emptyDialogWait)
-        #expect(outcome.jsonLine() == #"{"version":1,"cleared":1,"remaining":0,"method":"inspector","emptyDialog":true}"#)
+        #expect(outcome.jsonLine() == #"{"version":1,"cleared":1,"remaining":0,"method":"inspector","emptyDialog":true,"coveredBy":null}"#)
         #expect(RNLogBoxDismiss.line(outcome, index: nil, device: Self.android.rawValue).hasPrefix(
             "✗ Cleared 1 LogBox log, but React Native left its empty LogBox dialog over the app; nothing more was sent. Reload the app to close it, in an Expo dev client with: offsider rn open --port <metro port> --bundle-id <package> --device emulator-5554"
         ))

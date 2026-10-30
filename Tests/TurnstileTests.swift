@@ -122,6 +122,45 @@ struct TurnstileTests {
         #expect(backend.session.calls.isEmpty)
     }
 
+    @Test("a Turnstile web view with its widget hidden at no height is no widget, not absent")
+    func webViewWithNoWidget() {
+        let viewport = UIFrame(x: 0, y: 0, width: 393, height: 852)
+        let hidden = FakeUI.node(.group, id: "turnstile-widget", frame: FakeUI.frame(20, 400, 300, 0))
+        let view = FakeUI.node(.group, id: "signin-turnstile", frame: FakeUI.frame(20, 400, 300, 70), children: [hidden])
+        #expect(TurnstileWidget.phase(in: [view], viewport: viewport) == .noWidget)
+        #expect(TurnstileStatus(phase: .noWidget, source: .tree)?.state == .unknown)
+        #expect(TurnstileStatus(phase: .noWidget, source: .tree)?.textLine().hasPrefix("Turnstile: unknown. ") == true)
+        #expect(TurnstileStatus(phase: .noWidget, source: .tree)?.jsonLine() == #"{"version":1,"state":"unknown","source":"tree","frame":null}"#)
+    }
+
+    @Test("login past a web view with no widget says so, in its text and JSON")
+    func loginReportsUnknown() {
+        let report = LoginReport(app: "com.example.app", key: "default", turnstile: .unknown, submitLabel: "Sign in")
+        #expect(report.textLine().hasSuffix(TurnstileStatus.unknownNote))
+        #expect(report.jsonLine().contains(#""turnstile":"unknown""#))
+        #expect(!LoginReport(app: "com.example.app", key: "default", turnstile: .absent, submitLabel: "Sign in").textLine().contains("Turnstile"))
+    }
+
+    @Test("a hidden or off-screen web view, or a screen that never names Turnstile, stays absent")
+    func noWebViewStaysAbsent() {
+        let viewport = UIFrame(x: 0, y: 0, width: 393, height: 852)
+        let hidden = FakeUI.node(.group, id: "turnstile-widget", frame: FakeUI.frame(20, 400, 300, 0))
+        let parked = FakeUI.node(.group, id: "signin-turnstile", frame: FakeUI.frame(20, 2000, 300, 70))
+        let other = FakeUI.node(.button, id: "submit", frame: FakeUI.frame(20, 400, 300, 44))
+        #expect(TurnstileWidget.phase(in: [hidden, parked, other], viewport: viewport) == .absent)
+    }
+
+    @Test("a widget inside the web view is read as before")
+    func webViewWithWidget() {
+        let viewport = UIFrame(x: 0, y: 0, width: 393, height: 852)
+        let box = FakeUI.node(.checkbox, label: "Verify you are human", frame: FakeUI.frame(30, 410, 200, 30))
+        let view = FakeUI.node(.group, id: "signin-turnstile", frame: FakeUI.frame(20, 400, 300, 70), children: [box])
+        guard case .ready = TurnstileWidget.phase(in: [view], viewport: viewport) else {
+            Issue.record("expected the checkbox")
+            return
+        }
+    }
+
     @Test("an off-screen widget is ignored")
     func offScreenIgnored() {
         let parked = node(role: .group, id: "cf-chl-widget-old", frame: UIFrame(x: 24, y: 2000, width: 365, height: 66), children: [

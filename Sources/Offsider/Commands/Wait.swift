@@ -96,6 +96,7 @@ struct Wait: AsyncParsableCommand {
         if waitsForAny {
             if gone { throw ValidationError("--any waits for the first selector on screen; it does not take --gone.") }
             if selector.hasValue != nil { throw ValidationError("--any does not take --has-value; use --value as one of the selectors.") }
+            if selector.requiredEnabled != nil { throw ValidationError("--any does not take --enabled or --disabled.") }
         } else if selector.mixesLabelSelectors {
             throw ValidationError(SelectorQuery.oneLabelRule)
         } else if selector.queries.count > 1, !selector.isConjunction {
@@ -113,6 +114,9 @@ struct Wait: AsyncParsableCommand {
         }
         if gone && selector.query == nil {
             throw ValidationError("--gone needs --id, --label, --label-contains or --value.")
+        }
+        if gone && selector.requiredEnabled != nil {
+            throw ValidationError("--gone does not take --enabled or --disabled.")
         }
         if let stableForMs {
             if settled || stable {
@@ -365,6 +369,7 @@ struct Wait: AsyncParsableCommand {
         }
         if let query = selector.query {
             if gone { return "\(query.selectorDescription) to be gone" }
+            if let wanted = selector.requiredEnabled { return "\(query.selectorDescription) to be \(wanted ? "enabled" : "disabled")" }
             return selector.hasValue.map { "\(query.selectorDescription) with value '\($0)'" } ?? query.selectorDescription
         }
         if settled { return "the screen to settle" }

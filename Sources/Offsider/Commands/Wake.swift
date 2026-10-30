@@ -85,7 +85,7 @@ struct Wake: AsyncParsableCommand {
         var current = outcome.current
         var sent = outcome.sent
         guard current.screen == .on else {
-            throw CLIError(errorDescription: "The screen of \(name) did not turn on within about 3 s. Check the device, then retry.", reason: .stateNotReached)
+            throw CLIError(errorDescription: "The screen of \(name) did not turn on within about 6 s. Check the device, then retry.", reason: .stateNotReached)
         }
         let unlockKey = Self.unlockKey(booted)
         if current.lockScreen == .secure {

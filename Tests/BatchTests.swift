@@ -434,3 +434,32 @@ struct BatchSecureTypeTests {
         }
     }
 }
+
+@Suite("Batch screenshot steps on a phone")
+@MainActor
+struct BatchScreenshotPreparationTests {
+    private final class MaskBackend: FakeDeviceBackend, MaskTreeReading {
+        var prepared = 0
+        func maskTree(for id: DeviceID) async throws -> UITree { try await accessibilityTree(for: id, point: nil) }
+        func prepareMaskTree(for id: DeviceID) async throws { prepared += 1 }
+    }
+
+    private static let phone = DeviceID(rawValue: "phone-serial", platform: .android)
+
+    private static func prepared(_ lines: [String], maskSecure: Bool? = nil) async -> Int {
+        let backend = MaskBackend(trees: [])
+        await Batch.prepareScreenshots(lines, maskSecure: maskSecure, backend: backend, device: phone)
+        return backend.prepared
+    }
+
+    @Test("the mask's helper starts once before the first step when any step is a screenshot")
+    func startsOnce() async {
+        #expect(await Self.prepared(["tap -x 1 -y 2", "screenshot --output a.png", "tap -x 1 -y 2", "screenshot --output b.png"]) == 1)
+    }
+
+    @Test("no screenshot step, or a batch with masks off, starts nothing")
+    func startsNothing() async {
+        #expect(await Self.prepared(["tap -x 1 -y 2", "describe-ui --summary"]) == 0)
+        #expect(await Self.prepared(["screenshot --output a.png"], maskSecure: false) == 0)
+    }
+}

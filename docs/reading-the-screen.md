@@ -42,6 +42,7 @@ A person and an agent read the same output; a person also sees a spinner while i
 
 `context` is always present:
 
+- Every `frame` is in the points input and captures use. With Display Zoom on an iOS simulator, where the app lays out in a smaller space than the screen, Offsider converts them to screen points; `--raw-source` prints the simulator's own numbers.
 - `window` is null with the uiautomator fallback, and on iOS unless a prompt another process draws over the app is up, such as AutoFill's Save Password? after a sign-in. The app's tree holds only that prompt's empty host, so while the host is there `describe-ui` reads the middle of the screen once and names it `{"title": "Save Password?", "kind": "system", "package": "SafariViewService", "empty": false}`, without listing its buttons. On Android it names the active window: `title`, `kind` (`app`; `modal` for a dialog or a React Native `Modal`, known by another application window beneath it or by having no title, since Android leaves the activity beneath a dialog out of the list; or `system`), `package` and `empty` (true for an untitled modal spanning the screen with nothing labelled, named or actionable in it, as React Native can leave its LogBox dialog).
 - `keyboard` is true while an on-screen keyboard is in the tree and its frame meets the screen; one left below the screen after a fold, or with a hardware keyboard connected, draws nothing and reads false.
 - `logbox` is null, or `{logs, inspector}` while React Native LogBox shows in a debug build.

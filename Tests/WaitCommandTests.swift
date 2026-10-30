@@ -37,6 +37,25 @@ struct WaitCommandTests {
         try ScreenImage.encode(TestImages.make(width: 40, height: 40, marked: marked), as: .png)
     }
 
+    @Test("wait --enabled is met when the button enables, and a timeout says it stayed disabled")
+    func waitsForEnabled() async throws {
+        let form = { (enabled: Bool) in
+            FakeUI.tree(width: 393, height: 852, [FakeUI.node(.button, id: "submit", frame: FakeUI.frame(20, 600, 350, 44), enabled: enabled)])
+        }
+        let backend = FakeDeviceBackend(trees: [form(false), form(false), form(true)])
+        let wait = try Self.command(["--id", "submit", "--enabled", "--timeout", "5"])
+        let outcome = try await Self.evaluate(wait, on: backend)
+        #expect(outcome.met)
+        #expect(outcome.match?.enabled == true)
+        #expect(backend.treeReads == 3)
+        #expect(wait.successLine(outcome).hasPrefix("✓ --id 'submit' is on screen and enabled after "))
+
+        let stuck = try Self.command(["--id", "submit", "--enabled", "--timeout", "0.2"])
+        let timedOut = try await Self.evaluate(stuck, on: FakeDeviceBackend(trees: [form(false)]))
+        #expect(!timedOut.met)
+        #expect(stuck.failureLine(timedOut).contains("waiting for --id 'submit' to be enabled (last: is disabled, expected enabled)"))
+    }
+
     @Test("wait --id is met once a later tree moves the parked element on screen")
     func waitsForParkedElement() async throws {
         let backend = FakeDeviceBackend(trees: [Self.sheetScreen(applyY: 10700), Self.sheetScreen(applyY: 10700), Self.sheetScreen(applyY: 600)])
@@ -184,6 +203,9 @@ struct WaitCommandTests {
     @Test("conflicting or incomplete conditions are rejected", arguments: [
         (["--id", "a", "--settled"], "Choose only one of a selector, --settled, --region or --seconds."),
         (["--timeout", "5"], "Choose one of a selector (--id, --label, --label-contains or --value), --settled, --region or --seconds."),
+        (["--id", "a", "--gone", "--disabled"], "--gone does not take --enabled or --disabled."),
+        (["--any", "--id", "a", "--id", "b", "--enabled"], "--any does not take --enabled or --disabled."),
+        (["--settled", "--enabled"], "--enabled needs --id, --label, --label-contains or --value."),
         (["--settled", "--changed"], "--changed and --stable need --region."),
         (["--region", "0,0,10,10"], "--region needs --changed or --stable."),
         (["--region", "0,0,10,10", "--changed", "--stable"], "Use only one of --changed or --stable."),

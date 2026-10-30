@@ -328,6 +328,30 @@ public enum AndroidDoctorRules {
         return (.pass, "Automatic system updates are off", nil)
     }
 
+    /// WebView 80 brought the JavaScript that web widgets such as Cloudflare Turnstile now need; an older one fails to run them.
+    static let oldestUsefulWebView = 80
+
+    public static func webView(_ version: String) -> Verdict {
+        guard let major = Int(version.prefix { $0.isNumber }), major < oldestUsefulWebView else {
+            return (.pass, "version \(version)", nil)
+        }
+        return (
+            .warn,
+            "version \(version), too old to run web widgets such as Cloudflare Turnstile (needs \(oldestUsefulWebView) or later)",
+            "Update Android System WebView on the device, or test web sign-in on a newer one."
+        )
+    }
+
+    /// The version in `dumpsys webviewupdate`'s `Current WebView package (name, version): (com.android.webview, 70.0.3538.110)`.
+    public static func webViewVersion(fromDump dump: String) -> String? {
+        for line in dump.split(whereSeparator: \.isNewline) where line.contains("Current WebView package") {
+            guard let comma = line.lastIndex(of: ","), line.hasSuffix(")") else { continue }
+            let version = line[line.index(after: comma)...].dropLast().trimmingCharacters(in: .whitespaces)
+            if !version.isEmpty, version != "version" { return version }
+        }
+        return nil
+    }
+
     /// Information only: marks the reverses `rn open` set (`offsider`), which `session stop` removes; it never touches another.
     public static func metroReverse(_ lines: [String]?, offsider: [Int] = []) -> Verdict {
         guard let lines else { return (.pass, "Could not read the reverse list", nil) }
@@ -378,7 +402,7 @@ public enum AndroidDoctorRules {
 
     static let deviceDependents: [DoctorCheckID] = [
         .androidDeviceImage, .androidDeviceMemory, .androidDeviceScreen, .androidDeviceLock, .androidDeviceStayAwake, .androidDeviceGrpc, .androidDeviceUiAutomation,
-        .androidDeviceHelper, .androidDeviceMetroReverse, .androidDeviceAdbExpiry, .androidDeviceSystemUpdates,
+        .androidDeviceHelper, .androidDeviceMetroReverse, .androidDeviceWebView, .androidDeviceAdbExpiry, .androidDeviceSystemUpdates,
     ]
 
     /// `hostBlocker` names the failed host check the device checks need, such as `android.sdk`.
@@ -430,6 +454,11 @@ public enum AndroidDoctorRules {
             checks.append(.skipped(.androidDeviceHelper, "requires android-device.uiautomation"))
         }
         checks.append(DoctorCheckResult(id: .androidDeviceMetroReverse, verdict: metroReverse(facts.reverses, offsider: facts.offsiderReverses)))
+        if let webView = facts.webViewVersion {
+            checks.append(DoctorCheckResult(id: .androidDeviceWebView, verdict: self.webView(webView)))
+        } else {
+            checks.append(.skipped(.androidDeviceWebView, "could not read the WebView version"))
+        }
         let phoneChecks: [(DoctorCheckID, String?, (String) -> Verdict)] = [
             (.androidDeviceAdbExpiry, facts.adbAuthorisationTimeout, adbAuthorisation),
             (.androidDeviceSystemUpdates, facts.automaticUpdatesDisabled, systemUpdates),
