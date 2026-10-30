@@ -25,6 +25,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - `assert` and `wait` take `--enabled` and `--disabled`. Among matches they judge the control a tap would: a button over plain text with its label, the deepest of controls nested in each other, and text inside a disabled button reads disabled. `--json`'s `match` now names that element, with its `enabled`, where it was null for a button and the text inside it.
 - `doctor`'s `android-device.webview` warns when the system WebView is older than version 80, which cannot run web widgets such as Cloudflare Turnstile.
 - `screenshot --json` and a batch screenshot step report `treeReadMs` (the mask's tree read) beside `captureMs`.
+- `make build` signs the debug `offsider` when `.env` names `OFFSIDER_DEV_SIGNING_IDENTITY`, an Apple Development identity (off until set), so a login a signed build saved reads with no Keychain prompt after any rebuild, in any worktree. `./scripts/build.sh dev-sign` runs the step alone. It signs the executable only, hardened, and refuses a Developer ID identity; brokers still admit only the exact build.
 
 ### Changed
 
