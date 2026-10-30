@@ -82,7 +82,7 @@ struct ReactNativeStackCoverTests {
         _ = try await app.waitForLabel(of: "stack-test-state") { $0 == "Stack State: Tab: Products" }
     }
 
-    @Test("--summary folds the mounted stack beneath the page on Android; iOS lists a React Native overlay page flat, so nothing folds", arguments: RNPlatform.enabled)
+    @Test("--summary folds the mounted stack beneath the page on Android; iOS lists the overlay page flat, so only a tab the page's group takes the touch from folds", arguments: RNPlatform.enabled)
     func summaryFoldsCoveredScreen(platform: RNPlatform) async throws {
         let app = RNApp(platform)
         try await Self.openFullPage(app)
@@ -96,7 +96,8 @@ struct ReactNativeStackCoverTests {
             #expect(summary.contains("# beneath: \"Mounted Stack\""), "\(summary)")
             #expect(summary.contains("under \"stack-test-full-page-1\""), "\(summary)")
         case .ios:
-            #expect(summary.contains("id=stack-test-tab-products") && !summary.contains("# beneath:"), "\(summary)")
+            #expect(!summary.contains("id=stack-test-tab-products") && !summary.contains("# beneath:"), "\(summary)")
+            #expect(summary.contains("# covered: "), "\(summary)")
         }
     }
 

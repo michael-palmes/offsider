@@ -9,14 +9,14 @@ enum FrontJudge {
     /// At most this many points are hit-tested on an iOS simulator in one read, all at once; the rest keep the tree's word.
     static let hitLimit = 24
 
-    /// Judges the elements at `indexes` (pre-order over `tree.roots`) and stores the reading on `tree`, merged with any it had.
-    static func read(_ indexes: some Sequence<Int>, in tree: inout UITree, backend: any DeviceBackend, device: DeviceID) async {
+    /// Judges the elements at `indexes` (pre-order over `tree.roots`) and stores the reading on `tree`, merged with any it had; `everyPoint` hit-tests each on a simulator, not only those something labelled overlaps.
+    static func read(_ indexes: some Sequence<Int>, in tree: inout UITree, backend: any DeviceBackend, device: DeviceID, everyPoint: Bool = false) async {
         let reader = tree.platform == .android ? nil : PointReader(backend: backend, device: device)
         var reading = tree.front ?? FrontReading()
         let judged = tree
         await Timings.measure("front") {
             let plan = Plan(tree: judged, indexes: indexes, reading: reading)
-            let contested = Array(plan.contested.prefix(hitLimit))
+            let contested = Array((everyPoint ? plan.unblocked : plan.contested).prefix(hitLimit))
             // A tap aims at the part of a covered element beside its cover, so that part is read in the same round as the centre.
             let parts = reader == nil ? [] : contested.compactMap { entry -> (Int, TapCover.Judging)? in
                 let covers = entry.judging.candidates.compactMap(\.frame)
@@ -59,7 +59,7 @@ enum FrontJudge {
     }
 
     /// `read` for every on-screen match of `queries`.
-    static func read(matching queries: [AccessibilityQuery], elementType: String?, in tree: inout UITree, backend: any DeviceBackend, device: DeviceID) async {
+    static func read(matching queries: [AccessibilityQuery], elementType: String?, in tree: inout UITree, backend: any DeviceBackend, device: DeviceID, everyPoint: Bool = false) async {
         let flat = tree.roots.flatMap { $0.flattened() }
         var indexes = Set<Int>()
         for query in queries {
@@ -69,7 +69,7 @@ enum FrontJudge {
             }
         }
         guard !indexes.isEmpty else { return }
-        await read(indexes.sorted(), in: &tree, backend: backend, device: device)
+        await read(indexes.sorted(), in: &tree, backend: backend, device: device, everyPoint: everyPoint)
     }
 
     /// The elements judged without a device: pages and the drawing order, and which need a hit-test.
@@ -105,7 +105,12 @@ enum FrontJudge {
 
         /// The judged elements something may draw over, which an iOS simulator's hit-test settles.
         var contested: [Entry] {
-            entries.filter { $0.judging.keyboard == nil && $0.judging.isContested }
+            unblocked.filter { $0.judging.isContested }
+        }
+
+        /// The judged elements the keyboard does not cover.
+        var unblocked: [Entry] {
+            entries.filter { $0.judging.keyboard == nil }
         }
 
         func record(into reading: inout FrontReading, hits: [Int: UINode], hitTested: Bool, platform: DevicePlatform) {

@@ -19,6 +19,27 @@ struct Verifier {
         var date: @MainActor () -> Date = { Date() }
         /// What hides values in the change list, as `describe-ui` hides them, and in the cached tree.
         var valueMask: @MainActor () async -> TreeValueMask = { .none }
+        /// The tree with the shared on-screen judgement read for the `--verify-id` element, so one beneath a page or covered is not in front.
+        var judge: @MainActor (UITree, String) async -> UITree = { tree, _ in tree }
+    }
+
+    /// Where `--verify-id`'s element is.
+    enum Placement: Equatable {
+        case front
+        /// What a touch would reach instead, such as `beneath "Details"`.
+        case hidden(String)
+        case offScreen
+        case absent
+
+        /// Why it is not in front, as a failure names it.
+        var reason: String? {
+            switch self {
+            case .front: return nil
+            case .hidden(let why): return "it is \(why)"
+            case .offScreen: return "it is off screen"
+            case .absent: return "no element has that id"
+            }
+        }
     }
 
     /// What proves the input worked: a settled change (text and frames optional), or one element coming on screen.
@@ -87,7 +108,7 @@ struct Verifier {
         moving && taken < maxScreenshots && (taken == screenshotCount || withinDeadline)
     }
 
-    /// `initialTree`, the tree the selector was resolved on, stands in for the first read; `beforeAction` sees the second.
+    /// `initialTree`, the tree the selector was resolved on, stands in for the first read; `beforeAction` sees the second; a retry is held for one more window after a change that did not last, a failed read or `targetStays` false.
     static func run(
         styles: [TapDeliveryStyle?],
         timeout: Duration,
@@ -96,8 +117,10 @@ struct Verifier {
         detector: ChangeDetector? = nil,
         initialTree: UITree? = nil,
         target: UINode? = nil,
+        targetStays: ((UITree) async -> Bool)? = nil,
         beforeAction: (UITree) async throws -> Void = { _ in },
         onRetry: (Attempt, Attempt) -> Void = { _, _ in },
+        onHold: (Attempt) -> Void = { _ in },
         action: (Attempt) async throws -> Void
     ) async throws -> Outcome {
         let attempts = styles.isEmpty ? [nil] : styles
@@ -107,7 +130,7 @@ struct Verifier {
         case .appearing(let id):
             return try await runAppearing(
                 id: id, attempts: attempts, timeoutSeconds: timeoutSeconds, dependencies: dependencies,
-                initialTree: initialTree, beforeAction: beforeAction, onRetry: onRetry, action: action
+                initialTree: initialTree, beforeAction: beforeAction, onRetry: onRetry, onHold: onHold, action: action
             )
         case .change(let ignore):
             ignoringText = ignore
@@ -205,13 +228,16 @@ struct Verifier {
             )
         }
 
-        for (index, style) in attempts.enumerated() {
-            let attempt = Attempt(number: index + 1, style: style)
-            let dispatchStart = dependencies.now()
-            try await Timings.measure("dispatch") { try await action(attempt) }
-            phases.dispatch += dependencies.now() - dispatchStart
-            let attemptStart = dependencies.now()
+        func unverified(_ attempt: Attempt, note: VerifyNote? = nil) -> Outcome {
+            var outcome = Outcome(verified: false, attempts: attempt.number, change: .none, style: attempt.style, summary: nil, note: note)
+            outcome.phases = phases
+            outcome.ignored = ignored
+            return outcome
+        }
 
+        /// One window of polls, after-shots and a late read; `unsettled` when the tree changed and went back, or a read failed after a readable baseline.
+        func check(_ attempt: Attempt, from attemptStart: TimeInterval) async throws -> (outcome: Outcome?, unsettled: Bool, latest: Read?, lastUnchanged: Read?) {
+            let style = attempt.style
             let deadline = dependencies.now() + timeoutSeconds
             var seenChange = false
             var pending: AccessibilitySnapshot?
@@ -252,11 +278,11 @@ struct Verifier {
                     } while dependencies.now() < deadline
                     return nil
                 }
-                if let polled { return polled }
+                if let polled { return (polled, false, nil, nil) }
             }
             // A change that never settled counts only while the latest read still shows it.
             if seenChange, let lastRead, case .changed(let summary) = detector.compare(baseline, lastRead.snapshot, ignoring: volatile, live: live) {
-                return verified(summary, read: lastRead, attempt: attempt, attemptStart: attemptStart)
+                return (verified(summary, read: lastRead, attempt: attempt, attemptStart: attemptStart), false, nil, nil)
             }
 
             if !ignoringText, let shot = baselineShots.last {
@@ -286,7 +312,7 @@ struct Verifier {
                     + (baselineRead.toasts + (lastRead?.toasts ?? [])).map { AccessibilitySnapshot.Frame(x: $0.frame.x, y: $0.frame.y, width: $0.frame.width, height: $0.frame.height) }
                 let skipped = afterPrints.last.map { Self.tiles(under: explained, in: $0, screenFrame: screenFrame) } ?? []
                 if ScreenChange.detect(before: baselinePrints, after: afterPrints, ignoring: skipped) {
-                    return finish(Outcome(verified: true, attempts: attempt.number, change: .screenshot, style: style, summary: nil), attemptStart: attemptStart)
+                    return (finish(Outcome(verified: true, attempts: attempt.number, change: .screenshot, style: style, summary: nil), attemptStart: attemptStart), false, nil, nil)
                 }
                 if let last = afterShots.last {
                     baselineShots = [last.data]
@@ -295,39 +321,53 @@ struct Verifier {
             }
 
             // A slow push may land after the poll: one more read before any retry, so it verifies on this attempt.
-            if baseline.isKnown {
-                let lateRead = Read(try? await dependencies.tree())
-                noteIgnored(lateRead)
-                if case .changed(let summary) = detector.compare(baseline, lateRead.snapshot, ignoring: volatile, live: live) {
-                    return verified(summary, read: lateRead, attempt: attempt, attemptStart: attemptStart)
-                }
-                if lateRead.snapshot.isKnown {
-                    lastUnchanged = lateRead
-                }
+            guard baseline.isKnown else { return (nil, false, nil, lastUnchanged) }
+            let lateRead = Read(try? await dependencies.tree())
+            noteIgnored(lateRead)
+            if case .changed(let summary) = detector.compare(baseline, lateRead.snapshot, ignoring: volatile, live: live) {
+                return (verified(summary, read: lateRead, attempt: attempt, attemptStart: attemptStart), false, nil, nil)
             }
+            if lateRead.snapshot.isKnown {
+                lastUnchanged = lateRead
+            }
+            return (nil, seenChange || !lateRead.snapshot.isKnown, lateRead, lastUnchanged)
+        }
+
+        for (index, style) in attempts.enumerated() {
+            let attempt = Attempt(number: index + 1, style: style)
+            let dispatchStart = dependencies.now()
+            try await Timings.measure("dispatch") { try await action(attempt) }
+            phases.dispatch += dependencies.now() - dispatchStart
+            let attemptStart = dependencies.now()
+            let checked = try await check(attempt, from: attemptStart)
+            if let outcome = checked.outcome { return outcome }
 
             // A real effect taken for live text could be undone by a second input, so live text holds the retry back.
             let retrying = index + 1 < attempts.count && !ignored.contains { $0.reason == .live }
             phases.verify += dependencies.now() - attemptStart
-            guard retrying else {
-                var outcome = Outcome(verified: false, attempts: attempt.number, change: .none, style: style, summary: nil)
-                outcome.phases = phases
-                outcome.ignored = ignored
-                return outcome
+            guard retrying else { return unverified(attempt) }
+            var moving = checked.unsettled
+            if !moving, let targetStays, let tree = checked.latest?.tree {
+                moving = await !targetStays(tree)
             }
-            if let lastUnchanged {
+            if moving {
+                // A second input would land on whatever the change brings, so this one is watched for one more window instead.
+                onHold(attempt)
+                let watchStart = dependencies.now()
+                if let outcome = try await check(attempt, from: watchStart).outcome { return outcome }
+                phases.verify += dependencies.now() - watchStart
+                return unverified(attempt, note: .unsettled)
+            }
+            if let lastUnchanged = checked.lastUnchanged {
                 baselineRead = lastUnchanged
                 baseline = lastUnchanged.snapshot
             }
             onRetry(attempt, Attempt(number: index + 2, style: attempts[index + 1]))
         }
-        var outcome = Outcome(verified: false, attempts: attempts.count, change: .none, style: attempts.last ?? nil, summary: nil)
-        outcome.phases = phases
-        outcome.ignored = ignored
-        return outcome
+        return unverified(Attempt(number: attempts.count, style: attempts.last ?? nil))
     }
 
-    /// Refuses before any input when the element is already on screen, then waits up to the timeout per attempt for it to come on screen.
+    /// Refuses before any input when the element is already in front (one beneath a page or covered is not), then waits up to the timeout per attempt for it to come to the front.
     private static func runAppearing(
         id: String,
         attempts: [TapDeliveryStyle?],
@@ -336,46 +376,76 @@ struct Verifier {
         initialTree: UITree?,
         beforeAction: (UITree) async throws -> Void,
         onRetry: (Attempt, Attempt) -> Void,
+        onHold: (Attempt) -> Void,
         action: (Attempt) async throws -> Void
     ) async throws -> Outcome {
         let start = dependencies.now()
         var phases = VerifyPhases()
-        let baseline: UITree
-        if let initialTree { baseline = initialTree } else { baseline = try await dependencies.tree() }
+        let read: UITree
+        if let initialTree { read = initialTree } else { read = try await dependencies.tree() }
+        let baseline = await dependencies.judge(read, id)
         try refuseIfOnScreen(id, in: baseline)
         try await beforeAction(baseline)
         phases.settle = dependencies.now() - start
-        for (index, style) in attempts.enumerated() {
-            let attempt = Attempt(number: index + 1, style: style)
-            let dispatchStart = dependencies.now()
-            try await Timings.measure("dispatch") { try await action(attempt) }
-            phases.dispatch += dependencies.now() - dispatchStart
-            let attemptStart = dependencies.now()
-            let deadline = dependencies.now() + timeoutSeconds
+        var latest = baseline
+        var lastReadFailed = false
+
+        /// Polls one window for the element; true once it is in front.
+        func watch() async throws -> Bool {
+            let watchStart = dependencies.now()
+            defer { phases.verify += dependencies.now() - watchStart }
+            let deadline = watchStart + timeoutSeconds
             repeat {
                 if let waitForChange = dependencies.waitForChange {
                     try await waitForChange(pollInterval)
                 } else {
                     try await dependencies.sleep(pollInterval)
                 }
-                if let tree = try? await dependencies.tree(), isOnScreen(id, in: tree) {
-                    phases.verify += dependencies.now() - attemptStart
-                    var outcome = Outcome(verified: true, attempts: attempt.number, change: .element, style: style, summary: "--id '\(id)' is on screen")
-                    outcome.phases = phases
-                    return outcome
+                let read = Read(try? await dependencies.tree())
+                lastReadFailed = !read.snapshot.isKnown
+                if !lastReadFailed, let tree = read.tree {
+                    latest = await dependencies.judge(tree, id)
+                    if placement(of: id, in: latest) == .front { return true }
                 }
             } while dependencies.now() < deadline
-            phases.verify += dependencies.now() - attemptStart
-            if index + 1 < attempts.count {
-                onRetry(attempt, Attempt(number: index + 2, style: attempts[index + 1]))
-            }
+            return false
         }
-        var outcome = Outcome(verified: false, attempts: attempts.count, change: .none, style: attempts.last ?? nil, summary: nil)
-        outcome.phases = phases
-        return outcome
+
+        // Only a read identical in every element says the input may not have landed; a ticking clock or a failed read says nothing.
+        func screenUnchanged() -> Bool {
+            !lastReadFailed && ChangeDetector().compare(Read(baseline).snapshot, Read(latest).snapshot) == .unchanged
+        }
+
+        func outcome(_ attempt: Attempt, verified: Bool) -> Outcome {
+            var outcome = Outcome(
+                verified: verified, attempts: attempt.number, change: verified ? .element : .none, style: attempt.style,
+                summary: verified ? "--id '\(id)' is on screen" : placement(of: id, in: latest).reason
+            )
+            if !verified, screenUnchanged() {
+                outcome.note = .screenUnchanged
+            }
+            outcome.phases = phases
+            return outcome
+        }
+
+        for (index, style) in attempts.enumerated() {
+            let attempt = Attempt(number: index + 1, style: style)
+            let dispatchStart = dependencies.now()
+            try await Timings.measure("dispatch") { try await action(attempt) }
+            phases.dispatch += dependencies.now() - dispatchStart
+            if try await watch() { return outcome(attempt, verified: true) }
+            guard index + 1 < attempts.count else { break }
+            if !screenUnchanged() {
+                // The screen is not as it was, so a second input would land on whatever it shows now.
+                onHold(attempt)
+                return outcome(attempt, verified: try await watch())
+            }
+            onRetry(attempt, Attempt(number: index + 2, style: attempts[index + 1]))
+        }
+        return outcome(Attempt(number: attempts.count, style: attempts.last ?? nil), verified: false)
     }
 
-    /// `--verify-id` cannot prove an input when its element shows already; the refusal says whether this command sent anything before it.
+    /// `--verify-id` cannot prove an input when its element is in front already; the refusal says whether this command sent anything before it.
     static func refuseIfOnScreen(_ id: String, in tree: UITree) throws {
         guard isOnScreen(id, in: tree) else { return }
         let sent = DispatchTracker.current.state == .no ? "Nothing was sent." : "Only earlier input, such as the tap that focused the field, was sent."
@@ -386,10 +456,30 @@ struct Verifier {
         )
     }
 
-    /// On screen when the tree has a screen to compare with; any match otherwise.
+    /// In front when a touch would reach it by the tree's on-screen judgement, or on screen by frame when the tree carries none; any match when the tree has no screen.
     static func isOnScreen(_ id: String, in tree: UITree) -> Bool {
+        placement(of: id, in: tree) == .front
+    }
+
+    /// `tree` with the shared on-screen judgement read for `id`'s element, hit-testing its point on a simulator even where nothing labelled overlaps it.
+    static func judged(_ tree: UITree, id: String, backend: any DeviceBackend, device: DeviceID) async -> UITree {
+        var judged = tree
+        await FrontJudge.read(matching: [.id(id)], elementType: nil, in: &judged, backend: backend, device: device, everyPoint: true)
+        return judged
+    }
+
+    static func placement(of id: String, in tree: UITree) -> Placement {
         let found = AccessibilityTargetResolver.candidates(roots: tree.roots, query: .id(id), elementType: nil)
-        return !(found.viewport == nil ? found.matches : found.onScreen).isEmpty
+        guard !found.matches.isEmpty else { return .absent }
+        let shown = found.viewport == nil ? found.matches : found.onScreen
+        guard !shown.isEmpty else { return .offScreen }
+        guard let front = tree.front, !front.isEmpty else { return .front }
+        var first: String?
+        for node in shown {
+            guard let reason = front.reason(for: node, in: tree.roots) else { return .front }
+            first = first ?? reason
+        }
+        return first.map(Placement.hidden) ?? .front
     }
 
     /// Nodes that differed between the two reads before the action, left out of the change list as the detector leaves them out of its comparison.
@@ -448,7 +538,8 @@ extension Verifier.Dependencies {
             now: { ProcessInfo.processInfo.systemUptime },
             bands: { await backend.volatileScreenBands(for: device) },
             cachedRecord: { await TreeCache.load(for: device, backend: backend) },
-            valueMask: { (try? AmbientMasks.treeMask(revealed: await TreeCache.revealedSecrets(for: device, backend: backend))) ?? .none }
+            valueMask: { (try? AmbientMasks.treeMask(revealed: await TreeCache.revealedSecrets(for: device, backend: backend))) ?? .none },
+            judge: { tree, id in await Verifier.judged(tree, id: id, backend: backend, device: device) }
         )
         if let waiting = backend as? any AccessibilityChangeWaiting {
             dependencies.waitForChange = { duration in

@@ -105,9 +105,9 @@ Text output (`--summary` and `--format text`) saves bytes in four ways; JSON and
 
 ## What counts as on screen
 
-One rule decides what is on screen for `describe-ui --on-screen` (and `--summary`), `wait`, `assert` and selector `tap`, `--topmost` included: an element is on screen when its frame meets the screen by at least 1 point on both axes, no full-screen page is drawn over its screen, and a touch at its activation point (its centre, or the middle of the part that shows) reaches it or something inside it. Offsider judges the touch as `tap` judges its target before sending anything:
+One rule decides what is on screen for `describe-ui --on-screen` (and `--summary`), `wait`, `assert`, `--verify-id` and selector `tap`, `--topmost` included: an element is on screen when its frame meets the screen by at least 1 point on both axes, no full-screen page is drawn over its screen, and a touch at its activation point (its centre, or the middle of the part that shows) reaches it or something inside it. Offsider judges the touch as `tap` judges its target before sending anything:
 
-- On an iOS simulator, a hit-test at the point. It reads only the points where something else holds the point too (another control, a labelled element, a bar of controls such as a tab bar), all at once, so a screen where nothing overlaps costs nothing and one that does costs one round of reads, about half a second. An element covered at its point still counts when a hit-test at the part of it showing beside the cover finds it, the part `tap` then aims at.
+- On an iOS simulator, a hit-test at the point. It reads only the points where something else holds the point too (another control, a labelled element, a bar of controls such as a tab bar), all at once, so a screen where nothing overlaps costs nothing and one that does costs one round of reads, about half a second. `--verify-id` reads its element's point on every check, since a page drawn over it may hold nothing labelled there. An element covered at its point still counts when a hit-test at the part of it showing beside the cover finds it, the part `tap` then aims at.
 - On Android, the drawing order and window layers the tree carries, with no extra read.
 - On a physical iPhone or iPad there is no hit-test yet, so only pages drawn over a screen count; tree order alone never hides an element.
 

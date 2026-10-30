@@ -839,3 +839,182 @@ struct VerifierLiveTests {
         #expect(VerifyOutput.unverifiedLine(failed, for: request).contains("Ignored already changing before the input: spinner, which changed without the input. "))
     }
 }
+
+@MainActor
+@Suite("Verifier held retries and --verify-id in front", .personOutput)
+struct VerifierHoldTests {
+    private static let loading = tree(count: "0", extra: [FakeUI.node(.other, id: "spinner", label: "Loading", frame: FakeUI.frame(20, 40, 24, 24))])
+    private static let next = FakeUI.tree(width: 64, height: 128, [FakeUI.node(.button, id: "seed-packets", label: "Seed Packets", frame: FakeUI.frame(0, 0, 64, 20))])
+
+    private static func run(_ fake: FakeSimulator, targetStays: ((UITree) async -> Bool)? = nil) async throws -> (outcome: Verifier.Outcome, sent: Int, held: [Int]) {
+        var sent = 0
+        var held: [Int] = []
+        let outcome = try await Verifier.run(
+            styles: [.simulator, .physical], timeout: .seconds(1), dependencies: fake.dependencies, targetStays: targetStays,
+            onHold: { held.append($0.number) }
+        ) { _ in sent += 1 }
+        return (outcome, sent, held)
+    }
+
+    @Test("a change that shows after the input and goes back holds the retry, and the input verifies once the next screen settles, sent once")
+    func passingChangeHoldsRetry() async throws {
+        let fake = FakeSimulator(trees: [tree(count: "0"), tree(count: "0"), Self.loading, tree(count: "0"), tree(count: "0"), Self.next])
+
+        let (outcome, sent, held) = try await Self.run(fake)
+
+        #expect(sent == 1)
+        #expect(held == [1])
+        #expect(outcome.verified && outcome.attempts == 1 && outcome.change == .accessibilityTree)
+    }
+
+    @Test("a held input whose screen never settles is unverified with note unsettled, and is never sent again")
+    func heldInputThatNeverSettles() async throws {
+        let fake = FakeSimulator(trees: [tree(count: "0"), tree(count: "0"), Self.loading, tree(count: "0")])
+
+        let (outcome, sent, _) = try await Self.run(fake)
+
+        #expect(sent == 1)
+        #expect(!outcome.verified && outcome.attempts == 1 && outcome.note == .unsettled)
+    }
+
+    @Test("a read that fails after the input holds the retry, since a transition can stop the tree being read")
+    func failedReadHoldsRetry() async throws {
+        let fake = FakeSimulator(trees: [tree(count: "0"), tree(count: "0"), tree(count: "0"), tree(count: "0"), emptyTree, tree(count: "0")])
+
+        let (outcome, sent, held) = try await Self.run(fake)
+
+        #expect(sent == 1 && held == [1])
+        #expect(outcome.note == .unsettled)
+    }
+
+    @Test("a target no longer where the input aimed holds the retry; one still there is sent again", arguments: [(false, 1), (true, 2)])
+    func targetThatLeftHoldsRetry(stays: Bool, sends: Int) async throws {
+        let fake = FakeSimulator(trees: [tree(count: "0")])
+
+        let (outcome, sent, _) = try await Self.run(fake) { _ in stays }
+
+        #expect(sent == sends)
+        #expect(!outcome.verified)
+        #expect(outcome.note == (stays ? nil : .unsettled))
+    }
+
+    @Test("a screen that never changes is still sent again, with no hold")
+    func unchangedScreenRetries() async throws {
+        let fake = FakeSimulator(trees: [tree(count: "0")])
+
+        let (outcome, sent, held) = try await Self.run(fake)
+
+        #expect(sent == 2 && held.isEmpty && outcome.note == nil)
+    }
+
+    /// A page with `home-screen` beneath a pushed details page, judged as `describe-ui` judges it; once popped, home alone.
+    private static func stacked(pushed: Bool) -> UITree {
+        let home = FakeUI.node(.group, id: "home-screen", frame: FakeUI.frame(0, 0, 402, 874), children: [
+            FakeUI.node(.header, label: "Home", frame: FakeUI.frame(60, 60, 282, 20)),
+            FakeUI.node(.button, id: "open-details", label: "Open Details", frame: FakeUI.frame(16, 120, 370, 44)),
+        ])
+        let details = FakeUI.node(.group, id: "details-screen", frame: FakeUI.frame(0, 0, 402, 874), children: [
+            FakeUI.node(.button, id: "details-back", label: "Back", frame: FakeUI.frame(5, 61, 40, 40)),
+            FakeUI.node(.header, label: "Details", frame: FakeUI.frame(60, 70, 282, 22)),
+            FakeUI.node(.button, id: "details-share", label: "Share", frame: FakeUI.frame(16, 790, 370, 49)),
+        ])
+        return FakeUI.tree(pushed ? [home, details] : [home])
+    }
+
+    private static func judging(_ fake: FakeSimulator) -> Verifier.Dependencies {
+        var dependencies = fake.dependencies
+        dependencies.judge = { tree, id in await Verifier.judged(tree, id: id, backend: FakeDeviceBackend(trees: [tree]), device: DeviceID(rawValue: "fake-device", platform: .ios)) }
+        return dependencies
+    }
+
+    @Test("--verify-id on a screen beneath a pushed page is not refused, and verifies once the page pops")
+    func beneathScreenComesToFront() async throws {
+        let fake = FakeSimulator(trees: [Self.stacked(pushed: true), Self.stacked(pushed: true), Self.stacked(pushed: false)])
+
+        let outcome = try await Verifier.run(styles: [nil], timeout: .seconds(5), dependencies: Self.judging(fake), mode: .appearing(id: "home-screen")) { _ in }
+
+        #expect(outcome.verified && outcome.change == .element)
+    }
+
+    @Test("--verify-id still beneath after the input names the page over it and says nothing changed")
+    func beneathScreenStaysBeneath() async throws {
+        let fake = FakeSimulator(trees: [Self.stacked(pushed: true)])
+
+        let outcome = try await Verifier.run(styles: [nil], timeout: .seconds(1), dependencies: Self.judging(fake), mode: .appearing(id: "home-screen")) { _ in }
+
+        #expect(!outcome.verified)
+        #expect(outcome.summary == #"it is beneath "details-screen""#)
+        #expect(outcome.note == .screenUnchanged)
+    }
+
+    @Test("--verify-id on the front page is refused before the input, as before")
+    func frontScreenRefused() async throws {
+        let fake = FakeSimulator(trees: [Self.stacked(pushed: true)])
+        var sent = 0
+
+        let error = await #expect(throws: CLIError.self) {
+            try await Verifier.run(styles: [nil], timeout: .seconds(1), dependencies: Self.judging(fake), mode: .appearing(id: "details-screen")) { _ in sent += 1 }
+        }
+
+        #expect(error?.reason == .verifyTargetPresent)
+        #expect(sent == 0)
+    }
+
+    @Test("--verify-id with a retry sends it only while nothing on screen changed; once the screen moved on without the element it is watched instead", arguments: [(true, 1), (false, 2)])
+    func verifyIDRetryHeldOnceScreenMoves(screenMoves: Bool, sends: Int) async throws {
+        let other = FakeUI.tree([FakeUI.node(.header, label: "Somewhere Else", frame: FakeUI.frame(60, 60, 282, 20))])
+        let fake = FakeSimulator(trees: [Self.stacked(pushed: true)])
+        var sent = 0
+        var held = 0
+
+        let outcome = try await Verifier.run(
+            styles: [nil, nil], timeout: .seconds(1), dependencies: Self.judging(fake), mode: .appearing(id: "home-screen"), onHold: { _ in held += 1 }
+        ) { _ in
+            sent += 1
+            if screenMoves { fake.trees = [other] }
+        }
+
+        #expect(sent == sends && held == (screenMoves ? 1 : 0))
+        #expect(!outcome.verified)
+        #expect(outcome.summary == (screenMoves ? "no element has that id" : #"it is beneath "details-screen""#))
+        #expect(outcome.note == (screenMoves ? nil : .screenUnchanged))
+    }
+
+    @Test("--verify-id with a retry holds it when reads fail after the input, and never says nothing changed")
+    func verifyIDRetryHeldOnFailedRead() async throws {
+        let fake = FakeSimulator(trees: [Self.stacked(pushed: true)])
+        var dependencies = Self.judging(fake)
+        let read = dependencies.tree
+        var failing = false
+        dependencies.tree = {
+            if failing { throw CLIError(errorDescription: "read failed") }
+            return try await read()
+        }
+        var sent = 0
+        var held = 0
+
+        let outcome = try await Verifier.run(
+            styles: [nil, nil], timeout: .seconds(1), dependencies: dependencies, mode: .appearing(id: "home-screen"), onHold: { _ in held += 1 }
+        ) { _ in
+            sent += 1
+            failing = true
+        }
+
+        #expect(sent == 1 && held == 1)
+        #expect(!outcome.verified)
+        #expect(outcome.note == nil)
+    }
+
+    @Test("an --verify-id failure names where the element is and whether anything changed")
+    func verifyIDFailureLine() throws {
+        let request = VerifyRequest(
+            command: "tap", subject: "Tap on id=details-back", target: "id=details-back",
+            backend: FakeDeviceBackend(trees: []), device: DeviceID(rawValue: "fake-device", platform: .ios),
+            options: try VerificationOptions.parse(["--verify-id", "home-screen"]), styles: [nil]
+        )
+        var outcome = Verifier.Outcome(verified: false, attempts: 1, change: .none, style: nil, summary: #"it is beneath "details-screen""#)
+        outcome.note = .screenUnchanged
+
+        #expect(VerifyOutput.unverifiedLine(outcome, for: request) == #"✗ Tap on id=details-back was dispatched but --verify-id 'home-screen' did not come on screen within 10 s after 1 attempt: it is beneath "details-screen", and nothing on screen changed, so the input may not have landed. Check the screen with describe-ui --summary."#)
+    }
+}

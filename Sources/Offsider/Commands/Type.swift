@@ -140,7 +140,7 @@ struct Type: AsyncParsableCommand, VerifiableCommand {
         logger: OffsiderLogger,
         clock: PollClock = .live,
         warn: @MainActor (String) -> Void = { Console.current.notice(.warning(InputPersonView.sentence($0), agent: $0)) },
-        beforeTap: @MainActor (UITree) throws -> Void = { _ in },
+        beforeTap: @MainActor (UITree) async throws -> Void = { _ in },
         refusingSecureTarget secureRefusal: CLIError? = nil,
         tap: @MainActor (InputEvent) async throws -> Void
     ) async throws -> FocusCheck {
@@ -182,7 +182,7 @@ struct Type: AsyncParsableCommand, VerifiableCommand {
         if let secureRefusal, field?.isSecure == true || polled.value.target?.isSecure == true { throw secureRefusal }
         let point = try await backend.deviceCoordinates(for: [polled.value.point], tree: polled.tree, on: device)[0]
         let keyboardAlreadyUp = simulator && polled.tree.roots.flatMap { $0.flattened() }.contains { $0.role == .keyboard }
-        try beforeTap(polled.tree)
+        try await beforeTap(polled.tree)
         try await tap(.tapAt(x: point.x, y: point.y))
         let deadline = clock.now() + Self.focusTimeout
         var last: UITree?
@@ -363,7 +363,7 @@ struct Type: AsyncParsableCommand, VerifiableCommand {
         let secureRefusal = refusingSecureArgument ? Self.secureFieldRefusal(device: device) : nil
         let focus = try await ensureFocus(backend: backend, device: device, logger: logger, beforeTap: { tree in
             if progress != nil, case .appearing(let id) = verification.mode {
-                try Verifier.refuseIfOnScreen(id, in: tree)
+                try Verifier.refuseIfOnScreen(id, in: await Verifier.judged(tree, id: id, backend: backend, device: device))
             }
         }, refusingSecureTarget: secureRefusal) { event in
             try await backend.performTracked(event, on: device)
