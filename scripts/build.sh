@@ -31,6 +31,8 @@ IDB_REPLACEMENT_ROOT=""
 FRAMEWORK_SDK="macosx"
 FRAMEWORK_CONFIGURATION="Release"
 ARCHS="arm64"
+# A signed debug build's identifier, never a release's, so it cannot satisfy a release's designated requirement.
+DEV_SIGNING_IDENTIFIER="com.mpalmes.offsider.dev"
 
 # shellcheck source=/dev/null
 . "${SCRIPT_DIR}/lib/ui.sh"
@@ -901,6 +903,10 @@ Everyday:
   runner [--check]
       Regenerate Sources/Offsider/Resources/runner/OffsiderRunner.xcodeproj from its project.yml with XcodeGen.
       --check regenerates in a temporary directory and compares with the committed project without writing it.
+  dev-sign [--if-set] [--scratch-path <dir>]
+      Sign the debug offsider with the Apple Development identity OFFSIDER_DEV_SIGNING_IDENTITY names in .env, so a
+      login a signed build saved reads without a Keychain prompt after any rebuild. Off until set; make build runs it.
+      --if-set does nothing when it is not set. Plain swift build goes back to ad hoc after a source change.
 
 The steps dev runs, one at a time (CI uses these):
   setup                Clone the pinned idb fork into idb_checkout/.
@@ -925,6 +931,7 @@ Environment:
   DERIVED_DATA_PATH      Derived data (default: ./build_derived_data)
   OFFSIDER_HELPER_JDK    JDK ${HELPER_JDK_MAJOR} home for helper (default: JAVA_HOME, then /usr/libexec/java_home -v ${HELPER_JDK_MAJOR})
   ANDROID_HOME           Android SDK for helper (default: ANDROID_SDK_ROOT, then ~/Library/Android/sdk)
+  OFFSIDER_DEV_SIGNING_IDENTITY  Apple Development identity for dev-sign, by name or hash (default: .env, then the main checkout's .env; none is off)
 
 Examples:
   $0 dev                  # Build the idb XCFrameworks, then run: swift build
@@ -1166,6 +1173,66 @@ function cmd_dev() {
   ui_next "swift build"
 }
 
+# One key of a .env, read and never run: the file may hold anything.
+function env_file_value() {
+  local value
+  [[ -f "$2" ]] || return 0
+  value="$(sed -n "s/^[[:space:]]*\(export[[:space:]]\{1,\}\)\{0,1\}$1=//p" "$2" 2>/dev/null | tail -n 1)" || return 0
+  value="${value%"${value##*[![:space:]]}"}"
+  value="${value%\"}"; value="${value#\"}"
+  value="${value%\'}"; value="${value#\'}"
+  printf '%s' "$value"
+}
+
+# The environment, this checkout's .env, then the main checkout's, since a worktree has no .env of its own.
+function dev_signing_identity() {
+  local value="${OFFSIDER_DEV_SIGNING_IDENTITY:-}" common
+  [[ -n "$value" ]] || value="$(env_file_value OFFSIDER_DEV_SIGNING_IDENTITY "${REPO_ROOT}/.env")"
+  if [[ -z "$value" ]] && common="$(git -C "$REPO_ROOT" rev-parse --path-format=absolute --git-common-dir 2>/dev/null)"; then
+    value="$(env_file_value OFFSIDER_DEV_SIGNING_IDENTITY "$(dirname "$common")/.env")"
+  fi
+  printf '%s' "$value"
+}
+
+function cmd_dev_sign() {
+  local if_set=0 identity rows matches count sha name bin_dir bin output
+  local scratch=()
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --if-set) if_set=1; shift;;
+      --scratch-path)
+        [[ $# -ge 2 ]] || die "--scratch-path needs a folder." "$0 dev-sign --scratch-path <dir>"
+        scratch=(--scratch-path "$2"); shift 2;;
+      *) die "Unknown option for dev-sign: $1" "$0 help";;
+    esac
+  done
+
+  identity="$(dev_signing_identity)"
+  if [[ -z "$identity" ]]; then
+    [[ "$if_set" == 1 ]] && return 0
+    die "OFFSIDER_DEV_SIGNING_IDENTITY is not set, so debug builds stay ad hoc." "Add your Apple Development identity to .env (see .env.example)"
+  fi
+
+  rows="$(security find-identity -v -p codesigning 2>/dev/null | sed -nE 's/^ *[0-9]+\) ([0-9A-F]{40}) "(.*)"$/\1|\2/p')" || rows=""
+  matches="$(printf '%s\n' "$rows" | WANT="$identity" awk -F'|' 'length($1) && ($1 == ENVIRON["WANT"] || $2 == ENVIRON["WANT"])')"
+  count="$(printf '%s' "$matches" | grep -c '|' || true)"
+  [[ "$count" -gt 0 ]] || die "OFFSIDER_DEV_SIGNING_IDENTITY names no valid signing identity on this Mac, so this build stays ad hoc." "security find-identity -v -p codesigning"
+  [[ "$count" -eq 1 ]] || die "OFFSIDER_DEV_SIGNING_IDENTITY matches $count identities. Use the 40-character hash of one in .env." "security find-identity -v -p codesigning"
+  sha="${matches%%|*}"
+  name="${matches#*|}"
+  [[ "$name" == "Apple Development:"* ]] || die "A debug build signs with an Apple Development identity only, so nothing was signed." "security find-identity -v -p codesigning"
+
+  bin_dir="$(swift build "${scratch[@]}" --show-bin-path)" || die "swift could not name the build folder." "swift build"
+  bin="${bin_dir}/offsider"
+  [[ -f "$bin" ]] || die "There is no debug Offsider to sign yet." "swift build"
+
+  # Hardened, so DYLD_INSERT_LIBRARIES and debuggers cannot reach it. Library validation stays off, since swift build restores ad hoc frameworks without relinking: whatever can write to .build runs inside it.
+  output="$(codesign --force --sign "$sha" --timestamp=none --options runtime --identifier "$DEV_SIGNING_IDENTIFIER" --entitlements "${REPO_ROOT}/entitlements-adhoc.plist" "$bin" 2>&1)" ||
+    die "codesign could not use that identity: ${output##*$'\n'}" "security find-identity -v -p codesigning"
+  "$bin" --version >/dev/null 2>&1 || die "The signed build does not start." "swift build"
+  ui_receipt "Signed the debug Offsider" "$(ui_path "$bin")"
+}
+
 # Parse command line arguments
 if [[ $# -eq 0 ]]; then
   print_start_here
@@ -1206,6 +1273,9 @@ case $COMMAND in
   runner)
     shift
     cmd_runner "$@";;
+  dev-sign)
+    shift
+    cmd_dev_sign "$@";;
   *)
     die "Unknown command: $COMMAND" "$0 help";;
 esac

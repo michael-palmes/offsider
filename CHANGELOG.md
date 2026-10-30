@@ -8,6 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Added
 
+- `make build` signs the debug `offsider` when `.env` names `OFFSIDER_DEV_SIGNING_IDENTITY`, an Apple Development identity (off until set), so a login a signed build saved reads with no Keychain prompt after any rebuild, in any worktree. `./scripts/build.sh dev-sign` runs the step alone. It signs the executable only, hardened, and refuses a Developer ID identity; brokers still admit only the exact build.
 - `batch` takes a `drag` step, written and limited like `offsider drag`.
 - `app_not_responding` (exit 1): on Android, when the app in front on an unlocked screen has no window the tree can read, as when its main thread is stuck, `describe-ui` and other reads say so instead of telling you to unlock the device.
 - `rn devmenu` lists the items an app registers (`registerDevMenuItems`, or `DevSettings.addMenuItem` in React Native's own Android menu), marked `"custom":true` in `--json` and tagged for a person; `--label` already chose them, and now prefers the menu's item over an app button behind it with the same label. Expo's custom heading also counts as menu evidence, so a menu whose tools those items push off screen is still read.
