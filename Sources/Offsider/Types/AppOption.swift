@@ -21,6 +21,16 @@ struct AppOption: ParsableArguments {
     }
 }
 
+extension DeviceRouter.Route {
+    /// The one app a command acts on: `named`, else offsider.login.json's for this platform, else the allowance's only pinned app; then the allowance must permit it. `missing` is the usage error when none names one.
+    func app(named: String?, gate: DevicePolicyGate, profile: () -> LoginProfile?, missing: () -> CLIError) throws -> String {
+        let pinned = allowance.flatMap { $0.pinnedApps.count == 1 ? $0.pinnedApps[0] : nil }
+        guard let app = named ?? Logs.profileApp(profile(), platform: device.platform) ?? pinned else { throw missing() }
+        if let allowance { try gate.requireApp(app, on: allowance) }
+        return app
+    }
+}
+
 /// A command that takes `--app`, so a batch step can apply it too.
 protocol AppTargeting {
     var appOption: AppOption { get }
