@@ -43,12 +43,14 @@ public enum KeyboardDismiss {
     private static func scan(_ tree: UITree, from start: Double, viewport: UIFrame, avoiding avoid: [UIFrame]) -> [UIPoint] {
         let xs = [viewport.x + viewport.width * 0.5, viewport.x + 40, viewport.x + viewport.width - 40]
             .filter { $0 >= viewport.x && $0 < viewport.x + viewport.width }
+        // Any branch, as a wrapper listed after the keyboard's Passwords bar hides that button from the chain.
+        let controls = tree.roots.flatMap { $0.flattened() }.filter(\.isActionable).compactMap(\.frame)
         var found: [UIPoint] = []
         for backgroundOnly in [true, false] {
             var y = start
             while y > viewport.y + 8 {
                 let row = xs.lazy.map { UIPoint(x: $0, y: y) }.first { point in
-                    guard !avoid.contains(where: { $0.contains(point) }) else { return false }
+                    guard !avoid.contains(where: { $0.contains(point) }), !controls.contains(where: { $0.contains(point) }) else { return false }
                     let chain = chain(in: tree.roots, at: point, viewport: viewport)
                     guard let hit = chain.last, hit.role != .keyboard, !SignInHit.isHiddenByChrome(chain) else { return false }
                     if chain.contains(where: \.isActionable) { return false }

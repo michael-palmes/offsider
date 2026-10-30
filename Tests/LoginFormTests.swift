@@ -100,6 +100,19 @@ struct KeyboardDismissTests {
         #expect(KeyboardDismiss.point(in: SignInFixture.tree()) == nil)
     }
 
+    @Test("the keyboard's Passwords bar is never chosen, though a wrapper listed after it hides its button from the point's chain")
+    func passwordsBarUnderWrapper() throws {
+        let passwords = FakeUI.node(.button, label: "Passwords", frame: FakeUI.frame(30, 546, 342, 44))
+        let bar = FakeUI.node(.group, id: "SystemInputAssistantView", frame: FakeUI.frame(0, 546, 402, 44), children: [passwords])
+        let wrapper = FakeUI.node(.group, frame: FakeUI.frame(0, 546, 402, 329))
+        let key = FakeUI.node(.button, label: "q", frame: FakeUI.frame(3, 597, 40, 50))
+        let keyboard = FakeUI.node(.keyboard, frame: FakeUI.frame(0, 590, 402, 226), children: [key])
+
+        let point = try #require(KeyboardDismiss.point(in: FakeUI.tree([bar, wrapper, keyboard])))
+
+        #expect(point.y < 546)
+    }
+
     @Test("a hide keyboard control is preferred, and a short scroll view is not a safe tap")
     func hideOrSafePoint() {
         let hide = FakeUI.node(.button, label: "Hide keyboard", frame: FakeUI.frame(300, 800, 80, 30))

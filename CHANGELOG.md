@@ -72,6 +72,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - `--verify` no longer sends a retry while the screen is still changing (a change that came and went, a read that failed, or a selector tap's target that moved away), where a navigation tap still on its way was sent again and landed on the next screen's row. It watches one more `--verify-timeout` instead and verifies when the next screen settles, else exits 5 with `note` `unsettled`, sent once.
 - A title under the next page's title, or an element under another page's own screen-sized group, now counts as covered (`wait`, `assert`, `describe-ui --on-screen`, `--verify-id`): an iOS simulator's hit-test and Android's drawing order both found the cover but took it for the target's own content.
 - On a phone, naming an app it may not drive with `--app` is refused at once, naming that app, whichever app is in front.
+- With Display Zoom on, an iOS simulator's `describe-ui` frames are in screen points, where they were in the app's smaller layout space, so a selector tap no longer lands up and to the left of its target (on the row above in a list), tree masks cover what they name, and `rn logbox` and `login` reach their fields and buttons. `describe-ui --raw-source` still prints the simulator's own numbers.
+- `login` on an iOS simulator no longer taps the keyboard's Passwords bar while closing the keyboard, where it reported `submitted` with the sign-in tap lost to that bar (seen on most runs).
 
 ## [0.14.0] - 2026-10-22
 
