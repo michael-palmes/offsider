@@ -112,6 +112,7 @@ struct DoctorReportTests {
             "android-device.uiautomation",
             "android-device.helper",
             "android-device.metro-reverse",
+            "android-device.webview",
             "android-device.adb-expiry",
             "android-device.system-updates",
             "ios-device.xcode",
@@ -139,7 +140,7 @@ struct DoctorReportTests {
         ])
         #expect(DoctorCheckID.allCases.filter(\.isPerSimulator).count == 8)
         #expect(DoctorCheckID.allCases.filter(\.isAndroidHost).count == 7)
-        #expect(DoctorCheckID.allCases.filter(\.isPerAndroidDevice).count == 12)
+        #expect(DoctorCheckID.allCases.filter(\.isPerAndroidDevice).count == 13)
     }
 
     @Test("an iOS report encodes device and android as null")

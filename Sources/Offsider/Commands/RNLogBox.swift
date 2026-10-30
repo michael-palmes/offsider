@@ -9,6 +9,17 @@ struct RNLogBox: AsyncParsableCommand {
         subcommands: [RNLogBoxStatus.self, RNLogBoxOpen.self, RNLogBoxDismiss.self]
     )
 
+    @MainActor
+    /// A tree read; as `wait` and `tap` do, it tries again when a window change, such as an unlock, left no window to read for a moment.
+    static func readTree(on route: DeviceRouter.Route, sleep: @MainActor (Duration) async throws -> Void = { try await Task.sleep(for: $0) }) async throws -> UITree {
+        do {
+            return try await route.backend.accessibilityTree(for: route.device)
+        } catch where error.isTransientFailure {
+            try await sleep(.milliseconds(500))
+            return try await route.backend.accessibilityTree(for: route.device)
+        }
+    }
+
     /// No toast numbered `index`: exit 2, with the toasts on screen as the candidates.
     static func noToast(_ index: Int, in state: LogBoxState, device: String) -> CLIError {
         let have = state.toasts.isEmpty ? "there are none on screen" : "there \(state.toasts.count == 1 ? "is 1" : "are \(state.toasts.count)")"
@@ -52,7 +63,7 @@ struct RNLogBoxStatus: AsyncParsableCommand {
         let console = Console.current
         let state: LogBoxState = try await console.progress("Reading LogBox") {
             try await route.backend.prepare()
-            return LogBoxState(tree: try await route.backend.accessibilityTree(for: route.device))
+            return LogBoxState(tree: try await RNLogBox.readTree(on: route))
         }
         guard !json else { return console.data(state.jsonLine(redacts: !noRedact) + "\n") }
         console.show(InputPersonView.logBox(state, redacts: !noRedact, device: route.device.rawValue))
@@ -159,7 +170,8 @@ struct RNLogBoxDismiss: AsyncParsableCommand {
         it opens the inspector by tapping the toast and taps Dismiss once per log. An open inspector is dismissed first. \
         --index clears only that toast, counted from 1 at the bottom as status lists them (exit 2 when there is none). \
         Exits 0 when no log is left (or none was there) and 5 when some remain, or when React Native's empty LogBox \
-        dialog stays over the app on Android (emptyDialog in --json), which it never taps.
+        dialog stays over the app on Android (emptyDialog in --json), which it never taps, or when Expo's dev menu intro \
+        covers the logs (coveredBy in --json), when it taps nothing and says how to close it.
 
         Examples:
           offsider rn logbox dismiss --device DEVICE_ID
@@ -173,7 +185,7 @@ struct RNLogBoxDismiss: AsyncParsableCommand {
     @Option(help: ArgumentHelp("Give up after this many seconds, from 1 to 60.", valueName: "seconds"))
     var timeout: Double = 15
 
-    @Flag(name: .customLong("json"), help: "Print one JSON object to stdout: cleared, remaining, method and emptyDialog.")
+    @Flag(name: .customLong("json"), help: "Print one JSON object to stdout: cleared, remaining, method, emptyDialog and coveredBy.")
     var json = false
 
     @OptionGroup
@@ -213,7 +225,7 @@ struct RNLogBoxDismiss: AsyncParsableCommand {
             console.show(InputPersonView.receipt(Self.personLine(outcome, index: index), details: Self.personMethod(outcome), agent: line + "\n"))
         } else {
             var failure = Self.personFailure(outcome)
-            failure.commands = outcome.emptyDialog ? [] : ["offsider rn logbox status --device \(device)"]
+            failure.commands = outcome.emptyDialog ? [] : outcome.coveredBy != nil ? [Self.closeIntro(device)] : ["offsider rn logbox status --device \(device)"]
             console.line(line, person: failure)
         }
         if !outcome.isClear {
@@ -235,8 +247,13 @@ struct RNLogBoxDismiss: AsyncParsableCommand {
         }
     }
 
+    static func closeIntro(_ device: String) -> String {
+        "offsider tap --label Continue --device \(device)"
+    }
+
     /// What a person reads when logs stay on screen or React Native's empty dialog covers the app.
     static func personFailure(_ outcome: Outcome) -> OffsiderCore.Outcome {
+        if outcome.coveredBy != nil { return .failed("Expo's dev menu intro covers the logs", details: ["Nothing was sent."]) }
         let left = "\(outcome.remaining) LogBox log\(outcome.remaining == 1 ? " is" : "s are") still on screen"
         guard outcome.emptyDialog else { return .failed(left, details: outcome.cleared > 0 ? ["Cleared \(outcome.cleared) first"] : []) }
         let cleared = outcome.cleared == 0 ? "Nothing was sent." : "Cleared \(outcome.cleared) first; nothing more was sent."
@@ -245,6 +262,9 @@ struct RNLogBoxDismiss: AsyncParsableCommand {
 
     /// What `dismiss` prints: `✓ Cleared 2 LogBox logs (inspector)`, or why it exits 5.
     static func line(_ outcome: Outcome, index: Int?, device: String) -> String {
+        if outcome.coveredBy != nil {
+            return "✗ Expo's dev menu intro covers \(outcome.remaining) LogBox log\(outcome.remaining == 1 ? "" : "s"), so nothing was tapped. Close it with `\(closeIntro(device))`, then run this again."
+        }
         let logs = "\(outcome.cleared) LogBox log\(outcome.cleared == 1 ? "" : "s")"
         if outcome.emptyDialog {
             let lead = outcome.cleared == 0
@@ -282,6 +302,9 @@ struct RNLogBoxDismiss: AsyncParsableCommand {
         var state = try await screen.read()
         if state.emptyDialog {
             return Outcome(cleared: 0, remaining: 0, method: .none, emptyDialog: true)
+        }
+        if state.logs > 0, let tree = screen.tree, ExpoDevLauncher.isDevMenuIntro(tree) {
+            return Outcome(cleared: 0, remaining: state.logs, method: .none, coveredBy: LogBoxDismissal.devMenuIntro)
         }
         if let index {
             return try await dismissOnly(index, from: state, screen: screen, clock: clock, deadline: deadline)
@@ -416,7 +439,7 @@ struct RNLogBoxDismiss: AsyncParsableCommand {
 @MainActor
 private final class LogBoxScreen {
     let route: DeviceRouter.Route
-    private var tree: UITree?
+    private(set) var tree: UITree?
     private var session: (any InputSession)?
     /// The logs the last read with the app's own window in front showed.
     private(set) var appLogs: Int?
@@ -428,7 +451,7 @@ private final class LogBoxScreen {
     var device: String { route.device.rawValue }
 
     func read() async throws -> LogBoxState {
-        let read = try await route.backend.accessibilityTree(for: route.device)
+        let read = try await RNLogBox.readTree(on: route)
         tree = read
         let state = LogBoxState(tree: read)
         if !state.modal {

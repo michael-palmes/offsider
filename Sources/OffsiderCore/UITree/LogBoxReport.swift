@@ -82,12 +82,17 @@ public struct LogBoxDismissal: Equatable, Sendable {
     public var remaining: Int
     public var method: Method
     public var emptyDialog: Bool
+    /// What covers the logs, so nothing was tapped: `expo-dev-menu-intro`.
+    public var coveredBy: String?
 
-    public init(cleared: Int, remaining: Int, method: Method, emptyDialog: Bool = false) {
+    public static let devMenuIntro = "expo-dev-menu-intro"
+
+    public init(cleared: Int, remaining: Int, method: Method, emptyDialog: Bool = false, coveredBy: String? = nil) {
         self.cleared = cleared
         self.remaining = remaining
         self.method = method
         self.emptyDialog = emptyDialog
+        self.coveredBy = coveredBy
     }
 
     /// No log is left and nothing covers the app.
@@ -100,6 +105,7 @@ public struct LogBoxDismissal: Equatable, Sendable {
             ("remaining", .integer(remaining)),
             ("method", .string(method.rawValue)),
             ("emptyDialog", .bool(emptyDialog)),
+            ("coveredBy", .optional(coveredBy, OrderedJSON.string)),
         ]).rendered(compact: true)
     }
 }

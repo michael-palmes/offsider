@@ -21,6 +21,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - `notifications --app <package>` lists one Android app's posted notifications (title, text, big text, sub-text, channel, post time), picked on the device so no other app's text crosses the cable, with one-time codes and card numbers hidden; `--wait <text>` polls until one holds it (`--new`: one that arrives during the wait), exiting 5 at `--timeout`. On a phone the app must be one the allowance permits.
 - `posture closed|half-opened|open` sets an allowed USB foldable phone's posture through a `cmd device_state` override, recorded first with the phone's boot id; `posture reset` drops an Android override so the hinge decides again, and `session stop` and `devices remove` reset one Offsider set while it is still in place.
 - `gesture pinch --from <points> --to <points>` moves two fingers apart (zoom in) or together (zoom out) about `--x`,`--y`, or the app frame's middle, over `--duration`, on simulators, Android emulators and Android phones; also a `batch` step.
+- `assert` and `wait` take `--enabled` and `--disabled`. Among matches they judge the control a tap would: a button over plain text with its label, the deepest of controls nested in each other, and text inside a disabled button reads disabled. `--json`'s `match` now names that element, with its `enabled`, where it was null for a button and the text inside it.
+- `doctor`'s `android-device.webview` warns when the system WebView is older than version 80, which cannot run web widgets such as Cloudflare Turnstile.
+- `screenshot --json` and a batch screenshot step report `treeReadMs` (the mask's tree read) beside `captureMs`.
 
 ### Changed
 
@@ -33,6 +36,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - `wait --any` with one selector is a plain wait for it rather than exit 64.
 - On an iOS simulator `describe-ui` reports `state.focused` on the field with keyboard focus, so `type --require-focus-id` works there.
 - Plain `type`, with no `--into-*` or `--require-focus-id`, sends nothing unless a text field has focus (or an iOS simulator shows a keyboard) and exits 1 `no_focused_field`: keys that reached no field could act as app shortcuts, and a React Native dev build reloaded on `r`. Focus on something that takes no text, such as the button of an app's own number keypad, refuses too, as does an Android keyboard up for a field hidden from accessibility, where `type` and `key-sequence` used to report `ok` with nothing landed. `key-sequence` with letters, digits, space or punctuation and batch `type` steps follow the same rule. On an iOS simulator the check reads the screen first, about 0.6 s. Argument text into the focused password field is refused on an iOS simulator too, as on Android.
+- `logs` on Android joins the lines of one logged message, which logcat prints each under its own header, into one entry: `--grep` and `--exclude` match the whole entry and `.` crosses its lines, `--json` carries it whole, and text output keeps it on one line with `\n`.
 
 ### Fixed
 
@@ -66,6 +70,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - `rn devmenu perf-monitor` on Android first checks the app may display over other apps and exits 1 `person_required` naming the setting, with nothing sent; React Native otherwise opened Android's settings page for it and the command reported the item chosen.
 - `--verify` no longer sends a retry while the screen is still changing (a change that came and went, a read that failed, or a selector tap's target that moved away), where a navigation tap still on its way was sent again and landed on the next screen's row. It watches one more `--verify-timeout` instead and verifies when the next screen settles, else exits 5 with `note` `unsettled`, sent once.
 - A title under the next page's title, or an element under another page's own screen-sized group, now counts as covered (`wait`, `assert`, `describe-ui --on-screen`, `--verify-id`): an iOS simulator's hit-test and Android's drawing order both found the cover but took it for the target's own content.
+- `turnstile` reads `unknown`, not `absent`, when an element named for Turnstile is on screen with no widget in it: the widget failed to run, as on a WebView too old for its script, or runs invisibly. `login` goes on past it, since an invisible widget that passes looks the same, and reports `turnstile: "unknown"`.
+- A tree read on an iOS simulator, and so `screenshot`'s password mask, `wait`, `tap` and the rest, tries once more when the simulator's automation session times out or it has no answer just after a boot, instead of exiting 1. Two in a row say what to do.
+- `button home --verify` on an iOS simulator checks what answers at the screen's centre, so it returns as soon as SpringBoard is in front, rather than after several tree reads.
+- `posture` on an iOS simulator trusts what the device reads: a hinge request refused while the device moves no longer exits `not_supported` when the fold happened, and a refused resend no longer ends the wait for the first request.
+- `rn logbox dismiss` taps nothing while Expo's dev menu intro covers the logs and says how to close it (`coveredBy` in `--json`), where it exited 5 with no reason. `rn logbox` reads try once more when a window change, such as an unlock, left no window to read.
+- `wake` waits about 6 s for the screen to turn on, not 3 s, and sends the wake key once more halfway, for phones whose screen is slow to come on.
 
 ## [0.14.0] - 2026-10-22
 

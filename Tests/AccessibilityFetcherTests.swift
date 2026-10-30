@@ -1,5 +1,6 @@
 import Foundation
 import FBControlCore
+import FBSimulatorControl
 import OffsiderCore
 import Testing
 @testable import Offsider
@@ -7,6 +8,45 @@ import Testing
 @Suite("Accessibility Fetcher Tests")
 @MainActor
 struct AccessibilityFetcherTests {
+    private static func bootstrapError(_ code: Int) -> NSError {
+        NSError(domain: "com.facebook.FBSimulatorControl.AccessibilityBootstrap", code: code, userInfo: [NSLocalizedDescriptionKey: "Timed out creating the simulator remote automation session"])
+    }
+
+    private func read(frontmost: Bool = true, failing error: any Error, times: Int) async throws -> (result: String, reads: Int) {
+        var reads = 0
+        let result = try await AccessibilityFetcher.retryingStartupFailure(simulatorUDID: "TEST-UDID", frontmost: frontmost, logger: OffsiderLogger(), sleep: { _ in }) {
+            reads += 1
+            if reads <= times { throw error }
+            return "tree"
+        }
+        return (result, reads)
+    }
+
+    @Test("A read whose automation session timed out, or that got no answer just after a boot, is tried once more")
+    func startupFailureRetried() async throws {
+        for error in [Self.bootstrapError(4), Self.bootstrapError(8), FBAccessibilityError.noTranslationObject] as [any Error] {
+            let (result, reads) = try await read(failing: error, times: 1)
+            #expect(result == "tree")
+            #expect(reads == 2)
+        }
+    }
+
+    @Test("Two startup failures fail once, naming the fix")
+    func startupFailureTwice() async {
+        await #expect {
+            _ = try await read(failing: Self.bootstrapError(4), times: 2)
+        } throws: { error in
+            let failure = error as? CLIError
+            return failure?.reason == .commandFailed && failure?.hint == "offsider doctor --device TEST-UDID" && failure?.errorDescription?.contains("shut the simulator down and boot it") == true
+        }
+    }
+
+    @Test("Any other error is not retried, and no answer at a point is that point's own")
+    func otherErrorsNotRetried() async {
+        await #expect(throws: (any Error).self) { _ = try await read(failing: Self.bootstrapError(9), times: 1) }
+        await #expect(throws: FBAccessibilityError.self) { _ = try await read(frontmost: false, failing: FBAccessibilityError.noTranslationObject, times: 1) }
+    }
+
     @Test("Serializes nested accessibility arrays without changing their schema")
     func serializesNestedAccessibilityArrays() throws {
         let hierarchy: [[String: Any]] = [

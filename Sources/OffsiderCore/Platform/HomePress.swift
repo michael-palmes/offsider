@@ -102,3 +102,46 @@ public enum HomePress {
         return reading
     }
 }
+
+/// iOS simulator `button home --verify`: what answers at the screen's centre, which takes a fraction of a tree read, tells SpringBoard from an app.
+public enum SimulatorHomePress {
+    public static let poll: Duration = .milliseconds(100)
+    public static let window: TimeInterval = 5
+
+    public enum Outcome: Equatable, Sendable {
+        case reached(presses: Int)
+        case notReached(presses: Int)
+        /// No read answered, so Offsider cannot say where the press went.
+        case unreadable(presses: Int)
+    }
+
+    /// Presses, then reads until SpringBoard answers; a second press only after a whole `window` with no sign of it. SpringBoard hosts alerts over an app as well as the home screen, so an answer before the press proves nothing. `isHome` is nil for a read that failed.
+    public static func run(
+        isHome: () async -> Bool?,
+        press: () async throws -> Void,
+        sleep: (Duration) async throws -> Void,
+        now: () -> TimeInterval,
+        attempts: Int,
+        window: TimeInterval = window
+    ) async throws -> Outcome {
+        var presses = 0
+        var readable = false
+        for _ in 0..<max(1, attempts) {
+            try await press()
+            presses += 1
+            let deadline = now() + window
+            repeat {
+                let home = await isHome()
+                if home == true { return .reached(presses: presses) }
+                readable = readable || home != nil
+                try await sleep(poll)
+            } while now() < deadline
+        }
+        return readable ? .notReached(presses: presses) : .unreadable(presses: presses)
+    }
+
+    /// The process path idb's point read gave belongs to SpringBoard.
+    public static func isSpringBoard(path: String) -> Bool {
+        path.hasSuffix("/SpringBoard")
+    }
+}

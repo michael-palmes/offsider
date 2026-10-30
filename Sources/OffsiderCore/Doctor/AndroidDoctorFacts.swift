@@ -163,6 +163,8 @@ public struct AndroidDeviceFacts: Equatable, Sendable {
     public var reverses: [String]?
     /// The ports whose reverse `rn open` set during the phone's current adb connection.
     public var offsiderReverses: [Int] = []
+    /// The system WebView's version from `dumpsys webviewupdate`; nil when it could not be read.
+    public var webViewVersion: String?
     /// A USB phone: its state comes from the device list, and emulator-only checks are skipped.
     public var isPhysical = false
     public var model: String?

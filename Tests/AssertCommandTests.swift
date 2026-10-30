@@ -102,6 +102,113 @@ struct AssertCommandTests {
         #expect(outcome.match == nil)
     }
 
+    // MARK: --enabled and --disabled
+
+    private static func form(submitEnabled: Bool?) -> UITree {
+        FakeUI.tree(width: 393, height: 852, [
+            FakeUI.node(.button, id: "submit", label: "Send form", frame: FakeUI.frame(20, 600, 350, 44), enabled: submitEnabled),
+        ])
+    }
+
+    @Test("--disabled passes on a disabled button and reports it; --enabled fails saying what it read")
+    func enabledState() async throws {
+        let (disabled, met, _) = try await Self.check(["--label", "Send form", "--disabled"], on: Self.form(submitEnabled: false))
+        #expect(met.met)
+        #expect(disabled.successLine(met) == "✓ --label 'Send form' is on screen and disabled")
+        #expect(WaitReport(met).jsonLine().contains(#""enabled":false"#))
+
+        let (enabled, unmet, _) = try await Self.check(["--label", "Send form", "--enabled"], on: Self.form(submitEnabled: false))
+        #expect(!unmet.met)
+        #expect(enabled.failureLine(unmet) == "✗ Assertion failed: --label 'Send form' is disabled, expected enabled.")
+    }
+
+    @Test("a tree that does not say is neither enabled nor disabled")
+    func enabledStateUnknown() async throws {
+        for flag in ["--enabled", "--disabled"] {
+            let (_, outcome, _) = try await Self.check(["--id", "submit", flag], on: Self.form(submitEnabled: nil))
+            #expect(!outcome.met)
+            #expect(outcome.reason.hasPrefix("does not say whether it is enabled"))
+        }
+    }
+
+    @Test("a disabled button and the enabled text inside it read as the one disabled button")
+    func nestedTextFollowsItsButton() async throws {
+        let tree = FakeUI.tree(width: 393, height: 852, [
+            FakeUI.node(.button, id: "submit", label: "Send form", frame: FakeUI.frame(20, 600, 350, 44), enabled: false, children: [
+                FakeUI.node(.text, label: "Send form", frame: FakeUI.frame(30, 610, 200, 24), enabled: true),
+            ]),
+        ])
+        let (_, disabled, _) = try await Self.check(["--label", "Send form", "--disabled"], on: tree)
+        #expect(disabled.met)
+        #expect(disabled.match?.id == "submit")
+
+        let (_, enabled, _) = try await Self.check(["--label", "Send form", "--enabled"], on: tree)
+        #expect(!enabled.met)
+    }
+
+    @Test("text matched inside a disabled button with no label of its own reads disabled, in the JSON too")
+    func textInsideDisabledButton() async throws {
+        let tree = FakeUI.tree(width: 393, height: 852, [
+            FakeUI.node(.button, frame: FakeUI.frame(20, 600, 350, 44), enabled: false, children: [
+                FakeUI.node(.text, label: "Send form", frame: FakeUI.frame(30, 610, 200, 24), enabled: true),
+            ]),
+        ])
+        let (_, outcome, _) = try await Self.check(["--label", "Send form", "--disabled"], on: tree)
+        #expect(outcome.met)
+        #expect(outcome.match?.enabled == false)
+    }
+
+    @Test("of controls nested in each other, the deepest answers, since a touch reaches it")
+    func deepestControlAnswers() async throws {
+        let wrapped = { (outer: Bool, inner: Bool) in
+            FakeUI.tree(width: 393, height: 852, [
+                FakeUI.node(.button, id: "outer", label: "Save", frame: FakeUI.frame(20, 600, 350, 60), enabled: outer, children: [
+                    FakeUI.node(.button, id: "inner", label: "Save", frame: FakeUI.frame(30, 610, 200, 40), enabled: inner),
+                ]),
+            ])
+        }
+        let (_, disabled, _) = try await Self.check(["--label", "Save", "--disabled"], on: wrapped(true, false))
+        #expect(disabled.met)
+        #expect(disabled.match?.id == "inner")
+
+        let (_, enabled, _) = try await Self.check(["--label", "Save", "--enabled"], on: wrapped(false, true))
+        #expect(enabled.met)
+        #expect(enabled.match?.id == "inner")
+    }
+
+    @Test("a label on plain text and on a button judges the button, and reports it with no flag at all")
+    func buttonOverPlainText() async throws {
+        let tree = FakeUI.tree(width: 393, height: 852, [
+            FakeUI.node(.text, label: "Save", frame: FakeUI.frame(20, 100, 200, 30), enabled: true),
+            FakeUI.node(.button, id: "save", label: "Save", frame: FakeUI.frame(20, 600, 350, 44), enabled: false),
+        ])
+        let (_, plain, _) = try await Self.check(["--label", "Save"], on: tree)
+        #expect(plain.match?.id == "save")
+
+        let (_, enabled, _) = try await Self.check(["--label", "Save", "--enabled"], on: tree)
+        #expect(!enabled.met)
+    }
+
+    @Test("of two separate matches, the one in the wanted state passes and is the one reported")
+    func twoButtonsOneEnabled() async throws {
+        let tree = FakeUI.tree(width: 393, height: 852, [
+            FakeUI.node(.button, label: "Save", frame: FakeUI.frame(20, 100, 100, 44), enabled: false),
+            FakeUI.node(.button, id: "live", label: "Save", frame: FakeUI.frame(20, 300, 100, 44), enabled: true),
+        ])
+        let (_, outcome, _) = try await Self.check(["--label", "Save", "--enabled"], on: tree)
+        #expect(outcome.met)
+        #expect(outcome.match?.id == "live")
+    }
+
+    @Test("--enabled and --disabled refuse each other, --gone and a missing selector")
+    func enabledFlagRules() {
+        for arguments in [["--id", "a", "--enabled", "--disabled"], ["--id", "a", "--gone", "--enabled"], ["--disabled"]] {
+            #expect(throws: (any Error).self) {
+                try Assert.parse(arguments + ["--device", Self.device.rawValue])
+            }
+        }
+    }
+
     @Test("assert needs a selector")
     func needsSelector() {
         #expect(throws: (any Error).self) {

@@ -109,6 +109,67 @@ struct AndroidLogsTests {
         #expect(continuation?.raw == "    at onPress (index.bundle:1:2)")
     }
 
+    // MARK: Multi-line entries
+
+    private static func entries(_ lines: [String], source: LogSource = .all, preamble: [String] = []) throws -> [LogEntry] {
+        var stream = LogcatStream(source: source, serial: "R58TEST0001")
+        var found = try (preamble + ["offsider-logcat"] + lines).compactMap { try stream.consume($0) }
+        if let last = stream.finish() { found.append(last) }
+        return found
+    }
+
+    @Test("lines sharing one header are one entry, however close the next entry comes")
+    func joinsOneEntry() throws {
+        let entries = try Self.entries([
+            "1790945238.399123  4100  4120 I ReactNativeJS: { name: 'alpha',",
+            "1790945238.399123  4100  4120 I ReactNativeJS:   size: 2 }",
+            "1790945238.399124  4100  4120 I ReactNativeJS: next entry",
+        ])
+
+        #expect(entries.map(\.message) == ["{ name: 'alpha',\n  size: 2 }", "next entry"])
+        #expect(entries[0].tag == "ReactNativeJS" && entries[0].pid == 4100 && entries[0].level == "Info")
+        #expect(entries[0].raw == "1790945238.399123  4100  4120 I ReactNativeJS: { name: 'alpha',\n1790945238.399123  4100  4120 I ReactNativeJS:   size: 2 }")
+    }
+
+    @Test("the same time from another thread, tag or level is another entry")
+    func keepsOtherEntriesApart() throws {
+        let entries = try Self.entries([
+            "1790945238.399123  4100  4120 I ReactNativeJS: one",
+            "1790945238.399123  4100  4121 I ReactNativeJS: other thread",
+            "1790945238.399123  4100  4121 I ReactNative  : other tag",
+            "1790945238.399123  4100  4121 W ReactNative  : other level",
+        ])
+        #expect(entries.map(\.message) == ["one", "other thread", "other tag", "other level"])
+    }
+
+    @Test("--grep and --exclude see the whole entry, so one match counts one entry and . crosses its lines")
+    func grepSeesWholeEntry() throws {
+        let lines = [
+            "1790945238.399123  4100  4120 I ReactNativeJS: Started {",
+            "1790945238.399123  4100  4120 I ReactNativeJS:   name: 'alpha' }",
+            "1790945238.500000  4100  4120 I ReactNativeJS: Finished {",
+            "1790945238.500000  4100  4120 I ReactNativeJS:   name: 'alpha' }",
+        ]
+        let entries = try Self.entries(lines)
+        let collector = try LogCollector(maxLines: 0, grep: "started.*alpha", keepsANSI: false)
+        #expect(entries.compactMap(collector.filter).count == 1)
+        let excluding = try LogCollector(maxLines: 0, grep: nil, exclude: ["finished.*alpha"], keepsANSI: false)
+        #expect(entries.compactMap(excluding.filter).map(\.message) == ["Started {\n  name: 'alpha' }"])
+        let anchored = try LogCollector(maxLines: 0, grep: "^  name:", keepsANSI: false)
+        #expect(entries.compactMap(anchored.filter).count == 2)
+    }
+
+    @Test("a line of another app between two of an --rn --app entry does not split it")
+    func joinsAcrossFilteredLines() throws {
+        let entries = try Self.entries([
+            "1790945238.399123 10213  4100  4120 I AppLog: one",
+            "1790945238.399200 10999  5100  5120 I Other : filtered",
+            "1790945238.399123 10213  4100  4120 I AppLog: two",
+        ], source: .reactNative(app: "com.example.app"), preamble: ["package:com.example.app uid:10213"])
+        #expect(entries.map(\.message) == ["one\ntwo"])
+        #expect(entries.first?.process == "com.example.app")
+    }
+
     // MARK: Commands
 
     static let clock = #"echo "offsider-clock $(date +%s)"; "#
@@ -116,16 +177,16 @@ struct AndroidLogsTests {
     @Test("history dumps from a start the device computes, live starts at the device's clock, each after the clock and marker lines")
     func scripts() {
         #expect(LogcatCommand.script(window: .last(.seconds(30)), source: .all)
-            == Self.clock + #"echo offsider-logcat; logcat -d -v threadtime -v epoch -T "$(($(date +%s)-30)).000""#)
+            == Self.clock + #"echo offsider-logcat; logcat -d -v threadtime -v epoch -v usec -T "$(($(date +%s)-30)).000""#)
         #expect(LogcatCommand.script(window: .live(nil), source: .reactNative)
-            == Self.clock + #"echo offsider-logcat; logcat -v threadtime -v epoch -T "$(date +%s).000" 'ReactNativeJS:V' 'ReactNative:V' '*:S'"#)
+            == Self.clock + #"echo offsider-logcat; logcat -v threadtime -v epoch -v usec -T "$(date +%s).000" 'ReactNativeJS:V' 'ReactNative:V' '*:S'"#)
     }
 
     @Test("--since counts back from the device's own clock by how long ago it was on this Mac, so a skewed clock reads the same stretch")
     func sinceOnDeviceClock() {
         let now = Date(timeIntervalSince1970: 1_791_343_402.4)
         #expect(LogcatCommand.script(window: .since(now.addingTimeInterval(-90)), source: .all, now: now)
-            == Self.clock + #"echo offsider-logcat; logcat -d -v threadtime -v epoch -T "$(($(date +%s)-90)).000""#)
+            == Self.clock + #"echo offsider-logcat; logcat -d -v threadtime -v epoch -v usec -T "$(($(date +%s)-90)).000""#)
         #expect(LogcatCommand.script(window: .since(now.addingTimeInterval(60)), source: .all, now: now).hasSuffix(#"-T "$(($(date +%s)-0)).000""#))
     }
 
@@ -143,13 +204,13 @@ struct AndroidLogsTests {
     @Test("--app looks up the pid in the same script, stopping with a marker when nothing runs, and filters on it")
     func appScript() {
         #expect(LogcatCommand.script(window: .last(.seconds(5)), source: .app("com.example.app"))
-            == Self.clock + #"p=$(pidof -s 'com.example.app') || { echo offsider-not-running; exit 3; }; echo "offsider-pid $p"; echo offsider-logcat; logcat -d -v threadtime -v epoch -T "$(($(date +%s)-5)).000" --pid=$p"#)
+            == Self.clock + #"p=$(pidof -s 'com.example.app') || { echo offsider-not-running; exit 3; }; echo "offsider-pid $p"; echo offsider-logcat; logcat -d -v threadtime -v epoch -v usec -T "$(($(date +%s)-5)).000" --pid=$p"#)
     }
 
     @Test("--rn --app lists the package's user ID and reads every process with the uid column")
     func reactNativeAppScript() {
         #expect(LogcatCommand.script(window: .last(.seconds(120)), source: .reactNative(app: "com.example.app"))
-            == Self.clock + #"cmd package list packages -U 'com.example.app'; echo offsider-logcat; logcat -d -v threadtime -v epoch -T "$(($(date +%s)-120)).000" -v uid"#)
+            == Self.clock + #"cmd package list packages -U 'com.example.app'; echo offsider-logcat; logcat -d -v threadtime -v epoch -v usec -T "$(($(date +%s)-120)).000" -v uid"#)
     }
 
     @Test("--rn reads history with React Native filterspecs and parses the dump in one shell command")
@@ -234,7 +295,7 @@ struct AndroidLogsTests {
         let server = Self.server()
         let entries = try await Self.read(LogQuery(source: .reactNative, window: .live(.seconds(5))), from: server)
 
-        #expect(Self.shellCommands(server) == [Self.clock + #"echo offsider-logcat; logcat -v threadtime -v epoch -T "$(date +%s).000" 'ReactNativeJS:V' 'ReactNative:V' '*:S'"#])
+        #expect(Self.shellCommands(server) == [Self.clock + #"echo offsider-logcat; logcat -v threadtime -v epoch -v usec -T "$(date +%s).000" 'ReactNativeJS:V' 'ReactNative:V' '*:S'"#])
         #expect(entries.count == 3)
         #expect(server.closedStreams >= 1)
     }

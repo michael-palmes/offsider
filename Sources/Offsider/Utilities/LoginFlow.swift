@@ -140,10 +140,10 @@ enum LoginFlow {
         case afterSubmit
     }
 
-    /// A checkbox, a challenge or several checkboxes are for a person; absent, passed and checking are not.
+    /// A checkbox, a challenge or several checkboxes are for a person; absent, passed, checking and a web view with no widget are not.
     private static func requireNoWidget(_ phase: TurnstilePhase, stage: TurnstileStage) throws {
         switch phase {
-        case .absent, .passed, .checking:
+        case .absent, .passed, .checking, .noWidget:
             return
         case .ready, .visualChallenge, .ambiguous:
             throw turnstileRequired(phase, stage: stage)
@@ -160,6 +160,8 @@ enum LoginFlow {
                 return .absent
             case .passed:
                 return .passed
+            case .noWidget:
+                return .unknown
             case .ready, .visualChallenge, .ambiguous:
                 throw turnstileRequired(phase, stage: .beforeSubmit)
             case .checking:

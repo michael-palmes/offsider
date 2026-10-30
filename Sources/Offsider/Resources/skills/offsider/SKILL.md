@@ -34,7 +34,7 @@ offsider assert --id <identifier> --has-value <text> --device <DEVICE_ID>
 
 ## Rules
 
-- Wait on a condition, never a guess: `wait --id`, `--gone` (`--stable-for`), `--has-value`, `--settled` (`--ignore-values` on a ticking screen). Never tap an element just to pass time.
+- Wait on a condition, never a guess: `wait --id`, `--gone` (`--stable-for`), `--has-value`, `--enabled`, `--disabled`, `--settled` (`--ignore-values` on a ticking screen). Never tap an element just to pass time.
 - `type` adds to the focused field. Tap the field (or pass `--into-id <id>`), then `type --replace 'text'` sets it exactly (`''` clears it); a trailing newline presses Return; single quotes inline, `--stdin` or `--file` for shell-sensitive text (`guide selectors`).
 - Secure fields read as bullets, one per character: find them by `--id` or `--label` (`--value` never matches them). Secrets go through `login` or `type --stdin`, never as an argument; screenshots mask password fields, and what `offsider.mask.json` names, by default (`guide screenshots`).
 - For a report, `run start <dir>` numbers screenshots and logs into one folder, masking password fields and emails by default; video refuses tree masks (`guide evidence`).

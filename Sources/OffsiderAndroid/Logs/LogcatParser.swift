@@ -1,11 +1,13 @@
 import Foundation
 import OffsiderCore
 
-/// `logcat -v threadtime -v epoch` lines as entries: `SECONDS.mmm [UID] PID TID L TAG: message`, with Unix times so no zone is involved.
+/// `logcat -v threadtime -v epoch -v usec` lines as entries: `SECONDS.uuuuuu [UID] PID TID L TAG: message`, with Unix times so no zone is involved.
 struct LogcatParser {
     private var previous: LogEntry?
     /// The user ID column `-v uid` adds, for the last line read; a continuation keeps its entry's.
     private(set) var lastUID: String?
+    /// Everything before the last line's message, nil when it had none. logcat repeats it, to the microsecond, on each line of one multi-line message.
+    private(set) var lastHeader: String?
 
     private static let header = try! NSRegularExpression(
         pattern: #"^\s*(\d+)\.(\d{3,9})\s+(?:(\S+)\s+)?(\d+)\s+\d+\s+([VDIWEFAS])\s(.*?)\s*:(?: (.*))?$"#
@@ -22,6 +24,7 @@ struct LogcatParser {
             return nil
         }
         guard let match = Self.header.firstMatch(in: line, range: NSRange(line.startIndex..., in: line)) else {
+            lastHeader = nil
             guard var continuation = previous else {
                 return LogEntry(message: line, raw: line)
             }
@@ -42,6 +45,7 @@ struct LogcatParser {
             raw: line
         )
         lastUID = group(3)
+        lastHeader = Range(match.range(at: 7), in: line).map { String(line[..<$0.lowerBound]) } ?? line
         previous = entry
         return entry
     }
@@ -80,14 +84,15 @@ enum LogcatCommand {
     /// History is a dump (`-d`) counted back from the device's own clock, as is live output, so a skewed clock still reads the right stretch.
     private static func logcatWords(window: LogWindow, now: Date) -> [String] {
         var words = ["logcat"]
+        let format = ["-v", "threadtime", "-v", "epoch", "-v", "usec"]
         switch window {
         case .last(let duration):
-            words += ["-d", "-v", "threadtime", "-v", "epoch", "-T", "\"$(($(date +%s)-\(duration.wholeSecondsRoundedUp))).000\""]
+            words += ["-d"] + format + ["-T", "\"$(($(date +%s)-\(duration.wholeSecondsRoundedUp))).000\""]
         case .since(let date):
             let back = max(0, Int(now.timeIntervalSince(date).rounded(.up)))
-            words += ["-d", "-v", "threadtime", "-v", "epoch", "-T", "\"$(($(date +%s)-\(back))).000\""]
+            words += ["-d"] + format + ["-T", "\"$(($(date +%s)-\(back))).000\""]
         case .live:
-            words += ["-v", "threadtime", "-v", "epoch", "-T", "\"$(date +%s).000\""]
+            words += format + ["-T", "\"$(date +%s).000\""]
         }
         return words
     }
