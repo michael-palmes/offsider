@@ -16,6 +16,8 @@ import { HoldDragScreen } from './HoldDragScreen';
 import { KeypadTestScreen } from './KeypadTestScreen';
 import { KeyPressScreen } from './KeyPressScreen';
 import { KeySequenceScreen } from './KeySequenceScreen';
+import { LateDrawTestScreen } from './LateDrawTestScreen';
+import { LiveChartTestScreen } from './LiveChartTestScreen';
 import { LiveTickerTestScreen } from './LiveTickerTestScreen';
 import { LongScrollTestScreen } from './LongScrollTestScreen';
 import { MaskSheetTestScreen } from './MaskSheetTestScreen';
@@ -75,6 +77,8 @@ export const screens: Record<RouteId, ComponentType> = {
   'environment-test': EnvironmentTestScreen,
   'permission-state': PermissionStateTestScreen,
   'live-ticker': LiveTickerTestScreen,
+  'live-chart': LiveChartTestScreen,
+  'late-draw': LateDrawTestScreen,
   'drawer-test': DrawerTestScreen,
   'tab-bar-test': TabBarTestScreen,
   'cover-test': CoverTestScreen,

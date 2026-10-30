@@ -97,6 +97,32 @@ struct AndroidPhoneScopeTests {
         #expect(AndroidBackend.activeWindowPackages(UITree(platform: .android, device: "R58M123ABC", roots: roots)) == [Self.playground])
     }
 
+    @Test("what is in front decides a refusal only when the named app could be driven", arguments: [
+        (AndroidAppScope(permitted: [playground], managedCeiling: nil), nil as String?, "com.android.vending/.Store", true),
+        (AndroidAppScope(permitted: [playground], managedCeiling: nil), nil, "com.example.other/.Main", true),
+        (AndroidAppScope(permitted: [playground], managedCeiling: nil), "com.example.other", "\(playground)/.Main", false),
+        (AndroidAppScope(permitted: [], managedCeiling: nil, needsTarget: true), "com.android.settings", "com.android.settings/.Main", false),
+        (AndroidAppScope(permitted: [], managedCeiling: nil, needsTarget: true), "com.android.settings", "\(playground)/.Main", false),
+        (AndroidAppScope(permitted: [], managedCeiling: nil, needsTarget: true), playground, "com.android.vending/.Store", true),
+        (AndroidAppScope(permitted: [], managedCeiling: [playground], needsTarget: true), "com.example.other", "\(playground)/.Main", false),
+        (AndroidAppScope(permitted: [], managedCeiling: [playground], needsTarget: true), playground, "com.example.other/.Main", true),
+    ])
+    func otherAppOrNamedApp(scope: AndroidAppScope, named: String?, front: String, otherApp: Bool) async throws {
+        let (backend, _) = try AndroidBackendHelperTests.phoneBackend(top: front)
+        backend.appScopes[Self.phone.rawValue] = scope
+        if let named { backend.selectApp(named, on: Self.phone.rawValue) }
+
+        let error = await #expect(throws: AndroidError.self) { try await backend.requireDrivableForeground(Self.phone.rawValue) }
+
+        #expect(error?.reason == .appNotAllowed)
+        #expect(error?.isOtherAppInFront == otherApp, "\(error?.message ?? "")")
+    }
+
+    @Test("a front app Offsider cannot name counts as another app in front")
+    func unknownForegroundIsOtherApp() {
+        #expect(AndroidError.foregroundUnknown(Self.phone.rawValue).isOtherAppInFront)
+    }
+
     @Test("a phone allowed for any app drives only the app the command names, and refuses until one is named")
     func anyAppNeedsTarget() async throws {
         let (backend, _) = try AndroidBackendHelperTests.phoneBackend(top: "com.example.app/.MainActivity")
@@ -104,10 +130,12 @@ struct AndroidPhoneScopeTests {
         let unnamed = await #expect(throws: AndroidError.self) { try await backend.requireDrivableForeground(Self.phone.rawValue) }
         #expect(unnamed?.reason == .appNotAllowed)
         #expect(unnamed?.message.contains("offsider.login.json") == true)
+        #expect(unnamed?.isOtherAppInFront == false, "no app coming to the front can clear it")
 
         backend.selectApp("com.example.other", on: Self.phone.rawValue)
         let other = await #expect(throws: AndroidError.self) { try await backend.requireDrivableForeground(Self.phone.rawValue) }
         #expect(other?.message.contains("not com.example.other") == true)
+        #expect(other?.isOtherAppInFront == true)
 
         backend.selectApp("com.example.app", on: Self.phone.rawValue)
         try await backend.requireDrivableForeground(Self.phone.rawValue)

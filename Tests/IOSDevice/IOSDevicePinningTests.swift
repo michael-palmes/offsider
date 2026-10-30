@@ -104,6 +104,7 @@ struct IOSDevicePinningTests {
         backend.targetApp = "com.apple.mobilesafari"
         let browser = await #expect(throws: IOSDeviceError.self) { try await backend.requirePinnedAppInFront(Self.phone) }
         #expect(browser?.reason == .appNotAllowed)
+        #expect(browser?.isOtherAppInFront == false)
         backend.targetApp = "com.example.other"
         let other = await #expect(throws: IOSDeviceError.self) { _ = try await backend.rawAccessibilitySource(for: Self.phone) }
         #expect(other?.reason == .appNotAllowed)
@@ -120,6 +121,7 @@ struct IOSDevicePinningTests {
         let error = await #expect(throws: IOSDeviceError.self) { try await backend.openInputSession(for: Self.phone).perform(.tapAt(x: 10, y: 20)) }
         #expect(error?.reason == .appNotAllowed)
         #expect(error?.message.contains("com.example.other is in front") == true)
+        #expect(error?.isOtherAppInFront == true, "a wait sits this out")
         #expect(!transport.calls.contains { $0.path == "/tap-point" })
 
         transport.foregroundApp = Self.playground

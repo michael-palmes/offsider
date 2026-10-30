@@ -35,6 +35,8 @@ public struct IOSDeviceError: LocalizedError, CustomStringConvertible, Equatable
         case sessionLost
         /// The app in front is not the one this command may drive, or that app is deny-listed or outside the allowance.
         case appNotAllowed
+        /// `app_not_allowed` only because of what is in front now; it clears when the app under test comes back.
+        case otherAppInFront
         /// A physical iPhone or iPad needs a pinned app and none was named.
         case appRequired
         /// The device's allowance lapsed while a session broker ran (expired, removed or its seal broken).
@@ -164,6 +166,11 @@ extension IOSDeviceError {
     }
 }
 
+/// Another app in front clears when the app under test comes back, so a wait counts it as not yet met.
+extension IOSDeviceError: OtherAppFailure {
+    public var isOtherAppInFront: Bool { kind == .otherAppInFront }
+}
+
 extension IOSDeviceError: OffsiderFailure {
     public var reason: FailureReason {
         switch kind {
@@ -194,7 +201,7 @@ extension IOSDeviceError: OffsiderFailure {
         case .streamNeedsGUISession: return .notSupported
         case .sessionFailed: return .hidBrokerFailed
         case .sessionLost: return .inputOutcomeUnknown
-        case .appNotAllowed: return .appNotAllowed
+        case .appNotAllowed, .otherAppInFront: return .appNotAllowed
         case .notAllowed: return .deviceNotAllowed
         case .appRequired, .invalidSetting: return .usage
         }

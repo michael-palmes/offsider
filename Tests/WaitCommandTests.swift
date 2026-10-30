@@ -236,6 +236,97 @@ struct WaitCommandTests {
         }
     }
 
+    @Test("--seconds alone needs no device and touches none; every other wait still needs one")
+    func pauseNeedsNoDevice() async throws {
+        let pause = try Wait.parse(["--seconds", "1.5"])
+        let clock = ScriptedClock()
+        let outcome = try await pause.pause(clock: clock.poll)
+        #expect(outcome.met)
+        #expect(outcome.elapsed == 1.5)
+
+        for arguments in [["--settled"], ["--id", "save"], ["--region", "0,0,10,10", "--stable"]] {
+            let message = Wait.message(for: try #require(Self.parsingError(arguments)))
+            #expect(message.contains("--device"), "\(arguments)")
+        }
+    }
+
+    private static func parsingError(_ arguments: [String]) -> (any Error)? {
+        do {
+            _ = try Wait.parse(arguments)
+            return nil
+        } catch {
+            return error
+        }
+    }
+
+    @Test("--ignore-id and --ignore-region are checked against the condition", arguments: [
+        (["--id", "a", "--ignore-id", "b"], "--ignore-id applies to --settled only"),
+        (["--seconds", "1", "--ignore-region", "0,0,10,10"], "--ignore-region applies to --settled only"),
+        (["--settled", "--settle-by", "screen", "--ignore-id", "b"], "--ignore-id reads the accessibility tree"),
+        (["--settled", "--ignore-region", "0,0,10"], "--ignore-region takes x,y,width,height"),
+        (["--settled", "--ignore-region", "0,0,0,10"], "--ignore-region 0,0,0,10 has no area"),
+    ])
+    func ignoreFlagsAreChecked(arguments: [String], expected: String) {
+        let message = Self.validationMessage(arguments)
+        #expect(message?.contains(expected) == true, "\(message ?? "accepted")")
+    }
+
+    private static func chart(_ y: Double) -> UITree {
+        FakeUI.tree(width: 393, height: 852, [
+            FakeUI.node(.other, id: "chart", frame: FakeUI.frame(20, y, 300, 200)),
+            FakeUI.node(.button, id: "save", label: "Save", frame: FakeUI.frame(20, 600, 350, 44)),
+        ])
+    }
+
+    @Test("a settle that times out on a moving group prints the flag that leaves it out, and that flag settles it")
+    func timeoutNamesTheFlag() async throws {
+        let backend = FakeDeviceBackend(trees: (0..<60).map { Self.chart(Double(100 + $0)) })
+        let stuck = try Self.command(["--settled", "--ignore-values", "--timeout", "1"])
+        let outcome = try await Self.evaluate(stuck, on: backend)
+        #expect(!outcome.met)
+        #expect(stuck.failureLine(outcome).contains("add --ignore-id chart to leave it out."))
+        let details = stuck.personOutcome(Wait.shown(outcome), note: nil).details
+        #expect(details.contains("Part of it keeps moving; --ignore-id chart leaves it out"))
+        let json = try #require(try JSONSerialization.jsonObject(with: Data(WaitReport(outcome).jsonLine().utf8)) as? [String: Any])
+        #expect(json["leaveOut"] as? String == "--ignore-id chart")
+
+        let settled = try Self.command(["--settled", "--ignore-values", "--ignore-id", "chart", "--timeout", "1"])
+        #expect(try await Self.evaluate(settled, on: FakeDeviceBackend(trees: (0..<60).map { Self.chart(Double(100 + $0)) })).met)
+    }
+
+    @Test("a left-out region's and id's pixels do not count, with --settle-by both")
+    func leftOutPixels() async throws {
+        let moving = try (0..<20).map { try Self.png(marked: [(x: 2 + $0 % 8, y: 2)]) }
+        let screen = UIScreenInfo(width: 40, height: 40, scale: 1, rotationDegrees: 0)
+        let frameID = FakeUI.tree(width: 40, height: 40, [FakeUI.node(.other, id: "chart", frame: FakeUI.frame(0, 0, 20, 10)), FakeUI.node(.button, id: "save", frame: FakeUI.frame(0, 20, 40, 20))])
+
+        let plain = FakeDeviceBackend(trees: [frameID], screenshots: moving, screen: screen)
+        #expect(try await Self.evaluate(try Self.command(["--settled", "--settle-by", "both", "--timeout", "1"]), on: plain).met == false)
+
+        let byRegion = FakeDeviceBackend(trees: [frameID], screenshots: moving, screen: screen)
+        #expect(try await Self.evaluate(try Self.command(["--settled", "--settle-by", "both", "--ignore-region", "0,0,20,10", "--timeout", "1"]), on: byRegion).met)
+
+        let byID = FakeDeviceBackend(trees: [frameID], screenshots: moving, screen: screen)
+        #expect(try await Self.evaluate(try Self.command(["--settled", "--settle-by", "both", "--ignore-id", "chart", "--timeout", "1"]), on: byID).met)
+    }
+
+    @Test("the draw hold is for Android after an input, and an explicit --settle-by turns it off", arguments: [
+        (DevicePlatform.android, ["--settled"], true, true),
+        (.android, ["--settled"], false, false),
+        (.ios, ["--settled"], true, false),
+        (.android, ["--settled", "--settle-by", "tree"], true, false),
+        (.android, ["--settled", "--settle-by", "both"], true, false),
+    ])
+    func drawHoldScope(platform: DevicePlatform, arguments: [String], afterInput: Bool, holds: Bool) throws {
+        let gate = afterInput ? SettleGate(sinceInput: 0.1, before: nil) : nil
+        let condition = try Self.command(arguments).condition(gate: gate, platform: platform)
+        guard case .settled(_, _, _, _, _, let drawHold) = condition else {
+            Issue.record("not a settled condition")
+            return
+        }
+        #expect((drawHold != nil) == holds)
+    }
+
     @Test("--timeout and --seconds accept up to 900 seconds, for cold bundles that take minutes", arguments: [
         ["--id", "a", "--timeout", "900"],
         ["--seconds", "900"],

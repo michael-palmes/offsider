@@ -39,6 +39,8 @@ public struct AndroidError: LocalizedError, CustomStringConvertible, Equatable, 
         case fieldNotEditable
         case securePasteRefused
         case appNotAllowed
+        /// `app_not_allowed` only because of what is in front now; it clears when the app under test comes back.
+        case otherAppInFront
         case textNotAccepted
         case unsupportedKey
         case unsupportedButton
@@ -520,19 +522,44 @@ public struct AndroidError: LocalizedError, CustomStringConvertible, Equatable, 
     static func appNotAllowed(_ serial: String, refusal: String) -> AndroidError {
         AndroidError(
             .appNotAllowed,
+            "\(refusal) on a physical phone, so Offsider did nothing on \(serial). Name your own app with --app instead."
+        )
+    }
+
+    static func otherAppRefused(_ serial: String, refusal: String) -> AndroidError {
+        AndroidError(
+            .otherAppInFront,
             "\(refusal) on a physical phone, so Offsider did nothing on \(serial). Bring your own app to the front, then retry."
         )
     }
 
+    /// The app a command names is outside this phone's allowance, whatever is in front.
     static func appNotPermitted(_ serial: String, package: String, byManagedPolicy: Bool, audience: ErrorAudience = .current) -> AndroidError {
         if byManagedPolicy {
             return AndroidError(
                 .appNotAllowed,
-                "\(package) is in front on \(serial), and managed policy on this Mac does not list it, so Offsider did nothing. The allow-list cannot override managed policy; bring an app it lists to the front, then retry."
+                "\(package), the app this command drives, is not listed by managed policy on this Mac, so Offsider did nothing on \(serial). The allow-list cannot override managed policy; name an app it lists."
             )
         }
         return AndroidError(
             .appNotAllowed,
+            "\(package), the app this command drives, is not among the apps allowed on \(serial), so Offsider did nothing. "
+                + (audience == .person
+                    ? "Name an allowed app, or pin this one."
+                    : "Name an allowed app, or ask the user to run `offsider devices add` in their own terminal, choose \(serial) and pin \(package)."),
+            hint: "offsider devices add"
+        )
+    }
+
+    static func otherAppNotPermitted(_ serial: String, package: String, byManagedPolicy: Bool, audience: ErrorAudience = .current) -> AndroidError {
+        if byManagedPolicy {
+            return AndroidError(
+                .otherAppInFront,
+                "\(package) is in front on \(serial), and managed policy on this Mac does not list it, so Offsider did nothing. The allow-list cannot override managed policy; bring an app it lists to the front, then retry."
+            )
+        }
+        return AndroidError(
+            .otherAppInFront,
             "\(package) is in front on \(serial), and it is not among the apps allowed on this phone, so Offsider did nothing. "
                 + (audience == .person
                     ? "Bring an allowed app to the front, or pin this one."
@@ -543,7 +570,7 @@ public struct AndroidError: LocalizedError, CustomStringConvertible, Equatable, 
 
     static func foregroundUnknown(_ serial: String) -> AndroidError {
         AndroidError(
-            .appNotAllowed,
+            .otherAppInFront,
             "Offsider could not tell which app is in front on \(serial), and on a physical phone it acts only once it knows, so it did nothing. Unlock the phone and bring your app to the front, then retry."
         )
     }
@@ -726,6 +753,11 @@ extension AndroidError: TransientFailure {
     public var isTransient: Bool { kind == .uiautomatorNoWindow || kind == .noWindow }
 }
 
+/// Another app in front clears when the app under test comes back, so a wait counts it as not yet met.
+extension AndroidError: OtherAppFailure {
+    public var isOtherAppInFront: Bool { kind == .otherAppInFront }
+}
+
 extension AndroidError: OffsiderFailure {
     public var reason: FailureReason {
         switch kind {
@@ -754,7 +786,7 @@ extension AndroidError: OffsiderFailure {
         case .noFocusedField: return .noFocusedField
         case .fieldNotEditable: return .fieldNotEditable
         case .securePasteRefused: return .securePasteRefused
-        case .appNotAllowed: return .appNotAllowed
+        case .appNotAllowed, .otherAppInFront: return .appNotAllowed
         case .textNotAccepted: return .textNotAccepted
         case .unsupportedKey: return .unsupportedKey
         case .unsupportedButton: return .unsupportedButton
