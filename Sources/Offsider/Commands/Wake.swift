@@ -7,7 +7,7 @@ struct Wake: AsyncParsableCommand {
         abstract: "Turn an Android device's screen on and dismiss its lock screen.",
         discussion: """
         Sends nothing when the screen is already on and unlocked. Otherwise it presses the wake key, dismisses the \
-        lock screen and waits about 3 s. A PIN, pattern or password lock screen stays up, and the command exits 7 \
+        lock screen and waits about 6 s. A PIN, pattern or password lock screen stays up, and the command exits 7 \
         (device_locked) unless --unlock finds a PIN or password saved with `offsider unlock-code set`. Then it types \
         that code once, and only into the lock screen's own focused PIN or password field, as key events through the \
         UiAutomation helper, never as a shell command; without the helper it exits 9 (helper_unavailable), and while \
