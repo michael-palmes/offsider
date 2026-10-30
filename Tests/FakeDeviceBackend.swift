@@ -59,6 +59,8 @@ class FakeDeviceBackend: DeviceBackend {
     var codeTyped = true
     /// Runs as the code is typed, after `beforeTyping`.
     var whileTyping: (() -> Void)?
+    /// Thrown after the marker is written and before the result, as a run that dies mid-code would.
+    var codeError: (any Error)?
     private(set) var enteredCodes: [UnlockCode] = []
     /// What `listedName(of:)` serves, as a phone's model or an AVD name.
     var listedDeviceName: String?
@@ -406,6 +408,7 @@ extension FakeDeviceBackend: AwakeControlling {
             whileTyping?()
         }
         enteredCodes.append(code)
+        if let codeError { throw codeError }
         awake = afterCode
         return UnlockAttempt(typed: codeTyped, reading: awake)
     }

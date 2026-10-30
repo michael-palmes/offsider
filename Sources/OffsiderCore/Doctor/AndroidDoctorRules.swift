@@ -267,20 +267,24 @@ public enum AndroidDoctorRules {
         )
     }
 
-    /// Apps cannot start on a device set up with a credential until it is unlocked once after boot.
-    public static func lock(_ reading: AwakeReading, unlockCode: UnlockCodeFact?, deviceID: String) -> Verdict {
+    /// Apps cannot start on a device set up with a credential until it is unlocked once after boot; a saved code Offsider will not type warns even when it is unlocked.
+    public static func lock(_ reading: AwakeReading, unlockCode: UnlockCodeFact?, deviceID: String, codeKey: String, timeZone: TimeZone = .current) -> Verdict {
         guard reading.hasCredential else { return (.pass, "No PIN, pattern or password", nil) }
-        let lock = LockReport(reading, savedCode: unlockCode?.saved ?? false, lastAttemptFailed: unlockCode?.lastAttemptFailed ?? false)
-        let saved = "code saved: " + (lock.savedCode ? (lock.lastAttemptFailed ? "yes, but it failed last time" : "yes") : "no")
+        let lock = LockReport(reading, savedCode: unlockCode?.saved ?? false, lastAttempt: unlockCode?.lastAttempt)
+        let attempt = lock.blockingAttempt
+        let saved = attempt.map { ". " + $0.problem(name: "the device", timeZone: timeZone) } ?? "; code saved: \(lock.savedCode ? "yes" : "no")"
         let set = reading.credential == nil ? "\(reading.credentialName) set (Android does not say which here; unlock-code takes a PIN or password only)" : "\(reading.credentialName) set"
+        let state: String
         switch reading.userUnlocked {
         case false?:
-            return (.fail, "\(set); waiting for its first unlock since boot, so apps cannot start; \(saved)", lock.unlockHint(deviceID: deviceID))
+            return (.fail, "\(set); waiting for its first unlock since boot, so apps cannot start\(saved)", lock.unlockHint(deviceID: deviceID, codeKey: codeKey))
         case true?:
-            return (.pass, "\(set); unlocked since boot; \(saved)", nil)
+            state = "\(set); unlocked since boot\(saved)"
         case nil:
-            return (.pass, "\(set); \(saved)", nil)
+            state = "\(set)\(saved)"
         }
+        guard attempt != nil else { return (.pass, state, nil) }
+        return (.warn, state, lock.unlockHint(deviceID: deviceID, codeKey: codeKey))
     }
 
     /// Off lets the screen time out, and a PIN, pattern or password lock screen return.
@@ -398,7 +402,7 @@ public enum AndroidDoctorRules {
             if awake.credential == nil, awake.keyguardSecure == nil {
                 checks.append(.skipped(.androidDeviceLock, "could not read the lock settings"))
             } else {
-                checks.append(DoctorCheckResult(id: .androidDeviceLock, verdict: lock(awake, unlockCode: facts.unlockCode, deviceID: facts.id)))
+                checks.append(DoctorCheckResult(id: .androidDeviceLock, verdict: lock(awake, unlockCode: facts.unlockCode, deviceID: facts.id, codeKey: facts.unlockCodeKey)))
             }
             checks.append(DoctorCheckResult(id: .androidDeviceStayAwake, verdict: stayAwake(awake, deviceID: facts.id)))
         } else {

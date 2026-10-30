@@ -223,8 +223,8 @@ struct AndroidAwakeStateTests {
     }
 
     /// The lock screen as the helper reports it: System UI's focused PIN field, or `package`'s own password field.
-    nonisolated static func keyguardDump(package: String = "com.android.systemui", focused: Bool = true) -> String {
-        let field = #"{"i":1,"class":"android.widget.EditText","package":"\#(package)","resourceId":"\#(package):id/pinEntry","bounds":[184,679,895,815],"clickable":true,"focusable":true,"focused":\#(focused),"editable":true,"password":true}"#
+    nonisolated static func keyguardDump(package: String = "com.android.systemui", focused: Bool = true, enabled: Bool = true) -> String {
+        let field = #"{"i":1,"class":"android.widget.EditText","package":"\#(package)","resourceId":"\#(package):id/pinEntry","bounds":[184,679,895,815],"clickable":true,"enabled":\#(enabled),"focusable":true,"focused":\#(focused),"editable":true,"password":true}"#
         return #"{"generation":1,"idle":true,\#(FakeHelperDevice.display),"windows":[{"id":2292,"type":"application","layer":0,"title":"Keyguard","displayId":0,"bounds":[0,0,1080,2424],"active":true,"focused":true,"root":{"i":0,"class":"android.widget.FrameLayout","package":"\#(package)","bounds":[0,0,1080,2424],"children":[\#(field)]}}],"truncated":false,"eventSeq":3}"#
     }
 
@@ -257,6 +257,42 @@ struct AndroidAwakeStateTests {
         #expect(rig.device.injected == ["text 2580", "key press 66 meta 0"])
         #expect(!Self.shellCommands(rig).contains { $0.contains("input ") })
         #expect(!rig.server.services.contains { $0.contains("2580") })
+    }
+
+    @Test("a right code on a slow phone is not called wrong: the check waits for a lock screen that goes after 12 s")
+    func slowUnlock() async throws {
+        let pollsIn12Seconds = 12_000 / 200
+        let stillUp = Array(repeating: Self.state(showing: true), count: pollsIn12Seconds)
+        let rig = try Self.helperRig(states: ScriptedOutputs([Self.state(showing: true)] + stillUp + [Self.motoAwake]))
+        let attempt = try await rig.backend.enterUnlockCode(try #require(UnlockCode("2580")), on: Self.device) {}
+
+        #expect(attempt.typed)
+        #expect(attempt.reading.isUsable)
+    }
+
+    @Test("a lock screen that stays up ends the check at the window, typed once, for the command to call wrong")
+    func lockScreenStaysUp() async throws {
+        let rig = try Self.helperRig(states: ScriptedOutputs([Self.state(showing: true)]))
+        let attempt = try await rig.backend.enterUnlockCode(try #require(UnlockCode("2580")), on: Self.device) {}
+
+        #expect(attempt.typed)
+        #expect(attempt.reading.lockScreen == .secure)
+        #expect(rig.sleeps.total >= AndroidBackend.codeCheckWindow)
+        #expect(rig.sleeps.total <= AndroidBackend.codeCheckWindow + .seconds(1))
+        #expect(rig.device.injected == ["text 2580", "key press 66 meta 0"])
+    }
+
+    @Test("a code field disabled during a lockout countdown gets nothing typed, so a right code never reads as wrong")
+    func fieldDisabled() async throws {
+        let rig = try Self.helperRig(states: ScriptedOutputs([Self.state(showing: true)]), dump: Self.keyguardDump(enabled: false))
+        let error = await #expect(throws: AndroidError.self) {
+            _ = try await rig.backend.enterUnlockCode(try #require(UnlockCode("2580")), on: Self.device) {
+                Issue.record("nothing should be about to be typed")
+            }
+        }
+
+        #expect(error?.reason == .deviceLocked)
+        #expect(rig.device.injected.isEmpty)
     }
 
     @Test("a lock screen that went dark between finding the field and typing gets nothing typed")

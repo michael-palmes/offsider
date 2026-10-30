@@ -33,6 +33,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - `wait --any` with one selector is a plain wait for it rather than exit 64.
 - On an iOS simulator `describe-ui` reports `state.focused` on the field with keyboard focus, so `type --require-focus-id` works there.
 - Plain `type`, with no `--into-*` or `--require-focus-id`, sends nothing unless a text field has focus (or an iOS simulator shows a keyboard) and exits 1 `no_focused_field`: keys that reached no field could act as app shortcuts, and a React Native dev build reloaded on `r`. Focus on something that takes no text, such as the button of an app's own number keypad, refuses too, as does an Android keyboard up for a field hidden from accessibility, where `type` and `key-sequence` used to report `ok` with nothing landed. `key-sequence` with letters, digits, space or punctuation and batch `type` steps follow the same rule. On an iOS simulator the check reads the screen first, about 0.6 s. Argument text into the focused password field is refused on an iOS simulator too, as on Android.
+- `wake --unlock`, `unlock-code status`, `doctor` and `boot` say plainly whether a saved PIN or password is wrong. A code typed in full with the lock screen still up 15 s later is `The saved PIN is wrong: ...`, and stays blocked, even through an unlock by hand, until it is saved again. A run that ended before it saw the result, or a marker from an earlier version, is `Offsider can't tell if the saved PIN is right: ...`. Each message names the command that saves it, and that Offsider won't retry because repeated wrong PINs can lock a phone out. The marker now holds the outcome, the time and whether the lock was a PIN or password, and `--json` adds `lastAttempt` (`outcome`, `at`, `credential`, or null) beside `lastAttemptFailed`, which stays true for either.
+- `doctor`'s `android-device.lock` warns instead of passing while a saved code is wrong or unconfirmed.
 
 ### Fixed
 
@@ -66,6 +68,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - `rn devmenu perf-monitor` on Android first checks the app may display over other apps and exits 1 `person_required` naming the setting, with nothing sent; React Native otherwise opened Android's settings page for it and the command reported the item chosen.
 - `--verify` no longer sends a retry while the screen is still changing (a change that came and went, a read that failed, or a selector tap's target that moved away), where a navigation tap still on its way was sent again and landed on the next screen's row. It watches one more `--verify-timeout` instead and verifies when the next screen settles, else exits 5 with `note` `unsettled`, sent once.
 - A title under the next page's title, or an element under another page's own screen-sized group, now counts as covered (`wait`, `assert`, `describe-ui --on-screen`, `--verify-id`): an iOS simulator's hit-test and Android's drawing order both found the cover but took it for the target's own content.
+- `wake --unlock` waits up to 15 s for the lock screen to go after typing a code, not about 2.5 s on an emulator and 4 to 6 s on a phone, so a slow first unlock since boot no longer ends the check early, and a right code is not called wrong.
+- `wake --unlock` types nothing into a code field disabled while the lock screen counts down after wrong codes, where a right code could not land.
+- The unlock hints in `boot` and `doctor` name an emulator's AVD for `unlock-code set`, which refuses its serial.
 
 ## [0.14.0] - 2026-10-22
 

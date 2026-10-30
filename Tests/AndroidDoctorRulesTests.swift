@@ -243,20 +243,53 @@ struct AndroidDoctorRulesTests {
     @Test("a device waiting for its first unlock fails with the unlock hints; unlocked or without a credential passes")
     func lockVerdicts() {
         let waiting = AwakeReading(screen: .on, lockScreen: .secure, credential: "pin", userUnlocked: false)
-        let failing = AndroidDoctorRules.lock(waiting, unlockCode: nil, deviceID: "emulator-5560")
+        let failing = AndroidDoctorRules.lock(waiting, unlockCode: nil, deviceID: "emulator-5560", codeKey: "Pixel_PIN")
         #expect(failing.status == .fail)
         #expect(failing.detail == "PIN set; waiting for its first unlock since boot, so apps cannot start; code saved: no")
-        #expect(failing.hint?.contains("offsider unlock-code set --device emulator-5560") == true)
-        let saved = AndroidDoctorRules.lock(waiting, unlockCode: UnlockCodeFact(saved: true, lastAttemptFailed: false), deviceID: "emulator-5560")
+        #expect(failing.hint?.contains("offsider unlock-code set --device Pixel_PIN") == true)
+        let saved = AndroidDoctorRules.lock(waiting, unlockCode: UnlockCodeFact(saved: true, lastAttempt: nil), deviceID: "emulator-5560", codeKey: "Pixel_PIN")
         #expect(saved.hint?.hasPrefix("Run `offsider wake --unlock --device emulator-5560`") == true)
-        let failed = AndroidDoctorRules.lock(waiting, unlockCode: UnlockCodeFact(saved: true, lastAttemptFailed: true), deviceID: "emulator-5560")
-        #expect(failed.detail.hasSuffix("code saved: yes, but it failed last time"))
         var unlocked = waiting
         unlocked.userUnlocked = true
-        #expect(AndroidDoctorRules.lock(unlocked, unlockCode: nil, deviceID: "emulator-5560") == (.pass, "PIN set; unlocked since boot; code saved: no", nil))
-        #expect(AndroidDoctorRules.lock(AwakeReading(screen: .on, lockScreen: .hidden, credential: "none"), unlockCode: nil, deviceID: "x").status == .pass)
+        #expect(AndroidDoctorRules.lock(unlocked, unlockCode: nil, deviceID: "emulator-5560", codeKey: "Pixel_PIN") == (.pass, "PIN set; unlocked since boot; code saved: no", nil))
+        #expect(AndroidDoctorRules.lock(AwakeReading(screen: .on, lockScreen: .hidden, credential: "none"), unlockCode: nil, deviceID: "x", codeKey: "x").status == .pass)
         let unknown = AndroidDoctorRules.deviceChecks(Self.booted { $0.awake?.credential = nil }, hostBlocker: nil)
         #expect(Self.check(.androidDeviceLock, in: unknown)?.status == .skip)
+    }
+
+    @Test("a saved code Offsider will not type never passes the lock check, whatever the unlock state", arguments: [true as Bool?, nil])
+    func lockBlockedCode(userUnlocked: Bool?) throws {
+        let utc = try #require(TimeZone(identifier: "UTC"))
+        let at = Date(timeIntervalSince1970: 1_790_000_000)
+        let reading = AwakeReading(screen: .on, lockScreen: .hidden, credential: "pin", userUnlocked: userUnlocked)
+        let since = userUnlocked == true ? "; unlocked since boot" : ""
+
+        let wrong = AndroidDoctorRules.lock(reading, unlockCode: UnlockCodeFact(saved: true, lastAttempt: UnlockAttemptRecord(outcome: .rejected, at: at, credential: "pin")), deviceID: "emulator-5560", codeKey: "Pixel_PIN", timeZone: utc)
+        #expect(wrong.status == .warn)
+        #expect(wrong.detail == "PIN set\(since). The saved PIN is wrong: the device stayed locked after Offsider typed it on 21 Sep at 14:13.")
+        #expect(wrong.hint == "Save the right one: `offsider unlock-code set --device Pixel_PIN`")
+
+        let unknown = AndroidDoctorRules.lock(reading, unlockCode: UnlockCodeFact(saved: true, lastAttempt: UnlockAttemptRecord(outcome: .started, at: at, credential: nil)), deviceID: "emulator-5560", codeKey: "Pixel_PIN", timeZone: utc)
+        #expect(unknown.status == .warn)
+        #expect(unknown.detail == "PIN set\(since). Offsider can't tell if the saved code is right: it has no result for its unlock of the device on 21 Sep at 14:13.")
+        #expect(unknown.hint == "Save it again: `offsider unlock-code set --device Pixel_PIN`")
+
+        let removed = AndroidDoctorRules.lock(reading, unlockCode: UnlockCodeFact(saved: false, lastAttempt: UnlockAttemptRecord(outcome: .rejected, at: at, credential: "pin")), deviceID: "emulator-5560", codeKey: "Pixel_PIN", timeZone: utc)
+        #expect(removed.status == .pass)
+    }
+
+    @Test("a device waiting for its first unlock with a wrong saved PIN fails, and doctor's fix runs on an emulator")
+    func lockWrongCodeWaiting() throws {
+        let attempt = UnlockAttemptRecord(outcome: .rejected, at: nil, credential: "pin")
+        let checks = AndroidDoctorRules.deviceChecks(Self.booted {
+            $0.avdName = "Pixel_PIN"
+            $0.awake = AwakeReading(screen: .on, lockScreen: .secure, credential: "pin", userUnlocked: false)
+            $0.unlockCode = UnlockCodeFact(saved: true, lastAttempt: attempt)
+        }, hostBlocker: nil)
+        let check = try #require(Self.check(.androidDeviceLock, in: checks))
+        #expect(check.status == .fail)
+        #expect(check.detail == "PIN set; waiting for its first unlock since boot, so apps cannot start. The saved PIN is wrong: the device stayed locked after Offsider typed it.")
+        #expect(check.hint == "Save the right one: `offsider unlock-code set --device Pixel_PIN`")
     }
 
     @Test("without a credential type, the keyguard's secure line still decides the lock check")
@@ -270,10 +303,10 @@ struct AndroidDoctorRulesTests {
         #expect(check?.status == .fail)
         #expect(check?.detail.hasPrefix("PIN, pattern or password set (Android does not say which here; unlock-code takes a PIN or password only); waiting for its first unlock since boot") == true)
         let unlocked = AwakeReading(screen: .on, lockScreen: .hidden, userUnlocked: true, keyguardSecure: true)
-        #expect(AndroidDoctorRules.lock(unlocked, unlockCode: nil, deviceID: "x").detail.contains("unlock-code takes a PIN or password only"))
+        #expect(AndroidDoctorRules.lock(unlocked, unlockCode: nil, deviceID: "x", codeKey: "x").detail.contains("unlock-code takes a PIN or password only"))
         let open = AwakeReading(screen: .on, lockScreen: .hidden, credential: "none", keyguardSecure: false)
-        #expect(AndroidDoctorRules.lock(open, unlockCode: nil, deviceID: "x") == (.pass, "No PIN, pattern or password", nil))
-        #expect(LockReport(AwakeReading(screen: .on, lockScreen: .hidden, keyguardSecure: true), savedCode: false, lastAttemptFailed: false).type == nil)
+        #expect(AndroidDoctorRules.lock(open, unlockCode: nil, deviceID: "x", codeKey: "x") == (.pass, "No PIN, pattern or password", nil))
+        #expect(LockReport(AwakeReading(screen: .on, lockScreen: .hidden, keyguardSecure: true), savedCode: false, lastAttempt: nil).type == nil)
     }
 
     @Test("a pattern lock never points at unlock-code, which types only a PIN or password")
@@ -281,7 +314,7 @@ struct AndroidDoctorRulesTests {
         let showing = AndroidDoctorRules.screen(AwakeReading(screen: .on, lockScreen: .secure, credential: "pattern"), deviceID: "P")
         #expect(showing.hint?.contains("unlock-code") == false)
         #expect(showing.hint?.contains("never a pattern") == true)
-        let waiting = AndroidDoctorRules.lock(AwakeReading(screen: .on, lockScreen: .secure, credential: "pattern", userUnlocked: false), unlockCode: nil, deviceID: "P")
+        let waiting = AndroidDoctorRules.lock(AwakeReading(screen: .on, lockScreen: .secure, credential: "pattern", userUnlocked: false), unlockCode: nil, deviceID: "P", codeKey: "P")
         #expect(waiting.status == .fail)
         #expect(waiting.hint?.contains("unlock-code") == false)
     }

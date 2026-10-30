@@ -56,7 +56,7 @@ A `--verify --json` report also carries `ignored` (`{node, reason}` entries left
 | `device_not_booted` | 7 | The device exists but is not running | `offsider boot <ID>` |
 | `device_not_ready` | 7 | The emulator is offline or still booting | Wait, or `offsider boot <AVD>` |
 | `device_unauthorised` | 7 | adb is not authorised for the emulator | Accept the prompt, or restart it with `offsider boot` |
-| `device_locked` | 7 | A PIN, pattern or password lock screen stayed up after `wake`, or its saved code did not unlock it, or an iPhone or iPad is locked, so it refused input or Xcode could not start the runner | Unlock it on the device, or on Android `offsider wake --unlock` with a code saved by `offsider unlock-code set` |
+| `device_locked` | 7 | A PIN, pattern or password lock screen stayed up after `wake`, or the message says its saved code is wrong or that Offsider can't tell if it is right, or an iPhone or iPad is locked, so it refused input or Xcode could not start the runner | Unlock it on the device, or on Android `offsider wake --unlock` with a code saved by `offsider unlock-code set`; a wrong or unconfirmed code: save it with `offsider unlock-code set`, as Offsider won't type it again until then |
 | `device_ambiguous` | 7 | An AVD name matches more than one running emulator, names both a phone and an AVD, or `boot` names a simulator several share | Pass one serial or UDID |
 | `avd_not_found` | 7 | No AVD has that name | Run the `hint` when it names the closest AVD; else check the name in Android Studio's Device Manager |
 | `device_not_wired` | 7 | The iPhone or iPad is connected over Wi-Fi, and Offsider drives it over USB only | Connect its cable |
