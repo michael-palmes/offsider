@@ -4,7 +4,7 @@ help:
 	@echo "Common Offsider commands"
 	@echo "  make setup          First run: build the pinned idb frameworks, then Offsider"
 	@echo "  make frameworks     Build the pinned idb frameworks and XCFrameworks (reuses a matching build)"
-	@echo "  make build          Build Offsider"
+	@echo "  make build          Build Offsider, signed when .env names OFFSIDER_DEV_SIGNING_IDENTITY"
 	@echo "  make test           Run default tests (non-E2E)"
 	@echo "  make e2e            Run full E2E flow (build + simulator tests)"
 	@echo "  make e2e-devices    Show the E2E simulator and emulators, and create the missing ones"
@@ -25,6 +25,7 @@ help:
 setup:
 	./scripts/build.sh dev
 	swift build
+	@./scripts/build.sh dev-sign --if-set
 
 frameworks:
 	./scripts/build.sh dev
@@ -32,6 +33,7 @@ frameworks:
 build:
 	@test -d build_products/XCFrameworks/FBSimulatorControl.xcframework || { echo "The idb frameworks are not built yet. Run: ./scripts/build.sh dev" >&2; exit 1; }
 	swift build
+	@./scripts/build.sh dev-sign --if-set
 
 test:
 	swift test

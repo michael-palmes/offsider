@@ -23,6 +23,15 @@ struct PeerCodeIdentityTests {
         #expect(verdict.cdhash?.isEmpty == false)
     }
 
+    @Test("a debug build's brokers admit only its exact code, and refuse any other cdhash")
+    func debugBuildPinsToItsOwnCode() throws {
+        let requirement = try PeerCodeIdentity.ownRequirement()
+        let own = try #require(PeerCodeIdentity.check(pid: getpid(), requirement: requirement).cdhash)
+        #expect(requirement.text == "cdhash H\"\(own)\"")
+        let another = try PeerCodeIdentity.requirement("cdhash H\"\(String(repeating: "0", count: 40))\"")
+        #expect(!PeerCodeIdentity.check(pid: getpid(), requirement: another).accepted)
+    }
+
     @Test("the same peer is refused against a requirement for another identifier")
     func otherIdentifierRefused() throws {
         let pair = try Self.pair()
