@@ -41,7 +41,7 @@ Offsider began as a fork of AXe (`cameroncooke/axe`) v1.8.0 and is developed ind
 | `./scripts/build.sh dev [--rebuild] [--verbose]` or `make frameworks` | Check the tools (Xcode 26+, XcodeGen, jq, git, 10 GB), clone idb at the pin and build the XCFrameworks, reusing a `build_products/` that matches the pin and Xcode here or in another worktree; logs to `.build/idb-build.log` behind a row per step (`--verbose` streams), `--rebuild` always builds; run once per clone before `swift build` |
 | `swift build` | Build the `offsider` executable |
 | `swift test` | Unit tests; no simulator needed, E2E suites skip |
-| `./scripts/build.sh help` | List build steps (`setup`, `clean`, `generate`, `frameworks`, `install`, `strip`, `xcframeworks`, `dev`, `executable`, `verify-xcframeworks`, `verify-arches`, `helper`, `runner`); bare `./scripts/build.sh` prints where to start |
+| `./scripts/build.sh help` | List build steps (`setup`, `clean`, `generate`, `frameworks`, `install`, `strip`, `xcframeworks`, `dev`, `executable`, `verify-xcframeworks`, `verify-arches`, `helper`, `runner`, `dev-sign`); bare `./scripts/build.sh` prints where to start |
 | `./scripts/build.sh helper` or `make helper` | Rebuild the Android helper dex and manifest after changing `AndroidHelper/`; refuses toolchain drift |
 | `./scripts/build.sh helper --check` or `make helper-check` | Rebuild the helper and compare it with the committed dex and manifest, as CI does |
 | `scripts/release.sh rehearse --version X --adhoc` | Stage, sign, package, verify and Homebrew-gate a local build without secrets; without `--version` it uses `git describe`'s |
@@ -78,6 +78,7 @@ Agents building in parallel use `swift build --scratch-path <dir>` and `swift te
 | `OFFSIDER_REUSE_IDB=1` | `test-runner.sh` runs `build.sh dev` instead of `dev --rebuild`, reusing a `build_products/` that matches the pin and Xcode (here or in another worktree) |
 | `SIMULATOR_UDID` | Pins E2E runs to one simulator |
 | `OFFSIDER_SIGNING_IDENTITY` | Developer ID identity for `scripts/release.sh`; set it in git-ignored `.env` (copy `.env.example`) |
+| `OFFSIDER_DEV_SIGNING_IDENTITY` | Off until a person sets it in git-ignored `.env` (a worktree reads the main checkout's); agents never do. The Apple Development identity (name or hash, never Developer ID) that `make build` or `./scripts/build.sh dev-sign [--scratch-path <dir>]` signs the debug `offsider` with, so a login a signed build saved reads with no Keychain prompt after any rebuild; older logins need `credential remove`, then `credential add`, once, which drops their notes, tags, `--confirm` and joins. Anything signed with it reads those logins too, including a build an agent edited; brokers still admit only the exact build. Plain `swift build` goes back to ad hoc after a source change |
 | `OFFSIDER_RN_E2E=1` | Enables the React Native suites on iOS (`test-runner.sh --rn-ios` sets it) |
 | `OFFSIDER_RN_IOS_APP` | The React Native playground's Release `.app` the iOS suites install |
 | `OFFSIDER_RN_DEBUG_E2E=1` | Enables the RN debug smoke suite (`--rn-debug` sets it; needs Metro on 8742) |
