@@ -35,16 +35,32 @@ extension AndroidBackend {
         try requireDrivable(package, on: serial)
     }
 
-    /// The deny-list, then the allowance's scope, for one package on a phone.
+    /// What no app in front can change first (an app this phone may not drive named, or none named), then the deny-list and the allowance's scope for one package on a phone.
     func requireDrivable(_ package: String, on serial: String) throws {
+        let scope = appScopes[serial]
+        if let scope { try requireDrivableTarget(of: scope, on: serial) }
         if let refusal = SystemAppDenyList.refusal(package, platform: .android) {
-            throw AndroidError.appNotAllowed(serial, refusal: refusal)
+            throw AndroidError.otherAppRefused(serial, refusal: refusal)
         }
-        guard let scope = appScopes[serial] else { return }
+        guard let scope else { return }
         if let ceiling = scope.managedCeiling, !ceiling.contains(package) {
-            throw AndroidError.appNotPermitted(serial, package: package, byManagedPolicy: true)
+            throw AndroidError.otherAppNotPermitted(serial, package: package, byManagedPolicy: true)
         }
-        if scope.needsTarget, scope.target == nil {
+        if !scope.needsTarget, !scope.permitted.contains(package) {
+            throw AndroidError.otherAppNotPermitted(serial, package: package, byManagedPolicy: false)
+        }
+        if let target = scope.target, package != target {
+            throw AndroidError(
+                .otherAppInFront,
+                "\(package) is in front on \(serial), not \(target), the app this command drives, so Offsider did nothing. Bring \(target) to the front, then retry."
+            )
+        }
+    }
+
+    /// The refusals that stand whichever app is in front, so a wait need not sit them out.
+    private func requireDrivableTarget(of scope: AndroidAppScope, on serial: String) throws {
+        guard let target = scope.target else {
+            guard scope.needsTarget else { return }
             throw AndroidError(
                 .appNotAllowed,
                 "\(serial) is allowed for any app, so each command names the app it drives, and none was named. Offsider did nothing. "
@@ -52,14 +68,14 @@ extension AndroidBackend {
                 hint: "offsider devices add"
             )
         }
-        if !scope.needsTarget, !scope.permitted.contains(package) {
-            throw AndroidError.appNotPermitted(serial, package: package, byManagedPolicy: false)
+        if let refusal = SystemAppDenyList.refusal(target, platform: .android) {
+            throw AndroidError.appNotAllowed(serial, refusal: refusal)
         }
-        if let target = scope.target, package != target {
-            throw AndroidError(
-                .appNotAllowed,
-                "\(package) is in front on \(serial), not \(target), the app this command drives, so Offsider did nothing. Bring \(target) to the front, then retry."
-            )
+        if let ceiling = scope.managedCeiling, !ceiling.contains(target) {
+            throw AndroidError.appNotPermitted(serial, package: target, byManagedPolicy: true)
+        }
+        if !scope.needsTarget, !scope.permitted.contains(target) {
+            throw AndroidError.appNotPermitted(serial, package: target, byManagedPolicy: false)
         }
     }
 
