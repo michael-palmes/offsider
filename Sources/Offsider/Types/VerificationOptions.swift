@@ -29,7 +29,7 @@ struct VerificationOptions: ParsableArguments {
     @Option(name: .customLong("verify-timeout"), help: "Seconds to wait for a change per attempt (default: 2).")
     var verifyTimeout: Double?
 
-    @Option(name: .customLong("retries"), help: "Extra attempts when nothing changes, 0 to 3 (default: 1, or 0 for a tap on a switch, checkbox or radio button and for button app-switch). Tap retries switch the tap style. None is sent while the screen is still changing.")
+    @Option(name: .customLong("retries"), help: "Extra attempts when nothing changes, 0 to 3 (default: 1, or 0 for a tap on a switch, checkbox or radio button, for type without --replace and for button app-switch). Tap retries switch the tap style. None is sent while the screen is still changing.")
     var retries: Int?
 
     @Flag(name: .customLong("json"), help: "Print one JSON result to stdout; human text goes to stderr. With --verify, the verify report.")
@@ -63,6 +63,11 @@ struct VerificationOptions: ParsableArguments {
     /// No default retry for a switch, checkbox or radio button: one that changes late would be flipped back by a second tap.
     func resolvedRetries(target: UINode?) -> Int {
         retries ?? (Self.retriesUndo(target) ? 0 : resolvedRetries)
+    }
+
+    /// No default retry for `type`: added text that lands late would be sent twice, a secret from `--stdin` too. `--replace` ends the same however often it runs.
+    func resolvedRetries(replacing: Bool) -> Int {
+        retries ?? (replacing ? resolvedRetries : 0)
     }
 
     static func retriesUndo(_ target: UINode?) -> Bool {

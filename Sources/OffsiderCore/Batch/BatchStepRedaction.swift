@@ -1,23 +1,25 @@
 import Foundation
 
-/// Keeps a `type` step's text out of batch records and errors: the agent wrote the step, so it already knows it.
+/// Keeps a `type` step's text and a `key-sequence` step's keycodes out of batch records and errors: the agent wrote the step, so it already knows it.
 public enum BatchStepRedaction {
     public static let marker = "<redacted>"
 
     /// `type`'s flags; a test checks these and `valueOptions` against its help.
-    public static let flags: Set<String> = ["--stdin", "--replace", "--allow-path", "--verify", "--verify-ignore-text", "--json", "--help", "-h"]
+    public static let flags: Set<String> = ["--stdin", "--replace", "--allow-path", "--topmost", "--unlisted-field", "--verify", "--verify-ignore-text", "--json", "--help", "-h"]
     /// `type`'s options that take a value, kept with their value.
-    public static let valueOptions: Set<String> = ["--file", "--verify-timeout", "--verify-id", "--retries", "--into-id", "--into-label", "--into-label-contains", "--require-focus-id", "--app", "--device", "--wait-lock"]
+    public static let valueOptions: Set<String> = ["--file", "--verify-timeout", "--verify-id", "--retries", "--into-id", "--into-label", "--into-label-contains", "--require-focus-id", "--nth", "--app", "--device", "--wait-lock"]
 
     /// A `type` line with its text as `<N characters>` and every option kept; other lines with their mask and grep selectors as `<N characters>`.
     public static func redactedLine(_ line: String, tokens: [String]?) -> String {
         guard let tokens else {
             if isTypeLine(line) { return "type <unparsed>" }
+            if isKeySequenceLine(line) { return "key-sequence <unparsed>" }
             guard SelectorRedaction.mentionsSelector(line) else { return line }
             let kind = line.prefix { !$0.isWhitespace }
             let named = !kind.isEmpty && kind.allSatisfy { $0.isASCII && ($0.isLetter || $0 == "-") }
             return (named ? "\(kind) " : "") + "<unparsed>"
         }
+        if tokens.first == "key-sequence" { return redactedKeySequence(tokens).joined(separator: " ") }
         guard tokens.first == "type" else {
             let redacted = SelectorRedaction.redacted(tokens)
             return redacted == tokens ? line : redacted.joined(separator: " ")
@@ -42,8 +44,37 @@ public enum BatchStepRedaction {
         return output.joined(separator: " ")
     }
 
-    /// The tokens of a `type` step that are text rather than options or their values.
+    /// The step with its keycodes as `<N keys>`, in `--keycodes 4,5` and `--keycodes=4,5` forms.
+    private static func redactedKeySequence(_ tokens: [String]) -> [String] {
+        var output: [String] = []
+        var takingKeys = false
+        for token in tokens {
+            if takingKeys {
+                output.append(keyCount(token))
+                takingKeys = false
+            } else if token.hasPrefix("--keycodes=") {
+                output.append("--keycodes=" + keyCount(String(token.dropFirst("--keycodes=".count))))
+            } else {
+                takingKeys = token == "--keycodes"
+                output.append(token)
+            }
+        }
+        return output
+    }
+
+    private static func keyCount(_ keycodes: String) -> String {
+        let count = keycodes.split(separator: ",").count
+        return "<\(count) key\(count == 1 ? "" : "s")>"
+    }
+
+    /// The tokens of a `type` step that are text rather than options or their values, or a `key-sequence` step's keycodes.
     public static func textTokens(_ tokens: [String]) -> [String] {
+        if tokens.first == "key-sequence" {
+            return tokens.enumerated().compactMap { index, token in
+                if token.hasPrefix("--keycodes=") { return String(token.dropFirst("--keycodes=".count)) }
+                return index > 0 && tokens[index - 1] == "--keycodes" ? token : nil
+            }
+        }
         guard tokens.first == "type" else { return [] }
         var result: [String] = []
         classify(tokens) { token, isText in
@@ -87,6 +118,10 @@ public enum BatchStepRedaction {
 
     public static func isTypeLine(_ line: String) -> Bool {
         line == "type" || line.hasPrefix("type ") || line.hasPrefix("type\t")
+    }
+
+    public static func isKeySequenceLine(_ line: String) -> Bool {
+        line == "key-sequence" || line.hasPrefix("key-sequence ") || line.hasPrefix("key-sequence\t")
     }
 
     static func characterCount(_ text: String) -> String {

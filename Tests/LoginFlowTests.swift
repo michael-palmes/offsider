@@ -268,6 +268,35 @@ struct LoginFlowTests {
         #expect(report.turnstile == .passed)
     }
 
+    @Test("on a tree that names no focused field, the keyboard goes before the password, so its return can prove the tap landed")
+    func keyboardGoesBeforeThePassword() async throws {
+        let bullets = String(repeating: String(SecureText.bullet), count: password.count)
+        let script = LoginScript(trees: [
+            SignInFixture.tree(),
+            SignInFixture.tree(emailValue: username, lowKeyboard: true),
+            SignInFixture.tree(emailValue: username),
+            SignInFixture.tree(emailValue: username, passwordValue: bullets, submitEnabled: true),
+        ])
+        script.advanceOnTap = true
+        _ = try await run(script)
+        #expect(script.typed == [username, password])
+        #expect(script.tapsBeforeType == [0, 1])
+    }
+
+    @Test("a keyboard with a focused text field named stays up for the password, as the field's own focus will prove the tap")
+    func keyboardStaysWithFocusNamed() async throws {
+        var email = SignInFixture.tree(emailValue: username, lowKeyboard: true)
+        let field = try #require(email.roots[0].children.firstIndex { $0.id == "email-field" })
+        email.roots[0].children[field].state.focused = true
+        let bullets = String(repeating: String(SecureText.bullet), count: password.count)
+        let script = LoginScript(trees: [
+            SignInFixture.tree(), email,
+            SignInFixture.tree(emailValue: username, passwordValue: bullets, submitEnabled: true),
+        ])
+        _ = try await run(script)
+        #expect(script.tapsBeforeType == [0, 0])
+    }
+
     @Test("keys still sliding away after the dismiss tap are waited for, not taken for a keyboard that stayed")
     func keyboardLeavesSlowly() async throws {
         let bullets = String(repeating: String(SecureText.bullet), count: password.count)
@@ -629,6 +658,8 @@ final class LoginScript {
     var foregroundIndex = 0
     /// `InputSecrecy.isSecret` at each type call.
     var secrecy: [Bool] = []
+    /// How many taps came before each type call.
+    var tapsBeforeType: [Int] = []
     var hides = 0
     var advanceOnHide = false
     var advanceOnSleep = false
@@ -647,6 +678,7 @@ final class LoginScript {
 
     func type(_ text: String, _: UINode) {
         typed.append(text)
+        tapsBeforeType.append(taps.count)
         secrecy.append(InputSecrecy.isSecret)
         if index + 1 < trees.count { index += 1 }
     }

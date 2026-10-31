@@ -16,6 +16,8 @@ struct Key: AsyncParsableCommand, VerifiableCommand {
           58-67 - F1-F10
           224-231 - Modifier keys (Ctrl, Shift, Alt, etc.)
         
+        One key goes out with no focus or password check, on any platform, so a shortcut always gets through; key-sequence checks text keys.
+
         Examples:
           offsider key 40 --device DEVICE_ID                    # Press Enter
           offsider key 44 --device DEVICE_ID                    # Press Space

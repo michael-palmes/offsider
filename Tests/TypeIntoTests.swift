@@ -1,3 +1,4 @@
+import ArgumentParser
 import Foundation
 import OffsiderCore
 import OffsiderIOSDevice
@@ -433,6 +434,216 @@ struct TypeIntoTests {
         #expect(error?.exitCode == .failure)
         #expect(error?.userFacingDescription == Self.coveredMessage)
         #expect(backend.session.calls.isEmpty)
+    }
+
+    /// Two label-only fields stacked with a 1 pt overlap, as a form with a negative margin lays them out.
+    static func stacked(focused: String?, keyboard: Bool = false, platform: DevicePlatform = .ios) -> UITree {
+        func field(_ label: String, y: Double) -> UINode {
+            FakeUI.node(.textField, label: label, frame: FakeUI.frame(20, y, 360, 44), state: UIState(focused: focused == label ? true : nil), platform: platform)
+        }
+        return FakeUI.tree(platform: platform, [field("Email", y: 200), field("Password", y: 243)] + (keyboard ? [FakeUI.node(.keyboard, frame: FakeUI.frame(0, 574, 402, 300), platform: platform)] : []))
+    }
+
+    @Test("a neighbour holding focus, sharing a sliver of an id-less field's frame, does not confirm the tap", arguments: [DevicePlatform.ios, .android])
+    func neighbourKeepsFocus(platform: DevicePlatform) async throws {
+        let device = platform == .ios ? Self.simulator : Self.android
+        let error = await #expect(throws: CLIError.self) {
+            _ = try await Self.focus(["--into-label", "Password"], trees: [Self.stacked(focused: "Email", platform: platform)], device: device)
+        }
+        #expect(error?.reason == .focusNotConfirmed)
+    }
+
+    @Test("an id-less field that takes focus on a later poll confirms the tap")
+    func neighbourLosesFocusLate() async throws {
+        let sent = try await Self.focus(
+            ["--into-label", "Password"], trees: [Self.stacked(focused: "Email"), Self.stacked(focused: "Email"), Self.stacked(focused: "Password")], device: Self.simulator
+        )
+        #expect(sent.count == 1)
+    }
+
+    @Test("an id-less wrapper matched by label is confirmed by the text field inside it or a focused web view filling it")
+    func wrapperConfirmed() {
+        let query = AccessibilityQuery.label("Email")
+        let wrapper = FakeUI.node(.group, label: "Email", frame: FakeUI.frame(20, 200, 360, 60))
+        let inner = FakeUI.node(.textField, frame: FakeUI.frame(30, 210, 340, 40), state: UIState(focused: true))
+        #expect(Type.hasFocus(wrapper, query: query, in: FakeUI.tree([inner]), keyboardOnly: false))
+        let web = FakeUI.node(.group, frame: FakeUI.frame(0, 100, 402, 700), state: UIState(focused: true))
+        #expect(Type.hasFocus(wrapper, query: query, in: FakeUI.tree([web]), keyboardOnly: false))
+    }
+
+    @Test("a focused web view around a field proves nothing for a secret, as another of its fields may hold the keys")
+    func webViewProvesNoSecret() {
+        let query = AccessibilityQuery.label("Password")
+        let field = FakeUI.node(.textField, label: "Password", frame: FakeUI.frame(20, 300, 360, 44))
+        let web = FakeUI.node(.group, frame: FakeUI.frame(0, 100, 402, 700), state: UIState(focused: true))
+        let tree = FakeUI.tree([web])
+        #expect(Type.hasFocus(field, query: query, in: tree, keyboardOnly: false))
+        InputSecrecy.$isSecret.withValue(true) {
+            #expect(!Type.hasFocus(field, query: query, in: tree, keyboardOnly: false))
+        }
+    }
+
+    @Test("a keyboard already up and no element named focused warns for plain text, but refuses a secret and types nothing")
+    func unprovenFocusRefusesSecret() async throws {
+        let backend = FakeDeviceBackend(platform: .ios, trees: [Self.form(focused: nil, keyboard: true, platform: .ios)])
+        let error = await #expect(throws: CLIError.self) {
+            try await Self.quiet {
+                try await InputSecrecy.$isSecret.withValue(true) {
+                    try await Type.parse(["--into-id", "second-field", "--replace", "secret", "--device", Self.simulator.rawValue])
+                        .execute(on: DeviceRouter.Route(backend: backend, device: Self.simulator), progress: nil, logger: OffsiderLogger())
+                }
+            }
+        }
+        #expect(error?.reason == .focusNotConfirmed)
+        #expect(backend.session.calls == [.perform(.tapAt(x: 200, y: 322))])
+    }
+
+    /// Twin ids as a wrapper and the text field inside it report them.
+    static func twins(focused: Bool = false, platform: DevicePlatform = .ios) -> UITree {
+        let inner = FakeUI.node(.textField, id: "card", frame: FakeUI.frame(40, 410, 300, 30), state: UIState(focused: focused ? true : nil), platform: platform)
+        let wrapper = FakeUI.node(.textField, id: "card", frame: FakeUI.frame(20, 400, 360, 60), platform: platform, children: [inner])
+        return FakeUI.tree(platform: platform, [wrapper])
+    }
+
+    @Test("--into-id with nested twin ids is ambiguous alone; --nth chooses by tree order and focus on the twin confirms it")
+    func twinIDs() async throws {
+        await #expect(throws: (any Error).self) {
+            _ = try await Self.focus(["--into-id", "card"], trees: [Self.twins(), Self.twins(focused: true)], device: Self.simulator)
+        }
+
+        #expect(try await Self.focus(["--into-id", "card", "--nth", "1"], trees: [Self.twins(), Self.twins(focused: true)], device: Self.simulator) == [.tapAt(x: 200, y: 430)])
+        #expect(try await Self.focus(["--into-id", "card", "--nth", "2"], trees: [Self.twins(), Self.twins(focused: true)], device: Self.simulator) == [.tapAt(x: 190, y: 425)])
+    }
+
+    @Test("--into-id --topmost takes the first twin a hit-test reaches, as tap --topmost does")
+    func twinIDsTopmost() async throws {
+        let backend = HitTestingFakeBackend(platform: .ios, trees: [Self.twins(), Self.twins(focused: true)])
+        let inner = Self.twins().roots[0].children[0].children[0]
+        backend.hits = { _ in inner }
+        var sent: [InputEvent] = []
+        try await Self.quiet {
+            try await Type.parse(["--into-id", "card", "--topmost", "text", "--device", Self.simulator.rawValue]).ensureFocus(
+                backend: backend, device: Self.simulator, logger: OffsiderLogger(), clock: ScriptedClock().poll, warn: { _ in }
+            ) { sent.append($0) }
+        }
+        #expect(sent == [.tapAt(x: 200, y: 430)])
+        #expect(backend.hitTests > 0)
+    }
+
+    @Test("--nth and --topmost need an --into-* selector, exclude each other, and --nth starts at 1")
+    func pickValidation() {
+        for arguments in [["x", "--nth", "1"], ["x", "--topmost"], ["x", "--require-focus-id", "a", "--nth", "1"], ["x", "--into-id", "a", "--nth", "1", "--topmost"], ["x", "--into-id", "a", "--nth", "0"]] {
+            #expect(throws: (any Error).self) { try Type.parse(arguments + ["--device", "emulator-5554"]) }
+        }
+        #expect(throws: Never.self) { try Type.parse(["x", "--into-label", "a", "--nth", "2", "--device", "emulator-5554"]) }
+    }
+
+    /// Takes text as Android and a physical iPhone do, and counts the tree reads before the first text.
+    final class TextSessionBackend: FakeDeviceBackend {
+        let text = RecordingTextInputSession()
+        override func openInputSession(for id: DeviceID) async throws -> any InputSession {
+            CountingSession(inner: text) { [unowned self] in
+                if self.readsBeforeInput == nil { self.readsBeforeInput = self.treeReads }
+            }
+        }
+        private(set) var readsBeforeInput: Int?
+    }
+
+    final class CountingSession: TextInputSession {
+        let inner: RecordingTextInputSession
+        let onText: () -> Void
+        var device: DeviceID { inner.device }
+        init(inner: RecordingTextInputSession, onText: @escaping () -> Void) {
+            self.inner = inner
+            self.onText = onText
+        }
+        func perform(_ event: InputEvent) async throws { try await inner.perform(event) }
+        func typeText(_ text: String) async throws {
+            onText()
+            try await inner.typeText(text)
+        }
+        func replaceText(_ text: String) async throws {
+            onText()
+            try await inner.replaceText(text)
+        }
+        func close() async {}
+    }
+
+    /// Runs `type` under `--verify` as the CLI does; true when it reported a failure.
+    static func verifying(_ arguments: [String], backend: FakeDeviceBackend, device: DeviceID) async throws -> Bool {
+        let command = try Type.parse(arguments + ["--json", "--device", device.rawValue])
+        do {
+            try await VerifyOutput.reportingFailures(command: "type", target: "text", options: command.verification, scope: CommandScope(), write: { _ in }) { progress in
+                try await Self.quiet { try await command.execute(on: DeviceRouter.Route(backend: backend, device: device), progress: progress, logger: OffsiderLogger()) }
+            }
+            return false
+        } catch is ExitCode {
+            return true
+        }
+    }
+
+    static let quietChange = ["--verify-ignore-text", "--verify-timeout", "0.5"]
+
+    @Test("type --verify-ignore-text on a simulator with nothing else changing sends the text once, as a second go would double it")
+    func verifyDoesNotRetypeOnSimulator() async throws {
+        let backend = FakeDeviceBackend(platform: .ios, trees: [Self.form(focused: "first-field", platform: .ios)])
+        #expect(try await Self.verifying(["hello"] + Self.quietChange, backend: backend, device: Self.simulator))
+        #expect(backend.session.calls.count == 1)
+    }
+
+    @Test("type --verify-ignore-text through an input session sends the text once too")
+    func verifyDoesNotRetypeThroughSession() async throws {
+        let backend = TextSessionBackend(platform: .android, trees: [Self.form(focused: "first-field")])
+        #expect(try await Self.verifying(["hello"] + Self.quietChange, backend: backend, device: Self.android))
+        #expect(backend.text.calls == [.typeText("hello")])
+    }
+
+    @Test("--stdin text under --verify is not resent when nothing changes")
+    func verifyDoesNotResendStdin() throws {
+        let options = try Type.parse(["--stdin", "--verify", "--device", "emulator-5554"]).verification
+        #expect(options.resolvedRetries(replacing: false) == 0)
+    }
+
+    @Test("--replace keeps its retry, since it ends the same however often it runs; --retries asks for one outright")
+    func replaceAndExplicitRetries() async throws {
+        let replacing = TextSessionBackend(platform: .android, trees: [Self.form(focused: "first-field")])
+        #expect(try await Self.verifying(["hello", "--replace"] + Self.quietChange, backend: replacing, device: Self.android))
+        #expect(replacing.text.calls == [.replaceText("hello"), .replaceText("hello")])
+        let asked = TextSessionBackend(platform: .android, trees: [Self.form(focused: "first-field")])
+        #expect(try await Self.verifying(["hello", "--retries", "1"] + Self.quietChange, backend: asked, device: Self.android))
+        #expect(asked.text.calls.count == 2)
+    }
+
+    @Test("plain type --verify and --require-focus-id --verify read twice before the text: the focus read, then the baseline", arguments: [["hello"], ["hello", "--require-focus-id", "first-field"]])
+    func verifyReusesFocusRead(arguments: [String]) async throws {
+        let focused = Self.form(focused: "first-field")
+        var changed = focused
+        changed.roots[0].children[0].value = "hello"
+        let backend = TextSessionBackend(platform: .android, trees: [focused, focused, changed])
+        #expect(!(try await Self.verifying(arguments + ["--verify"], backend: backend, device: Self.android)))
+        #expect(backend.readsBeforeInput == 2)
+    }
+
+    @Test("plain type --verify on a simulator reads twice before its keys too")
+    func verifyReusesFocusReadOnSimulator() async throws {
+        let focused = Self.form(focused: "first-field", platform: .ios)
+        var changed = focused
+        changed.roots[0].children[0].value = "hello"
+        let backend = FakeDeviceBackend(platform: .ios, trees: [focused, focused, changed])
+        var readsBeforeKeys: Int?
+        backend.session.onPerform = { _ in readsBeforeKeys = readsBeforeKeys ?? backend.treeReads }
+        #expect(!(try await Self.verifying(["hello", "--verify"], backend: backend, device: Self.simulator)))
+        #expect(readsBeforeKeys == 2)
+    }
+
+    @Test("--into-id --verify reads afresh after its focus tap, as the keyboard may still be moving")
+    func verifyReadsAfterFocusTap() async throws {
+        let focused = Self.form(focused: "second-field")
+        var changed = focused
+        changed.roots[0].children[1].value = "hello"
+        let backend = TextSessionBackend(platform: .android, trees: [Self.form(focused: nil), focused, focused, focused, changed])
+        #expect(!(try await Self.verifying(["hello", "--into-id", "second-field", "--verify"], backend: backend, device: Self.android)))
+        #expect((backend.readsBeforeInput ?? 0) >= 4)
     }
 
     @Test("the focus options exclude each other")

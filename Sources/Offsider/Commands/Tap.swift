@@ -312,10 +312,12 @@ struct Tap: AsyncParsableCommand, VerifiableCommand {
 
     /// `--nth` as given; `--topmost` the match Android draws over the others, else `topmostPick`'s on each read (hit-test on a simulator).
     func matchPicker(query: AccessibilityQuery, backend: any DeviceBackend, device: DeviceID) -> MatchPicker? {
+        Self.matchPicker(nth: nth, topmost: topmost, elementType: elementType, allowOffscreen: allowOffscreen, query: query, backend: backend, device: device)
+    }
+
+    static func matchPicker(nth: Int?, topmost: Bool, elementType: String?, allowOffscreen: Bool, query: AccessibilityQuery, backend: any DeviceBackend, device: DeviceID) -> MatchPicker? {
         if let nth { return { _ in .nth(nth) } }
         guard topmost else { return nil }
-        let elementType = elementType
-        let allowOffscreen = allowOffscreen
         let hitTester = backend as? any PointHitTesting
         return { roots in
             if hitTester == nil, let drawn = Self.drawnTopmost(roots: roots, query: query, elementType: elementType, allowOffscreen: allowOffscreen) {

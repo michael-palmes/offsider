@@ -149,6 +149,35 @@ struct SecureTextTests {
         #expect(!lines.all.contains { $0.contains(Self.sentinel) })
     }
 
+    @Test("login's password logs no character count, as it never logs the password")
+    func secretLogsNoCount() async throws {
+        let backend = FakeDeviceBackend(trees: [Self.focusedField])
+        let (logger, lines) = Self.capturingLogger()
+        try await InputSecrecy.$isSecret.withValue(true) {
+            try await Type.parse([Self.sentinel, "--device", Self.device.rawValue])
+                .execute(on: DeviceRouter.Route(backend: backend, device: Self.device), progress: nil, logger: logger)
+        }
+        #expect(!lines.all.contains { $0.contains("8 character") })
+    }
+
+    @Test("key-sequence logs how many keys, never which")
+    func keySequenceLogsCount() async throws {
+        let backend = FakeDeviceBackend(trees: [Self.focusedField])
+        let (logger, lines) = Self.capturingLogger()
+        try await KeySequence.parse(["--keycodes", "40,41", "--device", Self.device.rawValue])
+            .perform(on: DeviceRouter.Route(backend: backend, device: Self.device), logger: logger)
+        #expect(lines.all.contains { $0.contains("Pressing 2 keys") })
+        #expect(!lines.all.contains { $0.contains("40") && $0.contains("41") })
+    }
+
+    @Test("a key-sequence step's keycodes stay out of its record, in either form and unparsed")
+    func keySequenceRedaction() {
+        #expect(BatchStepRedaction.redactedLine("", tokens: ["key-sequence", "--keycodes", "19,4,22", "--delay", "0.1"]) == "key-sequence --keycodes <3 keys> --delay 0.1")
+        #expect(BatchStepRedaction.redactedLine("", tokens: ["key-sequence", "--keycodes=19"]) == "key-sequence --keycodes=<1 key>")
+        #expect(BatchStepRedaction.redactedLine("key-sequence --keycodes '19", tokens: nil) == "key-sequence <unparsed>")
+        #expect(BatchStepRedaction.textTokens(["key-sequence", "--keycodes", "19,4"]) == ["19,4"])
+    }
+
     @Test("an unsupported character is reported by position, not by the character")
     func unsupportedByPosition() async throws {
         let backend = FakeDeviceBackend(trees: [])

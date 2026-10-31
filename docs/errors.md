@@ -87,7 +87,7 @@ A `--verify --json` report also carries `ignored` (`{node, reason}` entries left
 | `unsupported_key` | 64 | The key has no equivalent on the device | Use a supported key |
 | `unknown_display` | 64 | `--display` names no display on the device | `offsider displays --device <ID>` |
 | `legacy_argument` | 64 | A renamed option or command, such as `--udid` | Use the new name in the message |
-| `secure_field_argument` | 64 | `type` or a batch `type` step aimed text from the command line at a password field | Sign in with `login` and a saved test user, or pass the text with `--stdin` |
+| `secure_field_argument` | 64 | `type`, `key-sequence` or a batch step of either aimed text from the command line at a password field | Sign in with `login` and a saved test user, or pass the text with `--stdin` |
 | `input_file_refused` | 64 | `type --file` or `batch --file` named a file Offsider will not read: not a regular file, over 64 KiB, or under a credentials folder such as `~/.ssh` | Pass a regular text file; `--allow-path` reads a refused location once a person confirms it |
 | `not_verified` | 5 | `--verify` saw no change after the input (reports only) | Check the screen before sending again |
 | `condition_not_met` | 5 | A `wait`, `assert`, `login`, `notifications --wait`, `turnstile --wait` or `screenshot --compare` condition was not met | Read the message. For `login`, the submit button stayed disabled |
@@ -102,7 +102,7 @@ A `--verify --json` report also carries `ignored` (`{node, reason}` entries left
 | `not_a_slider` | 1 | `slider` matched something that is not a slider | Use `--element-type slider` or a narrower selector |
 | `slider_unreadable` | 1 | The slider exposes no numeric value | Use `tap` or `drag` instead |
 | `slider_unverified` | 1 | The slider did not reach the value | Retry, or read its value with `describe-ui` |
-| `no_focused_field` | 1 | `type` (`--replace` too) or a `key-sequence` of letters, digits or punctuation found no text field with focus, or focus on something that takes no text, such as an app's own keypad; nothing was sent | Tap the field first, or use `type --into-id`; tap an app keypad's keys |
+| `no_focused_field` | 1 | `type` (`--replace` too) or a `key-sequence` of letters, digits or punctuation found no text field with focus, focus on something that takes no text, such as an app's own keypad, or a field focused beneath a page; nothing was sent | Tap the field first, or use `type --into-id`; tap an app keypad's keys; on Android, `type --unlisted-field` for a real field hidden from accessibility |
 | `field_not_editable` | 1 | The focused element is not a text field | Tap the text field first |
 | `unsupported_text` | 1 | The text has characters the device cannot type | Remove them, or use `type --replace` on Android |
 | `secure_paste_refused` | 1 | Typing into a password field would use the clipboard | Use `type --replace` |

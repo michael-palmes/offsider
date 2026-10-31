@@ -293,7 +293,7 @@ struct Batch: AsyncParsableCommand {
             }
         } catch {
             var payload = ErrorReporter.payload(for: error, dispatched: sendsInput ? DispatchTracker.current.state : nil)
-            if BatchStepRedaction.isTypeLine(line) {
+            if BatchStepRedaction.isTypeLine(line) || BatchStepRedaction.isKeySequenceLine(line) {
                 let secrets = [line] + BatchStepRedaction.textTokens(parsedTokens ?? [])
                 payload = payload.scrubbed { BatchStepRedaction.scrub($0, removing: secrets) }
             }
