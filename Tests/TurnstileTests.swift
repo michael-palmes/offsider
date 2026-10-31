@@ -223,7 +223,7 @@ struct TurnstileTests {
     @Test("the removed tap options exit 64 and say turnstile only reads", arguments: ["--timeout", "--poll-interval", "--jitter", "--seed"])
     func removedOptionsAreUsageErrors(option: String) {
         let hint = ArgumentHints.hint(for: ["turnstile", option, "2", "--device", "emulator-5554"])
-        #expect(hint == ArgumentHints.Hint(message: "turnstile no longer taps; it reads the widget's state. Hand a checkbox or challenge to a person.", isLegacy: false))
+        #expect(hint == ArgumentHints.Hint(message: "turnstile no longer taps; it reads the widget's state. A checkbox or challenge is for a person: --wait <seconds> carries on when it passes.", isLegacy: false))
         #expect(FailureReason.usage.exitCode.rawValue == 64)
         #expect(throws: (any Error).self) { try Turnstile.parse([option, "2", "--device", "emulator-5554"]) }
     }
@@ -290,5 +290,274 @@ struct TurnstileTests {
         #expect(status.state == .challenge)
         #expect(backend.session.calls.isEmpty)
         #expect(backend.openedSessions.isEmpty)
+    }
+
+    private func status(_ state: TurnstileStatus.State) -> TurnstileStatus {
+        TurnstileStatus(state: state, source: .tree)
+    }
+
+    /// Serves `states` in order, holding the last, on a clock that only sleeps move.
+    @MainActor
+    private func waiting(_ states: [TurnstileStatus.State], seconds: TimeInterval = 60) async throws -> (status: TurnstileStatus, reads: Int, clock: ScriptedClock) {
+        let clock = ScriptedClock()
+        var reads = 0
+        let result = try await Turnstile.waitForPerson(seconds: seconds, clock: clock.poll) {
+            defer { reads += 1 }
+            return status(states[min(reads, states.count - 1)])
+        }
+        return (result, reads, clock)
+    }
+
+    @Test("--wait keeps reading through the person's step and returns the moment it passes")
+    @MainActor
+    func waitReturnsOnPassed() async throws {
+        let result = try await waiting([.checkbox, .checkbox, .verifying, .challenge, .passed])
+        #expect(result.status.state == .passed)
+        #expect(result.reads == 5)
+        #expect(result.clock.now == 4)
+    }
+
+    @Test("--wait on a screen with no widget ends, but a reload mid-tick does not", arguments: [TurnstileStatus.State.absent, .unknown])
+    @MainActor
+    func waitNeedsTheWidgetGoneTwice(gone: TurnstileStatus.State) async throws {
+        let settled = try await waiting([.checkbox, gone, gone])
+        #expect(settled.status.state == gone)
+        #expect(settled.reads == 3)
+
+        let reloaded = try await waiting([.checkbox, gone, .checkbox, .passed])
+        #expect(reloaded.status.state == .passed)
+    }
+
+    @Test("--wait hands back the open step at the deadline, and reads no further")
+    @MainActor
+    func waitStopsAtTheDeadline() async throws {
+        let result = try await waiting([.checkbox], seconds: 3)
+        #expect(result.status.state == .checkbox)
+        #expect(result.status.state.awaitsPerson)
+        #expect(result.reads == 4)
+        #expect(result.clock.now == 3)
+    }
+
+    @Test("--wait 0 reads once and gives a settled state as it is")
+    @MainActor
+    func waitZeroReadsOnce() async throws {
+        let result = try await waiting([.absent], seconds: 0)
+        #expect(result.status.state == .absent)
+        #expect(result.reads == 1)
+    }
+
+    private struct ReadBlip: TransientFailure, Error {
+        var isTransient: Bool { true }
+    }
+
+    @Test("--wait rides out a read that fails for a moment, and gives up only when none ever worked")
+    @MainActor
+    func waitRidesOutTransientFailures() async throws {
+        let clock = ScriptedClock()
+        var reads = 0
+        let recovered = try await Turnstile.waitForPerson(seconds: 60, clock: clock.poll) {
+            reads += 1
+            if reads == 1 { throw ReadBlip() }
+            return status(.passed)
+        }
+        #expect(recovered.state == .passed)
+        await #expect(throws: ReadBlip.self) {
+            _ = try await Turnstile.waitForPerson(seconds: 2, clock: clock.poll) { throw ReadBlip() }
+        }
+    }
+
+    @Test("a read that fails at the deadline still says the step is open")
+    @MainActor
+    func waitKeepsTheOpenStepThroughABlip() async throws {
+        let clock = ScriptedClock()
+        var reads = 0
+        let result = try await Turnstile.waitForPerson(seconds: 1, clock: clock.poll) {
+            reads += 1
+            if reads > 1 { throw ReadBlip() }
+            return status(.checkbox)
+        }
+        #expect(result.state == .checkbox)
+    }
+
+    private struct OtherAppInFront: OtherAppFailure {
+        var isOtherAppInFront: Bool { true }
+    }
+
+    private func inTheWay(otherApp: Bool) -> Error {
+        otherApp ? OtherAppInFront() : CLIError(errorDescription: "Locked.", reason: .deviceLocked)
+    }
+
+    @Test("a phone's other app or lock screen holds the wait until the tick", arguments: [true, false])
+    @MainActor
+    func waitRidesOutThePersonOnTheirWay(otherApp: Bool) async throws {
+        let clock = ScriptedClock()
+        var reads = 0
+        let result = try await Turnstile.waitForPerson(seconds: 60, clock: clock.poll) {
+            reads += 1
+            if reads == 2 { throw inTheWay(otherApp: otherApp) }
+            return status(reads == 1 ? .checkbox : .passed)
+        }
+        #expect(result.state == .passed)
+        #expect(reads == 3)
+    }
+
+    @Test("a phone's other app or lock screen still there at the deadline is the answer, not a tick nobody did", arguments: [true, false])
+    @MainActor
+    func waitReportsWhatIsStillInTheWay(otherApp: Bool) async throws {
+        let clock = ScriptedClock()
+        var reads = 0
+        let error = try #require(await #expect(throws: (any Error).self) {
+            _ = try await Turnstile.waitForPerson(seconds: 2, clock: clock.poll) {
+                reads += 1
+                if reads > 1 { throw inTheWay(otherApp: otherApp) }
+                return status(.checkbox)
+            }
+        })
+        #expect(error.isOtherAppInFront == otherApp)
+        #expect(otherApp || (error as? CLIError)?.reason == .deviceLocked)
+    }
+
+    @Test("a locked phone is read less often, since a read may start xcodebuild; another app in front is not")
+    @MainActor
+    func waitBacksOffOnALockedPhone() async throws {
+        for (otherApp, gap) in [(false, 15.0), (true, 1.0)] {
+            let clock = ScriptedClock()
+            var reads = 0
+            _ = try await Turnstile.waitForPerson(seconds: 60, clock: clock.poll) {
+                reads += 1
+                if reads == 1 { throw inTheWay(otherApp: otherApp) }
+                return status(.passed)
+            }
+            #expect(clock.now == gap)
+        }
+    }
+
+    @Test("several checkboxes hold the wait, as login's hint needs, and stand as the answer at the deadline")
+    @MainActor
+    func waitHoldsThroughSeveralCheckboxes() async throws {
+        let several = UITree(platform: .android, device: "emulator-5554", roots: roots([checkboxWidget(), checkboxWidget()]))
+        let route = { (trees: [UITree]) in
+            DeviceRouter.Route(backend: FakeDeviceBackend(trees: trees), device: DeviceID(rawValue: "emulator-5554", platform: .android))
+        }
+        let ticked = UITree(platform: .android, device: "emulator-5554", roots: roots([]))
+        let command = try Turnstile.parse(["--wait", "30", "--device", "emulator-5554"])
+        let status = try await command.readStatus(on: route([several, ticked, ticked]), clock: ScriptedClock().poll)
+        #expect(status.state == .absent)
+
+        let short = try Turnstile.parse(["--wait", "2", "--device", "emulator-5554"])
+        let error = try #require(await #expect(throws: CLIError.self) {
+            _ = try await short.readStatus(on: route([several]), clock: ScriptedClock().poll)
+        })
+        #expect(error.reason == .selectorAmbiguous)
+    }
+
+    @Test("another app holding the wait up is said once, and a lock screen or a single read says nothing")
+    @MainActor
+    func waitNotesAnotherAppOnce() async throws {
+        var notes = 0
+        var reads = 0
+        _ = try await Turnstile.waitForPerson(seconds: 60, clock: ScriptedClock().poll, onOtherApp: { notes += 1 }) {
+            reads += 1
+            if reads <= 2 { throw inTheWay(otherApp: true) }
+            if reads == 3 { return status(.checkbox) }
+            if reads == 4 { throw inTheWay(otherApp: true) }
+            return status(.passed)
+        }
+        #expect(notes == 1)
+
+        notes = 0
+        reads = 0
+        _ = try await Turnstile.waitForPerson(seconds: 60, clock: ScriptedClock().poll, onOtherApp: { notes += 1 }) {
+            reads += 1
+            if reads == 1 { throw inTheWay(otherApp: false) }
+            return status(.passed)
+        }
+        #expect(notes == 0)
+
+        await #expect(throws: (any Error).self) {
+            _ = try await Turnstile.waitForPerson(seconds: 0, clock: ScriptedClock().poll, onOtherApp: { notes += 1 }) { throw inTheWay(otherApp: true) }
+        }
+        #expect(notes == 0)
+    }
+
+    @Test("--wait stops at once on a failure that will not clear, such as an app the phone never allows", arguments: [
+        CLIError.deviceNotFound(id: "emulator-5554"),
+        CLIError(errorDescription: "Not among the apps allowed.", reason: .appNotAllowed),
+    ])
+    @MainActor
+    func waitStopsOnFatalFailure(failure: CLIError) async throws {
+        let clock = ScriptedClock()
+        var reads = 0
+        await #expect(throws: CLIError.self) {
+            _ = try await Turnstile.waitForPerson(seconds: 60, clock: clock.poll) {
+                reads += 1
+                throw failure
+            }
+        }
+        #expect(reads == 1)
+    }
+
+    @Test("--wait running out exits 5, says nobody did it, and carries the ask and the same wait", arguments: [
+        (TurnstileStatus.State.checkbox, "nobody has ticked it", PersonAsk.tickTurnstile),
+        (TurnstileStatus.State.challenge, "nobody has solved it", PersonAsk.solveTurnstile),
+        (TurnstileStatus.State.verifying, "still checking", PersonAsk.finishTurnstile),
+    ])
+    func waitRunningOut(state: TurnstileStatus.State, says: String, ask: String) {
+        let error = Turnstile.stepStillOpen(state, seconds: 90, app: nil)
+        #expect(error.exitCode.rawValue == 5)
+        #expect(error.userFacingDescription.contains(says))
+        #expect(error.userFacingDescription.contains("after 90 s"))
+        #expect(error.userFacingDescription.contains("Nothing was sent."))
+        #expect(error.ask == ask)
+        #expect(error.hint == "offsider turnstile --wait 600 --device <DEVICE_ID>")
+    }
+
+    @Test("a wait on a phone names its app, as every command there must")
+    func waitNamesThePhonesApp() {
+        #expect(Turnstile.waitCommand(app: "com.example.app") == "offsider turnstile --wait 600 --device <DEVICE_ID> --app com.example.app")
+        #expect(Turnstile.stepStillOpen(.checkbox, seconds: 5, app: "com.example.app").hint?.hasSuffix("--app com.example.app") == true)
+    }
+
+    @Test("--wait takes 0 to 900 seconds")
+    func waitBounds() throws {
+        #expect(try Turnstile.parse(["--wait", "0", "--device", "emulator-5558"]).waitSeconds == 0)
+        #expect(try Turnstile.parse(["--wait", "900", "--device", "emulator-5558"]).waitSeconds == 900)
+        #expect(parseMessage(["--wait", "901"]).contains("--wait must be from 0 to 900"))
+        #expect(parseMessage(["--wait=-1"]).contains("--wait must be from 0 to 900"))
+    }
+
+    @Test("--wait on a device reads until it passes and sends no input")
+    @MainActor
+    func waitSendsNothing() async throws {
+        let passed = node(role: .group, id: "cf-chl-widget-9jc94", frame: UIFrame(x: 24, y: 431, width: 365, height: 66), children: [
+            node(role: .group, id: "a1b2c3", label: "Success!", frame: UIFrame(x: 32, y: 448, width: 93, height: 31)),
+        ])
+        let backend = FakeDeviceBackend(trees: [
+            UITree(platform: .android, device: "emulator-5554", roots: roots([checkboxWidget()])),
+            UITree(platform: .android, device: "emulator-5554", roots: roots([passed])),
+        ])
+        let route = DeviceRouter.Route(backend: backend, device: DeviceID(rawValue: "emulator-5554", platform: .android))
+        let command = try Turnstile.parse(["--wait", "30", "--device", "emulator-5554"])
+
+        let status = try await command.readStatus(on: route, clock: ScriptedClock().poll)
+
+        #expect(status.state == .passed)
+        #expect(backend.treeReads == 2)
+        #expect(backend.session.calls.isEmpty)
+        #expect(backend.openedSessions.isEmpty)
+    }
+
+    @Test("--wait on a device that nobody ticks exits 5 and sends no input")
+    @MainActor
+    func waitRunsOutOnDevice() async throws {
+        let backend = FakeDeviceBackend(trees: [UITree(platform: .android, device: "emulator-5554", roots: roots([checkboxWidget()]))])
+        let route = DeviceRouter.Route(backend: backend, device: DeviceID(rawValue: "emulator-5554", platform: .android))
+        let command = try Turnstile.parse(["--wait", "2", "--device", "emulator-5554"])
+
+        let error = try #require(await #expect(throws: CLIError.self) { try await command.readStatus(on: route, clock: ScriptedClock().poll) })
+
+        #expect(error.reason == .conditionNotMet)
+        #expect(error.ask == PersonAsk.tickTurnstile)
+        #expect(backend.session.calls.isEmpty)
     }
 }

@@ -27,6 +27,13 @@ enum ErrorReporter {
     /// Set once on the main thread before the command runs; the watchdog reads it from its own queue.
     nonisolated(unsafe) static var context = Context(command: nil, wantsJSON: false, device: nil)
 
+    /// The name a person knows the command's device by, once something has read it; the watchdog's exit carries no ask, so never reads it.
+    nonisolated(unsafe) private(set) static var deviceName: String?
+
+    static func noteDeviceName(_ name: String?) {
+        deviceName = name
+    }
+
     static func prepare(command: (any ParsableCommand)?, arguments: [String]) {
         let name = command.map { CommandPath.of($0) } ?? arguments.first { !$0.hasPrefix("-") }
         let wantsJSON = (command as? any JSONReportingCommand)?.wantsJSON ?? arguments.contains("--json")
@@ -34,16 +41,19 @@ enum ErrorReporter {
         ErrorAudience.configure(jsonOutput: wantsJSON)
     }
 
-    /// The JSON `error` object for `error`; `<DEVICE_ID>` in a hint becomes the `--device` value.
-    static func payload(for error: any Error, dispatched: DispatchState? = nil) -> ErrorPayload {
+    /// The JSON `error` object for `error`; `<DEVICE_ID>` in a hint becomes the `--device` value, and an ask names the device.
+    static func payload(for error: any Error, dispatched: DispatchState? = nil, deviceName: String? = ErrorReporter.deviceName) -> ErrorPayload {
         let error = (error as? ReportedFailure)?.underlying ?? error
-        let payload: ErrorPayload
+        var payload: ErrorPayload
         if let failure = error as? any OffsiderFailure {
             payload = ErrorPayload(failure, dispatched: dispatched)
         } else if OffsiderCommand.exitCode(for: error) == .validationFailure {
             payload = ErrorPayload(reason: .usage, message: OffsiderCommand.message(for: error), dispatched: dispatched)
         } else {
             payload = ErrorPayload(reason: .commandFailed, message: OffsiderCommand.message(for: error), dispatched: dispatched)
+        }
+        if let ask = payload.ask {
+            payload = payload.replacingAsk(PersonAsk.filled(ask, name: deviceName, id: context.device))
         }
         guard let device = context.device, let hint = payload.hint, hint.contains("<DEVICE_ID>") else { return payload }
         return payload.replacingHint(hint.replacingOccurrences(of: "<DEVICE_ID>", with: device))
@@ -66,7 +76,8 @@ enum ErrorReporter {
 
     static func exit(_ error: any Error) -> Never {
         if let reported = error as? ReportedFailure {
-            writeErrorLine(OffsiderCommand.message(for: reported.underlying), hint: payload(for: reported.underlying).hint)
+            let payload = payload(for: reported.underlying)
+            writeErrorLine(OffsiderCommand.message(for: reported.underlying), hint: payload.hint, ask: payload.ask)
             Darwin.exit(reported.exitCode.rawValue)
         }
         if error is ExitCode || OffsiderCommand.exitCode(for: error) == .success {
@@ -75,7 +86,7 @@ enum ErrorReporter {
         if let failure = error as? any OffsiderFailure {
             let payload = payload(for: error)
             writeEnvelopeIfWanted(payload)
-            writeErrorLine(OffsiderCommand.message(for: error), hint: payload.hint)
+            writeErrorLine(OffsiderCommand.message(for: error), hint: payload.hint, ask: payload.ask)
             Darwin.exit(failure.exitCode.rawValue)
         }
         let payload = payload(for: error)
@@ -110,13 +121,19 @@ enum ErrorReporter {
         UntrustedPaths.appending(payload.untrustedPaths(), to: ErrorEnvelope(command: command, error: payload).jsonLine())
     }
 
-    /// A person sees the cause in bold red and a `Try` line; an agent the plain `Error:` and `Try:` lines.
-    static func writeErrorLine(_ message: String, hint: String? = nil) {
+    /// A person sees the cause in bold red and a `Try` line; an agent the plain `Error:`, `Ask:` and `Try:` lines.
+    static func writeErrorLine(_ message: String, hint: String? = nil, ask: String? = nil) {
         Console.current.release()
         let text = ErrorAudience.current == .person
             ? PersonRenderer.error(message, hint: hint, canvas: Console.current.err.canvas)
-            : errorText(message) + (context.wantsJSON ? "" : hintText(hint, message: message, style: .plain))
+            : errorText(message) + (context.wantsJSON ? "" : askText(ask) + hintText(hint, message: message, style: .plain))
         Console.current.data(text, to: .err)
+    }
+
+    /// `Ask: <request>` and a newline; empty when the failure needs nobody's hands.
+    static func askText(_ ask: String?) -> String {
+        guard let ask, !ask.isEmpty else { return "" }
+        return "Ask: \(TerminalText.line(ask, cap: TerminalText.maxErrorCharacters, keepsTab: false))\n"
     }
 
     /// `Error: <message>` and a newline, with control and bidi characters escaped, continuation lines indented and at most 4 KiB shown.

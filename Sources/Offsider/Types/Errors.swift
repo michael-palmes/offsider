@@ -19,6 +19,7 @@ struct CLIError: LocalizedError, UserFacingError, OffsiderFailure {
     let candidates: [FailureCandidate]
     let coveredBy: CoverReport?
     let users: [FailureUser]
+    let ask: String?
 
     init(
         errorDescription: String,
@@ -26,7 +27,8 @@ struct CLIError: LocalizedError, UserFacingError, OffsiderFailure {
         hint: String? = nil,
         candidates: [FailureCandidate] = [],
         coveredBy: CoverReport? = nil,
-        users: [FailureUser] = []
+        users: [FailureUser] = [],
+        ask: String? = nil
     ) {
         userFacingDescription = errorDescription
         self.reason = reason
@@ -34,6 +36,7 @@ struct CLIError: LocalizedError, UserFacingError, OffsiderFailure {
         self.candidates = candidates
         self.coveredBy = coveredBy
         self.users = users
+        self.ask = ask ?? reason.personAsk
     }
 
     static func deviceNotFound(id: String) -> CLIError {
