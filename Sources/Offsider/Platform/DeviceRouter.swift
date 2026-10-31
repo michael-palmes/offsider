@@ -49,6 +49,7 @@ enum DeviceRouter {
     ) async throws -> Route {
         _ = try MaskConfigs.current()
         let route = try await route(rawID, logger: logger, host: host, scope: scope)
+        OutputMasks.current.learn(revealed: await TreeCache.revealedSecrets(for: route.device, backend: route.backend))
         if locking {
             try await claims.claim(route.device)
         }
@@ -69,6 +70,7 @@ enum DeviceRouter {
         let route = try await watchdog.guardingSetup(device: rawID) {
             try await route(rawID, logger: logger, host: host, scope: scope)
         }
+        OutputMasks.current.learn(revealed: await TreeCache.revealedSecrets(for: route.device, backend: route.backend))
         if locking {
             try await claims.claim(route.device)
         }

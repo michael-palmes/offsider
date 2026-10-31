@@ -299,8 +299,7 @@ struct Wait: AsyncParsableCommand {
 
     var condition: WaitCondition { condition(gate: nil, platform: .ios) }
 
-    /// `platform` picks the draw hold: Android's tree can change well before its pixels, and an explicit `--settle-by` says what to watch.
-    /// `revealed` keeps a `--has-value` miss from printing a revealed password field's text.
+    /// `platform` picks the draw hold: Android's tree can change well before its pixels, and an explicit `--settle-by` says what to watch; `revealed` keeps a `--has-value` miss from printing one's text.
     func condition(gate: SettleGate?, platform: DevicePlatform, revealed: RevealedSecrets? = nil) -> WaitCondition {
         if waitsForAny {
             let queries = selector.queries

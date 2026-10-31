@@ -134,8 +134,7 @@ enum ScreenCapture {
         var unproven: String? = nil
     }
 
-    /// Why this tree cannot prove its masks: `truncated` when the device cut it short; on Android, `modal` when a modal window, but an empty or opaque LogBox one,
-    /// hides the windows beneath from the tree, and `no-windows` when the read lists no windows, as uiautomator's does, so a modal cannot be told.
+    /// Why this tree cannot prove its masks: `truncated` by the device; on Android, `no-windows` when uiautomator lists none, or `modal` when a window, but an empty or opaque LogBox one, hides those beneath.
     nonisolated static func unproven(_ tree: UITree) -> String? {
         if tree.sourceTruncated { return "truncated" }
         guard tree.platform == .android else { return nil }

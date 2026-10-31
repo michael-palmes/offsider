@@ -125,8 +125,7 @@ struct ElementSelectorOptions: ParsableArguments {
         try SelectorQuery.validate(ids: elementIDs, labels: elementLabels, labelsContaining: elementLabelsContaining, values: elementValues, allowingSeveral: true)
     }
 
-    /// Present when a qualifying candidate exists, even several; on-screen only unless `--allow-offscreen` or the tree has no screen.
-    /// `revealed` keeps a `--has-value` miss from printing a revealed password field's text.
+    /// Present when a qualifying candidate exists, even several; on-screen only unless `--allow-offscreen` or the tree has no screen; `revealed` keeps a `--has-value` miss from printing one's text.
     func probe(for query: AccessibilityQuery, revealed: RevealedSecrets? = nil) -> (UITree) -> ElementProbe {
         let elementType = elementType
         let allowOffscreen = allowOffscreen

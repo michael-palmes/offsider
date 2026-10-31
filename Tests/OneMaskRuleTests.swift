@@ -122,6 +122,14 @@ struct OneMaskRuleTests {
         #expect(shown.children[0].value == "••••")
     }
 
+    @Test("a mask's toggle value is a state no label copies, so a parent's digits stay")
+    func toggleValueStaysOut() {
+        let toggle = FakeUI.node(.switch, id: "plan-switch", value: "1", platform: .android)
+        let row = FakeUI.node(.button, label: "Plan 1 of 12", platform: .android, children: [toggle])
+        let shown = UITree(platform: .android, device: "x", roots: [row]).redacted(TreeValueMask(ids: ["plan-switch"])).roots[0]
+        #expect(shown.label == "Plan 1 of 12")
+    }
+
     @Test("nesting costs nothing to count: with no element masks a tree is unchanged and counts nothing")
     func noMasksNoChange() {
         let tree = Self.screen()
@@ -168,6 +176,72 @@ struct OneMaskRuleTests {
                 let cover = CoverReport(CoverVerdict(cover: rows[0], evidence: .hitTest, isConfident: true, screen: nil))
                 #expect(cover.label == "Balance [redacted] Details")
             }
+        }
+    }
+
+    @Test("after a read, a message hides a revealed field's text in a label that copies it")
+    func messageHidesRevealedCopy() async throws {
+        let field = FakeUI.node(.textField, id: "pin", value: "4471", platform: .android)
+        let row = FakeUI.node(.button, label: "PIN 4471", frame: FakeUI.frame(0, 100, 300, 80), platform: .android, children: [field])
+        let backend = FakeDeviceBackend(platform: .android, trees: [FakeUI.tree(platform: .android, device: Self.device.rawValue, [row])])
+        let record = SecureFieldRecord(platform: .android, device: Self.device.rawValue, writtenAt: Date(), bootMarker: nil, entries: [.init(id: "pin", frame: nil)])
+        let masks = OutputMasks { .none }
+        masks.learn(revealed: RevealedSecrets(record))
+
+        try await TreeCacheFixture().run {
+            try await OutputMasks.$current.withValue(masks) {
+                let read = try await backend.accessibilityTree(for: Self.device)
+                #expect(MatchSummary.shownLabel(of: read.roots[0].children[0]) == "PIN [redacted]")
+            }
+        }
+    }
+
+    @Test("a wait's gate compares what the masks hide, not what reads learnt, so a label elsewhere that matches a hidden one is no effect")
+    func gateIgnoresLearntLabels() async throws {
+        let inside = FakeUI.node(.text, label: "Details", frame: FakeUI.frame(0, 100, 300, 20))
+        let row = FakeUI.node(.button, id: "secret-row", frame: FakeUI.frame(0, 100, 300, 80), children: [inside])
+        let other = FakeUI.node(.text, label: "Details", frame: FakeUI.frame(0, 300, 300, 20))
+        let tree = FakeUI.tree([row, other])
+        let mask = TreeValueMask(ids: ["secret-row"])
+        let gate = try #require(SettleGate(sinceInput: 0.1, before: tree.redacted(mask, scope: .cache)))
+        let masks = OutputMasks { mask }
+        masks.note(tree)
+
+        OutputMasks.$current.withValue(masks) {
+            #expect(!gate.showsEffect(in: tree, ignoreValues: false))
+        }
+    }
+
+    @Test("a rotating code is never remembered, since a pattern alone hides it")
+    func noteSkipsPatternOnlyLabels() throws {
+        let mask = TreeValueMask(ids: ["other"], patterns: [try MaskPlan.compile(#"rc-\d{4}"#)])
+        let masks = OutputMasks { mask }
+        masks.note(FakeUI.tree([FakeUI.node(.text, label: "Offer rc-5521")]))
+        #expect(masks.mask.nested == NestedMasks())
+        #expect(masks.mask.shownLabel("Offer rc-5521", id: nil) == "Offer [redacted]")
+    }
+
+    @Test("--verify on the fixture prints no planted text, whatever changed")
+    func verifyPrintsNoSecret() async throws {
+        func screen(_ balance: String, _ code: String) -> UITree {
+            let row = FakeUI.node(.button, id: "balance-row", label: "Balance \(balance) Details", frame: FakeUI.frame(0, 100, 300, 80), platform: .android, children: [
+                FakeUI.node(.text, id: "balance", label: balance, frame: FakeUI.frame(0, 120, 100, 20), platform: .android),
+                FakeUI.node(.text, id: "code", label: code, frame: FakeUI.frame(0, 140, 100, 20), platform: .android),
+            ])
+            return FakeUI.tree(platform: .android, device: Self.device.rawValue, [row])
+        }
+        let backend = FakeDeviceBackend(platform: .android, trees: [screen("$12", "rc-5521"), screen("$12", "rc-5521"), screen("$99", "rc-5521")], screen: UIScreenInfo(width: 402, height: 874, scale: 3))
+        let fixture = try TreeCacheFixture()
+
+        let outcome = try await fixture.run {
+            try await Self.masked(MaskConfig(ids: ["balance"], valuePatterns: [#"rc-[0-9]{4}"#])) {
+                try await Verifier.run(styles: [nil], timeout: .seconds(1), dependencies: .live(backend: backend, device: Self.device)) { _ in }
+            }
+        }
+
+        #expect(outcome.verified)
+        for secret in Self.planted + ["$99"] {
+            #expect(!"\(outcome.summary ?? "") \(outcome.changes) \(outcome.ignored)".contains(secret), "\(outcome)")
         }
     }
 

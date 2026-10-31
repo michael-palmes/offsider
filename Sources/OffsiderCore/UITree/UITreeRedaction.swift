@@ -112,16 +112,14 @@ public struct TreeValueMask: @unchecked Sendable {
     /// A label of the element with `id` as tree output shows it: masked when a mask names the element, else with secrets redacted.
     public func shownLabel(_ label: String, id: String?) -> String {
         if let masked = masked(label, id: id) { return masked }
-        if let rewritten = rewritten(label) { return rewritten }
-        return redactedText(label)
+        return redactedText(rewritten(label) ?? label)
     }
 
     /// A page or window name, which keeps `LogRedactor`'s email, key-value and JWT passes and adds the mask's patterns.
     public func contextLabel(_ label: String, id: String?) -> String {
         if let masked = masked(label, id: id) { return masked }
-        if let rewritten = rewritten(label) { return rewritten }
         var count = 0
-        return maskText(LogRedactor.redact(label).text, count: &count)
+        return maskText(LogRedactor.redact(rewritten(label) ?? label).text, count: &count)
     }
 
     /// `text` with secrets and the mask's patterns replaced, for a message that holds screen text but names no element.
@@ -208,6 +206,7 @@ public final class OutputMasks: @unchecked Sendable {
     private let lock = NSLock()
     private var cached: TreeValueMask?
     private var nested = NestedMasks()
+    private var revealed: RevealedSecrets?
 
     public init(_ read: @escaping @Sendable () -> TreeValueMask) {
         self.read = read
@@ -226,18 +225,25 @@ public final class OutputMasks: @unchecked Sendable {
     public var base: TreeValueMask {
         lock.lock()
         defer { lock.unlock() }
-        if let cached { return cached }
-        let mask = read()
+        var mask = cached ?? read()
         cached = mask
+        if let revealed { mask.revealed = revealed }
         return mask
+    }
+
+    /// The device's revealed password fields, so a message hides a label that copies one's text.
+    public func learn(revealed: RevealedSecrets?) {
+        lock.lock()
+        defer { lock.unlock() }
+        self.revealed = revealed.flatMap { $0.isEmpty ? nil : $0 }
     }
 
     /// Remembers what `tree`'s nesting hides, so a later message about one of its elements hides it too.
     public func note(_ tree: UITree) {
         let base = base
-        guard base.hidesElements else { return }
+        guard base.hidesElements || base.revealed != nil else { return }
         var seen = NestedMasks()
-        let shown = tree.redacted(base)
+        let shown = tree.redacted(base, scope: .cache)
         for (raw, shown) in zip(tree.roots, shown.roots) {
             Self.collect(raw, shown: shown, inherited: false, mask: base, into: &seen)
         }
@@ -329,7 +335,7 @@ extension UITree {
         }
         guard isMasked || revealed else { return }
         if isMasked, let label = original.label, let shown = node.label, label != shown { hiddenBelow.append((label, shown)) }
-        for text in [original.value, original.text].compactMap({ $0 }) where text.contains(where: { !$0.isWhitespace }) {
+        for text in [node.role.valueIsScreenText ? original.value : nil, original.text].compactMap({ $0 }) where text.contains(where: { !$0.isWhitespace }) {
             hiddenBelow.append((text, LogRedactor.marker))
         }
     }
@@ -407,6 +413,13 @@ extension UINative {
             attributes.roleDescription = attributes.roleDescription.map(transform)
             self = .android(attributes)
         }
+    }
+}
+
+extension UIRole {
+    /// A toggle's or range's value is a state such as `1` or `25%`, which no label copies.
+    var valueIsScreenText: Bool {
+        ![.switch, .checkbox, .radioButton, .slider, .progress].contains(self)
     }
 }
 

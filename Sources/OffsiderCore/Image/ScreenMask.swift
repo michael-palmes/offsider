@@ -161,8 +161,7 @@ public struct MaskTargets: Equatable, Sendable {
         groups.append(MaskGroup(kind: kind, nodes: matches))
     }
 
-    /// Places matches by tree position: frames painted beneath a page, and with `skip` the skippable ones left out of `frames`; an unplaceable group is painted whole.
-    /// A match counts as beneath only when every identical copy of it is, as a tree can repeat an element nested in itself or on two pages.
+    /// Places matches by tree position: frames painted beneath a page, and with `skip` the skippable ones left out of `frames`; an unplaceable group is painted whole, and a match standing for several identical copies is beneath only when all are.
     public mutating func placeBeneath(in tree: UITree, skip: Bool) -> (painted: [MaskKind: [UIFrame?]], skipped: [MaskKind: Int]) {
         guard groups.contains(where: { !$0.nodes.isEmpty }) else { return ([:], [:]) }
         let stack = ScreenStack.build(roots: tree.roots, viewport: tree.viewport)
