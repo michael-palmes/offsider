@@ -111,16 +111,13 @@ struct NotificationsCommand: AsyncParsableCommand {
 
     /// `--app`, else offsider.login.json's package, else the allowance's only pinned app; on a phone the allowance must permit it.
     static func app(_ explicit: String?, route: DeviceRouter.Route, gate: DevicePolicyGate = .current, profile: () -> LoginProfile? = { (try? LoginProfiles.load(project: nil, warn: { _ in })) ?? nil }) throws -> String {
-        let pinned = route.allowance.flatMap { $0.pinnedApps.count == 1 ? $0.pinnedApps[0] : nil }
-        guard let app = explicit ?? profile()?.package.flatMap({ $0.isEmpty ? nil : $0 }) ?? pinned else {
-            throw CLIError(
+        try route.app(named: explicit, gate: gate, profile: profile) {
+            CLIError(
                 errorDescription: "notifications needs the app: pass --app <package>, or name it in offsider.login.json.",
                 reason: .usage,
                 hint: "offsider notifications --app <package> --device \(route.device.rawValue)"
             )
         }
-        if let allowance = route.allowance { try gate.requireApp(app, on: allowance) }
-        return app
     }
 
     static func lines(_ notifications: [PostedNotification], app: String, waited: String?) -> String {

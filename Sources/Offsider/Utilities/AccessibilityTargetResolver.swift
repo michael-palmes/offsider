@@ -732,13 +732,8 @@ struct AccessibilityTargetResolver {
 
     /// The box around a keyboard's nodes smaller than a backdrop, since a floating keyboard's window and root view span the screen around its strip of keys.
     private static func keyArea(in roots: [UINode], viewport: UIFrame) -> UIFrame? {
-        let frames = roots.filter { $0.role == .keyboard }.flatMap { $0.flattened() }.compactMap(\.frame)
-            .filter { $0.width > 0 && $0.height > 0 && !isBackdrop($0, in: viewport) }
-        guard let first = frames.first else { return nil }
-        return frames.dropFirst().reduce(first) { box, frame in
-            let left = min(box.x, frame.x), top = min(box.y, frame.y)
-            return UIFrame(x: left, y: top, width: max(box.x + box.width, frame.x + frame.width) - left, height: max(box.y + box.height, frame.y + frame.height) - top)
-        }
+        UIFrame.union(of: roots.filter { $0.role == .keyboard }.flatMap { $0.flattened() }.compactMap(\.frame)
+            .filter { $0.width > 0 && $0.height > 0 && !isBackdrop($0, in: viewport) })
     }
 
     /// Covers at least 80 percent of the viewport, as a modal backdrop or scrim does; a banner covers far less.

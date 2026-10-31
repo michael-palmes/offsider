@@ -86,21 +86,7 @@ public enum KeyboardDismiss {
             let keys = keyboard.flattened().compactMap(\.frame).filter { candidate in
                 candidate.width > 0 && candidate.height > 0 && candidate != frame && !isBackdrop(candidate, in: viewport)
             }
-            return union(keys) ?? frame
-        }
-    }
-
-    private static func union(_ frames: [UIFrame]) -> UIFrame? {
-        guard let first = frames.first else { return nil }
-        return frames.dropFirst().reduce(first) { box, frame in
-            let left = min(box.x, frame.x)
-            let top = min(box.y, frame.y)
-            return UIFrame(
-                x: left,
-                y: top,
-                width: max(box.x + box.width, frame.x + frame.width) - left,
-                height: max(box.y + box.height, frame.y + frame.height) - top
-            )
+            return UIFrame.union(of: keys) ?? frame
         }
     }
 
