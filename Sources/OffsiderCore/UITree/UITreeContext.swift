@@ -142,10 +142,12 @@ public struct UITreeContext: Equatable, Sendable {
     public var hidden: Int?
     /// Up to five of them, on-screen and larger first; nil when the source does not name them.
     public var hiddenBranches: [HiddenBranch]?
+    /// Elements the app draws but hides from accessibility, listed because they fill an empty part of the screen; nil when there are none.
+    public var filled: Int?
 
     public init(
         window: Window? = nil, keyboard: Bool = false, logBox: LogBox? = nil, presented: Presented? = nil, staleFrame: StaleFrame? = nil,
-        hidden: Int? = nil, hiddenBranches: [HiddenBranch]? = nil
+        hidden: Int? = nil, hiddenBranches: [HiddenBranch]? = nil, filled: Int? = nil
     ) {
         self.window = window
         self.keyboard = keyboard
@@ -154,6 +156,7 @@ public struct UITreeContext: Equatable, Sendable {
         self.staleFrame = staleFrame
         self.hidden = hidden
         self.hiddenBranches = hiddenBranches
+        self.filled = filled
     }
 
     public init(tree: UITree) {
@@ -170,7 +173,8 @@ public struct UITreeContext: Equatable, Sendable {
             presented: tree.presented,
             staleFrame: tree.staleFrame,
             hidden: tree.hiddenBranches,
-            hiddenBranches: tree.namedHiddenBranches
+            hiddenBranches: tree.namedHiddenBranches,
+            filled: tree.filledFromGaps
         )
     }
 
@@ -205,7 +209,7 @@ public struct UITreeContext: Equatable, Sendable {
         return Window(title: top.title, kind: kind, package: top.package)
     }
 
-    /// `# window: Lab Toggles (modal)` (`(modal, empty)` for an empty dialog), `# keyboard shown`, `# logbox: 2 logs`, `# presented: "Cancel" from PhotosPicker`, `# stale frame: ...` and `# hidden: 2 branches not visible to the user`, each only when it applies.
+    /// `# window: Lab Toggles (modal)` (`(modal, empty)` for an empty dialog), `# keyboard shown`, `# logbox: 2 logs`, `# presented: "Cancel" from PhotosPicker`, `# stale frame: ...`, `# hidden: 2 branches not visible to the user` and `# filled: 12 elements the app hides from accessibility`, each only when it applies.
     public var headerLines: [String] {
         var lines: [String] = []
         if let window, window.kind != .app {
@@ -226,6 +230,9 @@ public struct UITreeContext: Equatable, Sendable {
         if let hidden, hidden > 0 {
             let named = (hiddenBranches ?? []).map(\.summary).joined(separator: "; ")
             lines.append("# hidden: \(hidden) branch\(hidden == 1 ? "" : "es") not visible to the user\(named.isEmpty ? "" : ": " + named)")
+        }
+        if let filled, filled > 0 {
+            lines.append("# filled: \(filled) element\(filled == 1 ? "" : "s") the app hides from accessibility")
         }
         return lines
     }
@@ -267,6 +274,7 @@ public struct UITreeContext: Equatable, Sendable {
                     ])
                 })
             }),
+            ("filled", .optional(filled, OrderedJSON.integer)),
         ])
     }
 }

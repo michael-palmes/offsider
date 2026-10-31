@@ -202,6 +202,7 @@ struct Tap: AsyncParsableCommand, VerifiableCommand {
                 settle: settle,
                 pick: picker,
                 coverCheck: coverCheck(selector: query.selectorDescription, backend: backend, device: device),
+                readsHiddenCovers: failIfCovered,
                 logger: logger
             )
             resolution = polled.value
@@ -241,7 +242,8 @@ struct Tap: AsyncParsableCommand, VerifiableCommand {
                 device: device,
                 options: verification,
                 styles: RetryPolicy.tapStyles(initial: initial, retries: verification.resolvedRetries(target: targetNode)),
-                initialTree: resolvedTree,
+                // Verify compares plain reads, and a filled tree can differ from one in shape as well as content.
+                initialTree: resolvedTree?.filledFromGaps == nil ? resolvedTree : nil,
                 targetNode: targetNode,
                 beforeAction: { tree in
                     guard let moved = await located(in: tree), !isAimed(moved) else { return }

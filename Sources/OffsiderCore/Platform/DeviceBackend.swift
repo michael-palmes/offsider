@@ -120,6 +120,51 @@ extension PointHitTesting {
 public protocol PresentationProbing: DeviceBackend {
     /// The element at `point` with its process id; nil when nothing answers there.
     func probe(at point: UIPoint, on id: DeviceID) async throws -> UINode?
+    /// True once a tree read has found the device's display zoom, so a probe converts its point and frames to screen points; stays false on a device with none.
+    func knowsDisplayZoom(on id: DeviceID) -> Bool
+}
+
+extension PresentationProbing {
+    public func knowsDisplayZoom(on id: DeviceID) -> Bool { false }
+}
+
+/// Point reads a fill started alongside a tree read, whose hit-tests cost almost nothing there; what they found is read only where the fill asks.
+@MainActor
+public struct GapSamples {
+    public let points: [UIPoint]
+    /// The answers at the points `wanted` marks, nil elsewhere; `isNew` picks which answers are worth reading in full.
+    public let answers: @MainActor (_ wanted: [Bool], _ isNew: (UINode) -> Bool) async -> [UINode?]
+    /// See `PresentationProbing.knowsDisplayZoom`, as they started.
+    public let zoomKnown: Bool
+
+    public init(points: [UIPoint], answers: @escaping @MainActor ([Bool], (UINode) -> Bool) async -> [UINode?], zoomKnown: Bool) {
+        self.points = points
+        self.answers = answers
+        self.zoomKnown = zoomKnown
+    }
+}
+
+/// Optional capability: finds what an app draws but hides from accessibility, which a plain read leaves out. What it adds is never cached.
+@MainActor
+public protocol TreeGapFilling: DeviceBackend {
+    /// Starts a fill's first reads, to run alongside the tree read; nil when a fill has no use for them.
+    func startGapSamples(on id: DeviceID) async -> GapSamples?
+    /// `tree`, as a plain read returned it, with those elements added.
+    func fillingGaps(in tree: UITree, on id: DeviceID, samples: GapSamples?) async -> UITree
+}
+
+extension DeviceBackend {
+    /// `tree` with what the app hides from accessibility, on a backend that can read it.
+    public func withGapsFilled(_ tree: UITree, on id: DeviceID, samples: GapSamples? = nil) async -> UITree {
+        guard let filler = self as? any TreeGapFilling else { return tree }
+        let filled = await filler.fillingGaps(in: tree, on: id, samples: samples)
+        if filled.filledFromGaps != nil { DeviceActivityLedger.current.recordFill(filled, on: id) }
+        return filled
+    }
+
+    public func startGapSamples(on id: DeviceID) async -> GapSamples? {
+        await (self as? any TreeGapFilling)?.startGapSamples(on: id)
+    }
 }
 
 /// Optional capability: the platform's own tree reply before mapping, for the committed tree goldens.

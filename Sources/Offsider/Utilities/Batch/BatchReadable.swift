@@ -94,7 +94,7 @@ extension DescribeUI: BatchReadable {
         if let point = try parsedPoint() {
             tree = try await context.backend.accessibilityTree(for: context.device, point: point)
         } else {
-            tree = try await context.accessibilityTree()
+            tree = await context.backend.withGapsFilled(try await context.accessibilityTree(), on: context.device)
             tree.systemPrompt = await SystemPromptProbe.find(in: tree, backend: context.backend, device: context.device)
         }
         let options = try output.renderOptions()
