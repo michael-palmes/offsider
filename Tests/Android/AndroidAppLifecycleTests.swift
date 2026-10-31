@@ -273,6 +273,15 @@ struct AndroidAppLifecycleTests {
         #expect(error?.message.contains("chooser") == true)
     }
 
+    @Test("the app's own screen named like the chooser counts as opened, and --restart is not refused for it")
+    func ownResolverNamedScreen() async throws {
+        let (backend, _) = try Self.setUp { _ in FakeAdbServer.shell(stdout: "offsider: running\nStatus: ok\nActivity: \(Self.package)/.LinkResolverActivity\n") }
+        #expect(try await backend.openLink("https://example.com/a", in: Self.package, restart: false, on: Self.device).linkHandled == true)
+        let output = try Self.runOpenScript(resolved: "\(Self.package)/.LinkResolverActivity", restart: true)
+        #expect(!AndroidAppPackage.hasChooser(output))
+        #expect(output.contains("am force-stop") && output.contains("am start"))
+    }
+
     @Test("a link another app took is link_not_handled, naming what took it")
     func openOtherApp() async throws {
         let (backend, _) = try Self.setUp { _ in FakeAdbServer.shell(stdout: "offsider: running\nStatus: ok\nActivity: com.example.other/.Main\n") }

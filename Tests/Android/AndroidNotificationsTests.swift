@@ -274,6 +274,18 @@ struct AndroidNotificationsTests {
         #expect(error?.kind == .appNotInstalled)
     }
 
+    @Test("the install check runs once a read has confirmed the app, so a --wait pays for one pm path and a later failed one cannot end it")
+    @MainActor
+    func installCheckRunsOnce() async throws {
+        let (backend, server) = try AndroidAppLifecycleTests.setUp { _ in FakeAdbServer.shell(stdout: "\(AndroidNotifications.keysMarker)\n") }
+        _ = try await backend.notifications(of: Self.package, on: AndroidAppLifecycleTests.device)
+        _ = try await backend.notifications(of: Self.package, on: AndroidAppLifecycleTests.device)
+        let scripts = AndroidAppLifecycleTests.shellCommands(server).filter { $0.contains("cmd notification list") }
+        #expect(scripts.count == 2)
+        #expect(scripts[0].contains("pm path"))
+        #expect(!scripts[1].contains("pm path"))
+    }
+
     /// The tail of an Android 16 dump, captured from an emulator: settings lines, the archive, then headers at one and two spaces.
     static func dump(_ records: String, archive: String = "  mArchive=Archive (0 notifications)") -> String {
         """

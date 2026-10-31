@@ -53,6 +53,8 @@ extension IOSBackend: AppLifecycleControlling {
             try await requireInFront(bundleID, name: name, on: id)
         } catch let error as AppLifecycleError {
             throw error.noting(stopped: stopped, app: bundleID)
+        } catch where stopped {
+            throw AppLifecycleError(.failed, "Could not open the link in \(bundleID) on simulator \(id.rawValue): \(TerminalText.line(error.localizedDescription, cap: 300))").noting(stopped: true, app: bundleID)
         }
         let pid = await Self.runningPID(bundleID, on: id)
         return AppLaunch(app: bundleID, start: running != nil && running == pid ? .warm : .cold, restarted: restart, pid: pid, linkHandled: true)

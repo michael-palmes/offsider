@@ -59,7 +59,7 @@ A name close to an AVD's exits 7 `avd_not_found` naming the closest, with `Try: 
 
 ## Notifications
 
-`offsider notifications --app <package> --device <DEVICE_ID>` lists the notifications one app has posted and still shows: each one's title, text, big text, sub-text, channel, post time and whether it is ongoing. `--wait <text>` polls once a second until a title or text holds that text, ignoring case, reads a last time at `--timeout` (1 to 600 s, default 30) and then exits 5 (`condition_not_met`). A package that is not installed exits 1 (`app_not_installed`), not an empty list; `pm path` runs only when the app shows no record. With `--new`, only a notification that appears or changes after the wait starts counts, so one already showing cannot pass it: use it to prove a push arrived. It reads and never locks the device.
+`offsider notifications --app <package> --device <DEVICE_ID>` lists the notifications one app has posted and still shows: each one's title, text, big text, sub-text, channel, post time and whether it is ongoing. `--wait <text>` polls once a second until a title or text holds that text, ignoring case, reads a last time at `--timeout` (1 to 600 s, default 30) and then exits 5 (`condition_not_met`). A package that is not installed exits 1 (`app_not_installed`), not an empty list; `pm path` runs at most once, on the first read that finds no record. With `--new`, only a notification that appears or changes after the wait starts counts, so one already showing cannot pass it: use it to prove a push arrived. It reads and never locks the device.
 
 ```bash
 offsider notifications --app com.example.app --wait 'Order filled' --new --timeout 60 --device <DEVICE_ID> --json

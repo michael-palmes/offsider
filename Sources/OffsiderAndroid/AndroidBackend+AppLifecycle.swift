@@ -45,7 +45,7 @@ extension AndroidBackend: AppLifecycleControlling {
         let reply = AndroidAppPackage.startReply(output)
         do {
             if reply.unresolved { throw noScreen }
-            if reply.landedOnChooser { throw chooser }
+            if reply.landedOnChooser(package) { throw chooser }
             if reply.landedOutside(package), let activity = reply.activity {
                 throw AppLifecycleError(.linkNotHandled, "Android opened the link in \(TerminalText.quoted(TerminalText.line(activity, cap: 200))), not \(package), on \(id.rawValue). Send a link only \(package) takes, such as its own scheme.")
             }

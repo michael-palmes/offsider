@@ -123,6 +123,14 @@ struct RecordingVisibilityTests {
         #expect(check.hint == "offsider session stop --device emulator-5554")
     }
 
+    @Test("session stop's JSON says when a recording is still running, and stays silent otherwise")
+    func sessionStopRunning() throws {
+        let running = try #require(try JSONSerialization.jsonObject(with: Data(DeviceSessionRow.stoppedJSON([], recordingRunning: true).utf8)) as? [String: Any])
+        #expect(running["recordingRunning"] as? Bool == true)
+        let clean = try #require(try JSONSerialization.jsonObject(with: Data(DeviceSessionRow.stoppedJSON([]).utf8)) as? [String: Any])
+        #expect(clean["recordingRunning"] == nil)
+    }
+
     @Test("a stopped recording shows in session stop's text and JSON")
     func sessionStopRow() throws {
         let stopped = DeviceSessionRow.stopped(runners: [], brokers: [], recordings: ["emulator-5554"])

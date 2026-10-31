@@ -22,8 +22,8 @@ struct StreamVideo: AsyncParsableCommand {
         --mask-label, --mask-label-contains, --mask-text and --mask-emails exit 1 with video_unmasked and send nothing, as does a stream \
         while the evidence run masks emails or ids. One tree read before the first frame refuses the same way when a password \
         field is on screen or the tree cannot be read (OFFSIDER_MASK_SECURE=0 skips it outside a run); --unmasked streams anyway, \
-        with a warning. A stop before the first frame ends it at once with nothing streamed (exit 1, video_failed); with \
-        bgra, which has no first-frame signal, within 5 s. A simulator or emulator that stops answering for 30 s ends it \
+        with a warning. A stop before the first frame ends it at once with nothing streamed (exit 1, video_failed); \
+        bgra has no first-frame signal, so there it exits 0 with no frames. A simulator or emulator that stops answering for 30 s ends it \
         (exit 1, device_unresponsive), and a stop that a stalled reader or capture holds up ends it within 5 s (exit 1, video_failed).
         """
     )
@@ -130,7 +130,7 @@ struct StreamVideo: AsyncParsableCommand {
         let early = CLIError(errorDescription: RecordingStop.earlyMessage("stream-video"), reason: .videoFailed)
         var pending = try await watchdog.guardingRead(of: device, extra: RecordVideo.watchdogExtra) {
             try await source.firstFrame { error in
-                Self.captureFailed(error)
+                RecordVideo.frameFailed(error)
             }
         }
         let frameInterval = 1.0 / Double(fps)
@@ -181,7 +181,7 @@ struct StreamVideo: AsyncParsableCommand {
                 case .frame(let next):
                     frame = next
                 case .failed(let error):
-                    Self.captureFailed(error)
+                    RecordVideo.frameFailed(error)
                     if let readLimit, clock.now - lastFrameAt >= readLimit {
                         hung = true
                         break streaming
@@ -228,7 +228,7 @@ struct StreamVideo: AsyncParsableCommand {
                     }
                 }
             } catch {
-                Self.captureFailed(error)
+                RecordVideo.frameFailed(error)
             }
 
             await pace()
@@ -259,12 +259,6 @@ struct StreamVideo: AsyncParsableCommand {
             reason: .deviceUnresponsive,
             hint: "offsider doctor --device \(device.rawValue)"
         )
-    }
-
-    /// An agent reads every failed frame; a person one warning per distinct cause.
-    private static func captureFailed(_ error: any Error) {
-        let message = TerminalText.line(error.localizedDescription)
-        Console.current.line("Error capturing frame: \(message)", person: .warning("A frame could not be captured: \(message)"))
     }
 
     // MARK: - BGRA streaming

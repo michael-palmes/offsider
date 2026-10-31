@@ -11,10 +11,10 @@ enum AndroidNotifications {
     static let maximumValue = 4_096
 
     /// Android 11 and later pick each record by its key (`list`, then `get`); before that a filter keeps the package's blocks of the active list. With no record, `pm path` tells a mistyped package from an app with nothing posted.
-    static func script(package: String) -> String {
+    static func script(package: String, checksInstalled: Bool = true) -> String {
         """
         p=\(ExpoDevClient.shellQuote(package))
-        n() { [ -n "$(pm path "$p" 2>/dev/null)" ] || echo '\(notInstalledMarker)'; }
+        n() { \(checksInstalled ? "[ -n \"$(pm path \"$p\" 2>/dev/null)\" ] || echo '\(notInstalledMarker)'" : ":"); }
         if keys=$(cmd notification list 2>/dev/null); then
           echo '\(keysMarker)'
           case "$keys" in *"|$p|"*) ;; *) n ;; esac

@@ -105,7 +105,7 @@ struct SessionStop: AsyncParsableCommand {
     func run() async throws {
         let cleanUDID = try clean ? RunnerSessions.cleanableUDID(device ?? "", command: "session stop --clean") : nil
         let console = Console.current
-        let (stopped, cleaned) = await console.progress("Stopping sessions") {
+        let (stopped, cleaned, recordingRunning) = await console.progress("Stopping sessions") {
             let brokers = DeviceSessions.records(device: device)
             let manager = DeviceSessions.manager()
             for record in brokers {
@@ -146,10 +146,10 @@ struct SessionStop: AsyncParsableCommand {
                 console.relabel("Uninstalling the runner")
                 cleaned = await RunnerSessions.clean(udid: cleanUDID)
             }
-            return (stopped, cleaned)
+            return (stopped, cleaned, recording?.ended == false)
         }
         if json {
-            console.data(DeviceSessionRow.stoppedJSON(stopped, clean: cleaned.map(RunnerSessions.cleanFields)) + "\n")
+            console.data(DeviceSessionRow.stoppedJSON(stopped, clean: cleaned.map(RunnerSessions.cleanFields), recordingRunning: recordingRunning) + "\n")
             return
         }
         var text = DeviceSessionRow.stoppedText(stopped, device: device)
@@ -408,12 +408,13 @@ struct DeviceSessionRow: Equatable {
         }
     }
 
-    static func stoppedJSON(_ stopped: [Stopped], clean: [String: Any]? = nil) -> String {
+    static func stoppedJSON(_ stopped: [Stopped], clean: [String: Any]? = nil, recordingRunning: Bool = false) -> String {
         let entries: [[String: Any]] = stopped.map {
             ["device": $0.device, "runner": $0.runner, "broker": $0.broker, "helper": $0.helper, "input": $0.input, "reverses": $0.reverses, "posture": $0.posture, "recording": $0.recording]
         }
         var object: [String: Any] = ["stopped": entries]
         if let clean { object["clean"] = clean }
+        if recordingRunning { object["recordingRunning"] = true }
         let data = (try? JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])) ?? Data("{}".utf8)
         return String(decoding: data, as: UTF8.self)
     }

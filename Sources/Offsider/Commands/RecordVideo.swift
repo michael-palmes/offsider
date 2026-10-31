@@ -334,7 +334,8 @@ struct RecordVideo: AsyncParsableCommand {
     /// A writer that keeps refusing frames ends the recording; one failed frame does not.
     static let maximumAppendFailures = 5
 
-    private static func frameFailed(_ error: any Error) {
+    /// An agent reads every failed frame; a person one warning per distinct cause.
+    static func frameFailed(_ error: any Error) {
         let message = TerminalText.line(error.localizedDescription)
         Console.current.line("Error capturing frame: \(message)", person: .warning("A frame could not be captured: \(message)"))
     }
@@ -441,8 +442,8 @@ final class RecordingStop: @unchecked Sendable {
         "\(command) was stopped before its first frame, so nothing was \(command == "stream-video" ? "streamed" : "recorded")."
     }
 
-    /// How long a stop waits for the loop, which a blocked main thread would never reach.
-    static let stuckAfter: TimeInterval = 5
+    /// How long a stop waits for the loop, which a blocked main thread would never reach: longer for a recording, whose file a busy Mac must not cost, than for a stream, which has none to lose.
+    static func stuckAfter(_ command: String) -> TimeInterval { command == "stream-video" ? 5 : 15 }
     /// How long the writer has to finish the file once the loop has ended.
     static let savingAfter: TimeInterval = 30
 
@@ -450,6 +451,7 @@ final class RecordingStop: @unchecked Sendable {
     private var requested = false
     private var capturing = false
     private var done = false
+    private var savingStarted = false
     private var staging: String?
     private var timer: DispatchSourceTimer?
     private let queue = DispatchQueue(label: "offsider.recording-stop")
@@ -462,7 +464,7 @@ final class RecordingStop: @unchecked Sendable {
 
     init(
         command: String = "record-video", endNow: (@Sendable () -> Void)? = nil, giveUp: (@Sendable (FailureReason, String) -> Void)? = nil,
-        stuckAfter: TimeInterval = RecordingStop.stuckAfter, savingAfter: TimeInterval = RecordingStop.savingAfter
+        stuckAfter: TimeInterval? = nil, savingAfter: TimeInterval = RecordingStop.savingAfter
     ) {
         self.command = command
         self.endNow = endNow ?? { ErrorReporter.exitFromTimer(reason: .videoFailed, message: RecordingStop.earlyMessage(command), hint: nil) }
@@ -474,13 +476,13 @@ final class RecordingStop: @unchecked Sendable {
             case .report: DeviceWatchdog.report(message)
             }
         }
-        self.stuckAfter = stuckAfter
+        self.stuckAfter = stuckAfter ?? Self.stuckAfter(command)
         self.savingAfter = savingAfter
     }
 
     func request() {
         let (early, first) = lock.withLock { () -> (Bool, Bool) in
-            let first = !requested && !done
+            let first = !requested && !done && !savingStarted
             requested = true
             return (!capturing, first)
         }
@@ -508,6 +510,7 @@ final class RecordingStop: @unchecked Sendable {
 
     /// The loop has ended, so what is left is the writer; a stop's shorter limit no longer applies.
     func saving() {
+        lock.withLock { savingStarted = true }
         arm(after: savingAfter)
     }
 

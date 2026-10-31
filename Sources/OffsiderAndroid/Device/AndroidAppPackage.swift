@@ -42,7 +42,7 @@ enum AndroidAppPackage {
         let stop = restart ? """
 
         c=$(cmd package resolve-activity --brief -a android.intent.action.VIEW -d \(link) "$p" 2>/dev/null | tail -n 1)
-        case "$c" in "No activity found"*) echo '\(marker) no-activity'; exit 0 ;; *\(resolverActivity)*) echo '\(marker) chooser'; exit 0 ;; esac
+        case "$c" in "$p"/*) ;; "No activity found"*) echo '\(marker) no-activity'; exit 0 ;; *\(resolverActivity)*) echo '\(marker) chooser'; exit 0 ;; esac
         am force-stop "$p"
         """ : ""
         return preamble(ExpoDevClient.shellQuote(package), stop: false) + stop + """
@@ -104,7 +104,10 @@ enum AndroidAppPackage {
             activity.map { !$0.hasPrefix("\(package)/") } ?? false
         }
 
-        var landedOnChooser: Bool { activity?.contains(resolverActivity) == true }
+        /// Android's own chooser, not one of the app's screens that happens to share its name.
+        func landedOnChooser(_ package: String) -> Bool {
+            landedOutside(package) && activity?.contains(resolverActivity) == true
+        }
     }
 
     static func startReply(_ output: String) -> StartReply {

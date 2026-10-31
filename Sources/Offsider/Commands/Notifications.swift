@@ -73,14 +73,13 @@ struct NotificationsCommand: AsyncParsableCommand {
         let app = try Self.app(app, route: route)
         let clock = ContinuousClock()
         let limit = timeout ?? Self.defaultTimeout
-        let deadline = clock.now + .seconds(limit)
         let (snapshot, listed) = try await Console.current.progress(wait.map { "Waiting for \(TerminalText.quoted($0))" } ?? "Reading \(app)'s notifications") {
             guard let reader = route.backend as? any PostedNotificationReading else {
                 throw CLIError(errorDescription: "notifications is not available for \(route.device.rawValue).", reason: .notSupported)
             }
             try await route.backend.prepare()
             let id = try await route.backend.requireBootedDevice(route.device).id
-            return try await Self.poll(wait: wait, new: new, until: deadline, clock: clock, read: { try await reader.notifications(of: app, on: id) }) { posted in
+            return try await Self.poll(wait: wait, new: new, until: clock.now + .seconds(limit), clock: clock, read: { try await reader.notifications(of: app, on: id) }) { posted in
                 CLIError(
                     errorDescription: "No notification from \(app) held \(TerminalText.quoted(wait ?? "")) within \(DeviceSettingsReport.number(limit)) s (\(posted) posted). Check that the app may post (`offsider permission show --app \(app) --device \(route.device.rawValue)` on Android 13 and later) and that the push was sent.",
                     reason: .conditionNotMet

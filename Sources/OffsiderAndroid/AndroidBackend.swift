@@ -4,6 +4,8 @@ import OffsiderCore
 /// Android emulators and USB phones over the adb server; lives for one command run, so its caches do too.
 @MainActor
 public final class AndroidBackend: DeviceBackend, AccessibilityActionPerforming, AccessibilityChangeWaiting, MaskTreeReading {
+    /// Apps a notifications read has confirmed installed, so a --wait checks once.
+    var notificationAppsSeen: Set<String> = []
     let host: AndroidHost
     let log: AndroidLog
     private var sdk: AndroidSDK?

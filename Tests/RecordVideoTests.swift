@@ -622,6 +622,22 @@ struct RecordingStopTests {
         #expect(fired.all.isEmpty)
     }
 
+    @Test("a first stop while the writer saves keeps the writer's longer limit, so Ctrl+C cannot cost a finished video")
+    func stopDuringSavingKeepsLimit() async throws {
+        let fired = Fired()
+        let stop = Self.stop(fired)
+        stop.saving()
+        stop.request()
+        try await Task.sleep(for: .seconds(0.6))
+        #expect(fired.all.isEmpty)
+    }
+
+    @Test("a recording waits longer than a stream before it gives up, as it has a file to lose")
+    func stuckLimits() {
+        #expect(RecordingStop.stuckAfter("record-video") > RecordingStop.stuckAfter("stream-video"))
+        #expect(RecordingStop.stuckAfter("stream-video") == 5)
+    }
+
     @Test("a writer stuck past its own limit gives up too")
     func savingGivesUp() async throws {
         let fired = Fired()
