@@ -88,7 +88,7 @@ struct TapCover {
         }
         // Before the hit-test, which on a simulator can answer with the field beneath the keyboard.
         if judging.keyboard != nil {
-            throw Tap.keyboardCoverError(selector: selector, at: resolution.point, device: device, describeHint: CommandScope.current.describeHint(device: device.rawValue))
+            throw Tap.keyboardCoverError(selector: selector, at: resolution.point, device: device, appArgument: CommandScope.current.appArgument(device: device.rawValue))
         }
         guard judging.isContested else {
             return resolution
@@ -103,7 +103,7 @@ struct TapCover {
             return resolution
         }
         if AccessibilityTargetResolver.isUnderKeyboard(verdict.cover, in: judging.roots) {
-            throw Tap.keyboardCoverError(selector: selector, at: resolution.point, device: device, describeHint: CommandScope.current.describeHint(device: device.rawValue))
+            throw Tap.keyboardCoverError(selector: selector, at: resolution.point, device: device, appArgument: CommandScope.current.appArgument(device: device.rawValue))
         }
         if verdict.isConfident, !allowCovered, verdict.evidence == .hitTest,
            let moved = await clearPart(of: resolution, beside: verdict.cover, in: tree, backend: backend, device: device) {

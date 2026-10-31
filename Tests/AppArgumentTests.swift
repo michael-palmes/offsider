@@ -127,6 +127,14 @@ struct AppArgumentTests {
         #expect(DeviceRouter.Route(backend: phone, device: DeviceID(rawValue: "emulator-5554", platform: .android)).appArgument == "")
     }
 
+    @Test("a keyboard refusal's hint names the app before --device, whichever command it prints")
+    func keyboardHintNamesApp() {
+        let android = Tap.keyboardCoverError(selector: "id=go", at: (x: 1, y: 1), device: Self.pixel, appArgument: " --app com.example.app")
+        #expect(android.hint == "offsider button back --app com.example.app --device R58MFAKE01")
+        let ios = Tap.keyboardCoverError(selector: "id=go", at: (x: 1, y: 1), device: DeviceID(rawValue: "X", platform: .ios), appArgument: " --app com.example.app")
+        #expect(ios.hint == "offsider describe-ui --summary --app com.example.app --device X")
+    }
+
     @Test("the describe-ui hint uses the route noted for the device, with the app before --device")
     func describeHint() {
         let allowance = Self.allowance(apps: [])

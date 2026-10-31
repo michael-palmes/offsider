@@ -11,7 +11,9 @@ extension AndroidBackend: LogReading {
         let serial = id.rawValue
         let client = try requireClient()
         let script = LogcatCommand.script(window: query.window, source: query.source)
-        var stream = LogcatStream(source: query.source, serial: serial, appOnly: query.appOnly)
+        var live = false
+        if case .live = query.window { live = true }
+        var stream = LogcatStream(source: query.source, serial: serial, appOnly: query.appOnly, live: live)
         let deliver: @MainActor (String) throws -> Void = { line in
             let entry = try stream.consume(line)
             if let note = stream.note {

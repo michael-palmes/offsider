@@ -32,6 +32,8 @@ struct LogcatStream {
     let source: LogSource
     let serial: String
     let appOnly: Bool
+    /// A live read, where another app's lines can keep the silent slice from coming; history arrives all at once.
+    let live: Bool
     private(set) var pid: Int?
     private(set) var filter: LogcatAppFilter?
     /// Set once from the device's clock line when it is past `LogClock.skewThreshold`; the reader takes it.
@@ -42,10 +44,11 @@ struct LogcatStream {
     /// The entry being read, and its header: logcat prints each line of a multi-line message as its own line, so it is finished only when another begins.
     private var pending: (entry: LogEntry, header: String?, extended: Date)?
 
-    init(source: LogSource, serial: String, appOnly: Bool = false) {
+    init(source: LogSource, serial: String, appOnly: Bool = false, live: Bool = false) {
         self.source = source
         self.serial = serial
         self.appOnly = appOnly
+        self.live = live
     }
 
     /// The entry a line finishes, nil for the preamble, separators, lines the source leaves out and lines of an entry still being read; `now` is this Mac's clock. `finish` hands over the last one.
@@ -58,7 +61,7 @@ struct LogcatStream {
         switch source {
         case .reactNative(let package?):
             guard let filter, filter.keeps(entry, uid: parser.lastUID) else {
-                if let pending, now.timeIntervalSince(pending.extended) >= Self.quietAfter { return finish() }
+                if live, let pending, now.timeIntervalSince(pending.extended) >= Self.quietAfter { return finish() }
                 return nil
             }
             if parser.lastUID == filter.uid { entry.process = package }

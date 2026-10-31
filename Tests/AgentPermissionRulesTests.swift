@@ -131,7 +131,7 @@ struct AgentPermissionRulesTests {
     @Test("the loosening flags a person gate does not stop ask first")
     func looseningFlagsAsk() {
         let ask = AgentPermissionRules.patterns(.ask)
-        for pattern in ["Bash(offsider record-video --unmasked*)", "Bash(offsider stream-video --unmasked*)", "Bash(offsider logs --no-redact*)", "Bash(offsider rn logbox * --no-redact*)"] {
+        for pattern in ["Bash(offsider record-video --unmasked*)", "Bash(offsider stream-video --unmasked*)", "Bash(offsider logs --no-redact*)", "Bash(offsider rn logbox * --no-redact*)", "Bash(offsider batch *type --file*)"] {
             #expect(ask.contains(pattern))
         }
     }

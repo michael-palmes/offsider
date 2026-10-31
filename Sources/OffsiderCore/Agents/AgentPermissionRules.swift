@@ -55,6 +55,8 @@ public enum AgentPermissionRules {
              reason: "Raw adb reaches any attached phone without Offsider's checks."),
         Rule(claude: "devicectl *", codex: ["devicectl"], decision: .ask,
              reason: "Raw devicectl reaches any attached iPhone without Offsider's checks."),
+        Rule(claude: "offsider batch *type --file*", codex: [], decision: .ask,
+             reason: "Types a file's contents, which may hold a secret."),
         Rule(claude: "offsider batch --no-mask-secure*", codex: ["offsider", "batch", "--no-mask-secure"], decision: .ask,
              reason: "Captures password fields unmasked."),
         Rule(claude: "offsider credential add*", codex: ["offsider", "credential", "add"], decision: .ask,

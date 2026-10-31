@@ -175,7 +175,7 @@ struct AndroidLogsTests {
 
     @Test("a finished entry prints once other apps' lines have run on for the quiet gap")
     func otherAppsLinesFlushAQuietEntry() throws {
-        var stream = LogcatStream(source: .reactNative(app: "com.example.app"), serial: "R58TEST0001")
+        var stream = LogcatStream(source: .reactNative(app: "com.example.app"), serial: "R58TEST0001", live: true)
         let start = Date(timeIntervalSince1970: 1_790_945_238)
         for line in Self.appEntry { #expect(try stream.consume(line, now: start) == nil) }
 
@@ -186,9 +186,18 @@ struct AndroidLogsTests {
         #expect(stream.finish() == nil)
     }
 
+    @Test("a history read keeps an entry whole however long another app's line takes to arrive")
+    func historyNeverFlushes() throws {
+        var stream = LogcatStream(source: .reactNative(app: "com.example.app"), serial: "R58TEST0001")
+        let start = Date(timeIntervalSince1970: 1_790_945_238)
+        for line in Self.appEntry { #expect(try stream.consume(line, now: start) == nil) }
+        #expect(try stream.consume(Self.otherLine, now: start.addingTimeInterval(5)) == nil)
+        #expect(stream.finish()?.message == "failed")
+    }
+
     @Test("another line of the entry restarts the quiet gap")
     func entryLineRestartsQuietGap() throws {
-        var stream = LogcatStream(source: .reactNative(app: "com.example.app"), serial: "R58TEST0001")
+        var stream = LogcatStream(source: .reactNative(app: "com.example.app"), serial: "R58TEST0001", live: true)
         let start = Date(timeIntervalSince1970: 1_790_945_238)
         for line in Self.appEntry { #expect(try stream.consume(line, now: start) == nil) }
 

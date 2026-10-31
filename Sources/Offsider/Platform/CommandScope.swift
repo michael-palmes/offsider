@@ -50,8 +50,12 @@ final class CommandScope {
 
     /// `offsider describe-ui --summary` as a new process on this device can run it, naming the app where it would not otherwise know it.
     func describeHint(device: String) -> String {
-        let app = routes.last { $0.device.rawValue == device }?.appArgument ?? ""
-        return "offsider describe-ui --summary\(app) --device \(device)"
+        "offsider describe-ui --summary\(appArgument(device: device)) --device \(device)"
+    }
+
+    /// ` --app <id>` for a printed command on this device, as `DeviceRouter.Route.appArgument` decides; empty before routing.
+    func appArgument(device: String) -> String {
+        routes.last { $0.device.rawValue == device }?.appArgument ?? ""
     }
 
     func noteRoute(_ route: DeviceRouter.Route) {

@@ -33,7 +33,6 @@ struct AppTargetOption: ParsableArguments {
         transform: AppID.parse
     )
     var bundleID: String?
-
 }
 
 enum AppTarget {

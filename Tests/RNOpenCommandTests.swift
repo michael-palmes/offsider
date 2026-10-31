@@ -156,7 +156,7 @@ struct RNOpenCommandTests {
         #expect(backend.openedURLs == ["exp+playground://expo-development-client/?url=http%3A%2F%2F127.0.0.1%3A8742"])
     }
 
-    @Test("a phone pinned to another app, or a denied app on any phone, exits app_not_allowed with no reverse, stop or link")
+    @Test("a phone pinned to another app exits app_not_allowed with no reverse, stop or link")
     func pinnedPhoneRefusesOtherApp() async throws {
         let (result, backend) = try await Self.openOnPhone(ports: [8742], apps: ["com.mpalmes.offsider.playground.rn"])
         guard case .failure(let error) = result else { Issue.record("an app outside the pins was opened"); return }

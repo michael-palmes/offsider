@@ -393,7 +393,7 @@ struct Tap: AsyncParsableCommand, VerifiableCommand {
     }
 
     /// `tap` and `type --into-id` refuse; with `tree`, Back is offered only over docked keys, as over a toolbar it goes to the app.
-    static func keyboardCoverError(selector: String, at point: (x: Double, y: Double), device: DeviceID, tree: UITree? = nil, describeHint: String? = nil) -> CLIError {
+    static func keyboardCoverError(selector: String, at point: (x: Double, y: Double), device: DeviceID, tree: UITree? = nil, appArgument: String = "") -> CLIError {
         let pointText = VerifyOutput.pointDescription(x: point.x, y: point.y)
         let back = device.platform == .android && tree.map(KeyboardDismiss.showsKeys(in:)) != false
         let hide: String
@@ -407,7 +407,7 @@ struct Tap: AsyncParsableCommand, VerifiableCommand {
         return CLIError(
             errorDescription: "The keyboard covers \(selector) at \(pointText), so the tap would press a key. \(hide), then retry. Nothing was sent.",
             reason: .targetUnderKeyboard,
-            hint: back ? "offsider button back --device \(device.rawValue)" : describeHint ?? "offsider describe-ui --summary --device \(device.rawValue)"
+            hint: back ? "offsider button back\(appArgument) --device \(device.rawValue)" : "offsider describe-ui --summary\(appArgument) --device \(device.rawValue)"
         )
     }
 
@@ -417,7 +417,7 @@ struct Tap: AsyncParsableCommand, VerifiableCommand {
         do {
             return try await check()
         } catch let error as CLIError where error.reason == .targetUnderKeyboard {
-            throw keyboardCoverError(selector: selector, at: point, device: device, tree: tree, describeHint: CommandScope.current.describeHint(device: device.rawValue))
+            throw keyboardCoverError(selector: selector, at: point, device: device, tree: tree, appArgument: CommandScope.current.appArgument(device: device.rawValue))
         }
     }
 

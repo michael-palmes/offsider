@@ -28,12 +28,13 @@ struct RNLogBox: AsyncParsableCommand {
     }
 
     /// No toast numbered `index`: exit 2, with the toasts on screen as the candidates.
+    @MainActor
     static func noToast(_ index: Int, in state: LogBoxState, device: String) -> CLIError {
         let have = state.toasts.isEmpty ? "there are none on screen" : "there \(state.toasts.count == 1 ? "is 1" : "are \(state.toasts.count)")"
         return CLIError(
             errorDescription: "No LogBox toast \(index): toasts count from 1 at the bottom, and \(have).",
             reason: .selectorNotFound,
-            hint: "offsider rn logbox status --device \(device)",
+            hint: "offsider rn logbox status\(CommandScope.current.appArgument(device: device)) --device \(device)",
             candidates: state.toasts.map { FailureCandidate(id: nil, label: LogBoxState.shown($0.message, redacts: true), role: "logbox", frame: $0.frame, onScreen: true, index: $0.index) }
         )
     }
@@ -224,6 +225,7 @@ struct RNLogBoxDismiss: AsyncParsableCommand {
         }
     }
 
+    @MainActor
     func run() async throws {
         let logger = OffsiderLogger()
         let watchdog = DeviceWatchdog()
@@ -242,7 +244,7 @@ struct RNLogBoxDismiss: AsyncParsableCommand {
             console.show(InputPersonView.receipt(Self.personLine(outcome, index: index), details: Self.personMethod(outcome), agent: line + "\n"))
         } else {
             var failure = Self.personFailure(outcome)
-            failure.commands = outcome.emptyDialog ? [] : outcome.coveredBy != nil ? [Self.closeIntro(device)] : ["offsider rn logbox status --device \(device)"]
+            failure.commands = outcome.emptyDialog ? [] : outcome.coveredBy != nil ? [Self.closeIntro(device)] : ["offsider rn logbox status\(CommandScope.current.appArgument(device: device)) --device \(device)"]
             console.line(line, person: failure)
         }
         if !outcome.isClear {
@@ -264,8 +266,9 @@ struct RNLogBoxDismiss: AsyncParsableCommand {
         }
     }
 
+    @MainActor
     static func closeIntro(_ device: String) -> String {
-        "offsider tap --label Continue --device \(device)"
+        "offsider tap --label Continue\(CommandScope.current.appArgument(device: device)) --device \(device)"
     }
 
     /// What a person reads when logs stay on screen or React Native's empty dialog covers the app.
@@ -278,6 +281,7 @@ struct RNLogBoxDismiss: AsyncParsableCommand {
     }
 
     /// What `dismiss` prints: `✓ Cleared 2 LogBox logs (inspector)`, or why it exits 5.
+    @MainActor
     static func line(_ outcome: Outcome, index: Int?, device: String) -> String {
         if outcome.coveredBy != nil {
             return "✗ Expo's dev menu intro covers \(outcome.remaining) LogBox log\(outcome.remaining == 1 ? "" : "s"), so nothing was tapped. Close it with `\(closeIntro(device))`, then run this again."
