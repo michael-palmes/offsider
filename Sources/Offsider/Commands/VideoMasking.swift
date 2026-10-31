@@ -91,7 +91,7 @@ struct VideoMaskOptions: ParsableArguments {
             if let reader = backend as? any MaskTreeReading {
                 tree = try await reader.maskTree(for: device)
             } else {
-                tree = try await backend.accessibilityTree(for: device)
+                tree = try await backend.readingWithGaps(on: device) { try await backend.accessibilityTree(for: device) }
             }
         } catch {
             throw CLIError(errorDescription: VideoMaskPolicy.unreadableRefusal(command: command, error: OffsiderCommand.message(for: error)), reason: .videoUnmasked)

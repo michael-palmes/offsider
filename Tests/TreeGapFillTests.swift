@@ -204,6 +204,8 @@ struct TreeGapFillTests {
             #expect(Self.ids(filled).contains("row-3"))
             #expect(ledger.activities.first?.tree == Self.plain)
             #expect(ledger.activities.first?.filled.contains { $0.id == "row-3" } == true)
+            ledger.recordTreeRead(Self.plain, on: device, startedAt: Date())
+            #expect(ledger.activities.first?.filled.isEmpty == true)
         }
     }
 
@@ -235,6 +237,18 @@ struct TreeGapFillTests {
         let layout = Self.android(.group, frame: FakeUI.frame(0, 0, 390, 795), order: 1)
         let filled = TreeGapFill.filling(plain, from: Self.androidTree([layout, Self.androidTab]))
         #expect(filled == plain)
+    }
+
+    @Test("an empty container with only an id is not hidden content, and a cut every-view read keeps the plain tree")
+    func androidContainersAndCutReads() {
+        let row = Self.android(.button, id: "row", label: "Saved Item 1", frame: FakeUI.frame(0, 200, 390, 56))
+        let list = Self.android(.group, id: "list", frame: FakeUI.frame(0, 100, 390, 300), order: 1, children: [Self.android(.group, frame: FakeUI.frame(0, 100, 390, 300))])
+        let plain = Self.androidTree([Self.androidTab])
+        #expect(TreeGapFill.filling(plain, from: Self.androidTree([list, Self.androidTab])) == plain)
+
+        var cut = Self.androidTree([row, Self.androidTab])
+        cut.sourceTruncated = true
+        #expect(TreeGapFill.filling(plain, from: cut) == plain)
     }
 
     @Test("what is drawn beneath a sheet's backdrop is not added, though every view lists it")

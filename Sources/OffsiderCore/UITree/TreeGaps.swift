@@ -59,11 +59,11 @@ struct TreeGaps {
 }
 
 extension UINode {
-    /// Content a person would read or touch, on screen: not the app or a window, not a screen-sized backdrop, and labelled, actionable or a small identified view.
+    /// Content a person would read or touch, on screen: not the app or a window, not a screen-sized backdrop, and labelled, actionable or an identified view with nothing inside it.
     func isContent(in viewport: UIFrame) -> Bool {
         guard role != .application, role != .window, role != .keyboard, let frame, frame.width > 0, frame.height > 0, frame.isVisible(in: viewport),
               frame.width * frame.height < viewport.width * viewport.height * TreeGapFill.backdropShare else { return false }
-        return normalizedLabel != nil || normalizedID != nil || isActionable
+        return normalizedLabel != nil || isActionable || (normalizedID != nil && children.isEmpty)
     }
 
     /// A hit-test can land on a listed element's own text or icon, which says nothing a person would miss.
@@ -89,6 +89,8 @@ public enum TreeGapFill {
     public static let roundSize = 24
     public static let readLimit = 96
     public static let timeLimit: TimeInterval = 1.5
+    /// A stalled point read waits 5 s, so past this the plain tree in hand is the answer.
+    public static let overallLimit: TimeInterval = 6
     static let sampleColumns = 3
     /// A hit-test takes about 25 ms in the app, one after another: this many fit inside a tree read, and any one that finds something starts the scan.
     public static let earlySampleRows = 4
@@ -108,8 +110,7 @@ public enum TreeGapFill {
         }
     }
 
-    /// `tree` with what point reads find on a simulator. A hit-test passes over a hidden view when a listed one lies beneath it, so only points the tree leaves empty are read, and only a sample answering with content the tree does not list starts a scan.
-    /// `samples` tells which sample points to read and which answers to read in full; `read` does both for further points at once. `now` is a clock in seconds.
+    /// `tree` with what point reads find on a simulator: `samples` reads the points asked for, in full where the second argument says, `read` likewise for more. A hit-test passes over a hidden view when a listed one lies beneath it, so only empty points are read, and only a sample answering with unlisted content starts a scan.
     @MainActor
     public static func filling(
         _ tree: UITree,
@@ -143,12 +144,14 @@ public enum TreeGapFill {
 
         let wanted = points.map { !gaps.isCovered($0) }
         guard wanted.contains(true) else { return tree }
-        var answers = await samples(wanted, isNew)
+        let answers = await samples(wanted, isNew)
         // A hit-test can fail when it starts as a simulator's session opens, and then all of them do; one more try tells that from white space.
         if zip(wanted, answers).allSatisfy({ wanted, answer in !wanted || answer == nil }) {
-            answers = zip(points, await read(points, isNew)).map { point, hit in gaps.isCovered(point) ? nil : hit }
+            let empty = points.filter { !gaps.isCovered($0) }
+            take(empty, await read(empty, isNew))
+        } else {
+            take(points, answers)
         }
-        take(points, answers)
         guard !found.isEmpty else { return tree }
 
         var reads = 0
@@ -173,7 +176,8 @@ public enum TreeGapFill {
 
     /// `plain` with what `everyView` adds that a touch at its centre would reach, as Android's drawing order tells: the structure comes from `everyView`, so a hidden page drawn over a listed one stays over it. Unchanged when it adds nothing.
     public static func filling(_ plain: UITree, from everyView: UITree) -> UITree {
-        guard let viewport = plain.visibleRect, viewport.width > 0, viewport.height > 0 else { return plain }
+        // A cut read may have lost what the plain read lists.
+        guard let viewport = plain.visibleRect, viewport.width > 0, viewport.height > 0, everyView.truncated == nil, !everyView.sourceTruncated else { return plain }
         let listed = plain.roots.flatMap { $0.flattened() }
         let found = everyView.roots.flatMap { $0.flattened() }.filter { node in
             guard node.isContent(in: viewport), let center = node.frame?.center, !listed.contains(where: { $0.isSameView(as: node) }) else { return false }

@@ -162,6 +162,12 @@ extension DeviceBackend {
         return filled
     }
 
+    /// A tree from `read` with what the app hides from accessibility, for a mask to paint, its first point reads started alongside it.
+    public func readingWithGaps(on id: DeviceID, read: () async throws -> UITree) async throws -> UITree {
+        let samples = await startGapSamples(on: id)
+        return await withGapsFilled(try await read(), on: id, samples: samples)
+    }
+
     public func startGapSamples(on id: DeviceID) async -> GapSamples? {
         await (self as? any TreeGapFilling)?.startGapSamples(on: id)
     }

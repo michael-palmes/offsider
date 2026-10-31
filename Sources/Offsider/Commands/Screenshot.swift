@@ -198,7 +198,9 @@ struct Screenshot: AsyncParsableCommand {
     @MainActor
     func take(_ request: ScreenshotRequest, on route: DeviceRouter.Route, masks: MaskPlan, plain: Bool = false) async throws -> ScreenshotReport {
         var report = try await take(request, on: route, masks: masks, plain: plain) {
-            guard let reader = route.backend as? any MaskTreeReading else { return try await route.backend.accessibilityTree(for: route.device) }
+            guard let reader = route.backend as? any MaskTreeReading else {
+                return try await route.backend.readingWithGaps(on: route.device) { try await route.backend.accessibilityTree(for: route.device) }
+            }
             return try await reader.maskTree(for: route.device)
         }
         report.captureSource = (route.backend as? any CaptureSourceReporting)?.captureSource(for: route.device)

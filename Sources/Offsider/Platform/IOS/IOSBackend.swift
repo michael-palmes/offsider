@@ -383,6 +383,13 @@ extension IOSBackend: TreeGapFilling {
     }
 
     func fillingGaps(in tree: UITree, on id: DeviceID, samples: GapSamples?) async -> UITree {
+        let filled = try? await DoctorProbes.withTimeout(TreeGapFill.overallLimit, operation: "Reading what the app hides") {
+            await self.filling(tree, on: id, samples: samples)
+        }
+        return filled ?? tree
+    }
+
+    private func filling(_ tree: UITree, on id: DeviceID, samples: GapSamples?) async -> UITree {
         await Timings.measure("gap-fill") {
             guard let simulator = try? await simulator(for: id) else { return tree }
             let read = { (points: [UIPoint], wanted: [Bool], isNew: (UINode) -> Bool) async -> [UINode?] in
@@ -432,14 +439,6 @@ extension IOSBackend: TreeGapFilling {
             guard wanted, let element, let identity = node(element, keys: AccessibilityFetcher.identityKeys) else { return nil }
             return isNew(identity) ? node(element, keys: TraitsRequest.process.keys) ?? identity : identity
         }
-    }
-}
-
-extension IOSBackend: MaskTreeReading {
-    /// With what the app hides from accessibility, so a mask paints it too; only the plain read reaches the tree cache.
-    func maskTree(for id: DeviceID) async throws -> UITree {
-        let samples = await startGapSamples(on: id)
-        return await withGapsFilled(try await accessibilityTree(for: id, point: nil), on: id, samples: samples)
     }
 }
 

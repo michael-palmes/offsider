@@ -249,7 +249,9 @@ struct Wait: AsyncParsableCommand {
         let gate = settled ? await Self.settleGate(for: route, revealed: revealed) : nil
         let condition = condition(gate: gate, platform: route.device.platform)
         var sources = try await liveSources(on: route, condition: condition, tree: tree, clock: clock)
-        sources.tree = selector.judging(sources.tree, queries: waitsForAny ? selector.queries : [selector.query].compactMap { $0 }, on: route)
+        // A simulator's fill slows each poll by about a second, so two reads could both land in a brief flicker and call it gone.
+        let fills = !gone || route.device.platform != .ios
+        sources.tree = selector.judging(sources.tree, queries: waitsForAny ? selector.queries : [selector.query].compactMap { $0 }, fillingGaps: fills, on: route)
         if let revealed {
             // As the cache stores them, so a change message never prints one and the gate compares like with like.
             let (mask, read) = (TreeValueMask(revealed: revealed), sources.tree)

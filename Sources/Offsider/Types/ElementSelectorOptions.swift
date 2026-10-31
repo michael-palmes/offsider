@@ -225,12 +225,15 @@ struct ElementSelectorOptions: ParsableArguments {
 
     /// `source` with what the app hides from accessibility read when nothing matches, then the shared on-screen judgement read for the on-screen matches of `queries`, so a match a touch would not reach does not count; with `--allow-offscreen`, no judgement.
     @MainActor
-    func judging(_ source: @escaping Wait.TreeSource, queries: [AccessibilityQuery], on route: DeviceRouter.Route) -> Wait.TreeSource {
+    func judging(_ source: @escaping Wait.TreeSource, queries: [AccessibilityQuery], fillingGaps: Bool = true, on route: DeviceRouter.Route) -> Wait.TreeSource {
         guard !queries.isEmpty else { return source }
         let elementType = elementType
         let allowOffscreen = allowOffscreen
         return {
-            var tree = await AccessibilityPoller.fillingGaps(try await source(), for: queries, elementType: elementType, allowOffscreen: allowOffscreen, on: route.backend, device: route.device)
+            let plain = try await source()
+            var tree = fillingGaps
+                ? await AccessibilityPoller.fillingGaps(plain, for: queries, elementType: elementType, allowOffscreen: allowOffscreen, on: route.backend, device: route.device)
+                : plain
             if allowOffscreen { return tree }
             await FrontJudge.read(matching: queries, elementType: elementType, in: &tree, backend: route.backend, device: route.device)
             return tree

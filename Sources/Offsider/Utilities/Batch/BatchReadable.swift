@@ -111,7 +111,9 @@ extension Screenshot: BatchReadable {
     func runInBatch(context: BatchContext, logger: OffsiderLogger) async throws -> BatchReadResult {
         let masks = masksWithRunDefaults(try maskPlan(batchDefault: context.maskSecure))
         let report = try await take(try request(), on: context.route, masks: masks) {
-            guard let reader = context.backend as? any MaskTreeReading else { return try await context.accessibilityTree() }
+            guard let reader = context.backend as? any MaskTreeReading else {
+                return try await context.backend.readingWithGaps(on: context.device) { try await context.accessibilityTree() }
+            }
             return try await reader.maskTree(for: context.device)
         }
         guard let comparison = report.comparison else {

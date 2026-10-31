@@ -47,6 +47,7 @@ public final class DeviceActivityLedger {
             activity.firstReadStartedAt = activity.firstReadStartedAt ?? startedAt
             activity.tree = tree
             activity.treeReadAt = now()
+            activity.filled = []
         }
     }
 
