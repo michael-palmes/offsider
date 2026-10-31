@@ -151,13 +151,13 @@ public struct AndroidHost: Sendable {
         return AndroidHost(environment: environment, homeDirectory: home, helperDex: helperDex, timing: timing)
     }
 
-    /// The private directory's `displays/`, made 0700 on first use; nil when `OFFSIDER_DISPLAY_CACHE=off` or it cannot be made private.
+    /// The private directory's `postures/`, made 0700 when `create`; nil when it is missing or not private.
     public static let privatePostureRecords: @Sendable (Bool) -> String? = { create in
-        create
-            ? try? OffsiderPrivateDirectory.ensureSubdirectory(AndroidPostureRecord.directoryName)
-            : (OffsiderPrivateDirectory.root as NSString).appendingPathComponent(AndroidPostureRecord.directoryName)
+        let name = AndroidPostureRecord.directoryName
+        return create ? try? OffsiderPrivateDirectory.ensureSubdirectory(name) : (try? OffsiderPrivateDirectory.existingSubdirectory(name)) ?? nil
     }
 
+    /// The private directory's `displays/`, made 0700 on first use; nil when `OFFSIDER_DISPLAY_CACHE=off` or it cannot be made private.
     public static func privateDisplayCache(environment: [String: String]) -> @Sendable () -> String? {
         guard AndroidDisplayCache.isEnabled(environment) else { return { nil } }
         return { try? OffsiderPrivateDirectory.ensureSubdirectory(AndroidDisplayCache.directoryName) }
