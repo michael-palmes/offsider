@@ -220,6 +220,7 @@ struct WakeCommandTests {
             #expect(first?.reason == .deviceLocked)
             #expect(first?.userFacingDescription == "The saved PIN is wrong: Motorola moto g (ZY22FAKE01) stayed locked after Offsider typed it.\nSave the right one: `offsider unlock-code set --device ZY22FAKE01`\nOffsider won't type it again: repeated wrong PINs can lock a phone out.")
             #expect(first?.hint == "offsider unlock-code set --device ZY22FAKE01")
+            #expect(first?.ask == "Can you save the right PIN for \(PersonAsk.devicePlaceholder)? Run this in your own terminal: `offsider unlock-code set --device ZY22FAKE01`")
             #expect(ledger.lastAttempt("ZY22FAKE01")?.outcome == .rejected)
             #expect(ledger.lastAttempt("ZY22FAKE01")?.credential == "pin")
 
@@ -228,6 +229,7 @@ struct WakeCommandTests {
             #expect(second?.reason == .deviceLocked)
             #expect(second?.userFacingDescription.hasPrefix("The saved PIN is wrong: Motorola moto g (ZY22FAKE01) stayed locked after Offsider typed it on ") == true)
             #expect(second?.hint == "offsider unlock-code set --device ZY22FAKE01")
+            #expect(second?.ask == first?.ask)
             #expect(backend.enteredCodes.count == 1)
             #expect(store.reads == 1)
         }
@@ -250,7 +252,20 @@ struct WakeCommandTests {
             #expect(second?.reason == .deviceLocked)
             #expect(second?.userFacingDescription.hasPrefix("Offsider can't tell if the saved PIN is right: it has no result for its unlock of Motorola moto g (ZY22FAKE01) on ") == true)
             #expect(second?.hint == "offsider unlock-code set --device ZY22FAKE01")
+            #expect(second?.ask == "Can you save the PIN for \(PersonAsk.devicePlaceholder) again? Run this in your own terminal: `offsider unlock-code set --device ZY22FAKE01`")
             #expect(backend.enteredCodes.count == 1)
+        }
+    }
+
+    @Test("a lock screen with no saved-code problem still asks the user to unlock, and the ask names the device when reported")
+    func plainLockedAsk() async throws {
+        try await Self.withLedger { (ledger: UnlockAttemptLedger) async throws in
+            let backend = Self.backend(Self.locked, afterWake: AwakeReading(screen: .on, lockScreen: .secure, credential: "pin"))
+            let error = await #expect(throws: CLIError.self) { try await Self.wake(backend, ledger: ledger) }
+            #expect(error?.ask == "Can you unlock \(PersonAsk.devicePlaceholder)?")
+
+            let record = UnlockAttemptRecord(outcome: .rejected, at: nil, credential: "pin")
+            #expect(PersonAsk.filled(record.ask(device: "ZY22FAKE01"), name: "moto g (ZY22FAKE01)", id: "ZY22FAKE01") == "Can you save the right PIN for moto g (ZY22FAKE01)? Run this in your own terminal: `offsider unlock-code set --device ZY22FAKE01`")
         }
     }
 

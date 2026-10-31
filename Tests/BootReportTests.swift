@@ -88,6 +88,10 @@ struct BootReportTests {
         let failure = try #require(BootReport.firstUnlockFailure(avd: "Pixel_PIN", serial: "emulator-5560", alreadyRunning: false, reading: Self.pinLocked, lock: lock))
         #expect(failure.message == "Pixel_PIN booted as emulator-5560 but is waiting for its first unlock (PIN); apps cannot start until it is unlocked.\nThe saved PIN is wrong: Pixel_PIN stayed locked after Offsider typed it.\nSave the right one: `offsider unlock-code set --device Pixel_PIN`\nOffsider won't type it again: repeated wrong PINs can lock a phone out.")
         #expect(failure.hint == "offsider unlock-code set --device Pixel_PIN")
+        #expect(failure.ask == "Can you save the right PIN for \(PersonAsk.devicePlaceholder)? Run this in your own terminal: `offsider unlock-code set --device Pixel_PIN`")
+
+        let saved = LockReport(Self.pinLocked, savedCode: true, lastAttempt: nil)
+        #expect(try #require(BootReport.firstUnlockFailure(avd: "Pixel_PIN", serial: "emulator-5560", alreadyRunning: false, reading: Self.pinLocked, lock: saved)).ask == nil)
     }
 
     @Test("a device with no credential never reads the Keychain")

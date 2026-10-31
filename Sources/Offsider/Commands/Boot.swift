@@ -169,7 +169,7 @@ struct Boot: AsyncParsableCommand, JSONReportingCommand {
         }
         if let failure = BootReport.firstUnlockFailure(avd: avd, serial: result.serial, alreadyRunning: result.alreadyRunning, reading: reading, lock: lock) {
             ErrorReporter.noteDeviceName(avd)
-            let error = CLIError(errorDescription: failure.message, reason: .deviceLocked, hint: failure.hint)
+            let error = CLIError(errorDescription: failure.message, reason: .deviceLocked, hint: failure.hint, ask: failure.ask)
             guard json else { throw error }
             report.error = ErrorReporter.payload(for: error)
             console.data(report.jsonLine() + "\n")

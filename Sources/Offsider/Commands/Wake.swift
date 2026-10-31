@@ -125,8 +125,8 @@ struct Wake: AsyncParsableCommand {
         ledger: UnlockAttemptLedger,
         recordingLive: (DeviceLockKey) -> Bool = { RecordingMarker.isLive($0) }
     ) async throws -> UnlockAttempt {
-        func locked(_ message: String, hint: String? = nil) -> CLIError {
-            CLIError(errorDescription: message, reason: .deviceLocked, hint: hint)
+        func locked(_ message: String, hint: String? = nil, ask: String? = nil) -> CLIError {
+            CLIError(errorDescription: message, reason: .deviceLocked, hint: hint, ask: ask)
         }
         try RecordingMarker.refuseTyping("its unlock code", command: "wake", on: device, name: name, recordingLive: recordingLive)
         guard let key else {
@@ -137,7 +137,7 @@ struct Wake: AsyncParsableCommand {
             throw locked("\(name) has a pattern lock screen, and Offsider types only PINs and passwords. Unlock it on the device.")
         }
         if let last = ledger.lastAttempt(key) {
-            throw locked(last.message(name: name, device: key), hint: save)
+            throw locked(last.message(name: name, device: key), hint: save, ask: last.ask(device: key))
         }
         guard let code = try store.code(for: key) else {
             throw locked("No unlock code is saved for \(name). Unlock it on the device, or save one with `\(save)`.", hint: save)
@@ -171,7 +171,7 @@ struct Wake: AsyncParsableCommand {
             let rejected = UnlockAttemptRecord(outcome: .rejected, at: Date(), credential: reading.credential)
             // A failed write leaves `started`, which still stops a second try.
             try? ledger.record(rejected, for: key)
-            throw locked(rejected.message(name: name, device: key, dated: false), hint: save)
+            throw locked(rejected.message(name: name, device: key, dated: false), hint: save, ask: rejected.ask(device: key))
         }
         return attempt
     }

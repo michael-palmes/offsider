@@ -88,6 +88,15 @@ public struct UnlockAttemptRecord: Codable, Equatable, Sendable {
         }
     }
 
+    /// What an agent asks the user: unlocking would not clear this, and only a person may save a code.
+    public func ask(device: String) -> String {
+        let save = UnlockCodeScreen.setCommand(device)
+        switch outcome {
+        case .rejected: return "Can you save the right \(codeName) for \(PersonAsk.devicePlaceholder)? Run this in your own terminal: `\(save)`"
+        case .started: return "Can you save the \(codeName) for \(PersonAsk.devicePlaceholder) again? Run this in your own terminal: `\(save)`"
+        }
+    }
+
     public var noRetry: String {
         let plural = codeName + "s"
         switch outcome {
