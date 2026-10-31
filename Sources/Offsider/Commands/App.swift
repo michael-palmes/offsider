@@ -49,18 +49,13 @@ enum AppTarget {
         _ option: AppTargetOption, route: DeviceRouter.Route, command: String, gate: DevicePolicyGate = .current,
         profile: () -> LoginProfile? = { (try? LoginProfiles.load(project: nil, warn: { _ in })) ?? nil }
     ) throws -> String {
-        let platform = route.device.platform
-        let pinned = route.allowance.flatMap { $0.pinnedApps.count == 1 ? $0.pinnedApps[0] : nil }
-        let named = option.bundleID ?? profile().flatMap { platform == .ios ? $0.bundleID : $0.package }.flatMap { $0.isEmpty ? nil : $0 }
-        guard let app = named ?? pinned else {
-            throw CLIError(
-                errorDescription: "app \(command) needs the app: pass --app <\(platform == .ios ? "bundle-id" : "package")>, or name it in offsider.login.json.",
+        try route.app(named: option.bundleID, gate: gate, profile: profile) {
+            CLIError(
+                errorDescription: "app \(command) needs the app: pass --app <\(route.device.platform == .ios ? "bundle-id" : "package")>, or name it in offsider.login.json.",
                 reason: .usage,
                 hint: "offsider app \(command) --app <id> --device \(route.device.rawValue)"
             )
         }
-        if let allowance = route.allowance { try gate.requireApp(app, on: allowance) }
-        return app
     }
 
     /// A phone allowed for any app reads only the app a command names, so the backend learns it too.

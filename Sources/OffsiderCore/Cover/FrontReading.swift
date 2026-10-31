@@ -13,10 +13,13 @@ public struct FrontReading: Equatable, Sendable {
     public struct Judged: Equatable, Sendable {
         public var point: UIPoint
         public var verdict: CoverVerdict?
+        /// Whether the simulator's hit-test answered with the element or something inside it; nil when none was read.
+        public var ownHit: Bool?
 
-        public init(point: UIPoint, verdict: CoverVerdict?) {
+        public init(point: UIPoint, verdict: CoverVerdict?, ownHit: Bool? = nil) {
             self.point = point
             self.verdict = verdict
+            self.ownHit = ownHit
         }
     }
 
@@ -30,6 +33,11 @@ public struct FrontReading: Equatable, Sendable {
 
     /// Pre-order indexes of every element a touch would not reach.
     public var unreached: Set<Int> { Set(beneath.keys).union(covered.keys) }
+
+    /// True when a touch at the element at `index` lands elsewhere: a sure cover, or anything else the simulator's hit-test answered with, a backdrop included.
+    public func misses(at index: Int) -> Bool {
+        unreached.contains(index) || judged[index]?.ownHit == false
+    }
 
     /// Why a touch at the element at `index` would not reach it, such as `beneath "Products"` or `under button "Buy" (16, 790.0) 370x44`; nil when it would.
     public func reason(at index: Int) -> String? {

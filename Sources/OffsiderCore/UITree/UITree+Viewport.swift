@@ -3,14 +3,10 @@ import Foundation
 extension UITree {
     /// The union of the `.application` and `.keyboard` root frames with a positive size; nil when there is none.
     public static func viewport(in roots: [UINode]) -> UIFrame? {
-        let frames = roots
+        UIFrame.union(of: roots
             .filter { $0.role == .application || $0.role == .keyboard }
             .compactMap(\.frame)
-            .filter { $0.width > 0 && $0.height > 0 }
-        guard let first = frames.first else {
-            return nil
-        }
-        return frames.dropFirst().reduce(first) { $0.union($1) }
+            .filter { $0.width > 0 && $0.height > 0 })
     }
 
     public var viewport: UIFrame? {
@@ -80,12 +76,17 @@ extension UIFrame {
         "\(Self.format(width))x\(Self.format(height))"
     }
 
-    func union(_ other: UIFrame) -> UIFrame {
+    public func union(_ other: UIFrame) -> UIFrame {
         let minX = min(x, other.x)
         let minY = min(y, other.y)
         let maxX = max(x + width, other.x + other.width)
         let maxY = max(y + height, other.y + other.height)
         return UIFrame(x: minX, y: minY, width: maxX - minX, height: maxY - minY)
+    }
+
+    /// The smallest frame holding all of `frames`; nil when there are none.
+    public static func union(of frames: some Sequence<UIFrame>) -> UIFrame? {
+        frames.reduce(nil) { $0?.union($1) ?? $1 }
     }
 
     private static func format(_ value: Double) -> String {

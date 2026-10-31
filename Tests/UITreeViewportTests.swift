@@ -8,6 +8,16 @@ struct UITreeViewportTests {
         UINode(role: role, frame: UIFrame(x: x, y: y, width: width, height: height), native: .android(AndroidNativeAttributes()))
     }
 
+    @Test("the union of frames holds them all, whatever their order and sign; of none there is none")
+    func unionOfFrames() {
+        let frames = [UIFrame(x: 10, y: 20, width: 5, height: 5), UIFrame(x: -4, y: 40, width: 2, height: 10), UIFrame(x: 0, y: 0, width: 1, height: 1)]
+
+        #expect(UIFrame.union(of: frames) == UIFrame(x: -4, y: 0, width: 19, height: 50))
+        #expect(UIFrame.union(of: frames.reversed()) == UIFrame(x: -4, y: 0, width: 19, height: 50))
+        #expect(UIFrame.union(of: [frames[0]]) == frames[0])
+        #expect(UIFrame.union(of: []) == nil)
+    }
+
     @Test("the viewport is the union of the application and keyboard roots")
     func unionOfApplicationAndKeyboard() {
         let roots = [Self.root(.application, 0, 0, 400, 700), Self.root(.keyboard, 0, 600, 400, 300)]

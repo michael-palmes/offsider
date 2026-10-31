@@ -57,8 +57,7 @@ public enum KnownOverlays {
         if let screen = tree.screen, screen.width > 0, screen.height > 0 {
             return UIFrame(x: 0, y: 0, width: screen.width, height: screen.height)
         }
-        let bounds = (tree.windows ?? []).compactMap(\.bounds).filter { $0.width > 0 && $0.height > 0 }
-        return bounds.dropFirst().reduce(bounds.first) { $0?.union($1) }
+        return UIFrame.union(of: (tree.windows ?? []).compactMap(\.bounds).filter { $0.width > 0 && $0.height > 0 })
     }
 
     /// The text a LogBox banner shows after its `!, ` or `n, ` prefix, with line breaks and runs of spaces as one space.
