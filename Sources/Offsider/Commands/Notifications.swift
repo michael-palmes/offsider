@@ -69,6 +69,7 @@ struct NotificationsCommand: AsyncParsableCommand {
         if DeviceIDClassifier.classify(rawID).platform == .ios {
             throw CLIError(errorDescription: "notifications is Android only: iOS offers no way to read an app's posted notifications. Check the screen with describe-ui or screenshot instead.", reason: .notSupported)
         }
+        let mask = try await AmbientMasks.treeMask()
         let route = try await DeviceRouter.route(rawID, logger: OffsiderLogger())
         let app = try Self.app(app, route: route)
         let clock = ContinuousClock()
@@ -83,7 +84,7 @@ struct NotificationsCommand: AsyncParsableCommand {
             var earlier: Set<PostedNotification>?
             while true {
                 let snapshot = try await reader.notifications(of: app, on: id)
-                let hidden = snapshot.notifications.map { $0.redacted() }
+                let hidden = snapshot.notifications.map { $0.redacted(mask) }
                 guard let wait else { return (snapshot, hidden) }
                 let baseline = earlier ?? (new ? Set(snapshot.notifications) : [])
                 earlier = baseline

@@ -1,5 +1,5 @@
 import Foundation
-import OffsiderCore
+@testable import OffsiderCore
 import Testing
 @testable import Offsider
 
@@ -84,6 +84,67 @@ struct MaskFileLabelTests {
         #expect(shown.label == "Referral code. [redacted]")
         #expect(attributes.contentDescription == "Referral code. [redacted]" && attributes.text == "Referral code. [redacted]")
         #expect(attributes.hint == "[redacted]" && attributes.stateDescription == "[redacted]")
+    }
+
+    @Test("on iOS a matched element's custom actions and role description are hidden, and on an unmatched one their secrets are redacted")
+    func iosNativeText() throws {
+        func node(label: String, action: String, role: String) -> UINode {
+            var node = FakeUI.node(.button, label: label)
+            node.native = .ios(IOSNativeAttributes(roleDescription: role, customActions: [action]))
+            return node
+        }
+        let tree = UITree(platform: .ios, device: "fake-device", roots: [
+            node(label: "Referral code. rc-5521", action: "Copy rc-5521", role: "rc-5521 button"),
+            node(label: "Back", action: "Send code 482915 now", role: "button"),
+        ])
+        let shown = tree.redacted(Self.mask).roots
+        guard case .ios(let matched) = shown[0].native, case .ios(let other) = shown[1].native else {
+            Issue.record("expected iOS attributes")
+            return
+        }
+
+        #expect(matched.customActions == ["[redacted]"] && matched.roleDescription == "[redacted]")
+        #expect(other.customActions.first?.contains("482915") == false)
+        #expect(other.roleDescription == "button")
+    }
+
+    @Test("a revealed password field the file also names hides its label, in output and the cache, and its value stays bullets")
+    func revealedAndMasked() throws {
+        var field = FakeUI.node(.textField, id: "pin-field", label: "PIN field, 4471", value: "4471", frame: FakeUI.frame(0, 0, 100, 40), platform: .android)
+        field.native = .android(AndroidNativeAttributes(text: "4471", contentDescription: "PIN field, 4471", hint: "Holds 4471"))
+        let record = SecureFieldRecord(platform: .android, device: "emulator-5554", writtenAt: Date(), bootMarker: nil, entries: [.init(id: "pin-field", frame: field.frame)])
+        let mask = TreeValueMask(ids: ["pin-field"], revealed: RevealedSecrets(record))
+        let tree = UITree(platform: .android, device: "emulator-5554", roots: [field])
+
+        for scope in [TreeRedactionScope.output, .cache] {
+            let shown = tree.redacted(mask, scope: scope).roots[0]
+            #expect(shown.label == "[redacted]" && shown.value == "••••")
+            guard case .android(let attributes) = shown.native else { continue }
+            #expect(attributes.contentDescription == "[redacted]" && attributes.hint == "[redacted]" && attributes.text == "••••")
+        }
+        #expect(tree.redacted(mask).redaction == UITreeRedactionCounts(redacted: 1, revealed: 1))
+    }
+
+    @Test("a revealed field's label holding a code is redacted on output, without touching its bullets")
+    func revealedLabelRedacted() throws {
+        let field = FakeUI.node(.textField, id: "code-field", label: "Your code 482915", value: "482915", platform: .android)
+        let record = SecureFieldRecord(platform: .android, device: "emulator-5554", writtenAt: Date(), bootMarker: nil, entries: [.init(id: "code-field", frame: nil)])
+        let shown = UITree(platform: .android, device: "emulator-5554", roots: [field]).redacted(TreeValueMask(revealed: RevealedSecrets(record))).roots[0]
+
+        #expect(shown.label?.contains("482915") == false)
+        #expect(shown.value == "••••••")
+    }
+
+    @Test("page, presented, stale frame and hidden branch names take the file's value patterns; a page name its secrets too")
+    func contextLabels() throws {
+        let mask = TreeValueMask(patterns: [try MaskPlan.compile(#"rc-\d{4}"#)])
+        try OutputMasks.$current.withValue(OutputMasks { mask }) {
+            #expect(PresentationProbe.shownLabel(of: FakeUI.node(.other, label: "Offer rc-5521")) == "Offer [redacted]")
+            let branch = UITreeContext.HiddenBranch.shown(id: nil, label: "Offer rc-5521", className: nil, frame: nil)
+            #expect(branch.label == "Offer [redacted]")
+            #expect(mask.contextLabel("Signed in as me@example.com", id: nil).contains("me@example.com") == false)
+            #expect(mask.contextLabel("Your code 482913", id: nil).contains("482913") == false)
+        }
     }
 
     @Test("a verified tap that removes matched rows lists them masked, in the change list and the summary")

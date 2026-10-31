@@ -47,6 +47,7 @@ enum DeviceRouter {
         scope: CommandScope = .current,
         claims: DeviceClaims = .current
     ) async throws -> Route {
+        _ = try MaskConfigs.current()
         let route = try await route(rawID, logger: logger, host: host, scope: scope)
         if locking {
             try await claims.claim(route.device)
@@ -64,6 +65,7 @@ enum DeviceRouter {
         scope: CommandScope = .current,
         claims: DeviceClaims = .current
     ) async throws -> Route {
+        _ = try MaskConfigs.current()
         let route = try await watchdog.guardingSetup(device: rawID) {
             try await route(rawID, logger: logger, host: host, scope: scope)
         }

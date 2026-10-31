@@ -17,6 +17,7 @@ private final class FakeSimulator {
     var waitsForChange = false
     /// The device's cached tree, dated against `LiveTextTests.now`.
     var cached: TreeCacheRecord?
+    var valueMask = TreeValueMask.none
     /// Each read and capture yields once, as device I/O does, so work started alongside it can run.
     var yields = false
     private(set) var events: [String] = []
@@ -31,7 +32,7 @@ private final class FakeSimulator {
     }
 
     var dependencies: Verifier.Dependencies {
-        Verifier.Dependencies(
+        var dependencies = Verifier.Dependencies(
             tree: { [unowned self] in
                 treeReads += 1
                 events.append("tree")
@@ -60,6 +61,8 @@ private final class FakeSimulator {
             cachedRecord: { [unowned self] in cached },
             date: { LiveTextTests.now }
         )
+        dependencies.valueMask = { [unowned self] in valueMask }
+        return dependencies
     }
 
     func record(_ event: String) {
@@ -169,6 +172,53 @@ struct VerifierTests {
                 try onAction(attempt.number)
             }
         )
+    }
+
+    @Test("what redaction leaves unchanged never prints from the raw reads: a rotating code, a pattern match, a revealed field, a label with no id", arguments: [
+        ("Code 482913", "Code 771204", "482913", nil as String?),
+        ("rc-1111", "rc-2222", "rc-1111", "rc-\\d{4}"),
+    ])
+    func summaryComesFromShownTrees(before: String, after: String, secret: String, pattern: String?) async throws {
+        func screen(_ value: String) -> UITree { FakeUI.tree(width: 64, height: 128, [FakeUI.node(.text, id: "otp", value: value)]) }
+        let fake = FakeSimulator(trees: [screen(before), screen(before), screen(after)])
+        fake.valueMask = TreeValueMask(patterns: try pattern.map { [try MaskPlan.compile($0)] } ?? [])
+        var (actions, retries) = ([Verifier.Attempt](), [Int]())
+
+        let outcome = try await run(fake, actions: &actions, retries: &retries)
+
+        #expect(outcome.verified && outcome.change == .accessibilityTree)
+        #expect(outcome.summary == nil, "\(outcome.summary ?? "")")
+        #expect(outcome.changes.isEmpty)
+        #expect(!"\(outcome)".contains(secret))
+    }
+
+    @Test("a revealed password field replaced by text of the same length, and a label change on an element with no id, print no text")
+    func summaryHidesRevealedAndLabels() async throws {
+        let frame = FakeUI.frame(0, 0, 60, 20)
+        func field(_ value: String) -> UITree { FakeUI.tree(width: 64, height: 128, [FakeUI.node(.textField, id: "password-field", value: value, frame: frame)]) }
+        let record = SecureFieldRecord(platform: .ios, device: "fake-device", writtenAt: LiveTextTests.now, bootMarker: nil, entries: [.init(id: "password-field", frame: frame)])
+        let revealed = FakeSimulator(trees: [field("hunter22"), field("hunter22"), field("swordfis")])
+        revealed.valueMask = TreeValueMask(revealed: RevealedSecrets(record))
+        var (actions, retries) = ([Verifier.Attempt](), [Int]())
+
+        let outcome = try await run(revealed, actions: &actions, retries: &retries)
+        #expect(outcome.summary == nil)
+        #expect(!"\(outcome)".contains("hunter") && !"\(outcome)".contains("swordfis"))
+
+        func row(_ label: String) -> UITree { FakeUI.tree(width: 64, height: 128, [FakeUI.node(.button, label: label, frame: frame)]) }
+        let rotating = FakeSimulator(trees: [row("Your code 482913"), row("Your code 482913"), row("Your code 771204")])
+        let labelled = try await run(rotating, actions: &actions, retries: &retries)
+        #expect(!"\(labelled)".contains("482913") && !"\(labelled)".contains("771204"))
+    }
+
+    @Test("a change the shown trees do see keeps its summary")
+    func summaryStaysForRealChanges() async throws {
+        let fake = FakeSimulator(trees: [tree(count: "0"), tree(count: "0"), tree(count: "1")])
+        var (actions, retries) = ([Verifier.Attempt](), [Int]())
+
+        let outcome = try await run(fake, actions: &actions, retries: &retries)
+
+        #expect(outcome.summary == #"value of tap-count changed from "0" to "1""#)
     }
 
     @Test("A settled tree change on the first attempt verifies without a retry")
