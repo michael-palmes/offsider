@@ -6,7 +6,7 @@ public protocol AppLifecycleControlling: DeviceBackend {
     func appInfo(_ app: String, on id: DeviceID) async throws -> AppInfo
     func launchApp(_ app: String, restart: Bool, on id: DeviceID) async throws -> AppLaunch
     func terminateApp(_ app: String, on id: DeviceID) async throws -> AppStop
-    /// Delivers `url` to `app` alone, never to a chooser or the device's default handler, except on an iOS simulator.
+    /// Delivers `url` to `app` alone, never to the device's default handler, except on an iOS simulator.
     func openLink(_ url: String, in app: String, restart: Bool, on id: DeviceID) async throws -> AppLaunch
 }
 
@@ -53,13 +53,16 @@ public struct AppLaunch: Equatable, Sendable {
     /// Android's `TotalTime` from `am start -W`.
     public var milliseconds: Int?
     public var pid: Int?
+    /// For a link: true once the platform showed the named app took it; nil when it only says the link was delivered, as on an iPhone or iPad.
+    public var linkHandled: Bool?
 
-    public init(app: String, start: AppStart?, restarted: Bool, milliseconds: Int? = nil, pid: Int? = nil) {
+    public init(app: String, start: AppStart?, restarted: Bool, milliseconds: Int? = nil, pid: Int? = nil, linkHandled: Bool? = nil) {
         self.app = app
         self.start = start
         self.restarted = restarted
         self.milliseconds = milliseconds
         self.pid = pid
+        self.linkHandled = linkHandled
     }
 }
 
@@ -92,6 +95,11 @@ public struct AppLifecycleError: Error, Equatable, Sendable, CustomStringConvert
 
     public var description: String { message }
     public var errorDescription: String? { message }
+
+    /// The same failure, saying `app` was stopped when `stopped`, since `--restart` stops it before the link is sent.
+    public func noting(stopped: Bool, app: String) -> AppLifecycleError {
+        stopped ? AppLifecycleError(kind, "\(message) \(app) was stopped first.") : self
+    }
 }
 
 /// The links `app open` sends: one line of printable ASCII with a scheme, never one that reaches past the app.
@@ -145,7 +153,10 @@ public enum AppReport {
 
     public static func launch(_ launch: AppLaunch, action: String, url: String? = nil, on device: DeviceID) -> String {
         var members = header(action, app: launch.app, device: device)
-        if let url { members.append(("url", .string(url))) }
+        if let url {
+            members.append(("url", .string(url)))
+            members.append(("linkHandled", .optional(launch.linkHandled) { .bool($0) }))
+        }
         members += [
             ("start", .optional(launch.start) { .string($0.rawValue) }),
             ("restarted", .bool(launch.restarted)),

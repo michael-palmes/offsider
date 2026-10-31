@@ -253,4 +253,115 @@ struct AndroidAppLifecycleTests {
         await #expect(throws: AppLifecycleError.self) { _ = try await backend.openLink("intent://x#Intent;component=com.example/.Evil;end", in: Self.package, restart: false, on: Self.device) }
         #expect(Self.shellCommands(server).isEmpty)
     }
+
+    /// `am start -W` on Android 16 for a screen the app does not export, captured from an emulator with a stock app's id changed.
+    static let notExportedReply = """
+    offsider: running
+    Starting: Intent { cmp=com.mpalmes.offsider.playground.rn/.SubScreen }
+
+    Exception occurred while executing 'start':
+    java.lang.SecurityException: Permission Denial: starting Intent { flg=0x10000000 xflg=0x4 cmp=com.mpalmes.offsider.playground.rn/.SubScreen } from null (pid=21054, uid=2000) not exported from uid 10214
+    \tat com.android.server.wm.ActivityTaskSupervisor.checkStartAnyActivityPermission(ActivityTaskSupervisor.java:1211)
+    \tat com.android.server.wm.ActivityStarter.executeRequest(ActivityStarter.java:1231)
+    """
+
+    @Test("a link that lands on Android's chooser is link_not_handled, not opened")
+    func openChooser() async throws {
+        let (backend, _) = try Self.setUp { _ in FakeAdbServer.shell(stdout: "offsider: stopped\nStarting: Intent { act=android.intent.action.VIEW }\nStatus: ok\nLaunchState: COLD\nActivity: android/com.android.internal.app.ResolverActivity\nTotalTime: 90\nComplete\n") }
+        let error = await #expect(throws: AppLifecycleError.self) { _ = try await backend.openLink("https://example.com/a", in: Self.package, restart: false, on: Self.device) }
+        #expect(error?.kind == .linkNotHandled)
+        #expect(error?.message.contains("chooser") == true)
+    }
+
+    @Test("a link another app took is link_not_handled, naming what took it")
+    func openOtherApp() async throws {
+        let (backend, _) = try Self.setUp { _ in FakeAdbServer.shell(stdout: "offsider: running\nStatus: ok\nActivity: com.example.other/.Main\n") }
+        let error = await #expect(throws: AppLifecycleError.self) { _ = try await backend.openLink("https://example.com/a", in: Self.package, restart: false, on: Self.device) }
+        #expect(error?.kind == .linkNotHandled)
+        #expect(error?.message.contains("com.example.other/.Main") == true)
+    }
+
+    @Test("a link the app's own screen took, or a reply with no Activity line, counts as opened", arguments: ["Activity: \(Self.package)/.MainActivity\n", ""])
+    func openOwnScreen(_ activity: String) async throws {
+        let (backend, _) = try Self.setUp { _ in FakeAdbServer.shell(stdout: "offsider: running\nStatus: ok\n\(activity)") }
+        #expect(try await backend.openLink("https://example.com/a", in: Self.package, restart: false, on: Self.device).linkHandled == true)
+    }
+
+    @Test("an am start exception names the refusal and the fix, not an unknown status")
+    func exceptionNamesTheCause() async throws {
+        let (backend, _) = try Self.setUp { _ in FakeAdbServer.shell(stdout: Self.notExportedReply) }
+        let error = await #expect(throws: AppLifecycleError.self) { _ = try await backend.launchApp(Self.package, restart: false, on: Self.device) }
+        #expect(error?.kind == .failed)
+        #expect(error?.message.contains("not exported") == true)
+        #expect(error?.message.contains("export it") == true)
+        #expect(error?.message.contains("status unknown") == false)
+        #expect(AndroidAppPackage.startReply(Self.notExportedReply).error?.hasPrefix("java.lang.SecurityException") == true)
+    }
+
+    @Test("Status: timeout says the app may still be starting, not that it did not launch")
+    func timeoutMayStillBeStarting() async throws {
+        let (backend, _) = try Self.setUp { _ in FakeAdbServer.shell(stdout: "offsider: stopped\nStatus: timeout\nActivity: \(Self.package)/.MainActivity\n") }
+        let error = await #expect(throws: AppLifecycleError.self) { _ = try await backend.launchApp(Self.package, restart: false, on: Self.device) }
+        #expect(error?.kind == .failed)
+        #expect(error?.message.contains("may still be starting") == true)
+        #expect(error?.message.contains("did not launch") == false)
+    }
+
+    /// Runs the device script under /bin/sh with `resolve-activity` answering `resolved`, and logs each `am` call.
+    static func runOpenScript(resolved: String, restart: Bool) throws -> String {
+        let stubs = """
+        pm() { echo package:/data/app/base.apk; }
+        pidof() { echo 1234; }
+        cmd() { echo "\(resolved)"; }
+        am() { echo "am $1"; }
+        """
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/bin/sh")
+        process.arguments = ["-c", stubs + "\n" + AndroidAppPackage.openScript(url: "offsider-nowhere://x", package: Self.package, restart: restart)]
+        let pipe = Pipe()
+        process.standardOutput = pipe
+        try process.run()
+        let data = pipe.fileHandleForReading.readDataToEndOfFile()
+        process.waitUntilExit()
+        return String(decoding: data, as: UTF8.self)
+    }
+
+    @Test("open --restart of a link Android would refuse or send to a chooser stops nothing", arguments: ["No activity found", "android/com.android.internal.app.ResolverActivity"])
+    func restartChecksTheLinkFirst(_ resolved: String) throws {
+        let output = try Self.runOpenScript(resolved: resolved, restart: true)
+        #expect(!output.contains("am force-stop"))
+        #expect(!output.contains("am start"))
+        #expect(AndroidAppPackage.hasNoActivity(output) || AndroidAppPackage.hasChooser(output))
+    }
+
+    @Test("open --restart of a link the app takes stops the app, then opens it")
+    func restartStopsThenOpens() throws {
+        let output = try Self.runOpenScript(resolved: "\(Self.package)/.MainActivity", restart: true)
+        let stop = try #require(output.range(of: "am force-stop"))
+        let start = try #require(output.range(of: "am start"))
+        #expect(stop.lowerBound < start.lowerBound)
+    }
+
+    @Test("open without --restart asks Android nothing first, so it costs no extra call")
+    func openWithoutRestartSkipsTheCheck() {
+        #expect(!AndroidAppPackage.openScript(url: "a://b", package: Self.package, restart: false).contains("resolve-activity"))
+    }
+
+    @Test("open --restart refused before the stop maps to link_not_handled, with no word of a stop")
+    func restartRefusedBeforeStop() async throws {
+        let (backend, _) = try Self.setUp { _ in FakeAdbServer.shell(stdout: "offsider: running\noffsider: no-activity\n") }
+        let error = await #expect(throws: AppLifecycleError.self) { _ = try await backend.openLink("offsider-nowhere://x", in: Self.package, restart: true, on: Self.device) }
+        #expect(error?.kind == .linkNotHandled)
+        #expect(error?.message.contains("stopped first") == false)
+    }
+
+    @Test("a refusal after --restart stopped a running app says it was stopped, and only then", arguments: [("offsider: running", true), ("offsider: stopped", false)])
+    func restartSaysItStopped(state: String, says: Bool) async throws {
+        let (backend, _) = try Self.setUp { _ in
+            FakeAdbServer.shell(stdout: "\(state)\nError: Activity not started, unable to resolve Intent { act=android.intent.action.VIEW }\n")
+        }
+        let error = await #expect(throws: AppLifecycleError.self) { _ = try await backend.openLink("offsider-nowhere://x", in: Self.package, restart: true, on: Self.device) }
+        #expect(error?.kind == .linkNotHandled)
+        #expect(error?.message.contains("\(Self.package) was stopped first.") == says)
+    }
 }

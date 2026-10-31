@@ -39,18 +39,23 @@ extension IOSBackend: AppLifecycleControlling {
         let link = try AppLink.validate(url)
         let name = try await appInfo(bundleID, on: id).name
         var running = await Self.runningPID(bundleID, on: id)
+        let stopped = restart && running != nil
         if restart, running != nil {
             _ = try await Self.simctl(ExpoDevClient.iosTerminateArguments(udid: id.rawValue, bundleID: bundleID))
             running = nil
         }
-        let result = try await Self.simctl(ExpoDevClient.iosOpenURLArguments(udid: id.rawValue, url: link), timeout: 30)
-        if SimulatorApps.linkUnclaimed(status: result.status, stderr: result.stderr) {
-            throw AppLifecycleError(.linkNotHandled, "No app on simulator \(id.rawValue) claims this link, so iOS opened nothing. Check the link's scheme against \(bundleID)'s URL types.")
+        do {
+            let result = try await Self.simctl(ExpoDevClient.iosOpenURLArguments(udid: id.rawValue, url: link), timeout: 30)
+            if SimulatorApps.linkUnclaimed(status: result.status, stderr: result.stderr) {
+                throw AppLifecycleError(.linkNotHandled, "No app on simulator \(id.rawValue) claims this link, so iOS opened nothing. Check the link's scheme against \(bundleID)'s URL types.")
+            }
+            guard result.status == 0 else { throw Self.failure(result, bundleID: bundleID, on: id, doing: "open the link in") }
+            try await requireInFront(bundleID, name: name, on: id)
+        } catch let error as AppLifecycleError {
+            throw error.noting(stopped: stopped, app: bundleID)
         }
-        guard result.status == 0 else { throw Self.failure(result, bundleID: bundleID, on: id, doing: "open the link in") }
-        try await requireInFront(bundleID, name: name, on: id)
         let pid = await Self.runningPID(bundleID, on: id)
-        return AppLaunch(app: bundleID, start: running != nil && running == pid ? .warm : .cold, restarted: restart, pid: pid)
+        return AppLaunch(app: bundleID, start: running != nil && running == pid ? .warm : .cold, restarted: restart, pid: pid, linkHandled: true)
     }
 
     static let frontChecks = (reads: 2, every: Duration.milliseconds(400), within: Duration.seconds(5))

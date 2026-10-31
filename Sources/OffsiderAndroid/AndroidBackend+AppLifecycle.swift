@@ -38,15 +38,25 @@ extension AndroidBackend: AppLifecycleControlling {
         let link = try AppLink.validate(url)
         let output = try await lifecycleShell(AndroidAppPackage.openScript(url: link, package: package, restart: restart), package: package, on: id, label: "am start")
         let running = try requireInstalled(output, package: package, on: id)
+        let noScreen = AppLifecycleError(.linkNotHandled, "\(package) on \(id.rawValue) has no screen for this link, so Android opened nothing. Check the link's scheme and host against the app's intent filters.")
+        let chooser = AppLifecycleError(.linkNotHandled, "Android showed a chooser, not \(package), on \(id.rawValue): more than one of the app's screens takes this link. Give one filter a higher priority, or send a link only one takes.")
+        if AndroidAppPackage.hasNoActivity(output) { throw noScreen }
+        if AndroidAppPackage.hasChooser(output) { throw chooser }
         let reply = AndroidAppPackage.startReply(output)
-        if reply.unresolved {
-            throw AppLifecycleError(.linkNotHandled, "\(package) on \(id.rawValue) has no screen for this link, so Android opened nothing. Check the link's scheme and host against the app's intent filters.")
+        do {
+            if reply.unresolved { throw noScreen }
+            if reply.landedOnChooser { throw chooser }
+            if reply.landedOutside(package), let activity = reply.activity {
+                throw AppLifecycleError(.linkNotHandled, "Android opened the link in \(TerminalText.quoted(TerminalText.line(activity, cap: 200))), not \(package), on \(id.rawValue). Send a link only \(package) takes, such as its own scheme.")
+            }
+            let started = try requireStarted(reply, package: package, on: id, what: "open the link in")
+            return AppLaunch(
+                app: package, start: AndroidAppPackage.start(launchState: started.launchState, wasRunning: running, restarted: restart),
+                restarted: restart, milliseconds: started.totalTime, linkHandled: true
+            )
+        } catch let error as AppLifecycleError {
+            throw error.noting(stopped: restart && running, app: package)
         }
-        let started = try requireStarted(reply, package: package, on: id, what: "open the link in")
-        return AppLaunch(
-            app: package, start: AndroidAppPackage.start(launchState: started.launchState, wasRunning: running, restarted: restart),
-            restarted: restart, milliseconds: started.totalTime
-        )
     }
 
     private func lifecycleShell(_ script: String, package: String, on id: DeviceID, label: String) async throws -> String {
@@ -66,8 +76,12 @@ extension AndroidBackend: AppLifecycleControlling {
 
     private func requireStarted(_ reply: AndroidAppPackage.StartReply, package: String, on id: DeviceID, what: String) throws -> AndroidAppPackage.StartReply {
         guard reply.error == nil, reply.status == "ok" else {
+            if reply.error == nil, reply.status == "timeout" {
+                throw AppLifecycleError(.failed, "`am start` stopped waiting for \(package) on \(id.rawValue), so it may still be starting. Check with `offsider describe-ui --device \(id.rawValue)` before retrying.")
+            }
             let detail = reply.error ?? "status \(reply.status ?? "unknown")"
-            throw AppLifecycleError(.failed, "Android did not \(what) \(package) on \(id.rawValue): \(TerminalText.line(detail, cap: 300)).")
+            let fix = detail.contains("not exported") ? " Android refused because that screen is not exported: export it, or check its intent filters." : ""
+            throw AppLifecycleError(.failed, "Android did not \(what) \(package) on \(id.rawValue): \(TerminalText.line(detail, cap: 300)).\(fix)")
         }
         return reply
     }
