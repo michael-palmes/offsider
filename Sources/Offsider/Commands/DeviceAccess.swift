@@ -226,6 +226,8 @@ struct DeviceAccessAllow: AsyncParsableCommand {
         let apps: [String]
         let lifetime: TimeInterval?
         var metroPorts: [Int] = []
+        /// The end a change kept, which Touch ID's wait must not push back.
+        var keptExpiry: Date?
     }
 
     /// A person reading the menus may step away for Touch ID, so a key may be minutes coming.
@@ -356,7 +358,7 @@ struct DeviceAccessAllow: AsyncParsableCommand {
             let entry = DeviceAllowance(
                 platform: platform, key: key, name: PromptScreen.label(chosen.row.name, cap: 100),
                 added: Date(timeIntervalSince1970: now.timeIntervalSince1970.rounded(.down)),
-                expires: chosen.lifetime.map { Date(timeIntervalSince1970: now.addingTimeInterval($0).timeIntervalSince1970.rounded(.down)) },
+                expires: chosen.keptExpiry ?? chosen.lifetime.map { Date(timeIntervalSince1970: now.addingTimeInterval($0).timeIntervalSince1970.rounded(.down)) },
                 apps: chosen.apps,
                 team: chosen.team,
                 metroPorts: chosen.metroPorts
@@ -423,11 +425,14 @@ struct DeviceAccessAllow: AsyncParsableCommand {
             chosenPorts = try await step("Metro") { try pickMetroPorts(on: prompt, current: current?.metroPorts ?? [], step: $0) }.value
         }
         let lifetime: TimeInterval?
+        var keptExpiry: Date?
         if let expires {
             lifetime = try DeviceAccess.expiry(expires)
         } else {
             let kept = current.map { entry in (entry.expires?.timeIntervalSince(context.now()), AllowScreen.until(entry.expires, now: context.now(), timeZone: context.timeZone)) }
-            lifetime = try await step("How long") { try pickExpiry(on: prompt, current: kept, step: $0) }.value
+            let picked = try await step("How long") { try pickExpiry(on: prompt, current: kept, step: $0) }
+            lifetime = picked.value
+            if picked.shown == kept?.1 { keptExpiry = current?.expires }
         }
         let name = AllowScreen.name(row)
         let start = prompt.mark
@@ -436,7 +441,7 @@ struct DeviceAccessAllow: AsyncParsableCommand {
         let reach = chosenPorts.isEmpty ? "" : " and let its apps reach \(AllowScreen.metro(chosenPorts))"
         try await PersonPresence.confirm(reason: "allow Offsider to drive \(name) (\(PromptScreen.visible(key)))\(reach)")
         prompt.rewind(to: start)
-        return Choice(row: row, key: key, team: chosenTeam, apps: chosenApps, lifetime: lifetime, metroPorts: chosenPorts)
+        return Choice(row: row, key: key, team: chosenTeam, apps: chosenApps, lifetime: lifetime, metroPorts: chosenPorts, keptExpiry: keptExpiry)
     }
 
     /// The steps this run shows, in order; a flag given on the command line skips its step.
@@ -536,7 +541,12 @@ struct DeviceAccessAllow: AsyncParsableCommand {
             }
         } catch {
             prompt.lines(TerminalUI.warning("Could not read its apps (\(Self.reason(error))). Unlock it, or type an app ID.", width: prompt.width, style: prompt.style))
-            return try typeApp(on: prompt, platform: row.platform, policy: policy, label: (step.map { "\($0) " } ?? "  ") + "App ID (Return for any app): ")
+            let lead = step.map { "\($0) " } ?? "  "
+            if let current {
+                let answer = try typeApp(on: prompt, platform: row.platform, policy: policy, label: lead + "App ID (Return to keep \(AllowScreen.apps(current))): ")
+                return answer.value.isEmpty ? (current, AllowScreen.apps(current)) : answer
+            }
+            return try typeApp(on: prompt, platform: row.platform, policy: policy, label: lead + "App ID (Return for any app): ")
         }
         let menu = Self.appMenu(listed, platform: row.platform, policy: policy, profile: context.profile(), front: front)
         let kept = current.flatMap { apps in

@@ -24,7 +24,7 @@ struct FrozenDisplayTests {
             await Console.$current.withValue(capture.console(out: .agent, err: .agent)) {
                 for (index, tree) in trees.enumerated() {
                     let png = images?[index] ?? same
-                    FrozenDisplay.check(try! ScreenImage.decode(png), tree: tree, device: device)
+                    FrozenDisplay.check(try! ScreenCapture.make(png: png, platform: device.platform, screen: nil), tree: tree, device: device)
                 }
             }
         }

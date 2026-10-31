@@ -230,6 +230,7 @@ struct Button: AsyncParsableCommand, VerifiableCommand {
         }
         try await VerifyOutput.reportingFailures(command: "button", target: buttonType.rawValue, options: verification) { progress in
             try await execute(progress: progress)
+            if let note = Self.unlockNote(buttonType, device: deviceOption.id) { Console.current.notice(note) }
         }
     }
 

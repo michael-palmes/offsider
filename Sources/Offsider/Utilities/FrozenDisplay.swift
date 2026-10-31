@@ -1,4 +1,3 @@
-import CoreGraphics
 import Foundation
 import OffsiderCore
 
@@ -6,9 +5,9 @@ import OffsiderCore
 @MainActor
 enum FrozenDisplay {
     /// Off with the tree cache, and for any device that is not a simulator; a failed read or write only skips the warning.
-    static func check(_ image: CGImage, tree: UITree, device: DeviceID, environment: TreeCacheEnvironment = .current) {
+    static func check(_ capture: CapturedScreen, tree: UITree, device: DeviceID, environment: TreeCacheEnvironment = .current) {
         guard case .iosSimulator = DeviceIDClassifier.classify(device.rawValue), let directory = environment.directory(),
-              let pixels = image.dataProvider?.data as Data? else { return }
+              let pixels = capture.untouchedPNG ?? capture.image.dataProvider?.data as Data? else { return }
         let name = FrozenDisplayRecord.fileName(device: device.rawValue)
         let current = FrozenDisplayRecord(image: FrozenDisplayRecord.digest(pixels: pixels), tree: FrozenDisplayRecord.digest(tree: tree))
         let previous = (try? OffsiderPrivateDirectory.readOwnedFile(named: name, in: directory, maxBytes: FrozenDisplayRecord.maximumBytes)).flatMap { $0 }.flatMap(FrozenDisplayRecord.init(data:))

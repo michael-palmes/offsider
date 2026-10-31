@@ -487,16 +487,24 @@ struct RNOpenCommandTests {
         #expect(result.failure?.reason == .appCrashed)
     }
 
-    @Test("another app in front, still running beneath it, is named as another process rather than a system prompt")
-    func anotherProcessIsNotCalledASystemPrompt() async throws {
-        let backend = HitTestingFakeBackend(trees: [Self.permissionAlert()])
-        backend.processNames = [Self.springBoardPID: "OtherApp"]
+    @Test("another app in front, with the app still running, is named as another app, and any other process with a blank root stays a system prompt")
+    func anotherAppIsNotCalledASystemPrompt() async throws {
+        let alert = Self.permissionAlert()
+        var named = alert
+        named.roots[0].label = "OtherApp"
+        let backend = HitTestingFakeBackend(trees: [named])
         backend.livenessReadings = [.running(AppProcess(pid: Self.appPID, started: 1))]
         let (result, _) = try await Self.run(["--wait-id", "menu-title", "--timeout", "600"], on: backend)
-        let message = result.failure?.userFacingDescription ?? ""
-        #expect(message.hasPrefix("Another process is in front of com.example.app:"))
-        #expect(message.contains("from OtherApp"))
-        #expect(!message.contains("system prompt"))
+        #expect(result.failure?.reason == .conditionNotMet)
+        #expect(result.failure?.userFacingDescription.hasPrefix(#"Another app, "OtherApp", is in front of com.example.app"#) == true)
+        #expect(result.failure?.hint?.contains("--restart") == true)
+
+        let service = HitTestingFakeBackend(trees: [alert])
+        service.processNames = [Self.springBoardPID: "SomeViewService"]
+        service.livenessReadings = backend.livenessReadings
+        let (prompted, _) = try await Self.run(["--wait-id", "menu-title", "--timeout", "600"], on: service)
+        #expect(prompted.failure?.reason == .personRequired)
+        #expect(prompted.failure?.userFacingDescription.contains("the system prompt") == true)
     }
 
     @Test("an Open in prompt long after the last link is reported as a system prompt and never tapped")

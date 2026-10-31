@@ -146,7 +146,7 @@ struct AccessibilityFetcher {
         let relaunch = DoctorRules.relaunchCommand(app, udid: udid)
         return .warning(
             "\(app.bundleID) is running but its accessibility tree is empty; relaunch it, or reboot the simulator if that fails",
-            agent: "\(DoctorRules.emptyTreeDetail(app)). \(hint)", try: hint.contains(relaunch) ? relaunch : nil
+            agent: "\(DoctorRules.emptyTreeDetail(app)). \(hint)", try: relaunch
         )
     }
 

@@ -373,6 +373,8 @@ struct RNOpen: AsyncParsableCommand {
     enum Cover {
         case devMenuIntro
         case prompt(SystemPrompt, buttons: [String])
+        /// Another app's own screen: unlike SpringBoard's blank root, its application element carries the app's name.
+        case otherApp(String, title: String?, buttons: [String])
     }
 
     /// What hides the app: the dev menu's intro, or on an iOS simulator a system prompt, which another process draws.
@@ -380,6 +382,7 @@ struct RNOpen: AsyncParsableCommand {
     static func cover(over tree: UITree, app: AppProcess?, on route: DeviceRouter.Route) async -> Cover? {
         if ExpoDevLauncher.isDevMenuIntro(tree) { return .devMenuIntro }
         if isForeign(tree, app: app), let pid = SimulatorAppLiveness.applicationPID(in: tree), let alert = SystemPrompt.alert(in: tree) {
+            if let name = tree.roots.first(where: { $0.role == .application })?.normalizedLabel { return .otherApp(name, title: alert.title, buttons: alert.buttons) }
             let process = await (route.backend as? any PointHitTesting)?.processName(of: pid, on: route.device)
             return .prompt(SystemPrompt(title: alert.title, process: process, pid: pid), buttons: alert.buttons)
         }
@@ -414,21 +417,23 @@ struct RNOpen: AsyncParsableCommand {
             )
         case .prompt(let prompt, let buttons):
             let choices = buttons.isEmpty ? "" : " (\(buttons.map { TerminalText.quoted(SelectorText.truncated($0)) }.joined(separator: ", ")))"
-            if !prompt.isFromSystemHost {
-                return CLIError(
-                    errorDescription: "Another process is in front of \(bundleID): \(prompt.summary.replacingOccurrences(of: "the system prompt ", with: ""))\(choices), so rn open stopped waiting. It answers nothing there: bring \(bundleID) to the front, or ask the user which to choose, then run rn open again.",
-                    reason: .personRequired,
-                    hint: "offsider describe-ui --summary --device \(device.rawValue)"
-                )
-            }
             return CLIError(
                 errorDescription: "\(bundleID) is behind \(prompt.summary)\(choices), so rn open stopped waiting. It never answers a system prompt: ask the user which to choose, answer it, then run rn open again.",
                 reason: .personRequired,
                 hint: buttons.isEmpty ? "offsider screenshot --device \(device.rawValue)" : "offsider describe-ui --summary --device \(device.rawValue)",
                 ask: "Can you answer the system prompt on \(PersonAsk.devicePlaceholder)?"
             )
+        case .otherApp(let name, let title, let buttons):
+            let shown = ([title].compactMap { $0 } + buttons).map(Self.other).joined(separator: ", ")
+            return CLIError(
+                errorDescription: "Another app, \(Self.other(name)), is in front of \(bundleID)\(shown.isEmpty ? "" : ", showing \(shown)"), so rn open stopped waiting. Run rn open again with --restart to bring \(bundleID) to the front.",
+                reason: .conditionNotMet,
+                hint: restartCommand(device: device)
+            )
         }
     }
+
+    private static func other(_ name: String) -> String { TerminalText.quoted(SelectorText.truncated(name)) }
 
     func otherScreen(_ name: String, waitID: String, after: String, device: DeviceID) -> CLIError {
         CLIError(

@@ -29,11 +29,6 @@ public struct SystemPrompt: Equatable, Sendable {
         return parts.joined(separator: " ")
     }
 
-    /// False when the process is named and is not one that draws system prompts, so it may be another app; an unnamed one stays a prompt.
-    public var isFromSystemHost: Bool {
-        process.map { ["SpringBoard", "SafariViewService", "AuthenticationServicesUI", "AccountAuthenticationDialog"].contains($0) } ?? true
-    }
-
     /// Windows over the app's first that look like that host: nothing labelled, named or actionable, no keyboard, and a container larger than the screen.
     public static func hosts(in tree: UITree) -> [(index: Int, window: UINode)] {
         guard tree.platform == .ios, let viewport = tree.viewport else { return [] }
