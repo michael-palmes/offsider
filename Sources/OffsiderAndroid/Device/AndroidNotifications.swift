@@ -7,30 +7,42 @@ enum AndroidNotifications {
     static let dumpMarker = "offsider: dump"
     static let recordMarker = "offsider: record"
     static let listMarker = "offsider: list"
+    static let notInstalledMarker = "offsider: not-installed"
     static let maximumValue = 4_096
 
-    /// Android 11 and later pick each record by its key (`list`, then `get`); before that a filter keeps the package's blocks of the active list.
+    /// Android 11 and later pick each record by its key (`list`, then `get`); before that a filter keeps the package's blocks of the active list. With no record, `pm path` tells a mistyped package from an app with nothing posted.
     static func script(package: String) -> String {
         """
         p=\(ExpoDevClient.shellQuote(package))
+        n() { [ -n "$(pm path "$p" 2>/dev/null)" ] || echo '\(notInstalledMarker)'; }
         if keys=$(cmd notification list 2>/dev/null); then
           echo '\(keysMarker)'
+          case "$keys" in *"|$p|"*) ;; *) n ;; esac
           printf '%s\\n' "$keys" | while IFS= read -r k; do
             r="${k#*"|"}"
             case "$r" in "$p|"*) echo '\(recordMarker)'; cmd notification get "$k" </dev/null 2>/dev/null ;; esac
           done
         else
           echo '\(dumpMarker)'
-          dumpsys notification --noredact 2>/dev/null | while IFS= read -r l; do
-            case "$l" in
-              "  Notification List:"*) s=1; o=0; echo '\(listMarker)'; continue ;;
-              "    NotificationRecord("*) o=0; if [ "$s" = 1 ]; then case "$l" in *" pkg=$p "*) o=1; echo '\(recordMarker)' ;; esac; fi ;;
-              "  "[!\\ ]*:|" "[!\\ ]*:|[!\\ ]*:) o=0; s=0 ;;
-            esac
-            [ "$o" = 1 ] && printf '%s\\n' "$l"
-          done
+          dumpsys notification --noredact 2>/dev/null | {
+            while IFS= read -r l; do
+              case "$l" in
+                "  Notification List:"*) s=1; o=0; echo '\(listMarker)'; continue ;;
+                "    NotificationRecord("*) o=0; if [ "$s" = 1 ]; then case "$l" in *" pkg=$p "*) o=1; f=1; echo '\(recordMarker)' ;; esac; fi ;;
+                "  mArchive"*|"  "[!\\ ]*:|" "[!\\ ]*:) o=0; s=0 ;;
+              esac
+              [ "$o" = 1 ] && printf '%s\\n' "$l"
+            done
+            [ "$f" = 1 ] || n
+          }
         fi
         """
+    }
+
+    /// True when the script found no record and `pm path` found no app; a line of the app's own text cannot pass for it, as it prints only with no record.
+    static func notInstalled(_ output: String) -> Bool {
+        let lines = output.components(separatedBy: "\n")
+        return lines.contains(notInstalledMarker) && !lines.contains(recordMarker)
     }
 
     /// The app's checked records without Android's own group summaries or empty ones; nil when no list was found, which is not "none posted".
@@ -82,9 +94,9 @@ enum AndroidNotifications {
             } else if line.hasPrefix("when="), when == nil {
                 when = milliseconds(line.dropFirst("when=".count).prefix { $0.isNumber })
             } else if let extra = textExtra(line) {
+                let indent = lines[index - 1].prefix { $0 == " " }.count
                 var value = String(line.dropFirst(extra.prefix.count))
-                while !value.hasSuffix(")"), index < lines.count, extraName(lines[index].trimmingCharacters(in: .whitespaces)) == nil,
-                      lines[index].trimmingCharacters(in: .whitespaces) != "}", value.count < maximumValue {
+                while index < lines.count, value.count < maximumValue, !(value.hasSuffix(")") && endsValue(lines[index], indent: indent)) {
                     value += "\n" + lines[index]
                     index += 1
                 }
@@ -114,12 +126,21 @@ enum AndroidNotifications {
         return (name, String(line[..<open.upperBound]))
     }
 
-    /// The key of an `extras` line, which ends a value that ran over several lines.
+    /// The key of an `android.` entry in `extras`.
     private static func extraName(_ line: String) -> String? {
         guard let equals = line.firstIndex(of: "=") else { return nil }
         let name = line[..<equals]
         guard name.hasPrefix("android."), !name.contains(" ") else { return nil }
         return String(name)
+    }
+
+    /// The line after a value's closing `)`: the next entry of any key at the value's own indent, or the block's closing brace further out. Android prints a value's later lines as they are, with no indent of its own.
+    private static func endsValue(_ line: String, indent: Int) -> Bool {
+        let own = line.prefix { $0 == " " }.count
+        let trimmed = line.dropFirst(own)
+        if trimmed == "}" { return own < indent }
+        guard own == indent, let equals = trimmed.firstIndex(of: "=") else { return false }
+        return equals > trimmed.startIndex && !trimmed[..<equals].contains(" ")
     }
 
     private static func field(_ name: String, in text: String, until end: String) -> String? {

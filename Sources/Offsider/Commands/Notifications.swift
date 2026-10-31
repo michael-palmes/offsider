@@ -80,22 +80,11 @@ struct NotificationsCommand: AsyncParsableCommand {
             }
             try await route.backend.prepare()
             let id = try await route.backend.requireBootedDevice(route.device).id
-            var earlier: Set<PostedNotification>?
-            while true {
-                let snapshot = try await reader.notifications(of: app, on: id)
-                let hidden = snapshot.notifications.map { $0.redacted() }
-                guard let wait else { return (snapshot, hidden) }
-                let baseline = earlier ?? (new ? Set(snapshot.notifications) : [])
-                earlier = baseline
-                let fresh = zip(snapshot.notifications, hidden).filter { !baseline.contains($0.0) }.map(\.1)
-                if let match = fresh.first(where: { $0.notification.contains(wait) }) { return (snapshot, [match]) }
-                guard clock.now + .seconds(1) < deadline else {
-                    throw CLIError(
-                        errorDescription: "No notification from \(app) held \(TerminalText.quoted(wait)) within \(DeviceSettingsReport.number(limit)) s (\(hidden.count) posted). Check that the app may post (`offsider permission show --app \(app) --device \(route.device.rawValue)` on Android 13 and later) and that the push was sent.",
-                        reason: .conditionNotMet
-                    )
-                }
-                try await Task.sleep(for: .seconds(1))
+            return try await Self.poll(wait: wait, new: new, until: deadline, clock: clock, read: { try await reader.notifications(of: app, on: id) }) { posted in
+                CLIError(
+                    errorDescription: "No notification from \(app) held \(TerminalText.quoted(wait ?? "")) within \(DeviceSettingsReport.number(limit)) s (\(posted) posted). Check that the app may post (`offsider permission show --app \(app) --device \(route.device.rawValue)` on Android 13 and later) and that the push was sent.",
+                    reason: .conditionNotMet
+                )
             }
         }
         let shown = listed.map(\.notification)
@@ -107,6 +96,26 @@ struct NotificationsCommand: AsyncParsableCommand {
             ? NotificationReport.json(shown, app: app, source: snapshot.source, redacted: redacted, matched: wait, on: route.device)
             : Self.lines(shown, app: app, waited: wait)
         DevicePersonView.emit(text, json: json, person: Self.person(shown, app: app, waited: wait), console: .current)
+    }
+
+    /// One read without `wait`; with it, a read each second and a last one at `deadline`, until a notification holds the text.
+    static func poll(
+        wait: String?, new: Bool, until deadline: ContinuousClock.Instant, clock: ContinuousClock,
+        read: () async throws -> NotificationSnapshot, gaveUp: (Int) -> CLIError
+    ) async throws -> (NotificationSnapshot, [(notification: PostedNotification, count: Int)]) {
+        var earlier: Set<PostedNotification>?
+        while true {
+            let snapshot = try await read()
+            let hidden = snapshot.notifications.map { $0.redacted() }
+            guard let wait else { return (snapshot, hidden) }
+            let baseline = earlier ?? (new ? Set(snapshot.notifications) : [])
+            earlier = baseline
+            let fresh = zip(snapshot.notifications, hidden).filter { !baseline.contains($0.0) }.map(\.1)
+            if let match = fresh.first(where: { $0.notification.contains(wait) }) { return (snapshot, [match]) }
+            let remaining = deadline - clock.now
+            guard remaining > .zero else { throw gaveUp(hidden.count) }
+            try await Task.sleep(for: min(.seconds(1), remaining))
+        }
     }
 
     /// `--app`, else offsider.login.json's package, else the allowance's only pinned app; on a phone the allowance must permit it.
