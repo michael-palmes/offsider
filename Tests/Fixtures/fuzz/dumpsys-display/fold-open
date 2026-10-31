@@ -1,0 +1,12 @@
+Supported states: [
+  DeviceState{identifier=0, name='CLOSED', app_accessible=true, cancel_when_requester_not_on_top=false},
+  DeviceState{identifier=2, name='OPENED', app_accessible=true, cancel_when_requester_not_on_top=false},
+]
+Committed state: DeviceState{identifier=2, name='OPENED', app_accessible=true, cancel_when_requester_not_on_top=false}
+DISPLAY MANAGER (dumpsys display)
+Display Devices: size=2
+  DisplayDeviceInfo{"Inner Screen": uniqueId="local:1000", 2076 x 2152, modeId 1, density 420, type INTERNAL, installOrientation 0, state ON, committedState ON}
+  DisplayDeviceInfo{"Outer Screen": uniqueId="local:1001", 1080 x 2424, modeId 2, density 420, type INTERNAL, installOrientation 0, state OFF, committedState OFF}
+  DisplayDeviceInfo{"HDMI Screen": uniqueId="local:1002", 1920 x 1080, modeId 3, density 160, type EXTERNAL, state ON}
+  Display 0:
+    mPrimaryDisplayDevice=Inner Screen(local:1000)

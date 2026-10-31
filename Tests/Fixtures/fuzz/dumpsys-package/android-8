@@ -1,0 +1,12 @@
+27
+WARNING: linker: Warning: unable to normalize ""
+Packages:
+  Package [com.mpalmes.offsider.playground.rn] (4a1c2e0):
+    userId=10123
+    versionCode=3 minSdk=21 targetSdk=27
+    versionName=0.9.1
+    firstInstallTime=2026-10-27 09:00:01
+    requested permissions:
+      android.permission.CAMERA
+Dangerous Permissions:
+permission:android.permission.CAMERA

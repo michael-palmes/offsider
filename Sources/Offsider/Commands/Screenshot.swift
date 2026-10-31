@@ -167,10 +167,10 @@ struct Screenshot: AsyncParsableCommand {
         await appOption.apply(to: route)
         let console = Console.current
         let masks = try await masksWithRunDefaults(maskPlan())
-        try await watchdog.guardingSetup(device: deviceOption.id) { try await route.backend.prepare() }
         let report = try await console.progress("Capturing the screen") {
+            try await watchdog.guardingSetup(device: deviceOption.id) { try await route.backend.prepare() }
             // The bound also covers a --wait-lock wait, since an Android mask's tree read takes the device's lock.
-            try await watchdog.guardingRead(of: route.device, extra: DeviceClaims.current.longestWait) {
+            return try await watchdog.guardingRead(of: route.device, extra: DeviceClaims.current.longestWait) {
                 try await take(request, on: route, masks: masks, plain: !json)
             }
         }

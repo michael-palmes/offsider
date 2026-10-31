@@ -31,6 +31,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Changed
 
+- `test-runner.sh` runs every E2E suite in a full mode and takes any listed suite by name (`--android <suite>` for the Android ones), and refuses an unknown name; a `ReactNative*Tests` name that matched nothing used to pass.
 - `login`'s `turnstile_required` suggests `turnstile --wait` as its `hint` and says whether `login` may run again once the widget passes. A person at a terminal is told to do the step on the device, not to hand the device to a person.
 - One rule decides what is on screen for `wait`, `assert`, `describe-ui --on-screen` (and `--summary`) and selector `tap`, `--topmost` included: a touch at the element's point must reach it, judged as `tap` judges its target (the simulator's hit-test, Android's drawing order; on a physical iPhone or iPad only pages drawn over a screen). `wait` and `assert` no longer count a match on a screen beneath a pushed page or one another element covers, such as a closed side menu kept mounted under the page, and say what is over it (`under button "…"`, `beneath "…"`), and a match under the on-screen keyboard counts only once the keyboard goes; `--summary` folds those into a closing `# covered: N elements under others: id=…` line, and `--on-screen` JSON leaves them out. On an iOS simulator only elements something else overlaps are hit-tested, all at once, so a screen with no overlap costs nothing and one with overlaps about half a second.
 - `tap --topmost` takes the only match on the front page when a page is drawn over the others, before any hit-test.
@@ -51,6 +52,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Fixed
 
+- `screenshot` and `describe-ui` show their spinner while a simulator's frameworks load, which was a silent pause on the first command.
 - On Android, `describe-ui` frames the keyboard by its keys and buttons, not by its window, which spans the screen around a floating or compact keyboard such as Gboard's toolbar with a hardware keyboard connected. `target_under_keyboard` names `button back` only over docked keys: with only a toolbar showing, Back goes to the app and can leave the screen.
 - `login` on an iOS simulator no longer refuses every field when the tree's order puts a view from another process over the form, such as a Turnstile web widget at the screen's centre: a hit-test at each field's own point decides, as for `tap --fail-if-covered`. `describe-ui` no longer names web content the app draws in its own smaller view as `presented`.
 - `type --into-id`, and so `login`, on an iOS simulator confirm focus from the field itself: a connected hardware keyboard, which hides the software one, no longer stops them with `focus_not_confirmed`, and a keyboard already up for another field no longer types with an unconfirmed-focus warning. When focus never comes, the message says no keyboard appeared and names the hardware keyboard as a cause.
