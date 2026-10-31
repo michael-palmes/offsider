@@ -77,7 +77,7 @@ struct Logs: AsyncParsableCommand {
     @Flag(help: "Keep ANSI colour codes in messages; other escape sequences are still removed, and redaction stays on.")
     var raw = false
 
-    @Flag(inversion: .prefixedNo, help: "Replace passwords, tokens, keys, cookies, JWTs, emails, wallet addresses, card numbers, recovery phrases and one-time codes with markers (the default).")
+    @Flag(inversion: .prefixedNo, help: "Replace passwords, tokens, keys, cookies, JWTs, emails, wallet addresses, card numbers, recovery phrases and one-time codes with markers (the default). --no-redact needs a person when an agent runs it.")
     var redact: Bool?
 
     @Flag(name: .customLong("json"), help: "Print one JSON object to stdout; human text goes to stderr.")
@@ -150,8 +150,18 @@ struct Logs: AsyncParsableCommand {
     }
 
     func run() async throws {
+        if !redacts { try await Self.confirmUnredacted() }
         let logger = OffsiderLogger()
         try await read(from: try await DeviceRouter.route(deviceOption.id, logger: logger))
+    }
+
+    /// `--no-redact` prints passwords and tokens, so for an agent a person confirms it first.
+    static func confirmUnredacted(profile: OutputProfile = .gated) async throws {
+        try await UnmaskedConsent.confirm(
+            reason: "print log messages unredacted",
+            refusal: "Log messages stay redacted when an agent runs this. Nothing was read. Run it from your own terminal, or keep redaction and narrow with --grep.",
+            profile: profile
+        )
     }
 
     /// Writes one line of stdout at once, so a reader of `--follow` sees each entry as it arrives.

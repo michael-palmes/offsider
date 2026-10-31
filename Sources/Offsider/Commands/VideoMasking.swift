@@ -81,6 +81,13 @@ struct VideoMaskOptions: ParsableArguments {
         }
     }
 
+    /// `OFFSIDER_MASK_SECURE=0` turns the password check off, so for an agent a person confirms it, as `screenshot` asks. `--unmasked` has its warning and ask rule instead.
+    @MainActor
+    func confirmCheckOff(command: String, environment: [String: String] = ProcessInfo.processInfo.environment, profile: OutputProfile = .gated) async throws {
+        guard !unmasked, !Screenshot.masksSecure(flag: nil, environment: environment) else { return }
+        try await UnmaskedConsent.confirm(command: command, profile: profile)
+    }
+
     /// Reads one tree before the first frame and refuses with `video_unmasked` when it shows a password field, or anything
     /// `offsider.mask.json` masks, or cannot be read.
     @MainActor

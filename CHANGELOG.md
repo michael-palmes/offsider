@@ -46,6 +46,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - `wait --seconds` needs no `--device`, and touches no device even when one is named, so a pause can never fail or be skipped.
 - `describe-ui`, `screenshot` and the `rn logbox` commands exit 1 `device_unresponsive` naming the device after 30 s without an answer from a simulator or emulator, instead of hanging; a `--wait-lock` wait and `rn logbox`'s own waits are added to that. Phones have limits of their own.
 - `logs` on Android joins the lines of one logged message, which logcat prints each under its own header, into one entry: `--grep` and `--exclude` match the whole entry and `.` crosses its lines, `--json` carries it whole, and text output keeps it on one line with `\n`.
+- `logs --no-redact` and `rn logbox status|open --no-redact` need a person when an agent runs them (`person_required`, or Touch ID with a terminal on standard input); a person at a terminal is not asked. `OFFSIDER_MASK_SECURE=0` on `record-video` and `stream-video` needs the same.
+- `offsider init` asks before `record-video --unmasked`, `stream-video --unmasked`, `logs --no-redact`, and, in Claude Code, `rn logbox --no-redact` and raw `adb` and `devicectl` called by full path.
+- `wake --unlock` and `type --file` must come straight after the command (exit 64 otherwise), so the permission rules that match the command as typed see them.
 
 ### Fixed
 
@@ -100,6 +103,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - `rn open` taps Open only on the `Open in “…”?` prompt naming the app it was told to open; any other, or one when the name is unknown, is reported as `person_required`.
 - Hints printed on a phone allowed for any app or for several name `--app`, so the printed command runs as it stands.
 - A broken `offsider.login.json` exits 64 with its own message from `app`, `notifications` and `logs`. It used to read as naming no app, falling through to a phone's only pin or to the whole log on a simulator or emulator.
+- `OFFSIDER_OUTPUT=person` only changes what Offsider prints. It no longer opens `describe-ui --raw-source` or the unmask check for an agent; a person piping `--raw-source` from their own terminal confirms with Touch ID.
+- A person's own Codex line for an Offsider rule counts whichever way they changed it, so `init` no longer adds a prompt over it and `doctor` no longer warns.
 - `--app` help says what it does for video: the app in front is checked at most every 1 s on Android and every 2 s on an iPhone or iPad.
 
 ## [0.14.0] - 2026-10-22

@@ -63,6 +63,7 @@ struct RNLogBoxStatus: AsyncParsableCommand {
     var appOption: AppOption
 
     func run() async throws {
+        if noRedact { try await Logs.confirmUnredacted() }
         let logger = OffsiderLogger()
         let watchdog = DeviceWatchdog()
         let locking = DeviceIDClassifier.classify(deviceOption.id).platform == .android
@@ -118,6 +119,7 @@ struct RNLogBoxOpen: AsyncParsableCommand {
     }
 
     func run() async throws {
+        if noRedact { try await Logs.confirmUnredacted() }
         let logger = OffsiderLogger()
         let watchdog = DeviceWatchdog()
         let route = try await DeviceRouter.routeForInput(deviceOption.id, logger: logger, watchdog: watchdog)
@@ -168,7 +170,7 @@ struct RNLogBoxOpen: AsyncParsableCommand {
         throw CLIError(
             errorDescription: "Tapped LogBox toast \(index), but the inspector did not open within \(Int(Self.inspectorWait)) s.",
             reason: .notVerified,
-            hint: "offsider describe-ui --summary --device \(screen.device)"
+            hint: CommandScope.current.describeHint(device: screen.device)
         )
     }
 }

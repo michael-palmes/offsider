@@ -10,6 +10,27 @@ struct ArgumentHintsTests {
     private let udidHint = "--udid was renamed to --device in 0.3.0. Run offsider devices to find device IDs."
     private let listHint = "list-simulators was renamed to list-devices in 0.3.0."
 
+    @Test("wake --unlock and type --file must come straight after the command, so the permission rules see them", arguments: [
+        (["wake", "--device", "emulator-5554", "--unlock"], "--unlock"),
+        (["type", "--device", "emulator-5554", "--file", "notes.txt"], "--file"),
+        (["type", "--allow-path", "--file=notes.txt"], "--file"),
+    ])
+    func reorderedFlagRefused(arguments: [String], flag: String) throws {
+        let hint = try #require(ArgumentHints.hint(for: arguments))
+        #expect(!hint.isLegacy)
+        #expect(hint.message == ArgumentHints.flagFirst(command: arguments[0], flag: flag))
+    }
+
+    @Test("the same flags first, or as text after --, pass through", arguments: [
+        ["wake", "--unlock", "--device", "emulator-5554"],
+        ["type", "--file", "notes.txt", "--device", "emulator-5554"],
+        ["type", "--device", "emulator-5554", "--", "--file"],
+        ["wake", "--device", "emulator-5554"],
+    ])
+    func flagFirstPasses(arguments: [String]) {
+        #expect(ArgumentHints.hint(for: arguments) == nil)
+    }
+
     @Test("--udid in either form gets the rename hint", arguments: [
         ["tap", "-x", "1", "-y", "1", "--udid", "X"], ["describe-ui", "--udid=X"], ["--udid", "X", "tap"], ["doctor", "--udid"],
     ])

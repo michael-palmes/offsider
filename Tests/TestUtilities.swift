@@ -1,5 +1,6 @@
 import Darwin
 import Foundation
+import OffsiderCore
 import Testing
 
 // MARK: - Command Execution
@@ -409,6 +410,24 @@ struct TestHelpers {
             unsetting: unsetVariables,
             timeout: timeout
         )
+    }
+
+    /// Runs the binary on a pseudo-terminal with no agent's marker, as a person's own terminal: the person gates open only there. Stderr comes mixed in, and terminal line endings are removed.
+    static func runOffsiderAsPerson(_ command: String, timeout: TimeInterval = 120) async throws -> SeparatedCommandOutput {
+        let result = try await CommandRunner.runSeparated(
+            "/usr/bin/script -q /dev/null \(try getOffsiderPath()) \(command) < /dev/null",
+            unsetting: AgentMarkers.variables + [OutputProfile.variable],
+            timeout: timeout
+        )
+        return SeparatedCommandOutput(stdout: result.stdout.replacingOccurrences(of: "\r", with: ""), stderr: result.stderr, exitCode: result.exitCode)
+    }
+
+    /// The JSON object in a person's terminal output, without the lines around it.
+    static func jsonObject(in output: String) throws -> Data {
+        guard let start = output.firstIndex(of: "{"), let end = output.lastIndex(of: "}"), start < end else {
+            throw CocoaError(.coderReadCorrupt)
+        }
+        return Data(output[start...end].utf8)
     }
 
     /// Runs the binary where no Android SDK or adb server can be found: an empty HOME, no SDK variables, no adb on PATH.

@@ -455,16 +455,21 @@ enum UnmaskedConsent {
         + "Run it from your own terminal, or keep the mask and hide other fields with --mask-id."
 
     /// Refuses for an agent unless a person confirmed in this process; a person at a terminal is never asked.
-    static func require(profile: OutputProfile = .current) throws {
+    static func require(profile: OutputProfile = .gated) throws {
         guard profile == .agent, !confirmed else { return }
         throw CLIError.personRequired(refusal)
     }
 
     /// For an agent: a terminal on standard input, then Touch ID or the password; refused without either.
-    static func confirm(command: String, profile: OutputProfile = .current) async throws {
+    static func confirm(command: String, profile: OutputProfile = .gated) async throws {
+        try await confirm(reason: "\(command) with password fields unmasked", refusal: refusal, profile: profile)
+    }
+
+    /// `reason` completes macOS's sentence "offsider is trying to ..."; `refusal` is the agent's answer with no terminal.
+    static func confirm(reason: String, refusal: String, profile: OutputProfile = .gated) async throws {
         guard profile == .agent, !confirmed else { return }
         guard PersonPresence.terminal() else { throw CLIError.personRequired(refusal) }
-        try await PersonPresence.confirm(reason: "\(command) with password fields unmasked")
+        try await PersonPresence.confirm(reason: reason)
         confirmed = true
     }
 }
