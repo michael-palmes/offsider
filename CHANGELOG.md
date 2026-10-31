@@ -31,6 +31,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Changed
 
+- `record-video` with no `--duration` stops and saves at 10 minutes, with a note and `reachedLimit` in `--json`, so a lost background recording cannot block logins for ever. Pass `--duration`, up to 3600, for longer.
+- `session stop --device <id>` also stops and saves a recording on that device, and says so only once it has ended. `doctor --device` warns `device.recording` while one runs, and the refusal `login`, `wake --unlock` and `type --stdin` give names its pid, with `kill -INT <pid>` as the `hint`.
+- `app open` on an iPhone or iPad says `Sent the link to`, as iOS reports only that it delivered the link. `--json` adds `linkHandled`: `true` once Android or a simulator showed the app took the link, `null` on an iPhone or iPad.
+- `record-video` and `stream-video` end when a simulator or emulator gives no frame for 30 s (exit 1, `device_unresponsive`); a recording saves its frames first.
+
 - `login`'s `turnstile_required` suggests `turnstile --wait` as its `hint` and says whether `login` may run again once the widget passes. A person at a terminal is told to do the step on the device, not to hand the device to a person.
 - One rule decides what is on screen for `wait`, `assert`, `describe-ui --on-screen` (and `--summary`) and selector `tap`, `--topmost` included: a touch at the element's point must reach it, judged as `tap` judges its target (the simulator's hit-test, Android's drawing order; on a physical iPhone or iPad only pages drawn over a screen). `wait` and `assert` no longer count a match on a screen beneath a pushed page or one another element covers, such as a closed side menu kept mounted under the page, and say what is over it (`under button "…"`, `beneath "…"`), and a match under the on-screen keyboard counts only once the keyboard goes; `--summary` folds those into a closing `# covered: N elements under others: id=…` line, and `--on-screen` JSON leaves them out. On an iOS simulator only elements something else overlaps are hit-tested, all at once, so a screen with no overlap costs nothing and one with overlaps about half a second.
 - `tap --topmost` takes the only match on the front page when a page is drawn over the others, before any hit-test.
@@ -50,6 +55,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - `doctor`'s `android-device.lock` warns instead of passing while a saved code is wrong or unconfirmed.
 
 ### Fixed
+
+- `app stop` on an iPhone or iPad could end an app extension and report the app stopped, and `app launch` could misreport the start. Only the process directly in the bundle now counts as the app.
+- `app stop` on an iPhone or iPad reported "was not running" when `devicectl` named no bundle location; it now says it cannot tell and stops nothing, and `app launch` leaves `start` empty.
+- A `devicectl` failure holding the letters "locked", such as "blocked", no longer reads as `device_locked`, and a real lock keeps `devicectl`'s words.
+- `app open` on Android reported success when the link landed on the chooser or another app; that is now `link_not_handled`.
+- `app open --restart` on Android checks the link before it stops the app, and any refusal after a stop, there or on a simulator, says the app was stopped.
+- An `am start` exception reads as its cause, with the fix for a screen that is not exported, instead of "status unknown"; `Status: timeout` says the app may still be starting.
+- `notifications`: multi-line text no longer stops at a line ending in `)` and no longer takes in an app's own extras; a mistyped package is `app_not_installed`, not an empty list; on Android 8 to 10 a line at the margin ending in `:` in any app's text no longer drops later records, and the archive after the list stays off the cable; `--wait` runs its whole `--timeout` with a last read at the end, so `--new --timeout 1` can succeed.
+- A stuck capture or writer can no longer make a recording unstoppable: a stop or `--duration` during a hung capture saves the frames so far, and a stop that still cannot finish ends the process within seconds with the staging folder removed. A failed writer ends the recording instead of waiting for ever.
+- `stream-video`: a stop before the first frame ends it at once with exit 1 and nothing streamed, and a stalled reader can no longer hold up a stop.
 
 - On Android, `describe-ui` frames the keyboard by its keys and buttons, not by its window, which spans the screen around a floating or compact keyboard such as Gboard's toolbar with a hardware keyboard connected. `target_under_keyboard` names `button back` only over docked keys: with only a toolbar showing, Back goes to the app and can leave the screen.
 - `login` on an iOS simulator no longer refuses every field when the tree's order puts a view from another process over the form, such as a Turnstile web widget at the screen's centre: a hit-test at each field's own point decides, as for `tap --fail-if-covered`. `describe-ui` no longer names web content the app draws in its own smaller view as `presented`.
