@@ -27,7 +27,7 @@ struct StreamVideo: AsyncParsableCommand {
     )
 
     @OptionGroup
-    var deviceOption: ReadDeviceOption
+    var deviceOption: DeviceOption
 
     @OptionGroup
     var appOption: AppOption

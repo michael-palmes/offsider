@@ -95,6 +95,24 @@ struct RNOpenCommandTests {
         #expect(backend.openedURLs.isEmpty)
     }
 
+    @Test("a dev client with only its own scheme opens with it")
+    func ownSchemeOpens() async throws {
+        let backend = FakeDeviceBackend(trees: [Self.app])
+        backend.expoSchemes = ["myapp", "com.example.app"]
+        let command = try RNOpen.parse(["--port", "8742", "--bundle-id", "com.example.app", "--wait-id", "menu-title", "--device", Self.device.rawValue])
+        _ = try await command.open(on: DeviceRouter.Route(backend: backend, device: Self.device), metro: Self.running, clock: ScriptedClock().poll)
+        #expect(backend.openedURLs == ["myapp://expo-development-client/?url=http%3A%2F%2F127.0.0.1%3A8742"])
+    }
+
+    @Test("--json stays one valid object with a newline or quote in --wait-id, whose key order holds")
+    func jsonWithControlCharacters() throws {
+        let report = RNOpen.Report(bundleID: "com.example.app", url: "exp+a://b", host: "127.0.0.1", port: 8742, sends: 1, launcherSeen: false, waitID: "menu\"title\n", elapsedMs: 5, bundleMs: 4)
+        let object = try #require(try JSONSerialization.jsonObject(with: Data(report.jsonLine().utf8)) as? [String: Any])
+        #expect(object["waitId"] as? String == "menu\"title\n")
+        #expect(object["reverseSet"] as? Bool == false)
+        #expect(!report.jsonLine().contains("\n"))
+    }
+
     @Test("a load error on screen is exit 1 rn_load_failed")
     func loadError() async throws {
         let failed = FakeUI.tree([FakeUI.node(.text, label: "There was a problem loading the project.", frame: FakeUI.frame(20, 100, 300, 30))])
@@ -454,9 +472,31 @@ struct RNOpenCommandTests {
         let (result, seconds) = try await Self.run(arguments, on: backend)
         guard case .failure(let error) = result else { Issue.record("expected person_required"); return }
         #expect(error.reason == .personRequired)
+        #expect(error.ask == "Can you answer the system prompt on \(PersonAsk.devicePlaceholder)?")
         #expect(error.userFacingDescription == #"com.example.app is behind the system prompt "“Playground” Would Like to Send You Notifications" from SpringBoard ("Don’t Allow", "Allow"), so rn open stopped waiting. It never answers a system prompt: ask the user which to choose, answer it, then run rn open again."#)
         #expect(backend.session.calls.isEmpty)
         #expect(seconds < 5)
+    }
+
+    @Test("the app dying as a home screen shaped like a prompt shows is app_crashed, not person_required")
+    func crashIsNotAPrompt() async throws {
+        let backend = HitTestingFakeBackend(trees: [Self.permissionAlert()])
+        backend.processNames = [Self.springBoardPID: "SpringBoard"]
+        backend.livenessReadings = [.running(AppProcess(pid: Self.appPID, started: 1)), .notRunning]
+        let (result, _) = try await Self.run(["--wait-id", "menu-title", "--timeout", "600"], on: backend)
+        #expect(result.failure?.reason == .appCrashed)
+    }
+
+    @Test("another app in front, still running beneath it, is named as another process rather than a system prompt")
+    func anotherProcessIsNotCalledASystemPrompt() async throws {
+        let backend = HitTestingFakeBackend(trees: [Self.permissionAlert()])
+        backend.processNames = [Self.springBoardPID: "OtherApp"]
+        backend.livenessReadings = [.running(AppProcess(pid: Self.appPID, started: 1))]
+        let (result, _) = try await Self.run(["--wait-id", "menu-title", "--timeout", "600"], on: backend)
+        let message = result.failure?.userFacingDescription ?? ""
+        #expect(message.hasPrefix("Another process is in front of com.example.app:"))
+        #expect(message.contains("from OtherApp"))
+        #expect(!message.contains("system prompt"))
     }
 
     @Test("an Open in prompt long after the last link is reported as a system prompt and never tapped")

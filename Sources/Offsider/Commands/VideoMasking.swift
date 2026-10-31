@@ -93,6 +93,8 @@ struct VideoMaskOptions: ParsableArguments {
             } else {
                 tree = try await backend.accessibilityTree(for: device)
             }
+        } catch let failure as any OffsiderFailure where failure.reason.exitCode.rawValue == OffsiderExitCode.deviceBusy.rawValue {
+            throw failure
         } catch {
             throw CLIError(errorDescription: VideoMaskPolicy.unreadableRefusal(command: command, error: OffsiderCommand.message(for: error)), reason: .videoUnmasked)
         }

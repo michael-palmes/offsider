@@ -9,7 +9,7 @@ public protocol ExpoDevClientPreparing: DeviceBackend {
 /// Optional capability: sending an Expo dev client the link that loads a bundle from Metro.
 @MainActor
 public protocol ExpoDevClientOpening: DeviceBackend {
-    /// The `exp+` schemes the installed app registers.
+    /// The link schemes that open the installed app's dev client: its `exp+` schemes, else its own that resolve `<scheme>://expo-development-client/`.
     func devClientSchemes(_ appID: String, on id: DeviceID) async throws -> [String]
     /// The host the device reaches Metro on: loopback, or the emulator's alias for the Mac.
     func metroHost(port: Int, on id: DeviceID) async throws -> String
@@ -221,36 +221,71 @@ public enum ExpoDevClient {
 
     /// The `exp+` schemes among `dumpsys package` lines such as `Scheme: "exp+offsiderplaygroundrn"`, in order, once each.
     public static func schemes(fromPackageDump dump: String) -> [String] {
-        var found: [String] = []
-        for line in dump.split(whereSeparator: \.isNewline) {
-            let trimmed = line.trimmingCharacters(in: .whitespaces)
-            guard trimmed.hasPrefix("Scheme: \"") else { continue }
-            let scheme = trimmed.dropFirst("Scheme: \"".count).prefix { $0 != "\"" }
-            if scheme.hasPrefix("exp+"), !found.contains(String(scheme)) {
-                found.append(String(scheme))
-            }
-        }
-        return found
+        dumpSchemes(dump).filter { $0.hasPrefix("exp+") }
     }
 
     /// The `exp+` schemes in an app's `Info.plist` `CFBundleURLTypes`.
     public static func schemes(fromInfoPlist data: Data) -> [String] {
+        plistSchemes(data).filter { $0.hasPrefix("exp+") }
+    }
+
+    /// The app's own link schemes among `dumpsys package` lines, in order, once each.
+    public static func ownSchemes(fromPackageDump dump: String) -> [String] {
+        dumpSchemes(dump).filter(isOwnLinkScheme)
+    }
+
+    /// The app's own link schemes in its `Info.plist`.
+    public static func ownSchemes(fromInfoPlist data: Data) -> [String] {
+        plistSchemes(data).filter(isOwnLinkScheme)
+    }
+
+    /// The schemes a dev client link can use beyond `exp+`: the app's own, not the web's or the launcher's internal one.
+    private static func isOwnLinkScheme(_ scheme: String) -> Bool {
+        !scheme.hasPrefix("exp+") && !["http", "https", "file", "content", "expo-dev-launcher", "expo-dev-menu"].contains(scheme.lowercased())
+    }
+
+    private static func dumpSchemes(_ dump: String) -> [String] {
+        var found: [String] = []
+        for line in dump.split(whereSeparator: \.isNewline) {
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            guard trimmed.hasPrefix("Scheme: \"") else { continue }
+            let scheme = String(trimmed.dropFirst("Scheme: \"".count).prefix { $0 != "\"" })
+            if !found.contains(scheme) { found.append(scheme) }
+        }
+        return found
+    }
+
+    private static func plistSchemes(_ data: Data) -> [String] {
         guard let plist = unsafe try? PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any],
               let types = plist["CFBundleURLTypes"] as? [[String: Any]] else { return [] }
         var found: [String] = []
-        for scheme in types.flatMap({ $0["CFBundleURLSchemes"] as? [String] ?? [] }) where scheme.hasPrefix("exp+") && !found.contains(scheme) {
+        for scheme in types.flatMap({ $0["CFBundleURLSchemes"] as? [String] ?? [] }) where !found.contains(scheme) {
             found.append(scheme)
         }
         return found
     }
 
-    /// The one `exp+` scheme, or an error that names `--scheme`.
+    /// Whether `cmd package resolve-activity --brief` names an activity of `package`; it prints `No activity found` otherwise.
+    public static func androidResolves(_ output: String, package: String) -> Bool {
+        output.split(whereSeparator: \.isNewline).contains { $0.trimmingCharacters(in: .whitespaces).hasPrefix(package + "/") }
+    }
+
+    public static func androidResolveCommand(scheme: String, package: String) -> String {
+        "cmd package resolve-activity --brief -a android.intent.action.VIEW -c android.intent.category.BROWSABLE -d \(shellQuote("\(scheme)://expo-development-client/")) \(package)"
+    }
+
+    /// The one `exp+` scheme, else the app's one own scheme, which Expo also registers under the app's id; or an error that lists them and names `--scheme`.
     public static func singleScheme(_ schemes: [String], appID: String) throws -> String {
-        guard schemes.count == 1 else {
-            let listed = schemes.isEmpty ? "no exp+ scheme" : "\(schemes.count) exp+ schemes (\(schemes.joined(separator: ", ")))"
-            throw ExpoDevClientError(.noScheme, "\(appID) registers \(listed), so Offsider cannot tell which link opens its dev client. Pass --scheme exp+<slug>.")
+        let expo = schemes.filter { $0.hasPrefix("exp+") }
+        let own = schemes.filter { $0 != appID }
+        let choices = !expo.isEmpty ? expo : own.isEmpty ? schemes : own
+        guard choices.count == 1 else {
+            guard let first = choices.first else {
+                throw ExpoDevClientError(.noScheme, "\(appID) registers no link scheme that opens its dev client, so Offsider cannot send it Metro's address. Add a scheme to the app's config, build it again, then pass --scheme <scheme>.")
+            }
+            throw ExpoDevClientError(.noScheme, "\(appID) registers \(choices.count) link schemes (\(choices.joined(separator: ", "))), so Offsider cannot tell which opens its dev client. Pass the right one, such as --scheme \(first).")
         }
-        return schemes[0]
+        return choices[0]
     }
 
     /// Loopback when `adb reverse` maps the port to the same port (`emulator-5554 tcp:8081 tcp:8081`), else the emulator's alias for the Mac; nil for a phone without one.
@@ -265,6 +300,26 @@ public enum ExpoDevClient {
 
     public static func iosOpenURLArguments(udid: String, url: String) -> [String] {
         ["simctl", "openurl", udid, url]
+    }
+
+    /// `rn open --json`'s one line.
+    public static func openReportJSONLine(
+        bundleID: String, url: String, host: String, port: Int, sends: Int, launcherSeen: Bool, waitID: String?, elapsedMs: Int, bundleMs: Int, reverseSet: Bool
+    ) -> String {
+        OrderedJSON.object([
+            ("version", .integer(1)),
+            ("bundleId", .string(bundleID)),
+            ("url", .string(url)),
+            ("host", .string(host)),
+            ("port", .integer(port)),
+            ("metro", .string("running")),
+            ("sends", .integer(sends)),
+            ("launcherSeen", .bool(launcherSeen)),
+            ("waitId", .optional(waitID, OrderedJSON.string)),
+            ("elapsedMs", .integer(elapsedMs)),
+            ("bundleMs", .integer(bundleMs)),
+            ("reverseSet", .bool(reverseSet)),
+        ]).rendered(compact: true)
     }
 }
 

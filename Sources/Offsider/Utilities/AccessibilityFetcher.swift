@@ -143,7 +143,7 @@ struct AccessibilityFetcher {
     /// An agent reads the doctor's detail and hint as one `Warning:` line; a person the cause in a few words and the relaunch to try.
     nonisolated static func emptyTreeNotice(_ app: SimLaunchctl.App, udid: String) -> Notice {
         let hint = DoctorRules.emptyTreeHint(app, udid: udid)
-        let relaunch = "xcrun simctl terminate \(udid) \(app.bundleID) && xcrun simctl launch \(udid) \(app.bundleID)"
+        let relaunch = DoctorRules.relaunchCommand(app, udid: udid)
         return .warning(
             "\(app.bundleID) is running but its accessibility tree is empty; relaunch it, or reboot the simulator if that fails",
             agent: "\(DoctorRules.emptyTreeDetail(app)). \(hint)", try: hint.contains(relaunch) ? relaunch : nil

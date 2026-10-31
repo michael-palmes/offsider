@@ -16,7 +16,7 @@ public enum AllowScreen {
     public static let anotherQuestion = "Allow another?"
     public static let noDevice = "Nothing over USB. Plug in, unlock, trust this Mac."
     public static let wifiOnly = "Wi-Fi only, plug in a cable"
-    public static let allAllowed = "All connected devices are allowed."
+    public static let allAllowed = "All connected devices are allowed. Choose one to change it."
     public static let anyApp = "Any app"
     public static let typeApp = "Type an app ID"
     public static let typeTeam = "Type a team ID"
@@ -48,9 +48,14 @@ public enum AllowScreen {
         return MenuRow(mark(row), [name(row), style.ellipsis + PromptScreen.visible(String(key.suffix(4)))])
     }
 
-    /// A connected device agents may already control: dim, never chosen, with `allowed · any app · until 22:14` for its detail.
+    /// A connected device agents may already control, chosen to change it, with `allowed · any app · until 22:14` for its detail.
     public static func allowedRow(_ row: DeviceSummary, detail: String, style: TerminalStyle) -> MenuRow {
-        MenuRow(mark(row), [name(row), "allowed \(style.dot) " + detail], enabled: false)
+        MenuRow(mark(row), [name(row), "allowed \(style.dot) " + detail])
+    }
+
+    /// The first row of a step when changing an allowed device: what it has now, chosen unless the person moves.
+    public static func keepRow(_ current: String) -> MenuRow {
+        MenuRow(.keep, ["Keep \(current)"])
     }
 
     /// `12 hours`, `7 days`, `45 minutes`, or `until removed`.

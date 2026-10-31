@@ -23,10 +23,10 @@ struct DevMenuDriver {
     }
 
     /// The menu, opening it first; a menu that never shows is `state_not_reached`, as in a Release build.
-    /// `check` runs after the first read, which refuses an app a phone is not allowed for, and before any input.
-    func open(check: (() async throws -> Void)? = nil) async throws -> (DevMenu.State, UITree) {
+    /// `check` runs on the first read, which refuses an app a phone is not allowed for, and before any input.
+    func open(check: ((UITree) async throws -> Void)? = nil) async throws -> (DevMenu.State, UITree) {
         let tree = try await read()
-        try await check?()
+        try await check?(tree)
         if let state = DevMenu.read(tree) { return (state, tree) }
         if route.device.platform == .android {
             try await perform(.shortButtonPress(.menu))
@@ -72,16 +72,17 @@ struct DevMenuDriver {
               (try? await reader.canDrawOverlays(package, on: route.device)) == false else { return }
         throw CLIError(
             errorDescription: "\(package) may not display over other apps, so its performance monitor would open Android's settings instead of showing. Offsider sent nothing. Ask the user to turn on Display over other apps for it (Settings > Apps > Special app access; Samsung calls it Appear on top), then run this again.",
-            reason: .personRequired
+            reason: .personRequired,
+            ask: "Can you turn on Display over other apps for \(package) on \(PersonAsk.devicePlaceholder)?"
         )
     }
 
     /// What to do when a focused text field keeps the menu key from Expo's menu.
     static let focusAdvice = "move focus out of the field, or open Expo's menu with its Tools button, then run this again (it uses a menu that is already open)."
 
-    /// Taps the item, closes the menu if a switch left it open, and returns the label tapped once the menu is gone.
+    /// Taps the item, closes the menu if a switch left it open, and returns the label tapped once the menu is gone, and whether Offsider closed it.
     @discardableResult
-    func choose(_ item: DevMenu.Item?, label: String?, state: DevMenu.State, tree opened: UITree) async throws -> String {
+    func choose(_ item: DevMenu.Item?, label: String?, state: DevMenu.State, tree opened: UITree) async throws -> (label: String, closedByFallback: Bool) {
         let android = route.device.platform == .android
         var tree = opened
         let unsure = DevMenu.unsureMatches(for: item, label: label, in: tree)
@@ -92,7 +93,7 @@ struct DevMenuDriver {
             // React Native's own menu on Android is a dialog with no close control, which Back dismisses.
             if item == .close, android {
                 try await perform(.shortButtonPress(.back))
-                if try await closed(leaving: state.menu) { return "Back" }
+                if try await closed(leaving: state.menu) { return ("Back", false) }
                 throw CLIError(errorDescription: "Pressed Back, but the \(state.menu) dev menu is still open.", reason: .notVerified, hint: "offsider describe-ui --summary --device \(route.device.rawValue)")
             }
             let name = label.map { "--label '\($0)'" } ?? item?.rawValue ?? "item"
@@ -107,7 +108,7 @@ struct DevMenuDriver {
         }
         let point = try visiblePoint(of: node, frame: frame, label: tapped, menu: state.menu, in: tree)
         try await tap(point, tree: tree, hold: node.role == .switch)
-        if try await closed(leaving: state.menu) { return tapped }
+        if try await closed(leaving: state.menu) { return (tapped, false) }
         // A switch or label can leave the menu open, and a Close tapped while the menu still presents can be ignored.
         if item?.isToggle == true || label != nil || item == .close {
             let fresh = try await read()
@@ -121,10 +122,10 @@ struct DevMenuDriver {
             }
             if let close = DevMenu.node(for: .close, label: nil, in: fresh), let closeFrame = close.frame {
                 try await tap(closeFrame.center, tree: nil)
-                if try await closed(leaving: state.menu) { return tapped }
+                if try await closed(leaving: state.menu) { return (tapped, item != .close) }
             } else if android, DevMenu.read(fresh)?.menu == state.menu {
                 try await perform(.shortButtonPress(.back))
-                if try await closed(leaving: state.menu) { return tapped }
+                if try await closed(leaving: state.menu) { return (tapped, item != .close) }
             }
         }
         throw CLIError(
@@ -251,12 +252,12 @@ struct RNDevMenu: AsyncParsableCommand {
     /// The open menu when no item is asked for, else the item chosen from it.
     enum Outcome: Equatable {
         case listed(DevMenu.State)
-        case chose(menu: String, item: DevMenu.Item?, label: String)
+        case chose(menu: String, item: DevMenu.Item?, label: String, closedByFallback: Bool = false)
 
         func jsonLine() -> String {
             switch self {
             case .listed(let state): return DevMenu.jsonLine(state)
-            case .chose(let menu, let item, let label): return DevMenu.choiceJSONLine(menu: menu, item: item, label: label)
+            case .chose(let menu, let item, let label, let fallback): return DevMenu.choiceJSONLine(menu: menu, item: item, label: label, closedByFallback: fallback)
             }
         }
 
@@ -264,9 +265,9 @@ struct RNDevMenu: AsyncParsableCommand {
             switch self {
             case .listed(let state):
                 let line = "\(state.menu) dev menu: " + state.items.filter { !$0.custom }.map(\.label).joined(separator: ", ")
-                let custom = state.items.filter(\.custom).map(\.label)
+                let custom = state.items.filter(\.custom).map { TerminalText.quoted($0.label) }
                 return custom.isEmpty ? line : line + "; custom: " + custom.joined(separator: ", ")
-            case .chose(_, _, let label): return "✓ Chose \(label) and the dev menu closed"
+            case .chose(_, _, let label, let fallback): return "✓ Chose \(label)" + (fallback ? "; it left the dev menu open, so Offsider closed it" : " and the dev menu closed")
             }
         }
 
@@ -275,8 +276,8 @@ struct RNDevMenu: AsyncParsableCommand {
             switch self {
             case .listed(let state):
                 return InputPersonView.devMenu(state, agent: textLine())
-            case .chose(_, _, let label):
-                return InputPersonView.receipt("Chose \(TerminalText.field(label, profile: .person))", details: ["The dev menu closed"], agent: textLine() + "\n")
+            case .chose(_, _, let label, let fallback):
+                return InputPersonView.receipt("Chose \(TerminalText.field(label, profile: .person))", details: [fallback ? "It left the dev menu open, so Offsider closed it" : "The dev menu closed"], agent: textLine() + "\n")
             }
         }
     }
@@ -306,12 +307,17 @@ struct RNDevMenu: AsyncParsableCommand {
     func perform(on route: DeviceRouter.Route, clock: PollClock, send: (@MainActor (InputEvent) async throws -> Void)? = nil) async throws -> Outcome {
         try await route.backend.prepare()
         let driver = DevMenuDriver(route: route, clock: clock, send: send)
-        let perfMonitor = item == .perfMonitor || label.map { label in DevMenu.Item.perfMonitor.labels.contains { $0.caseInsensitiveCompare(label) == .orderedSame } } == true
-        let check: (() async throws -> Void)? = perfMonitor ? { try await driver.requireOverlayPermission() } : nil
+        let item = self.item, label = self.label
+        let perfMonitor = item == .perfMonitor || label.map(DevMenu.namesPerfMonitor) == true
+        // An open menu shows whether the choice is the performance monitor; a closed one is checked before the menu key is sent.
+        let check: ((UITree) async throws -> Void)? = perfMonitor ? { tree in
+            if DevMenu.read(tree) != nil, !DevMenu.picksPerfMonitor(item: item, label: label, in: tree) { return }
+            try await driver.requireOverlayPermission()
+        } : nil
         let (state, tree) = try await driver.open(check: check)
         guard item != nil || label != nil else { return .listed(state) }
-        let tapped = try await driver.choose(item, label: label, state: state, tree: tree)
-        return .chose(menu: state.menu, item: item, label: tapped)
+        let chosen = try await driver.choose(item, label: label, state: state, tree: tree)
+        return .chose(menu: state.menu, item: item, label: chosen.label, closedByFallback: chosen.closedByFallback)
     }
 }
 

@@ -131,7 +131,18 @@ struct RNDevMenuTests {
 
         #expect(json.contains(#"{"label":"Go home","role":"button"},{"label":"Clear cache","role":"button","custom":true},{"label":"Toggle mock data","role":"button","custom":true},{"label":"Toggle performance monitor","role":"button"}"#))
         #expect(json.components(separatedBy: "custom").count == 3)
-        #expect(RNDevMenu.Outcome.listed(state).textLine() == "expo dev menu: Close, Reload, Go home, Toggle performance monitor, Toggle element inspector, Open DevTools, Fast Refresh; custom: Clear cache, Toggle mock data")
+        #expect(RNDevMenu.Outcome.listed(state).textLine() == "expo dev menu: Close, Reload, Go home, Toggle performance monitor, Toggle element inspector, Open DevTools, Fast Refresh; custom: \"Clear cache\", \"Toggle mock data\"")
+        #expect(json.hasSuffix(#""untrusted":["items[].label"]}"#))
+    }
+
+    @Test("a custom label holding a newline stays on rn devmenu's one agent line")
+    func customLabelNewline() throws {
+        let heading = RNDevMenuTests.expoMenu(text: "CUSTOM MENU ITEMS", frame: FakeUI.frame(20, 600, 300, 20))
+        let item = FakeUI.node(.button, label: "Reload\n✓ Doctor passed", frame: FakeUI.frame(20, 630, 300, 44))
+        let state = try #require(DevMenu.read(FakeUI.tree(platform: .ios, heading.roots[0].children + [item])))
+        let line = RNDevMenu.Outcome.listed(state).textLine()
+        #expect(!line.contains("\n"))
+        #expect(line.contains("; custom: "))
     }
 
     @Test("rn devmenu --label chooses an item the app registered, then closes the menu Expo's Android menu leaves open")
@@ -143,7 +154,7 @@ struct RNDevMenuTests {
         let outcome = try await RNDevMenu.parse(["--label", "Toggle mock data", "--device", Self.device.rawValue])
             .perform(on: DeviceRouter.Route(backend: backend, device: Self.device), clock: ScriptedClock().poll)
 
-        #expect(outcome == .chose(menu: "expo", item: nil, label: "Toggle mock data"))
+        #expect(outcome == .chose(menu: "expo", item: nil, label: "Toggle mock data", closedByFallback: true))
         #expect(backend.session.calls == [.perform(.tapAt(x: 205.5, y: 696)), .perform(.tapAt(x: close.x, y: close.y))])
     }
 
@@ -346,7 +357,7 @@ struct RNDevMenuTests {
         let outcome = try await RNDevMenu.parse(["--label", "Continue", "--device", Self.iosDevice.rawValue])
             .perform(on: DeviceRouter.Route(backend: backend, device: Self.iosDevice), clock: ScriptedClock().poll)
 
-        #expect(outcome == .chose(menu: "expo", item: nil, label: "Continue"))
+        #expect(outcome == .chose(menu: "expo", item: nil, label: "Continue", closedByFallback: true))
         #expect(backend.session.calls.first == .perform(.tapAt(x: 200.5, y: 798)))
         #expect(backend.hitTests == 0)
     }
@@ -396,13 +407,13 @@ struct RNDevMenuTests {
             let outcome = try await RNDevMenu.parse(["--label", label, "--device", Self.iosDevice.rawValue])
                 .perform(on: DeviceRouter.Route(backend: backend, device: Self.iosDevice), clock: ScriptedClock().poll)
 
-            #expect(outcome == .chose(menu: "expo", item: nil, label: label))
+            #expect(outcome == .chose(menu: "expo", item: nil, label: label, closedByFallback: true))
             #expect(backend.session.calls.count == 2, "the text's tap, then Close")
         }
     }
 
     @Test("perf-monitor on Android stops with person_required before anything is sent when the app may not draw over other apps", arguments: [
-        ["perf-monitor"], ["--label", "Toggle Performance Monitor"],
+        ["perf-monitor"], ["--label", "Toggle performance monitor"],
     ])
     func perfMonitorNeedsOverlay(arguments: [String]) async throws {
         let backend = OverlayFakeBackend(platform: .android, trees: [Self.expoMenu(), Self.app])
@@ -415,11 +426,46 @@ struct RNDevMenuTests {
         }
 
         #expect(error?.reason == .personRequired)
+        #expect(error?.ask == "Can you turn on Display over other apps for com.example.app on \(PersonAsk.devicePlaceholder)?")
         #expect(error?.userFacingDescription.contains("com.example.app may not display over other apps") == true)
         #expect(error?.userFacingDescription.contains("Display over other apps") == true)
         #expect(backend.overlayChecks == ["com.example.app"])
         #expect(backend.session.calls.isEmpty)
         #expect(backend.treeReads == 1)
+    }
+
+    @Test("on an open menu the overlay check runs only for the built-in performance monitor: a menu without it, a custom item and another case ask nothing of a person")
+    func overlayCheckFollowsTheMenu() async throws {
+        let custom = RNDevMenuTests.expoMenu(text: "CUSTOM MENU ITEMS", frame: FakeUI.frame(20, 600, 300, 20))
+        let item = FakeUI.node(.button, label: "Perf Monitor", frame: FakeUI.frame(20, 630, 300, 44))
+        let withItem = FakeUI.tree(platform: .ios, custom.roots[0].children + [item])
+        #expect(!DevMenu.picksPerfMonitor(item: nil, label: "Perf Monitor", in: withItem))
+        #expect(DevMenu.picksPerfMonitor(item: .perfMonitor, label: nil, in: Self.expoMenu()))
+        #expect(DevMenu.picksPerfMonitor(item: nil, label: "Toggle performance monitor", in: Self.expoMenu()))
+        #expect(!DevMenu.picksPerfMonitor(item: nil, label: "toggle performance monitor", in: Self.expoMenu()))
+        #expect(DevMenu.namesPerfMonitor("Performance monitor Toggle performance monitor"))
+        #expect(!DevMenu.namesPerfMonitor("toggle performance monitor"))
+
+        let backend = OverlayFakeBackend(platform: .android, trees: [Self.expoMenu()])
+        backend.foregrounds = [ForegroundActivities(top: "com.example.app/.MainActivity", home: nil)]
+        backend.overlayAllowed = false
+        let error = await #expect(throws: CLIError.self) {
+            _ = try await RNDevMenu.parse(["--label", "toggle performance monitor", "--device", Self.device.rawValue])
+                .perform(on: DeviceRouter.Route(backend: backend, device: Self.device), clock: ScriptedClock().poll)
+        }
+        #expect(error?.reason == .selectorNotFound)
+        #expect(backend.overlayChecks.isEmpty)
+
+        // A closed menu shows nothing yet, so the whole Expo button label is checked before the menu key is sent.
+        let closed = OverlayFakeBackend(platform: .android, trees: [Self.app])
+        closed.foregrounds = backend.foregrounds
+        closed.overlayAllowed = false
+        let refused = await #expect(throws: CLIError.self) {
+            _ = try await RNDevMenu.parse(["--label", "Performance monitor Toggle performance monitor", "--device", Self.device.rawValue])
+                .perform(on: DeviceRouter.Route(backend: closed, device: Self.device), clock: ScriptedClock().poll)
+        }
+        #expect(refused?.reason == .personRequired)
+        #expect(closed.session.calls.isEmpty)
     }
 
     @Test("perf-monitor goes ahead when the app may draw over other apps or the device does not say, and other items never ask", arguments: [
@@ -660,10 +706,13 @@ struct RNDevMenuTests {
     @Test("choosing an item with --json prints one JSON object naming the menu, the item, the label tapped and that it closed")
     func choiceJSON() {
         let reload = RNDevMenu.Outcome.chose(menu: "expo", item: .reload, label: "Reload")
-        #expect(reload.jsonLine() == #"{"version":1,"menu":"expo","item":"reload","label":"Reload","closed":true}"#)
+        #expect(reload.jsonLine() == #"{"version":1,"menu":"expo","item":"reload","label":"Reload","closed":true,"untrusted":["label"]}"#)
         let byLabel = RNDevMenu.Outcome.chose(menu: "expo", item: nil, label: "Open React Native dev menu")
-        #expect(byLabel.jsonLine() == #"{"version":1,"menu":"expo","item":null,"label":"Open React Native dev menu","closed":true}"#)
+        #expect(byLabel.jsonLine() == #"{"version":1,"menu":"expo","item":null,"label":"Open React Native dev menu","closed":true,"untrusted":["label"]}"#)
         #expect(byLabel.textLine() == "✓ Chose Open React Native dev menu and the dev menu closed")
+        let closedBy = RNDevMenu.Outcome.chose(menu: "expo", item: nil, label: "Clear cache", closedByFallback: true)
+        #expect(closedBy.jsonLine().contains(#""closed":true,"closedBy":"fallback""#))
+        #expect(closedBy.textLine() == "✓ Chose Clear cache; it left the dev menu open, so Offsider closed it")
     }
 
     @Test("a label that opens React Native's own menu from Expo's counts as chosen, with no close tap")
@@ -710,7 +759,7 @@ struct RNDevMenuTests {
         let outcome = try await RNDevMenu.parse(["inspector", "--device", Self.device.rawValue])
             .perform(on: DeviceRouter.Route(backend: stillOpen, device: Self.device), clock: ScriptedClock().poll)
 
-        #expect(outcome == .chose(menu: "react-native", item: .inspector, label: "Toggle Element Inspector"))
+        #expect(outcome == .chose(menu: "react-native", item: .inspector, label: "Toggle Element Inspector", closedByFallback: true))
         #expect(stillOpen.session.calls == [.perform(.tapAt(x: toggle.x, y: toggle.y)), .perform(.shortButtonPress(.back))])
 
         let gone = FakeDeviceBackend(platform: .android, trees: [menu, Self.app], advanceTreeOnInput: true)

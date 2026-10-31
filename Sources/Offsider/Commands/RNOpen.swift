@@ -8,7 +8,7 @@ struct RNOpen: AsyncParsableCommand {
         abstract: "Load an Expo dev client's bundle from Metro on this Mac and wait until the app is up.",
         discussion: """
         Checks that Metro answers on 127.0.0.1:<port>, sends the dev client its own link to that Metro \
-        (exp+<slug>://expo-development-client/?url=...), and waits until the launcher and the Bundling banner \
+        (exp+<slug>://expo-development-client/?url=..., or the app's own scheme when it registers no exp+ one), and waits until the launcher and the Bundling banner \
         are gone and --wait-id is on screen (without it, until the screen shows something and is still for a \
         second; an empty app window, as while the bundle loads, never counts). It resends \
         the link at most every 10 s, three times, while the launcher shows. Every 2 s it also checks the app's \
@@ -16,7 +16,7 @@ struct RNOpen: AsyncParsableCommand {
         emulator reaches Metro at 10.0.2.2 unless an adb reverse maps the port. A USB phone needs that reverse: rn open \
         sets tcp:<port> tcp:<port> only when the person allowed --port in devices add and the Metro that answers runs \
         as this user (else exit 7, metro_port_not_allowed, or 9), and session stop removes it. \
-        Exits 9 (metro_not_running) when Metro does not answer, 1 (rn_load_failed) \
+        Exits 9 (metro_not_running) when Metro does not answer on 127.0.0.1, also when it answers only on ::1, 1 (rn_load_failed) \
         when the app shows a load error, 1 (app_crashed) when its process stops, naming the iOS crash report or \
         the Android exception class or signal, and 5 at --timeout. It stops early with exit 5 when the app holds \
         a screen without --wait-id for 15 s (naming the screen) or shows Expo's dev menu intro, 1 (person_required) \
@@ -36,7 +36,7 @@ struct RNOpen: AsyncParsableCommand {
     @Option(name: .customLong("bundle-id"), help: ArgumentHelp("The app's bundle ID on iOS or package on Android.", valueName: "bundle-id|package"))
     var bundleID: String
 
-    @Option(help: ArgumentHelp("The dev client's link scheme, such as exp+my-app; read from the app when it has exactly one.", valueName: "exp+slug"))
+    @Option(help: ArgumentHelp("The dev client's link scheme, such as exp+my-app or the app's own; read from the app when it has exactly one.", valueName: "scheme"))
     var scheme: String?
 
     @Option(name: .customLong("wait-id"), help: ArgumentHelp("Wait until the element with this id is on screen.", valueName: "id"))
@@ -76,12 +76,9 @@ struct RNOpen: AsyncParsableCommand {
         var reverseSet = false
 
         func jsonLine() -> String {
-            let waited = waitID.map { "\"\(Self.escape($0))\"" } ?? "null"
-            return #"{"version":1,"bundleId":"\#(Self.escape(bundleID))","url":"\#(Self.escape(url))","host":"\#(host)","port":\#(port),"metro":"running","sends":\#(sends),"launcherSeen":\#(launcherSeen),"waitId":\#(waited),"elapsedMs":\#(elapsedMs),"bundleMs":\#(bundleMs),"reverseSet":\#(reverseSet)}"#
-        }
-
-        private static func escape(_ text: String) -> String {
-            text.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\"")
+            ExpoDevClient.openReportJSONLine(
+                bundleID: bundleID, url: url, host: host, port: port, sends: sends, launcherSeen: launcherSeen, waitID: waitID, elapsedMs: elapsedMs, bundleMs: bundleMs, reverseSet: reverseSet
+            )
         }
     }
 
@@ -130,12 +127,7 @@ struct RNOpen: AsyncParsableCommand {
         }
         // A phone allowed for any app reads only the app a command names.
         (route.backend as? any AppTargetSelecting)?.selectApp(bundleID, on: device)
-        if let problem = await metro.problem(port: port) {
-            throw CLIError(
-                errorDescription: "Metro is not running on 127.0.0.1:\(port) (\(problem)). Ask the user to start it (npx expo start --dev-client --port \(port)), then try again.",
-                reason: .metroNotRunning
-            )
-        }
+        if let unreachable = await metro.unreachable(port: port) { throw unreachable }
         try await opener.prepare()
         let url: String
         let host: String
@@ -259,7 +251,12 @@ struct RNOpen: AsyncParsableCommand {
                 shown = nil
                 let since = coveredSince ?? now
                 coveredSince = since
-                if now - since >= Self.coveredFor { throw covered(by: cover, device: device) }
+                if now - since >= Self.coveredFor {
+                    // A crash leaves the home screen in front, which is no prompt to ask about.
+                    try await watchApp(tree, force: true)
+                    if watch.hasPendingMiss { continue }
+                    throw covered(by: cover, device: device)
+                }
                 continue
             }
             coveredSince = nil
@@ -343,8 +340,9 @@ struct RNOpen: AsyncParsableCommand {
             }
             guard await metro.ownedByThisUser(port) else {
                 throw CLIError(
-                    errorDescription: "Offsider could not confirm that the Metro answering on 127.0.0.1:\(port) runs as this user (another user's, or it did not accept a connection within a second), so it set no adb reverse to it. Try again; if it repeats, ask the user to start their own Metro (npx expo start --dev-client --port \(port)).",
-                    reason: .metroNotRunning
+                    errorDescription: "Offsider could not confirm that the Metro answering on 127.0.0.1:\(port) runs as this user (another user's, or it did not accept a connection within a second), so it set no adb reverse to it. Try again; if it repeats, start your own Metro (\(MetroStatus.startCommand(port: port))).",
+                    reason: .metroNotRunning,
+                    hint: MetroStatus.startCommand(port: port)
                 )
             }
             try await setter.addMetroReverse(port: port, on: device)
@@ -364,7 +362,7 @@ struct RNOpen: AsyncParsableCommand {
     @MainActor
     func readFailure(_ error: any Error, failingFor seconds: TimeInterval, on route: DeviceRouter.Route) async -> any Error {
         guard (error as? any OffsiderFailure)?.reason == .noWindow, let package = await AppNotResponding.frontApp(on: route) else { return error }
-        guard package == bundleID else { return AppNotResponding.failure(package: package, device: route.device) }
+        guard package == bundleID else { return AppNotResponding.failure(package: package, route: route) }
         return CLIError(
             errorDescription: "\(bundleID) is in front on \(route.device.rawValue), but Android has listed no window for it for \(WaitLoop.seconds(seconds)), so the app is not responding. Run rn open again with --restart to stop it and open it fresh.",
             reason: .appNotResponding,
@@ -416,10 +414,18 @@ struct RNOpen: AsyncParsableCommand {
             )
         case .prompt(let prompt, let buttons):
             let choices = buttons.isEmpty ? "" : " (\(buttons.map { TerminalText.quoted(SelectorText.truncated($0)) }.joined(separator: ", ")))"
+            if !prompt.isFromSystemHost {
+                return CLIError(
+                    errorDescription: "Another process is in front of \(bundleID): \(prompt.summary.replacingOccurrences(of: "the system prompt ", with: ""))\(choices), so rn open stopped waiting. It answers nothing there: bring \(bundleID) to the front, or ask the user which to choose, then run rn open again.",
+                    reason: .personRequired,
+                    hint: "offsider describe-ui --summary --device \(device.rawValue)"
+                )
+            }
             return CLIError(
                 errorDescription: "\(bundleID) is behind \(prompt.summary)\(choices), so rn open stopped waiting. It never answers a system prompt: ask the user which to choose, answer it, then run rn open again.",
                 reason: .personRequired,
-                hint: buttons.isEmpty ? "offsider screenshot --device \(device.rawValue)" : "offsider describe-ui --summary --device \(device.rawValue)"
+                hint: buttons.isEmpty ? "offsider screenshot --device \(device.rawValue)" : "offsider describe-ui --summary --device \(device.rawValue)",
+                ask: "Can you answer the system prompt on \(PersonAsk.devicePlaceholder)?"
             )
         }
     }

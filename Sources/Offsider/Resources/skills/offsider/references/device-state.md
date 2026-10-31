@@ -2,6 +2,8 @@
 
 Every setter here changes the device and it stays changed. Read the current value by omitting the argument, set state before launching the app, and set it back when done. On a USB phone the user allowed, the setters work too and change their phone: change only what the test needs, and always set it back. `--json` on each prints one object with `version: 1`.
 
+A phone's `posture` override stays too: run `offsider posture reset --device <serial>` when done (`guide foldables`).
+
 ## Appearance and text size
 
 - `offsider appearance light|dark --device <DEVICE_ID>` sets the appearance. On Android a reading can be `auto` or `custom` when night mode follows a schedule; setting light or dark replaces it. Apps with their own theme setting follow `appearance` only when that setting is on automatic.

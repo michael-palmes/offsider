@@ -38,7 +38,7 @@ public struct LogBoxState: Equatable, Sendable {
     }
 
     public func jsonLine(redacts: Bool = true) -> String {
-        OrderedJSON.object([
+        UntrustedPaths.marked(.object([
             ("version", .integer(1)),
             ("logs", .integer(inspector?.of ?? logs)),
             ("toasts", .array(toasts.map { toast in
@@ -51,7 +51,7 @@ public struct LogBoxState: Equatable, Sendable {
             })),
             ("inspector", .bool(inspector != nil)),
             ("emptyDialog", .bool(emptyDialog)),
-        ]).rendered(compact: true)
+        ]), ["toasts[].message"]).rendered(compact: true)
     }
 
     /// One summary line, then one line per toast, bottom first: `  1. <message>`, with its log count when above 1.

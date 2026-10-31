@@ -8,6 +8,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Added
 
+- `wait --wait-timeout` is the same as `wait --timeout`, the name `tap` and other selector commands use.
+- `screen_off` (exit 1): a phone refused because Android keeps system UI in front of a dark or locked screen says so first, with `offsider wake` as the fix.
+- `credential status --device` adds `signedInHereStale: true` on Android when the app was first installed after that sign-in.
+- `screenshot` warns when an iOS simulator's picture matches the last one although the elements on screen changed, as a swipe-up unlock can freeze its display, and `button lock` says to unlock with Home twice.
+- `rn devmenu --json` adds `closedBy: "fallback"` when the item left the menu open and Offsider closed it.
+- `record-video` and `stream-video` take `--wait-lock` for their one tree read.
 - `batch` takes a `drag` step, written and limited like `offsider drag`.
 - `app_not_responding` (exit 1): on Android, when the app in front on an unlocked screen has no window the tree can read, as when its main thread is stuck, `describe-ui` and other reads say so instead of telling you to unlock the device.
 - `rn devmenu` lists the items an app registers (`registerDevMenuItems`, or `DevSettings.addMenuItem` in React Native's own Android menu), marked `"custom":true` in `--json` and tagged for a person; `--label` already chose them, and now prefers the menu's item over an app button behind it with the same label. Expo's custom heading also counts as menu evidence, so a menu whose tools those items push off screen is still read.
@@ -51,6 +57,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Fixed
 
+- Over Android's permission dialog, the refusal names `offsider permission grant`.
+- `rn open` finds a dev client's own scheme when it registers no `exp+` one, or lists them, instead of suggesting `exp+<slug>`.
+- `rn open` says when Metro answers only on `::1`, and its start command stays on 127.0.0.1.
+- `turnstile` reads `passed` over a checkbox left in the tree, across widgets and beside an app's wrapper.
+- `devices status --device <id> --json` prints one JSON document when the device is not allowed.
+- `devices add` lets a person choose a device already allowed to change it, with what it has now preselected, so `metro_port_not_allowed` and `app_not_allowed` no longer send them to a menu that offers nothing.
+- `record-video` and `stream-video` keep exit 8 for a busy device, say only to retry when waiting would not help, and never suggest `--unmasked` for it.
+- `rn open` no longer calls a crash to the home screen a system prompt, and says another process is in front when it is not a system one.
+- `rn devmenu`'s overlay check follows the label the menu would match, so a custom item or a label the menu lacks asks nothing of a person.
+- `rn devmenu`'s agent line quotes custom labels, and `--json` and `rn logbox status --json` name app text in `untrusted`.
+- `doctor` names `caffeinate -d` for a sleeping display, not a missing desktop session.
+- `app_not_responding` names `offsider app launch --restart`, and the simulator empty-tree hint does too; on a phone not allowed for the app it asks the user.
+- `rn open --json` stays valid JSON with a newline in `--wait-id`.
+- The skill's lasting-state rule names `posture`.
+- The foldables guide says `screenshot --display` needs the display active.
 - On Android, `describe-ui` frames the keyboard by its keys and buttons, not by its window, which spans the screen around a floating or compact keyboard such as Gboard's toolbar with a hardware keyboard connected. `target_under_keyboard` names `button back` only over docked keys: with only a toolbar showing, Back goes to the app and can leave the screen.
 - `login` on an iOS simulator no longer refuses every field when the tree's order puts a view from another process over the form, such as a Turnstile web widget at the screen's centre: a hit-test at each field's own point decides, as for `tap --fail-if-covered`. `describe-ui` no longer names web content the app draws in its own smaller view as `presented`.
 - `type --into-id`, and so `login`, on an iOS simulator confirm focus from the field itself: a connected hardware keyboard, which hides the software one, no longer stops them with `focus_not_confirmed`, and a keyboard already up for another field no longer types with an unconfirmed-focus warning. When focus never comes, the message says no keyboard appeared and names the hardware keyboard as a cause.

@@ -182,6 +182,37 @@ struct ExpoDevClientOpeningTests {
         #expect(ExpoDevClient.devClientURL(scheme: "exp+app", host: "10.0.2.2", port: 8081).hasSuffix("url=http%3A%2F%2F10.0.2.2%3A8081"))
     }
 
+    @Test("with no exp+ scheme the app's own is used, the id scheme Expo adds gives way to it, and several are listed with --scheme")
+    func ownSchemes() throws {
+        let dump = """
+              Scheme: "https"
+              Scheme: "myapp"
+              Scheme: "expo-dev-launcher"
+              Scheme: "com.example.app"
+              Scheme: "myapp"
+        """
+        #expect(ExpoDevClient.ownSchemes(fromPackageDump: dump) == ["myapp", "com.example.app"])
+        let plist = try PropertyListSerialization.data(fromPropertyList: ["CFBundleURLTypes": [["CFBundleURLSchemes": ["myapp", "exp+myapp", "com.example.app"]]]], format: .xml, options: 0)
+        #expect(ExpoDevClient.ownSchemes(fromInfoPlist: plist) == ["myapp", "com.example.app"])
+
+        #expect(try ExpoDevClient.singleScheme(["myapp", "com.example.app"], appID: "com.example.app") == "myapp")
+        #expect(try ExpoDevClient.singleScheme(["com.example.app"], appID: "com.example.app") == "com.example.app")
+        #expect(try ExpoDevClient.singleScheme(["exp+a", "myapp"], appID: "com.example.app") == "exp+a")
+        let several = #expect(throws: ExpoDevClientError.self) { try ExpoDevClient.singleScheme(["one", "two"], appID: "com.example.app") }
+        #expect(several?.message == "com.example.app registers 2 link schemes (one, two), so Offsider cannot tell which opens its dev client. Pass the right one, such as --scheme one.")
+        let none = #expect(throws: ExpoDevClientError.self) { try ExpoDevClient.singleScheme([], appID: "com.example.app") }
+        #expect(none?.message.hasPrefix("com.example.app registers no link scheme") == true)
+        #expect(none?.message.contains("exp+<slug>") == false)
+    }
+
+    @Test("a scheme resolves only when resolve-activity names an activity of the app")
+    func schemeResolves() {
+        #expect(ExpoDevClient.androidResolves("priority=0 preferredOrder=0 match=0x208000\ncom.example.app/.MainActivity\n", package: "com.example.app"))
+        #expect(!ExpoDevClient.androidResolves("No activity found\n", package: "com.example.app"))
+        #expect(!ExpoDevClient.androidResolves("com.example.application/.MainActivity\n", package: "com.example.app"))
+        #expect(ExpoDevClient.androidResolveCommand(scheme: "myapp", package: "com.example.app") == "cmd package resolve-activity --brief -a android.intent.action.VIEW -c android.intent.category.BROWSABLE -d 'myapp://expo-development-client/' com.example.app")
+    }
+
     @Test("exp+ schemes come from dumpsys package lines, once each, and from Info.plist URL types")
     func schemes() throws {
         let dump = """

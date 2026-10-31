@@ -14,7 +14,9 @@ A simulator can fall into a crash loop after boot, with macOS showing a "quit un
 
 Simulator input goes through a warm input session ([details](input.md#simulator-input-session)). When input seems ignored after a simulator restarted or misbehaved, `offsider session stop --device <UDID>` closes it, and the next command opens a fresh one; `OFFSIDER_SIMULATOR_SESSION=off` opens one per command.
 
-After an app crash and relaunch, a simulator can return an empty accessibility tree while the app is plainly on screen. When `describe-ui` still reads an empty tree after its retries, it checks the simulator's `launchctl list` and warns when an app is running, and `doctor --device <UDID>` fails `simulator.accessibility` with `<bundle> is running (pid N) but its accessibility tree is empty`. Both print the fix: relaunch the app with `xcrun simctl terminate` and `launch`, then, if the tree stays empty, reboot the simulator. No simulator service restart was found that reliably brings the tree back, so `doctor --fix` does not try one.
+A swipe-up unlock on a simulator (after `button lock`) can freeze its display while the tree keeps changing. `screenshot` warns when its picture matches the last one although the elements on screen changed, and names the way back: `offsider button lock`, then `offsider button home` twice. Unlock with Home in the first place: `button lock` says so.
+
+After an app crash and relaunch, a simulator can return an empty accessibility tree while the app is plainly on screen. When `describe-ui` still reads an empty tree after its retries, it checks the simulator's `launchctl list` and warns when an app is running, and `doctor --device <UDID>` fails `simulator.accessibility` with `<bundle> is running (pid N) but its accessibility tree is empty`. Both print the fix: relaunch the app with `offsider app launch --restart`, then, if the tree stays empty, reboot the simulator. No simulator service restart was found that reliably brings the tree back, so `doctor --fix` does not try one.
 
 When `describe-ui`, `screenshot` or `rn logbox` exits `device_unresponsive` after 30 s, that simulator or emulator stopped answering, even if others still do. Run `offsider doctor --device <ID>`; if a simulator is stuck, `xcrun simctl shutdown <UDID>`, then `offsider boot <UDID>`. Its app data survives.
 
@@ -30,5 +32,5 @@ On a USB phone, the checks come from its row in adb's device list, the emulator 
 
 - `ios-device.hid` opens the HID button socket and round-trips a barrier on it.
 - iOS does not report the UI Automation setting, so `ios-device.ui-automation` is skipped with the Settings path unless the unlocked device refused input.
-- `ios-device.session` reports the session broker and its screen stream, and is a skip when none is running: doctor never starts one.
+- `ios-device.session` reports the session broker and its screen stream, and is a skip when none is running: doctor never starts one. It names `caffeinate -d` when this Mac's display is asleep, and a terminal on the Mac's desktop when the process has no desktop session.
 - `ios-device.usbmuxd` checks that usbmuxd lists the device on USB: usbmuxd can stop listing a wired device that `devicectl` still sees, until the cable is replugged.

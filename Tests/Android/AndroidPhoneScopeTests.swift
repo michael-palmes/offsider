@@ -118,6 +118,18 @@ struct AndroidPhoneScopeTests {
         #expect(error?.isOtherAppInFront == otherApp, "\(error?.message ?? "")")
     }
 
+    @Test("the permission dialog in front names offsider permission grant for the app this command drives", arguments: ["com.google.android.permissioncontroller/.Grant", "com.android.permissioncontroller/.Grant"])
+    func permissionDialogNamesGrant(front: String) async throws {
+        let (backend, _) = try AndroidBackendHelperTests.phoneBackend(top: front)
+        backend.appScopes[Self.phone.rawValue] = AndroidAppScope(permitted: [Self.playground], managedCeiling: nil)
+
+        let error = await #expect(throws: AndroidError.self) { try await backend.requireDrivableForeground(Self.phone.rawValue) }
+
+        #expect(error?.reason == .appNotAllowed && error?.isOtherAppInFront == true)
+        #expect(error?.message.hasPrefix("A permission dialog is in front on \(Self.phone.rawValue)") == true)
+        #expect(error?.hint == "offsider permission grant <service> --app \(Self.playground) --device \(Self.phone.rawValue)")
+    }
+
     @Test("a front app Offsider cannot name counts as another app in front")
     func unknownForegroundIsOtherApp() {
         #expect(AndroidError.foregroundUnknown(Self.phone.rawValue).isOtherAppInFront)

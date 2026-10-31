@@ -770,8 +770,8 @@ struct DeviceAccessCommandTests {
         #expect(agent.out.contains("was changed outside Offsider"))
     }
 
-    @Test("the device step shows an allowed device dim with its allowance, never offers it, and offers the rest")
-    func allowedDeviceShownNotOffered() async throws {
+    @Test("the device step shows an allowed device with its allowance, and a new one comes first")
+    func allowedDeviceShownBeside() async throws {
         let home = try makePolicyHome()
         defer { try? FileManager.default.removeItem(atPath: home) }
         let seal = MemorySeal()
@@ -785,24 +785,83 @@ struct DeviceAccessCommandTests {
         #expect(!transcript.contains(AllowScreen.anotherQuestion))
     }
 
-    @Test("with every connected device allowed, the device step offers only rescan and quit and names the withdraw command")
+    /// A phone allowed for one app, with a Metro port and a time left.
+    static func allowedPhone() -> DeviceAllowance {
+        DeviceAllowance(
+            platform: .android, key: PolicyFixtures.serial, name: "Test Pixel", added: PolicyFixtures.added, expires: PolicyFixtures.now.addingTimeInterval(1_800),
+            apps: ["com.mpalmes.offsider.playground.rn"], metroPorts: [8081]
+        )
+    }
+
+    @Test("choosing an allowed device starts every step on what it has, so Return through them keeps it all, and Touch ID still confirms")
+    func changeKeepsEverything() async throws {
+        let home = try makePolicyHome()
+        defer { try? FileManager.default.removeItem(atPath: home) }
+        let seal = MemorySeal()
+        let presence = RecordingPresence()
+        try Self.seed(home, seal: seal, [Self.allowedPhone()])
+        let (_, transcript) = try await Self.allow([], answers: ["\r", "\r", "\r", "\r"], context: { terminal in
+            Self.context(home: home, seal: seal, terminal: terminal, devices: { [Self.androidRow] }, apps: { _ in [InstalledApp(id: "com.example.other", name: "Other")] })
+        }, presence: presence)
+        let entry = try #require(try Self.entries(home).first)
+        #expect(entry.apps == ["com.mpalmes.offsider.playground.rn"])
+        #expect(entry.metroPorts == [8081])
+        #expect(entry.expires == PolicyFixtures.now.addingTimeInterval(1_800))
+        #expect(transcript.contains(AllowScreen.allAllowed))
+        #expect(transcript.contains("Keep com.mpalmes.offsider.playground.rn only"))
+        #expect(transcript.contains("Keep 8081"))
+        #expect(transcript.contains("Keep until"))
+        #expect(presence.reasons.count == 1)
+    }
+
+    @Test("changing an allowed device adds a Metro port and leaves its app and time, as metro_port_not_allowed sends a person to do")
+    func changeAddsAMetroPort() async throws {
+        let home = try makePolicyHome()
+        defer { try? FileManager.default.removeItem(atPath: home) }
+        let seal = MemorySeal()
+        try Self.seed(home, seal: seal, [Self.allowedPhone()])
+        _ = try await Self.allow([], answers: ["\r", "\r", "4", "8081 8742\r", "\r"], context: { terminal in
+            Self.context(home: home, seal: seal, terminal: terminal, devices: { [Self.androidRow] })
+        })
+        let entry = try #require(try Self.entries(home).first)
+        #expect(entry.metroPorts == [8081, 8742])
+        #expect(entry.apps == ["com.mpalmes.offsider.playground.rn"])
+        #expect(entry.expires == PolicyFixtures.now.addingTimeInterval(1_800))
+    }
+
+    @Test("with every connected device allowed, quitting saves nothing and the screen names the withdraw command")
     func everyDeviceAllowed() async throws {
         let home = try makePolicyHome()
         defer { try? FileManager.default.removeItem(atPath: home) }
         let seal = MemorySeal()
         try Self.seed(home, seal: seal, [PolicyFixtures.entry()])
         let terminal = try AccessTerminal()
-        terminal.type(["\r", "q"])
+        terminal.type(["q"])
         await #expect(throws: ExitCode(130)) {
             try await PersonPresence.$terminal.withValue({ true }) {
                 _ = try await DeviceAccessAllow.parse([]).perform(context: Self.context(home: home, seal: seal, terminal: terminal, devices: { [Self.row] }))
             }
         }
         let transcript = terminal.finish()
-        #expect(transcript.contains("\(AllowScreen.deviceQuestion) (R rescan, Q quit)"))
         #expect(transcript.contains(AllowScreen.allAllowed))
         #expect(transcript.contains("Withdraw  offsider devices remove --device \(PolicyFixtures.phone)"))
         #expect(try Self.entries(home).count == 1)
+    }
+
+    @Test("status --device --json on a device not allowed prints one JSON document, keeps exit 7 and adds no envelope")
+    func statusRefusalIsOneDocument() async throws {
+        let home = try makePolicyHome()
+        defer { try? FileManager.default.removeItem(atPath: home) }
+        let capture = ConsoleCapture()
+        let failure = await #expect(throws: ReportedFailure.self) {
+            try await DeviceAccessContext.$current.withValue(Self.context(home: home, seal: MemorySeal())) {
+                try await Console.$current.withValue(capture.console(out: .agent, err: .agent)) {
+                    try await DeviceAccessStatus.parse(["--device", PolicyFixtures.phone, "--json"]).run()
+                }
+            }
+        }
+        #expect(failure?.exitCode == .deviceUnavailable)
+        #expect(try JSONSerialization.jsonObject(with: Data(capture.out.utf8)) is [String: Any])
     }
 
     @Test("devices lists, and add, remove and status are its subcommands")

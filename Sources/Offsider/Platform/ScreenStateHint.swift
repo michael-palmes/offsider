@@ -2,7 +2,8 @@ import ArgumentParser
 import Foundation
 import OffsiderCore
 
-/// After a failure that an off or locked Android screen explains, says so: same reason and exit code, `offsider wake` as the hint.
+/// After a failure that an off or locked Android screen explains, says so with `offsider wake` as the hint.
+/// The failure keeps its reason and exit code, except a front-app refusal: there the screen is the cause, and what Android keeps in front of it says nothing.
 enum ScreenStateHint {
     static let reasons: Set<FailureReason> = [.selectorNotFound, .selectorFilteredByType, .targetOffScreen, .noWindow, .notVerified, .conditionNotMet]
 
@@ -21,15 +22,15 @@ enum ScreenStateHint {
             }
             return error
         }
-        guard let failure = error as? any OffsiderFailure, reasons.contains(failure.reason),
+        guard let failure = error as? any OffsiderFailure, reasons.contains(failure.reason) || error.isOtherAppInFront,
               let (route, name, reading) = await screenState(routes) else {
             return error
         }
         guard reading.isUsable else {
-            return ScreenStateFailure(underlying: failure, device: route.device.rawValue, name: name, reading: reading)
+            return ScreenStateFailure(underlying: failure, device: route.device.rawValue, name: name, reading: reading, screenIsCause: error.isOtherAppInFront)
         }
         guard failure.reason == .noWindow, let package = await AppNotResponding.frontApp(on: route, awake: reading) else { return error }
-        return AppNotResponding.failure(package: package, device: route.device)
+        return AppNotResponding.failure(package: package, route: route)
     }
 
     /// The serial, the device's name from what the command already read (no extra round trip), and the reading, when the screen is off or locked.
@@ -84,9 +85,13 @@ struct ScreenStateFailure: LocalizedError, UserFacingError, OffsiderFailure {
     let device: String
     let name: String
     let reading: AwakeReading
+    var screenIsCause = false
 
-    var reason: FailureReason { underlying.reason }
-    var failureMessage: String { "\(underlying.failureMessage) \(ScreenStateHint.sentence(serial: device, name: name, reading: reading))" }
+    var reason: FailureReason { screenIsCause ? .screenOff : underlying.reason }
+    var failureMessage: String {
+        let sentence = ScreenStateHint.sentence(serial: device, name: name, reading: reading)
+        return screenIsCause ? sentence : "\(underlying.failureMessage) \(sentence)"
+    }
     var hint: String? { "offsider wake --device \(device)" }
     var ask: String? { underlying.ask }
     var candidates: [FailureCandidate] { underlying.candidates }

@@ -16,7 +16,7 @@ struct RecordVideo: AsyncParsableCommand {
         a recording while the evidence run masks emails or ids. One tree read before the first frame refuses the same way \
         when a password field is on screen or the tree cannot be read (OFFSIDER_MASK_SECURE=0 skips it outside a run); \
         --unmasked records anyway, with a warning. For masked evidence use \
-        `screenshot` or screenshot steps in a batch. Only that read holds the device, so other commands can read and \
+        `screenshot` or screenshot steps in a batch. Only that read holds the device (--wait-lock waits for it on Android), so other commands can read and \
         drive it while it records; a recording sends no input. It records until --duration runs out or it gets Ctrl+C, SIGINT, \
         SIGTERM or SIGHUP, then saves every captured frame at the times they were taken and leaves nothing else beside \
         the file; a stop before the first frame ends it with nothing recorded (exit 1), and a closed output pipe does not stop it.
@@ -24,7 +24,7 @@ struct RecordVideo: AsyncParsableCommand {
     )
 
     @OptionGroup
-    var deviceOption: ReadDeviceOption
+    var deviceOption: DeviceOption
 
     @OptionGroup
     var appOption: AppOption
@@ -267,7 +267,7 @@ struct RecordVideo: AsyncParsableCommand {
         _ key: DeviceLockKey, device: String, command: String = "record-video", holder: (DeviceLockKey) -> DeviceLockHolder? = { DeviceLock.currentHolder($0) }
     ) throws {
         guard let current = holder(key), RecordingMarker.refusedHolderCommands.contains(current.command.split(separator: " ").first.map(String.init) ?? "") else { return }
-        throw DeviceBusy(device: device, command: command, holder: current, waited: nil)
+        throw DeviceBusy(device: device, command: command, holder: current, waited: nil, canWait: false)
     }
 
     /// The booted device and its marker for both video commands; frames need neither the tree reader nor its lock, so both go before any frame.

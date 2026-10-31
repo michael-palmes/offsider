@@ -292,8 +292,29 @@ struct VideoRecordingStartTests {
         }
         #expect(error?.reason.exitCode.rawValue == 8)
         #expect(error?.failureMessage.contains("offsider login") == true)
-        #expect(error?.hint == "add --wait-lock 30 to the same command")
+        #expect(error?.hint == "retry when it finishes")
+        #expect(error?.failureMessage.contains("--wait-lock") == false)
         #expect(!RecordingMarker.isLive(Self.key, root: root))
+    }
+
+    @Test("a device another command holds during the password read stays exit 8, never offers --unmasked, and both video commands take --wait-lock", arguments: ["record-video", "stream-video"])
+    func busyDuringTheRead(command: String) async throws {
+        let root = try RecordingMarkerTests.root()
+        defer { try? FileManager.default.removeItem(atPath: root) }
+        let claims = DeviceClaims()
+        claims.root = { root }
+        let held = try await DeviceLock.acquire(Self.key, command: "tap", wait: nil, root: root)
+        defer { held.release() }
+
+        let error = await #expect(throws: DeviceBusy.self) {
+            _ = try await RecordVideo.start(
+                command: command, backend: LockingReadBackend(claims: claims), device: Self.device, checksSecureField: true, root: root, holder: { _ in nil }, claims: claims
+            )
+        }
+        #expect(error?.reason == .deviceBusy && error?.reason.exitCode.rawValue == 8)
+        #expect(error?.failureMessage.contains("--unmasked") == false)
+        #expect(try RecordVideo.parse(["--wait-lock", "5", "--device", Self.device.rawValue, "--output", "a.mp4"]).deviceOption.waitLock == 5)
+        #expect(try StreamVideo.parse(["--wait-lock", "5", "--device", Self.device.rawValue]).deviceOption.waitLock == 5)
     }
 
     @Test("a marker that cannot be written fails with video_failed before the lock holder is read or any frame is taken")

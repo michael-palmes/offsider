@@ -37,12 +37,12 @@ public struct IOSDeviceDoctorProbe {
     /// The broker's record and `ping`; a broker that is not running is reported, not started.
     public static func sessionFact(_ udid: String, root: String) async -> IOSDeviceDoctorFacts.SessionFact {
         let store = DeviceSessionStore(root: root)
-        guard let record = try? store.read(udid: udid) else { return .notRunning(guiSession: IOSDeviceScreenStream.hasDisplay()) }
+        guard let record = try? store.read(udid: udid) else { return .notRunning(desktop()) }
         let manager = DeviceSessionManager(
             store: store, processes: OffsiderSelfProcesses(executable: URL(fileURLWithPath: "/usr/bin/false")), environment: [:], log: { _, _ in }
         )
         let status = await manager.status(of: record)
-        guard status.alive else { return .notRunning(guiSession: IOSDeviceScreenStream.hasDisplay()) }
+        guard status.alive else { return .notRunning(desktop()) }
         guard let stream = status.reply?.stream else { return .unanswered }
         let detail: String?
         switch stream.state {
@@ -51,6 +51,14 @@ public struct IOSDeviceDoctorProbe {
         case .opening, .closed: detail = nil
         }
         return .running(stream: stream.state.rawValue, detail: detail)
+    }
+
+    private static func desktop() -> IOSDeviceDoctorFacts.Desktop {
+        switch IOSDeviceScreenStream.displays() {
+        case .awake: return .awake
+        case .asleep: return .asleep
+        case .none: return .none
+        }
     }
 
     public struct Result: Sendable {

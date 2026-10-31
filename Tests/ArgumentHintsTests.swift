@@ -27,7 +27,7 @@ struct ArgumentHintsTests {
         [], ["list-devices"], ["tap", "--device", "X"], ["type", "list-simulators", "--device", "X"],
         ["batch", "--device", "X", "--step", "tap --udid Y"], ["tap", "--udids", "X"], ["type", "--device", "X", "--", "--udid"],
         ["wait", "--id", "a", "--timeout", "5"], ["tap", "--id", "a", "--wait-timeout", "5"], ["swipe", "--timeout"],
-        ["type", "--device", "X", "--", "--timeout"], ["wait", "--id", "a", "--", "--wait-timeout"],
+        ["type", "--device", "X", "--", "--timeout"], ["wait", "--id", "a", "--wait-timeout", "5"],
     ])
     func othersAreUntouched(arguments: [String]) {
         #expect(ArgumentHints.hint(for: arguments) == nil)
@@ -58,7 +58,6 @@ struct ArgumentHintsTests {
 
     /// Each wrong option, the hint it gets, and the suggested command, which must parse.
     static let misnamed: [(wrong: [String], hint: String, suggestion: [String])] = [
-        (["wait", "--id", "a", "--wait-timeout", "5"], "wait takes --timeout <seconds>, not --wait-timeout.", ["wait", "--id", "a", "--timeout", "5"]),
         (["wait", "--id", "a", "--verify-timeout=5"], "wait takes --timeout <seconds>, not --verify-timeout.", ["wait", "--id", "a", "--timeout", "5"]),
         (["assert", "--id", "a", "--timeout", "5"], "assert checks once and has no --timeout. To wait for the condition, run offsider wait with the same selector and --timeout <seconds>.", ["wait", "--id", "a", "--timeout", "5"]),
         (["tap", "--id", "a", "--timeout", "5"], "tap has no --timeout: --wait-timeout <seconds> waits for the element to appear, and --verify-timeout <seconds> (with --verify) waits for the tap's effect.", ["tap", "--id", "a", "--wait-timeout", "5"]),
@@ -95,10 +94,15 @@ struct ArgumentHintsTests {
         #expect(session.calls.isEmpty)
     }
 
+    @Test("wait takes --wait-timeout as --timeout, the name tap uses")
+    func waitTakesWaitTimeout() throws {
+        #expect(try Wait.parse(["--id", "a", "--wait-timeout", "5", "--device", "X"]).timeout == 5)
+        #expect(try Wait.parse(["--id", "a", "--timeout", "7", "--device", "X"]).timeout == 7)
+    }
+
     @Test("the binary prints the hint and exits with a usage error", arguments: [
         ("tap -x 1 -y 1 --udid X", "Error: --udid was renamed to --device in 0.3.0. Run offsider devices to find device IDs.\n"),
         ("list-simulators", "Error: list-simulators was renamed to list-devices in 0.3.0.\n"),
-        ("wait --id a --wait-timeout 5 --device X", "Error: wait takes --timeout <seconds>, not --wait-timeout.\n"),
         ("credential --app com.example.app remove qa", "Error: \(ArgumentHints.credentialActionFirst)\n"),
     ])
     func binaryPrintsHint(command: String, expected: String) async throws {
