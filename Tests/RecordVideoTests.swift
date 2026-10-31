@@ -354,8 +354,30 @@ struct VideoRecordingFileTests {
         func add() { lock.withLock { count += 1 } }
     }
 
+    /// Hangs from its `hangAt`th capture on, as a wedged device does, ignoring cancellation.
+    final class HangingBackend: FakeDeviceBackend {
+        var hangAt = 3
+
+        override func screenshotPNG(for id: DeviceID) async throws -> Data {
+            let data = try await super.screenshotPNG(for: id)
+            if screenshotReads >= hangAt {
+                await withCheckedContinuation { (_: CheckedContinuation<Void, Never>) in }
+            }
+            return data
+        }
+    }
+
+    /// Fails each capture from its `failAt`th on, as a device that has gone does.
+    final class FailingBackend: FakeDeviceBackend {
+        override func screenshotPNG(for id: DeviceID) async throws -> Data {
+            let data = try await super.screenshotPNG(for: id)
+            if screenshotReads >= 3 { throw CLIError(errorDescription: "gone") }
+            return data
+        }
+    }
+
     /// Asks the recording to stop from inside one capture, so the test does not depend on how fast frames come.
-    final class StoppingBackend: FakeDeviceBackend {
+    class StoppingBackend: FakeDeviceBackend {
         let early = EarlyStops()
         lazy var stop = RecordingStop(endNow: { [early] in early.add() })
         var stopAt = 6
@@ -436,5 +458,283 @@ struct VideoRecordingFileTests {
 
         #expect(error?.reason == .videoFailed)
         #expect(try FileManager.default.contentsOfDirectory(atPath: folder.path).isEmpty)
+    }
+
+    static func stopSoon(_ stop: RecordingStop) {
+        DispatchQueue.global().asyncAfter(deadline: .now() + 0.8) { stop.request() }
+    }
+
+    @Test("a stop while a capture hangs still saves the frames so far, soon", .timeLimit(.minutes(1)))
+    func stopDuringHungCapture() async throws {
+        let folder = try Self.folder()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let target = folder.appendingPathComponent("clip.mp4")
+        let backend = HangingBackend(platform: .android, trees: [], screenshots: [try VideoMaskTests.whitePNG(width: 120, height: 260)])
+        let stop = RecordingStop(endNow: { Issue.record("stopped before the first frame") }, giveUp: { _, message in Issue.record("gave up: \(message)") })
+        Self.stopSoon(stop)
+
+        let started = ContinuousClock.now
+        let saved = try await RecordVideo.record(
+            from: VideoFrameSource(backend: backend, device: Self.device, scale: 1, regions: []), to: (target, true),
+            fps: 10, quality: 50, scale: 1, duration: nil, stop: stop
+        )
+
+        #expect(ContinuousClock.now - started < .seconds(15))
+        #expect(saved.frames == 2)
+        #expect(try await Self.samples(in: target) == saved.frames)
+        #expect(try FileManager.default.contentsOfDirectory(atPath: folder.path) == ["clip.mp4"])
+    }
+
+    @Test("--duration ends a recording whose capture hangs", .timeLimit(.minutes(1)))
+    func durationDuringHungCapture() async throws {
+        let folder = try Self.folder()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let target = folder.appendingPathComponent("clip.mp4")
+        let backend = HangingBackend(platform: .android, trees: [], screenshots: [try VideoMaskTests.whitePNG(width: 120, height: 260)])
+
+        let saved = try await RecordVideo.record(
+            from: VideoFrameSource(backend: backend, device: Self.device, scale: 1, regions: []), to: (target, true),
+            fps: 10, quality: 50, scale: 1, duration: 1, stop: RecordingStop(endNow: { Issue.record("stopped before the first frame") })
+        )
+        #expect(saved.frames == 2)
+    }
+
+    @Test("a device that stops answering past the read limit ends the recording with device_unresponsive, its frames saved", .timeLimit(.minutes(1)))
+    func hungPastReadLimit() async throws {
+        let folder = try Self.folder()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let target = folder.appendingPathComponent("clip.mp4")
+        let backend = HangingBackend(platform: .android, trees: [], screenshots: [try VideoMaskTests.whitePNG(width: 120, height: 260)])
+
+        let error = await #expect(throws: CLIError.self) {
+            _ = try await RecordVideo.record(
+                from: VideoFrameSource(backend: backend, device: Self.device, scale: 1, regions: []), to: (target, true),
+                fps: 10, quality: 50, scale: 1, duration: nil, stop: RecordingStop(endNow: { Issue.record("stopped before the first frame") }), readLimit: .seconds(1)
+            )
+        }
+        #expect(error?.reason == .deviceUnresponsive)
+        #expect(error?.userFacingDescription.contains(target.path) == true)
+        #expect(try await Self.samples(in: target) == 2)
+    }
+
+    @Test("captures that only fail past the read limit end the recording too", .timeLimit(.minutes(1)))
+    func failingPastReadLimit() async throws {
+        let folder = try Self.folder()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let target = folder.appendingPathComponent("clip.mp4")
+        let backend = FailingBackend(platform: .android, trees: [], screenshots: [try VideoMaskTests.whitePNG(width: 120, height: 260)])
+
+        let error = await #expect(throws: CLIError.self) {
+            _ = try await RecordVideo.record(
+                from: VideoFrameSource(backend: backend, device: Self.device, scale: 1, regions: []), to: (target, true),
+                fps: 10, quality: 50, scale: 1, duration: nil, stop: RecordingStop(endNow: { Issue.record("stopped before the first frame") }), readLimit: .seconds(1)
+            )
+        }
+        #expect(error?.reason == .deviceUnresponsive)
+        #expect(FileManager.default.fileExists(atPath: target.path))
+    }
+
+    @Test("a writer that has failed throws at once, rather than waiting for ever for room")
+    func failedWriterThrows() throws {
+        let folder = try Self.folder()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let recorder = try H264StreamRecorder(outputURL: folder.appendingPathComponent("clip.mp4"), width: 120, height: 260, fps: 10, quality: 50)
+        recorder.invalidate()
+        #expect(!recorder.isWriting)
+        let image = try #require(VideoFrameUtilities.makeCGImage(from: try VideoMaskTests.whitePNG(width: 120, height: 260)))
+        #expect(throws: (any Error).self) { try recorder.append(image: image, presentationTime: .zero) }
+    }
+
+    @Test("a recording with no --duration has a 10 minute limit, and only the limit earns the note")
+    func defaultLimit() {
+        #expect(RecordVideo.defaultLimit == 600)
+        #expect(RecordVideo.limitNote(duration: nil, stopped: false)?.contains("10 minute limit") == true)
+        #expect(RecordVideo.limitNote(duration: nil, stopped: true) == nil)
+        #expect(RecordVideo.limitNote(duration: 30, stopped: false) == nil)
+    }
+
+    @Test("--json says when the limit ended the recording")
+    func reachedLimitJSON() throws {
+        let line = VideoRecordingReport(path: "/tmp/a.mp4", frames: 2, heldFrames: 0, seconds: 1, regions: 0, unmasked: false, reachedLimit: true).jsonLine()
+        let object = try #require(try JSONSerialization.jsonObject(with: Data(line.utf8)) as? [String: Any])
+        #expect(object["reachedLimit"] as? Bool == true)
+    }
+
+    @Test("the read limit bounds simulators and emulators, and leaves phones and iPhones to their own")
+    func readLimitByDevice() {
+        #expect(RecordVideo.readLimit(for: Self.device) == .seconds(30))
+        #expect(RecordVideo.readLimit(for: DeviceID(rawValue: "00000000-0000-0000-0000-000000000001", platform: .ios)) == .seconds(30))
+        #expect(RecordVideo.readLimit(for: DeviceID(rawValue: "00008130-0000000000000ABC", platform: .ios)) == nil)
+        #expect(RecordVideo.readLimit(for: DeviceID(rawValue: PolicyFixtures.serial, platform: .android)) == nil)
+    }
+}
+
+@Suite("Stopping a recording that is stuck")
+struct RecordingStopTests {
+    final class Fired: @unchecked Sendable {
+        private let lock = NSLock()
+        private var seen: [(FailureReason, String)] = []
+        func add(_ reason: FailureReason, _ message: String) { lock.withLock { seen.append((reason, message)) } }
+        var all: [(FailureReason, String)] { lock.withLock { seen } }
+    }
+
+    static func stop(_ fired: Fired, command: String = "record-video", stuckAfter: TimeInterval = 0.2, savingAfter: TimeInterval = 30) -> RecordingStop {
+        let stop = RecordingStop(command: command, endNow: { Issue.record("not early") }, giveUp: { fired.add($0, $1) }, stuckAfter: stuckAfter, savingAfter: savingAfter)
+        #expect(stop.beginCapturing())
+        return stop
+    }
+
+    @Test("a stop the loop never reaches gives up from another thread, once, with video_failed and the staging folder gone")
+    func stuckGivesUp() async throws {
+        let fired = Fired()
+        let stop = Self.stop(fired)
+        let folder = NSTemporaryDirectory() + ".offsider-staging-\(UUID().uuidString)"
+        try FileManager.default.createDirectory(atPath: folder, withIntermediateDirectories: false)
+        defer { try? FileManager.default.removeItem(atPath: folder) }
+        stop.discardOnGivingUp(folder)
+
+        stop.request()
+        stop.request()
+        try await Task.sleep(for: .seconds(1))
+
+        #expect(fired.all.count == 1)
+        #expect(fired.all.first?.0 == .videoFailed)
+        #expect(fired.all.first?.1.contains("record-video could not stop in time") == true)
+        #expect(!FileManager.default.fileExists(atPath: folder))
+    }
+
+    @Test("a stalled reader's stream-video says so")
+    func streamWording() async throws {
+        let fired = Fired()
+        let stop = Self.stop(fired, command: "stream-video")
+        stop.request()
+        try await Task.sleep(for: .seconds(1))
+        #expect(fired.all.first?.1.contains("its reader stopped reading") == true)
+    }
+
+    @Test("once the loop has stopped, the writer gets its longer limit, so a good file is not thrown away")
+    func savingGetsLonger() async throws {
+        let fired = Fired()
+        let stop = Self.stop(fired)
+        stop.request()
+        stop.saving()
+        try await Task.sleep(for: .seconds(0.6))
+        #expect(fired.all.isEmpty)
+    }
+
+    @Test("a writer stuck past its own limit gives up too")
+    func savingGivesUp() async throws {
+        let fired = Fired()
+        let stop = Self.stop(fired, savingAfter: 0.2)
+        stop.saving()
+        try await Task.sleep(for: .seconds(0.8))
+        #expect(fired.all.count == 1)
+    }
+
+    @Test("a finished recording never gives up, even on a late signal")
+    func finishedNeverGivesUp() async throws {
+        let fired = Fired()
+        let stop = Self.stop(fired)
+        stop.request()
+        stop.finished()
+        stop.request()
+        stop.saving()
+        try await Task.sleep(for: .seconds(0.6))
+        #expect(fired.all.isEmpty)
+    }
+
+    @Test("a stop before the first frame ends at once and arms nothing")
+    func earlyStopArmsNothing() async throws {
+        let early = VideoRecordingFileTests.EarlyStops()
+        let fired = Fired()
+        let stop = RecordingStop(endNow: { early.add() }, giveUp: { fired.add($0, $1) }, stuckAfter: 0.1)
+        stop.request()
+        try await Task.sleep(for: .seconds(0.4))
+        #expect(early.value == 1)
+        #expect(fired.all.isEmpty)
+    }
+}
+
+@Suite("Streaming frames")
+@MainActor
+struct StreamFramesTests {
+    static let device = DeviceID(rawValue: "emulator-5554", platform: .android)
+
+    static func output() throws -> (url: URL, handle: FileHandle) {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("offsider-stream-\(UUID().uuidString)")
+        FileManager.default.createFile(atPath: url.path, contents: nil)
+        return (url, try FileHandle(forWritingTo: url))
+    }
+
+    static func source(_ backend: FakeDeviceBackend) -> VideoFrameSource {
+        VideoFrameSource(backend: backend, device: device, scale: 1, regions: [])
+    }
+
+    @Test("a stop during the first capture ends with exit 1 and nothing streamed, not even the HTTP header")
+    func stopDuringFirstCapture() async throws {
+        let (url, handle) = try Self.output()
+        defer { try? FileManager.default.removeItem(at: url) }
+        let backend = VideoRecordingFileTests.StoppingBackend(platform: .android, trees: [], screenshots: [try VideoMaskTests.whitePNG(width: 120, height: 260)])
+        backend.stopAt = 1
+        let error = await #expect(throws: CLIError.self) {
+            try await StreamVideo.streamFrames(from: Self.source(backend), format: .mjpeg, fps: 10, quality: 50, scale: 1, stop: backend.stop, to: handle)
+        }
+        #expect(backend.early.value == 1)
+        #expect(error?.reason == .videoFailed)
+        #expect(error?.userFacingDescription == "stream-video was stopped before its first frame, so nothing was streamed.")
+        #expect(try Data(contentsOf: url).isEmpty)
+    }
+
+    @Test("a failed first capture is still before the first frame, so a stop during the retry ends at once too")
+    func stopDuringRetry() async throws {
+        let (url, handle) = try Self.output()
+        defer { try? FileManager.default.removeItem(at: url) }
+        final class FailsThenStops: VideoRecordingFileTests.StoppingBackend {
+            override func screenshotPNG(for id: DeviceID) async throws -> Data {
+                let data = try await super.screenshotPNG(for: id)
+                if screenshotReads == 1 { throw CLIError(errorDescription: "not yet") }
+                return data
+            }
+        }
+        let backend = FailsThenStops(platform: .android, trees: [], screenshots: [try VideoMaskTests.whitePNG(width: 120, height: 260)])
+        backend.stopAt = 2
+        await #expect(throws: CLIError.self) {
+            try await StreamVideo.streamFrames(from: Self.source(backend), format: .mjpeg, fps: 10, quality: 50, scale: 1, stop: backend.stop, to: handle)
+        }
+        #expect(backend.early.value == 1)
+        #expect(try Data(contentsOf: url).isEmpty)
+    }
+
+    @Test("a stop after the first frame ends the stream cleanly: header, frames and closing boundary")
+    func stopAfterFirstFrame() async throws {
+        let (url, handle) = try Self.output()
+        defer { try? FileManager.default.removeItem(at: url) }
+        let backend = VideoRecordingFileTests.StoppingBackend(platform: .android, trees: [], screenshots: [try VideoMaskTests.whitePNG(width: 120, height: 260)])
+        backend.stopAt = 3
+        try await StreamVideo.streamFrames(from: Self.source(backend), format: .mjpeg, fps: 10, quality: 50, scale: 1, stop: backend.stop, to: handle)
+        let text = String(decoding: try Data(contentsOf: url), as: Unicode.ASCII.self)
+        #expect(backend.early.value == 0)
+        #expect(text.hasPrefix("HTTP/1.1 200 OK"))
+        #expect(text.components(separatedBy: "--mjpegstream\r\nContent-Type: image/jpeg").count - 1 == 3)
+        #expect(text.hasSuffix("--mjpegstream--\r\n"))
+    }
+
+    @Test("a stop while a capture hangs ends the stream, and a hang past the read limit is device_unresponsive", .timeLimit(.minutes(1)))
+    func hungCapture() async throws {
+        let (url, handle) = try Self.output()
+        defer { try? FileManager.default.removeItem(at: url) }
+        let backend = VideoRecordingFileTests.HangingBackend(platform: .android, trees: [], screenshots: [try VideoMaskTests.whitePNG(width: 120, height: 260)])
+        let stop = RecordingStop(command: "stream-video", endNow: { Issue.record("stopped before the first frame") }, giveUp: { _, message in Issue.record("gave up: \(message)") })
+        VideoRecordingFileTests.stopSoon(stop)
+        try await StreamVideo.streamFrames(from: Self.source(backend), format: .mjpeg, fps: 10, quality: 50, scale: 1, stop: stop, to: handle)
+        #expect(String(decoding: try Data(contentsOf: url), as: Unicode.ASCII.self).hasSuffix("--mjpegstream--\r\n"))
+
+        let again = VideoRecordingFileTests.HangingBackend(platform: .android, trees: [], screenshots: [try VideoMaskTests.whitePNG(width: 120, height: 260)])
+        let (url2, handle2) = try Self.output()
+        defer { try? FileManager.default.removeItem(at: url2) }
+        let error = await #expect(throws: CLIError.self) {
+            try await StreamVideo.streamFrames(from: Self.source(again), format: .raw, fps: 10, quality: 50, scale: 1, stop: RecordingStop(command: "stream-video", endNow: {}), readLimit: .seconds(1), to: handle2)
+        }
+        #expect(error?.reason == .deviceUnresponsive)
     }
 }

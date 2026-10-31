@@ -22,7 +22,9 @@ struct StreamVideo: AsyncParsableCommand {
         --mask-label, --mask-label-contains, --mask-text and --mask-emails exit 1 with video_unmasked and send nothing, as does a stream \
         while the evidence run masks emails or ids. One tree read before the first frame refuses the same way when a password \
         field is on screen or the tree cannot be read (OFFSIDER_MASK_SECURE=0 skips it outside a run); --unmasked streams anyway, \
-        with a warning.
+        with a warning. A stop before the first frame ends it at once with nothing streamed (exit 1, video_failed); with \
+        bgra, which has no first-frame signal, within 5 s. A simulator or emulator that stops answering for 30 s ends it \
+        (exit 1, device_unresponsive), and a stop that a stalled reader or capture holds up ends it within 5 s (exit 1, video_failed).
         """
     )
 
@@ -69,7 +71,7 @@ struct StreamVideo: AsyncParsableCommand {
     func run() async throws {
         let cancellationFlag = CancellationFlag()
         let stop = RecordingStop(command: "stream-video")
-        let signalObserver = SignalObserver(signals: [SIGINT, SIGTERM]) {
+        let signalObserver = SignalObserver(signals: [SIGINT, SIGTERM], queue: RecordVideo.signalQueue) {
             stop.request()
             Task {
                 await cancellationFlag.cancel()
@@ -85,69 +87,118 @@ struct StreamVideo: AsyncParsableCommand {
         let backend = route.backend
         let (booted, marker) = try await RecordVideo.start(command: "stream-video", backend: backend, device: route.device, checksSecureField: checksSecureField)
         let device = booted.id
-        defer { marker.remove() }
-        guard stop.beginCapturing() else { return }
+        defer {
+            stop.finished()
+            marker.remove()
+        }
 
         switch format {
         case .bgra:
+            guard stop.beginCapturing() else {
+                throw CLIError(errorDescription: RecordingStop.earlyMessage("stream-video"), reason: .videoFailed)
+            }
             try await streamBGRA(from: backend, device: device, noun: booted.videoSourceNoun, cancellationFlag: cancellationFlag)
         default:
+            Console.current.aside(
+                "Starting screenshot-based video stream from \(booted.videoSourceNoun) \(device.rawValue)...",
+                person: StartPersonView.streamHeader(device: device.rawValue, format: format.rawValue, fps: fps)
+            )
+            Console.current.aside("Format: \(format.rawValue), FPS: \(fps), Quality: \(quality), Scale: \(scale)", person: nil)
+            Console.current.aside("Press Ctrl+C to stop streaming", person: nil)
             let source = VideoFrameSource(backend: backend, device: device, scale: scale, regions: regions)
-            try await streamCompressedFrames(from: source, format: format, noun: booted.videoSourceNoun, cancellationFlag: cancellationFlag)
+            try await Self.streamFrames(from: source, format: format, fps: fps, quality: quality, scale: scale, stop: stop, to: .standardOutput)
         }
     }
 
     // MARK: - Screenshot-based streaming
 
+    /// The stream counts as begun at its first frame, so until then a stop ends it at once and nothing reaches `destination`.
     @MainActor
-    private func streamCompressedFrames(
+    static func streamFrames(
         from source: VideoFrameSource,
         format: OutputFormat,
-        noun: String,
-        cancellationFlag: CancellationFlag
+        fps: Int,
+        quality: Int,
+        scale: Double,
+        stop: RecordingStop,
+        readLimit: Duration? = nil,
+        to destination: FileHandle
     ) async throws {
         let device = source.device
-        Console.current.aside(
-            "Starting screenshot-based video stream from \(noun) \(device.rawValue)...",
-            person: StartPersonView.streamHeader(device: device.rawValue, format: format.rawValue, fps: fps)
-        )
-        Console.current.aside("Format: \(format.rawValue), FPS: \(fps), Quality: \(quality), Scale: \(scale)", person: nil)
-        Console.current.aside("Press Ctrl+C to stop streaming", person: nil)
-
-        var pending = try await source.firstFrame { error in
-            Self.captureFailed(error)
+        let readLimit = readLimit ?? RecordVideo.readLimit(for: device)
+        let watchdog = RecordVideo.watchdog(stop)
+        let early = CLIError(errorDescription: RecordingStop.earlyMessage("stream-video"), reason: .videoFailed)
+        var pending = try await watchdog.guardingRead(of: device, extra: RecordVideo.watchdogExtra) {
+            try await source.firstFrame { error in
+                Self.captureFailed(error)
+            }
         }
         let frameInterval = 1.0 / Double(fps)
         let mjpegBoundary = "--mjpegstream"
-        let destination = FileHandle.standardOutput
+        var begun = false
 
-        if format == .mjpeg {
-            let header = "HTTP/1.1 200 OK\r\nContent-Type: multipart/x-mixed-replace; boundary=\(mjpegBoundary)\r\n\r\n"
-            destination.write(Data(header.utf8))
+        func begin() throws {
+            guard !begun else { return }
+            guard stop.beginCapturing() else { throw early }
+            begun = true
+            if format == .mjpeg {
+                let header = "HTTP/1.1 200 OK\r\nContent-Type: multipart/x-mixed-replace; boundary=\(mjpegBoundary)\r\n\r\n"
+                destination.write(Data(header.utf8))
+            }
         }
+
+        if pending != nil { try begin() }
 
         var frameCount: UInt64 = 0
         var heldCount = 0
         let startTime = Date()
+        let clock = ContinuousClock()
+        var lastFrameAt = clock.now
+        var hung = false
 
-        while true {
+        streaming: while true {
             if Task.isCancelled {
                 break
             }
-            if await cancellationFlag.isCancelled() {
+            if stop.isRequested {
                 break
             }
 
             let frameStartTime = Date()
+            let pace = {
+                let sleepTime = frameInterval - Date().timeIntervalSince(frameStartTime)
+                if sleepTime > 0 {
+                    try? await Task.sleep(nanoseconds: UInt64(sleepTime * 1_000_000_000))
+                }
+            }
+
+            let frame: VideoFrame
+            if let first = pending {
+                frame = VideoFrame(image: first, held: false)
+                pending = nil
+            } else {
+                switch await watchdog.guardingRead(of: device, extra: RecordVideo.watchdogExtra, { await source.next(stop: stop, readLimit: readLimit) }) {
+                case .frame(let next):
+                    frame = next
+                case .failed(let error):
+                    Self.captureFailed(error)
+                    if let readLimit, clock.now - lastFrameAt >= readLimit {
+                        hung = true
+                        break streaming
+                    }
+                    await pace()
+                    continue streaming
+                case .ended:
+                    break streaming
+                case .hung:
+                    hung = true
+                    break streaming
+                }
+            }
+            lastFrameAt = clock.now
+            try begin()
 
             do {
-                let frame: VideoFrame
-                if let first = pending {
-                    frame = VideoFrame(image: first, held: false)
-                    pending = nil
-                } else {
-                    frame = try await source.next()
-                }
                 let processedData = try VideoFrameUtilities.jpegData(from: frame.image, scale: source.scalesItself ? 1 : scale, quality: quality)
 
                 switch format {
@@ -180,13 +231,13 @@ struct StreamVideo: AsyncParsableCommand {
                 Self.captureFailed(error)
             }
 
-            let elapsed = Date().timeIntervalSince(frameStartTime)
-            let sleepTime = frameInterval - elapsed
-            if sleepTime > 0 {
-                try? await Task.sleep(nanoseconds: UInt64(sleepTime * 1_000_000_000))
-            }
+            await pace()
         }
 
+        guard begun else {
+            if hung { throw unanswered(device) }
+            throw early
+        }
         if format == .mjpeg {
             destination.write(Data("\(mjpegBoundary)--\r\n".utf8))
         }
@@ -199,6 +250,15 @@ struct StreamVideo: AsyncParsableCommand {
             Console.current.clearLine()
             Console.current.aside(summary + held, person: String(format: "Streamed %llu frames in %.1f s", frameCount, elapsed) + held)
         }
+        if hung { throw unanswered(device) }
+    }
+
+    private static func unanswered(_ device: DeviceID) -> CLIError {
+        CLIError(
+            errorDescription: "\(device.rawValue) stopped answering, so the stream ended.",
+            reason: .deviceUnresponsive,
+            hint: "offsider doctor --device \(device.rawValue)"
+        )
     }
 
     /// An agent reads every failed frame; a person one warning per distinct cause.

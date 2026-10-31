@@ -24,11 +24,12 @@ final class SignalObserver {
     private var sources: [DispatchSourceSignal] = []
     private let signals: [Int32]
 
-    init(signals: [Int32], handler: @escaping @Sendable () -> Void) {
+    /// `queue` other than main hears a signal while the main thread is blocked, as in a write to a full pipe.
+    init(signals: [Int32], queue: DispatchQueue = .main, handler: @escaping @Sendable () -> Void) {
         self.signals = signals
         for signalValue in signals {
             signal(signalValue, SIG_IGN)
-            let source = DispatchSource.makeSignalSource(signal: signalValue, queue: .main)
+            let source = DispatchSource.makeSignalSource(signal: signalValue, queue: queue)
             source.setEventHandler(handler: handler)
             source.resume()
             sources.append(source)
@@ -190,11 +191,19 @@ final class H264StreamRecorder: @unchecked Sendable {
         self.adaptor = adaptor
     }
 
+    /// How long one frame waits for the writer, which runs on the main thread, so a stalled writer cannot hold a stop back.
+    static let readyWait: TimeInterval = 5
+
+    /// False once the writer has failed or been cancelled, which it never recovers from.
+    var isWriting: Bool { writer.status == .writing }
+
     func append(image: CGImage, presentationTime: CMTime) throws {
-        if !input.isReadyForMoreMediaData {
-            while !input.isReadyForMoreMediaData {
-                Thread.sleep(forTimeInterval: 0.005)
+        let deadline = Date().addingTimeInterval(Self.readyWait)
+        while !input.isReadyForMoreMediaData {
+            guard isWriting, Date() < deadline else {
+                throw CLIError(errorDescription: "The video writer stopped taking frames: \(writer.error?.localizedDescription ?? "no reason given").", reason: .videoFailed)
             }
+            Thread.sleep(forTimeInterval: 0.005)
         }
 
         guard let pixelBuffer = Self.makePixelBuffer(width: width, height: height, adaptor: adaptor) else {
