@@ -114,7 +114,7 @@ public enum DoctorCheckID: String, Codable, Sendable, CaseIterable {
         case .androidDeviceImage: return "System image"
         case .androidDeviceMemory: return "Memory"
         case .androidDeviceScreen: return "Screen"
-        case .androidDeviceLock: return "First unlock"
+        case .androidDeviceLock: return "Unlock"
         case .androidDeviceStayAwake: return "Stay awake"
         case .androidDeviceGrpc: return "Emulator gRPC"
         case .androidDeviceUiAutomation: return "UiAutomation"

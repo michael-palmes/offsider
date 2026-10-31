@@ -136,6 +136,23 @@ struct DoctorCommandTests {
 @Suite("doctor unlock code facts")
 @MainActor
 struct DoctorUnlockCodeTests {
+    @Test("a Keychain that cannot be read does not hide a code known to be wrong from doctor or boot")
+    func unreadableKeychain() throws {
+        let store = MemoryUnlockCodeStore()
+        store.hasCodeError = CLIError(errorDescription: "The Keychain is locked.", reason: .commandFailed)
+        let ledger = try BootReportTests.ledger()
+        let rejected = UnlockAttemptRecord(outcome: .rejected, at: nil, credential: "pin")
+        var phone = AndroidDeviceFacts(id: "ZY22FAKE01", serial: "ZY22FAKE01", state: .booted)
+        phone.isPhysical = true
+        phone.awake = AwakeReading(screen: .on, lockScreen: .hidden, credential: "pin", userUnlocked: true)
+
+        #expect(Doctor.withUnlockCode(phone, store: store, ledger: ledger).unlockCode == UnlockCodeFact(saved: false, lastAttempt: nil))
+        try ledger.record(rejected, for: "ZY22FAKE01")
+        let facts = Doctor.withUnlockCode(phone, store: store, ledger: ledger)
+        #expect(AndroidDoctorRules.lock(try #require(facts.awake), unlockCode: facts.unlockCode, deviceID: "ZY22FAKE01", codeKey: "ZY22FAKE01").status == .warn)
+        #expect(Boot.lockReport(phone.awake, key: "ZY22FAKE01", store: store, ledger: ledger).blockingAttempt == rejected)
+    }
+
     @Test("an emulator's code is looked up by AVD name and a phone's by serial, and only with a credential")
     func unlockCodeKeys() throws {
         let store = MemoryUnlockCodeStore()
@@ -144,7 +161,7 @@ struct DoctorUnlockCodeTests {
         let ledger = try BootReportTests.ledger()
         var emulator = AndroidDeviceFacts(id: "emulator-5560", serial: "emulator-5560", avdName: "Pixel_PIN", state: .booted)
         emulator.awake = AwakeReading(screen: .on, lockScreen: .secure, credential: "pin", userUnlocked: false)
-        #expect(Doctor.withUnlockCode(emulator, store: store, ledger: ledger).unlockCode == UnlockCodeFact(saved: true, lastAttemptFailed: false))
+        #expect(Doctor.withUnlockCode(emulator, store: store, ledger: ledger).unlockCode == UnlockCodeFact(saved: true, lastAttempt: nil))
         var phone = AndroidDeviceFacts(id: "ZY22FAKE01", serial: "ZY22FAKE01", state: .booted)
         phone.isPhysical = true
         phone.awake = emulator.awake

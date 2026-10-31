@@ -47,6 +47,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - `wait --seconds` needs no `--device`, and touches no device even when one is named, so a pause can never fail or be skipped.
 - `describe-ui`, `screenshot` and the `rn logbox` commands exit 1 `device_unresponsive` naming the device after 30 s without an answer from a simulator or emulator, instead of hanging; a `--wait-lock` wait and `rn logbox`'s own waits are added to that. Phones have limits of their own.
 - `logs` on Android joins the lines of one logged message, which logcat prints each under its own header, into one entry: `--grep` and `--exclude` match the whole entry and `.` crosses its lines, `--json` carries it whole, and text output keeps it on one line with `\n`.
+- `wake --unlock`, `unlock-code status`, `doctor` and `boot` say plainly whether a saved PIN or password is wrong. A code typed in full with the lock screen still up 15 s later is `The saved PIN is wrong: ...`, and stays blocked, even through an unlock by hand, until it is saved again. A run that ended before it saw the result, or a marker from an earlier version, is `Offsider can't tell if the saved PIN is right: ...`. Each message names the command that saves it, and that Offsider won't retry because repeated wrong PINs can lock a phone out. Its `ask` asks the user to save the code, not to unlock. The marker now holds the outcome, the time and whether the lock was a PIN or password, and `--json` adds `lastAttempt` (`outcome`, `at`, `credential`, or null) beside `lastAttemptFailed`, which stays true for either.
+- `doctor`'s `android-device.lock` warns instead of passing while a saved code is wrong or unconfirmed.
 
 ### Fixed
 
@@ -95,6 +97,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - `rn devmenu` taps the menu's own item when a button of the app behind the menu has the same label, and `--label` naming only a row of that app exits 2 with nothing tapped, where it tapped the sheet's dismiss area, which closed the menu and reported a choice.
 - `rn devmenu --label` on something that is no control, such as a section heading, exits 5 saying nothing happened and leaves the menu open, where closing the menu passed for a choice.
 - A platform that does not exist after a `devices` subcommand (`devices status --platform windows`) gets that subcommand's own message, naming the listing command, where it failed in `devices` with that command's usage. `devices --platform windows` still exits 64, in one line.
+- `wake --unlock` waits up to 15 s for the lock screen to go after typing a code, not about 2.5 s on an emulator and 4 to 6 s on a phone, so a slow first unlock since boot no longer ends the check early, and a right code is not called wrong.
+- `wake --unlock` types nothing into a code field disabled while the lock screen counts down after wrong codes, where a right code could not land.
+- The unlock hints in `boot` and `doctor` name an emulator's AVD for `unlock-code set`, which refuses its serial.
 
 ## [0.14.0] - 2026-10-22
 
