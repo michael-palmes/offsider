@@ -19,7 +19,7 @@
 
 ## Cloudflare Turnstile
 
-A Turnstile checkbox is for a person: never tap it, its label or its coordinates. `offsider turnstile` only reads its state, and `login` stops with `turnstile_required` when a widget is on screen. Hand back, and read `offsider guide turnstile` for builds that use Cloudflare's test keys.
+A Turnstile checkbox is for a person: never tap it, its label or its coordinates. `offsider turnstile` only reads its state, and `login` stops with `turnstile_required` when a widget is on screen. Read `offsider guide turnstile` for how to ask the user and carry on by yourself, and for builds that use Cloudflare's test keys.
 
 ## Logs
 

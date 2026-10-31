@@ -14,13 +14,24 @@ struct Turnstile: AsyncParsableCommand {
         unknown means an element named for Turnstile is on screen with no widget in it: the widget failed to \
         run, or runs invisibly.
 
-        Offsider never ticks Turnstile. A checkbox or a challenge is for a person: hand the device to them, \
-        then carry on once this command reads passed.
+        Offsider never ticks Turnstile. A checkbox or a challenge is for a person: ask them, and --wait carries \
+        on the moment it passes, so nobody has to reply. It only reads, and exits 5 if the time runs out first. \
+        On a phone, another app in front or the lock screen counts as not yet done, and nothing is read from it; \
+        if it is still there when the time runs out, that failure is the answer.
         """
     )
 
+    /// How long the wait a refusal suggests runs: long enough for someone busy in another session.
+    static let suggestedWait = 600
+    private static let waitInterval: Duration = .seconds(1)
+    /// A read of a locked iPhone with no runner up starts xcodebuild, so it is tried less often.
+    private static let lockedInterval: Duration = .seconds(15)
+
     @Option(name: .customLong("id"), help: "Only look inside the element with this id, such as the app's wrapper around the widget.")
     var elementID: String?
+
+    @Option(name: .customLong("wait"), help: ArgumentHelp("Keep reading for up to this many seconds, from 0 to \(Wait.maximumSeconds), until the widget passes or leaves the screen. It still never taps; exit 5 if the time runs out.", valueName: "seconds"))
+    var waitSeconds: TimeInterval?
 
     /// Kept for one release so scripts that pass it still run; the command always only reads.
     @Flag(name: .customLong("status"), help: .hidden)
@@ -39,6 +50,9 @@ struct Turnstile: AsyncParsableCommand {
         if let elementID, elementID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             throw ValidationError("--id must not be empty.")
         }
+        if let waitSeconds, !(0...Double(Wait.maximumSeconds)).contains(waitSeconds) {
+            throw ValidationError("--wait must be from 0 to \(Wait.maximumSeconds) seconds; got \(waitSeconds).")
+        }
     }
 
     func run() async throws {
@@ -49,8 +63,8 @@ struct Turnstile: AsyncParsableCommand {
         let route = try await DeviceRouter.routeForInput(deviceOption.id, logger: logger, watchdog: watchdog, locking: locking)
         await appOption.apply(to: route)
         let console = Console.current
-        let report = try await console.progress("Reading Turnstile") {
-            try await watchdog.guarding(setupThen: 0, device: deviceOption.id) { ready in
+        let report = try await console.progress(waitSeconds == nil ? "Reading Turnstile" : "Waiting for Turnstile") {
+            try await watchdog.guarding(setupThen: waitSeconds ?? 0, device: deviceOption.id) { ready in
                 try await readStatus(on: route, onPrepared: ready)
             }
         }
@@ -62,13 +76,85 @@ struct Turnstile: AsyncParsableCommand {
         }
     }
 
-    /// One read, no input: the tree first, then on iOS points in the web view.
+    /// One read, or with --wait reads until a person's step is over, no input: the tree first, then on iOS points in the web view.
     @MainActor
-    func readStatus(on route: DeviceRouter.Route, onPrepared: @Sendable () -> Void = {}) async throws -> TurnstileStatus {
+    func readStatus(on route: DeviceRouter.Route, clock: PollClock = .live, onPrepared: @Sendable () -> Void = {}) async throws -> TurnstileStatus {
         try await route.backend.prepare()
         onPrepared()
-        let tree = try await route.backend.accessibilityTree(for: route.device)
-        return try await Self.status(in: tree, on: route, scopeID: elementID)
+        let readOnce = {
+            let tree = try await route.backend.accessibilityTree(for: route.device)
+            return try await Self.status(in: tree, on: route, scopeID: elementID)
+        }
+        guard let waitSeconds else { return try await readOnce() }
+        let device = route.device.rawValue
+        let status = try await Self.waitForPerson(seconds: waitSeconds, clock: clock, onOtherApp: { Wait.noteOtherApp(limit: waitSeconds, device: device) }, read: readOnce)
+        guard status.state.awaitsPerson else { return status }
+        await route.noteNameForAsk()
+        throw Self.stepStillOpen(status.state, seconds: waitSeconds, app: appOption.bundleID)
+    }
+
+    /// Reads until `passed`, a widget gone for two reads in a row (a reload mid-tick is not gone), or the deadline; another app, a lock screen or several checkboxes hold the wait and are the answer only if still there then.
+    @MainActor
+    static func waitForPerson(seconds: TimeInterval, clock: PollClock, onOtherApp: () -> Void = {}, read: () async throws -> TurnstileStatus) async throws -> TurnstileStatus {
+        let deadline = clock.now() + seconds
+        var last: TurnstileStatus?
+        var gone: TurnstileStatus.State?
+        var held: Error?
+        var failure: Error?
+        var notedOtherApp = false
+        while true {
+            do {
+                let status = try await read()
+                if status.state == .passed || (!status.state.awaitsPerson && gone == status.state) {
+                    return status
+                }
+                last = status
+                gone = status.state.awaitsPerson ? nil : status.state
+                held = nil
+            } catch where error.isTransientFailure {
+                gone = nil
+                held = nil
+                failure = error
+            } catch where error.isOtherAppInFront || [.deviceLocked, .selectorAmbiguous].contains((error as? any OffsiderFailure)?.reason) {
+                gone = nil
+                held = error
+                if error.isOtherAppInFront, seconds > 0, !notedOtherApp {
+                    notedOtherApp = true
+                    onOtherApp()
+                }
+            }
+            let remaining = deadline - clock.now()
+            guard remaining > 0 else { break }
+            let interval = (held as? any OffsiderFailure)?.reason == .deviceLocked ? lockedInterval : waitInterval
+            try await clock.sleep(min(interval, .milliseconds(Int((remaining * 1000).rounded()))))
+        }
+        if let held { throw held }
+        if let last { return last }
+        throw failure ?? CLIError(errorDescription: "Turnstile could not be read within \(WaitLoop.seconds(seconds)).", reason: .treeReadFailed)
+    }
+
+    /// The command a refusal suggests; a phone needs its app named on every command.
+    static func waitCommand(app: String? = nil) -> String {
+        "offsider turnstile --wait \(suggestedWait) --device <DEVICE_ID>" + (app.map { " --app \($0)" } ?? "")
+    }
+
+    /// Says what is still open, so an agent can tell the user plainly and carry on with what needs no sign-in.
+    static func stepStillOpen(_ state: TurnstileStatus.State, seconds: TimeInterval, app: String?) -> CLIError {
+        let after = "after \(WaitLoop.seconds(seconds))"
+        let what: String
+        let ask: String
+        switch state {
+        case .challenge:
+            what = "The Cloudflare Turnstile challenge is still on screen \(after), so nobody has solved it."
+            ask = PersonAsk.solveTurnstile
+        case .verifying:
+            what = "Cloudflare Turnstile was still checking \(after)."
+            ask = PersonAsk.finishTurnstile
+        default:
+            what = "The Cloudflare Turnstile checkbox is still on screen \(after), so nobody has ticked it."
+            ask = PersonAsk.tickTurnstile
+        }
+        return CLIError(errorDescription: "\(what) Nothing was sent.", reason: .conditionNotMet, hint: waitCommand(app: app), ask: ask)
     }
 
     /// The widget's state in `tree`, reading web-view points on iOS when the tree alone says absent or checking.

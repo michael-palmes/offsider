@@ -259,13 +259,17 @@ struct Wait: AsyncParsableCommand {
             sources.probe = Self.presentationProbe(on: route)
         }
         if notesOtherApp {
-            let (limit, device) = (WaitLoop.seconds(timeout), route.device.rawValue)
-            sources.onOtherApp = {
-                Console.current.notice(.note("Another app is in front. Waiting up to \(limit) for yours", agent: "another app is in front on \(device), so nothing is read from it; waiting up to \(limit) for the app under test."))
-            }
+            let (limit, device) = (timeout, route.device.rawValue)
+            sources.onOtherApp = { Self.noteOtherApp(limit: limit, device: device) }
         }
         logger.info().log("Waiting for \(target)")
         return try await WaitLoop.run(condition, timeout: timeout, interval: pollInterval, sources: sources)
+    }
+
+    /// Tells the reader once that another app in front is holding a wait up.
+    static func noteOtherApp(limit: TimeInterval, device: String) {
+        let shown = WaitLoop.seconds(limit)
+        Console.current.notice(.note("Another app is in front. Waiting up to \(shown) for yours", agent: "another app is in front on \(device), so nothing is read from it; waiting up to \(shown) for the app under test."))
     }
 
     /// The gate for the device's last input: this process's own when it sent one (a batch step), masked here as the cache's is at exit, else the cached record's.

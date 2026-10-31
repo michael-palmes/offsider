@@ -190,6 +190,8 @@ Ask focused multiple-choice questions when a decision materially changes the imp
 
 When the user must run something themselves, put the complete command in the ask itself, on its own line in a code block: the absolute path when it is not on `PATH`, every value filled in, nothing to look up. Never a fragment such as `devices add`, never "the command above" (a summarised message loses it), never a placeholder promised later. One command per ask, one line saying what it will prompt for, then read the result back before the next step. The same rule binds the hints Offsider prints and the bundled skill: a busy developer will not read a paragraph.
 
+When only the user's hands can do a step, ask for the step, not its status: `Can you tick the Turnstile checkbox on <device name>?`, never `Have you ticked it?`. Name the step and the device in the first line, never hurry them, and watch for the result yourself where anything can read it, so no reply is needed. The same rule binds `error.ask` and the bundled skill.
+
 ## Committing
 
 **Always use the `offsider-commit` skill** to review and create commits; never hand-roll `git commit`. Do not push unless asked. Use `offsider-skill-creator` for any change under `.agents/skills/`.

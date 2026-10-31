@@ -292,7 +292,8 @@ struct InputPersonOutputTests {
         #expect(Self.show(InputPersonView.turnstile(status), person: false).out == status.textLine() + "\n")
         let person = Self.show(InputPersonView.turnstile(status), person: true).out
         #expect(person.hasPrefix("  Turnstile  checkbox at (32, 388.95) 163.81x25.14\n"))
-        #expect(person.contains("A person must tick it"))
+        #expect(person.contains("Tick it on the device"))
+        #expect(!person.contains("A person"))
     }
 
     @Test("LogBox status keeps the agent's lines; a person's rows quote device text and keep it redacted")

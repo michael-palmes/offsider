@@ -52,7 +52,7 @@ public enum ArgumentHints {
         ],
     ]
 
-    public static let turnstileReadOnly = "turnstile no longer taps; it reads the widget's state. Hand a checkbox or challenge to a person."
+    public static let turnstileReadOnly = "turnstile no longer taps; it reads the widget's state. A checkbox or challenge is for a person: --wait <seconds> carries on when it passes."
 
     /// `--label-prefix` and `--label-includes`, guesses at `--label-contains`.
     private static func partialLabel(_ command: String) -> [String: String] {
