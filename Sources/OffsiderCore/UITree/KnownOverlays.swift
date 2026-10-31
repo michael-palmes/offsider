@@ -45,6 +45,46 @@ public enum KnownOverlays {
         return underBar ? bottom - app.y : 0
     }
 
+    /// How far from its icon's centre Expo's floating dev menu button takes touches: the tree gives only the 26 pt icon of a 50 pt circle.
+    static let devMenuButtonRadius = 25.0
+    /// The id iOS gives the button's icon, an SF Symbol's name.
+    static let devMenuButtonSymbol = "gearshape.fill"
+
+    /// The icon of Expo's floating dev menu button: on Android `Tools` in its Compose host, on iOS the gear directly in a screen-sized view, as a control's own icon never is.
+    public static func devMenuButtons(in roots: [UINode], viewport: UIFrame) -> [UINode] {
+        var found: [UINode] = []
+        func visit(_ node: UINode, ancestors: [UINode]) {
+            if isDevMenuIcon(node, ancestors: ancestors, viewport: viewport) { found.append(node) }
+            for child in node.children { visit(child, ancestors: ancestors + [node]) }
+        }
+        for root in roots { visit(root, ancestors: []) }
+        return found
+    }
+
+    private static func isDevMenuIcon(_ node: UINode, ancestors: [UINode], viewport: UIFrame) -> Bool {
+        guard let frame = node.frame, frame.width <= devMenuButtonRadius * 2, frame.height <= devMenuButtonRadius * 2,
+              !ancestors.contains(where: \.isActionable) else { return false }
+        if node.isAndroidNode {
+            return node.role == .image && node.normalizedID == nil && node.normalizedLabel == "Tools"
+                && ancestors.contains { $0.androidClassName == ExpoDevLauncher.composeHostClass }
+        }
+        guard node.normalizedID == devMenuButtonSymbol, let parent = ancestors.last?.frame else { return false }
+        return CoverJudge.spans(parent, viewport)
+    }
+
+    /// True when a touch at `point` lands on the button whose icon is at `frame`.
+    public static func devMenuButton(at frame: UIFrame, takes point: UIPoint) -> Bool {
+        let centre = frame.center
+        let across = point.x - centre.x, down = point.y - centre.y
+        return across * across + down * down <= devMenuButtonRadius * devMenuButtonRadius
+    }
+
+    /// The square around the circle the button at `frame` takes touches on.
+    public static func devMenuButtonTouchFrame(of frame: UIFrame) -> UIFrame {
+        let centre = frame.center
+        return UIFrame(x: centre.x - devMenuButtonRadius, y: centre.y - devMenuButtonRadius, width: devMenuButtonRadius * 2, height: devMenuButtonRadius * 2)
+    }
+
     /// A screen-spanning modal with nothing labelled, named or actionable, as React Native's LogBox can leave on Android.
     static func isEmptyDialog(_ tree: UITree) -> Bool {
         let app = tree.roots.filter { $0.role != .keyboard }

@@ -28,6 +28,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - `make build` signs the debug `offsider` when `.env` names `OFFSIDER_DEV_SIGNING_IDENTITY`, an Apple Development identity (off until set), so a login a signed build saved reads with no Keychain prompt after any rebuild, in any worktree. `./scripts/build.sh dev-sign` runs the step alone. It signs the executable only, hardened, and refuses a Developer ID identity; brokers still admit only the exact build.
 - `turnstile --wait <seconds>` (0 to 900) keeps reading until the widget passes or leaves the screen, so an agent can ask the user and carry on the moment they tick it, with nobody having to reply. It still never taps, and exits 5 when the time runs out. On a phone, another app in front or the lock screen counts as not yet done and nothing is read from it; an app the phone never allows stops the wait at once.
 - A failure only the user's hands can clear (`turnstile_required`, `device_locked`, `device_untrusted`, `developer_mode_off`, `ui_automation_off`, `device_not_wired`, `usbmux_unavailable`) carries `ask` in its JSON `error`, and an `Ask:` line for an agent without `--json`: a request naming the step and the device, such as `Can you unlock <device name>?`. `error.ask` joins the `untrusted` list, since a name can come from the device.
+- `tap --dry-run` finds the target and judges what a touch there would reach, then stops: nothing is sent and no input session opens, so an irreversible button can be tested safely. It exits as the tap would and says nothing was sent, and `--json` carries `"dryRun":true`. It takes a selector, and a `batch` step refuses it.
 
 ### Changed
 
@@ -48,6 +49,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - `logs` on Android joins the lines of one logged message, which logcat prints each under its own header, into one entry: `--grep` and `--exclude` match the whole entry and `.` crosses its lines, `--json` carries it whole, and text output keeps it on one line with `\n`.
 
 ### Fixed
+
+- `tap` refuses a target under the 50 pt circle of Expo's floating dev menu button, though the tree gives only its 26 pt icon (`evidence` `devMenuTouchArea`, with the `drag` that moves it clear as the hint), and `--verify` no longer passes when the dev menu opens over the app (exit 5, `note` `devmenu_opened`).
+- `--verify` no longer passes on text ticking on a screen beneath the front page, so a tap on a disabled button stays unverified.
+- `tap --verify` runs the keyboard and cover checks again on its last read before it sends, so a target that has gone, or come under a cover, is refused with nothing sent instead of tapped where it was.
+- A `--verify` read that fails just before the input no longer sends a retry at once and can no longer flip a switch back: the read before it stands as the baseline, and with nothing to compare at all the input goes once and exits 5 with `note` `unreadable`.
+- A cover from the page just left no longer refuses a tap for about a second after it: within 2 s of an input a refused cover is read again for up to 1 s (`--no-settle` skips it).
+- `--fail-if-covered` no longer refuses a sheet's button because of a spinner on the screen beneath the sheet, when the hit-test finds the button.
+- `wait`, `assert`, `--verify-id` and `describe-ui --on-screen` agree with `tap` on an element past the edge of its scroll view, which is not on screen, and on a row beside a cover, whose visible part a tap reaches. They read a part only once the centre is covered, and stay within 24 hit-tests a read.
+- On Android, `assert`, `wait` and `tap` count a screen-sized group as covered by a dialog drawn beside it.
+- A tap moved beside a cover no longer presses another control inside a group target, and a wide switch's tap keeps its knob's x, or is refused when the knob is covered.
+- A selector tap reads a point again when the shared on-screen read caught an empty screen-sized answer mid-transition, and `tap --verify` picks among several matches as the first read did, so a tap on a screen that never moved no longer reports `unsettled`.
+- A batch tap on an iOS simulator hit-tests several matches, as a lone tap does, and taps the one a touch reaches instead of stopping as `selector_ambiguous`.
+- `wait --gone` and `assert --gone` say what hides an element they count as gone (`is not on screen: under button "Buy" ...`), and `login` waits for the submit button to stop moving after a dismiss tap, and no longer chooses a point on the keyboard's bar or skips rows for controls on a screen beneath a page.
 
 - On Android, `describe-ui` frames the keyboard by its keys and buttons, not by its window, which spans the screen around a floating or compact keyboard such as Gboard's toolbar with a hardware keyboard connected. `target_under_keyboard` names `button back` only over docked keys: with only a toolbar showing, Back goes to the app and can leave the screen.
 - `login` on an iOS simulator no longer refuses every field when the tree's order puts a view from another process over the form, such as a Turnstile web widget at the screen's centre: a hit-test at each field's own point decides, as for `tap --fail-if-covered`. `describe-ui` no longer names web content the app draws in its own smaller view as `presented`.

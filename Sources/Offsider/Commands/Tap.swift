@@ -61,6 +61,9 @@ struct Tap: AsyncParsableCommand, VerifiableCommand {
     @Flag(name: .customLong("no-settle"), help: "Tap a selector's target at once, without waiting out a transition an input under 500 ms ago may have started.")
     var noSettle: Bool = false
 
+    @Flag(name: .customLong("dry-run"), help: "Find the target and check what a touch there would reach, then stop: nothing is sent. Takes a selector; exits as the tap would.")
+    var dryRun: Bool = false
+
     @OptionGroup
     var verification: VerificationOptions
 
@@ -103,6 +106,15 @@ struct Tap: AsyncParsableCommand, VerifiableCommand {
 
         if allowCovered, failIfCovered {
             throw ValidationError("Use only one of --allow-covered or --fail-if-covered.")
+        }
+
+        if dryRun {
+            guard pointX == nil else {
+                throw ValidationError("--dry-run checks an element; use it with --id, --label, --label-contains or --value.")
+            }
+            guard !verification.verify else {
+                throw ValidationError("--dry-run sends nothing, so there is nothing to verify.")
+            }
         }
 
         if let preDelay = preDelay {
@@ -175,6 +187,8 @@ struct Tap: AsyncParsableCommand, VerifiableCommand {
         let resolvedDescription: String
         let resolvedTree: UITree?
         let picker = query.flatMap { matchPicker(query: $0, backend: backend, device: device) }
+        let checkCover = coverCheck(selector: query?.selectorDescription ?? "", backend: backend, device: device)
+        let startedAt = ProcessInfo.processInfo.systemUptime
 
         if let pointX, let pointY {
             resolution = TapResolution(point: (x: pointX, y: pointY), isSwitchLikeControl: false)
@@ -186,10 +200,11 @@ struct Tap: AsyncParsableCommand, VerifiableCommand {
                 throw CLIError(errorDescription: "Unexpected state: no coordinates and no element query.", reason: .internalError)
             }
 
+            let record = noSettle ? nil : await TreeCache.load(for: device, backend: backend)
             // Under --verify the verifier's second read re-resolves the target, so the guard would only add a read; --verify-id has no such read.
             let settle: SettlePolicy = noSettle || (progress != nil && Self.verifierRereads(verification.mode))
                 ? .off
-                : .guarded(record: await TreeCache.load(for: device, backend: backend))
+                : .guarded(record: record)
             let polled = try await AccessibilityPoller.resolveWithPolling(
                 query: query,
                 on: backend,
@@ -201,7 +216,8 @@ struct Tap: AsyncParsableCommand, VerifiableCommand {
                 allowOffscreen: allowOffscreen,
                 settle: settle,
                 pick: picker,
-                coverCheck: coverCheck(selector: query.selectorDescription, backend: backend, device: device),
+                coverCheck: checkCover,
+                coverSettle: TapCover.coverSettle(lastInput: record?.lastInputAt),
                 logger: logger
             )
             resolution = polled.value
@@ -211,8 +227,18 @@ struct Tap: AsyncParsableCommand, VerifiableCommand {
             resolvedDescription = "\(verifyTarget) at \(VerifyOutput.pointDescription(x: resolution.point.x, y: resolution.point.y))"
         }
 
-        logger.info().log("Tapping \(resolvedDescription)")
         details?.point = UIPoint(x: resolution.point.x, y: resolution.point.y)
+        if dryRun {
+            details?.dryRun = true
+            Console.current.show(InputPersonView.receipt(
+                "Would tap \(verifyTarget)",
+                aside: VerifyOutput.pointDescription(x: resolution.point.x, y: resolution.point.y),
+                details: ["Nothing was sent"],
+                agent: "✓ Dry run: a tap on \(verifyTarget) at \(VerifyOutput.pointDescription(x: resolution.point.x, y: resolution.point.y)) would reach it. Nothing was sent.\n"
+            ))
+            return
+        }
+        logger.info().log("Tapping \(resolvedDescription)")
 
         var physicalPoint = try await backend.deviceCoordinates(for: [resolution.point], tree: resolvedTree, on: device)[0]
 
@@ -222,13 +248,23 @@ struct Tap: AsyncParsableCommand, VerifiableCommand {
             let subject = pointX != nil ? "Tap at \(verifyTarget)" : "Tap on \(verifyTarget)"
             let targetNode = resolution.target ?? resolution.matched
             var aimed = resolution.point
-            /// Where the target is in `tree`, aimed at the part beside a cover as the cover check aimed; nil once it is gone.
-            func located(in tree: UITree) async -> (x: Double, y: Double)? {
-                let pick: MatchPick? = await picker?(tree.roots) ?? nil
-                guard let query, let found = try? AccessibilityTargetResolver.resolveTap(
-                    roots: tree.roots, query: query, elementType: elementType, allowOffscreen: allowOffscreen, explainFailures: false, pick: pick
-                ) else { return nil }
-                return (x: found.point.x + resolution.aim.x, y: found.point.y + resolution.aim.y)
+            /// The tap the target's place in `tree` calls for, judged as the first read was, so the check covers the point sent; a target gone or newly covered throws.
+            func resolvedAgain(in tree: UITree, waitTimeout: TimeInterval) async throws -> TapResolution {
+                guard let query else { return resolution }
+                var first: UITree? = tree
+                return try await AccessibilityPoller.pollForResolution(
+                    query: query, waitTimeout: waitTimeout, pollInterval: resolvedPollInterval, elementType: elementType, allowOffscreen: allowOffscreen,
+                    pick: picker, coverCheck: checkCover, logger: logger
+                ) {
+                    let read: UITree
+                    if let held = first {
+                        read = held
+                        first = nil
+                    } else {
+                        read = try await backend.accessibilityTree(for: device)
+                    }
+                    return await AccessibilityPoller.judgingMatches(read, query: query, elementType: elementType, pick: picker, backend: backend, device: device)
+                }.value
             }
             func isAimed(_ point: (x: Double, y: Double)) -> Bool {
                 abs(point.x - aimed.x) <= TransitionGuard.frameTolerance && abs(point.y - aimed.y) <= TransitionGuard.frameTolerance
@@ -244,12 +280,19 @@ struct Tap: AsyncParsableCommand, VerifiableCommand {
                 initialTree: resolvedTree,
                 targetNode: targetNode,
                 beforeAction: { tree in
-                    guard let moved = await located(in: tree), !isAimed(moved) else { return }
-                    logger.info().log("\(verifyTarget) moved to \(VerifyOutput.pointDescription(x: moved.x, y: moved.y)) while settling; tapping there")
-                    physicalPoint = try await backend.deviceCoordinates(for: [moved], tree: tree, on: device)[0]
-                    aimed = moved
+                    guard query != nil, Self.verifierRereads(verification.mode) else { return }
+                    let elapsed = ProcessInfo.processInfo.systemUptime - startedAt
+                    let tap = try await resolvedAgain(in: tree, waitTimeout: max(0, resolvedWaitTimeout - elapsed))
+                    guard !isAimed(tap.point) else { return }
+                    logger.info().log("\(verifyTarget) moved to \(VerifyOutput.pointDescription(x: tap.point.x, y: tap.point.y)) while settling; tapping there")
+                    physicalPoint = try await backend.deviceCoordinates(for: [tap.point], tree: tree, on: device)[0]
+                    aimed = tap.point
                 },
-                targetStays: query == nil ? nil : { tree in await located(in: tree).map(isAimed) ?? false }
+                targetStays: query == nil ? nil : { tree in
+                    guard let tap = try? await resolvedAgain(in: tree, waitTimeout: 0) else { return false }
+                    return isAimed(tap.point)
+                },
+                expectsDevMenu: { tree in Self.aimsAtDevMenu(targetNode, point: resolution.point, in: tree) }
             )
             try await VerifyOutput.perform(request, progress: progress) { attempt, session in
                 let attemptStyle: TapStyle = attempt.style == .physical ? .physical : .simulator
@@ -274,6 +317,17 @@ struct Tap: AsyncParsableCommand, VerifiableCommand {
             aside: selector == nil ? nil : VerifyOutput.pointDescription(x: resolution.point.x, y: resolution.point.y),
             agent: Self.completionLine(selector: selector, at: resolution.point) + "\n"
         ))
+    }
+
+    /// True when no floating dev menu button shows, so a tap cannot have reached one by mistake, or the tap names it: `target` holds its icon, or a coordinate tap lands on the icon.
+    static func aimsAtDevMenu(_ target: UINode?, point: (x: Double, y: Double), in tree: UITree) -> Bool {
+        guard let viewport = tree.viewport else { return true }
+        let buttons = KnownOverlays.devMenuButtons(in: tree.roots, viewport: viewport)
+        guard !buttons.isEmpty else { return true }
+        if let target {
+            return buttons.contains { button in target.flattened().contains { $0.isSameElement(as: button) } }
+        }
+        return buttons.contains { $0.frame?.contains(UIPoint(x: point.x, y: point.y)) == true }
     }
 
     /// `Tapped id=save` for a selector, `Tapped (120, 640)` for a point; never more than the command line gave.
@@ -384,7 +438,7 @@ struct Tap: AsyncParsableCommand, VerifiableCommand {
 
     /// The keyboard and confident covers refuse unless `--allow-covered`; a tree-order guess warns, or with `--fail-if-covered` refuses.
     func coverCheck(selector: String, backend: any DeviceBackend, device: DeviceID) -> AccessibilityPoller.CoverCheck {
-        let cover = TapCover(allowCovered: allowCovered, failIfCovered: failIfCovered)
+        let cover = TapCover(allowCovered: allowCovered, failIfCovered: failIfCovered, dryRun: dryRun)
         return { resolution, tree in
             try await Self.withKeyboardAdvice({
                 try await cover.check(resolution, selector: selector, tree: tree, backend: backend, device: device)

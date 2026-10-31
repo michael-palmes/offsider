@@ -329,6 +329,9 @@ struct Wait: AsyncParsableCommand {
             return ("--\(matched.by) '\(matched.text)' is \(selector.presentState)", after, "\(matched.position) of \(matched.of) selectors")
         }
         if let query = selector.query {
+            if gone, let hidden = outcome.goneBecause {
+                return ("\(query.selectorDescription) is not on screen: \(hidden)", after, nil)
+            }
             return ("\(query.selectorDescription) is \(gone ? "gone" : selector.presentState)", after, nil)
         }
         if settled { return ("Screen settled", after, nil) }
@@ -495,6 +498,7 @@ struct Wait: AsyncParsableCommand {
             match: outcome.match.map { redacted($0, mask: mask) }, matched: outcome.matched
         )
         shown.onlyTextMoved = outcome.onlyTextMoved
+        shown.goneBecause = outcome.goneBecause.map { LogRedactor.redactValue($0).text }
         shown.movingPart = outcome.movingPart.flatMap { LogRedactor.redactValue($0.flag).text == $0.flag ? $0 : nil }
         shown.nearMiss = outcome.nearMiss.map { WaitNearMiss(summary: LogRedactor.redactValue($0.summary).text, candidates: $0.candidates) }
         return shown

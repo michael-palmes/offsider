@@ -538,6 +538,11 @@ struct AccessibilityTargetResolver {
         )
     }
 
+    /// A switch that toggles only at its trailing knob, not across its whole row.
+    static func isWideSwitch(_ element: UINode, frame: UIFrame) -> Bool {
+        element.isSwitch && frame.width > wideSwitchActivationWidthThreshold
+    }
+
     /// Less than this much of an element showing on either axis inside its scroll view is too little to tap safely.
     static let minimumVisibleExtent = 8.0
 
@@ -563,7 +568,6 @@ struct AccessibilityTargetResolver {
             point: (x: point.x, y: point.y), isSwitchLikeControl: resolution.isSwitchLikeControl,
             target: resolution.target, matched: resolution.matched, stack: resolution.stack
         )
-        moved.aim = UIPoint(x: resolution.aim.x + point.x - resolution.point.x, y: resolution.aim.y + point.y - resolution.point.y)
         guard let target = resolution.target ?? resolution.matched else { return moved }
         let candidates = coverCandidates(of: target, matched: resolution.matched ?? target, at: point, viewport: viewport, roots: roots)
         let stack = resolution.stack ?? ScreenStack.build(roots: roots, viewport: viewport)
@@ -889,7 +893,7 @@ struct AccessibilityTargetResolver {
     ) -> (x: Double, y: Double) {
         let centerY = frame.y + (frame.height / 2.0)
 
-        if element.isSwitch, frame.width > wideSwitchActivationWidthThreshold {
+        if isWideSwitch(element, frame: frame) {
             return (x: frame.x + frame.width - switchTrailingActivationInset, y: centerY)
         }
 

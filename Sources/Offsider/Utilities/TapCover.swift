@@ -9,6 +9,19 @@ struct TapCover {
     var failIfCovered = false
     /// How to tap anyway, for the refusal's last sentence.
     var override = "pass --allow-covered to tap anyway"
+    /// Nothing will be sent, so notes say what the tap would do.
+    var dryRun = false
+    /// What this check has said already, as a verified tap judges each read and a note need not repeat.
+    let notices = NoticeLog()
+
+    /// Each notice once.
+    final class NoticeLog {
+        private var shown: Set<Notice> = []
+
+        func say(_ notice: Notice) {
+            if shown.insert(notice).inserted { Console.current.notice(notice) }
+        }
+    }
 
     /// What a cover check needs about one resolved target: the roots and pages it judges, what may draw over the point, and whether a hit-test would tell.
     struct Judging {
@@ -50,7 +63,10 @@ struct TapCover {
             }
             // Empty containers never cover, but the empty host of another process's prompt is worth a hit-test.
             promptHost = !android && SystemPrompt.hasHost(over: target, in: tree)
-            isContested = android || !candidates.isEmpty || beneath || promptHost
+            let takenByDevMenu = KnownOverlays.devMenuButtons(in: roots, viewport: viewport).contains { button in
+                button.frame.map { KnownOverlays.devMenuButton(at: $0, takes: point) } == true
+            }
+            isContested = android || !candidates.isEmpty || beneath || promptHost || takenByDevMenu
             self.target = target
             self.matched = matched
             self.point = point
@@ -67,6 +83,16 @@ struct TapCover {
         /// True only when the simulator's `hit` is the target or inside it.
         func surelyReaches(hit: UINode) -> Bool {
             CoverJudge.surelyReaches(target: target, matched: matched, point: point, roots: roots, viewport: viewport, stack: stack, hit: hit)
+        }
+
+        /// `surelyReaches`, but never a control inside the target: moved beside a cover, a tap must not press something nobody named. Text inside it still counts.
+        func reachesPart(hit: UINode) -> Bool {
+            guard surelyReaches(hit: hit) else { return false }
+            guard hit.isActionable else { return true }
+            var bareTarget = target, bareMatched = matched
+            bareTarget.children = []
+            bareMatched.children = []
+            return CoverJudge.surelyReaches(target: bareTarget, matched: bareMatched, point: point, roots: roots, viewport: viewport, stack: stack, hit: hit)
         }
 
         /// What the tap would reach instead, given the simulator's `hit` if one was read; nil when it reaches the target, or nothing contests it and no hit was read.
@@ -105,11 +131,13 @@ struct TapCover {
         if AccessibilityTargetResolver.isUnderKeyboard(verdict.cover, in: judging.roots) {
             throw Tap.keyboardCoverError(selector: selector, at: resolution.point, device: device)
         }
-        if verdict.isConfident, !allowCovered, verdict.evidence == .hitTest,
-           let moved = await clearPart(of: resolution, beside: verdict.cover, in: tree, backend: backend, device: device) {
-            Console.current.notice(.note(
-                "\(selector) shows beside \(Self.describe(verdict)); tapping its visible part",
-                agent: "\(selector) at \(VerifyOutput.pointDescription(x: judging.point.x, y: judging.point.y)) is under \(Self.describe(verdict)); tapping the part that shows at \(VerifyOutput.pointDescription(x: moved.point.x, y: moved.point.y))."
+        if verdict.leavesPartShowing, !allowCovered, tree.platform == .ios, let coverFrame = verdict.touchFrame,
+           let reader = FrontJudge.PointReader(backend: backend, device: device),
+           let moved = await Self.reachablePart(of: resolution, beside: coverFrame, in: tree, reader: reader) {
+            let tapping = dryRun ? "would tap" : "tapping"
+            notices.say(.note(
+                "\(selector) shows beside \(Self.describe(verdict)); \(tapping) its visible part",
+                agent: "\(selector) at \(VerifyOutput.pointDescription(x: judging.point.x, y: judging.point.y)) is under \(Self.describe(verdict)); \(tapping) the part that shows at \(VerifyOutput.pointDescription(x: moved.point.x, y: moved.point.y))."
             ))
             return moved
         }
@@ -121,7 +149,7 @@ struct TapCover {
     @MainActor
     static func verdict(_ judging: Judging, in tree: UITree, hitTester: (any PointHitTesting)?, device: DeviceID) async -> CoverVerdict? {
         if let front = tree.front, judging.target.isSameElement(as: judging.matched),
-           let index = ScreenStack.index(of: judging.matched, in: tree.roots), let judged = front.judged[index], judged.point == judging.point {
+           let index = ScreenStack.index(of: judging.matched, in: tree.roots), let judged = front.judged[index], judged.point == judging.point, !judged.unsure {
             return judged.verdict
         }
         var hit: UINode?
@@ -131,26 +159,31 @@ struct TapCover {
         return judging.verdict(hit: hit)
     }
 
-    /// The tap moved to the middle of a part of the target that `cover` leaves showing, at least 8 pt across, where the simulator's hit-test finds the target itself; full-width parts first, two tries at most. Nil without a hit-test, which alone proves the part is not under something the tree leaves out.
+    /// At most this many parts beside a cover are read.
+    static let partTries = 2
+
+    /// The tap moved to the middle of a part of the target that a cover at `coverFrame` leaves showing, at least 8 pt across, where the simulator's hit-test finds the target itself; full-width parts first. Only a hit-test proves the part is not under something the tree leaves out.
     @MainActor
-    private func clearPart(of resolution: TapResolution, beside cover: UINode, in tree: UITree, backend: any DeviceBackend, device: DeviceID) async -> TapResolution? {
-        guard tree.platform == .ios, let coverFrame = cover.frame, let reader = FrontJudge.PointReader(backend: backend, device: device) else { return nil }
-        for moved in Self.clearParts(of: resolution, beside: coverFrame, in: tree).prefix(2) {
-            guard let judging = Judging(moved, in: tree), judging.keyboard == nil,
+    static func reachablePart(of resolution: TapResolution, beside coverFrame: UIFrame, in tree: UITree, reader: FrontJudge.PointReader) async -> TapResolution? {
+        for moved in clearParts(of: resolution, beside: coverFrame, in: tree).prefix(partTries) {
+            guard let judging = Judging(moved, in: tree, beneath: false), judging.keyboard == nil,
                   let hit = await reader.read(at: judging.point),
-                  judging.surelyReaches(hit: hit) else { continue }
+                  judging.reachesPart(hit: hit) else { continue }
             return moved
         }
         return nil
     }
 
-    /// The tap moved to the middle of each part of the target that a cover at `coverFrame` leaves showing, best first; empty when none is 8 pt across.
+    /// The tap moved to the middle of each part of the target that a cover at `coverFrame` leaves showing, best first; empty when none is 8 pt across. A wide switch toggles only at its knob, so its tap keeps the knob's x, and a part without it does not count.
     static func clearParts(of resolution: TapResolution, beside coverFrame: UIFrame, in tree: UITree) -> [TapResolution] {
         guard let target = resolution.target, let frame = target.frame, let viewport = tree.viewport,
               let visible = AccessibilityTargetResolver.visibleRegion(of: target, frame: frame, viewport: viewport, roots: tree.roots),
               let overlap = visible.intersection(coverFrame) else { return [] }
-        return parts(of: visible, outside: overlap, minimum: frame).map { part in
-            AccessibilityTargetResolver.resolution(of: resolution, at: part.center, roots: tree.roots, viewport: viewport)
+        let knob = AccessibilityTargetResolver.isWideSwitch(target, frame: frame) ? resolution.point.x : nil
+        return parts(of: visible, outside: overlap, minimum: frame).compactMap { part in
+            if let knob, knob < part.x || knob > part.x + part.width { return nil }
+            let point = UIPoint(x: knob ?? part.center.x, y: part.center.y)
+            return AccessibilityTargetResolver.resolution(of: resolution, at: point, roots: tree.roots, viewport: viewport)
         }
     }
 
@@ -176,12 +209,21 @@ struct TapCover {
     private func act(on verdict: CoverVerdict, selector: String, at point: UIPoint, device: DeviceID) throws {
         let pointText = VerifyOutput.pointDescription(x: point.x, y: point.y)
         let cover = Self.describe(verdict)
+        let tapping = dryRun ? "would tap" : "tapping"
         if verdict.isConfident, allowCovered {
-            Console.current.notice(.warning(
-                "\(selector) is covered by \(cover); tapping anyway (--allow-covered)",
-                agent: "\(selector) at \(pointText) is covered by \(cover) (\(Self.evidence(verdict.evidence))); tapping anyway because of --allow-covered."
+            notices.say(.warning(
+                "\(selector) is covered by \(cover); \(tapping) anyway (--allow-covered)",
+                agent: "\(selector) at \(pointText) is covered by \(cover) (\(Self.evidence(verdict.evidence))); \(tapping) anyway because of --allow-covered."
             ))
             return
+        }
+        if verdict.evidence == .devMenuTouchArea, let drag = Self.dragClear(verdict.cover, device: device) {
+            throw CLIError(
+                errorDescription: "\(selector) at \(pointText) is under the dev menu button, \(cover) (\(Self.evidence(verdict.evidence))), so the tap would open the dev menu. Nothing was sent. Drag the button clear, then retry; or \(override).",
+                reason: .targetCovered,
+                hint: drag,
+                coveredBy: CoverReport(verdict)
+            )
         }
         if verdict.isConfident {
             throw CLIError(
@@ -193,21 +235,30 @@ struct TapCover {
         }
         let message = "\(selector) at \(pointText) may be covered by \(cover); the tap may land on it."
         if failIfCovered {
-            throw CLIError(errorDescription: message, reason: .targetCovered, hint: "offsider describe-ui --device \(device.rawValue) --summary", coveredBy: CoverReport(verdict))
+            throw CLIError(errorDescription: "\(message) Nothing was sent.", reason: .targetCovered, hint: "offsider describe-ui --device \(device.rawValue) --summary", coveredBy: CoverReport(verdict))
         }
-        Console.current.notice(.warning(
+        notices.say(.warning(
             "\(selector) may be covered by \(cover); the tap may land on it",
             agent: "\(message) Pass --fail-if-covered to stop instead."
         ))
+    }
+
+    /// The drag that moves the dev menu button at `button`'s frame to the other half of the screen.
+    static func dragClear(_ button: UINode, device: DeviceID) -> String? {
+        guard let centre = button.frame?.center else { return nil }
+        let endY = centre.y >= 400 ? centre.y - 240 : centre.y + 240
+        let x = VerifyOutput.number(centre.x)
+        return "offsider drag --start-x \(x) --start-y \(VerifyOutput.number(centre.y)) --end-x \(x) --end-y \(VerifyOutput.number(endY)) --duration 0.8 --hold-end 300 --device \(device.rawValue)"
     }
 
     /// A prompt another process draws over the app takes the tap, so it refuses unless `--allow-covered`.
     private func refuse(under prompt: SystemPrompt, verdict: CoverVerdict, selector: String, at point: UIPoint, viewport: UIFrame, device: DeviceID) throws {
         if allowCovered {
             let pointText = VerifyOutput.pointDescription(x: point.x, y: point.y)
-            Console.current.notice(.warning(
-                "\(selector) is under \(prompt.summary); tapping anyway (--allow-covered)",
-                agent: "\(selector) at \(pointText) is under \(prompt.summary); tapping anyway because of --allow-covered."
+            let tapping = dryRun ? "would tap" : "tapping"
+            notices.say(.warning(
+                "\(selector) is under \(prompt.summary); \(tapping) anyway (--allow-covered)",
+                agent: "\(selector) at \(pointText) is under \(prompt.summary); \(tapping) anyway because of --allow-covered."
             ))
             return
         }
@@ -266,6 +317,7 @@ struct TapCover {
         case .treeOrder: return "by tree order"
         case .logBoxTouchArea: return "LogBox's toast takes touches beyond its frame there"
         case .otherProcess: return "a hit-test at the point found another process's view"
+        case .devMenuTouchArea: return "its touch area reaches past its icon there"
         }
     }
 
@@ -276,6 +328,17 @@ struct TapCover {
 
     /// How long a keyboard over the target is read again, so one caught as it appears or changes mode does not refuse.
     static let keyboardSettle: TimeInterval = 1
+
+    /// How long a refused cover is read again straight after an input, as a page just left can stay in the tree over its successor while it goes.
+    static let coverSettle: TimeInterval = 1
+    /// How recent an input must be for `coverSettle` to apply.
+    static let coverSettleWindow: TimeInterval = 2
+
+    /// `coverSettle` when the device's last input is recent, else nothing, so a cover that has simply been there refuses at once.
+    static func coverSettle(lastInput: Date?, now: Date = Date()) -> TimeInterval {
+        guard let lastInput, now.timeIntervalSince(lastInput) < coverSettleWindow else { return 0 }
+        return coverSettle
+    }
 
     static func isKeyboardRefusal(_ error: any Error) -> Bool {
         (error as? CLIError)?.reason == .targetUnderKeyboard

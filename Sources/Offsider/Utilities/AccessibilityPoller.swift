@@ -33,6 +33,7 @@ struct AccessibilityPoller {
         settle: SettlePolicy = .off,
         pick: MatchPicker? = nil,
         coverCheck: CoverCheck? = nil,
+        coverSettle: TimeInterval = 0,
         logger: OffsiderLogger
     ) async throws -> Polled<TapResolution> {
         try await pollForResolution(
@@ -45,16 +46,21 @@ struct AccessibilityPoller {
             settle: settle,
             pick: pick,
             coverCheck: coverCheck,
+            coverSettle: coverSettle,
             logger: logger
         ) {
-            var tree = try await backend.accessibilityTree(for: device)
-            // Several matches on a simulator: the hit-tests that tell which one a touch reaches, read at once, which the cover check then reuses.
-            if pick == nil, backend is any PointHitTesting, tree.platform == .ios,
-               AccessibilityTargetResolver.candidates(roots: tree.roots, query: query, elementType: elementType).onScreen.count > 1 {
-                await FrontJudge.read(matching: [query], elementType: elementType, in: &tree, backend: backend, device: device)
-            }
-            return tree
+            await judgingMatches(try await backend.accessibilityTree(for: device), query: query, elementType: elementType, pick: pick, backend: backend, device: device)
         }
+    }
+
+    /// Several matches on a simulator: `tree` with the hit-tests that tell which one a touch reaches, read at once, which the cover check then reuses.
+    static func judgingMatches(_ read: UITree, query: AccessibilityQuery, elementType: String?, pick: MatchPicker?, backend: any DeviceBackend, device: DeviceID) async -> UITree {
+        var tree = read
+        if pick == nil, backend is any PointHitTesting, tree.platform == .ios,
+           AccessibilityTargetResolver.candidates(roots: tree.roots, query: query, elementType: elementType).onScreen.count > 1 {
+            await FrontJudge.read(matching: [query], elementType: elementType, in: &tree, backend: backend, device: device)
+        }
+        return tree
     }
 
     /// Refuses (`target_covered`), warns or returns the tap to send for a resolved tap; `pollForResolution` retries a refusal until `--wait-timeout`.
@@ -102,6 +108,7 @@ struct AccessibilityPoller {
         settle: SettlePolicy = .off,
         pick: MatchPicker? = nil,
         coverCheck: CoverCheck? = nil,
+        coverSettle: TimeInterval = 0,
         logger: OffsiderLogger,
         clock: PollClock = .live,
         treeFetcher: () async throws -> UITree
@@ -118,7 +125,7 @@ struct AccessibilityPoller {
                 var checked = polled
                 checked.value = try await coverCheck(polled.value, polled.tree)
                 return checked
-            } catch where TapCover.isRefusal(error) && clock.now() - start < waitTimeout {
+            } catch where TapCover.isRefusal(error) && clock.now() - start < max(waitTimeout, coverSettle) {
                 logger.info().log("Target covered, checking again in \(pollInterval)s…")
                 try await clock.sleep(.seconds(pollInterval))
             } catch where TapCover.isKeyboardRefusal(error) && clock.now() - start < max(waitTimeout, TapCover.keyboardSettle) {

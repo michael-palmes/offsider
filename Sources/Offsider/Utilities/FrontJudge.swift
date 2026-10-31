@@ -6,7 +6,7 @@ import OffsiderCore
 /// judged as a tap's cover check judges its target (the simulator's hit-test, Android's drawing order). Only a confident cover counts.
 @MainActor
 enum FrontJudge {
-    /// At most this many points are hit-tested on an iOS simulator in one read, all at once; the rest keep the tree's word.
+    /// At most this many points are hit-tested on an iOS simulator in one read, centres all at once and then the parts beside covers; the rest keep the tree's word.
     static let hitLimit = 24
 
     /// Judges the elements at `indexes` (pre-order over `tree.roots`) and stores the reading on `tree`, merged with any it had; `everyPoint` hit-tests each on a simulator, not only those something labelled overlaps.
@@ -17,22 +17,38 @@ enum FrontJudge {
         await Timings.measure("front") {
             let plan = Plan(tree: judged, indexes: indexes, reading: reading)
             let contested = Array((everyPoint ? plan.unblocked : plan.contested).prefix(hitLimit))
-            // A tap aims at the part of a covered element beside its cover, so that part is read in the same round as the centre.
-            let parts = reader == nil ? [] : contested.compactMap { entry -> (Int, TapCover.Judging)? in
-                guard let covers = UIFrame.union(of: entry.judging.candidates.compactMap(\.frame)),
-                      let moved = TapCover.clearParts(of: entry.resolution, beside: covers, in: judged).first,
-                      let judging = TapCover.Judging(moved, in: judged, beneath: false), judging.keyboard == nil else { return nil }
-                return (entry.index, judging)
-            }
-            async let centres = hitTests(contested.map { ($0.index, $0.judging) }, reader: reader)
-            async let beside = hitTests(parts, reader: reader)
-            let (hits, partHits) = await (centres, beside)
+            let hits = await hitTests(contested.map { ($0.index, $0.judging) }, reader: reader)
             plan.record(into: &reading, hits: hits, hitTested: reader != nil, platform: judged.platform)
-            for (index, judging) in parts where reading.covered[index]?.evidence == .hitTest {
-                if let hit = partHits[index], judging.surelyReaches(hit: hit) { reading.covered[index] = nil }
+            if let reader {
+                await readParts(of: contested, into: &reading, in: judged, reader: reader)
             }
         }
         tree.front = reading
+    }
+
+    /// A tap goes to the part of a covered element beside its cover, so an element counts when that part reaches it, read as a tap reads it and only once its centre is known to be covered.
+    private static func readParts(of contested: [Plan.Entry], into reading: inout FrontReading, in tree: UITree, reader: PointReader) async {
+        let spare = (hitLimit - contested.count) / TapCover.partTries
+        let covered = contested.compactMap { entry -> (Plan.Entry, UIFrame)? in
+            guard let verdict = reading.covered[entry.index], verdict.leavesPartShowing, let frame = verdict.touchFrame else { return nil }
+            return (entry, frame)
+        }.prefix(spare)
+        guard !covered.isEmpty else { return }
+        let reached = await withTaskGroup(of: Int?.self) { group in
+            for (entry, frame) in covered {
+                group.addTask { @MainActor in
+                    await TapCover.reachablePart(of: entry.resolution, beside: frame, in: tree, reader: reader) == nil ? nil : entry.index
+                }
+            }
+            var indexes: [Int] = []
+            for await index in group {
+                if let index { indexes.append(index) }
+            }
+            return indexes
+        }
+        for index in reached {
+            reading.covered[index] = nil
+        }
     }
 
     /// One read per point on a simulator, with no retry: an answer read too soon only leaves an element counted.
@@ -77,21 +93,26 @@ enum FrontJudge {
         static let containerRoles: Set<UIRole> = [.application, .window]
 
         var beneath: [Int: String] = [:]
+        /// Inside the screen, but past the edge of its scroll view.
+        var clipped: Set<Int> = []
         var entries: [Entry] = []
 
         init(tree: UITree, indexes: some Sequence<Int>, reading: FrontReading) {
             guard let viewport = tree.viewport else { return }
             let flat = tree.roots.flatMap { $0.flattened() }
             let stack = ScreenStack.build(roots: tree.roots, viewport: viewport)
-            for index in indexes where index < flat.count && reading.judged[index] == nil && reading.beneath[index] == nil {
+            for index in indexes where index < flat.count && reading.judged[index] == nil && reading.beneath[index] == nil && !reading.clipped.contains(index) {
                 let node = flat[index]
                 guard !Self.containerRoles.contains(node.role), let frame = node.frame, node.hasPositiveFrame, frame.isVisible(in: viewport) else { continue }
                 if let page = stack.page(over: index) {
                     beneath[index] = page.name
                     continue
                 }
-                guard let resolution = AccessibilityTargetResolver.resolution(of: node, roots: tree.roots, viewport: viewport, stack: stack),
-                      let judging = TapCover.Judging(resolution, in: tree, beneath: false) else { continue }
+                guard let resolution = AccessibilityTargetResolver.resolution(of: node, roots: tree.roots, viewport: viewport, stack: stack) else {
+                    clipped.insert(index)
+                    continue
+                }
+                guard let judging = TapCover.Judging(resolution, in: tree, beneath: false) else { continue }
                 entries.append(Entry(index: index, resolution: resolution, judging: judging))
             }
         }
@@ -108,6 +129,7 @@ enum FrontJudge {
 
         func record(into reading: inout FrontReading, hits: [Int: UINode], hitTested: Bool, platform: DevicePlatform) {
             reading.beneath.merge(beneath) { _, new in new }
+            reading.clipped.formUnion(clipped)
             for entry in entries {
                 if let keyboard = entry.judging.keyboard {
                     let verdict = CoverVerdict(cover: keyboard, evidence: platform == .android ? .drawingOrder : .treeOrder, isConfident: true)
@@ -118,7 +140,11 @@ enum FrontJudge {
                 // A simulator point left unread keeps the tree's word, and a tap there reads it afresh.
                 if hitTested, hits[entry.index] == nil, entry.judging.isContested { continue }
                 let verdict = entry.judging.verdict(hit: hits[entry.index])
-                reading.judged[entry.index] = FrontReading.Judged(point: entry.judging.point, verdict: verdict, ownHit: hits[entry.index].map(entry.judging.surelyReaches(hit:)))
+                // An empty screen-sized answer may be a point read mid-transition, which only a tap's retrying hit-test can read past.
+                let unsure = verdict?.isConfident != true && hits[entry.index].map { hit in
+                    AccessibilityFetcher.isTransientPointFallback(hit, at: AccessibilityPoint(x: entry.judging.point.x, y: entry.judging.point.y))
+                } == true
+                reading.judged[entry.index] = FrontReading.Judged(point: entry.judging.point, verdict: verdict, ownHit: hits[entry.index].map(entry.judging.surelyReaches(hit:)), unsure: unsure)
                 if let verdict, verdict.isConfident {
                     reading.covered[entry.index] = verdict
                 }

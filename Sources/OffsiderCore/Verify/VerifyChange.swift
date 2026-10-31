@@ -44,6 +44,10 @@ public enum VerifyNote: String, Sendable {
     case unsettled
     /// `--verify-id`: nothing on screen changed after the input, so it may not have landed.
     case screenUnchanged = "screen_unchanged"
+    /// The dev menu opened over the app, so a tap reached its floating button rather than its target.
+    case devMenuOpened = "devmenu_opened"
+    /// No read before the input worked and no screenshot was taken, so its effect is unknown; it was sent once.
+    case unreadable
 }
 
 /// An element whose change a verified command left out: text that changed with no input, a node that moved between the reads before the input, or a LogBox toast.

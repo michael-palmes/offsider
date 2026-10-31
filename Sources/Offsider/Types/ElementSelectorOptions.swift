@@ -161,7 +161,7 @@ struct ElementSelectorOptions: ParsableArguments {
                 let reached = zip(pool, reasons).filter { $0.1 == nil }.map(\.0)
                 guard !reached.isEmpty else {
                     let more = pool.count > 1 ? " (and \(pool.count - 1) more)" : ""
-                    return absent("\(reasons[0] ?? "covered")\(more), so a tap would not reach it")
+                    return absent("\(reasons[0] ?? "covered")\(more)\(ElementProbe.notReached)")
                 }
                 pool = reached
             }

@@ -19,6 +19,8 @@ struct VerifyRequest {
     var beforeAction: (UITree) async throws -> Void = { _ in }
     /// Whether the target is still where the input aimed; a retry is held when it is not.
     var targetStays: ((UITree) async -> Bool)? = nil
+    /// From the read before the input, whether it aims at the dev menu; nil when the menu opening says nothing.
+    var expectsDevMenu: ((UITree) -> Bool)? = nil
     /// What a person reads in place of `subject`, which for `type` counts the characters.
     var personSubject: String? = nil
 }
@@ -97,6 +99,7 @@ enum VerifyOutput {
                     initialTree: request.initialTree,
                     target: request.targetNode,
                     targetStays: request.targetStays,
+                    expectsDevMenu: request.expectsDevMenu,
                     beforeAction: request.beforeAction,
                     onRetry: { failed, next in
                         Console.current.line(retryLine(failed: failed, next: next), person: .warning(personRetry(failed: failed, next: next)))
@@ -227,6 +230,12 @@ enum VerifyOutput {
         if outcome.note == .logBoxOpened {
             return "✗ \(request.subject) was dispatched but the React Native LogBox inspector opened over the app, so its effect cannot be seen. Read the log, then close it with offsider rn logbox dismiss --device \(request.device.rawValue)."
         }
+        if outcome.note == .devMenuOpened {
+            return "✗ \(request.subject) was dispatched but the dev menu opened, so the tap reached its floating button rather than the target. Close it with offsider rn devmenu close --device \(request.device.rawValue), then drag the button clear."
+        }
+        if outcome.note == .unreadable {
+            return "✗ \(request.subject) was dispatched once, but nothing could be read before it, so Offsider cannot tell what it changed. It was not sent again. Check the screen with a screenshot."
+        }
         if let id = request.options.verifyID {
             let whereabouts = outcome.summary.map { ": \($0)" } ?? ""
             let unchanged = outcome.note == .screenUnchanged ? ", and nothing on screen changed, so the input may not have landed" : ""
@@ -344,6 +353,12 @@ enum VerifyOutput {
         let plural = outcome.attempts == 1 ? "attempt" : "attempts"
         if outcome.note == .logBoxOpened {
             return .failed("LogBox opened over the app", details: ["\(subject) was sent, but its effect is hidden. Read the log, then close it."], try: ["offsider rn logbox dismiss --device \(device)"])
+        }
+        if outcome.note == .devMenuOpened {
+            return .failed("The dev menu opened", details: ["\(subject) reached its floating button, not the target. Close the menu, then drag the button clear."], try: ["offsider rn devmenu close --device \(device)"])
+        }
+        if outcome.note == .unreadable {
+            return .failed("Could not read the screen", details: ["\(subject) was sent once; not sent again"], try: ["offsider screenshot --device \(device)"])
         }
         if let id = request.options.verifyID {
             let waited = "\(subject) was sent; waited \(WaitLoop.seconds(request.options.resolvedTimeout)) after \(outcome.attempts) \(plural)"
