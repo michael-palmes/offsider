@@ -1,0 +1,16 @@
+  mWakefulness=Awake
+  mIsPowered=true
+  mPlugType=1
+  mScreenOffTimeoutSetting=1800000
+  mMaximumScreenOffTimeoutFromDeviceAdmin=9223372036854775807 (enforced=false)
+  mStayOnWhilePluggedInSetting=0
+      showing=false
+      occluded=false
+      secure=true
+    CredentialType: PIN
+maker=Example
+user_state=RUNNING_UNLOCKED
+ce_available=true
+memtotal_kb=MemTotal:        8000000 kB
+offsider-stay-awake-after
+7

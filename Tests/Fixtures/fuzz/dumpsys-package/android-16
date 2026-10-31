@@ -1,0 +1,22 @@
+36
+Packages:
+  Package [com.mpalmes.offsider.playground.rn] (82b83b):
+    appId=10214
+    versionCode=7 minSdk=24 targetSdk=36
+    versionName=1.0.0 (beta)
+    flags=[ HAS_CODE ALLOW_CLEAR_USER_DATA ALLOW_BACKUP ]
+    timeStamp=2026-10-28 11:32:20
+    lastUpdateTime=2026-10-28 11:32:20
+    installerPackageName=com.android.vending
+    requested permissions:
+      android.permission.POST_NOTIFICATIONS
+    User 0: ceDataInode=344923 installed=true hidden=false suspended=false stopped=false notLaunched=false enabled=0
+      firstInstallTime=2026-10-22 00:28:38
+      runtime permissions:
+        android.permission.POST_NOTIFICATIONS: granted=true, flags=[ USER_SET|USER_SENSITIVE_WHEN_GRANTED]
+        android.permission.CAMERA: granted=false, flags=[ USER_FIXED]
+
+Activity Resolver Table:
+      Scheme: "exp+offsiderplaygroundrn"
+Queries:
+  system apps queryable: false
