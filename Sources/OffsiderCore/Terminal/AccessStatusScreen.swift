@@ -37,16 +37,22 @@ public enum AccessStatusScreen {
         policy.list.entries.filter { policy.decision(platform: $0.platform, key: $0.key, now: now) == .allowed($0) }
     }
 
+    /// `Test Pixel needs a newer Offsider.`, or how many do.
+    public static func newerNeeded(_ policy: PhysicalDevicePolicy) -> String? {
+        guard let first = policy.list.newer.first else { return nil }
+        return policy.list.newer.count == 1 ? "\(PromptScreen.label(first.name)) needs a newer Offsider." : "\(policy.list.newer.count) devices need a newer Offsider."
+    }
+
     /// The one warning the screen carries, or nil.
     public static func warning(_ policy: PhysicalDevicePolicy, now: Date) -> String? {
         if policy.managed.unreadable || policy.managed.allowPhysicalDevices == false { return managedBlocksAll }
         if policy.listProblem != nil { return listUnreadable }
-        if !policy.sealIntact, !policy.list.entries.isEmpty { return listChanged }
+        if !policy.sealIntact, !policy.list.isEmpty { return listChanged }
         let blocked = policy.list.entries.contains { entry in
             if case .refused(let refusal) = policy.decision(platform: entry.platform, key: entry.key, now: now) { return refusal.isManaged }
             return false
         }
-        return blocked ? managedBlocksSome : nil
+        return blocked ? managedBlocksSome : newerNeeded(policy)
     }
 
     /// A person's page; `agent` is what an agent reads on stdout instead, as it always did.
@@ -54,7 +60,7 @@ public enum AccessStatusScreen {
         var notices: [Notice] = []
         if let warning = warning(policy, now: now) {
             let allowAgain = [listChanged, listUnreadable].contains(warning)
-            notices.append(.warning(warning, try: allowAgain ? allowCommand : nil))
+            notices.append(.warning(warning, try: allowAgain ? allowCommand : warning == newerNeeded(policy) ? NewerDeviceEntry.updateCommand : nil))
         }
         let entries = allowed(policy, now: now)
         guard !entries.isEmpty else {

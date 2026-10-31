@@ -105,6 +105,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - A broken `offsider.login.json` exits 64 with its own message from `app`, `notifications` and `logs`. It used to read as naming no app, falling through to a phone's only pin or to the whole log on a simulator or emulator.
 - `OFFSIDER_OUTPUT=person` only changes what Offsider prints. It no longer opens `describe-ui --raw-source` or the unmask check for an agent; a person piping `--raw-source` from their own terminal confirms with Touch ID.
 - A person's own Codex line for an Offsider rule counts whichever way they changed it, so `init` no longer adds a prompt over it and `doctor` no longer warns.
+- A key a newer Offsider wrote on one device's allow-list entry refuses that device alone, saying to update Offsider, where it used to refuse every phone and iPhone. `devices status` and `doctor` show it, and `add` or `remove` for another device keeps the entry as written. A problem at the top of the file, or an entry that does not say which device it is, still refuses everything.
 - `--app` help says what it does for video: the app in front is checked at most every 1 s on Android and every 2 s on an iPhone or iPad.
 
 ## [0.14.0] - 2026-10-22
