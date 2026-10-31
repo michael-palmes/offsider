@@ -562,6 +562,18 @@ struct AccessibilityTargetResolver {
         try? shownPart(of: element, frame: frame, viewport: viewport, roots: roots, selector: "")
     }
 
+    /// The side of its scroll view an element with too little showing lies past; nil when it shows.
+    static func sidePastScrollView(of element: UINode, frame: UIFrame, viewport: UIFrame, roots: [UINode]) -> OffScreenSide? {
+        do {
+            _ = try shownPart(of: element, frame: frame, viewport: viewport, roots: roots, selector: "")
+            return nil
+        } catch ElementResolutionError.beyondScrollView(_, _, _, let side) {
+            return side
+        } catch {
+            return nil
+        }
+    }
+
     /// `resolution` moved to `point`, with what may draw over it there.
     static func resolution(of resolution: TapResolution, at point: UIPoint, roots: [UINode], viewport: UIFrame) -> TapResolution {
         var moved = TapResolution(

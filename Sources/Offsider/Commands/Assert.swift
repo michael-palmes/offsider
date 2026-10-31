@@ -86,7 +86,7 @@ struct Assert: AsyncParsableCommand {
 
     /// `--id 'count' is on screen with value '3'`, `--id 'banner' is gone`, or for one the app still holds, `--id 'row' is not on screen: under ...`.
     private func metState(_ outcome: WaitOutcome) -> String {
-        if gone, let hidden = outcome.goneBecause { return "\(subject) is not on screen: \(hidden)" }
+        if gone, let hidden = outcome.goneBecause { return "\(subject) is not on screen: \(LogRedactor.redactValue(hidden).text)" }
         return "\(subject) is \(gone ? "gone" : selector.presentState)"
     }
 

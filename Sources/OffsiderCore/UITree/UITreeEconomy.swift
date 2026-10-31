@@ -137,8 +137,8 @@ public enum UITreeEconomy {
         let covered: Set<Int>
         /// Elements the front reading says a touch would not reach, outside the screens beneath.
         let unreached: Set<Int>
-        /// Elements past the edge of their scroll view, which fold like those off screen.
-        let pastScrollEdge: Set<Int>
+        /// Elements past an edge of their scroll view, which fold like those off screen.
+        let pastScrollEdge: [Int: OffScreenSide]
         /// The names of those that would otherwise be listed, in tree order.
         var coveredNames: [String] = []
         /// Nested output keeps the ancestors of matches, by pre-order index.
@@ -163,7 +163,7 @@ public enum UITreeEconomy {
             beneath = summarisesRuns ? ScreenStack.build(roots: tree.roots, viewport: tree.viewport).beneath : []
             covered = Set(beneath.flatMap(\.indexes))
             unreached = summarisesRuns ? Set(tree.front.map { Array($0.covered.keys) } ?? []).subtracting(covered) : []
-            pastScrollEdge = summarisesRuns ? tree.front?.clipped ?? [] : []
+            pastScrollEdge = summarisesRuns ? tree.front?.clipped ?? [:] : [:]
             if !options.flat {
                 for root in tree.roots {
                     _ = mark(root)
@@ -174,7 +174,7 @@ public enum UITreeEconomy {
         private mutating func mark(_ node: UINode) -> Bool {
             let position = kept.count
             kept.append(false)
-            var any = !covered.contains(position) && !unreached.contains(position) && !pastScrollEdge.contains(position) && options.filter.matches(node, visibleRect: rect)
+            var any = !covered.contains(position) && !unreached.contains(position) && pastScrollEdge[position] == nil && options.filter.matches(node, visibleRect: rect)
             for child in node.children where mark(child) {
                 any = true
             }
@@ -186,12 +186,12 @@ public enum UITreeEconomy {
         mutating func visit(_ node: UINode, depth: Int, ancestorLabel: String?, ancestor: Ancestor, owner: Int? = nil) {
             let position = index
             index += 1
-            let isClipped = pastScrollEdge.contains(position)
+            let clippedSide = pastScrollEdge[position]
             let isCovered = covered.contains(position) || unreached.contains(position)
             if unreached.contains(position), otherFilters.matches(node, visibleRect: rect) {
                 coveredNames.append(Self.name(node))
             }
-            let matches = !isCovered && !isClipped && options.filter.matches(node, visibleRect: rect)
+            let matches = !isCovered && clippedSide == nil && options.filter.matches(node, visibleRect: rect)
             let shown = options.flat ? matches : kept[position]
             let passesOthers = !isCovered && otherFilters.matches(node, visibleRect: rect)
             var childDepth = depth
@@ -205,7 +205,7 @@ public enum UITreeEconomy {
                     childLabel = node.label
                 }
             } else if summarisesRuns, passesOthers, ancestor != .offScreen,
-                      let frame = node.frame, let rect, let side = OffScreenSide.of(frame, in: rect) ?? (isClipped ? .below : nil) {
+                      let frame = node.frame, let rect, let side = clippedSide ?? OffScreenSide.of(frame, in: rect) {
                 addToRun(node, side: side, depth: depth)
                 childOwner = run?.serial
             } else if passesOthers, let owner, run?.serial == owner {

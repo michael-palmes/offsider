@@ -371,10 +371,8 @@ enum LoginFlow {
         while true {
             try await services.clock.sleep(.milliseconds(100))
             let next = try await services.readTree()
-            let agree = LoginForm.match(submit, in: current)?.frame.flatMap { before in
-                LoginForm.match(submit, in: next)?.frame.map { before.isWithinTolerance(of: $0) }
-            }
-            if agree == true || services.clock.now() >= deadline { return next }
+            guard let before = LoginForm.match(submit, in: current)?.frame, let after = LoginForm.match(submit, in: next)?.frame,
+                  !before.isWithinTolerance(of: after), services.clock.now() < deadline else { return next }
             current = next
         }
     }

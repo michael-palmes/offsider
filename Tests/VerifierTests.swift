@@ -479,7 +479,7 @@ struct VerifierTests {
             action: { _ in sentAt.append(fake.clock) }
         )
         #expect(!outcome.verified)
-        #expect(sentAt.count == 2)
+        try #require(sentAt.count == 2)
         #expect(sentAt[1] - sentAt[0] >= 2, "\(sentAt)")
     }
 

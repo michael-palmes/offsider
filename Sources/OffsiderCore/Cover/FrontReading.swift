@@ -8,8 +8,8 @@ public struct FrontReading: Equatable, Sendable {
     public var covered: [Int: CoverVerdict]
     /// Each element judged by a touch, covered or not, so a tap at the same point needs no second hit-test.
     public var judged: [Int: Judged]
-    /// Elements inside the screen but past the edge of their scroll view, by pre-order index.
-    public var clipped: Set<Int>
+    /// Elements inside the screen but past an edge of their scroll view, by pre-order index, with the side they lie on.
+    public var clipped: [Int: OffScreenSide]
 
     /// The point judged and the judge's verdict there, a guess included; nil when the touch reaches the element.
     public struct Judged: Equatable, Sendable {
@@ -28,7 +28,7 @@ public struct FrontReading: Equatable, Sendable {
         }
     }
 
-    public init(beneath: [Int: String] = [:], covered: [Int: CoverVerdict] = [:], judged: [Int: Judged] = [:], clipped: Set<Int> = []) {
+    public init(beneath: [Int: String] = [:], covered: [Int: CoverVerdict] = [:], judged: [Int: Judged] = [:], clipped: [Int: OffScreenSide] = [:]) {
         self.beneath = beneath
         self.covered = covered
         self.judged = judged
@@ -38,7 +38,7 @@ public struct FrontReading: Equatable, Sendable {
     public var isEmpty: Bool { beneath.isEmpty && covered.isEmpty && clipped.isEmpty }
 
     /// Pre-order indexes of every element a touch would not reach.
-    public var unreached: Set<Int> { Set(beneath.keys).union(covered.keys).union(clipped) }
+    public var unreached: Set<Int> { Set(beneath.keys).union(covered.keys).union(clipped.keys) }
 
     /// True when a touch at the element at `index` lands elsewhere: a sure cover, or anything else the simulator's hit-test answered with, a backdrop included.
     public func misses(at index: Int) -> Bool {
@@ -50,7 +50,7 @@ public struct FrontReading: Equatable, Sendable {
         if let page = beneath[index] {
             return "beneath \(UITreeRenderer.quoted(SelectorText.truncated(page, limit: 40)))"
         }
-        if clipped.contains(index) {
+        if clipped[index] != nil {
             return "past the edge of its scroll view"
         }
         guard let verdict = covered[index] else { return nil }

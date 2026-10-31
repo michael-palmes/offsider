@@ -453,7 +453,7 @@ public enum CoverJudge {
 
         /// On a page or screen-sized view the target is not on, with the target listed after it: the screen a sheet was presented over, which a clean hit-test is right about.
         private func isOnScreenBeneathTarget(_ candidate: UINode) -> Bool {
-            guard let path = UITree.indexPath(to: candidate, in: roots), let targetPath = UITree.indexPath(to: target, in: roots) else { return false }
+            guard pageOverTarget == nil, let path = UITree.indexPath(to: candidate, in: roots), let targetPath = UITree.indexPath(to: target, in: roots) else { return false }
             if let index = ScreenStack.index(of: candidate, in: roots), let page = stack.page(holding: index),
                let held = ScreenStack.index(of: target, in: roots), !page.content.contains(held) {
                 return true

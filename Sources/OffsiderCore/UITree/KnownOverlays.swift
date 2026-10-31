@@ -53,11 +53,15 @@ public enum KnownOverlays {
     /// The icon of Expo's floating dev menu button: on Android `Tools` in its Compose host, on iOS the gear directly in a screen-sized view, as a control's own icon never is.
     public static func devMenuButtons(in roots: [UINode], viewport: UIFrame) -> [UINode] {
         var found: [UINode] = []
-        func visit(_ node: UINode, ancestors: [UINode]) {
-            if isDevMenuIcon(node, ancestors: ancestors, viewport: viewport) { found.append(node) }
-            for child in node.children { visit(child, ancestors: ancestors + [node]) }
+        var ancestors: [UINode] = []
+        func visit(_ node: UINode) {
+            if node.id == devMenuButtonSymbol || node.label == "Tools", isDevMenuIcon(node, ancestors: ancestors, viewport: viewport) { found.append(node) }
+            guard !node.children.isEmpty else { return }
+            ancestors.append(node)
+            node.children.forEach(visit)
+            ancestors.removeLast()
         }
-        for root in roots { visit(root, ancestors: []) }
+        roots.forEach(visit)
         return found
     }
 

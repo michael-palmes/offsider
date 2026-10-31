@@ -330,7 +330,7 @@ struct Wait: AsyncParsableCommand {
         }
         if let query = selector.query {
             if gone, let hidden = outcome.goneBecause {
-                return ("\(query.selectorDescription) is not on screen: \(hidden)", after, nil)
+                return ("\(query.selectorDescription) is not on screen: \(LogRedactor.redactValue(hidden).text)", after, nil)
             }
             return ("\(query.selectorDescription) is \(gone ? "gone" : selector.presentState)", after, nil)
         }

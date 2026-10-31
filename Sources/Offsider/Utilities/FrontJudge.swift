@@ -93,15 +93,15 @@ enum FrontJudge {
         static let containerRoles: Set<UIRole> = [.application, .window]
 
         var beneath: [Int: String] = [:]
-        /// Inside the screen, but past the edge of its scroll view.
-        var clipped: Set<Int> = []
+        /// Inside the screen, but past an edge of its scroll view.
+        var clipped: [Int: OffScreenSide] = [:]
         var entries: [Entry] = []
 
         init(tree: UITree, indexes: some Sequence<Int>, reading: FrontReading) {
             guard let viewport = tree.viewport else { return }
             let flat = tree.roots.flatMap { $0.flattened() }
             let stack = ScreenStack.build(roots: tree.roots, viewport: viewport)
-            for index in indexes where index < flat.count && reading.judged[index] == nil && reading.beneath[index] == nil && !reading.clipped.contains(index) {
+            for index in indexes where index < flat.count && reading.judged[index] == nil && reading.beneath[index] == nil && reading.clipped[index] == nil {
                 let node = flat[index]
                 guard !Self.containerRoles.contains(node.role), let frame = node.frame, node.hasPositiveFrame, frame.isVisible(in: viewport) else { continue }
                 if let page = stack.page(over: index) {
@@ -109,7 +109,7 @@ enum FrontJudge {
                     continue
                 }
                 guard let resolution = AccessibilityTargetResolver.resolution(of: node, roots: tree.roots, viewport: viewport, stack: stack) else {
-                    clipped.insert(index)
+                    clipped[index] = AccessibilityTargetResolver.sidePastScrollView(of: node, frame: frame, viewport: viewport, roots: tree.roots) ?? .below
                     continue
                 }
                 guard let judging = TapCover.Judging(resolution, in: tree, beneath: false) else { continue }
@@ -129,7 +129,7 @@ enum FrontJudge {
 
         func record(into reading: inout FrontReading, hits: [Int: UINode], hitTested: Bool, platform: DevicePlatform) {
             reading.beneath.merge(beneath) { _, new in new }
-            reading.clipped.formUnion(clipped)
+            reading.clipped.merge(clipped) { _, new in new }
             for entry in entries {
                 if let keyboard = entry.judging.keyboard {
                     let verdict = CoverVerdict(cover: keyboard, evidence: platform == .android ? .drawingOrder : .treeOrder, isConfident: true)

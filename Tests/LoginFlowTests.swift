@@ -317,6 +317,20 @@ struct LoginFlowTests {
         #expect(script.taps.last?.y == 722, "\(script.taps)")
     }
 
+    @Test("with submit unmatched after the dismiss tap, no settle is spent on it")
+    func unmatchedSubmitSpendsNoSettle() async throws {
+        let bullets = String(repeating: String(SecureText.bullet), count: password.count)
+        let script = LoginScript(trees: [
+            SignInFixture.tree(),
+            SignInFixture.tree(emailValue: username),
+            SignInFixture.tree(emailValue: username, passwordValue: bullets, submitEnabled: true, lowKeyboard: true),
+            SignInFixture.tree(emailValue: username, passwordValue: bullets, submitEnabled: true),
+        ])
+        script.advanceOnTap = true
+        _ = try await run(script)
+        #expect(script.time < 1, "\(script.time)")
+    }
+
     @Test("a username the field shows a read late is waited for, not refused")
     func usernameShowsLate() async throws {
         let bullets = String(repeating: String(SecureText.bullet), count: password.count)

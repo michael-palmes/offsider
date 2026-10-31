@@ -189,6 +189,7 @@ struct Tap: AsyncParsableCommand, VerifiableCommand {
         let picker = query.flatMap { matchPicker(query: $0, backend: backend, device: device) }
         let checkCover = coverCheck(selector: query?.selectorDescription ?? "", backend: backend, device: device)
         let startedAt = ProcessInfo.processInfo.systemUptime
+        var lastInput: Date?
 
         if let pointX, let pointY {
             resolution = TapResolution(point: (x: pointX, y: pointY), isSwitchLikeControl: false)
@@ -201,6 +202,7 @@ struct Tap: AsyncParsableCommand, VerifiableCommand {
             }
 
             let record = noSettle ? nil : await TreeCache.load(for: device, backend: backend)
+            lastInput = record?.lastInputAt
             // Under --verify the verifier's second read re-resolves the target, so the guard would only add a read; --verify-id has no such read.
             let settle: SettlePolicy = noSettle || (progress != nil && Self.verifierRereads(verification.mode))
                 ? .off
@@ -217,7 +219,7 @@ struct Tap: AsyncParsableCommand, VerifiableCommand {
                 settle: settle,
                 pick: picker,
                 coverCheck: checkCover,
-                coverSettle: TapCover.coverSettle(lastInput: record?.lastInputAt),
+                coverSettle: TapCover.coverSettle(lastInput: lastInput),
                 logger: logger
             )
             resolution = polled.value
@@ -249,12 +251,12 @@ struct Tap: AsyncParsableCommand, VerifiableCommand {
             let targetNode = resolution.target ?? resolution.matched
             var aimed = resolution.point
             /// The tap the target's place in `tree` calls for, judged as the first read was, so the check covers the point sent; a target gone or newly covered throws.
-            func resolvedAgain(in tree: UITree, waitTimeout: TimeInterval) async throws -> TapResolution {
+            func resolvedAgain(in tree: UITree, waitTimeout: TimeInterval, coverSettle: TimeInterval = 0) async throws -> TapResolution {
                 guard let query else { return resolution }
                 var first: UITree? = tree
                 return try await AccessibilityPoller.pollForResolution(
                     query: query, waitTimeout: waitTimeout, pollInterval: resolvedPollInterval, elementType: elementType, allowOffscreen: allowOffscreen,
-                    pick: picker, coverCheck: checkCover, logger: logger
+                    pick: picker, coverCheck: checkCover, coverSettle: coverSettle, logger: logger
                 ) {
                     let read: UITree
                     if let held = first {
@@ -282,7 +284,7 @@ struct Tap: AsyncParsableCommand, VerifiableCommand {
                 beforeAction: { tree in
                     guard query != nil, Self.verifierRereads(verification.mode) else { return }
                     let elapsed = ProcessInfo.processInfo.systemUptime - startedAt
-                    let tap = try await resolvedAgain(in: tree, waitTimeout: max(0, resolvedWaitTimeout - elapsed))
+                    let tap = try await resolvedAgain(in: tree, waitTimeout: max(0, resolvedWaitTimeout - elapsed), coverSettle: TapCover.coverSettle(lastInput: lastInput))
                     guard !isAimed(tap.point) else { return }
                     logger.info().log("\(verifyTarget) moved to \(VerifyOutput.pointDescription(x: tap.point.x, y: tap.point.y)) while settling; tapping there")
                     physicalPoint = try await backend.deviceCoordinates(for: [tap.point], tree: tree, on: device)[0]

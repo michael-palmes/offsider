@@ -54,6 +54,13 @@ struct CoverAndVerifyTests {
         #expect(backend.session.calls.isEmpty)
     }
 
+    @Test("the drag it suggests stays on a short screen")
+    func dragStaysOnScreen() throws {
+        let button = FakeUI.node(.image, label: "Tools", frame: FakeUI.frame(320, 170, 26, 26))
+        let hint = try #require(TapCover.dragClear(button, viewport: FakeUI.frame(0, 0, 874, 402), device: Self.android))
+        #expect(hint.contains("--end-y 362"), "\(hint)")
+    }
+
     @Test("--allow-covered taps through the button's circle, and a point past the circle is clear")
     func gearCircleLimits() async throws {
         let through = FakeDeviceBackend(platform: .android, trees: [Self.androidGearScreen()])
@@ -154,6 +161,27 @@ struct CoverAndVerifyTests {
         #expect(!stderr.contains("covered"), "\(stderr)")
     }
 
+    @Test("a clean hit-test on a target beneath a page stays a guess when that page's control holds the point")
+    func pageOverTargetKeepsGuess() async {
+        let row = ScrollFoldTests.row(12, y: 780)
+        let beneath = FakeUI.node(.group, id: "home", frame: FakeUI.frame(0, 0, 402, 874), children: [
+            FakeUI.node(.header, label: "Home", frame: FakeUI.frame(60, 70, 282, 22)),
+            FakeUI.node(.scrollView, frame: FakeUI.frame(0, 100, 402, 774), children: [row]),
+        ])
+        let page = FakeUI.node(.group, id: "details", frame: FakeUI.frame(0, 0, 402, 874), children: [
+            FakeUI.node(.header, label: "Details", frame: FakeUI.frame(60, 70, 282, 22)),
+            FakeUI.node(.button, id: "details-action", label: "Act", frame: FakeUI.frame(16, 790, 370, 56)),
+        ])
+        let tree = FakeUI.tree([beneath, page])
+        let viewport = FakeUI.frame(0, 0, 402, 874)
+        let verdict = CoverJudge.judge(
+            target: row, matched: row, point: UIPoint(x: 201, y: 810),
+            candidates: tree.roots[0].flattened().filter { $0.id == "details-action" },
+            roots: tree.roots, viewport: viewport, stack: ScreenStack.build(roots: tree.roots, viewport: viewport), hit: row
+        )
+        #expect(verdict?.cover.id == "details-action")
+    }
+
     @Test("a footer floating over a scroll view is still a guess, listed either side of it")
     func footerStaysGuess() async {
         let row = ScrollFoldTests.row(12, y: 780)
@@ -216,6 +244,36 @@ struct CoverAndVerifyTests {
         let (polled, reads) = try await pollPopped(coverSettle: TapCover.coverSettle)
         #expect(reads == 2)
         #expect(polled.value.target?.id == "tab-library")
+    }
+
+    @Test("straight after an input, a page just left that shows only on a verify tap's second read is waited out, and a tap with none recent refuses")
+    func verifySecondReadSettles() async throws {
+        func run(inputAge: TimeInterval) async throws -> (calls: Int, error: (any Error)?) {
+            let device = DeviceID(rawValue: "fake-device", platform: .android)
+            let backend = FakeDeviceBackend(platform: .android, trees: [Self.poppedPage(leaving: false), Self.poppedPage(leaving: true), Self.poppedPage(leaving: false)])
+            let fixture = try TreeCacheFixture()
+            try fixture.write(fixture.settledRecord(Self.poppedPage(leaving: false), inputAge: inputAge))
+            var failure: (any Error)?
+            try await fixture.run {
+                do {
+                    try await Console.$current.withValue(ConsoleCapture().console(out: .agent, err: .agent)) {
+                        try await DispatchTracker.$current.withValue(DispatchTracker()) {
+                            try await Tap.parse(["--id", "tab-library", "--verify", "--verify-timeout", "0.5", "--retries", "0", "--device", device.rawValue])
+                                .execute(on: DeviceRouter.Route(backend: backend, device: device), progress: VerifyProgress(), logger: OffsiderLogger())
+                        }
+                    }
+                } catch {
+                    failure = error
+                }
+            }
+            return (backend.session.calls.count, failure)
+        }
+
+        let recent = try await run(inputAge: 0.3)
+        #expect(recent.calls == 1, "\(String(describing: recent.error))")
+        let old = try await run(inputAge: 30)
+        #expect(old.calls == 0)
+        #expect((old.error as? CLIError)?.reason == .targetCovered)
     }
 
     @Test("with no recent input the same cover refuses on the first read")
@@ -622,6 +680,15 @@ struct CoverAndVerifyTests {
         #expect(refused?.reason == .targetOffScreen)
     }
 
+    @Test("a row past the top of its scroll view folds into a run above, not below")
+    func rowPastTopFoldsAbove() async throws {
+        let scroll = FakeUI.node(.scrollView, frame: FakeUI.frame(0, 200, 402, 500), children: [
+            FakeUI.node(.group, frame: FakeUI.frame(0, 100, 402, 1200), children: [ScrollFoldTests.row(1, y: 120)]),
+        ])
+        let summary = try await OnScreenRuleTests.describe(["--summary"], on: HitTestingFakeBackend(trees: [FakeUI.tree([scroll])]), device: Self.ios)
+        #expect(summary.contains("[off-screen above]"), "\(summary)")
+    }
+
     @Test("a row that shows above its scroll view's fold stays on screen")
     func rowStraddlingFoldStays() async throws {
         let tree = ScrollFoldTests.pinnedFooter(rows: [ScrollFoldTests.row(11, y: 720)])
@@ -650,6 +717,16 @@ struct CoverAndVerifyTests {
             let none = try await absent.evaluate(on: route, logger: OffsiderLogger())
             #expect(absent.successLine(none) == "✓ --id 'no-such-row' is gone")
         }
+    }
+
+    @Test("--gone's success line masks what it quotes from the screen, as a failure line does")
+    func goneLineIsRedacted() throws {
+        let wait = try Wait.parse(["--id", "row", "--gone", "--timeout", "0", "--device", Self.android.rawValue])
+        let assert = try Assert.parse(["--id", "row", "--gone", "--device", Self.android.rawValue])
+        var outcome = WaitOutcome(met: true, elapsed: 0, reason: "")
+        outcome.goneBecause = #"under text "Your code is 482913""#
+        #expect(!wait.successLine(outcome).contains("482913"))
+        #expect(!assert.successLine(outcome).contains("482913"))
     }
 
     @Test("a --gone dwell carries the cover into its reason, as JSON reads it")

@@ -141,7 +141,7 @@ struct TapCover {
             ))
             return moved
         }
-        try act(on: verdict, selector: selector, at: judging.point, device: device)
+        try act(on: verdict, selector: selector, at: judging.point, viewport: judging.viewport, device: device)
         return resolution
     }
 
@@ -206,7 +206,7 @@ struct TapCover {
     }
 
     /// Refuses a confident cover, or a guessed one with `--fail-if-covered`, and warns of the rest.
-    private func act(on verdict: CoverVerdict, selector: String, at point: UIPoint, device: DeviceID) throws {
+    private func act(on verdict: CoverVerdict, selector: String, at point: UIPoint, viewport: UIFrame, device: DeviceID) throws {
         let pointText = VerifyOutput.pointDescription(x: point.x, y: point.y)
         let cover = Self.describe(verdict)
         let tapping = dryRun ? "would tap" : "tapping"
@@ -217,7 +217,7 @@ struct TapCover {
             ))
             return
         }
-        if verdict.evidence == .devMenuTouchArea, let drag = Self.dragClear(verdict.cover, device: device) {
+        if verdict.evidence == .devMenuTouchArea, let drag = Self.dragClear(verdict.cover, viewport: viewport, device: device) {
             throw CLIError(
                 errorDescription: "\(selector) at \(pointText) is under the dev menu button, \(cover) (\(Self.evidence(verdict.evidence))), so the tap would open the dev menu. Nothing was sent. Drag the button clear, then retry; or \(override).",
                 reason: .targetCovered,
@@ -243,10 +243,11 @@ struct TapCover {
         ))
     }
 
-    /// The drag that moves the dev menu button at `button`'s frame to the other half of the screen.
-    static func dragClear(_ button: UINode, device: DeviceID) -> String? {
+    /// The drag that moves the dev menu button at `button`'s frame into the other half of the screen.
+    static func dragClear(_ button: UINode, viewport: UIFrame, device: DeviceID) -> String? {
         guard let centre = button.frame?.center else { return nil }
-        let endY = centre.y >= 400 ? centre.y - 240 : centre.y + 240
+        let bottom = viewport.y + viewport.height
+        let endY = centre.y >= viewport.y + viewport.height / 2 ? max(viewport.y + 40, centre.y - 240) : min(bottom - 40, centre.y + 240)
         let x = VerifyOutput.number(centre.x)
         return "offsider drag --start-x \(x) --start-y \(VerifyOutput.number(centre.y)) --end-x \(x) --end-y \(VerifyOutput.number(endY)) --duration 0.8 --hold-end 300 --device \(device.rawValue)"
     }
@@ -335,8 +336,9 @@ struct TapCover {
     static let coverSettleWindow: TimeInterval = 2
 
     /// `coverSettle` when the device's last input is recent, else nothing, so a cover that has simply been there refuses at once.
-    static func coverSettle(lastInput: Date?, now: Date = Date()) -> TimeInterval {
-        guard let lastInput, now.timeIntervalSince(lastInput) < coverSettleWindow else { return 0 }
+    @MainActor
+    static func coverSettle(lastInput: Date?, now: Date? = nil) -> TimeInterval {
+        guard let lastInput, (now ?? TreeCacheEnvironment.current.now()).timeIntervalSince(lastInput) < coverSettleWindow else { return 0 }
         return coverSettle
     }
 
