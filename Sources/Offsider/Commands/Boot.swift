@@ -169,7 +169,7 @@ struct Boot: AsyncParsableCommand, JSONReportingCommand {
         }
         if let failure = BootReport.firstUnlockFailure(avd: avd, serial: result.serial, alreadyRunning: result.alreadyRunning, reading: reading, lock: lock) {
             ErrorReporter.noteDeviceName(avd)
-            let error = CLIError(errorDescription: failure.message, reason: .deviceLocked, hint: failure.hint)
+            let error = CLIError(errorDescription: failure.message, reason: .deviceLocked, hint: failure.hint, ask: failure.ask)
             guard json else { throw error }
             report.error = ErrorReporter.payload(for: error)
             console.data(report.jsonLine() + "\n")
@@ -186,7 +186,9 @@ struct Boot: AsyncParsableCommand, JSONReportingCommand {
 
     /// Asks the Keychain (attributes only, never the code) and the ledger only when the device has a credential.
     static func lockReport(_ reading: AwakeReading?, key: String, store: any UnlockCodeStoring, ledger: UnlockAttemptLedger) -> LockReport {
-        guard reading?.hasCredential == true else { return LockReport(reading, savedCode: false, lastAttemptFailed: false) }
-        return LockReport(reading, savedCode: (try? store.hasCode(for: key)) ?? false, lastAttemptFailed: ledger.hasFailed(key))
+        guard reading?.hasCredential == true else { return LockReport(reading, savedCode: false, lastAttempt: nil) }
+        let attempt = ledger.lastAttempt(key)
+        // A Keychain that cannot be read must not hide a code known to be wrong.
+        return LockReport(reading, savedCode: (try? store.hasCode(for: key)) ?? (attempt != nil), lastAttempt: attempt)
     }
 }

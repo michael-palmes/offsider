@@ -19,6 +19,10 @@ enum FuzzTargets {
         "mask-config": maskConfig,
         "ordered-json": orderedJSON,
         "log-redactor": logRedactor,
+        "android-notifications": androidNotifications,
+        "dumpsys-package": dumpsysPackage,
+        "dumpsys-display": dumpsysDisplay,
+        "dumpsys-state": dumpsysState,
     ]
 
     /// A stream decoder sees the bytes in chunks; the first byte picks the chunk size so splits vary with the input.
@@ -106,6 +110,60 @@ enum FuzzTargets {
         let text = String(decoding: data, as: UTF8.self)
         _ = LogRedactor.redactValue(text)
         return LogRedactor.redact(text).count > 0
+    }
+
+    /// The package the seeds under `android-notifications/` and `dumpsys-package/` name.
+    static let dumpPackage = "com.mpalmes.offsider.playground.rn"
+
+    static func androidNotifications(_ data: Data) -> Bool {
+        guard let snapshot = AndroidNotifications.parse(String(decoding: data, as: UTF8.self), package: dumpPackage) else { return false }
+        precondition(Set(snapshot.notifications.map(\.key)).count == snapshot.notifications.count, "a notification was listed twice")
+        var redacted = 0
+        let hidden = snapshot.notifications.map { notification -> PostedNotification in
+            let values = [notification.title, notification.text, notification.bigText, notification.subText].compactMap { $0 }
+            precondition(values.allSatisfy { $0.count <= AndroidNotifications.maximumValue }, "a notification value passed its cap")
+            let result = notification.redacted()
+            redacted += result.count
+            _ = result.notification.contains("code")
+            return result.notification
+        }
+        let report = NotificationReport.json(hidden, app: dumpPackage, source: snapshot.source, redacted: redacted, on: DeviceID(rawValue: "emulator-5554", platform: .android))
+        precondition((try? JSONSerialization.jsonObject(with: Data(report.utf8))) != nil, "the notification report is not JSON")
+        return true
+    }
+
+    static func dumpsysPackage(_ data: Data) -> Bool {
+        let output = String(decoding: data, as: UTF8.self)
+        let read = AndroidPackagePermissions.splitRead(output)
+        let dump = String(read.dump)
+        let permissions = AndroidPackagePermissions.parse(dumpsysPackage: dump, apiLevel: read.apiLevel, dangerous: AndroidPackagePermissions.parseDangerous(dump))
+        _ = AndroidPackagePermissions.parse(dumpsysPackage: dump, apiLevel: read.apiLevel)
+        _ = ExpoDevClient.schemes(fromPackageDump: dump)
+        _ = AndroidAppPackage.state(in: output)
+        let section = AndroidAppPackage.section(of: dumpPackage, in: dump)
+        let info = AndroidAppPackage.info(output, package: dumpPackage)
+        return section != nil || info != nil || !permissions.requested.isEmpty
+    }
+
+    static func dumpsysDisplay(_ data: Data) -> Bool {
+        let output = String(decoding: data, as: UTF8.self)
+        let list = AndroidDisplayList.parse(dumpsys: output)
+        _ = AndroidDisplayGeometry.apiLevel(in: output)
+        _ = AndroidDisplayGeometry.viewportUniqueId(in: output)
+        let states = AndroidDeviceState.parseStates(output)
+        let reading = AndroidDeviceState.parseReading(output)
+        let geometry = try? AndroidDisplayGeometry.parse(output)
+        return !list.displays.isEmpty || !states.isEmpty || reading != nil || geometry != nil
+    }
+
+    static func dumpsysState(_ data: Data) -> Bool {
+        let output = String(decoding: data, as: UTF8.self)
+        let foreground = AndroidForeground.parse(output)
+        let enrolled = BiometricControl.parseAndroidEnrolled(output)
+        let webView = AndroidDoctorRules.webViewVersion(fromDump: output)
+        let set = AndroidAwakeState.parseSet(output)
+        let reading = AndroidAwakeState.parse(output)
+        return foreground.top != nil || enrolled != nil || webView != nil || set != nil || reading != nil
     }
 
     /// The same mapping the media stream tests use, from a plist to the XPC value the parser reads.

@@ -7,13 +7,13 @@ struct Wake: AsyncParsableCommand {
         abstract: "Turn an Android device's screen on and dismiss its lock screen.",
         discussion: """
         Sends nothing when the screen is already on and unlocked. Otherwise it presses the wake key, dismisses the \
-        lock screen and waits about 3 s. A PIN, pattern or password lock screen stays up, and the command exits 7 \
+        lock screen and waits about 6 s. A PIN, pattern or password lock screen stays up, and the command exits 7 \
         (device_locked) unless --unlock finds a PIN or password saved with `offsider unlock-code set`. Then it types \
         that code once, and only into the lock screen's own focused PIN or password field, as key events through the \
         UiAutomation helper, never as a shell command; without the helper it exits 9 (helper_unavailable), and while \
-        record-video or stream-video records the device it exits 8 (device_busy), typing nothing. If the code does not \
-        unlock the device, Offsider will not type it again until the device is unlocked by hand or the code is saved \
-        again. Patterns are not supported. Android only: iOS simulators never sleep.
+        record-video or stream-video records the device it exits 8 (device_busy), typing nothing. If the lock screen \
+        is still up 15 s after the last key, the code is wrong: Offsider says so and will not type it again until it \
+        is saved again. Patterns are not supported. Android only: iOS simulators never sleep.
 
         Examples:
           offsider wake --device DEVICE_ID
@@ -108,12 +108,12 @@ struct Wake: AsyncParsableCommand {
         if current.lockScreen == .swipe {
             throw CLIError(errorDescription: "The lock screen of \(name) stayed up after `wm dismiss-keyguard`. Swipe it away on the device.", reason: .deviceLocked)
         }
-        if let unlockKey { ledger.clear(unlockKey) }
+        if let unlockKey { ledger.clearUnfinished(unlockKey) }
         let result = WakeOutcome(previous: outcome.previous, current: current, sent: sent)
         return (json ? DeviceStateReport.wake(result, on: device) : line(result, name: name), DevicePersonView.wake(result))
     }
 
-    /// One attempt; a rejected code is recorded so no later command types it again, and an untyped one never is.
+    /// One attempt: marked `started` before the first key and `rejected` when the lock screen stays up, so no later command types it again; an untyped one is never marked.
     @MainActor
     static func enterSavedCode(
         _ reading: AwakeReading,
@@ -125,19 +125,19 @@ struct Wake: AsyncParsableCommand {
         ledger: UnlockAttemptLedger,
         recordingLive: (DeviceLockKey) -> Bool = { RecordingMarker.isLive($0) }
     ) async throws -> UnlockAttempt {
-        func locked(_ message: String, hint: String? = nil) -> CLIError {
-            CLIError(errorDescription: message, reason: .deviceLocked, hint: hint)
+        func locked(_ message: String, hint: String? = nil, ask: String? = nil) -> CLIError {
+            CLIError(errorDescription: message, reason: .deviceLocked, hint: hint, ask: ask)
         }
         try RecordingMarker.refuseTyping("its unlock code", command: "wake", on: device, name: name, recordingLive: recordingLive)
         guard let key else {
             throw locked("Offsider could not read the AVD name of \(name), which its saved code is kept under. Unlock it on the device.")
         }
-        let save = "offsider unlock-code set --device \(key)"
+        let save = UnlockCodeScreen.setCommand(key)
         if reading.credential == "pattern" {
             throw locked("\(name) has a pattern lock screen, and Offsider types only PINs and passwords. Unlock it on the device.")
         }
-        guard !ledger.hasFailed(key) else {
-            throw locked("The saved code did not unlock \(name) last time, so Offsider will not type it again. Unlock it on the device, or save the right code with `\(save)`.", hint: save)
+        if let last = ledger.lastAttempt(key) {
+            throw locked(last.message(name: name, device: key), hint: save, ask: last.ask(device: key))
         }
         guard let code = try store.code(for: key) else {
             throw locked("No unlock code is saved for \(name). Unlock it on the device, or save one with `\(save)`.", hint: save)
@@ -145,12 +145,13 @@ struct Wake: AsyncParsableCommand {
         if reading.credential == "pin", !code.isPIN {
             throw locked("\(name) asks for a PIN, but its saved code is not 4 to 16 digits, so Offsider typed nothing. Save its PIN with `\(save)`.", hint: save)
         }
+        Console.current.relabel("Unlocking \(name)")
         let attempt: UnlockAttempt
         do {
             // The marker goes down before the first key, so a code that never confirms is not typed again by a later run.
             attempt = try await backend.enterUnlockCode(code, on: device) {
                 do {
-                    try ledger.recordFailure(key)
+                    try ledger.record(UnlockAttemptRecord(outcome: .started, at: Date(), credential: reading.credential), for: key)
                 } catch {
                     throw CLIError(
                         errorDescription: "Offsider could not record the unlock attempt for \(name) (\(error.localizedDescription)), so it typed nothing. Check that \(OffsiderPrivateDirectory.root) is yours and writable, then retry.",
@@ -167,7 +168,10 @@ struct Wake: AsyncParsableCommand {
             throw locked("The screen of \(name) changed before Offsider typed its code, so nothing was typed. Run `\(retry)` again.", hint: retry)
         }
         if attempt.reading.lockScreen == .secure {
-            throw locked("The saved code did not unlock \(name), so Offsider will not type it again until the device is unlocked by hand or the code is saved again with `\(save)`.", hint: save)
+            let rejected = UnlockAttemptRecord(outcome: .rejected, at: Date(), credential: reading.credential)
+            // A failed write leaves `started`, which still stops a second try.
+            try? ledger.record(rejected, for: key)
+            throw locked(rejected.message(name: name, device: key, dated: false), hint: save, ask: rejected.ask(device: key))
         }
         return attempt
     }

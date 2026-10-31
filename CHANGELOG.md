@@ -33,6 +33,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Changed
 
+- `test-runner.sh` runs every E2E suite in a full mode and takes any listed suite by name (`--android <suite>` for the Android ones), and refuses an unknown name; a `ReactNative*Tests` name that matched nothing used to pass.
 - `type --verify` no longer retries by default, as text that lands late was typed twice, a secret from `--stdin` too; `--replace` keeps its retry, and `--retries` asks for one.
 - `key-sequence` that spells text into a password field exits 64 `secure_field_argument`, as `type` does, unless the sequence holds a modifier. It logs how many keys, not which, and a batch step's record shows `<N keys>`.
 - `key-sequence` on a physical iPhone or iPad, and `type` from `--stdin` or `--file`, now check that a text field has focus, so they read the screen first; an unreadable screen warns and sends.
@@ -52,9 +53,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - `wait --seconds` needs no `--device`, and touches no device even when one is named, so a pause can never fail or be skipped.
 - `describe-ui`, `screenshot` and the `rn logbox` commands exit 1 `device_unresponsive` naming the device after 30 s without an answer from a simulator or emulator, instead of hanging; a `--wait-lock` wait and `rn logbox`'s own waits are added to that. Phones have limits of their own.
 - `logs` on Android joins the lines of one logged message, which logcat prints each under its own header, into one entry: `--grep` and `--exclude` match the whole entry and `.` crosses its lines, `--json` carries it whole, and text output keeps it on one line with `\n`.
+- `wake --unlock`, `unlock-code status`, `doctor` and `boot` say plainly whether a saved PIN or password is wrong. A code typed in full with the lock screen still up 15 s later is `The saved PIN is wrong: ...`, and stays blocked, even through an unlock by hand, until it is saved again. A run that ended before it saw the result, or a marker from an earlier version, is `Offsider can't tell if the saved PIN is right: ...`. Each message names the command that saves it, and that Offsider won't retry because repeated wrong PINs can lock a phone out. Its `ask` asks the user to save the code, not to unlock. The marker now holds the outcome, the time and whether the lock was a PIN or password, and `--json` adds `lastAttempt` (`outcome`, `at`, `credential`, or null) beside `lastAttemptFailed`, which stays true for either.
+- `doctor`'s `android-device.lock` warns instead of passing while a saved code is wrong or unconfirmed.
 
 ### Fixed
 
+- `screenshot` and `describe-ui` show their spinner while a simulator's frameworks load, which was a silent pause on the first command.
 - `type` refused a focused field with `no_focused_field` when the tree left the field out and a hardware keyboard hid the software one. An iOS simulator now reads points across the screen for a focused text field before refusing; `key-sequence` and `--require-focus-id` do too.
 - `type` on a physical iPhone or iPad with no field focused refuses (`no_focused_field`) instead of sending keys nowhere; the docs promised this and the broker's path skipped it.
 - `type --into-label` no longer takes a neighbouring field that keeps focus and overlaps the tapped one by a sliver for the field it tapped. A focused node must fill most of the field's frame, a text field almost all of it, and a focused web view no longer proves focus for `login`'s password.
@@ -105,6 +109,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - `rn devmenu` taps the menu's own item when a button of the app behind the menu has the same label, and `--label` naming only a row of that app exits 2 with nothing tapped, where it tapped the sheet's dismiss area, which closed the menu and reported a choice.
 - `rn devmenu --label` on something that is no control, such as a section heading, exits 5 saying nothing happened and leaves the menu open, where closing the menu passed for a choice.
 - A platform that does not exist after a `devices` subcommand (`devices status --platform windows`) gets that subcommand's own message, naming the listing command, where it failed in `devices` with that command's usage. `devices --platform windows` still exits 64, in one line.
+- `wake --unlock` waits up to 15 s for the lock screen to go after typing a code, not about 2.5 s on an emulator and 4 to 6 s on a phone, so a slow first unlock since boot no longer ends the check early, and a right code is not called wrong.
+- `wake --unlock` types nothing into a code field disabled while the lock screen counts down after wrong codes, where a right code could not land.
+- The unlock hints in `boot` and `doctor` name an emulator's AVD for `unlock-code set`, which refuses its serial.
 
 ## [0.14.0] - 2026-10-22
 

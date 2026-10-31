@@ -56,13 +56,14 @@ public struct BootReport: Equatable, Sendable {
     }
 
     /// The `device_locked` message and hint when the device is set up with a credential and has not been unlocked since boot.
-    public static func firstUnlockFailure(avd: String, serial: String, alreadyRunning: Bool, reading: AwakeReading?, lock: LockReport) -> (message: String, hint: String)? {
+    public static func firstUnlockFailure(avd: String, serial: String, alreadyRunning: Bool, reading: AwakeReading?, lock: LockReport) -> (message: String, hint: String, ask: String?)? {
         guard let reading, reading.awaitsFirstUnlock else { return nil }
         let how = alreadyRunning ? "is running" : "booted"
-        return (
-            "\(avd) \(how) as \(serial) but is waiting for its first unlock (\(reading.credentialName)); apps cannot start until it is unlocked.",
-            lock.unlockHint(deviceID: serial)
-        )
+        let waiting = "\(avd) \(how) as \(serial) but is waiting for its first unlock (\(reading.credentialName)); apps cannot start until it is unlocked."
+        if let attempt = lock.blockingAttempt {
+            return ("\(waiting)\n\(attempt.message(name: avd, device: avd))", UnlockCodeScreen.setCommand(avd), attempt.ask(device: avd))
+        }
+        return (waiting, lock.unlockHint(deviceID: serial, codeKey: avd), nil)
     }
 
     /// A note for an unlocked device whose screen is off or lock screen is up, so input would not reach the app.
