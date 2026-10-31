@@ -272,9 +272,11 @@ struct Doctor: AsyncParsableCommand {
     /// The Keychain is read (attributes only) only for a device with a credential; an emulator's code is saved under its AVD name.
     static func withUnlockCode(_ facts: AndroidDeviceFacts, store: any UnlockCodeStoring, ledger: UnlockAttemptLedger) -> AndroidDeviceFacts {
         guard facts.awake?.hasCredential == true else { return facts }
-        let key = facts.isPhysical ? (facts.serial ?? facts.id) : (facts.avdName ?? facts.serial ?? facts.id)
+        let key = facts.unlockCodeKey
+        let attempt = ledger.lastAttempt(key)
         var facts = facts
-        facts.unlockCode = UnlockCodeFact(saved: (try? store.hasCode(for: key)) ?? false, lastAttemptFailed: ledger.hasFailed(key))
+        // A Keychain that cannot be read must not hide a code known to be wrong.
+        facts.unlockCode = UnlockCodeFact(saved: (try? store.hasCode(for: key)) ?? (attempt != nil), lastAttempt: attempt)
         return facts
     }
 

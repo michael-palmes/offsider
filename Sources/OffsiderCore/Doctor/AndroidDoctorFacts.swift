@@ -140,11 +140,11 @@ public enum HelperProbeFact: Equatable, Sendable {
 /// Whether a lock screen code is saved for the device, read from the Keychain's attributes only.
 public struct UnlockCodeFact: Equatable, Sendable {
     public var saved: Bool
-    public var lastAttemptFailed: Bool
+    public var lastAttempt: UnlockAttemptRecord?
 
-    public init(saved: Bool, lastAttemptFailed: Bool) {
+    public init(saved: Bool, lastAttempt: UnlockAttemptRecord?) {
         self.saved = saved
-        self.lastAttemptFailed = lastAttemptFailed
+        self.lastAttempt = lastAttempt
     }
 }
 
@@ -179,7 +179,12 @@ public struct AndroidDeviceFacts: Equatable, Sendable {
 
     /// What `doctor --json` reports as `device.lock`.
     public var lockReport: LockReport {
-        LockReport(awake, savedCode: unlockCode?.saved ?? false, lastAttemptFailed: unlockCode?.lastAttemptFailed ?? false)
+        LockReport(awake, savedCode: unlockCode?.saved ?? false, lastAttempt: unlockCode?.lastAttempt)
+    }
+
+    /// What its unlock code is saved under: a phone's serial, an emulator's AVD name.
+    public var unlockCodeKey: String {
+        isPhysical ? (serial ?? id) : (avdName ?? serial ?? id)
     }
 
     public init(id: String, serial: String? = nil, avdName: String? = nil, state: AndroidDeviceStateFact) {

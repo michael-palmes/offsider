@@ -8,6 +8,8 @@ import Testing
 final class MemoryUnlockCodeStore: UnlockCodeStoring {
     var codes: [String: UnlockCode] = [:]
     private(set) var reads = 0
+    /// Thrown by `hasCode`, as a locked login Keychain would.
+    var hasCodeError: (any Error)?
 
     func code(for device: String) throws -> UnlockCode? {
         reads += 1
@@ -15,7 +17,8 @@ final class MemoryUnlockCodeStore: UnlockCodeStoring {
     }
 
     func hasCode(for device: String) throws -> Bool {
-        codes[device] != nil
+        if let hasCodeError { throw hasCodeError }
+        return codes[device] != nil
     }
 
     func save(_ code: UnlockCode, for device: String) throws {
@@ -144,7 +147,7 @@ struct WakeCommandTests {
 
             #expect(output == "Motorola moto g (ZY22FAKE01): screen on and unlocked with the saved PIN (was off, PIN lock screen showing)")
             #expect(backend.enteredCodes.map(\.text) == ["2580"])
-            #expect(!ledger.hasFailed("ZY22FAKE01"))
+            #expect(ledger.lastAttempt("ZY22FAKE01") == nil)
         }
     }
 
@@ -170,25 +173,26 @@ struct WakeCommandTests {
             #expect(error?.failureMessage.contains("A recording is running on Motorola moto g (ZY22FAKE01) (record-video or stream-video), so wake will not type its unlock code") == true)
             #expect(backend.enteredCodes.isEmpty)
             #expect(store.reads == 0)
-            #expect(!ledger.hasFailed("ZY22FAKE01"))
+            #expect(ledger.lastAttempt("ZY22FAKE01") == nil)
         }
     }
 
-    @Test("the failure marker is written before the first key, so a run that dies mid-code never types it again")
+    @Test("the marker goes down as started before the first key, so a run that dies mid-code never types it again, and an unlock clears it")
     func markerBeforeTyping() async throws {
         try await Self.withLedger { (ledger: UnlockAttemptLedger) async throws in
             let backend = Self.backend(Self.locked, afterWake: AwakeReading(screen: .on, lockScreen: .secure, credential: "pin"))
             backend.afterCode = Self.usable
-            var markedWhileTyping = false
-            backend.whileTyping = { markedWhileTyping = ledger.hasFailed("ZY22FAKE01") }
+            var whileTyping: UnlockAttemptRecord?
+            backend.whileTyping = { whileTyping = ledger.lastAttempt("ZY22FAKE01") }
             _ = try await Self.wake(backend, unlock: true, store: try Self.store("2580"), ledger: ledger)
 
-            #expect(markedWhileTyping)
-            #expect(!ledger.hasFailed("ZY22FAKE01"))
+            #expect(whileTyping?.outcome == .started)
+            #expect(whileTyping?.credential == "pin")
+            #expect(ledger.lastAttempt("ZY22FAKE01") == nil)
         }
     }
 
-    @Test("a failure marker that cannot be written stops the command with nothing typed")
+    @Test("a marker that cannot be written stops the command with nothing typed")
     func markerWriteFails() async throws {
         let blocked = (NSTemporaryDirectory() as NSString).appendingPathComponent("offsider-ledger-file-\(UUID().uuidString)")
         FileManager.default.createFile(atPath: blocked, contents: Data())
@@ -214,11 +218,85 @@ struct WakeCommandTests {
 
             let first = await #expect(throws: CLIError.self) { try await Self.wake(backend, unlock: true, store: store, ledger: ledger) }
             #expect(first?.reason == .deviceLocked)
-            #expect(ledger.hasFailed("ZY22FAKE01"))
+            #expect(first?.userFacingDescription == "The saved PIN is wrong: Motorola moto g (ZY22FAKE01) stayed locked after Offsider typed it.\nSave the right one: `offsider unlock-code set --device ZY22FAKE01`\nOffsider won't type it again: repeated wrong PINs can lock a phone out.")
+            #expect(first?.hint == "offsider unlock-code set --device ZY22FAKE01")
+            #expect(first?.ask == "Can you save the right PIN for \(PersonAsk.devicePlaceholder)? Run this in your own terminal: `offsider unlock-code set --device ZY22FAKE01`")
+            #expect(ledger.lastAttempt("ZY22FAKE01")?.outcome == .rejected)
+            #expect(ledger.lastAttempt("ZY22FAKE01")?.credential == "pin")
+
+            backend.awake = Self.locked
             let second = await #expect(throws: CLIError.self) { try await Self.wake(backend, unlock: true, store: store, ledger: ledger) }
-            #expect(second?.userFacingDescription.contains("last time") == true)
+            #expect(second?.reason == .deviceLocked)
+            #expect(second?.userFacingDescription.hasPrefix("The saved PIN is wrong: Motorola moto g (ZY22FAKE01) stayed locked after Offsider typed it on ") == true)
+            #expect(second?.hint == "offsider unlock-code set --device ZY22FAKE01")
+            #expect(second?.ask == first?.ask)
+            #expect(backend.enteredCodes.count == 1)
+            #expect(store.reads == 1)
+        }
+    }
+
+    @Test("a run that fails after the marker went down says Offsider can't tell, and the next one types nothing")
+    func wakeNoResult() async throws {
+        try await Self.withLedger { (ledger: UnlockAttemptLedger) async throws in
+            let secure = AwakeReading(screen: .on, lockScreen: .secure, credential: "pin")
+            let backend = Self.backend(Self.locked, afterWake: secure)
+            backend.codeError = CLIError(errorDescription: "The helper stopped.", reason: .commandFailed)
+            let store = try Self.store("2580")
+
+            let first = await #expect(throws: CLIError.self) { try await Self.wake(backend, unlock: true, store: store, ledger: ledger) }
+            #expect(first?.reason == .commandFailed)
+            #expect(ledger.lastAttempt("ZY22FAKE01")?.outcome == .started)
+
+            backend.awake = Self.locked
+            let second = await #expect(throws: CLIError.self) { try await Self.wake(backend, unlock: true, store: store, ledger: ledger) }
+            #expect(second?.reason == .deviceLocked)
+            #expect(second?.userFacingDescription.hasPrefix("Offsider can't tell if the saved PIN is right: it has no result for its unlock of Motorola moto g (ZY22FAKE01) on ") == true)
+            #expect(second?.hint == "offsider unlock-code set --device ZY22FAKE01")
+            #expect(second?.ask == "Can you save the PIN for \(PersonAsk.devicePlaceholder) again? Run this in your own terminal: `offsider unlock-code set --device ZY22FAKE01`")
             #expect(backend.enteredCodes.count == 1)
         }
+    }
+
+    @Test("a lock screen with no saved-code problem still asks the user to unlock, and the ask names the device when reported")
+    func plainLockedAsk() async throws {
+        try await Self.withLedger { (ledger: UnlockAttemptLedger) async throws in
+            let backend = Self.backend(Self.locked, afterWake: AwakeReading(screen: .on, lockScreen: .secure, credential: "pin"))
+            let error = await #expect(throws: CLIError.self) { try await Self.wake(backend, ledger: ledger) }
+            #expect(error?.ask == "Can you unlock \(PersonAsk.devicePlaceholder)?")
+
+            let record = UnlockAttemptRecord(outcome: .rejected, at: nil, credential: "pin")
+            #expect(PersonAsk.filled(record.ask(device: "ZY22FAKE01"), name: "moto g (ZY22FAKE01)", id: "ZY22FAKE01") == "Can you save the right PIN for moto g (ZY22FAKE01)? Run this in your own terminal: `offsider unlock-code set --device ZY22FAKE01`")
+        }
+    }
+
+    @Test("an empty marker from an earlier version types nothing and says Offsider can't tell")
+    func wakeOldMarker() async throws {
+        let root = try makePrivateLockRoot()
+        defer { try? FileManager.default.removeItem(atPath: root) }
+        let ledger = UnlockAttemptLedger(root: root)
+        try ledger.record(UnlockAttemptRecord(outcome: .started, at: nil, credential: nil), for: "ZY22FAKE01")
+        let path = ((root as NSString).appendingPathComponent(UnlockAttemptLedger.directoryName) as NSString).appendingPathComponent("device-ZY22FAKE01.failed")
+        try Data().write(to: URL(fileURLWithPath: path))
+
+        let backend = Self.backend(Self.locked, afterWake: AwakeReading(screen: .on, lockScreen: .secure, credential: "pin"))
+        let error = await #expect(throws: CLIError.self) { try await Self.wake(backend, unlock: true, store: try Self.store("2580"), ledger: ledger) }
+        #expect(error?.userFacingDescription.hasPrefix("Offsider can't tell if the saved code is right: ") == true)
+        #expect(backend.enteredCodes.isEmpty)
+    }
+
+    @Test("a person reads a wrong PIN as the cause, then the command on its own line, with no second Try line")
+    func wrongCodeForAPerson() {
+        let record = UnlockAttemptRecord(outcome: .rejected, at: nil, credential: "pin")
+        let message = record.message(name: "moto g (ZY22FAKE01)", device: "ZY22FAKE01", dated: false)
+        let shown = PersonRenderer.error(message, hint: "offsider unlock-code set --device ZY22FAKE01", canvas: Canvas(columns: 80, style: .plain))
+        #expect(shown == """
+        ❌  The saved PIN is wrong: moto g (ZY22FAKE01) stayed locked after
+            Offsider typed it.
+            Save the right one: offsider unlock-code set --device ZY22FAKE01
+            Offsider won't type it again: repeated wrong PINs can lock a phone
+            out.
+
+        """)
     }
 
     @Test("a code that was never typed, because the screen changed first, is not recorded as rejected")
@@ -231,16 +309,31 @@ struct WakeCommandTests {
 
             #expect(error?.userFacingDescription.contains("nothing was typed") == true)
             #expect(error?.hint == "offsider wake --unlock --device ZY22FAKE01")
-            #expect(!ledger.hasFailed("ZY22FAKE01"))
+            #expect(ledger.lastAttempt("ZY22FAKE01") == nil)
         }
     }
 
-    @Test("a usable screen clears an earlier failure, as an unlock by hand does")
-    func usableClearsLedger() async throws {
+    @Test("a usable screen settles an attempt with no result, as an unlock by hand does, but a wrong code stays until it is saved again")
+    func usableSettlesLedger() async throws {
         try await Self.withLedger { (ledger: UnlockAttemptLedger) async throws in
-            try ledger.recordFailure("ZY22FAKE01")
+            try ledger.record(UnlockAttemptRecord(outcome: .started, at: Date(), credential: "pin"), for: "ZY22FAKE01")
             _ = try await Self.wake(Self.backend(), ledger: ledger)
-            #expect(!ledger.hasFailed("ZY22FAKE01"))
+            #expect(ledger.lastAttempt("ZY22FAKE01") == nil)
+
+            try ledger.record(UnlockAttemptRecord(outcome: .rejected, at: Date(), credential: "pin"), for: "ZY22FAKE01")
+            _ = try await Self.wake(Self.backend(), ledger: ledger)
+            #expect(ledger.lastAttempt("ZY22FAKE01")?.outcome == .rejected)
+
+            let store = try Self.store("2580")
+            let locked = Self.backend(Self.locked, afterWake: AwakeReading(screen: .on, lockScreen: .secure, credential: "pin"))
+            await #expect(throws: CLIError.self) { try await Self.wake(locked, unlock: true, store: store, ledger: ledger) }
+            #expect(locked.enteredCodes.isEmpty)
+
+            _ = try UnlockCodeCommand.perform(.set, device: "ZY22FAKE01", json: false, store: store, ledger: ledger) { try #require(UnlockCode("1379")) }
+            #expect(ledger.lastAttempt("ZY22FAKE01") == nil)
+            locked.afterCode = Self.usable
+            _ = try await Self.wake(locked, unlock: true, store: store, ledger: ledger)
+            #expect(locked.enteredCodes.count == 1)
         }
     }
 
@@ -254,7 +347,7 @@ struct WakeCommandTests {
 
             #expect(pattern.enteredCodes.isEmpty)
             #expect(pin.enteredCodes.isEmpty)
-            #expect(!ledger.hasFailed("ZY22FAKE01"))
+            #expect(ledger.lastAttempt("ZY22FAKE01") == nil)
         }
     }
 
@@ -299,12 +392,34 @@ struct WakeCommandTests {
             try UnlockCodeCommand.perform(action, device: "FA7AFAKE02", name: "Google Pixel (FA7AFAKE02)", json: json, store: store, ledger: ledger) { code }
         }
 
-        try ledger.recordFailure("FA7AFAKE02")
+        try ledger.record(UnlockAttemptRecord(outcome: .rejected, at: Date(), credential: "pin"), for: "FA7AFAKE02")
         let outputs = [try run(.set), try run(.status), try run(.status, json: true), try run(.remove), try run(.status)]
         #expect(outputs[1] == "Google Pixel (FA7AFAKE02): unlock code saved")
-        #expect(outputs[2] == #"{"version":1,"action":"status","device":"FA7AFAKE02","saved":true,"lastAttemptFailed":false}"#)
+        #expect(outputs[2] == #"{"version":1,"action":"status","device":"FA7AFAKE02","saved":true,"lastAttemptFailed":false,"lastAttempt":null}"#)
         #expect(outputs[4] == "Google Pixel (FA7AFAKE02): no unlock code saved")
         #expect(outputs.allSatisfy { !$0.contains("hunter22") })
+        #expect(store.reads == 0)
+    }
+
+    @Test("unlock-code status says a saved code is wrong, or that Offsider can't tell, and the JSON gives the outcome and time")
+    func unlockCodeStatusWithAttempt() throws {
+        let root = try makePrivateLockRoot()
+        defer { try? FileManager.default.removeItem(atPath: root) }
+        let ledger = UnlockAttemptLedger(root: root)
+        let store = MemoryUnlockCodeStore()
+        store.codes["FA7AFAKE02"] = try #require(UnlockCode("2580"))
+        func run(json: Bool = false) throws -> String {
+            try UnlockCodeCommand.perform(.status, device: "FA7AFAKE02", name: "Google Pixel (FA7AFAKE02)", json: json, store: store, ledger: ledger) { throw CLIError(errorDescription: "Only set reads a code.", reason: .usage) }
+        }
+
+        try ledger.record(UnlockAttemptRecord(outcome: .rejected, at: Date(timeIntervalSince1970: 1_790_000_000), credential: "pin"), for: "FA7AFAKE02")
+        #expect(try run().hasPrefix("The saved PIN is wrong: Google Pixel (FA7AFAKE02) stayed locked after Offsider typed it on "))
+        #expect(try run().contains("Save the right one: `offsider unlock-code set --device FA7AFAKE02`"))
+        #expect(try run(json: true) == #"{"version":1,"action":"status","device":"FA7AFAKE02","saved":true,"lastAttemptFailed":true,"lastAttempt":{"outcome":"rejected","at":"2026-09-21T14:13:20Z","credential":"pin"}}"#)
+
+        try ledger.record(UnlockAttemptRecord(outcome: .started, at: Date(timeIntervalSince1970: 1_790_000_000), credential: "pin"), for: "FA7AFAKE02")
+        #expect(try run().hasPrefix("Offsider can't tell if the saved PIN is right: it has no result for its unlock of Google Pixel (FA7AFAKE02) on "))
+        #expect(try run().contains("Save it again: `offsider unlock-code set --device FA7AFAKE02`"))
         #expect(store.reads == 0)
     }
 
