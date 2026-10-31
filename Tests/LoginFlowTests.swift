@@ -283,6 +283,24 @@ struct LoginFlowTests {
         #expect(script.tapsBeforeType == [0, 1])
     }
 
+    @Test("a keyboard one tap does not clear before the password gets another point, clear of the form's fields")
+    func keyboardGoesAtSecondPoint() async throws {
+        let bullets = String(repeating: String(SecureText.bullet), count: password.count)
+        let up = SignInFixture.tree(emailValue: username, lowKeyboard: true)
+        let script = LoginScript(trees: [
+            SignInFixture.tree(), up, up,
+            SignInFixture.tree(emailValue: username),
+            SignInFixture.tree(emailValue: username, passwordValue: bullets, submitEnabled: true),
+        ])
+        script.advanceOnTap = true
+        _ = try await run(script)
+        #expect(script.tapsBeforeType == [0, 2])
+        #expect(script.taps[0].x != script.taps[1].x || script.taps[0].y != script.taps[1].y)
+        for tap in script.taps.prefix(2) {
+            #expect(!FakeUI.frame(17, 196, 367, 181).contains(tap), "\(tap)")
+        }
+    }
+
     @Test("a keyboard with a focused text field named stays up for the password, as the field's own focus will prove the tap")
     func keyboardStaysWithFocusNamed() async throws {
         var email = SignInFixture.tree(emailValue: username, lowKeyboard: true)

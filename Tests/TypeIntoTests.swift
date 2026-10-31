@@ -498,6 +498,32 @@ struct TypeIntoTests {
         #expect(backend.session.calls == [.perform(.tapAt(x: 200, y: 322))])
     }
 
+    @Test("a keyboard element left below the screen neither proves a tap's focus nor counts as already up, plain or secret")
+    func offScreenKeyboard() async throws {
+        var tree = Self.form(focused: nil, platform: .ios)
+        tree.roots[0].children.append(FakeUI.node(.keyboard, frame: FakeUI.frame(0, 918, 402, 226)))
+        let error = await #expect(throws: CLIError.self) {
+            _ = try await Self.focus(["--into-id", "second-field"], trees: [tree], device: Self.simulator)
+        }
+        #expect(error?.reason == .focusNotConfirmed)
+        #expect(error?.userFacingDescription.contains("hardware keyboard") == true)
+    }
+
+    @Test("with no frame to compare, only a focused node matching the query confirms the tap")
+    func framelessMatch() {
+        let query = AccessibilityQuery.label("Password")
+        func node(_ label: String, focused: Bool) -> UINode {
+            var node = FakeUI.node(.textField, label: label, state: UIState(focused: focused ? true : nil))
+            node.frame = nil
+            return node
+        }
+        let field = node("Password", focused: false)
+        let email = node("Email", focused: true)
+        let password = node("Password", focused: true)
+        #expect(!Type.hasFocus(field, query: query, in: FakeUI.tree([email]), keyboardOnly: false))
+        #expect(Type.hasFocus(field, query: query, in: FakeUI.tree([password]), keyboardOnly: false))
+    }
+
     /// Twin ids as a wrapper and the text field inside it report them.
     static func twins(focused: Bool = false, platform: DevicePlatform = .ios) -> UITree {
         let inner = FakeUI.node(.textField, id: "card", frame: FakeUI.frame(40, 410, 300, 30), state: UIState(focused: focused ? true : nil), platform: platform)

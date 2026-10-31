@@ -212,7 +212,7 @@ struct Type: AsyncParsableCommand, VerifiableCommand {
         let field = polled.value.matched ?? polled.value.target
         if let secureRefusal, field?.isSecure == true || polled.value.target?.isSecure == true { throw secureRefusal }
         let point = try await backend.deviceCoordinates(for: [polled.value.point], tree: polled.tree, on: device)[0]
-        let keyboardAlreadyUp = simulator && polled.tree.roots.flatMap { $0.flattened() }.contains { $0.role == .keyboard }
+        let keyboardAlreadyUp = simulator && TextFocus.hasKeyboard(polled.tree)
         try await beforeTap(polled.tree)
         try await tap(.tapAt(x: point.x, y: point.y))
         let deadline = clock.now() + Self.focusTimeout
@@ -243,7 +243,7 @@ struct Type: AsyncParsableCommand, VerifiableCommand {
         )
     }
 
-    /// Nothing goes out unless a field has focus; with no tree to read, Android and a physical iPhone warn and send, as their input still goes through its own password check.
+    /// Nothing goes out unless a field has focus; with no tree to read, Android (whose input still checks for a password field) and a physical iPhone warn and send.
     @MainActor
     static func checkTextFocus(
         readTree: @MainActor () async throws -> UITree,
@@ -305,7 +305,7 @@ struct Type: AsyncParsableCommand, VerifiableCommand {
         }
     }
 
-    /// Reads all at once, stopping at the first focused field; a failed read leaves its point out.
+    /// Reads all at once, as one at a time is slower; the round finishes even after a find. A failed read leaves its point out.
     @MainActor
     private static func firstFocusedField(at points: [UIPoint], hitTester: any PointHitTesting, device: DeviceID) async -> UINode? {
         await withTaskGroup(of: UINode?.self) { group in
@@ -360,12 +360,12 @@ struct Type: AsyncParsableCommand, VerifiableCommand {
         let focused = nodes.filter { $0.state.focused == true }
         let fieldFocused = focused.contains { node in
             if let id = field?.normalizedID { return node.normalizedID == id }
-            guard let frame = field?.frame, let focusedFrame = node.frame else { return query.field(of: node) != nil }
+            guard let frame = field?.frame, let focusedFrame = node.frame else { return query.matches(node) }
             return covers(frame, focusedFrame, by: node, query: query)
         }
         if fieldFocused { return true }
         guard keyboardOnly, !focused.contains(where: { $0.role.isTextInput }) else { return false }
-        let keyboard = nodes.contains { $0.role == .keyboard }
+        let keyboard = TextFocus.hasKeyboard(tree)
         let stillThere = !AccessibilityTargetResolver.candidates(roots: tree.roots, query: query, elementType: nil).onScreen.isEmpty
         return keyboard && stillThere
     }

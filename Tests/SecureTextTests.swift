@@ -176,6 +176,7 @@ struct SecureTextTests {
         #expect(BatchStepRedaction.redactedLine("", tokens: ["key-sequence", "--keycodes=19"]) == "key-sequence --keycodes=<1 key>")
         #expect(BatchStepRedaction.redactedLine("key-sequence --keycodes '19", tokens: nil) == "key-sequence <unparsed>")
         #expect(BatchStepRedaction.textTokens(["key-sequence", "--keycodes", "19,4"]) == ["19,4"])
+        #expect(BatchStepRedaction.textTokens(["key-sequence", "--keycodes", "4"]).isEmpty)
     }
 
     @Test("an unsupported character is reported by position, not by the character")

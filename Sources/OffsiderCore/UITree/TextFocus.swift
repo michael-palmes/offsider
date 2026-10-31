@@ -58,7 +58,7 @@ public enum TextFocus: Equatable, Sendable {
     }
 
     /// A keyboard on screen, or one whose frame the tree cannot place.
-    static func hasKeyboard(_ tree: UITree) -> Bool {
+    public static func hasKeyboard(_ tree: UITree) -> Bool {
         let keyboards = tree.roots.flatMap { $0.flattened() }.filter { $0.role == .keyboard }
         guard let viewport = tree.viewport else { return !keyboards.isEmpty }
         return keyboards.contains { keyboard in

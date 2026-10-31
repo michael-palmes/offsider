@@ -91,7 +91,7 @@ enum LoginFlow {
             }
             identityProgress = .filled
             try requireForeground(app, in: tree, services: services, stopped: "the password was not typed")
-            tree = try await hideKeysForFocusProof(in: tree, services: services)
+            tree = try await hideKeysForFocusProof(in: tree, fields: [form.identity, form.password], services: services)
             try await InputSecrecy.$isSecret.withValue(true) {
                 try await type(credential.password, into: form.password, services: services)
             }
@@ -314,12 +314,22 @@ enum LoginFlow {
     }
 
     /// On an iOS tree that names no focused text field, only a keyboard coming up shows the password tap landed; one already up would prove nothing, and the password would go to the field that still has focus.
-    private static func hideKeysForFocusProof(in tree: UITree, services: Services) async throws -> UITree {
+    private static func hideKeysForFocusProof(in tree: UITree, fields: [UINode], services: Services) async throws -> UITree {
         guard tree.platform == .ios, keyboardOnScreen(keyboards(in: tree), in: tree),
               !tree.roots.flatMap({ $0.flattened() }).contains(where: { $0.state.focused == true && $0.role.isTextInput }) else {
             return tree
         }
-        return try await hideKeys(in: tree, services: services)
+        var current = tree
+        let gone: (UITree) -> Bool = { !keyboardOnScreen(keyboards(in: $0), in: $0) }
+        var tried: [UIPoint] = []
+        while tried.count < KeyboardDismiss.attempts, !gone(current) {
+            let frames = fields.compactMap { (LoginForm.match($0, in: current) ?? $0).frame }
+            guard let point = KeyboardDismiss.points(in: current, fields: frames, tried: tried, limit: 1).first else { break }
+            try await services.tap(point, current)
+            tried.append(point)
+            current = try await readUntil(gone, services: services)
+        }
+        return current
     }
 
     private static func hideKeys(in tree: UITree, services: Services) async throws -> UITree {

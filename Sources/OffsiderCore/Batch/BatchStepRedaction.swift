@@ -67,13 +67,14 @@ public enum BatchStepRedaction {
         return "<\(count) key\(count == 1 ? "" : "s")>"
     }
 
-    /// The tokens of a `type` step that are text rather than options or their values, or a `key-sequence` step's keycodes.
+    /// The tokens of a `type` step that are text rather than options or their values, or a `key-sequence` step's list of keycodes; one code spells nothing, and scrubbing it would cut its digits from the rest of the message.
     public static func textTokens(_ tokens: [String]) -> [String] {
         if tokens.first == "key-sequence" {
-            return tokens.enumerated().compactMap { index, token in
+            let codes = tokens.enumerated().compactMap { index, token -> String? in
                 if token.hasPrefix("--keycodes=") { return String(token.dropFirst("--keycodes=".count)) }
                 return index > 0 && tokens[index - 1] == "--keycodes" ? token : nil
             }
+            return codes.filter { $0.contains(",") }
         }
         guard tokens.first == "type" else { return [] }
         var result: [String] = []

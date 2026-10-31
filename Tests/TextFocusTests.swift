@@ -197,6 +197,9 @@ struct TextFocusTests {
         let error = await #expect(throws: CLIError.self) { try await Self.send(["secret"], through: backend, refusingSecureArgument: true) }
         #expect(error?.reason == .secureFieldArgument)
         #expect(backend.session.calls.isEmpty)
+
+        try await Self.send(["secret"], through: backend, refusingSecureArgument: false)
+        #expect(backend.session.calls.count == 1)
     }
 
     @Test("--require-focus-id accepts a focused field the tree leaves out, and still refuses another")
