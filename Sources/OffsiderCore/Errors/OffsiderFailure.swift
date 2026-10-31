@@ -134,9 +134,12 @@ public protocol OffsiderFailure: Error {
     var candidates: [FailureCandidate] { get }
     var coveredBy: CoverReport? { get }
     var users: [FailureUser] { get }
+    /// What to ask the user when only their hands can clear this; `PersonAsk.devicePlaceholder` is filled in when it is reported.
+    var ask: String? { get }
 }
 
 extension OffsiderFailure {
+    public var ask: String? { reason.personAsk }
     public var hint: String? { nil }
     public var candidates: [FailureCandidate] { [] }
     public var coveredBy: CoverReport? { nil }

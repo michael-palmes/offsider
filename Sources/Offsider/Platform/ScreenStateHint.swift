@@ -88,6 +88,7 @@ struct ScreenStateFailure: LocalizedError, UserFacingError, OffsiderFailure {
     var reason: FailureReason { underlying.reason }
     var failureMessage: String { "\(underlying.failureMessage) \(ScreenStateHint.sentence(serial: device, name: name, reading: reading))" }
     var hint: String? { "offsider wake --device \(device)" }
+    var ask: String? { underlying.ask }
     var candidates: [FailureCandidate] { underlying.candidates }
     var userFacingDescription: String { failureMessage }
     var errorDescription: String? { failureMessage }

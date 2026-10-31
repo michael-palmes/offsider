@@ -76,8 +76,8 @@ public enum InputPersonView {
         let place = status.frame != nil && line.hasPrefix(lead) ? String(line.dropFirst(lead.count)).trimmingCharacters(in: .whitespaces) : ""
         var person: [Block] = [.fields([Field("Turnstile", Table.Cell(status.state.rawValue, tag: place.isEmpty ? nil : place))])]
         switch status.state {
-        case .checkbox: person.append(.prose("A person must tick it; Offsider never does. Run this again once they have."))
-        case .challenge: person.append(.prose("A person must solve the challenge; Offsider never does. Run this again once they have."))
+        case .checkbox: person.append(.prose("Tick it on the device; Offsider never does. Run this again once you have."))
+        case .challenge: person.append(.prose("Solve the challenge on the device; Offsider never does. Run this again once you have."))
         case .unknown: person.append(.prose(TurnstileStatus.unknownNote))
         case .verifying, .passed, .absent: break
         }

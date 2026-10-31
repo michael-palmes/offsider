@@ -72,6 +72,8 @@ offsider session stop --device <UDID> --clean
 
 ## Errors
 
+A refusal only the user's hands can clear carries `error.ask` (an `Ask:` line without `--json`), naming the step and the device: pass it on word for word.
+
 | Reason | Exit | What to do |
 | --- | --- | --- |
 | `device_not_allowed` | 7 | Ask the user to run `offsider devices add` and choose the device the message names; never allow it yourself |

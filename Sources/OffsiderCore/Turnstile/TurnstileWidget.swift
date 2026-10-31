@@ -282,6 +282,14 @@ public struct TurnstileStatus: Equatable, Sendable {
         case absent
         /// A Turnstile web view with no widget: do not read it as absent.
         case unknown
+
+        /// A person's step is still open: there is something to tick or solve, or a tick being checked.
+        public var awaitsPerson: Bool {
+            switch self {
+            case .checkbox, .challenge, .verifying: return true
+            case .passed, .absent, .unknown: return false
+            }
+        }
     }
 
     public enum Source: String, Sendable {

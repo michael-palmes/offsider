@@ -110,7 +110,7 @@ extension UntrustedPaths {
     static let candidateFields = ["id", "label", "window", "screen"]
 
     /// The `error` object's keys whose text came from a device, an app or a saved note.
-    static let errorFields = ["message"]
+    static let errorFields = ["message", "ask"]
         + under("candidates[]", candidateFields)
         + under("coveredBy", ["id", "label", "screen", "process"])
         + under("users[]", ["tags", "about"])

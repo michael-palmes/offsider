@@ -82,6 +82,7 @@ struct Wake: AsyncParsableCommand {
         let serial = device.rawValue
         let outcome = try await backend.wake(on: device)
         let name = DeviceName.android(serial: serial, listed: booted.name, maker: outcome.previous.maker)
+        ErrorReporter.noteDeviceName(name)
         var current = outcome.current
         var sent = outcome.sent
         guard current.screen == .on else {

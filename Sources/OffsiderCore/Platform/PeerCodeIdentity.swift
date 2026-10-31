@@ -32,19 +32,25 @@ public enum PeerCodeIdentity {
         }
     }
 
-    /// The designated requirement of the running process: for a Developer ID build its team and identifier, for an ad-hoc build its own cdhash.
+    /// What "this Offsider build" means to a broker: for a Developer ID build its team and identifier, for a debug build its own cdhash, however it is signed.
     /// Read it once at start, before a rebuild can replace the executable on disk.
     public static func ownRequirement() throws -> Requirement {
         var own: SecCode?
-        var status = unsafe SecCodeCopySelf([], &own)
-        guard status == errSecSuccess, let own else { throw CodeSignatureCheck.Failure(step: "SecCodeCopySelf", status: status) }
+        let copied = unsafe SecCodeCopySelf([], &own)
+        guard copied == errSecSuccess, let own else { throw CodeSignatureCheck.Failure(step: "SecCodeCopySelf", status: copied) }
+        #if DEBUG
+        // `scripts/build.sh dev-sign` gives a debug build a stable signature for the Keychain alone, so a rebuild still replaces its brokers.
+        guard let hash = cdhash(of: own) else { throw CodeSignatureCheck.Failure(step: "SecCodeCopySigningInformation", status: errSecInternalError) }
+        return try requirement("cdhash H\"\(hash)\"")
+        #else
         var designated: SecRequirement?
-        status = unsafe SecCodeCopyDesignatedRequirement(staticCode(own), [], &designated)
+        var status = unsafe SecCodeCopyDesignatedRequirement(staticCode(own), [], &designated)
         guard status == errSecSuccess, let designated else { throw CodeSignatureCheck.Failure(step: "SecCodeCopyDesignatedRequirement", status: status) }
         var text: CFString?
         status = unsafe SecRequirementCopyString(designated, [], &text)
         guard status == errSecSuccess, let text else { throw CodeSignatureCheck.Failure(step: "SecRequirementCopyString", status: status) }
         return Requirement(text: text as String, compiled: designated)
+        #endif
     }
 
     public static func requirement(_ text: String) throws -> Requirement {
