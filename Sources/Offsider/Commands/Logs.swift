@@ -30,14 +30,15 @@ struct Logs: AsyncParsableCommand {
         --rn reads React Native's own log (the com.facebook.react.log subsystem on iOS, the ReactNativeJS and \
         ReactNative tags on Android). An app's console output can also log outside it, so --rn --app reads both: \
         React Native's log and everything the app's process logs (on Android, every process of the app's user ID, \
-        so lines from before a restart are kept and the app need not be running).
+        so lines from before a restart are kept and the app need not be running). On a phone not allowed "Any app and all logs", \
+        --rn reads only that app's own lines, never another app's React Native tags.
         """
     )
 
     @Flag(name: .customLong("rn"), help: "React Native JavaScript and native logs; with --app, also everything that app logs.")
     var reactNative = false
 
-    @Option(help: ArgumentHelp("Only this app's process: a bundle ID on iOS (it must be installed), a package on Android (it must be running).", valueName: "bundle-id|package"))
+    @Option(help: ArgumentHelp("Only this app's process: a bundle ID on iOS (it must be installed), a package on Android (it must be running).", valueName: "bundle-id|package"), transform: AppID.parse)
     var app: String?
 
     @Option(help: ArgumentHelp("Only processes with this name, such as SpringBoard.", valueName: "name"))
@@ -104,9 +105,6 @@ struct Logs: AsyncParsableCommand {
         let windows = [(last != nil, "--last"), (since != nil, "--since"), (duration != nil, "--duration"), (follow, "--follow")].filter(\.0).map(\.1)
         if windows.count > 1 {
             throw LogOptionError("Use only one of --last, --since, --duration or --follow; got \(Self.list(windows)).")
-        }
-        if let app, app.trimmingCharacters(in: .whitespaces).isEmpty {
-            throw LogOptionError("--app needs a bundle ID or package.")
         }
         if let process, process.trimmingCharacters(in: .whitespaces).isEmpty {
             throw LogOptionError("--process needs a process name.")
@@ -283,7 +281,7 @@ struct Logs: AsyncParsableCommand {
     static let wholeLogNote = "Reading the whole device's log, every app's included; pass --app, --rn or --process to read only the app under test."
 
     /// offsider.login.json in this folder or above; tests bind their own.
-    @TaskLocal static var profile: @Sendable () -> LoginProfile? = { (try? LoginProfiles.load(project: nil, warn: { _ in })) ?? nil }
+    @TaskLocal static var profile: @Sendable () throws -> LoginProfile? = { try LoginProfiles.implicit() }
 
     /// The app offsider.login.json names for this platform.
     static func profileApp(_ profile: LoginProfile?, platform: DevicePlatform) -> String? {
@@ -293,23 +291,27 @@ struct Logs: AsyncParsableCommand {
     /// The source a read may use, and the stderr line that says what changed. On a physical phone every app must be within the allowance,
     /// and the whole log needs its `*` pin; elsewhere offsider.login.json's app replaces the whole log unless `--all` asks for it.
     static func scoped(
-        _ query: LogQuery, all: Bool, platform: DevicePlatform, allowance: DeviceAllowance?, policy: PhysicalDevicePolicy?, profile: () -> LoginProfile?
+        _ query: LogQuery, all: Bool, platform: DevicePlatform, allowance: DeviceAllowance?, policy: PhysicalDevicePolicy?, profile: () throws -> LoginProfile?
     ) throws -> (LogQuery, note: String?) {
         guard let allowance, let policy else {
-            guard !all, query.source == .all, let profileApp = profileApp(profile(), platform: platform) else { return (query, nil) }
+            guard !all, query.source == .all, let profileApp = profileApp(try profile(), platform: platform) else { return (query, nil) }
             var scoped = query
             scoped.source = .app(profileApp)
             return (scoped, "Reading only \(profileApp)'s log, which offsider.login.json names; pass --all for the whole device's.")
         }
-        let gate = DevicePolicyGate.fixed(policy)
         let whole = allowance.allowsWholeDevice
-        let pins = allowance.pinnedApps.filter { policy.permits(app: $0, on: allowance) }
-        let fallback = pins.count == 1 ? pins[0] : profileApp(profile(), platform: platform).flatMap { policy.permits(app: $0, on: allowance) ? $0 : nil }
         var scoped = query
+        scoped.appOnly = !whole
         switch query.source {
         case .app(let app), .reactNative(app: let app?):
-            try gate.requireApp(app, on: allowance)
-            return (query, nil)
+            try DevicePolicyGate.fixed(policy).requireApp(app, on: allowance)
+            return (scoped, nil)
+        case .all, .process, .reactNative(nil):
+            break
+        }
+        let pins = allowance.pinnedApps.filter { policy.permits(app: $0, on: allowance) }
+        let fallback = try pins.count == 1 ? pins[0] : profileApp(try profile(), platform: platform).flatMap { policy.permits(app: $0, on: allowance) ? $0 : nil }
+        switch query.source {
         case .all where whole && (all || fallback == nil):
             return (query, nil)
         case .reactNative(nil) where whole:
@@ -321,7 +323,7 @@ struct Logs: AsyncParsableCommand {
             scoped.source = query.source == .all ? .app(fallback) : .reactNative(app: fallback)
             let tail = whole ? "pass --all for the whole log" : "a phone's log is read one allowed app at a time"
             return (scoped, "Reading only \(fallback)'s log on \(allowance.name); \(tail).")
-        case .all, .process:
+        default:
             throw phoneWholeLogRefused(allowance)
         }
     }

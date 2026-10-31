@@ -16,8 +16,19 @@ struct RNOpenCommandTests {
     static let bundling = FakeUI.tree([FakeUI.node(.text, label: "Bundling 42%", frame: FakeUI.frame(20, 800, 300, 30))])
     static let app = FakeUI.tree([FakeUI.node(.other, id: "menu-title", label: "Offsider Playground", frame: FakeUI.frame(20, 100, 300, 30))])
 
-    static func open(_ arguments: [String], trees: [UITree], metro: MetroStatus = running) async throws -> (RNOpen.Report, FakeDeviceBackend) {
-        let backend = FakeDeviceBackend(trees: trees)
+    /// A simulator that reports the app's display name, as `simctl appinfo` does.
+    final class NamedAppBackend: FakeDeviceBackend, AppLifecycleControlling {
+        var name: String?
+
+        func appInfo(_ app: String, on id: DeviceID) async throws -> AppInfo { AppInfo(app: app, name: name) }
+        func launchApp(_ app: String, restart: Bool, on id: DeviceID) async throws -> AppLaunch { AppLaunch(app: app, start: .cold, restarted: restart, pid: nil) }
+        func terminateApp(_ app: String, on id: DeviceID) async throws -> AppStop { AppStop(app: app, wasRunning: false) }
+        func openLink(_ url: String, in app: String, restart: Bool, on id: DeviceID) async throws -> AppLaunch { AppLaunch(app: app, start: .cold, restarted: restart, pid: nil) }
+    }
+
+    static func open(_ arguments: [String], trees: [UITree], metro: MetroStatus = running, appName: String? = "OffsiderPlaygroundRN") async throws -> (RNOpen.Report, FakeDeviceBackend) {
+        let backend = NamedAppBackend(trees: trees)
+        backend.name = appName
         let command = try RNOpen.parse(["--port", "8742", "--bundle-id", "com.example.app"] + arguments + ["--device", device.rawValue])
         let report = try await command.open(on: DeviceRouter.Route(backend: backend, device: device), metro: metro, clock: ScriptedClock().poll)
         return (report, backend)
@@ -44,6 +55,20 @@ struct RNOpenCommandTests {
         #expect(report.sends == 1)
         #expect(backend.session.calls == [.perform(.tapAt(x: 275, y: 474))])
         #expect(ExpoDevLauncher.openLinkPrompt(in: Self.app) == nil)
+    }
+
+    static func openPrompt(_ appName: String) -> UITree {
+        FakeUI.tree([
+            FakeUI.node(.other, label: "Open in “\(appName)”?", frame: FakeUI.frame(41, 388, 320, 126)),
+            FakeUI.node(.button, label: "Cancel", frame: FakeUI.frame(57, 450, 140, 48)),
+            FakeUI.node(.button, label: "Open", frame: FakeUI.frame(205, 450, 140, 48)),
+        ])
+    }
+
+    @Test("an Open in prompt inside the window is left alone when it names another app, or the app's name is unknown", arguments: [("Maps", "OffsiderPlaygroundRN"), ("OffsiderPlaygroundRN", nil)] as [(String, String?)])
+    func otherOpenPromptNotTapped(prompt: String, appName: String?) async throws {
+        let (_, backend) = try await Self.open(["--wait-id", "menu-title"], trees: [Self.openPrompt(prompt), Self.bundling, Self.app], appName: appName)
+        #expect(backend.session.calls.isEmpty)
     }
 
     @Test("without --wait-id the app is up once the screen is still for a second")
@@ -105,16 +130,17 @@ struct RNOpenCommandTests {
     static let noRoute = ExpoDevClientError(.noRoute, "R58MFAKE01 is a phone with no adb reverse for port 8742, so it cannot reach Metro on this Mac.")
 
     /// Runs `rn open` on a phone without a reverse, allowed `ports` (no allowance when nil), with Metro owned by this user or not.
-    static func openOnPhone(ports: [Int]?, owned: Bool = true) async throws -> (Result<RNOpen.Report, CLIError>, FakeDeviceBackend) {
+    static func openOnPhone(ports: [Int]?, owned: Bool = true, apps: [String] = []) async throws -> (Result<RNOpen.Report, CLIError>, FakeDeviceBackend) {
         let backend = FakeDeviceBackend(platform: .android, trees: [Self.app])
         backend.metroHostError = Self.noRoute
-        let allowance = ports.map { DeviceAllowance(platform: .android, key: Self.phone.rawValue, name: "Test Pixel", added: Date(), expires: nil, apps: [], metroPorts: $0) }
+        let allowance = ports.map { DeviceAllowance(platform: .android, key: Self.phone.rawValue, name: "Test Pixel", added: Date(), expires: nil, apps: apps, metroPorts: $0) }
         var metro = Self.running
         metro.ownedByThisUser = { _ in owned }
         let command = try RNOpen.parse(["--port", "8742", "--bundle-id", "com.example.app", "--wait-id", "menu-title", "--device", Self.phone.rawValue])
         do {
             let route = DeviceRouter.Route(backend: backend, device: Self.phone, allowance: allowance)
-            return (.success(try await command.open(on: route, metro: metro, clock: ScriptedClock().poll)), backend)
+            let gate = DevicePolicyGate.fixed(PhysicalDevicePolicy(managed: .none, list: DeviceAllowList(entries: allowance.map { [$0] } ?? [])))
+            return (.success(try await command.open(on: route, metro: metro, clock: ScriptedClock().poll, gate: gate)), backend)
         } catch let error as CLIError {
             return (.failure(error), backend)
         }
@@ -128,6 +154,31 @@ struct RNOpenCommandTests {
         #expect(report.host == "127.0.0.1" && report.reverseSet)
         #expect(report.jsonLine().hasSuffix(#""reverseSet":true}"#))
         #expect(backend.openedURLs == ["exp+playground://expo-development-client/?url=http%3A%2F%2F127.0.0.1%3A8742"])
+    }
+
+    @Test("a phone pinned to another app, or a denied app on any phone, exits app_not_allowed with no reverse, stop or link")
+    func pinnedPhoneRefusesOtherApp() async throws {
+        let (result, backend) = try await Self.openOnPhone(ports: [8742], apps: ["com.mpalmes.offsider.playground.rn"])
+        guard case .failure(let error) = result else { Issue.record("an app outside the pins was opened"); return }
+        #expect(error.reason == .appNotAllowed)
+        #expect(backend.reversesSet.isEmpty && backend.openedURLs.isEmpty && backend.devClientCalls.isEmpty)
+    }
+
+    @Test("rn prepare on a phone pinned to another app reads nothing and writes nothing")
+    func prepareRefusesOtherApp() async throws {
+        final class Preparer: FakeDeviceBackend, ExpoDevClientPreparing {
+            var prepared: [String] = []
+            func prepareExpoDevClient(_ appID: String, on id: DeviceID) async throws { prepared.append(appID) }
+        }
+        let backend = Preparer(platform: .android, trees: [])
+        let allowance = DeviceAllowance(platform: .android, key: Self.phone.rawValue, name: "Test Pixel", added: Date(), expires: nil, apps: ["com.mpalmes.offsider.playground.rn"])
+        let gate = DevicePolicyGate.fixed(PhysicalDevicePolicy(managed: .none, list: DeviceAllowList(entries: [allowance])))
+        let command = try RNPrepare.parse(["--bundle-id", "com.example.app", "--device", Self.phone.rawValue])
+        let route = DeviceRouter.Route(backend: backend, device: Self.phone, allowance: allowance)
+
+        let error = await #expect(throws: CLIError.self) { try await command.prepare(on: route, gate: gate) }
+        #expect(error?.reason == .appNotAllowed)
+        #expect(backend.prepared.isEmpty)
     }
 
     @Test("a port the phone's allowance does not list exits 7 metro_port_not_allowed, sets nothing and asks for the person")
@@ -298,6 +349,8 @@ struct RNOpenCommandTests {
             defer { selected = appID }
             return selected != appID
         }
+
+        func selectedApp(on id: DeviceID) -> String? { selected }
 
         override func accessibilityTree(for id: DeviceID, point: UIPoint?) async throws -> UITree {
             guard selected != nil else {

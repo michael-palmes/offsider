@@ -340,7 +340,7 @@ enum VerifyOutput {
     static func personUnverified(_ outcome: Verifier.Outcome, for request: VerifyRequest) -> Outcome {
         let subject = request.personSubject ?? request.subject
         let device = request.device.rawValue
-        let look = "offsider describe-ui --summary --device \(device)"
+        let look = CommandScope.current.describeHint(device: device)
         let plural = outcome.attempts == 1 ? "attempt" : "attempts"
         if outcome.note == .logBoxOpened {
             return .failed("LogBox opened over the app", details: ["\(subject) was sent, but its effect is hidden. Read the log, then close it."], try: ["offsider rn logbox dismiss --device \(device)"])

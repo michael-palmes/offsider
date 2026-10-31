@@ -208,7 +208,7 @@ struct Type: AsyncParsableCommand, VerifiableCommand {
         throw CLIError(
             errorDescription: "Tapped \(query.selectorDescription), but it did not take focus within \(Int(Self.focusTimeout)) s\(noKeyboard). No text was typed.",
             reason: .focusNotConfirmed,
-            hint: "offsider describe-ui --summary --device \(device.rawValue)"
+            hint: CommandScope.current.describeHint(device: device.rawValue)
         )
     }
 
@@ -251,6 +251,7 @@ struct Type: AsyncParsableCommand, VerifiableCommand {
     }
 
     /// Keys with no field to take them can reach the app as shortcuts: a React Native dev build reloads on r.
+    @MainActor
     static func noFocusRefusal(_ focus: TextFocus, in tree: UITree, device: DeviceID, keys: Bool = false) -> CLIError {
         let sent = keys ? "pressed no keys" : "typed nothing"
         let what: String
@@ -265,7 +266,7 @@ struct Type: AsyncParsableCommand, VerifiableCommand {
         return CLIError(
             errorDescription: "\(what), so Offsider \(sent): keys that reach no field can act as app shortcuts, and a React Native dev build reloads on r. Tap the field first, or use `offsider type --into-id <id>`.",
             reason: .noFocusedField,
-            hint: "offsider describe-ui --summary --device \(device.rawValue)"
+            hint: CommandScope.current.describeHint(device: device.rawValue)
         )
     }
 

@@ -16,6 +16,10 @@ extension IOSDeviceBackend: AppTargetSelecting {
         targetApp = appID
         return true
     }
+
+    public func selectedApp(on id: DeviceID) -> String? {
+        targetApp
+    }
 }
 
 extension IOSDeviceBackend {

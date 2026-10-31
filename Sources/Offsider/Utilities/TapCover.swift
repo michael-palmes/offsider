@@ -88,7 +88,7 @@ struct TapCover {
         }
         // Before the hit-test, which on a simulator can answer with the field beneath the keyboard.
         if judging.keyboard != nil {
-            throw Tap.keyboardCoverError(selector: selector, at: resolution.point, device: device)
+            throw Tap.keyboardCoverError(selector: selector, at: resolution.point, device: device, describeHint: CommandScope.current.describeHint(device: device.rawValue))
         }
         guard judging.isContested else {
             return resolution
@@ -103,7 +103,7 @@ struct TapCover {
             return resolution
         }
         if AccessibilityTargetResolver.isUnderKeyboard(verdict.cover, in: judging.roots) {
-            throw Tap.keyboardCoverError(selector: selector, at: resolution.point, device: device)
+            throw Tap.keyboardCoverError(selector: selector, at: resolution.point, device: device, describeHint: CommandScope.current.describeHint(device: device.rawValue))
         }
         if verdict.isConfident, !allowCovered, verdict.evidence == .hitTest,
            let moved = await clearPart(of: resolution, beside: verdict.cover, in: tree, backend: backend, device: device) {
@@ -173,6 +173,7 @@ struct TapCover {
     }
 
     /// Refuses a confident cover, or a guessed one with `--fail-if-covered`, and warns of the rest.
+    @MainActor
     private func act(on verdict: CoverVerdict, selector: String, at point: UIPoint, device: DeviceID) throws {
         let pointText = VerifyOutput.pointDescription(x: point.x, y: point.y)
         let cover = Self.describe(verdict)
@@ -187,13 +188,13 @@ struct TapCover {
             throw CLIError(
                 errorDescription: "\(selector) at \(pointText) is covered by \(cover) (\(Self.evidence(verdict.evidence))), so the tap would land on it. Nothing was sent. Close what covers it or wait for it to go (--wait-timeout), or \(override).",
                 reason: .targetCovered,
-                hint: "offsider describe-ui --device \(device.rawValue) --summary",
+                hint: CommandScope.current.describeHint(device: device.rawValue),
                 coveredBy: CoverReport(verdict)
             )
         }
         let message = "\(selector) at \(pointText) may be covered by \(cover); the tap may land on it."
         if failIfCovered {
-            throw CLIError(errorDescription: message, reason: .targetCovered, hint: "offsider describe-ui --device \(device.rawValue) --summary", coveredBy: CoverReport(verdict))
+            throw CLIError(errorDescription: message, reason: .targetCovered, hint: CommandScope.current.describeHint(device: device.rawValue), coveredBy: CoverReport(verdict))
         }
         Console.current.notice(.warning(
             "\(selector) may be covered by \(cover); the tap may land on it",

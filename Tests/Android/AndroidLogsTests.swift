@@ -170,6 +170,33 @@ struct AndroidLogsTests {
         #expect(entries.first?.process == "com.example.app")
     }
 
+    private static let appEntry = ["package:com.example.app uid:10213", "offsider-logcat", "1790945238.399123 10213  4100  4120 E AppLog: failed"]
+    private static let otherLine = "1790945239.000000 10999  5100  5120 I Other : noise"
+
+    @Test("a finished entry prints once other apps' lines have run on for the quiet gap")
+    func otherAppsLinesFlushAQuietEntry() throws {
+        var stream = LogcatStream(source: .reactNative(app: "com.example.app"), serial: "R58TEST0001")
+        let start = Date(timeIntervalSince1970: 1_790_945_238)
+        for line in Self.appEntry { #expect(try stream.consume(line, now: start) == nil) }
+
+        #expect(try stream.consume(Self.otherLine, now: start.addingTimeInterval(0.2)) == nil)
+        let flushed = try stream.consume(Self.otherLine, now: start.addingTimeInterval(0.25))
+        #expect(flushed?.message == "failed")
+        #expect(try stream.consume(Self.otherLine, now: start.addingTimeInterval(1)) == nil)
+        #expect(stream.finish() == nil)
+    }
+
+    @Test("another line of the entry restarts the quiet gap")
+    func entryLineRestartsQuietGap() throws {
+        var stream = LogcatStream(source: .reactNative(app: "com.example.app"), serial: "R58TEST0001")
+        let start = Date(timeIntervalSince1970: 1_790_945_238)
+        for line in Self.appEntry { #expect(try stream.consume(line, now: start) == nil) }
+
+        #expect(try stream.consume("1790945238.399123 10213  4100  4120 E AppLog: second", now: start.addingTimeInterval(0.2)) == nil)
+        #expect(try stream.consume(Self.otherLine, now: start.addingTimeInterval(0.4)) == nil)
+        #expect(try stream.consume(Self.otherLine, now: start.addingTimeInterval(0.45))?.message == "failed\nsecond")
+    }
+
     // MARK: Commands
 
     static let clock = #"echo "offsider-clock $(date +%s)"; "#
@@ -240,6 +267,13 @@ struct AndroidLogsTests {
             try await Self.read(LogQuery(source: .reactNative(app: "com.example.app"), window: .last(.seconds(5))), from: server)
         }
         #expect(error?.message == "com.example.app is not installed on emulator-5556. Install it, or drop --app to read React Native's log alone.")
+    }
+
+    @Test("a phone reading one app at a time drops another app's React Native tags")
+    func appOnlyDropsOtherAppsTags() async throws {
+        let server = Self.server()
+        let entries = try await Self.read(LogQuery(source: .reactNative(app: "com.example.app"), window: .last(.seconds(5)), appOnly: true), from: server)
+        #expect(entries.map(\.message) == ["tapped save", "console: Size Selected S", "after restart"])
     }
 
     @Test("the user ID is the exact package's, not one it prefixes", arguments: [

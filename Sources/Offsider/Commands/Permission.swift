@@ -33,7 +33,7 @@ struct PermissionCommand: AsyncParsableCommand {
     @Argument(help: ArgumentHelp("Services such as camera, photos or all; on Android also android.permission.NAME.", valueName: "service"))
     var services: [String] = []
 
-    @Option(name: .customLong("app"), help: ArgumentHelp("The app's bundle ID or Android package (required except for services).", valueName: "id"))
+    @Option(name: .customLong("app"), help: ArgumentHelp("The app's bundle ID or Android package (required except for services).", valueName: "id"), transform: AppID.parse)
     var app: String?
 
     @Option(name: .customLong("device"), help: ArgumentHelp("The device ID from `offsider devices` (default OFFSIDER_DEVICE; required except for services).", valueName: "id"))
@@ -80,26 +80,20 @@ struct PermissionCommand: AsyncParsableCommand {
         guard let app else {
             throw ValidationError("permission \(name) needs --app with the bundle ID or package; Offsider never changes every app's permissions at once.")
         }
-        let appID: String
-        do {
-            appID = try ExpoDevClient.validate(appID: app)
-        } catch {
-            throw ValidationError(error.localizedDescription)
-        }
         let devicePlatform = DeviceIDClassifier.classify(device).platform
         if name == "show" {
             guard services.isEmpty else { throw ValidationError("permission show takes no service names.") }
             if devicePlatform == .ios {
                 throw ValidationError("permission show is Android only: iOS simulators offer no way to read privacy settings.")
             }
-            return .show(app: appID, device: device)
+            return .show(app: app, device: device)
         }
         guard !services.isEmpty else {
             throw ValidationError("Name at least one service, for example camera or all. Run `offsider permission services` to list them.")
         }
         do {
             let targets = try services.map { try PermissionTarget.parse($0, platform: devicePlatform) }
-            return .change(PermissionAction(rawValue: name)!, targets, app: appID, device: device)
+            return .change(PermissionAction(rawValue: name)!, targets, app: app, device: device)
         } catch let error as DeviceSettingsError {
             throw ValidationError(error.message)
         }

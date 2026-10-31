@@ -11,7 +11,7 @@ extension AndroidBackend: LogReading {
         let serial = id.rawValue
         let client = try requireClient()
         let script = LogcatCommand.script(window: query.window, source: query.source)
-        var stream = LogcatStream(source: query.source, serial: serial)
+        var stream = LogcatStream(source: query.source, serial: serial, appOnly: query.appOnly)
         let deliver: @MainActor (String) throws -> Void = { line in
             let entry = try stream.consume(line)
             if let note = stream.note {
@@ -54,7 +54,7 @@ extension AndroidBackend: LogReading {
         while !Task.isCancelled {
             let now = ContinuousClock.now
             if let end, now >= end { return }
-            let slice = now + .milliseconds(250)
+            let slice = now + .seconds(LogcatStream.quietAfter)
             do {
                 switch try await shell.next(deadline: end.map { min($0, slice) } ?? slice) {
                 case .line(let line):

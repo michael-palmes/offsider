@@ -93,6 +93,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - `rn devmenu` taps the menu's own item when a button of the app behind the menu has the same label, and `--label` naming only a row of that app exits 2 with nothing tapped, where it tapped the sheet's dismiss area, which closed the menu and reported a choice.
 - `rn devmenu --label` on something that is no control, such as a section heading, exits 5 saying nothing happened and leaves the menu open, where closing the menu passed for a choice.
 - A platform that does not exist after a `devices` subcommand (`devices status --platform windows`) gets that subcommand's own message, naming the listing command, where it failed in `devices` with that command's usage. `devices --platform windows` still exits 64, in one line.
+- An app id with a space, tab or newline around it is refused everywhere, as no check would match it while the device shell ignored the padding, so `--app ' com.android.chrome'` no longer got past a phone's deny-list or managed policy. Every `--app` and `--bundle-id` is checked at parsing (exit 64), `logs` and the input commands too, and a phone's allowance is checked when the command is routed, whichever command names the app; a test walks the command tree so a new one cannot skip either.
+- `logs --rn` and `logs --rn --app` on a phone without "Any app and all logs" keep only that app's own lines. They used to pass on every app's React Native tags.
+- `logs --rn --app --follow` prints a finished entry after 250 ms even while other apps keep logging.
+- `rn open` and `rn prepare` refuse an app a phone's allowance does not permit (`app_not_allowed`) before any `pm`, `am`, `run-as` or `adb reverse` reaches it.
+- `rn open` taps Open only on the `Open in “…”?` prompt naming the app it was told to open; any other, or one when the name is unknown, is reported as `person_required`.
+- Hints printed on a phone allowed for any app or for several name `--app`, so the printed command runs as it stands.
+- A broken `offsider.login.json` exits 64 with its own message from `app`, `notifications` and `logs`. It used to read as naming no app, falling through to a phone's only pin or to the whole log on a simulator or emulator.
+- `--app` help says what it does for video: the app in front is checked at most every 1 s on Android and every 2 s on an iPhone or iPad.
 
 ## [0.14.0] - 2026-10-22
 

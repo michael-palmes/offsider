@@ -80,9 +80,16 @@ enum DeviceRouter {
         scope: CommandScope = .current
     ) async throws -> Route {
         let route = try await resolve(rawID, logger: logger, host: host, scope: scope, gate: DevicePolicyGate.current)
+        try requireNamedApp(scope.namedApp, on: route, gate: DevicePolicyGate.current)
         scope.noteRoute(route)
         if let name = route.allowance?.name { ErrorReporter.noteDeviceName(name) }
         return route
+    }
+
+    /// `--app` or `--bundle-id` on a phone: refused here, whichever command took it, before anything reaches the device.
+    static func requireNamedApp(_ app: String?, on route: Route, gate: DevicePolicyGate) throws {
+        guard let app, let allowance = route.allowance else { return }
+        try gate.requireApp(app, on: allowance)
     }
 
     /// Gates a physical device: it must be named with `--device`, and the allow-list and managed policy must both allow it.

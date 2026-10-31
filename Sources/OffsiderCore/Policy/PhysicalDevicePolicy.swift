@@ -98,12 +98,17 @@ public struct PhysicalDevicePolicy: Equatable, Sendable {
 
     /// Whether `app` may be driven on the device: never a deny-listed app, and only within `permittedApps`.
     public func permits(app: String, on allowance: DeviceAllowance) -> Bool {
-        guard !SystemAppDenyList.isDenied(app, platform: allowance.platform) else { return false }
+        guard (try? ExpoDevClient.validate(appID: app)) != nil, !SystemAppDenyList.isDenied(app, platform: allowance.platform) else { return false }
         return permittedApps(for: allowance)?.contains(app) ?? true
     }
 
     /// Why `app` may not be driven or read on the device, in one sentence ending "Nothing was read or sent."; nil when it may.
     public func appRefusal(_ app: String, on allowance: DeviceAllowance, audience: ErrorAudience = .current) -> String? {
+        do {
+            _ = try ExpoDevClient.validate(appID: app)
+        } catch {
+            return "\(error.localizedDescription) Nothing was read or sent."
+        }
         if let why = SystemAppDenyList.refusal(app, platform: allowance.platform) {
             return "\(why). Nothing was read or sent."
         }

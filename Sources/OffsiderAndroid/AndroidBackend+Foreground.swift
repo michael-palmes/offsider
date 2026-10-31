@@ -117,6 +117,10 @@ extension AndroidBackend: AppTargetSelecting {
     public func selectApp(_ appID: String, on id: DeviceID) -> Bool {
         selectApp(appID, on: id.rawValue)
     }
+
+    public func selectedApp(on id: DeviceID) -> String? {
+        appScopes[id.rawValue]?.target
+    }
 }
 
 /// Set by an input session around its foreground check, so every input step on a phone reads the front app again.
