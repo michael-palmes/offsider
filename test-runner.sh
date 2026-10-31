@@ -148,6 +148,11 @@ run_step() {
     return 1
 }
 
+# Suite names for the help, wrapped.
+wrap_suites() {
+    printf '%s ' "$@" | fold -s -w 96 | sed -e 's/ *$//' -e '2,$s/^/             /'
+}
+
 # Short help: the modes. --help-env has the settings and suite names.
 show_usage() {
     cat <<EOF
@@ -219,10 +224,8 @@ React Native on iOS (--rn-ios, needs pnpm):
   OFFSIDER_RN_IOS_DEBUG_APP The Debug simulator app for --rn-debug (default: built by build-ios --debug --if-changed)
 
 Suite names (run just one):
-  Simulator: BatchTests ButtonTests CommandNamingTests DescribeUITests DeviceControlTests DoctorTests DragTests
-             GestureTests InitTests KeyComboTests KeySequenceTests KeyTests ListDevicesTests LogsTests
-             ParkedSheetTests PresentationFixtureTests PresentedSheetTests RecordVideoTests SliderTests
-             StreamVideoDebugTests StreamVideoTests SwipeTests TapTests TouchTests TypeTests VerifyTests
+  Simulator: $(wrap_suites "${SIMULATOR_SUITES[@]}")
+  Android (with --android): $(wrap_suites "${ANDROID_SUITES[@]}")
   React Native (with --rn-ios or --android): ReactNative*Tests, for example ReactNativeFixtureSmokeTests
 
 Examples:
@@ -283,7 +286,64 @@ SEQUENTIAL=true
 VERBOSE=false
 TEST_FILTER=""
 
-# React Native suites run by --rn-ios and after the Android suites; a suite not added yet matches nothing and passes.
+# Every E2E suite is in one of these lists or another mode's; E2ESuiteListTests fails on one that is in none.
+SIMULATOR_SUITES=(
+    "BatchTests"
+    "ButtonTests"
+    "CommandNamingTests"
+    "DescribeUITests"
+    "DeviceControlTests"
+    "DeviceStateE2ETests"
+    "DoctorTests"
+    "GestureTests"
+    "InitTests"
+    "KeyComboTests"
+    "KeySequenceTests"
+    "KeyTests"
+    "ListDevicesTests"
+    "LogsTests"
+    "ParkedSheetTests"
+    "PresentationFixtureTests"
+    "PresentedSheetTests"
+    "RecordVideoTests"
+    "RunE2ETests"
+    "StreamVideoDebugTests"
+    "StreamVideoTests"
+    "SwipeTests"
+    "DragTests"
+    "SliderTests"
+    "TapTests"
+    "TouchTests"
+    "TypeTests"
+    "VerifyTests"
+    "WaitSettleE2ETests"
+)
+ANDROID_SUITES=(
+    "AndroidListDevicesTests"
+    "AndroidDescribeUITests"
+    "AndroidHelperTests"
+    "AndroidTapTests"
+    "AndroidSelectorTests"
+    "AndroidTouchTests"
+    "AndroidSwipeGestureTests"
+    "AndroidSliderTests"
+    "AndroidTypeTests"
+    "AndroidKeyTests"
+    "AndroidButtonTests"
+    "AndroidScreenshotE2ETests"
+    "AndroidVideoTests"
+    "AndroidBatchTests"
+    "AndroidVerifyTests"
+    "AndroidDeviceStateE2ETests"
+    "AndroidNotificationsE2ETests"
+    "AndroidFallbackTests"
+    "AndroidJWTTests"
+    "AndroidBootTests"
+    "AndroidLandscapeTests"
+    "AndroidRunTests"
+    "AndroidDoctorE2ETests"
+)
+# React Native suites run by --rn-ios and after the Android suites.
 RN_SUITES=(
     "ReactNativeFixtureSmokeTests"
     "ReactNativeOffscreenTests"
@@ -296,6 +356,10 @@ RN_SUITES=(
     "ReactNativeLiveTests"
     "ReactNativeStackCoverTests"
     "ReactNativeStickyFooterTests"
+    "ReactNativeAppCommandTests"
+    "ReactNativeOnScreenTests"
+    "ReactNativeSettleTests"
+    "ReactNativeVerifyHoldTests"
     "ReactNativeLoginTests"
     "ReactNativeSystemPromptTests"
 )
@@ -387,11 +451,7 @@ while [[ $# -gt 0 ]]; do
             VERBOSE=true
             shift
             ;;
-        BatchTests|ButtonTests|CommandNamingTests|DescribeUITests|DeviceControlTests|DoctorTests|GestureTests|InitTests|KeyComboTests|KeySequenceTests|KeyTests|ListDevicesTests|LogsTests|ParkedSheetTests|PresentationFixtureTests|PresentedSheetTests|RecordVideoTests|StreamVideoDebugTests|StreamVideoTests|SwipeTests|DragTests|SliderTests|TapTests|TouchTests|TypeTests|VerifyTests)
-            TEST_FILTER="$1"
-            shift
-            ;;
-        ReactNative*Tests)
+        *Tests)
             TEST_FILTER="$1"
             shift
             ;;
@@ -429,23 +489,8 @@ fi
 
 RN_FILTER=false
 [[ "$TEST_FILTER" == ReactNative*Tests ]] && RN_FILTER=true
-
-if [[ "$ANDROID" == true && "$RN_IOS" == true ]]; then
-    die "--android and --rn-ios cannot be combined; run them one at a time."
-fi
-
-if [[ "$ANDROID" == true || "$RN_IOS" == true ]] &&
-   [[ "$UNIT_TESTS" == true || "$BUILD_ONLY" == true || "$CLEAN_BUILD" == true ]]; then
-    die "--android and --rn-ios can only be combined with --rn-debug, --tests-only, --verbose and a ReactNative*Tests filter."
-fi
-
-if [[ "$RN_FILTER" == true && "$ANDROID" != true && "$RN_IOS" != true ]]; then
-    die "$TEST_FILTER needs --rn-ios or --android."
-fi
-
-if [[ -n "$TEST_FILTER" && "$RN_FILTER" != true ]] && [[ "$ANDROID" == true || "$RN_IOS" == true ]]; then
-    die "$TEST_FILTER is a native iOS suite; --android and --rn-ios only take a ReactNative*Tests filter."
-fi
+ANDROID_FILTER=false
+[[ "$TEST_FILTER" == Android*Tests ]] && ANDROID_FILTER=true
 
 if [[ "$RN_DEBUG" == true ]]; then
     if [[ "$ANDROID" != true && "$RN_IOS" != true ]]; then
@@ -455,6 +500,36 @@ if [[ "$RN_DEBUG" == true ]]; then
         die "--rn-debug runs only ReactNativeDebugSmokeTests and takes no test filter."
     fi
 fi
+
+# A name in no list would match nothing and pass.
+if [[ -n "$TEST_FILTER" ]]; then
+    case " ${SIMULATOR_SUITES[*]} ${ANDROID_SUITES[*]} ${RN_SUITES[*]} " in
+        *" $TEST_FILTER "*) ;;
+        *) die "Unknown suite: $TEST_FILTER" "$0 --help-env" ;;
+    esac
+fi
+
+if [[ "$ANDROID" == true && "$RN_IOS" == true ]]; then
+    die "--android and --rn-ios cannot be combined; run them one at a time."
+fi
+
+if [[ "$ANDROID" == true || "$RN_IOS" == true ]] &&
+   [[ "$UNIT_TESTS" == true || "$BUILD_ONLY" == true || "$CLEAN_BUILD" == true ]]; then
+    die "--android and --rn-ios can only be combined with --rn-debug, --tests-only, --verbose and a suite name."
+fi
+
+if [[ "$RN_FILTER" == true && "$ANDROID" != true && "$RN_IOS" != true ]]; then
+    die "$TEST_FILTER needs --rn-ios or --android."
+fi
+
+if [[ "$ANDROID_FILTER" == true && "$ANDROID" != true ]]; then
+    die "$TEST_FILTER needs --android."
+fi
+
+if [[ -n "$TEST_FILTER" && "$RN_FILTER" != true && "$ANDROID_FILTER" != true ]] && [[ "$ANDROID" == true || "$RN_IOS" == true ]]; then
+    die "$TEST_FILTER is a simulator suite; --android and --rn-ios do not run it."
+fi
+
 
 # Function to check prerequisites
 check_prerequisites() {
@@ -686,7 +761,7 @@ run_suite_list() {
     done
 }
 
-# The React Native suites, or the one named by a ReactNative*Tests filter.
+# The React Native suites, or the one suite the command named.
 run_rn_suites() {
     if [[ "$ANDROID" == true ]]; then RERUN="$0 --android -t"; else RERUN="$0 --rn-ios -t"; fi
     if [[ -n "$TEST_FILTER" ]]; then
@@ -792,36 +867,12 @@ run_android_tests() {
         return
     fi
 
-    local suites=(
-        "AndroidListDevicesTests"
-        "AndroidDescribeUITests"
-        "AndroidHelperTests"
-        "AndroidTapTests"
-        "AndroidSelectorTests"
-        "AndroidTouchTests"
-        "AndroidSwipeGestureTests"
-        "AndroidSliderTests"
-        "AndroidTypeTests"
-        "AndroidKeyTests"
-        "AndroidButtonTests"
-        "AndroidScreenshotE2ETests"
-        "AndroidVideoTests"
-        "AndroidBatchTests"
-        "AndroidVerifyTests"
-        "AndroidDeviceStateE2ETests"
-        "AndroidFallbackTests"
-        "AndroidJWTTests"
-        "AndroidBootTests"
-        "AndroidLandscapeTests"
-        "AndroidRunTests"
-        "AndroidDoctorE2ETests"
-    )
     local suite
-    plan_suites "${suites[@]}" "${RN_SUITES[@]}"
-    for suite in "${suites[@]}"; do
+    plan_suites "${ANDROID_SUITES[@]}" "${RN_SUITES[@]}"
+    for suite in "${ANDROID_SUITES[@]}"; do
         if ! run_swift_suite "$suite" "" --filter "$suite"; then
             show_results
-            die "$suite failed."
+            die "$suite failed." "$0 --android -t $suite"
         fi
     done
 
@@ -1094,40 +1145,9 @@ run_tests() {
 
     if [[ "$SEQUENTIAL" == true ]]; then
         # One suite at a time, so they never contend for the simulator.
-        local suites=(
-            "BatchTests"
-            "ButtonTests"
-            "CommandNamingTests"
-            "DescribeUITests"
-            "DeviceControlTests"
-            "DeviceStateE2ETests"
-            "DoctorTests"
-            "GestureTests"
-            "InitTests"
-            "KeyComboTests"
-            "KeySequenceTests"
-            "KeyTests"
-            "ListDevicesTests"
-            "LogsTests"
-            "ParkedSheetTests"
-            "PresentationFixtureTests"
-            "PresentedSheetTests"
-            "RecordVideoTests"
-            "RunE2ETests"
-            "StreamVideoDebugTests"
-            "StreamVideoTests"
-            "SwipeTests"
-            "DragTests"
-            "SliderTests"
-            "TapTests"
-            "TouchTests"
-            "TypeTests"
-            "VerifyTests"
-        )
-
         local suite
-        plan_suites "${suites[@]}"
-        for suite in "${suites[@]}"; do
+        plan_suites "${SIMULATOR_SUITES[@]}"
+        for suite in "${SIMULATOR_SUITES[@]}"; do
             if ! run_swift_suite "$suite" "" --filter "$suite"; then
                 show_results
                 die "$suite failed." "$0 -t $suite"

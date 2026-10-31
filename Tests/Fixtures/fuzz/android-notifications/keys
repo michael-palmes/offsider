@@ -1,0 +1,41 @@
+offsider: keys
+offsider: record
+NotificationRecord(0x0015b7e1: pkg=com.mpalmes.offsider.playground.rn user=UserHandle{0} id=7 tag=alerts importance=3 key=0|com.mpalmes.offsider.playground.rn|7|alerts|10214: Notification(channel=alerts shortcut=null contentView=null vibrate=null sound=null defaults=0 flags=0 color=0x00000000 vis=PRIVATE))
+  uid=10214 userId=0
+  notification=
+        when=1793162588428/1793162588428
+        extras={
+            android.title=String (Order filled (AUD))
+            android.reduced.images=Boolean (true)
+            android.text=String (Your code is 482915)
+            android.appInfo=ApplicationInfo (ApplicationInfo{4c0906 com.mpalmes.offsider.playground.rn})
+            android.bigText=null
+        }
+  mCreationTimeMs=1793162588433
+offsider: record
+NotificationRecord(0x0015b7e1: pkg=com.mpalmes.offsider.playground.rn user=UserHandle{0} id=9 tag=live importance=3 key=0|com.mpalmes.offsider.playground.rn|9|live|10214: Notification(channel=alerts shortcut=null contentView=null vibrate=null sound=null defaults=0 flags=ONGOING_EVENT|NO_CLEAR color=0x00000000 vis=PRIVATE))
+  uid=10214 userId=0
+  notification=
+        when=1793162588428/1793162588428
+        extras={
+            android.title=String (Live price)
+            android.reduced.images=Boolean (true)
+            android.text=String (first
+second)
+            android.appInfo=ApplicationInfo (ApplicationInfo{4c0906 com.mpalmes.offsider.playground.rn})
+            android.bigText=null
+        }
+  mCreationTimeMs=1793162588433
+offsider: record
+NotificationRecord(0x0015b7e1: pkg=com.mpalmes.offsider.playground.rn user=UserHandle{0} id=0 tag=g importance=3 key=0|com.mpalmes.offsider.playground.rn|0|g|10214: Notification(channel=alerts shortcut=null contentView=null vibrate=null sound=null defaults=0 flags=LOCAL_ONLY|GROUP_SUMMARY|AUTOGROUP_SUMMARY color=0x00000000 vis=PRIVATE))
+  uid=10214 userId=0
+  notification=
+        when=1793162588428/1793162588428
+        extras={
+            android.title=String ()
+            android.reduced.images=Boolean (true)
+            android.text=String ()
+            android.appInfo=ApplicationInfo (ApplicationInfo{4c0906 com.mpalmes.offsider.playground.rn})
+            android.bigText=null
+        }
+  mCreationTimeMs=1793162588433

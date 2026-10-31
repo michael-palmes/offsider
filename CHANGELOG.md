@@ -31,6 +31,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Changed
 
+- `test-runner.sh` runs every E2E suite in a full mode and takes any listed suite by name (`--android <suite>` for the Android ones), and refuses an unknown name; a `ReactNative*Tests` name that matched nothing used to pass.
 - `record-video` with no `--duration` stops and saves at 10 minutes, with a note and `reachedLimit` in `--json`, so a lost background recording cannot block logins for ever. Pass `--duration`, up to 3600, for longer.
 - `session stop --device <id>` also stops and saves a recording on that device, and says so only once it has ended. `doctor --device` warns `device.recording` while one runs, and the refusal `login`, `wake --unlock` and `type --stdin` give names its pid, with `kill -INT <pid>` as the `hint`.
 - `app open` on an iPhone or iPad says `Sent the link to`, as iOS reports only that it delivered the link. `--json` adds `linkHandled`: `true` once Android or a simulator showed the app took the link, `null` on an iPhone or iPad.
@@ -56,6 +57,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Fixed
 
+- `screenshot` and `describe-ui` show their spinner while a simulator's frameworks load, which was a silent pause on the first command.
 - `app stop` on an iPhone or iPad could end an app extension and report the app stopped, and `app launch` could misreport the start. Only the process directly in the bundle now counts as the app.
 - `app stop` on an iPhone or iPad reported "was not running" when `devicectl` named no bundle location; it now says it cannot tell and stops nothing, and `app launch` leaves `start` empty.
 - A `devicectl` failure holding the letters "locked", such as "blocked", no longer reads as `device_locked`, and a real lock keeps `devicectl`'s words.

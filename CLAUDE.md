@@ -188,7 +188,7 @@ A command or option change also updates `docs/commands.md` (and the `docs/` page
 
 Ask focused multiple-choice questions when a decision materially changes the implementation: `AskUserQuestion` in Claude Code, `request_user_input` in Codex. Read every comment on a GitHub issue (`gh issue view <n> --comments`) before acting on it.
 
-When the user must run something themselves, put the complete command in the ask itself, on its own line in a code block: the absolute path when it is not on `PATH`, every value filled in, nothing to look up. Never a fragment such as `devices add`, never "the command above" (a summarised message loses it), never a placeholder promised later. One command per ask, one line saying what it will prompt for, then read the result back before the next step. The same rule binds the hints Offsider prints and the bundled skill: a busy developer will not read a paragraph.
+When the user must run something themselves, put the complete command in the question or the closing message, never in text before it, on its own line in a code block: the absolute path when it is not on `PATH`, every value filled in, nothing to look up. Never a fragment such as `devices add`, never "the command above" (a summarised message loses it), never a placeholder promised later. One command per ask, one line saying what it will prompt for, then read the result back before the next step. The same rule binds the hints Offsider prints and the bundled skill: a busy developer will not read a paragraph.
 
 When only the user's hands can do a step, ask for the step, not its status: `Can you tick the Turnstile checkbox on <device name>?`, never `Have you ticked it?`. Name the step and the device in the first line, never hurry them, and watch for the result yourself where anything can read it, so no reply is needed. The same rule binds `error.ask` and the bundled skill.
 
@@ -208,12 +208,13 @@ Before any pull request is opened, run `/code-review high` (Claude Code) or `/re
 - All text is modern Australian English (spelling and usage, never slang: no "G'day", no "mate"), short, sharp and warm, with no em dashes: use commas, colons, parentheses or full stops. On screen: a title of at most eight words, no intro sentences, questions of at most five words, rows of at most five words plus a dim detail, and nothing the person does not act on.
 - Comments are a last resort: one line max, only for context the code cannot show.
 - Write tests that can fail for a reason we care about: assert behaviour and contracts, mock boundaries only, never restate implementation.
+- A hand-kept list (commands, suites, gates) needs a test that fails when a new entry is missing from it.
 
 ## Public repository: privacy
 
 The repository is public, and so are its PRs, issues and releases.
 
-- Never commit or post local device ids (serials, UDIDs, CoreDevice ids, panel ids), Apple team IDs, simulator or AVD names from the maintainer's machine, personal device models or local paths.
+- Never commit or post local device ids (serials, UDIDs, CoreDevice ids, panel ids), Apple team IDs, simulator or AVD names from the maintainer's machine, personal device models or local paths. The E2E fixture names (`Offsider_E2E`, `Offsider_E2E_Fold`, `Offsider Duo`) are public defaults and may appear in code and PR text.
 - Never commit or post anything from the private apps the maintainer tests on: names, bundle ids, screens, labels, testIDs, copy or data. Call them "private apps".
 - Use placeholders (`<udid>`, `<serial>`, `/Users/me`) and the playground's own ids instead.
 - Issues found by testing a private app reach the repo rewritten: brief sub-agents with the rewritten version, and invent the labels, ids, copy, coordinates and log lines a fix and its tests need (or use the playground's). Name none of the app's SDKs or their log formats, and never call it a field case in code, tests or messages. The leak gate checks only its deny-list, so before committing grep the diff and messages for the issue's own words, numbers and device names.
