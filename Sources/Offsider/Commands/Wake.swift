@@ -1,10 +1,11 @@
 import ArgumentParser
 import Foundation
 import OffsiderCore
+import OffsiderIOSDevice
 
 struct Wake: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
-        abstract: "Turn an Android device's screen on and dismiss its lock screen.",
+        abstract: "Turn a screen on and dismiss its lock screen.",
         discussion: """
         Sends nothing when the screen is already on and unlocked. Otherwise it presses the wake key, dismisses the \
         lock screen and waits about 6 s. A PIN, pattern or password lock screen stays up, and the command exits 7 \
@@ -13,7 +14,10 @@ struct Wake: AsyncParsableCommand {
         UiAutomation helper, never as a shell command; without the helper it exits 9 (helper_unavailable), and while \
         record-video or stream-video records the device it exits 8 (device_busy), typing nothing. If the lock screen \
         is still up 15 s after the last key, the code is wrong: Offsider says so and will not type it again until it \
-        is saved again. Patterns are not supported. Android only: iOS simulators never sleep.
+        is saved again. Patterns are not supported.
+
+        On an allowed iPhone or iPad it presses Home at most twice, without needing an app in front, and exits 7 \
+        (device_locked) when a passcode stays up; Offsider never types one, so --unlock is refused. iOS simulators never sleep.
 
         Examples:
           offsider wake --device DEVICE_ID
@@ -30,7 +34,17 @@ struct Wake: AsyncParsableCommand {
     @OptionGroup
     var deviceOption: DeviceOption
 
+    func validate() throws {
+        if unlock, case .iosDevice = DeviceIDClassifier.classify(deviceOption.id) {
+            throw ValidationError("--unlock is Android only: Offsider never types an iPhone or iPad passcode. Unlock it by hand.")
+        }
+    }
+
     func run() async throws {
+        if case .iosDevice = DeviceIDClassifier.classify(deviceOption.id) {
+            try await wakeIOSDevice()
+            return
+        }
         try StayAwakeCommand.requireAndroid(deviceOption.id, command: "wake")
         let route = try await DeviceRouter.routeForInput(deviceOption, logger: OffsiderLogger())
         let console = Console.current
@@ -46,6 +60,24 @@ struct Wake: AsyncParsableCommand {
             )
         }
         DevicePersonView.emit(result.text, json: json, person: result.person, console: console)
+    }
+
+    private func wakeIOSDevice() async throws {
+        let route = try await DeviceRouter.routeForInput(deviceOption, logger: OffsiderLogger())
+        guard let backend = route.backend as? IOSDeviceBackend else {
+            throw CLIError(errorDescription: "wake is not available for \(route.device.rawValue).", reason: .notSupported)
+        }
+        let console = Console.current
+        let change = try await console.progress("Waking the screen") { try await backend.wakeScreen(route.device) }
+        let view = Self.iosView(change, device: route.device)
+        DevicePersonView.emit(json ? view.json : view.text, json: json, person: DevicePersonView.receipt(view.person), console: console)
+    }
+
+    static func iosView(_ change: IOSDeviceScreenChange, device: DeviceID) -> (text: String, json: String, person: String) {
+        let was = change.wasOn ? (change.wasLocked ? "on, locked" : "on, unlocked") : "off"
+        let json = DeviceStateReport.screen("wake", on: device, previous: was, current: "on, unlocked", sent: Array(repeating: "home", count: change.presses))
+        guard change.presses > 0 else { return ("The screen of \(device.rawValue) is already on and unlocked; nothing was sent.\n", json, "Screen already on and unlocked") }
+        return ("The screen of \(device.rawValue) is on and unlocked (was \(was)); Home pressed \(change.presses) time\(change.presses == 1 ? "" : "s").\n", json, "Screen on and unlocked")
     }
 
     /// A phone's serial, or an emulator's AVD name; nil when the AVD name is unknown.

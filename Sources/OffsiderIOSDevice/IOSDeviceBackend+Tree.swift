@@ -5,6 +5,7 @@ extension IOSDeviceBackend: RawAccessibilitySource {
     /// The runner's snapshot JSON before mapping.
     public func rawAccessibilitySource(for id: DeviceID) async throws -> Data {
         try requirePermittedPin(id)
+        if state.drivesWhole { try await prepareWholeDevice(id) }
         let client = try await runner(for: id)
         let app = targetApp
         return try await host.timing.measure("accessibility") { try await client.snapshot(app: app) }

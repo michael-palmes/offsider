@@ -31,7 +31,7 @@ Every setter here changes the device and it stays changed. Read the current valu
 
 ## Screen, stay awake and unlocking (Android)
 
-`stay-awake`, `wake` and `unlock-code` refuse an iOS simulator or iPhone as `not_supported`: simulators never sleep or lock, and an iPhone or iPad is unlocked by hand.
+`sleep` turns a screen off and `wake` turns it back on, on an Android device or an allowed iPhone or iPad (`guide ios-device`). `stay-awake`, `wake --unlock` and `unlock-code` refuse an iOS simulator or iPhone as `not_supported`, and `sleep` and `wake` refuse a simulator: simulators never sleep or lock, and an iPhone or iPad is unlocked by hand.
 
 - `offsider stay-awake --device <DEVICE_ID>` reads Developer options > Stay awake with the screen timeout; `on` keeps an awake screen on while the device charges (every power source) and `off` restores the timeout. It survives reboots. The output says when it has no effect: not charging, charging over a source it leaves out, or a device policy capping the timeout. Turn it on before a long run; it does not turn a dark screen on.
 - `offsider wake --device <DEVICE_ID>` turns the screen on and dismisses a swipe lock screen, and sends nothing when the screen is already on and unlocked. A PIN, pattern or password lock screen stays up and exits 7 with `device_locked`: ask the user to unlock the device.

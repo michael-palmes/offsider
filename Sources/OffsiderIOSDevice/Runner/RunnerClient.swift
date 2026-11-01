@@ -28,10 +28,27 @@ public struct RunnerPing: Equatable, Sendable {
 public struct RunnerForeground: Equatable, Sendable {
     public let inFront: Bool
     public let activeBundleID: String?
+    /// True when the lock screen is up; nil when the device did not say.
+    public let locked: Bool?
+    /// False when this Xcode offers no active-app lookup, so a system sheet over the app goes unseen.
+    public let sheetsVisible: Bool
 
-    public init(inFront: Bool, activeBundleID: String?) {
+    public init(inFront: Bool, activeBundleID: String?, locked: Bool? = nil, sheetsVisible: Bool = true) {
         self.inFront = inFront
         self.activeBundleID = activeBundleID
+        self.locked = locked
+        self.sheetsVisible = sheetsVisible
+    }
+}
+
+/// What `GET /screen` reports.
+public struct RunnerScreen: Equatable, Sendable {
+    public let on: Bool
+    public let locked: Bool
+
+    public init(on: Bool, locked: Bool) {
+        self.on = on
+        self.locked = locked
     }
 }
 
@@ -44,7 +61,7 @@ public enum RunnerProbe: Equatable, Sendable {
 
 /// The runner's routes, each a fresh connection through `transport`.
 public struct RunnerClient: Sendable {
-    public static let protocolVersion = "2"
+    public static let protocolVersion = "3"
     public static let timeout: TimeInterval = 5
 
     public let udid: String
@@ -126,7 +143,19 @@ public struct RunnerClient: Sendable {
     public func foreground(app: String) async throws -> RunnerForeground {
         let data = try await call("POST", "/foreground", ["app": app]) as? [String: Any]
         guard let data, let inFront = data["inFront"] as? Bool else { throw malformed("/foreground") }
-        return RunnerForeground(inFront: inFront, activeBundleID: data["activeBundleId"] as? String)
+        return RunnerForeground(
+            inFront: inFront, activeBundleID: data["activeBundleId"] as? String, locked: data["locked"] as? Bool, sheetsVisible: data["sheetsVisible"] as? Bool ?? true
+        )
+    }
+
+    public func screen() async throws -> RunnerScreen {
+        let data = try await call("GET", "/screen", nil) as? [String: Any]
+        guard let on = data?["on"] as? Bool, let locked = data?["locked"] as? Bool else { throw malformed("/screen") }
+        return RunnerScreen(on: on, locked: locked)
+    }
+
+    public func pressLock() async throws {
+        _ = try await call("POST", "/lock", [:])
     }
 
     public func home() async throws {
@@ -170,6 +199,8 @@ public struct RunnerClient: Sendable {
             throw IOSDeviceError(.noFocusedField, "No field on \(udid) has keyboard focus. Tap a text field first, then retry.")
         case "secure_field":
             throw IOSDeviceError(.secureFieldRefused, "The focused field on \(udid) is a secure field, and Offsider does not replace its text. Clear it in the app, or type without --replace.")
+        case "screen_locked":
+            throw IOSDeviceError.screenLocked(udid)
         case "app_not_in_front":
             throw IOSDeviceError(.otherAppInFront, "The app this command may drive is not in front on \(udid), so Offsider did not read or touch it. \(ErrorAudience.current == .person ? "Open it" : "Ask the user to open it"), then retry.")
         default:

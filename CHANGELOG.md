@@ -8,6 +8,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Added
 
+- Test devices: `devices add --test-device`, or "Test device: whole device" in the app menu, lets agents drive all of a phone or tablet a person says holds nothing personal: any app, Settings, system alerts and sheets, with no front-app check and `--app` optional. It asks "Anything personal on it?" with "Yes, stop" chosen, then Touch ID as usual, and offers "Until removed" first. The driving line and `devices status` say so (`"testDevice": true`). On a Mac with any forced Offsider key it is a plain Any app allowance until an administrator forces the new `allowTestDevices` to true, and a forced bundle list always wins. `test-runner.sh --ios-device` and `--android-phone` accept one.
+- `offsider sleep` turns a screen off to limit burn-in, on an allowed iPhone or iPad or an Android device, and `wake` now works on an allowed iPhone or iPad. Neither needs an app in front, and each sends nothing when the screen is already as asked. A test iPhone or iPad also sleeps when its session goes idle or `session stop` ends it, and wakes for the next command.
 - `batch` takes a `drag` step, written and limited like `offsider drag`.
 - `app_not_responding` (exit 1): on Android, when the app in front on an unlocked screen has no window the tree can read, as when its main thread is stuck, `describe-ui` and other reads say so instead of telling you to unlock the device.
 - `rn devmenu` lists the items an app registers (`registerDevMenuItems`, or `DevSettings.addMenuItem` in React Native's own Android menu), marked `"custom":true` in `--json` and tagged for a person; `--label` already chose them, and now prefers the menu's item over an app button behind it with the same label. Expo's custom heading also counts as menu evidence, so a menu whose tools those items push off screen is still read.
@@ -52,6 +54,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Fixed
 
+- `button lock` and `button side-button` on an iPhone or iPad no longer open Siri: the plain press held for 0.4 s, exactly where iOS starts Siri, and now holds for 0.34 s.
+- On Xcode 27.1 and later, a system alert, a sheet such as Siri's or Control Center over the pinned app no longer lets a screenshot or input through: the front-app check had lost XCTest's lookup and fell back to the app's own state, which misses them. It now uses XCTest's accessibility client, and an Xcode with no lookup says so in a notice. The runner rebuilds once.
+- A locked iPhone or iPad now says `device_locked` and names `offsider wake`, rather than telling you to open the app, and the check no longer passes in the moment after a lock press.
 - `screenshot` and `describe-ui` show their spinner while a simulator's frameworks load, which was a silent pause on the first command.
 - On Android, `describe-ui` frames the keyboard by its keys and buttons, not by its window, which spans the screen around a floating or compact keyboard such as Gboard's toolbar with a hardware keyboard connected. `target_under_keyboard` names `button back` only over docked keys: with only a toolbar showing, Back goes to the app and can leave the screen.
 - `login` on an iOS simulator no longer refuses every field when the tree's order puts a view from another process over the form, such as a Turnstile web widget at the screen's centre: a hit-test at each field's own point decides, as for `tap --fail-if-covered`. `describe-ui` no longer names web content the app draws in its own smaller view as `presented`.

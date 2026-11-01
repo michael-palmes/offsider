@@ -135,3 +135,4 @@ extension Wait: LockingCommand {
     var waitLock: Double? { deviceOption.waitLock }
 }
 extension Wake: DeviceOptionCommand {}
+extension SleepCommand: DeviceOptionCommand {}

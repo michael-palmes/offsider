@@ -19,7 +19,7 @@ extension AndroidBackend {
     /// On a USB phone only: refuses when a browser, a system app or an app outside the allowance is in front.
     /// Reads and captures share one `dumpsys` a second; each input step reads it afresh and leaves nothing cached, since the input may open another app.
     func requireDrivableForeground(_ serial: String) async throws {
-        guard DeviceID(rawValue: serial, platform: .android).isPhysicalAndroidDevice else { return }
+        guard DeviceID(rawValue: serial, platform: .android).isPhysicalAndroidDevice, appScopes[serial]?.wholeDevice != true else { return }
         let package: String?
         if !AndroidForegroundCheck.beforeInput, let cached = foregroundChecks[serial], ContinuousClock.now - cached.at < Self.foregroundCheckLifetime {
             package = cached.package
@@ -38,6 +38,7 @@ extension AndroidBackend {
     /// What no app in front can change first (an app this phone may not drive named, or none named), then the deny-list and the allowance's scope for one package on a phone.
     func requireDrivable(_ package: String, on serial: String) throws {
         let scope = appScopes[serial]
+        if scope?.wholeDevice == true { return }
         if let scope { try requireDrivableTarget(of: scope, on: serial) }
         if let refusal = SystemAppDenyList.refusal(package, platform: .android) {
             throw AndroidError.otherAppRefused(serial, refusal: refusal)
@@ -132,11 +133,14 @@ public struct AndroidAppScope: Equatable, Sendable {
     public let needsTarget: Bool
     /// The one app this command drives; any other app in front is refused.
     public var target: String?
+    /// A test device: every app, the launcher and system windows, with no front-app check.
+    public let wholeDevice: Bool
 
-    public init(permitted: Set<String>, managedCeiling: Set<String>?, needsTarget: Bool = false, target: String? = nil) {
+    public init(permitted: Set<String>, managedCeiling: Set<String>?, needsTarget: Bool = false, target: String? = nil, wholeDevice: Bool = false) {
         self.permitted = permitted
         self.managedCeiling = managedCeiling
         self.needsTarget = needsTarget
         self.target = target
+        self.wholeDevice = wholeDevice
     }
 }

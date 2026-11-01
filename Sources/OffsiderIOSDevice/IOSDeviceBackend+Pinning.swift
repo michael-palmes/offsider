@@ -8,16 +8,33 @@ extension IOSDeviceBackend {
         set { state.pinPolicy = newValue }
     }
 
+    /// Set by the CLI for a test device: commands read and drive whatever is in front, with no front-app check.
+    public var drivesWhole: Bool {
+        get { state.drivesWhole }
+        set { state.drivesWhole = newValue }
+    }
+
     /// The pinned app is named, allowed and, per the runner's private active-app lookup, in front; `maxAge` reuses a recent answer.
     public func requirePinnedAppInFront(_ id: DeviceID, maxAge: TimeInterval = 0) async throws {
         guard state.pinPolicy != nil else { return }
+        if state.drivesWhole {
+            try await prepareWholeDevice(id)
+            return
+        }
         let app = try requirePermittedPin(id)
         if maxAge > 0, let confirmed = state.pinConfirmed[id.rawValue], Date().timeIntervalSince(confirmed) < maxAge { return }
         let client = try await runner(for: id)
         let phase = state.inputSincePinCheck.contains(id.rawValue) ? "foreground-recheck" : "foreground"
         let answer = try await host.timing.measure(phase) { try await client.foreground(app: app) }
+        if !answer.sheetsVisible, !state.sheetsNoticeShown {
+            state.sheetsNoticeShown = true
+            log(.notice, "This Xcode does not say which app is in front, so Offsider cannot see a system sheet over \(app).")
+        }
         guard answer.inFront else {
             state.pinConfirmed[id.rawValue] = nil
+            if answer.locked == true {
+                throw IOSDeviceError.screenLocked(id.rawValue)
+            }
             let active = answer.activeBundleID.map { "\($0) is in front" } ?? "another app or the system is in front"
             throw IOSDeviceError(
                 .otherAppInFront,
@@ -38,7 +55,7 @@ extension IOSDeviceBackend {
     /// The pinned app, checked against the policy without asking the device.
     @discardableResult
     func requirePermittedPin(_ id: DeviceID) throws -> String {
-        guard let policy = state.pinPolicy else { return targetApp ?? "" }
+        guard let policy = state.pinPolicy, !state.drivesWhole else { return targetApp ?? "" }
         guard let app = targetApp else {
             throw IOSDeviceError(
                 .appRequired,

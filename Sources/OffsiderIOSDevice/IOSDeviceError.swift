@@ -19,6 +19,7 @@ public struct IOSDeviceError: LocalizedError, CustomStringConvertible, Equatable
         case usbmuxFailed
         case runnerUnavailable
         case locked
+        case stateNotReached
         case uiAutomationOff
         case xcodeTooOld
         case notSupported
@@ -187,6 +188,7 @@ extension IOSDeviceError: OffsiderFailure {
         case .usbmuxFailed: return .commandFailed
         case .runnerUnavailable: return .runnerUnavailable
         case .locked: return .deviceLocked
+        case .stateNotReached: return .stateNotReached
         case .uiAutomationOff: return .uiAutomationOff
         case .xcodeTooOld: return .xcodeTooOld
         case .notSupported: return .notSupported

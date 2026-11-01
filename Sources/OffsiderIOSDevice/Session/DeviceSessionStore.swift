@@ -34,6 +34,7 @@ public struct DeviceSessionStore: Sendable {
     static let fileName = "session.json"
     static let logName = "session.log"
     static let lockName = "session.lock"
+    static let asleepName = "asleep"
     static let socketDirectoryName = "sessions"
 
     public let root: String
@@ -58,6 +59,22 @@ public struct DeviceSessionStore: Sendable {
         guard let directory = try? IOSDevicePaths.device(udid, root: root) else { return }
         if let pid, let record = try? read(udid: udid), record.pid != pid { return }
         OffsiderPrivateDirectory.removeFile(named: Self.fileName, in: directory)
+    }
+
+    /// Marks that Offsider put this device's screen to sleep, so the next command on a test device wakes it and no idle press lights it again.
+    public func markAsleep(udid: String) {
+        guard let directory = try? IOSDevicePaths.device(udid, root: root) else { return }
+        try? OffsiderPrivateDirectory.writeAtomically(Data(), named: Self.asleepName, in: directory)
+    }
+
+    public func isMarkedAsleep(udid: String) -> Bool {
+        guard let directory = try? IOSDevicePaths.device(udid, root: root) else { return false }
+        return (try? OffsiderPrivateDirectory.readOwnedFile(named: Self.asleepName, in: directory, maxBytes: 16)) != nil
+    }
+
+    public func clearAsleep(udid: String) {
+        guard let directory = try? IOSDevicePaths.device(udid, root: root) else { return }
+        OffsiderPrivateDirectory.removeFile(named: Self.asleepName, in: directory)
     }
 
     /// Every device with a broker record, without creating directories for others.

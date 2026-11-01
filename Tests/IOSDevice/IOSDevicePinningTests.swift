@@ -78,7 +78,7 @@ struct IOSDevicePinningTests {
     /// Commands with `--device` that never read or drive a phone's screen: refused on a phone, a setting, or their own `--app`.
     static let noScreenOnPhone: Set<String> = [
         "device-session serve", "android-session serve", "doctor", "logs", "notifications", "displays", "shake", "login", "credential", "rn prepare", "rn open",
-        "orientation", "posture", "appearance", "content-size", "permission", "status-bar", "biometric", "stay-awake", "wake", "unlock-code",
+        "orientation", "posture", "appearance", "content-size", "permission", "status-bar", "biometric", "stay-awake", "wake", "sleep", "unlock-code",
         "devices add", "devices status", "devices remove", "runner status", "runner build", "runner stop",
         "session status", "session stop", "lease",
     ]

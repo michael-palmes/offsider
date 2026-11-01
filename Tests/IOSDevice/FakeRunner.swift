@@ -22,6 +22,14 @@ final class FakeRunnerTransport: RunnerTransport, @unchecked Sendable {
     var pingTimesOut = false
     /// The bundle id `/foreground` reports as active; nil reports none.
     var foregroundApp: String?
+    /// What `/screen` reports; `/lock` darkens and locks, `/home` lights a dark screen, then clears the lock screen unless a passcode holds it.
+    var screenOn = true
+    var screenLocked = false
+    var passcode = false
+    var homePresses = 0
+    var lockPresses = 0
+    /// Lock presses that only close a sheet before one darkens the screen.
+    var sheetsOpen = 0
 
     init(buildKey: String = "key", snapshot: Data = Data("[]".utf8)) {
         self.buildKey = buildKey
@@ -43,7 +51,22 @@ final class FakeRunnerTransport: RunnerTransport, @unchecked Sendable {
             return Self.response(200, ["ok": true, "data": ["version": RunnerClient.protocolVersion, "buildKey": buildKey, "screenBounds": ["width": 430, "height": 932], "scale": 3, "orientation": "portrait"]])
         case "/foreground":
             let active: Any = foregroundApp ?? NSNull()
-            return Self.response(200, ["ok": true, "data": ["inFront": foregroundApp != nil && object["app"] as? String == foregroundApp, "activeBundleId": active]])
+            return Self.response(200, ["ok": true, "data": ["inFront": foregroundApp != nil && object["app"] as? String == foregroundApp && !screenLocked, "activeBundleId": active, "locked": screenLocked]])
+        case "/screen":
+            return Self.response(200, ["ok": true, "data": ["on": screenOn, "locked": screenLocked]])
+        case "/lock":
+            lockPresses += 1
+            if sheetsOpen > 0 {
+                sheetsOpen -= 1
+            } else {
+                screenOn = false
+                screenLocked = true
+            }
+            return Self.response(200, ["ok": true, "data": [String: Any]()])
+        case "/home":
+            homePresses += 1
+            if !screenOn { screenOn = true } else if !passcode { screenLocked = false }
+            return Self.response(200, ["ok": true, "data": [String: Any]()])
         case "/snapshot":
             let data = (try? JSONSerialization.jsonObject(with: snapshot)) ?? []
             return Self.response(200, ["ok": true, "data": data])
