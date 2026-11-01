@@ -52,6 +52,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Fixed
 
+- `devices add`'s team menu shows the account's email when a development certificate's common name holds one, on its row and its receipt, so two teams with one name can be told apart. The email is never saved.
 - `screenshot` and `describe-ui` show their spinner while a simulator's frameworks load, which was a silent pause on the first command.
 - On Android, `describe-ui` frames the keyboard by its keys and buttons, not by its window, which spans the screen around a floating or compact keyboard such as Gboard's toolbar with a hardware keyboard connected. `target_under_keyboard` names `button back` only over docked keys: with only a toolbar showing, Back goes to the app and can leave the screen.
 - `login` on an iOS simulator no longer refuses every field when the tree's order puts a view from another process over the form, such as a Turnstile web widget at the screen's centre: a hit-test at each field's own point decides, as for `tap --fail-if-covered`. `describe-ui` no longer names web content the app draws in its own smaller view as `presented`.

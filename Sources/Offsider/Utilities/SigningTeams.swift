@@ -7,9 +7,16 @@ import Security
 struct SigningTeam: Equatable, Sendable {
     let id: String
     let name: String
+    /// The email a development certificate's common name can hold, for telling teams with one name apart; shown only to the person choosing, never saved.
+    var account: String?
 
     /// `Name (TEAMID)`, as the allow walkthrough lists it.
     var label: String { "\(name) (\(id))" }
+
+    /// What the receipt calls this team: its name, plus what tells it from another team of that name.
+    func shown(among teams: [SigningTeam]) -> String {
+        teams.contains { $0.id != id && $0.name == name } ? "\(name) (\(account ?? id))" : name
+    }
 }
 
 /// The teams the person can sign Offsider's runner with, read from the Keychain's code-signing identities.
@@ -29,19 +36,25 @@ enum SigningTeams {
         let personal = prefix == "Apple Development" || prefix == "iPhone Developer"
         guard let id = organisationalUnit ?? (personal ? nil : bracketed), DeviceAllowance.isTeamID(id) else { return nil }
         let name = organisation?.trimmingCharacters(in: .whitespaces).nilIfEmpty ?? holder.nilIfEmpty ?? id
-        return SigningTeam(id: id, name: name)
+        return SigningTeam(id: id, name: name, account: personal && isEmail(holder) && holder != name ? holder : nil)
     }
 
-    /// Deduplicated by team ID and sorted by name.
+    private static func isEmail(_ text: String) -> Bool {
+        let parts = text.split(separator: "@", omittingEmptySubsequences: false)
+        return parts.count == 2 && parts.allSatisfy { !$0.isEmpty } && !text.contains(where: \.isWhitespace)
+    }
+
+    /// One row per team ID, keeping the first certificate's name and any certificate's email, sorted by name.
     static func teams(_ subjects: [(commonName: String?, organisationalUnit: String?, organisation: String?)]) -> [SigningTeam] {
-        var seen: Set<String> = []
-        return subjects
-            .compactMap { team(commonName: $0.commonName, organisationalUnit: $0.organisationalUnit, organisation: $0.organisation) }
-            .filter { seen.insert($0.id).inserted }
-            .sorted { first, second in
-                let order = first.name.localizedCaseInsensitiveCompare(second.name)
-                return order == .orderedSame ? first.id < second.id : order == .orderedAscending
-            }
+        let found = subjects.compactMap { team(commonName: $0.commonName, organisationalUnit: $0.organisationalUnit, organisation: $0.organisation) }
+        return Dictionary(found.map { ($0.id, $0) }) { first, second in
+            SigningTeam(id: first.id, name: first.name, account: [first.account, second.account].compactMap { $0 }.min())
+        }
+        .values
+        .sorted { first, second in
+            let order = first.name.localizedCaseInsensitiveCompare(second.name)
+            return order == .orderedSame ? first.id < second.id : order == .orderedAscending
+        }
     }
 
     /// Reads identities only (never a private key) with interaction off, so it never prompts. No network.

@@ -734,6 +734,24 @@ struct DeviceAccessCommandTests {
         #expect(try DeviceAccessStatus.parse(["--json"]).perform(context: context).0.hasPrefix("{"))
     }
 
+    @Test("the team menu shows the email that tells two teams with one name apart, the receipt names the choice, and the email is never saved or printed")
+    func collidingTeams() async throws {
+        let home = try makePolicyHome()
+        defer { try? FileManager.default.removeItem(atPath: home) }
+        let teams = [
+            SigningTeam(id: "AAAAA11111", name: "Jane Citizen", account: "jane@example.com"),
+            SigningTeam(id: "BBBBB22222", name: "Jane Citizen"),
+        ]
+        let (output, transcript) = try await Self.allow(["--device", PolicyFixtures.phone, "--app", "com.example.app", "--expires", "2h"], answers: ["\r"], context: { terminal in
+            Self.context(home: home, seal: MemorySeal(), terminal: terminal, devices: { [Self.row] }, teams: { teams })
+        })
+        #expect(transcript.contains("AAAAA11111  jane@example.com"))
+        #expect(transcript.contains("Team      Jane Citizen (jane@example.com)"))
+        #expect(try Self.entries(home).first?.team == "AAAAA11111")
+        #expect(!output.contains("jane@example.com"))
+        #expect(!(try String(contentsOfFile: Self.file(home), encoding: .utf8)).contains("jane@example.com"))
+    }
+
     @Test("--json reaches status, add and remove after their name or before it, rather than stopping at devices")
     func jsonReachesTheSubcommand() async throws {
         let home = try makePolicyHome()
