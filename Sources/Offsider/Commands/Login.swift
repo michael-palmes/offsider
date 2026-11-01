@@ -127,6 +127,7 @@ struct LoginCommand: AsyncParsableCommand {
             )
         }
         app.apply(to: route)
+        if let package, let phone = route.backend as? AndroidBackend { phone.holdToApp(package, on: route.device.rawValue) }
         return route
     }
 

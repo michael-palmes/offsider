@@ -76,14 +76,18 @@ struct DeviceSessionServe: AsyncParsableCommand {
         return !store.isMarkedAsleep(udid: udid)
     }
 
-    /// Through the runner, which reads the screen first, as a blind press would light one already dark; best effort, since the session is ending anyway.
+    /// Through the runner, which reads the screen first, as a blind press would light one already dark; a failure is noted, since the session is ending anyway.
     @MainActor
     static func sleepTestDevice(udid: String, key: String, store: DeviceSessionStore, gate: DevicePolicyGate) async {
         guard sleepsWhenIdle(udid: udid, key: key, store: store, gate: gate), case .allowed(let allowance) = gate.decision(platform: .ios, key: key) else { return }
         let backend = IOSDeviceBackend.make(logger: OffsiderLogger())
         IOSDevicePinning.configure(backend, allowance: allowance, policy: gate.policy(), profileBundleID: { nil })
         backend.runnerTeam = allowance.team
-        _ = try? await backend.sleepScreen(DeviceID(rawValue: udid, platform: .ios))
+        do {
+            _ = try await backend.sleepScreen(DeviceID(rawValue: udid, platform: .ios))
+        } catch {
+            Console.current.data("Note: could not turn off the screen of \(udid): \(DeviceAccessAllow.reason(error)). Run `offsider sleep --device \(udid)`.\n", to: .err)
+        }
         await backend.close()
     }
 

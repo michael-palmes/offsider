@@ -43,7 +43,7 @@ Or choose "Test device: whole device" in the app menu, then answer "Anything per
 
 What it changes:
 
-- Any app may be driven: Safari, Settings, the home screen and the rest. `--app` is optional, and without it commands read and drive what is in front, so a system alert or sheet shows in `describe-ui` and can be tapped.
+- Any app may be driven: Safari, Settings, the home screen and the rest. `--app` is optional, and without it commands read and drive what is in front, so a system alert or sheet shows in `describe-ui` and can be tapped. On an Android phone, `--app` and `login` still hold their command to that app, so a saved password never reaches what comes up over it.
 - There is no front-app check, so commands skip that round trip, and `logs` on an Android phone may read the whole log.
 - On an iPhone or iPad the screen sleeps when the session goes idle or `session stop` ends it, and the next command wakes it ([Screen sleep and wake](ios-devices.md#screen-sleep-and-wake)).
 - `./test-runner.sh --ios-device` and `--android-phone` accept it in place of a pinned playground.

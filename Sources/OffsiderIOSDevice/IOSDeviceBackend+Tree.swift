@@ -11,10 +11,11 @@ extension IOSDeviceBackend: RawAccessibilitySource {
         do {
             return try await host.timing.measure("accessibility") { try await client.snapshot(app: app) }
         } catch let error as IOSDeviceError where state.drivesWhole && error.kind == .otherAppInFront {
+            guard let app else { throw error }
             // A test device can open it itself, so nobody needs to be asked.
             throw IOSDeviceError(
                 .otherAppInFront,
-                "\(app ?? "That app") is not in front on \(id.rawValue), so Offsider read nothing. Leave out --app to read what is in front, or run `offsider app launch --app \(app ?? "<bundle-id>") --device \(id.rawValue)` first."
+                "\(app) is not in front on \(id.rawValue), so Offsider read nothing. Leave out --app to read what is in front, or run `offsider app launch --app \(app) --device \(id.rawValue)` first."
             )
         }
     }
