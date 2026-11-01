@@ -269,7 +269,7 @@ struct Wait: AsyncParsableCommand {
     /// Tells the reader once that another app in front is holding a wait up.
     static func noteOtherApp(limit: TimeInterval, device: String) {
         let shown = WaitLoop.seconds(limit)
-        Console.current.notice(.note("Another app is in front. Waiting up to \(shown) for yours", agent: "another app is in front on \(device), so nothing is read from it; waiting up to \(shown) for the app under test."))
+        Console.current.notice(.note("Another app or a system prompt is in front. Waiting up to \(shown) for yours", agent: "another app or a system prompt is in front on \(device), so nothing is read from it; waiting up to \(shown) for the app under test."))
     }
 
     /// The gate for the device's last input: this process's own when it sent one (a batch step), masked here as the cache's is at exit, else the cached record's.

@@ -46,7 +46,7 @@ struct Drag: AsyncParsableCommand {
     @Option(name: .customLong("duration"), help: "Duration of the drag movement in seconds.")
     var duration: Double = Self.defaultDuration
 
-    @Option(name: .customLong("steps"), help: "Number of touch move events to emit during the drag.")
+    @Option(name: .customLong("steps"), help: "Number of touch move events to emit during the drag (8 more slow the end with --hold-end).")
     var steps: Int = Self.defaultSteps
 
     @Option(name: .customLong("hold-ms"), help: ArgumentHelp("Milliseconds to hold at the start before moving, from 0 to 10000; 500 or more starts a long-press drag.", valueName: "ms"))

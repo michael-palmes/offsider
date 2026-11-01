@@ -938,6 +938,15 @@ struct RunnerSystemPromptTests {
         #expect(transport.calls.map(\.path) == ["/ping"])
     }
 
+    @Test("input the runner dropped after a long wait says it was not sent, and is no tree failure")
+    func droppedInputIsHonest() async throws {
+        let transport = FakeRunnerTransport()
+        transport.failure = (path: "/tap-point", status: 409, code: "queued_too_long")
+        let error = await #expect(throws: IOSDeviceError.self) { try await Self.client(transport).tapPoint(x: 1, y: 2, app: nil) }
+        #expect(error?.reason == .runnerUnavailable)
+        #expect(error?.message.contains("no input was sent") == true)
+    }
+
     @Test("a timeout with no prompt seen still says a prompt may be why, and how to clear it")
     func timeoutNamesThePossibility() {
         let error = IOSDeviceError.runner(.timedOut, udid: Self.udid)

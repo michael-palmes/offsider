@@ -31,7 +31,7 @@ struct SwipeHoldEndTests {
     @Test("a short slow --hold-end swipe keeps moving: a finger still for half a second is a long press, and the list under it never scrolls")
     func shortHoldEndKeepsMoving() throws {
         let swipe = try Self.shortSwipe(["--duration", "0.6", "--hold-end", "400"])
-        #expect(try Self.longestRest(swipe.swipeEvent(from: (x: 215, y: 700), to: (x: 215, y: 630))) <= Swipe.longestRest * 1.01)
+        #expect(try Self.longestRest(swipe.swipeEvent(from: (x: 215, y: 700), to: (x: 215, y: 630))) <= PixelMath.longestSwipeRest * 1.01)
     }
 
     @Test("a short slow plain swipe moves as often: its steps come from the same pace", arguments: [0.6, 1.0, 5.0, 30.0])
@@ -42,7 +42,7 @@ struct SwipeHoldEndTests {
             return
         }
         let steps = PixelMath.swipeSteps(70 / delta)
-        #expect(seconds / Double(steps) <= Swipe.longestRest * 1.01)
+        #expect(seconds / Double(steps) <= PixelMath.longestSwipeRest * 1.01)
     }
 
     @Test("--delta still sets the spacing, and a fast swipe keeps its 50 point spacing, so its fling is what it was")

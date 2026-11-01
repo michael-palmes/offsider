@@ -24,8 +24,6 @@ struct Swipe: AsyncParsableCommand {
 
     static let defaultDuration: TimeInterval = 1.0
     static let defaultDelta = 50.0
-    /// The longest a finger stays still between points: longer can read as a long press, which then stops a list under it from scrolling.
-    static let longestRest: TimeInterval = 0.1
     
     @Option(name: .customLong("start-x"), help: "The X coordinate of the starting point.")
     var startX: Double
@@ -227,9 +225,8 @@ extension Swipe {
         delta.map { PixelMath.swipeSteps(distance / $0) } ?? Drag.defaultSteps
     }
 
-    /// --delta, else `defaultDelta`, or the spacing that leaves no rest over `longestRest` once the step count rounds down.
     var stepDelta: Double {
-        delta ?? min(Self.defaultDelta, distance / ((duration ?? Self.defaultDuration) / Self.longestRest + 1))
+        delta ?? PixelMath.swipeDelta(distance: distance, duration: duration ?? Self.defaultDuration, ceiling: Self.defaultDelta)
     }
 
     private var distance: Double {

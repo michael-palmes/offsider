@@ -49,7 +49,7 @@ offsider drag --start-x 100 --start-y 300 --end-x 100 --end-y 600 --hold-ms 800 
 - On Android the gesture goes as separate requests around each screenshot, so the screen read fits between them on the one UiAutomation helper; the helper keeps the finger down throughout, but sends no resting reports while a screenshot runs. A phone's helper starts before the finger goes down, so the first screenshot does not wait for it.
 - Batch `swipe` and `drag` steps do not take `--screenshot-at`; run the gesture on its own.
 - A slow `swipe` moves the finger at least every 0.1 s unless `--delta` says otherwise: held still longer, it can read as a long press, and a list that takes one then never scrolls. A `--delta` wider than the swipe rests under the finger for the whole `--duration`.
-- `swipe --hold-end` moves in `drag`'s 60 steps unless `--delta` says otherwise. `swipe` and `drag` with `--hold-end` above 0 slow the finger over the last 3 points, inside `--duration`, because a list reads its fling from the last moves, however long the hold. `--hold-end 0` lifts at full speed.
+- `swipe --hold-end` moves in `drag`'s 60 steps unless `--delta` says otherwise. `swipe` and `drag` with `--hold-end` above 0 slow the finger over the last 3 points (pixels on Android), inside `--duration`, because a list reads its fling from the last moves, however long the hold. `--hold-end 0` lifts at full speed.
 
 ### Two fingers and pinch
 

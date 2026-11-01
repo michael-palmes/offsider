@@ -209,6 +209,8 @@ public struct RunnerClient: Sendable {
             throw IOSDeviceError(.secureFieldRefused, "The focused field on \(udid) is a secure field, and Offsider does not replace its text. Clear it in the app, or type without --replace.")
         case "system_prompt":
             throw IOSDeviceError.systemPromptInFront(message, udid: udid)
+        case "queued_too_long":
+            throw IOSDeviceError(.runnerUnavailable, "The runner on \(udid) was busy for too long, so no input was sent. Retry; if it persists, run `offsider doctor --device \(udid)`.")
         case "screen_locked":
             throw IOSDeviceError.screenLocked(udid)
         case "app_not_in_front":

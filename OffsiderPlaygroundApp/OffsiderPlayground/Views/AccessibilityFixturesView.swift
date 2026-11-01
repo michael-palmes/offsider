@@ -284,7 +284,7 @@ struct ModalNavigationTestView: View {
 }
 
 struct LongScrollTestView: View {
-    /// A press held on the list counts as a long press before it can scroll, as a chart or a reorderable row does.
+    /// A press held on the list counts as a long press before it can scroll, as a reorderable row does.
     var holdPressRows = false
     private let rows = Array(1...80)
     @State private var selectedRow = "None"
