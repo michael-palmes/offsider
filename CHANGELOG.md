@@ -101,6 +101,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - `batch` screenshot steps on an iPhone or iPad report `capture`, as `screenshot --json` does.
 - `button home --verify` on an iOS simulator no longer passes on a system alert over an app; it compares the tree there. It and a `--verify` or selector read of a hung simulator now exit `device_unresponsive` instead of holding the device.
 - On a screen turned on its panel (an unfolded iPhone Duo, or any simulator in landscape), system alerts and the home screen report frames in screen points, so label taps reach them.
+- iPhone and iPad: a read under a system prompt such as Allow Paste exits 7 `system_prompt_in_front` at once, not after about 3 s, as the runner now looks for an alert or sheet before it reads; input the runner sends exits the same way. On a test device the error names the commands that read and answer the prompt, with no `ask`, and `wait` fails at once instead of waiting out its timeout. A tap by coordinates, a swipe or keys on a test device still go straight to the session broker, unchecked. Runner reads that waited 14 s are dropped, and input after 4 s, not 5.
 
 ## [0.15.0] - 2026-11-01
 

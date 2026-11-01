@@ -35,9 +35,10 @@ extension IOSDeviceBackend {
         if let client = state.runners[udid] { return client }
         let booted = try await requireBootedDevice(id)
         let connector = try await runnerConnector()
-        let client = try await host.timing.measure("runner") {
+        var client = try await host.timing.measure("runner") {
             try await connector.connect(.device(udid: udid), deviceName: DeviceName.display(udid, label: booted.name))
         }
+        client.testDevice = state.drivesWhole
         state.runners[udid] = client
         return client
     }

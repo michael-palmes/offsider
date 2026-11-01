@@ -7,9 +7,8 @@ final class RunnerTests: XCTestCase {
         let token = try XCTUnwrap(environment["OFFSIDER_RUNNER_TOKEN"].flatMap { $0.isEmpty ? nil : $0 }, "OFFSIDER_RUNNER_TOKEN is required")
         let port = UInt16(environment["OFFSIDER_RUNNER_PORT"] ?? "") ?? 0
         let idle = TimeInterval(environment["OFFSIDER_RUNNER_IDLE_SECONDS"] ?? "").flatMap { $0 > 0 ? $0 : nil } ?? 300
-        let mainThread = RunnerMainThreadState()
-        let commands = RunnerCommands(buildKey: environment["OFFSIDER_RUNNER_BUILD_KEY"] ?? "", mainThread: mainThread)
-        let server = try RunnerServer(port: port, token: token, mainThread: mainThread, handler: commands.handle)
+        let commands = RunnerCommands(buildKey: environment["OFFSIDER_RUNNER_BUILD_KEY"] ?? "")
+        let server = try RunnerServer(port: port, token: token, handler: commands.handle)
         let done = expectation(description: "stop or idle")
         var finished = false
         let finish = {
