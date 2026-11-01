@@ -35,6 +35,13 @@ struct DeviceAllowListNewerTests {
         #expect(policy.list.entry(platform: .android, key: Self.held) == nil, "the held entry must never be read as an allowance")
     }
 
+    @Test("a stranger key on a test device holds it back, so it never drives whole past a limit this build cannot read")
+    func heldTestDeviceDrivesNothing() throws {
+        let policy = try Self.policy(Self.file(#"{"platform":"android","id":"\#(Self.held)","name":"Test Pixel","added":"2026-09-21T14:13:20Z","expires":null,"apps":[],"testDevice":true,"newLimit":1}"#))
+        #expect(policy.decision(platform: .android, key: Self.held) == .refused(.newerEntry("newLimit")))
+        #expect(policy.list.entries.isEmpty)
+    }
+
     @Test("the refusal comes after managed policy and a broken seal, so those still stop every device")
     func strongerRefusalsFirst() throws {
         let list = try DeviceAllowList.parse(Self.file(Self.row(Self.held, extra: Self.stranger), Self.row(Self.other)))
