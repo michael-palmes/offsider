@@ -34,7 +34,10 @@ extension AndroidBackend {
         }
         guard let package else { throw AndroidError.foregroundUnknown(serial) }
         try requireDrivable(package, on: serial)
-        if AndroidForegroundCheck.beforeInput { try await requireInputFocus(serial) }
+        if AndroidForegroundCheck.beforeInput {
+            systemWindowChecks[serial] = nil
+            try await requireInputFocus(serial)
+        }
     }
 
     /// An activity stays resumed beneath a system window or the notification shade, so input also asks which window would take it.
@@ -70,8 +73,7 @@ extension AndroidBackend {
         }
     }
 
-    /// The window `describe-ui` or `screenshot` went ahead under: the system_server owns the focused window, and every focused activity beneath it is one this phone may drive.
-    /// Nothing else opens this, and the tree read's other active windows must still be drivable.
+    /// The window `describe-ui` or `screenshot` goes ahead under: android owns the focused window, and each focused activity and other active window is one this phone may drive.
     private func readableSystemWindow(_ focus: AndroidWindowFocus?, alongside others: [String], title: String?, on serial: String) throws -> UITreeContext.Window {
         guard let focus, focus.owner == AndroidWindowFocus.systemOwner, !focus.focusedApps.isEmpty else {
             throw AndroidError.systemWindowCovers(serial, title: title)
@@ -79,7 +81,7 @@ extension AndroidBackend {
         for package in focus.focusedApps + others {
             try requireDrivable(package, on: serial)
         }
-        return UITreeContext.Window(title: focus.title, kind: .system, package: AndroidWindowFocus.systemOwner, readOnly: true)
+        return UITreeContext.Window(title: AndroidWindowFocus.shown(focus.title), kind: .system, package: AndroidWindowFocus.systemOwner, readOnly: true)
     }
 
     /// A test device reads whatever is in front, so it needs no read of who has focus.

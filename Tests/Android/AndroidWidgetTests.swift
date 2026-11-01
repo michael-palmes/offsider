@@ -61,6 +61,12 @@ struct AndroidWidgetTests {
         #expect(widgets[0].label == "Status")
     }
 
+    @Test("a widget's label is redacted before anything can print it")
+    func labelRedacted() throws {
+        let tree = try Self.launcher([Self.host(10, package: Self.app, bounds: "42,300,500,800", label: "Sent to me@example.com")])
+        #expect(try Self.shown(tree)[0].label?.contains("me@example.com") == false)
+    }
+
     @Test("several come back top to bottom, then left to right")
     func readingOrder() throws {
         let tree = try Self.launcher([

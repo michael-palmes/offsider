@@ -1,4 +1,5 @@
 import Foundation
+import OffsiderCore
 
 /// Which window has input focus and which activity the window manager counts as focused, from `dumpsys window`.
 struct AndroidWindowFocus: Equatable, Sendable {
@@ -17,6 +18,11 @@ struct AndroidWindowFocus: Equatable, Sendable {
 
     /// Whether this is the input method, which never counts as an app in front.
     var isInputMethod: Bool { title == "InputMethod" }
+
+    /// A title as output shows it: masked, redacted and cut, as a hidden branch's label is.
+    static func shown(_ title: String) -> String? {
+        UITreeContext.HiddenBranch.shown(id: nil, label: title, className: nil, frame: nil).label
+    }
 
     /// `Window{hash u0 title}`'s title, an activity's window as `package/Class`; nil when no window has focus.
     static func parse(_ output: String) -> AndroidWindowFocus? {

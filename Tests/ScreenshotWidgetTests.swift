@@ -7,7 +7,7 @@ import Testing
 
 /// What `screenshot --widget` writes, from a scripted widget read.
 @MainActor
-private final class WidgetBackend: FakeDeviceBackend, WidgetCapturing {
+private class WidgetBackend: FakeDeviceBackend, WidgetCapturing {
     /// Each read's answer in order, holding the last.
     let reads: [[HomeWidget]]
     let launcherTree: UITree
@@ -34,6 +34,14 @@ private final class WidgetBackend: FakeDeviceBackend, WidgetCapturing {
     func widgetFullScreenPNG(on id: DeviceID) async throws -> Data {
         fullScreens += 1
         return try ScreenshotMaskTests.whitePNG()
+    }
+}
+
+/// A widget read on a backend that still remembers a system window from an earlier step.
+@MainActor
+private final class StaleWindowBackend: WidgetBackend, SystemWindowReporting {
+    func systemWindow(for id: DeviceID) -> UITreeContext.Window? {
+        UITreeContext.Window(title: "Gone", kind: .system, package: "android", readOnly: true)
     }
 }
 
@@ -117,6 +125,20 @@ struct ScreenshotWidgetTests {
         }
         #expect(error?.reason == .widgetNotShown)
         #expect(!FileManager.default.fileExists(atPath: path))
+    }
+
+    @Test("a label that ticks between the two reads is no change; only a moved widget is")
+    func tickingLabel() async throws {
+        let ticked = HomeWidget(frame: Self.widget.frame, label: "Status 10:01")
+        let (report, _, _) = try await Self.capture(on: try WidgetBackend(reads: [[Self.widget], [ticked]]))
+        #expect(report.widget != nil)
+    }
+
+    @Test("a widget capture names no system window a read before it found")
+    func noStaleWindow() async throws {
+        let backend = try StaleWindowBackend(reads: [[Self.widget]])
+        let (report, _, _) = try await Self.capture(on: backend)
+        #expect(report.systemWindow == nil)
     }
 
     @Test("several widgets with no choice name each and capture nothing; --widget-nth picks one", arguments: [1, 2])
@@ -251,6 +273,16 @@ struct ScreenshotSystemWindowTests {
         #expect((payload["untrusted"] as? [String])?.contains("systemWindow.title") == true)
         #expect(capture.err.contains("Keep this for later?"))
         #expect(capture.err.contains("input stays refused"))
+    }
+
+    @Test("a batch screenshot step marks the window's title and the widget's label as the device's words")
+    func batchMarks() throws {
+        var report = ScreenshotReport(path: nil, width: 1, height: 1, pixelsPerPoint: nil, region: nil, orientation: nil, upright: true, format: .png)
+        report.systemWindow = UITreeContext.Window(title: "Sheet", kind: .system, package: "android", readOnly: true)
+        report.widget = ScreenshotReport.Widget(app: "com.example.app", label: "Status", nth: 1, count: 1)
+        let line = BatchStepRecord(step: 1, kind: "screenshot", line: "screenshot", elapsed: 0, failure: nil, detail: .screenshot(report)).jsonLine()
+        let payload = try #require(try JSONSerialization.jsonObject(with: Data(line.utf8)) as? [String: Any])
+        #expect(payload["untrusted"] as? [String] == ["systemWindow.title", "widget.label"])
     }
 
     @Test("when Android lists nothing beneath the window, masks are unproven; with the app listed they are proven")

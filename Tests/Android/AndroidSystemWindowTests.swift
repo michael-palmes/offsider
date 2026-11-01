@@ -303,6 +303,26 @@ struct AndroidSystemWindowTests {
         #expect(server.services.contains { $0.contains("input ") })
     }
 
+    @Test("input forgets the last focus read, so the capture after it reads again")
+    func inputForgetsFocus() async throws {
+        let (backend, server) = try await Self.backend(focus: Self.focus(title: "\(Self.app)/\(Self.app).MainActivity", owner: Self.app))
+        try await PhoneRead.$overSystemWindow.withValue(true) { try await backend.requireReadableFocus(Self.phone.rawValue) }
+        let session = try await backend.openInputSession(for: Self.phone)
+        try await session.perform(.tapAt(x: 10, y: 10))
+        let before = Self.focusReads(server)
+        try await PhoneRead.$overSystemWindow.withValue(true) { try await backend.requireReadableFocus(Self.phone.rawValue) }
+        #expect(Self.focusReads(server) == before + 1)
+    }
+
+    @Test("a title that holds an email is redacted wherever it is shown")
+    func titleRedacted() async throws {
+        let (backend, _) = try await Self.backend(focus: Self.focus(title: "Saved for me@example.com"))
+        let window = try await read(try Self.covered(title: "Saved for me@example.com"), on: backend)
+        #expect(window?.title?.contains("me@example.com") == false)
+        let refusal = await #expect(throws: AndroidError.self) { _ = try await backend.requireReadableWindows(try Self.covered(title: "Saved for me@example.com"), on: Self.phone.rawValue) }
+        #expect(refusal?.message.contains("me@example.com") == false)
+    }
+
     @Test("a test device's input asks nobody who has focus")
     func testDeviceInput() async throws {
         let (backend, server) = try await Self.backend(focus: Self.focus(), scope: AndroidAppScope(permitted: [], managedCeiling: nil, wholeDevice: true))

@@ -46,8 +46,7 @@ enum AndroidWidgets {
         return !packages.isEmpty && packages.allSatisfy { $0 == app }
     }
 
-    /// `app`'s widgets on the screen, top to bottom and then left to right, when nothing but each widget would show in its frame; else why not, in one sentence with its fix.
-    /// `everyView` is the same screen with views hidden from accessibility, where an image-only widget's views are; hosts come only from `tree`, as it hides what an open folder or Recents covers.
+    /// `app`'s widgets in reading order, when only each widget would show in its frame. Hosts come only from `tree`, which hides what a folder or Recents covers; `everyView` holds an image-only widget's views.
     static func shown(of app: String, in tree: UITree, everyView: UITree? = nil, home: String, placed: [Placed], on serial: String) throws -> [HomeWidget] {
         guard let windows = tree.windows, !windows.isEmpty else {
             throw AndroidError.widgetNotShown(
@@ -81,7 +80,7 @@ enum AndroidWidgets {
                 throw AndroidError.widgetNotShown("Something else overlaps \(app)'s widget on \(serial), and it would show in the image, so Offsider captured nothing. Close it, then retry.")
             }
         }
-        return sized.map { HomeWidget(frame: $0.1, label: $0.0.label) }.sorted { ($0.frame.y, $0.frame.x) < ($1.frame.y, $1.frame.x) }
+        return sized.map { HomeWidget(frame: $0.1, label: $0.0.label.flatMap(AndroidWindowFocus.shown)) }.sorted { ($0.frame.y, $0.frame.x) < ($1.frame.y, $1.frame.x) }
     }
 
     private static func overlaps(_ a: UIFrame?, _ b: UIFrame) -> Bool {

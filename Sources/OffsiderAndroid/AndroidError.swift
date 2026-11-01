@@ -572,7 +572,7 @@ public struct AndroidError: LocalizedError, CustomStringConvertible, Equatable, 
 
     /// A system window over the app takes input that Offsider never sends it; a person closes it.
     static func systemWindowCovers(_ serial: String, title: String?) -> AndroidError {
-        let name = title.map { "(\(TerminalText.quoted(TerminalText.line($0, cap: 60)))) " } ?? ""
+        let name = title.flatMap(AndroidWindowFocus.shown).map { "(\(TerminalText.quoted($0))) " } ?? ""
         return AndroidError(
             .otherAppInFront,
             "A system window \(name)covers the app on \(serial), so Offsider did nothing. Only `describe-ui` and `screenshot` read over it, and nothing taps it. Can you close it on \(serial)?"

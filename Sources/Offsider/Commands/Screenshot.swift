@@ -185,7 +185,7 @@ struct Screenshot: AsyncParsableCommand {
         await appOption.apply(to: route)
         let console = Console.current
         let masks = try await masksWithRunDefaults(maskPlan())
-        let shot = try await pickingWidget(on: route)
+        let shot = try await pickingWidget(on: route, watchdog: watchdog)
         let report = try await console.progress("Capturing the screen") {
             try await watchdog.guardingSetup(device: deviceOption.id) { try await route.backend.prepare() }
             // The bound also covers a --wait-lock wait, since an Android mask's tree read takes the device's lock.
@@ -305,7 +305,7 @@ struct Screenshot: AsyncParsableCommand {
             capture = try await ScreenCapture.capture(backend, device: booted.id)
         }
         let captureMs = Self.milliseconds(since: captureStarted)
-        let systemWindow = Self.namedSystemWindow(on: backend, device: booted.id)
+        let systemWindow = shownWidget == nil ? Self.namedSystemWindow(on: backend, device: booted.id) : nil
         var masked: ScreenCapture.MaskResult?
         if !masks.isEmpty {
             var result = try Timings.measure("mask") { try ScreenCapture.masking(capture, plan: masks, tree: tree, revealed: revealed) }
@@ -556,19 +556,21 @@ extension Screenshot {
     @MainActor
     static func requireStill(_ shown: ChosenWidget, on device: DeviceID) async throws {
         let now = try await shown.capturer.widgets(of: shown.app, on: device)
-        guard now.count == shown.count, now.contains(shown.widget) else {
+        guard now.count == shown.count, now.contains(where: { $0.frame == shown.widget.frame }) else {
             throw CLIError(errorDescription: "The home screen changed during the capture, so Offsider wrote nothing. Retry.", reason: .widgetNotShown)
         }
     }
 
     /// On a person's terminal, a menu when several of the app's widgets show; else this command as it was given.
     @MainActor
-    func pickingWidget(on route: DeviceRouter.Route) async throws -> Screenshot {
+    func pickingWidget(on route: DeviceRouter.Route, watchdog: DeviceWatchdog) async throws -> Screenshot {
         guard widget, widgetNth == nil, OutputProfile.gated == .person, PersonPresence.terminal() else { return self }
         let widgets: [HomeWidget] = try await Console.current.progress("Looking for the widget") {
             guard let capturer = route.backend as? any WidgetCapturing else { return [] }
-            try await route.backend.prepare()
-            return try await capturer.widgets(of: try Self.widgetApp(appOption.bundleID, route: route), on: route.device)
+            try await watchdog.guardingSetup(device: deviceOption.id) { try await route.backend.prepare() }
+            return try await watchdog.guardingRead(of: route.device, extra: DeviceClaims.current.longestWait) {
+                try await capturer.widgets(of: try Self.widgetApp(appOption.bundleID, route: route), on: route.device)
+            }
         }
         guard widgets.count > 1 else { return self }
         let index = try TerminalPrompt.run(cancelled: "Cancelled; nothing was captured.") { prompt in
