@@ -1,0 +1,10 @@
+offsider: file app.xml
+<string name="auth_token"
+<int name="launch_count"
+<boolean name="onboarded"
+<long name="updated_at"
+<float name="scale"
+<set name="tags"
+offsider: file legacy.xml
+offsider: binary
+offsider: done

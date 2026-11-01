@@ -125,6 +125,12 @@ A `--verify --json` report also carries `ignored` (`{node, reason}` entries left
 | `device_control_failed` | 1 | A device setting could not be read or changed | Check the device is booted |
 | `app_not_installed` | 1 | `logs --app`, an `app` command or an Android permission command names an app that is not installed | Install it (the `hint` names the SDK's `adb -s <serial> install <path-to-apk>` on Android), or drop `--app` |
 | `link_not_handled` | 1 | `app open` sent a link no screen of the app takes (Android resolved no activity in the package, or on a simulator no app or another app claimed it) | Check the link's scheme and host against the app's URL types or intent filters, or send the app's own scheme |
+| `apk_unreadable` | 1 | `app install` was given something that is not one readable APK: a missing file, a bundle, or two manifests | Pass a built `.apk` |
+| `package_mismatch` | 1 | `app install`: the APK declares another package, read on the Mac or found by Android, so nothing was installed | Build that app, or pass the APK's own package with `--app` if it is allowed |
+| `install_failed` | 1 | Android refused an `app install`, or the connection dropped during it; the message names the code and the fix | Follow the message; a dropped connection installed nothing, so run it again |
+| `not_debuggable` | 1 | `app prefs` on a release build, which `run-as` refuses | Install a debuggable build with `app install` |
+| `broadcast_refused` | 1 | `app broadcast`: Android keeps the action for the system, or the receiver is not exported, so nothing was sent | Send an action the app declares (the message lists them), or export the receiver in a debug manifest |
+| `receiver_not_found` | 1 | `app broadcast --receiver` names a class the app has no receiver for, so nothing was sent | Check the class name in its manifest |
 | `log_stream_failed` | 1 | The device's log could not be read | Retry |
 | `video_failed` | 1 | Recording or streaming video failed, `--output` names something other than a video file you own, the device could not be marked as recording, or a stop came before the first frame, so nothing was recorded | Check the output path and the private directory, then retry |
 | `video_unmasked` | 1 | `record-video` or `stream-video` was asked for tree masks, the evidence run masks emails or ids, or a password field is on screen (or the screen could not be read) as it starts | Use `screenshot` for masked evidence, or pass `--unmasked` to record anyway |

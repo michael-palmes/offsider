@@ -336,6 +336,7 @@ ANDROID_SUITES=(
     "AndroidVerifyTests"
     "AndroidDeviceStateE2ETests"
     "AndroidNotificationsE2ETests"
+    "AndroidAppManagementE2ETests"
     "AndroidFallbackTests"
     "AndroidJWTTests"
     "AndroidBootTests"

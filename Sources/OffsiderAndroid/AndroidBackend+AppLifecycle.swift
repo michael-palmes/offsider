@@ -22,7 +22,7 @@ extension AndroidBackend: AppLifecycleControlling {
         let reply = try requireStarted(AndroidAppPackage.startReply(output), package: package, on: id, what: "launch")
         return AppLaunch(
             app: package, start: AndroidAppPackage.start(launchState: reply.launchState, wasRunning: running, restarted: restart),
-            restarted: restart, milliseconds: reply.totalTime
+            restarted: restart, milliseconds: reply.totalTime, waitMilliseconds: reply.waitTime, launchState: reply.launchState
         )
     }
 
@@ -49,14 +49,14 @@ extension AndroidBackend: AppLifecycleControlling {
         )
     }
 
-    private func lifecycleShell(_ script: String, package: String, on id: DeviceID, label: String) async throws -> String {
+    func lifecycleShell(_ script: String, package: String, on id: DeviceID, label: String) async throws -> String {
         try await prepare()
         let result = try await requireClient().shell(script, on: id.rawValue, timeout: .seconds(30), label: label)
         return result.stdoutText + result.stderrText
     }
 
     /// Whether the app was running before the script stopped or started it.
-    private func requireInstalled(_ output: String, package: String, on id: DeviceID) throws -> Bool {
+    func requireInstalled(_ output: String, package: String, on id: DeviceID) throws -> Bool {
         switch AndroidAppPackage.state(in: output) {
         case .notInstalled: throw AndroidError.appNotInstalled(package, serial: id.rawValue, adb: adbPath)
         case .installed(let running): return running
@@ -72,7 +72,7 @@ extension AndroidBackend: AppLifecycleControlling {
         return reply
     }
 
-    private static func firstLine(_ text: String) -> String {
+    static func firstLine(_ text: String) -> String {
         text.split(whereSeparator: \.isNewline).first.map(String.init) ?? "no output"
     }
 }

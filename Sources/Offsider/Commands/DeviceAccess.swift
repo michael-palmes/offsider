@@ -145,7 +145,8 @@ extension DeviceAccess {
             let helper = await AndroidBackend.stopWarmHelpers(host: .cli(), serial: udid).isEmpty ? [] : ["warm helper"]
             let reverses = await AndroidBackend.removeMetroReverses(host: .cli(), serial: udid).flatMap(\.ports).map { "adb reverse tcp:\($0)" }
             let posture = await AndroidBackend.resetRecordedPostures(host: .cli(), serial: udid).isEmpty ? [] : ["posture override"]
-            return helper + reverses + posture
+            let airplane = await AndroidBackend.resetRecordedAirplaneModes(host: .cli(), serial: udid).isEmpty ? [] : ["airplane mode"]
+            return helper + reverses + posture + airplane
         }
         var stopped: [String] = []
         let brokers = DeviceSessions.records(device: udid)
