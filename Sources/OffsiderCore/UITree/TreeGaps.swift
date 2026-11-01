@@ -179,9 +179,11 @@ public enum TreeGapFill {
         // A cut read may have lost what the plain read lists.
         guard let viewport = plain.visibleRect, viewport.width > 0, viewport.height > 0, everyView.truncated == nil, !everyView.sourceTruncated else { return plain }
         let listed = plain.roots.flatMap { $0.flattened() }
-        let found = everyView.roots.flatMap { $0.flattened() }.filter { node in
+        // A keyboard's own views are not the app's to hide, and a floating one's window spans keys it does not draw.
+        let appRoots = everyView.roots.filter { $0.role != .keyboard }
+        let found = appRoots.flatMap { $0.flattened() }.filter { node in
             guard node.isContent(in: viewport), let center = node.frame?.center, !listed.contains(where: { $0.isSameView(as: node) }) else { return false }
-            let chain = UITree.hitChain(in: everyView.roots, at: center)
+            let chain = UITree.hitChain(in: appRoots, at: center)
             guard let at = chain.firstIndex(where: { $0.isSameElement(as: node) }) else { return false }
             // A listed element's own text or icon says nothing a person would miss.
             return !chain[..<at].contains { above in

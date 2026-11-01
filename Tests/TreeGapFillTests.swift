@@ -251,6 +251,22 @@ struct TreeGapFillTests {
         #expect(TreeGapFill.filling(plain, from: cut) == plain)
     }
 
+    @Test("a keyboard's own views are never filled, and its window does not hide what the app draws beneath it")
+    func androidKeyboardRoot() {
+        let row = Self.android(.textField, id: "field", label: "Find Items", frame: FakeUI.frame(0, 200, 390, 44))
+        let key = Self.android(.button, label: "Show emoji", frame: FakeUI.frame(10, 500, 44, 44))
+        let keyboard = Self.android(.keyboard, label: "Keyboard", frame: FakeUI.frame(0, 50, 390, 794), children: [key])
+        var plain = Self.androidTree([Self.androidTab])
+        plain.roots.append(Self.android(.keyboard, label: "Keyboard", frame: FakeUI.frame(0, 50, 390, 794)))
+        var every = Self.androidTree([row, Self.androidTab])
+        every.roots.append(keyboard)
+
+        let filled = TreeGapFill.filling(plain, from: every)
+        #expect(filled.filledFromGaps == 1)
+        #expect(Self.ids(filled).contains("field"))
+        #expect(!filled.roots.flatMap { $0.flattened() }.contains { $0.label == "Show emoji" })
+    }
+
     @Test("what is drawn beneath a sheet's backdrop is not added, though every view lists it")
     func androidCoveredStaysOut() {
         let address = Self.android(.text, id: "address", label: "Address bc1q", frame: FakeUI.frame(0, 200, 390, 40))
