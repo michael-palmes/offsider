@@ -32,7 +32,7 @@ struct AppInstallCommand: AsyncParsableCommand {
 
     @MainActor
     func run() async throws {
-        try StayAwakeCommand.requireAndroid(deviceOption.id, command: "app install")
+        try AppManagementSupport.requireAndroid(deviceOption.id, command: "app install")
         let file = try AppManagementSupport.open(apk)
         let declared = try AppManagementSupport.package(of: file)
         let route = try await DeviceRouter.routeForInput(deviceOption, logger: OffsiderLogger())
@@ -55,6 +55,16 @@ struct AppInstallCommand: AsyncParsableCommand {
 }
 
 enum AppManagementSupport {
+    /// Before routing, so an iOS device is refused without starting its stack.
+    static func requireAndroid(_ id: String, command: String) throws {
+        switch DeviceIDClassifier.classify(id) {
+        case .iosSimulator, .iosDevice:
+            throw CLIError(errorDescription: "\(command) is Android only, and \(id) is an iOS device. Nothing was sent.", reason: .notSupported)
+        default:
+            break
+        }
+    }
+
     /// `--app`, else the APK's own package where it is allowed by name or any app is, else offsider.login.json's or the only pinned app, which then must match.
     @MainActor
     static func installTarget(_ option: AppTargetOption, declared: String, route: DeviceRouter.Route, gate: DevicePolicyGate = .current) throws -> String {

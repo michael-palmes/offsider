@@ -29,7 +29,7 @@ struct AppPrefsCommand: AsyncParsableCommand {
 
     @MainActor
     func run() async throws {
-        try StayAwakeCommand.requireAndroid(deviceOption.id, command: "app prefs")
+        try AppManagementSupport.requireAndroid(deviceOption.id, command: "app prefs")
         let route = try await DeviceRouter.route(deviceOption.id, logger: OffsiderLogger())
         let app = try AppTarget.resolve(appOption, route: route, command: "prefs")
         let recorder = EvidenceRecorder.current

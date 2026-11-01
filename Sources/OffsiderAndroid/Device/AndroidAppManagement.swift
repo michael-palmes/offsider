@@ -127,8 +127,6 @@ extension AndroidAppPackage {
         let exported: Bool
     }
 
-    static func receiversMarker(_ text: String) -> String { "\(marker) \(text)" }
-
     /// A named receiver is looked up alone, since an explicit send ignores its intent filters; otherwise what the manifest lists for the action.
     static func receiversScript(action: String, receiver: String?, package: String) -> String {
         let query = receiver.map { "-n \"$p\"/\(ExpoDevClient.shellQuote($0))" } ?? "-a \(ExpoDevClient.shellQuote(action)) -p \"$p\""
@@ -171,13 +169,12 @@ extension AndroidAppPackage {
         case unknown
     }
 
-    /// Android's words for a protected action, in either form. `data=` after the result is the app's own text, so it stays out.
+    /// The completed line first, as `data=` on it is the app's own text; then Android's words for a protected action, in either form.
     static func broadcastReply(_ output: String) -> BroadcastReply {
-        if output.contains("Permission Denial") || output.contains("SecurityException") { return .denied }
         for line in output.split(whereSeparator: \.isNewline) where line.hasPrefix("Broadcast completed:") {
             return .completed(resultCode: line.firstMatch(of: #/result=(-?[0-9]+)/#).flatMap { Int($0.1) })
         }
-        return .unknown
+        return output.contains("Permission Denial") || output.contains("SecurityException") ? .denied : .unknown
     }
 
     /// The custom actions the app's receivers declare in `dumpsys package`, to name in a refusal; Android's own stay out, as the shell cannot send them.
@@ -202,7 +199,7 @@ extension AndroidAppPackage {
 }
 
 /// Airplane mode Offsider turned on, kept until `airplane off`, `session stop` or `devices remove` takes it off. It outlives a reboot, unlike a posture override.
-struct AndroidAirplaneRecord: Equatable, Sendable {
+struct AndroidAirplaneRecord: AndroidSerialRecord, Equatable, Sendable {
     static let maximumBytes = 1_024
     static let directoryName = "airplane"
     static let readScript = "settings get global airplane_mode_on"
@@ -240,34 +237,4 @@ struct AndroidAirplaneRecord: Equatable, Sendable {
     }
 }
 
-struct AndroidAirplaneRecordStore {
-    let directory: String
-
-    /// The record for `serial`, or nil; an unreadable or foreign one is removed.
-    func load(serial: String) -> AndroidAirplaneRecord? {
-        let name = AndroidPostureRecord.fileName(serial: serial)
-        guard let data = try? OffsiderPrivateDirectory.readOwnedFile(named: name, in: directory, maxBytes: AndroidAirplaneRecord.maximumBytes) else { return nil }
-        guard let record = AndroidAirplaneRecord(data: data), record.serial == serial else {
-            OffsiderPrivateDirectory.removeFile(named: name, in: directory)
-            return nil
-        }
-        return record
-    }
-
-    func all() -> [AndroidAirplaneRecord] {
-        let names = (try? FileManager.default.contentsOfDirectory(atPath: directory)) ?? []
-        return names.filter { $0.hasSuffix(".json") }.compactMap { name in
-            (try? OffsiderPrivateDirectory.readOwnedFile(named: name, in: directory, maxBytes: AndroidAirplaneRecord.maximumBytes))
-                .flatMap { $0 }.flatMap(AndroidAirplaneRecord.init(data:))
-                .flatMap { AndroidPostureRecord.fileName(serial: $0.serial) == name ? $0 : nil }
-        }
-    }
-
-    func save(_ record: AndroidAirplaneRecord) throws {
-        try OffsiderPrivateDirectory.writeAtomically(record.encoded(), named: AndroidPostureRecord.fileName(serial: record.serial), in: directory)
-    }
-
-    func remove(serial: String) {
-        OffsiderPrivateDirectory.removeFile(named: AndroidPostureRecord.fileName(serial: serial), in: directory)
-    }
-}
+typealias AndroidAirplaneRecordStore = AndroidSerialRecordStore<AndroidAirplaneRecord>

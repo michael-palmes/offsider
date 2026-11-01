@@ -43,7 +43,7 @@ struct AirplaneCommand: AsyncParsableCommand {
 
     func run() async throws {
         let target = try target()
-        try StayAwakeCommand.requireAndroid(deviceOption.id, command: "airplane")
+        try AppManagementSupport.requireAndroid(deviceOption.id, command: "airplane")
         let route = try await DeviceRouter.routeForInput(deviceOption, logger: OffsiderLogger(), locking: target != nil)
         let console = Console.current
         let (change, id): (AirplaneChange, DeviceID) = try await console.progress(target.map { "Turning airplane mode \($0 ? "on" : "off")" } ?? "Reading airplane mode") {

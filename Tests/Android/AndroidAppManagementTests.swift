@@ -241,13 +241,48 @@ struct AndroidAppInstallTests {
         #expect(error?.message.contains("deletes its data") == true)
     }
 
+    /// Fails a write of the file's bytes, as a socket does when the phone drops off USB; smart-socket requests pass.
+    struct DroppingStream: AdbByteStream {
+        let inner: any AdbByteStream
+        func write(_ data: Data, deadline: ContinuousClock.Instant) async throws {
+            if data.starts(with: [0x50, 0x4B]) { throw AdbConnectError.failed(errno: EPIPE) }
+            try await inner.write(data, deadline: deadline)
+        }
+        func read(upTo count: Int, deadline: ContinuousClock.Instant) async throws -> Data { try await inner.read(upTo: count, deadline: deadline) }
+        func close() async { await inner.close() }
+    }
+
+    struct DroppingConnector: AdbConnecting {
+        let inner: any AdbConnecting
+        func connect(to endpoint: LoopbackEndpoint, timeout: Duration) async throws -> any AdbByteStream {
+            DroppingStream(inner: try await inner.connect(to: endpoint, timeout: timeout))
+        }
+    }
+
     @Test("a connection lost mid-file says nothing was installed and how to go on")
     func droppedMidFile() async throws {
-        let (backend, _) = try Self.setUp(sink: Sink(closeAfter: 1, answers: false))
+        let sink = Sink(answers: false)
+        let server = FakeAdbServer(handler: FakeAdbServer.devices(
+            [Self.device.rawValue],
+            host: { $0 == "host:version" ? FakeAdbServer.okay(payload: "0029") : .hang },
+            device: { _, service in service.hasPrefix("exec:") ? .session(sink) : FakeAdbServer.shell(stdout: "offsider: stopped\n") }
+        ))
+        var host = AndroidTestHost.make(home: try AndroidTestHost.homeWithSDK(), adb: server)
+        host.adbConnector = DroppingConnector(inner: server)
+        let backend = AndroidBackend(host: host) { _, _ in }
         let error = await #expect(throws: AppLifecycleError.self) { try await backend.installApp(ApkFile(path: Self.apk.path), as: Self.package, on: Self.device) }
         #expect(error?.kind == .installFailed)
         #expect(error?.message.contains("nothing was installed") == true)
         #expect(error?.message.contains("run the same command again") == true)
+    }
+
+    @Test("with the whole file sent and no answer, it never claims nothing was installed", arguments: [true, false])
+    func noAnswerAfterWholeFile(closes: Bool) async throws {
+        let (backend, _) = try Self.setUp(sink: Sink(closeAfter: closes ? 1 : nil, answers: false))
+        let error = await #expect(throws: AppLifecycleError.self) { try await backend.installApp(ApkFile(path: Self.apk.path), as: Self.package, on: Self.device) }
+        #expect(error?.kind == .installFailed)
+        #expect(error?.message.contains("nothing was installed") == false)
+        #expect(error?.message.contains("offsider app info") == true)
     }
 
     @Test("the reply keeps only the failure code, as the rest may quote the APK")
@@ -382,6 +417,15 @@ struct AndroidAppBroadcastTests {
         #expect(error?.message.contains("Its own actions: \(Self.action).") == true)
     }
 
+    @Test("a protected action a hidden receiver declares gets the protected refusal, not advice to export it")
+    func protectedOverHiddenReceiver() async throws {
+        let denied = "Security exception: Permission Denial: not allowed to send broadcast\n"
+        let (backend, _) = try Self.setUp(query: Self.receiver("com.example.fixture.Widget", exported: false), send: denied)
+        let error = await #expect(throws: AppLifecycleError.self) { try await backend.sendBroadcast("android.appwidget.action.APPWIDGET_UPDATE", receiver: nil, to: Self.package, on: Self.device) }
+        #expect(error?.message.contains("for the system") == true)
+        #expect(error?.message.contains("exported") == false)
+    }
+
     @Test("an app that is not installed is app_not_installed, and nothing is sent")
     func notInstalled() async throws {
         let (backend, server) = try AndroidAppLifecycleTests.setUp { _ in FakeAdbServer.shell(stdout: "offsider: not-installed\n") }
@@ -390,7 +434,7 @@ struct AndroidAppBroadcastTests {
         #expect(Self.sent(server).isEmpty)
     }
 
-    @Test("shell text in an action or receiver stops at validation", arguments: ["a b", "a;reboot", "a$(reboot)", "a'b", "-n", "a\nb", ""])
+    @Test("shell text in an action or receiver stops at validation", arguments: ["a b", "a;reboot", "a$(reboot)", "a'b", "-n", "a\nb", "a\n", ""])
     func validation(text: String) {
         #expect(throws: AppLifecycleError.self) { try AppBroadcastName.validate(action: text) }
         #expect(throws: AppLifecycleError.self) { try AppBroadcastName.validate(receiver: text) }
@@ -406,6 +450,7 @@ struct AndroidAppBroadcastTests {
     @Test("the receiver's own result text stays out, as only the code is kept")
     func resultCodeOnly() {
         #expect(AndroidAppPackage.broadcastReply(#"Broadcast completed: result=-1, data="anything""#) == .completed(resultCode: -1))
+        #expect(AndroidAppPackage.broadcastReply(#"Broadcast completed: result=1, data="Permission Denial""#) == .completed(resultCode: 1))
         #expect(AndroidAppPackage.broadcastReply("no reply") == .unknown)
     }
 }
@@ -422,10 +467,21 @@ struct AndroidAirplaneTests {
         private var on: Bool
         private var commands: [String] = []
         let refuses: Bool
+        private let late: Bool
+        private var landed = false
 
-        init(on: Bool = false, refuses: Bool = false) {
+        init(on: Bool = false, refuses: Bool = false, late: Bool = false) {
             self.on = on
             self.refuses = refuses
+            self.late = late
+        }
+
+        /// A change that was slow takes effect now; every later one is prompt.
+        func land() {
+            lock.withLock {
+                on = true
+                landed = true
+            }
         }
 
         var isOn: Bool { lock.withLock { on } }
@@ -437,7 +493,7 @@ struct AndroidAirplaneTests {
                 if command.hasPrefix("cmd connectivity airplane-mode ") {
                     commands.append(command)
                     if refuses { return FakeAdbServer.shell(stderr: "Unknown command\n", status: 1) }
-                    on = command.hasSuffix("enable")
+                    if !late || landed { on = command.hasSuffix("enable") }
                 }
                 return FakeAdbServer.shell()
             }
@@ -537,6 +593,17 @@ struct AndroidAirplaneTests {
         let error = await #expect(throws: AppLifecycleError.self) { try await AndroidBackend(host: host) { _, _ in }.setAirplaneMode(true, on: Self.phone) }
         #expect(error?.message.contains("Quick Settings") == true)
         #expect(AndroidAirplaneRecordStore(directory: directory.path).all().isEmpty)
+    }
+
+    @Test("a change that lands after the wait keeps the record, so session stop still undoes it")
+    func lateChange() async throws {
+        let radio = Radio(late: true)
+        let directory = try Self.directory()
+        let host = try Self.host(radio, serial: Self.phone.rawValue, directory: directory)
+        await #expect(throws: AppLifecycleError.self) { try await AndroidBackend(host: host) { _, _ in }.setAirplaneMode(true, on: Self.phone) }
+        radio.land()
+        #expect(await AndroidBackend.resetRecordedAirplaneModes(host: host) == [Self.phone.rawValue])
+        #expect(!radio.isOn)
     }
 
     @Test("with no private folder it stays off rather than leave a change nothing can undo")

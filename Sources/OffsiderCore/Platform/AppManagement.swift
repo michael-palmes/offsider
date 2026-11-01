@@ -112,7 +112,7 @@ public enum AppBroadcastName {
     public static let maximumLength = 256
 
     public static func validate(action: String) throws -> String {
-        guard !action.isEmpty, action.utf8.count <= maximumLength, action.range(of: #"^[A-Za-z][A-Za-z0-9_.$-]*$"#, options: .regularExpression) != nil else {
+        guard !action.isEmpty, action.utf8.count <= maximumLength, action.range(of: #"^[A-Za-z][A-Za-z0-9_.$-]*\z"#, options: .regularExpression) != nil else {
             throw AppLifecycleError(.failed, "The action must be letters, digits, dots, underscores or dashes, at most \(maximumLength) characters, such as com.example.app.action.REFRESH.")
         }
         return action
@@ -120,7 +120,7 @@ public enum AppBroadcastName {
 
     /// A class in the app: `.Receiver` or `com.example.app.Receiver`. Never another app's component: the package is always the one allowed.
     public static func validate(receiver: String) throws -> String {
-        guard receiver.utf8.count <= maximumLength, receiver.range(of: #"^\.?[A-Za-z_][A-Za-z0-9_$]*(\.[A-Za-z_][A-Za-z0-9_$]*)*$"#, options: .regularExpression) != nil else {
+        guard receiver.utf8.count <= maximumLength, receiver.range(of: #"^\.?[A-Za-z_][A-Za-z0-9_$]*(\.[A-Za-z_][A-Za-z0-9_$]*)*\z"#, options: .regularExpression) != nil else {
             throw AppLifecycleError(.failed, "The receiver must be a class in the app, such as .RefreshReceiver or com.example.app.RefreshReceiver.")
         }
         return receiver

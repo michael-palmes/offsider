@@ -25,7 +25,7 @@ struct AppUninstallCommand: AsyncParsableCommand {
     var deviceOption: DeviceOption
 
     func run() async throws {
-        try StayAwakeCommand.requireAndroid(deviceOption.id, command: "app uninstall")
+        try AppManagementSupport.requireAndroid(deviceOption.id, command: "app uninstall")
         let route = try await DeviceRouter.routeForInput(deviceOption, logger: OffsiderLogger())
         let app = try AppTarget.resolve(appOption, route: route, command: "uninstall")
         try AppTarget.requirePinned(app, route: route, command: "uninstall")

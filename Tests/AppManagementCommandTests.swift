@@ -97,9 +97,10 @@ struct AppManagementCommandTests {
 
     @Test("a simulator or an iPhone is told these are Android only, before any stack starts")
     func androidOnly() {
-        let simulator = #expect(throws: CLIError.self) { try StayAwakeCommand.requireAndroid("00000000-0000-0000-0000-000000000001", command: "app prefs") }
+        let simulator = #expect(throws: CLIError.self) { try AppManagementSupport.requireAndroid("00000000-0000-0000-0000-000000000001", command: "app prefs") }
         #expect(simulator?.reason == .notSupported)
         #expect(simulator?.errorDescription?.contains("app prefs is Android only") == true)
+        #expect(simulator?.errorDescription?.contains("sleep") == false)
     }
 
     @Test("--cold is another name for --restart")

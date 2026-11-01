@@ -15,7 +15,7 @@ extension AndroidBackend: AppManaging {
         case .failure(let code):
             throw AndroidAppPackage.installFailure(code: code, package: package, device: id.rawValue)
         case .unknown:
-            throw AppLifecycleError(.installFailed, "Android gave no answer to the install of \(package) on \(id.rawValue). Run `offsider app info --app \(package) --device \(id.rawValue)` to see what is there.")
+            throw AppLifecycleError(.installFailed, "\(id.rawValue) took the whole file but gave no answer, so \(package) may or may not have changed. Check with `offsider app info --app \(package) --device \(id.rawValue)`.")
         }
     }
 
@@ -62,7 +62,8 @@ extension AndroidBackend: AppManaging {
         if let receiver, declared.isEmpty {
             throw AppLifecycleError(.receiverNotFound, "\(package) has no receiver \(receiver), so nothing was sent. Check the class name in its manifest.")
         }
-        guard declared.isEmpty || declared.contains(where: \.exported) else {
+        // Android's own actions go on, so a protected one gets its own refusal rather than advice to export a receiver.
+        guard declared.isEmpty || declared.contains(where: \.exported) || action.hasPrefix("android.") else {
             throw AppLifecycleError(
                 .broadcastRefused,
                 "\(declared.map(\.name).joined(separator: ", ")) in \(package) is not exported, so Android would drop this silently. Nothing was sent. Set android:exported=\"true\" in a debug manifest."
@@ -121,11 +122,16 @@ extension AndroidBackend: AirplaneControlling {
             }
             try store.save(AndroidAirplaneRecord(serial: serial, avd: avd))
         }
+        let took: Bool
         do {
-            try await requireClient().changeAirplaneMode(enabled, on: serial, timing: host, polls: Self.airplanePolls, interval: Self.airplanePollInterval)
+            took = try await requireClient().changeAirplaneMode(enabled, on: serial, timing: host, polls: Self.airplanePolls, interval: Self.airplanePollInterval)
         } catch {
             if enabled { store?.remove(serial: serial) }
             throw error
+        }
+        // Android took the command, so the change may land late: the record stays, and `session stop` drops it if the mode stayed off.
+        guard took else {
+            throw AppLifecycleError(.failed, "\(serial) did not turn airplane mode \(enabled ? "on" : "off") in time. Can you set it in Quick Settings on \(serial)?")
         }
         if !enabled { store?.remove(serial: serial) }
         return AirplaneChange(previous: previous, current: enabled, resetBySessionStop: enabled)
@@ -145,7 +151,7 @@ extension AndroidBackend: AirplaneControlling {
                   let output = try? await client.shell(AndroidAirplaneRecord.readScript, on: serial, label: AndroidAirplaneRecord.readScript),
                   let on = AndroidAirplaneRecord.parseSetting(output.stdoutText) else { continue }
             if on {
-                guard (try? await client.changeAirplaneMode(false, on: serial, timing: host, polls: airplanePolls, interval: airplanePollInterval)) != nil else { continue }
+                guard (try? await client.changeAirplaneMode(false, on: serial, timing: host, polls: airplanePolls, interval: airplanePollInterval)) == true else { continue }
                 reset.append(serial)
             }
             store.remove(serial: record.serial)
@@ -167,8 +173,8 @@ extension AdbClient {
         let opened = try await openService(service, on: serial, timeout: .seconds(15))
         var output = opened.pending
         var lost = false
+        var offset = 0
         do {
-            var offset = 0
             while offset < file.size {
                 let count = min(chunk, file.size - offset)
                 guard let bytes = file.read(at: offset, count: count) else {
@@ -194,14 +200,15 @@ extension AdbClient {
         }
         await opened.stream.close()
         let text = String(decoding: output, as: UTF8.self)
-        if lost || text.isEmpty, AndroidAppPackage.installReply(text) == .unknown {
+        // With every byte sent, Android may still finish: only a file cut short is sure to have installed nothing.
+        if lost, offset < file.size, AndroidAppPackage.installReply(text) == .unknown {
             throw AppLifecycleError(.installFailed, "The connection to \(serial) dropped during the install, so nothing was installed. Check the cable, then run the same command again.")
         }
         return text
     }
 
-    /// Asks Android, then waits until the setting reads back, as the change lands a moment after the command returns.
-    func changeAirplaneMode(_ enabled: Bool, on serial: String, timing host: AndroidHost, polls: Int, interval: Duration) async throws {
+    /// Asks Android, then waits until the setting reads back, as the change lands a moment after the command returns; false if it never did.
+    func changeAirplaneMode(_ enabled: Bool, on serial: String, timing host: AndroidHost, polls: Int, interval: Duration) async throws -> Bool {
         let script = AndroidAirplaneRecord.script(enabled: enabled)
         let result = try await shell(script, on: serial, label: script)
         guard result.status == 0 else {
@@ -209,9 +216,9 @@ extension AdbClient {
         }
         for _ in 0..<polls {
             let output = try await shell(AndroidAirplaneRecord.readScript, on: serial, label: AndroidAirplaneRecord.readScript)
-            if AndroidAirplaneRecord.parseSetting(output.stdoutText) == enabled { return }
+            if AndroidAirplaneRecord.parseSetting(output.stdoutText) == enabled { return true }
             try await host.sleep(interval)
         }
-        throw AppLifecycleError(.failed, "\(serial) did not turn airplane mode \(enabled ? "on" : "off"). Can you set it in Quick Settings on \(serial)?")
+        return false
     }
 }

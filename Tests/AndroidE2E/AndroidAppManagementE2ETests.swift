@@ -2,7 +2,7 @@ import Foundation
 import OffsiderCore
 import Testing
 
-/// Set by `--rn-debug`: a debuggable build under the playground's own id, which `app prefs` needs.
+/// Set by `test-runner.sh --android`: a debuggable build under the playground's own id, which `app prefs` needs.
 private let debugAPK = ProcessInfo.processInfo.environment["OFFSIDER_ANDROID_DEBUG_APK"].flatMap { $0.isEmpty ? nil : $0 }
 
 @Suite("Android app install, prefs, broadcast and airplane", .serialized, .enabled(if: isAndroidE2EEnabled))

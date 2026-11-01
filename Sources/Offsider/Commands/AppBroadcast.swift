@@ -44,7 +44,7 @@ struct AppBroadcastCommand: AsyncParsableCommand {
     }
 
     func run() async throws {
-        try StayAwakeCommand.requireAndroid(deviceOption.id, command: "app broadcast")
+        try AppManagementSupport.requireAndroid(deviceOption.id, command: "app broadcast")
         let route = try await DeviceRouter.routeForInput(deviceOption, logger: OffsiderLogger())
         let app = try AppTarget.resolve(appOption, route: route, command: "broadcast")
         let console = Console.current
