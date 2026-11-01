@@ -462,6 +462,7 @@ public final class RunnerSessionManager {
         switch finding {
         case .deviceLocked: return .runnerLocked(deviceName)
         case .automationNotEnabled: return .runnerAutomationBlocked(deviceName)
+        case .certificateNotTrusted: return .runnerCertificateNotTrusted(deviceName)
         }
     }
 
