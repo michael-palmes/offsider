@@ -155,7 +155,7 @@ struct VerifyTests {
         let json = try report(result.stdout)
 
         #expect(result.exitCode == 0)
-        #expect(json["change"] as? String == "accessibility-tree")
+        #expect(json["change"] as? String == "activity")
         #expect(json["style"] is NSNull)
         let uiState = try await TestHelpers.getUIState()
         #expect(UIStateParser.findElement(in: uiState, withIdentifier: "button-test-screen") == nil)
