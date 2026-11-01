@@ -41,6 +41,7 @@ public final class DeviceActivityLedger {
 
     /// A full read (never a point read); `startedAt` guards against replacing a newer command's record.
     public func recordTreeRead(_ tree: UITree, on device: DeviceID, startedAt: Date) {
+        OutputMasks.current.note(tree)
         update(device) { activity in
             activity.firstReadStartedAt = activity.firstReadStartedAt ?? startedAt
             activity.tree = tree

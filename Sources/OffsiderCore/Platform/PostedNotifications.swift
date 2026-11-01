@@ -52,20 +52,23 @@ public struct PostedNotification: Hashable, Sendable {
         self.ongoing = ongoing
     }
 
-    /// One-time codes, card numbers, wallet addresses and recovery phrases hidden, as `describe-ui` hides them; and how many.
-    public func redacted() -> (notification: PostedNotification, count: Int) {
+    /// One-time codes, card numbers, wallet addresses, recovery phrases and what `mask`'s patterns match hidden, as `describe-ui` hides them; and how many.
+    public func redacted(_ mask: TreeValueMask = .none) -> (notification: PostedNotification, count: Int) {
         var copy = self
         var count = 0
         func hide(_ value: String?) -> String? {
-            guard let value else { return nil }
-            let result = LogRedactor.redactValue(value)
-            count += result.count
-            return result.text
+            value.map { UITree.redactText($0, mask: mask, count: &count) }
         }
         copy.title = hide(title)
         copy.text = hide(text)
         copy.bigText = hide(bigText)
         copy.subText = hide(subText)
+        copy.channel = hide(channel)
+        copy.tag = hide(tag)
+        // The key repeats the tag; `--new` compares raw snapshots, so only what prints changes.
+        if let tag, let shown = copy.tag, shown != tag {
+            copy.key = key.replacingOccurrences(of: tag, with: shown)
+        }
         return (copy, count)
     }
 
@@ -77,7 +80,7 @@ public struct PostedNotification: Hashable, Sendable {
 
 /// The JSON `notifications` prints with `--json`.
 public enum NotificationReport {
-    static let untrusted = ["notifications[].tag", "notifications[].channel", "notifications[].title", "notifications[].text", "notifications[].bigText", "notifications[].subText"]
+    static let untrusted = ["notifications[].key", "notifications[].tag", "notifications[].channel", "notifications[].title", "notifications[].text", "notifications[].bigText", "notifications[].subText"]
 
     public static func json(_ notifications: [PostedNotification], app: String, source: NotificationSnapshot.Source, redacted: Int, matched: String? = nil, on device: DeviceID) -> String {
         var members: [(String, OrderedJSON)] = [

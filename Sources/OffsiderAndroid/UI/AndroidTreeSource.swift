@@ -31,6 +31,6 @@ enum AndroidTreeSource {
     }
 
     static func truncationWarning(serial: String) -> String {
-        "The screen on \(serial) has more than 20,000 accessibility nodes; describe-ui shows the first 20,000."
+        "The screen on \(serial) is past 20,000 accessibility nodes or depth 200; describe-ui shows what was read, and masks may miss the rest."
     }
 }

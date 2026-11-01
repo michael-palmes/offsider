@@ -103,7 +103,7 @@ struct VideoMaskOptions: ParsableArguments {
         } catch {
             throw CLIError(errorDescription: VideoMaskPolicy.unreadableRefusal(command: command, error: OffsiderCommand.message(for: error)), reason: .videoUnmasked)
         }
-        if VideoMaskPolicy.showsSecureField(tree) {
+        if VideoMaskPolicy.showsSecureField(tree, revealed: await TreeCache.revealedSecrets(for: device, backend: backend)) {
             throw CLIError(errorDescription: VideoMaskPolicy.secureFieldRefusal(command: command), reason: .videoUnmasked)
         }
         if let config, let shown = try configMatch(config.config, in: tree) {
@@ -112,6 +112,9 @@ struct VideoMaskOptions: ParsableArguments {
                     + "Leave that screen first, use `screenshot`, which masks it, or pass --unmasked to record anyway.",
                 reason: .videoUnmasked
             )
+        }
+        if let unproven = ScreenCapture.unproven(tree) {
+            Console.current.notice(ScreenCapture.unprovenNotice(unproven, subject: "the video"))
         }
     }
 

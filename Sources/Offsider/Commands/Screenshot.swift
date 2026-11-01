@@ -284,11 +284,8 @@ struct Screenshot: AsyncParsableCommand {
             capture = result.capture
             masked = result
             let console = Console.current
-            if result.unproven != nil {
-                console.notice(.warning(
-                    "Masks can't see behind this modal; check the image",
-                    agent: "a modal window covers the app and Android leaves what is behind it out of the tree, so masks may miss text drawn there; check the image or add --mask-region (maskUnproven)."
-                ))
+            if let unproven = result.unproven {
+                console.notice(ScreenCapture.unprovenNotice(unproven, subject: "the image"))
             }
             if !result.unmatched.isEmpty {
                 let names = result.unmatched.joined(separator: ", ")

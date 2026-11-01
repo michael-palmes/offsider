@@ -418,7 +418,7 @@ struct Type: AsyncParsableCommand, VerifiableCommand {
         backend: any DeviceBackend, device: DeviceID, recordingLive: (DeviceLockKey) -> Bool = { RecordingMarker.isLive($0) }
     ) async throws {
         guard recordingLive(DeviceLockKey(platform: device.platform, id: device.rawValue)) else { return }
-        if let tree = try? await backend.accessibilityTree(for: device), !VideoMaskPolicy.showsSecureField(tree) { return }
+        if let tree = try? await backend.accessibilityTree(for: device), !VideoMaskPolicy.showsSecureField(tree, revealed: await TreeCache.revealedSecrets(for: device, backend: backend)) { return }
         try RecordingMarker.refuseTyping("with a password field on screen", command: "type", on: device, recordingLive: recordingLive)
     }
 
