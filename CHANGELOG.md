@@ -52,7 +52,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Fixed
 
-- `devices add`'s team menu shows the account's email when a development certificate's common name holds one, on its row and its receipt, so two teams with one name can be told apart. The email is never saved.
+- `devices add`'s team menu tells two teams with one name apart: each row says `Free` or `Paid` where Xcode's local preferences say, and shows the account's email when a development certificate's common name holds one. Free teams come last. The email is never saved.
+- `doctor`'s `ios-device.runner-signing` counts Xcode's signed-in teams on Xcode 27, where it said none.
 - `certificate_not_trusted` (exit 7): a runner the device will not launch because it does not trust the certificate names the fix, Settings > General > VPN & Device Management, and carries an `ask`, where it failed with `runner_unavailable` and said to check UI Automation.
 - `screenshot` and `describe-ui` show their spinner while a simulator's frameworks load, which was a silent pause on the first command.
 - On Android, `describe-ui` frames the keyboard by its keys and buttons, not by its window, which spans the screen around a floating or compact keyboard such as Gboard's toolbar with a hardware keyboard connected. `target_under_keyboard` names `button back` only over docked keys: with only a toolbar showing, Back goes to the app and can leave the screen.

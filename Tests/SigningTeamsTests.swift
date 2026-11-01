@@ -80,4 +80,42 @@ struct SigningTeamsTests {
         #expect(cell.count < 100)
         #expect(!PromptScreen.label(team.shown(among: [team, SigningTeam(id: "BBBBB22222", name: "Jane Citizen")])).unicodeScalars.contains("\u{1B}"))
     }
+
+    @Test("where Xcode says, a row reads Free or Paid, and a free team sorts after a paid one of the same name")
+    func freeAndPaid() {
+        let teams = SigningTeams.teams([
+            (commonName: "Apple Development: jane@example.com (PERSON1234)", organisationalUnit: "AAAAA11111", organisation: "Jane Citizen"),
+            (commonName: "Apple Development: Jane Citizen (PERSON5678)", organisationalUnit: "BBBBB22222", organisation: "Jane Citizen"),
+            (commonName: "Apple Development: Jane Citizen (PERSON9012)", organisationalUnit: "CCCCC33333", organisation: "Example Pty Ltd"),
+            (commonName: "Apple Development: Jane Citizen (PERSON3456)", organisationalUnit: "DDDDD44444", organisation: "Zebra Labs"),
+        ], xcode: ["AAAAA11111": true, "BBBBB22222": false, "CCCCC33333": false, "EEEEE55555": true])
+        #expect(DeviceAccessAllow.teamRows(teams).map(\.columns) == [
+            ["Example Pty Ltd", "Paid", "CCCCC33333"],
+            ["Jane Citizen", "Paid", "BBBBB22222"],
+            ["Zebra Labs", "", "DDDDD44444"],
+            ["Jane Citizen", "Free", "AAAAA11111  jane@example.com"],
+        ])
+    }
+
+    @Test("Xcode's preferences give each team and whether it is free, in either key's shape, skipping what they cannot read")
+    func readsXcodeTeams() {
+        let accounts: [String: Any] = [
+            "00000000-0000-0000-0000-000000000001": [
+                ["teamID": "AAAAA11111", "teamName": "Jane Citizen (Personal Team)", "isFreeProvisioningTeam": true],
+                ["teamID": "BBBBB22222", "teamName": "Example Pty Ltd", "isFreeProvisioningTeam": false],
+            ],
+            "jane@example.com": [
+                ["teamID": "CCCCC33333"],
+                ["teamID": "DDDDD44444", "isFreeProvisioningTeam": "yes"],
+                ["teamName": "No ID"],
+            ],
+            "notTeams": "text",
+        ]
+        let teams = XcodeTeams.parse(accounts)
+        #expect(teams.keys.sorted() == ["AAAAA11111", "BBBBB22222", "CCCCC33333", "DDDDD44444"])
+        #expect(teams["AAAAA11111"] == .some(true))
+        #expect(teams["BBBBB22222"] == .some(false))
+        #expect(teams["CCCCC33333"] == .some(nil))
+        #expect(teams["DDDDD44444"] == .some(nil))
+    }
 }

@@ -524,11 +524,13 @@ struct DeviceAccessAllow: AsyncParsableCommand {
         PromptScreen.label(team.shown(among: teams), cap: 120)
     }
 
-    /// A team's name, then its ID and the email its certificate holds, if any, as one dim detail.
+    /// A team's name, whether it is free where Xcode says, then its ID and the email its certificate holds, if any, as one dim detail.
     static func teamRows(_ teams: [SigningTeam]) -> [MenuRow] {
-        teams.map { team in
+        let plans = teams.contains { $0.free != nil }
+        return teams.map { team in
+            let plan = team.free.map { $0 ? AllowScreen.freeTeam : AllowScreen.paidTeam } ?? ""
             let detail = ([team.id] + (team.account.map { [$0] } ?? [])).joined(separator: "  ")
-            return MenuRow(.team, [PromptScreen.label(team.name), PromptScreen.label(detail)], recommended: teams.count == 1)
+            return MenuRow(.team, [PromptScreen.label(team.name)] + (plans ? [plan] : []) + [PromptScreen.label(detail)], recommended: teams.count == 1)
         }
     }
 

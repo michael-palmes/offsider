@@ -9,6 +9,8 @@ struct SigningTeam: Equatable, Sendable {
     let name: String
     /// The email a development certificate's common name can hold, for telling teams with one name apart; shown only to the person choosing, never saved.
     var account: String?
+    /// Whether Xcode calls this team free; nil when it does not say, as a certificate never does.
+    var free: Bool?
 
     /// `Name (TEAMID)`, as the allow walkthrough lists it.
     var label: String { "\(name) (\(id))" }
@@ -44,14 +46,16 @@ enum SigningTeams {
         return parts.count == 2 && parts.allSatisfy { !$0.isEmpty } && !text.contains(where: \.isWhitespace)
     }
 
-    /// One row per team ID, keeping the first certificate's name and any certificate's email, sorted by name.
-    static func teams(_ subjects: [(commonName: String?, organisationalUnit: String?, organisation: String?)]) -> [SigningTeam] {
+    /// One row per team ID, keeping the first certificate's name and any certificate's email; free teams last, then by name.
+    static func teams(_ subjects: [(commonName: String?, organisationalUnit: String?, organisation: String?)], xcode: [String: Bool?] = [:]) -> [SigningTeam] {
         let found = subjects.compactMap { team(commonName: $0.commonName, organisationalUnit: $0.organisationalUnit, organisation: $0.organisation) }
         return Dictionary(found.map { ($0.id, $0) }) { first, second in
             SigningTeam(id: first.id, name: first.name, account: [first.account, second.account].compactMap { $0 }.min())
         }
         .values
+        .map { SigningTeam(id: $0.id, name: $0.name, account: $0.account, free: xcode[$0.id] ?? nil) }
         .sorted { first, second in
+            if (first.free == true) != (second.free == true) { return second.free == true }
             let order = first.name.localizedCaseInsensitiveCompare(second.name)
             return order == .orderedSame ? first.id < second.id : order == .orderedAscending
         }
@@ -75,7 +79,7 @@ enum SigningTeams {
             guard SecIdentityCopyCertificate(item as! SecIdentity, &certificate) == errSecSuccess, let certificate else { return nil }
             return subject(of: certificate)
         }
-        return teams(subjects.map { (commonName: $0.0, organisationalUnit: $0.1, organisation: $0.2) })
+        return teams(subjects.map { (commonName: $0.0, organisationalUnit: $0.1, organisation: $0.2) }, xcode: XcodeTeams.signedIn())
     }
 
     private static func subject(of certificate: SecCertificate) -> (String?, String?, String?) {
