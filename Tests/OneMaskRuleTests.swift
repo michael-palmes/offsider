@@ -315,6 +315,66 @@ struct OneMaskRuleTests {
         }
     }
 
+    // MARK: A test device
+
+    private static let phone = DeviceID(rawValue: PolicyFixtures.serial, platform: .android)
+    private static let wholeDevice = DevicePolicyGate.fixed(
+        PhysicalDevicePolicy(managed: .none, list: DeviceAllowList(entries: [
+            DeviceAllowance(platform: .android, key: PolicyFixtures.serial, name: "Test phone", added: PolicyFixtures.added, expires: nil, apps: [], testDevice: true),
+        ])),
+        now: PolicyFixtures.now
+    )
+
+    @Test("on a test device, an agent turning password masks off still needs a person")
+    func testDeviceKeepsPersonGate() throws {
+        let command = try Screenshot.parse(["--no-mask-secure", "--device", PolicyFixtures.serial])
+        let error = #expect(throws: CLIError.self) {
+            try DevicePolicyGate.$current.withValue(Self.wholeDevice) { _ = try command.maskPlan(environment: [:]) }
+        }
+        #expect(error?.reason == .personRequired)
+    }
+
+    @Test("on a test device, a run's masks and the mask file still paint, and screen text is still hidden")
+    func testDeviceKeepsMasks() async throws {
+        let run = try RunFixture()
+        _ = try run.start(masks: RunMasks(emails: true))
+        let rows = [
+            FakeUI.node(.text, label: "me@example.com", frame: FakeUI.frame(100, 200, 200, 40), platform: .android),
+            FakeUI.node(.text, id: "balance", label: "$12", frame: FakeUI.frame(100, 400, 200, 40), platform: .android),
+        ]
+        let backend = FakeDeviceBackend(
+            platform: .android, trees: [FakeUI.tree(platform: .android, device: PolicyFixtures.serial, width: 390, height: 844, rows)],
+            screenshots: [try ScreenshotMaskTests.whitePNG()], screen: ScreenshotMaskTests.screen
+        )
+        let route = DeviceRouter.Route(backend: backend, device: Self.phone)
+        let path = ScreenshotMaskTests.temporaryPath()
+        defer { try? FileManager.default.removeItem(atPath: path) }
+        let command = try Screenshot.parse(["--output", path, "--device", PolicyFixtures.serial])
+        let check = try Assert.parse(["--id", "balance", "--json", "--device", PolicyFixtures.serial])
+        let fixture = try TreeCacheFixture()
+        var printed = ""
+
+        try await fixture.run {
+            try await Self.masked {
+                try await DevicePolicyGate.$current.withValue(Self.wholeDevice) {
+                    try await run.command(run.recorder("screenshot")) {
+                        _ = try await command.take(try command.request(), on: route, masks: command.masksWithRunDefaults(try command.maskPlan(environment: [:])))
+                    }
+                    let outcome = try await check.evaluate(on: route, logger: OffsiderLogger())
+                    let capture = ConsoleCapture()
+                    try await check.show(outcome, on: route, console: AgentOutputTests.agentConsole(capture))
+                    printed = capture.out
+                }
+            }
+        }
+
+        let image = try ScreenImage.decode(try Data(contentsOf: URL(fileURLWithPath: path)))
+        #expect(ScreenshotMaskTests.point(image, 200, 220) == ScreenshotMaskTests.black)
+        #expect(ScreenshotMaskTests.point(image, 200, 420) == ScreenshotMaskTests.black)
+        #expect(run.manifest().first?.masked == 2)
+        #expect(printed.contains("[redacted]") && !printed.contains("$12"), "\(printed)")
+    }
+
     // MARK: A broken file
 
     private static let broken: @Sendable () throws -> MaskConfigs.Loaded? = {
