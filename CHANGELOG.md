@@ -16,6 +16,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - `rn devmenu --json` adds `closedBy: "fallback"` when the item left the menu open and Offsider closed it.
 - `record-video` and `stream-video` take `--wait-lock` for their one tree read.
 
+### Changed
+
+- `record-video` with no `--duration` stops and saves at 10 minutes, with a note and `reachedLimit` in `--json`, so a lost background recording cannot block logins for ever. Pass `--duration`, up to 3600, for longer.
+- `session stop --device <id>` also stops and saves a recording on that device, and says so only once it has ended. `doctor --device` warns `device.recording` while one runs, and the refusal `login`, `wake --unlock` and `type --stdin` give names its pid, with `kill -INT <pid>` as the `hint`.
+- `app open` on an iPhone or iPad says `Sent the link to`, as iOS reports only that it delivered the link. `--json` adds `linkHandled`: `true` once Android or a simulator showed the app took the link, `null` on an iPhone or iPad.
+- `record-video` and `stream-video` end when a simulator or emulator gives no frame for 30 s (exit 1, `device_unresponsive`); a recording saves its frames first.
+
 ### Fixed
 
 - `tap` refuses a target under the 50 pt circle of Expo's floating dev menu button, though the tree gives only its 26 pt icon (`evidence` `devMenuTouchArea`, with the `drag` that moves it clear as the hint), and `--verify` no longer passes when the dev menu opens over the app (exit 5, `note` `devmenu_opened`).
@@ -45,6 +52,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - `rn open --json` stays valid JSON with a newline in `--wait-id`.
 - The skill's lasting-state rule names `posture`.
 - The foldables guide says `screenshot --display` needs the display active.
+- `app stop` on an iPhone or iPad could end an app extension and report the app stopped, and `app launch` could misreport the start. Only the process directly in the bundle now counts as the app.
+- `app stop` on an iPhone or iPad reported "was not running" when `devicectl` named no bundle location; it now says it cannot tell and stops nothing, and `app launch` leaves `start` empty.
+- A `devicectl` failure holding the letters "locked", such as "blocked", no longer reads as `device_locked`, and a real lock keeps `devicectl`'s words.
+- `app open` on Android reported success when the link landed on the chooser or another app; that is now `link_not_handled`.
+- `app open --restart` on Android checks the link before it stops the app, and any refusal after a stop, there or on a simulator, says the app was stopped.
+- An `am start` exception reads as its cause, with the fix for a screen that is not exported, instead of "status unknown"; `Status: timeout` says the app may still be starting.
+- `notifications`: multi-line text no longer stops at a line ending in `)` and no longer takes in an app's own extras; a mistyped package is `app_not_installed`, not an empty list; on Android 8 to 10 a line at the margin ending in `:` in any app's text no longer drops later records, and the archive after the list stays off the cable; `--wait` runs its whole `--timeout` with a last read at the end, so `--new --timeout 1` can succeed.
+- A stuck capture or writer can no longer make a recording unstoppable: a stop or `--duration` during a hung capture saves the frames so far, and a stop that still cannot finish ends the process within seconds with the staging folder removed. A failed writer ends the recording instead of waiting for ever.
+- `stream-video`: a stop before the first frame ends it at once with exit 1 and nothing streamed, and a stalled reader can no longer hold up a stop.
 
 ## [0.15.0] - 2026-11-01
 

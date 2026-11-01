@@ -99,7 +99,7 @@ Exit 0 means the submit button was tapped, not that the server accepted the logi
 | `app_not_allowed` | A browser or system app is in front, or the password field is inside a web view | Bring the app under test to the front; web sign-in needs the user's opt-in |
 | `person_required` | Touch ID or the password was cancelled or unavailable (plain ssh), or a link no person confirmed | Hand back; the message names the command for the user |
 | `device_not_allowed` | A physical phone not allowed, or a user saved without `--devices any` | Ask the user; never loosen it yourself |
-| `device_busy` (exit 8) | `record-video` is recording the device; nothing was typed | Stop the recording, then retry |
+| `device_busy` (exit 8) | `record-video` or `stream-video` is running on the device; nothing was typed | Run the `hint`, `kill -INT <pid>`, which saves it, then retry |
 
 On an iOS simulator, iOS can offer to save the password a second or more after a sign-in. `describe-ui` then shows `# window: Save Password? (system)` without its buttons, and a selector `tap` under it refuses with `target_covered` (`evidence` `otherProcess`) rather than spend the tap dismissing it. Take a screenshot and tap Not Now by its coordinates (`tap -x <X> -y <Y>`), or tap its backdrop as the refusal says, then wait until the header has gone. Never tap Save.
 

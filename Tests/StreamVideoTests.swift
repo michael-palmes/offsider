@@ -58,7 +58,7 @@ struct StreamVideoTests {
             fps: 5,
             quality: 50,
             scale: 0.5,
-            duration: 1.0
+            duration: 3.0
         )
 
         #expect(isAcceptableStreamExitCode(result.exitCode), "Unexpected exit code: \(result.exitCode)")
