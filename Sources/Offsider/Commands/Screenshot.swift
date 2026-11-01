@@ -167,10 +167,10 @@ struct Screenshot: AsyncParsableCommand {
         await appOption.apply(to: route)
         let console = Console.current
         let masks = try await masksWithRunDefaults(maskPlan())
-        try await watchdog.guardingSetup(device: deviceOption.id) { try await route.backend.prepare() }
         let report = try await console.progress("Capturing the screen") {
+            try await watchdog.guardingSetup(device: deviceOption.id) { try await route.backend.prepare() }
             // The bound also covers a --wait-lock wait, since an Android mask's tree read takes the device's lock.
-            try await watchdog.guardingRead(of: route.device, extra: DeviceClaims.current.longestWait) {
+            return try await watchdog.guardingRead(of: route.device, extra: DeviceClaims.current.longestWait) {
                 try await take(request, on: route, masks: masks, plain: !json)
             }
         }
@@ -286,11 +286,8 @@ struct Screenshot: AsyncParsableCommand {
             capture = result.capture
             masked = result
             let console = Console.current
-            if result.unproven != nil {
-                console.notice(.warning(
-                    "Masks can't see behind this modal; check the image",
-                    agent: "a modal window covers the app and Android leaves what is behind it out of the tree, so masks may miss text drawn there; check the image or add --mask-region (maskUnproven)."
-                ))
+            if let unproven = result.unproven {
+                console.notice(ScreenCapture.unprovenNotice(unproven, subject: "the image"))
             }
             if !result.unmatched.isEmpty {
                 let names = result.unmatched.joined(separator: ", ")
@@ -457,16 +454,21 @@ enum UnmaskedConsent {
         + "Run it from your own terminal, or keep the mask and hide other fields with --mask-id."
 
     /// Refuses for an agent unless a person confirmed in this process; a person at a terminal is never asked.
-    static func require(profile: OutputProfile = .current) throws {
+    static func require(profile: OutputProfile = .gated) throws {
         guard profile == .agent, !confirmed else { return }
         throw CLIError.personRequired(refusal)
     }
 
     /// For an agent: a terminal on standard input, then Touch ID or the password; refused without either.
-    static func confirm(command: String, profile: OutputProfile = .current) async throws {
+    static func confirm(command: String, profile: OutputProfile = .gated) async throws {
+        try await confirm(reason: "\(command) with password fields unmasked", refusal: refusal, profile: profile)
+    }
+
+    /// `reason` completes macOS's sentence "offsider is trying to ..."; `refusal` is the agent's answer with no terminal.
+    static func confirm(reason: String, refusal: String, profile: OutputProfile = .gated) async throws {
         guard profile == .agent, !confirmed else { return }
         guard PersonPresence.terminal() else { throw CLIError.personRequired(refusal) }
-        try await PersonPresence.confirm(reason: "\(command) with password fields unmasked")
+        try await PersonPresence.confirm(reason: reason)
         confirmed = true
     }
 }

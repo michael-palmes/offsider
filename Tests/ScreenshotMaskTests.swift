@@ -283,6 +283,37 @@ struct ScreenshotMaskTests {
         #expect(Self.pixel(image, 394, 315) == Self.black)
     }
 
+    /// stack-test-depth, beneath the page, inside an identical parent, as iOS lists a matched text twice.
+    static func doubledBeneathTree() throws -> UITree {
+        func doubled(_ node: UINode) -> UINode {
+            var copy = node
+            copy.children = node.id == "stack-test-depth" ? [node] : node.children.map(doubled)
+            return copy
+        }
+        var tree = try stackTree()
+        tree.roots = tree.roots.map(doubled)
+        return tree
+    }
+
+    @Test("a matched text listed twice beneath the page counts as beneath, once; the default still paints it")
+    func doubledCountsBeneath() async throws {
+        let (report, image, _) = try await Self.stackCapture(["--mask-text", "Stack Depth: 1"], tree: try Self.doubledBeneathTree())
+
+        #expect(report.maskedBeneath == [.text: 1])
+        let frame = try #require(try Self.doubledBeneathTree().roots.flatMap { $0.flattened() }.first { $0.id == "stack-test-depth" }?.frame)
+        #expect(Self.point(image, frame.x + 2, frame.y + 2) == Self.black)
+    }
+
+    @Test("--mask-skip-beneath skips a matched text listed twice beneath the page")
+    func doubledSkipped() async throws {
+        let (report, image, _) = try await Self.stackCapture(["--mask-text", "Stack Depth: 1", "--mask-skip-beneath"], tree: try Self.doubledBeneathTree())
+
+        #expect(report.maskedBeneath.isEmpty)
+        #expect(report.skippedBeneath?[.text] == 1)
+        let frame = try #require(try Self.doubledBeneathTree().roots.flatMap { $0.flattened() }.first { $0.id == "stack-test-depth" }?.frame)
+        #expect(Self.point(image, frame.x + 2, frame.y + 2) != Self.black)
+    }
+
     @Test("--mask-skip-beneath still paints a page element identical to one it skips beneath the page")
     func skipBeneathPaintsIdenticalPageElement() async throws {
         let (report, image, _) = try await Self.stackCapture(["--mask-id", "stack-test-depth", "--mask-skip-beneath"], tree: try Self.stackTreeWithPageCopy())

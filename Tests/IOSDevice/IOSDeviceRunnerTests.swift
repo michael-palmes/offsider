@@ -205,6 +205,24 @@ struct RunnerSessionTests {
         #expect(try RunnerSessionStore(root: root).read(udid: Self.udid) == nil)
     }
 
+    @Test("an xcodebuild that says the certificate is not trusted fails at once with certificate_not_trusted, naming the setting and not UI Automation", arguments: [true, false])
+    func certificateNotTrusted(exits: Bool) async throws {
+        let root = RunnerTestPaths.temporaryRoot()
+        defer { try? FileManager.default.removeItem(atPath: root) }
+        let processes = FakeRunnerProcesses(launchLog: try IOSDeviceFixtures.data("xcodebuild-runner-certificate-untrusted.log"), exitsOnLaunch: exits)
+        let transport = FakeRunnerTransport()
+        transport.refuseConnections = true
+        let manager = Self.manager(root: root, processes: processes, transport: transport, startTimeout: 20)
+
+        let error = await #expect(throws: IOSDeviceError.self) { _ = try await manager.connect(.device(udid: Self.udid), deviceName: "iPad") }
+
+        #expect(error?.reason == .certificateNotTrusted && error?.reason.exitCode == .deviceUnavailable)
+        #expect(error?.message.contains("Settings > General > VPN & Device Management") == true)
+        #expect(error?.message.contains("UI Automation") == false)
+        #expect(!(error?.message.contains("\n") ?? true))
+        #expect(try RunnerSessionStore(root: root).read(udid: Self.udid) == nil)
+    }
+
     @Test("stop asks the runner to stop, then signals a process that lingers and removes the session and its result bundles")
     func stop() async throws {
         let root = RunnerTestPaths.temporaryRoot()

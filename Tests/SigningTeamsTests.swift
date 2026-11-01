@@ -1,4 +1,5 @@
 @testable import Offsider
+import OffsiderCore
 import Testing
 
 @Suite("Signing teams")
@@ -27,5 +28,94 @@ struct SigningTeamsTests {
             (commonName: "iPhone Developer: Jane Citizen (PERSON1234)", organisationalUnit: "ZZZZZ99999", organisation: "Zebra Labs"),
         ])
         #expect(teams.map(\.label) == ["Acme (ABCDE12345)", "Zebra Labs (ZZZZZ99999)"])
+    }
+
+    @Test("a development certificate's email tells two teams with one name apart, on its row and its receipt")
+    func collidingNames() throws {
+        let teams = SigningTeams.teams([
+            (commonName: "Apple Development: jane@example.com (PERSON1234)", organisationalUnit: "AAAAA11111", organisation: "Jane Citizen"),
+            (commonName: "Apple Development: Jane Citizen (PERSON5678)", organisationalUnit: "BBBBB22222", organisation: "Jane Citizen"),
+            (commonName: "Apple Development: Jane Citizen (PERSON9012)", organisationalUnit: "CCCCC33333", organisation: "Jane Citizen"),
+            (commonName: "Apple Development: Jane Citizen (PERSON9012)", organisationalUnit: "DDDDD44444", organisation: "Example Pty Ltd"),
+        ])
+        #expect(DeviceAccessAllow.teamRows(teams).map(\.columns) == [
+            ["Example Pty Ltd", "DDDDD44444"],
+            ["Jane Citizen", "AAAAA11111  jane@example.com"],
+            ["Jane Citizen", "BBBBB22222"],
+            ["Jane Citizen", "CCCCC33333"],
+        ])
+        let long = String(repeating: "x", count: 55)
+        let twins = [SigningTeam(id: "AAAAA11111", name: long, account: "jane@example.com"), SigningTeam(id: "BBBBB22222", name: long)]
+        #expect(DeviceAccessAllow.teamShown(twins[0], among: twins).hasSuffix("(jane@example.com)"))
+        #expect(teams.map { $0.shown(among: teams) } == ["Example Pty Ltd", "Jane Citizen (jane@example.com)", "Jane Citizen (BBBBB22222)", "Jane Citizen (CCCCC33333)"])
+    }
+
+    @Test("the email comes from a development certificate's holder, and from any of a team's certificates")
+    func whichEmail() {
+        let team = { (commonName: String) in SigningTeams.team(commonName: commonName, organisationalUnit: "ABCDE12345", organisation: "Jane Citizen")?.account }
+        #expect(team("Apple Development: jane@example.com (PERSON1234)") == "jane@example.com")
+        #expect(team("iPhone Developer: jane@example.com (PERSON1234)") == "jane@example.com")
+        #expect(team("Apple Distribution: jane@example.com (ABCDE12345)") == nil)
+        #expect(team("Developer ID Application: jane@example.com (ABCDE12345)") == nil)
+        #expect(team("Apple Development: Jane Citizen (PERSON1234)") == nil)
+        #expect(team("Apple Development: not an@email (PERSON1234)") == nil)
+
+        let nameless = SigningTeams.team(commonName: "Apple Development: jane@example.com (PERSON1234)", organisationalUnit: "ABCDE12345", organisation: nil)
+        #expect(nameless == SigningTeam(id: "ABCDE12345", name: "jane@example.com"))
+
+        let merged = SigningTeams.teams([
+            (commonName: "Apple Distribution: Jane Citizen (ABCDE12345)", organisationalUnit: "ABCDE12345", organisation: "Jane Citizen"),
+            (commonName: "Apple Development: jo@example.com (PERSON5678)", organisationalUnit: "ABCDE12345", organisation: "Jane Citizen"),
+            (commonName: "Apple Development: jane@example.com (PERSON1234)", organisationalUnit: "ABCDE12345", organisation: "Jane Citizen"),
+        ])
+        #expect(merged == [SigningTeam(id: "ABCDE12345", name: "Jane Citizen", account: "jane@example.com")])
+    }
+
+    @Test("a certificate's email cannot draw on the terminal or run long")
+    func emailIsCleaned() throws {
+        let forged = "jane\u{1B}]52;c;eA==\u{07}\u{202E}@" + String(repeating: "x", count: 500) + ".example.com"
+        let team = try #require(SigningTeams.team(commonName: "Apple Development: \(forged) (PERSON1234)", organisationalUnit: "ABCDE12345", organisation: "Jane Citizen"))
+        let cell = try #require(DeviceAccessAllow.teamRows([team]).first?.columns.last)
+        #expect(!cell.unicodeScalars.contains { $0 == "\u{1B}" || $0 == "\u{07}" || $0 == "\u{202E}" })
+        #expect(cell.count < 100)
+        #expect(!PromptScreen.label(team.shown(among: [team, SigningTeam(id: "BBBBB22222", name: "Jane Citizen")])).unicodeScalars.contains("\u{1B}"))
+    }
+
+    @Test("where Xcode says, a row reads Free or Paid, and a free team sorts after a paid one of the same name")
+    func freeAndPaid() {
+        let teams = SigningTeams.teams([
+            (commonName: "Apple Development: jane@example.com (PERSON1234)", organisationalUnit: "AAAAA11111", organisation: "Jane Citizen"),
+            (commonName: "Apple Development: Jane Citizen (PERSON5678)", organisationalUnit: "BBBBB22222", organisation: "Jane Citizen"),
+            (commonName: "Apple Development: Jane Citizen (PERSON9012)", organisationalUnit: "CCCCC33333", organisation: "Example Pty Ltd"),
+            (commonName: "Apple Development: Jane Citizen (PERSON3456)", organisationalUnit: "DDDDD44444", organisation: "Zebra Labs"),
+        ], xcode: ["AAAAA11111": true, "BBBBB22222": false, "CCCCC33333": false, "EEEEE55555": true])
+        #expect(DeviceAccessAllow.teamRows(teams).map(\.columns) == [
+            ["Example Pty Ltd", "Paid", "CCCCC33333"],
+            ["Jane Citizen", "Paid", "BBBBB22222"],
+            ["Zebra Labs", "", "DDDDD44444"],
+            ["Jane Citizen", "Free", "AAAAA11111  jane@example.com"],
+        ])
+    }
+
+    @Test("Xcode's preferences give each team and whether it is free, in either key's shape, skipping what they cannot read")
+    func readsXcodeTeams() {
+        let accounts: [String: Any] = [
+            "00000000-0000-0000-0000-000000000001": [
+                ["teamID": "AAAAA11111", "teamName": "Jane Citizen (Personal Team)", "isFreeProvisioningTeam": true],
+                ["teamID": "BBBBB22222", "teamName": "Example Pty Ltd", "isFreeProvisioningTeam": false],
+            ],
+            "jane@example.com": [
+                ["teamID": "CCCCC33333"],
+                ["teamID": "DDDDD44444", "isFreeProvisioningTeam": "yes"],
+                ["teamName": "No ID"],
+            ],
+            "notTeams": "text",
+        ]
+        let teams = XcodeTeams.parse(accounts)
+        #expect(teams.keys.sorted() == ["AAAAA11111", "BBBBB22222", "CCCCC33333", "DDDDD44444"])
+        #expect(teams["AAAAA11111"] == .some(true))
+        #expect(teams["BBBBB22222"] == .some(false))
+        #expect(teams["CCCCC33333"] == .some(nil))
+        #expect(teams["DDDDD44444"] == .some(nil))
     }
 }

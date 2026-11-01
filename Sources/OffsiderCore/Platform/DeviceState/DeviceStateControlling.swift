@@ -50,10 +50,33 @@ public protocol AwakeControlling: DeviceBackend {
     func listedName(of id: DeviceID) -> String?
 }
 
+/// What `sleep` found: the screen's state before, and whether anything was sent.
+public struct ScreenSleepOutcome: Equatable, Sendable {
+    public let wasOn: Bool
+    public let sent: Bool
+
+    public init(wasOn: Bool, sent: Bool) {
+        self.wasOn = wasOn
+        self.sent = sent
+    }
+}
+
+/// Turns a screen off, reading its state first so a dark screen is never lit by the press.
+public protocol ScreenSleeping: DeviceBackend {
+    func sleepScreen(on id: DeviceID) async throws -> ScreenSleepOutcome
+}
+
 /// The JSON objects `permission`, `status-bar` and `biometric` print with `--json`, in schema order.
 public enum DeviceStateReport {
     static func header(_ action: String, device: DeviceID) -> [(String, OrderedJSON)] {
         [("version", .integer(1)), ("action", .string(action)), ("device", .string(device.rawValue)), ("platform", .string(device.platform.rawValue))]
+    }
+
+    /// What `sleep`, or `wake` on an iPhone or iPad, found and sent.
+    public static func screen(_ action: String, on device: DeviceID, previous: String, current: String, sent: [String]) -> String {
+        OrderedJSON.object(header(action, device: device) + [
+            ("previous", .string(previous)), ("current", .string(current)), ("sent", .array(sent.map { .string($0) })),
+        ]).rendered(compact: true)
     }
 
     public static func permissionChange(_ change: PermissionChange, app: String, on device: DeviceID) -> String {

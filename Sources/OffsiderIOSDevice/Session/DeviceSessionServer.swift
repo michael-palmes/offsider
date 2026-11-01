@@ -104,6 +104,9 @@ public enum DeviceSessionPeers: Sendable {
 /// What the broker re-checks every 30 s while it runs: nil while it may go on, else the refusal it stops with.
 public typealias DeviceSessionRecheck = @Sendable () async -> IOSDeviceError?
 
+/// Run once when the broker stops for being idle, after it stops accepting commands.
+public typealias DeviceSessionIdleSleep = @MainActor @Sendable () async -> Void
+
 /// The per-device broker on a 0600 socket, ending on idle, `stop` or a lost device; input and frames each run one at a time, never waiting on the other.
 @MainActor
 public final class DeviceSessionServer {
@@ -124,6 +127,7 @@ public final class DeviceSessionServer {
     let peers: DeviceSessionPeers
     let recheck: DeviceSessionRecheck?
     let recheckInterval: Duration
+    let idleSleep: DeviceSessionIdleSleep?
     let log: IOSDeviceLog
     private let inputGate = DeviceSessionGate()
     private let frameGate = DeviceSessionGate()
@@ -140,7 +144,7 @@ public final class DeviceSessionServer {
         idleTimeout: Duration, healthInterval: Duration = .seconds(2), maxLifetime: Duration = DeviceSessionLimits.maxLifetime,
         bodyTimeout: Duration = DeviceSessionLimits.bodyTimeout, firstRequestTimeout: Duration = DeviceSessionLimits.firstRequestTimeout,
         maxClients: Int = DeviceSessionLimits.maxClients, peers: DeviceSessionPeers = .ownSignature, recheck: DeviceSessionRecheck? = nil, recheckInterval: Duration = DeviceSessionLimits.recheckInterval,
-        log: @escaping IOSDeviceLog
+        idleSleep: DeviceSessionIdleSleep? = nil, log: @escaping IOSDeviceLog
     ) {
         self.udid = udid
         self.socketPath = socketPath
@@ -155,6 +159,7 @@ public final class DeviceSessionServer {
         self.peers = peers
         self.recheck = recheck
         self.recheckInterval = recheckInterval
+        self.idleSleep = idleSleep
         self.log = log
     }
 
@@ -198,6 +203,7 @@ public final class DeviceSessionServer {
         Task { await hardware.start() }
         var nextHealth = ContinuousClock.now + healthInterval
         var nextRecheck = started + recheckInterval
+        var wentIdle = false
         while !stopping {
             try? await Task.sleep(for: .milliseconds(50))
             let now = ContinuousClock.now
@@ -215,6 +221,7 @@ public final class DeviceSessionServer {
             }
             if inFlight == 0, now - lastRequest >= idleTimeout {
                 log(.info, "Stopping: idle for \(idleTimeout)")
+                wentIdle = true
                 break
             }
             if inFlight == 0, now - started >= maxLifetime {
@@ -233,6 +240,8 @@ public final class DeviceSessionServer {
         accepting.raise()
         Darwin.close(listener)
         if let identity, Self.socketIdentity(socketPath) == identity { unlink(socketPath) }
+        // Only an idle stop sleeps the screen: an expired allowance or a lost device gets no press.
+        if wentIdle { await idleSleep?() }
         await inputGate.run { await frameGate.run { await hardware.close() } }
         store?.remove(udid: udid, ifPID: getpid())
         log(.info, "Stopped")

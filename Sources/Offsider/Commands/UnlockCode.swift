@@ -150,31 +150,28 @@ struct UnlockCodeCommand: AsyncParsableCommand {
             try store.save(try readCode(), for: device)
             ledger.clear(device)
             let text = json
-                ? report("set", device: device, saved: true, lastAttemptFailed: false)
+                ? report("set", device: device, saved: true, lastAttempt: nil)
                 : "Saved the unlock code for \(name) in the login Keychain. `offsider wake --unlock --device \(device)` types it when the lock screen asks."
             return Report(text: text, person: UnlockCodeScreen.saved(name: name, device: device))
         case .status:
             let saved = try store.hasCode(for: device)
-            let failed = ledger.hasFailed(device)
-            let person = UnlockCodeScreen.status(name: name, device: device, saved: saved, lastAttemptFailed: failed)
-            if json { return Report(text: report("status", device: device, saved: saved, lastAttemptFailed: failed), person: person) }
+            let last = ledger.lastAttempt(device)
+            let person = UnlockCodeScreen.status(name: name, device: device, saved: saved, lastAttempt: last)
+            if json { return Report(text: report("status", device: device, saved: saved, lastAttempt: last), person: person) }
             guard saved else { return Report(text: "\(name): no unlock code saved", person: person) }
-            let text = failed
-                ? "\(name): unlock code saved, but it did not unlock the device last time, so Offsider will not type it until the device is unlocked by hand or the code is saved again"
-                : "\(name): unlock code saved"
-            return Report(text: text, person: person)
+            return Report(text: last?.message(name: name, device: device) ?? "\(name): unlock code saved", person: person)
         case .remove:
             let removed = try store.remove(for: device)
             ledger.clear(device)
             let text = json
-                ? report("remove", device: device, saved: false, lastAttemptFailed: false)
+                ? report("remove", device: device, saved: false, lastAttempt: nil)
                 : removed ? "Removed the unlock code for \(name)" : "No unlock code was saved for \(name)"
             return Report(text: text, person: UnlockCodeScreen.removed(name: name, removed: removed))
         }
     }
 
-    static func report(_ action: String, device: String, saved: Bool, lastAttemptFailed: Bool) -> String {
-        DeviceStateReport.unlockCode(action, device: device, saved: saved, lastAttemptFailed: lastAttemptFailed)
+    static func report(_ action: String, device: String, saved: Bool, lastAttempt: UnlockAttemptRecord?) -> String {
+        DeviceStateReport.unlockCode(action, device: device, saved: saved, lastAttempt: lastAttempt)
     }
 
     static let formatMessage = "A code is 4 to 64 printable ASCII characters (a PIN is 4 to 16 digits)."

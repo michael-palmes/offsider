@@ -113,8 +113,8 @@ public struct UITreeContext: Equatable, Sendable {
         public static func shown(id: String?, label: String?, labelledBy: String? = nil, className: String?, frame: UIFrame?) -> HiddenBranch {
             let mask = OutputMasks.current.mask
             let masked = label.map { label in
-                let hidden = mask.masked(label, id: labelledBy) ?? (labelledBy == id ? nil : mask.masked(label, id: id))
-                return SelectorText.truncated(hidden ?? LogRedactor.redact(label).text, limit: PresentationProbe.labelLimit)
+                let hidden = labelledBy == id ? nil : mask.masked(label, id: id)
+                return SelectorText.truncated(hidden ?? mask.contextLabel(label, id: labelledBy), limit: PresentationProbe.labelLimit)
             }
             return HiddenBranch(id: id, label: masked, className: className, frame: frame)
         }

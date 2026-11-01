@@ -70,6 +70,13 @@ enum AmbientMasks {
         return (try? TreeValueMask(plan: plan)) ?? .none
     }
 
+    /// `treeMask` with `route`'s revealed password fields and what this command's reads showed, for screen text that names one element.
+    static func shownMask(on route: DeviceRouter.Route) async throws -> TreeValueMask {
+        var mask = try treeMask(revealed: await TreeCache.revealedSecrets(for: route.device, backend: route.backend))
+        mask.nested = OutputMasks.current.mask.nested
+        return mask
+    }
+
     /// The config's and the run's masks for the values a tree shows, with the device's revealed password fields.
     static func treeMask(revealed: RevealedSecrets? = nil) throws -> TreeValueMask {
         var plan = try MaskConfigs.current()?.config.plan ?? .none

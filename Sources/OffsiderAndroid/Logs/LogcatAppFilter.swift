@@ -1,15 +1,16 @@
 import Foundation
 import OffsiderCore
 
-/// `--rn --app`: React Native's tags, plus every line from the app's user ID, which survives a restart where a pid would not.
+/// `--rn --app`: every line from the app's user ID, which survives a restart where a pid would not, plus React Native's tags from any app unless `appOnly`.
 struct LogcatAppFilter: Equatable {
     static let reactNativeTags: Set<String> = ["ReactNativeJS", "ReactNative"]
 
     let package: String
     let uid: String
+    var appOnly = false
 
     func keeps(_ entry: LogEntry, uid: String?) -> Bool {
-        uid == self.uid || entry.tag.map(Self.reactNativeTags.contains) == true
+        uid == self.uid || (!appOnly && entry.tag.map(Self.reactNativeTags.contains) == true)
     }
 
     /// The package's user ID from `cmd package list packages -U <package>`, which also lists packages it only prefixes.
@@ -25,8 +26,14 @@ struct LogcatAppFilter: Equatable {
 
 /// One `LogcatCommand.script`'s output read line by line: its preamble up to the marker, then the entries the source keeps.
 struct LogcatStream {
+    /// How long an entry waits for another line before it counts as finished: a silent read slice, or another app's lines arriving for this long.
+    static let quietAfter: TimeInterval = 0.25
+
     let source: LogSource
     let serial: String
+    let appOnly: Bool
+    /// A live read, where another app's lines can keep the silent slice from coming; history arrives all at once.
+    let live: Bool
     private(set) var pid: Int?
     private(set) var filter: LogcatAppFilter?
     /// Set once from the device's clock line when it is past `LogClock.skewThreshold`; the reader takes it.
@@ -35,11 +42,13 @@ struct LogcatStream {
     private var listing: [String] = []
     private var parser = LogcatParser()
     /// The entry being read, and its header: logcat prints each line of a multi-line message as its own line, so it is finished only when another begins.
-    private var pending: (entry: LogEntry, header: String?)?
+    private var pending: (entry: LogEntry, header: String?, extended: Date)?
 
-    init(source: LogSource, serial: String) {
+    init(source: LogSource, serial: String, appOnly: Bool = false, live: Bool = false) {
         self.source = source
         self.serial = serial
+        self.appOnly = appOnly
+        self.live = live
     }
 
     /// The entry a line finishes, nil for the preamble, separators, lines the source leaves out and lines of an entry still being read; `now` is this Mac's clock. `finish` hands over the last one.
@@ -51,7 +60,10 @@ struct LogcatStream {
         guard var entry = parser.parse(line) else { return nil }
         switch source {
         case .reactNative(let package?):
-            guard let filter, filter.keeps(entry, uid: parser.lastUID) else { return nil }
+            guard let filter, filter.keeps(entry, uid: parser.lastUID) else {
+                if live, let pending, now.timeIntervalSince(pending.extended) >= Self.quietAfter { return finish() }
+                return nil
+            }
             if parser.lastUID == filter.uid { entry.process = package }
         case .app(let name), .process(let name):
             if let pid, entry.pid == pid { entry.process = name }
@@ -63,9 +75,10 @@ struct LogcatStream {
             whole.message += "\n" + entry.message
             whole.raw = [whole.raw, entry.raw].compactMap { $0 }.joined(separator: "\n")
             pending?.entry = whole
+            pending?.extended = now
             return nil
         }
-        defer { pending = (entry, header) }
+        defer { pending = (entry, header, now) }
         return pending?.entry
     }
 
@@ -97,7 +110,7 @@ struct LogcatStream {
             guard let uid = LogcatAppFilter.uid(of: package, in: listing) else {
                 throw AndroidError(.appNotInstalled, "\(package) is not installed on \(serial). Install it, or drop --app to read React Native's log alone.")
             }
-            filter = LogcatAppFilter(package: package, uid: uid)
+            filter = LogcatAppFilter(package: package, uid: uid, appOnly: appOnly)
         }
         started = true
     }

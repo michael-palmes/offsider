@@ -47,6 +47,7 @@ enum CommandEffect: String, Sendable {
         "devices remove": .none,
         "stay-awake": .input,
         "wake": .input,
+        "sleep": .input,
         "key": .input,
         "key-sequence": .input,
         "key-combo": .input,

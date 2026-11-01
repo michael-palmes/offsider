@@ -26,12 +26,22 @@ struct NotificationsCommandTests {
         #expect(error?.reason == .usage)
     }
 
-    @Test("a phone allowed for any app refuses another app's notifications from a messages or system app", arguments: ["com.google.android.apps.messaging", "com.android.systemui", "com.google.android.gm"])
+    @Test("a phone allowed for any app refuses another app's notifications from a messages or system app", arguments: ["com.google.android.apps.messaging", "com.android.systemui", "com.google.android.gm", " com.android.chrome", "com.google.android.gm "])
     @MainActor
     func anyAppPhoneRefusesDenyList(_ app: String) {
         let any = PolicyFixtures.entry(.android, key: PolicyFixtures.serial, apps: [])
         let error = #expect(throws: CLIError.self) { try NotificationsCommand.app(app, route: Self.route(allowance: any), gate: Self.gate(any), profile: { nil }) }
         #expect(error?.reason == .appNotAllowed)
+    }
+
+    @Test("a broken offsider.login.json exits 64, not a fall through to the pin")
+    @MainActor
+    func brokenProfileRefuses() {
+        let pinned = PolicyFixtures.entry(.android, key: PolicyFixtures.serial, apps: ["com.example.pinned"])
+        let error = #expect(throws: CLIError.self) {
+            try NotificationsCommand.app(nil, route: Self.route(allowance: pinned), gate: Self.gate(pinned), profile: { throw CLIError(errorDescription: "broken", reason: .usage) })
+        }
+        #expect(error?.reason == .usage)
     }
 
     @Test("a phone pinned to one app refuses another app's notifications")

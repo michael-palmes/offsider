@@ -125,8 +125,8 @@ struct ElementSelectorOptions: ParsableArguments {
         try SelectorQuery.validate(ids: elementIDs, labels: elementLabels, labelsContaining: elementLabelsContaining, values: elementValues, allowingSeveral: true)
     }
 
-    /// Present when a qualifying candidate exists, even several; on-screen only unless `--allow-offscreen` or the tree has no screen.
-    func probe(for query: AccessibilityQuery) -> (UITree) -> ElementProbe {
+    /// Present when a qualifying candidate exists, even several; on-screen only unless `--allow-offscreen` or the tree has no screen; `revealed` keeps a `--has-value` miss from printing one's text.
+    func probe(for query: AccessibilityQuery, revealed: RevealedSecrets? = nil) -> (UITree) -> ElementProbe {
         let elementType = elementType
         let allowOffscreen = allowOffscreen
         let hasValue = hasValue
@@ -168,7 +168,7 @@ struct ElementSelectorOptions: ParsableArguments {
             if let hasValue {
                 let valued = pool.filter { Self.value(of: $0, equals: hasValue) }
                 guard !valued.isEmpty else {
-                    let hidden = OutputMasks.current.mask.hidesValue(of: pool[0])
+                    let hidden = revealed?.matches(pool[0]) == true || OutputMasks.current.mask.hidesValue(of: pool[0])
                     let actual = pool[0].normalizedValue.map { hidden ? "has a masked value" : "has value '\(LogRedactor.redactValue(TerminalText.line($0, keepsTab: false)).text)'" } ?? "has no value"
                     let labelled = pool.contains { AccessibilityQuery.label(hasValue).matches($0) }
                     let hint = labelled ? "; '\(hasValue)' is its label: use --label '\(hasValue)'" : ""

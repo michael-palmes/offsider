@@ -43,7 +43,8 @@ enum TreeCache {
 
     /// The device's password fields from earlier reads in this boot, which a plain text field at the same id or frame reveals; nil with none or no cache.
     static func revealedSecrets(for device: DeviceID, backend: any DeviceBackend, environment: TreeCacheEnvironment = .current) async -> RevealedSecrets? {
-        guard let directory = environment.directory() else { return nil }
+        guard let directory = environment.directory(),
+              FileManager.default.fileExists(atPath: (directory as NSString).appendingPathComponent(SecureFieldRecord.fileName(platform: device.platform, device: device.rawValue))) else { return nil }
         return await Timings.measure("tree-cache") {
             let marker = await (backend as? any BootMarking)?.bootMarker(for: device)
             let record = readSecure(device, in: directory, bootMarker: marker, now: environment.now())

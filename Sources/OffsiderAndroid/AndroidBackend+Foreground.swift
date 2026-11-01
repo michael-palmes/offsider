@@ -19,7 +19,8 @@ extension AndroidBackend {
     /// On a USB phone only: refuses when a browser, a system app or an app outside the allowance is in front.
     /// Reads and captures share one `dumpsys` a second; each input step reads it afresh and leaves nothing cached, since the input may open another app.
     func requireDrivableForeground(_ serial: String) async throws {
-        guard DeviceID(rawValue: serial, platform: .android).isPhysicalAndroidDevice else { return }
+        let free = appScopes[serial].map { $0.wholeDevice && $0.target == nil } ?? false
+        guard DeviceID(rawValue: serial, platform: .android).isPhysicalAndroidDevice, !free else { return }
         let package: String?
         if !AndroidForegroundCheck.beforeInput, let cached = foregroundChecks[serial], ContinuousClock.now - cached.at < Self.foregroundCheckLifetime {
             package = cached.package
@@ -38,6 +39,11 @@ extension AndroidBackend {
     /// What no app in front can change first (an app this phone may not drive named, or none named), then the deny-list and the allowance's scope for one package on a phone.
     func requireDrivable(_ package: String, on serial: String) throws {
         let scope = appScopes[serial]
+        if let scope, scope.wholeDevice {
+            // A named app still holds its command to it, so a login's keys never reach what comes up over it.
+            if let target = scope.target, package != target { throw Self.otherThanTarget(package, target, on: serial) }
+            return
+        }
         if let scope { try requireDrivableTarget(of: scope, on: serial) }
         if let refusal = SystemAppDenyList.refusal(package, platform: .android) {
             throw AndroidError.otherAppRefused(serial, refusal: refusal)
@@ -49,12 +55,20 @@ extension AndroidBackend {
         if !scope.needsTarget, !scope.permitted.contains(package) {
             throw AndroidError.otherAppNotPermitted(serial, package: package, byManagedPolicy: false)
         }
-        if let target = scope.target, package != target {
-            throw AndroidError(
-                .otherAppInFront,
-                "\(package) is in front on \(serial), not \(target), the app this command drives, so Offsider did nothing. Bring \(target) to the front, then retry."
-            )
-        }
+        if let target = scope.target, package != target { throw Self.otherThanTarget(package, target, on: serial) }
+    }
+
+    private static func otherThanTarget(_ package: String, _ target: String, on serial: String) -> AndroidError {
+        AndroidError(
+            .otherAppInFront,
+            "\(package) is in front on \(serial), not \(target), the app this command drives, so Offsider did nothing. Bring \(target) to the front, then retry."
+        )
+    }
+
+    /// `login` on a test device holds to the app it signs in to, as a named app does; no other scope changes, since they already check.
+    public func holdToApp(_ package: String, on serial: String) {
+        guard appScopes[serial]?.wholeDevice == true else { return }
+        appScopes[serial]?.target = package
     }
 
     /// The refusals that stand whichever app is in front, so a wait need not sit them out.
@@ -117,6 +131,10 @@ extension AndroidBackend: AppTargetSelecting {
     public func selectApp(_ appID: String, on id: DeviceID) -> Bool {
         selectApp(appID, on: id.rawValue)
     }
+
+    public func selectedApp(on id: DeviceID) -> String? {
+        appScopes[id.rawValue]?.target
+    }
 }
 
 /// Set by an input session around its foreground check, so every input step on a phone reads the front app again.
@@ -132,11 +150,14 @@ public struct AndroidAppScope: Equatable, Sendable {
     public let needsTarget: Bool
     /// The one app this command drives; any other app in front is refused.
     public var target: String?
+    /// A test device: every app, the launcher and system windows, with no front-app check.
+    public let wholeDevice: Bool
 
-    public init(permitted: Set<String>, managedCeiling: Set<String>?, needsTarget: Bool = false, target: String? = nil) {
+    public init(permitted: Set<String>, managedCeiling: Set<String>?, needsTarget: Bool = false, target: String? = nil, wholeDevice: Bool = false) {
         self.permitted = permitted
         self.managedCeiling = managedCeiling
         self.needsTarget = needsTarget
         self.target = target
+        self.wholeDevice = wholeDevice
     }
 }

@@ -66,15 +66,17 @@ struct DescribeUI: AsyncParsableCommand {
     }
 
     func run() async throws {
-        if rawSource { try Self.refuseRawSourceForAgent() }
+        if rawSource { try await Self.confirmRawSource() }
         let logger = OffsiderLogger()
         let watchdog = DeviceWatchdog()
         let route = try await DeviceRouter.routeForInput(deviceOption.id, logger: logger, watchdog: watchdog, locking: false)
         await appOption.apply(to: route)
-        try await watchdog.guardingSetup(device: deviceOption.id) { try await route.backend.prepare() }
 
         let console = Console.current
-        let described = try await console.progress("Reading the screen") { try await read(on: route, watchdog: watchdog) }
+        let described = try await console.progress("Reading the screen") {
+            try await watchdog.guardingSetup(device: deviceOption.id) { try await route.backend.prepare() }
+            return try await read(on: route, watchdog: watchdog)
+        }
         console.data(described)
     }
 
@@ -170,10 +172,11 @@ struct DescribeUI: AsyncParsableCommand {
     }
 
     /// The raw tree is unredacted and uncapped device text, so only a person at a terminal reads it.
-    static func refuseRawSourceForAgent(profile: OutputProfile = .current) throws {
-        guard profile == .agent else { return }
-        throw CLIError.personRequired(
-            "--raw-source prints the device's unredacted tree, so it runs only for a person at a terminal. Nothing was read. Use describe-ui --json instead."
+    static func confirmRawSource(profile: OutputProfile = .gated) async throws {
+        try await UnmaskedConsent.confirm(
+            reason: "print the device's unredacted tree",
+            refusal: "--raw-source prints the device's unredacted tree, so it runs only for a person at a terminal. Nothing was read. Use describe-ui --json instead.",
+            profile: profile
         )
     }
 
