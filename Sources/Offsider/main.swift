@@ -27,7 +27,7 @@ struct OffsiderCommand: AsyncParsableCommand {
             ]),
             CommandGroup(name: "Device state", subcommands: [
                 AppCommand.self, OrientationCommand.self, PostureCommand.self, AppearanceCommand.self, ContentSizeCommand.self, PermissionCommand.self,
-                StatusBarCommand.self, BiometricCommand.self, StayAwakeCommand.self, Wake.self, UnlockCodeCommand.self,
+                StatusBarCommand.self, BiometricCommand.self, StayAwakeCommand.self, Wake.self, SleepCommand.self, UnlockCodeCommand.self,
             ]),
             CommandGroup(name: "Physical devices", subcommands: [RunnerCommand.self]),
             CommandGroup(name: "Sessions", subcommands: [SessionCommand.self, RunCommand.self, LeaseCommand.self]),
@@ -65,7 +65,7 @@ struct OffsiderCommand: AsyncParsableCommand {
             parsed = command
             ErrorReporter.prepare(command: command, arguments: arguments)
             let path = CommandPath.of(command)
-            await CommandScope.current.configure(command: path)
+            await CommandScope.current.configure(command: path, namedApp: (command as? any AppNaming)?.namedApp)
             await DeviceClaims.current.configure(
                 command: path,
                 waitOption: (command as? any LockingCommand)?.waitLock

@@ -29,25 +29,17 @@ struct AppTargetOption: ParsableArguments {
         help: ArgumentHelp(
             "The app's bundle ID or Android package (default offsider.login.json's, else a physical device's only pinned app).",
             valueName: "bundle-id"
-        )
+        ),
+        transform: AppID.parse
     )
     var bundleID: String?
-
-    func validate() throws {
-        guard let bundleID else { return }
-        do {
-            _ = try ExpoDevClient.validate(appID: bundleID)
-        } catch {
-            throw ValidationError(error.localizedDescription)
-        }
-    }
 }
 
 enum AppTarget {
     /// `--app`, else offsider.login.json's app for the platform, else the allowance's only pinned app; then the allowance must permit it.
     static func resolve(
         _ option: AppTargetOption, route: DeviceRouter.Route, command: String, gate: DevicePolicyGate = .current,
-        profile: () -> LoginProfile? = { (try? LoginProfiles.load(project: nil, warn: { _ in })) ?? nil }
+        profile: () throws -> LoginProfile? = { try LoginProfiles.implicit() }
     ) throws -> String {
         try route.app(named: option.bundleID, gate: gate, profile: profile) {
             CLIError(

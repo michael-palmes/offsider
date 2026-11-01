@@ -142,7 +142,7 @@ struct ReactNativeEvidenceTests {
         #expect(!(entry.raw ?? "").contains("Hunter22"))
         #expect(found.redacted >= 2)
 
-        let plain = try await app.run("logs --rn --last 1m --no-redact --grep 'OffsiderFixture batch-login'").stdout
+        let plain = try await app.runAsPerson("logs --rn --last 1m --no-redact --grep 'OffsiderFixture batch-login'").stdout
         #expect(plain.contains(Self.email))
     }
 

@@ -41,6 +41,7 @@ extension FailureReason {
         case .deviceUntrusted: return "Can you unlock \(device) and tap Trust?"
         case .developerModeOff: return "Can you turn on Developer Mode on \(device) and restart it?"
         case .uiAutomationOff: return "Can you turn on Settings > Developer > UI Automation on \(device), or enter the passcode on the device if it asks for XCTest?"
+        case .certificateNotTrusted: return "Can you trust the developer certificate on \(device), in Settings > General > VPN & Device Management?"
         case .deviceNotWired: return "Can you connect \(device) with a cable?"
         case .usbmuxUnavailable: return "Can you unplug and replug the cable on \(device)?"
         default: return nil

@@ -164,7 +164,7 @@ struct RunnerProvisioningTests {
 
         let error = await #expect(throws: IOSDeviceError.self) { _ = try await fixture.builder().build(for: .device(udid: "U"), deviceName: "iPhone") }
         #expect(error?.reason == .runnerBuildFailed)
-        #expect(error?.hint == "offsider runner build --device U --register-device")
+        #expect(error?.hint == "offsider runner build --register-device --device U")
         #expect(error?.message.contains("Xcode > Window > Devices and Simulators") == true)
     }
 

@@ -84,9 +84,16 @@ enum DeviceRouter {
         scope: CommandScope = .current
     ) async throws -> Route {
         let route = try await resolve(rawID, logger: logger, host: host, scope: scope, gate: DevicePolicyGate.current)
+        try requireNamedApp(scope.namedApp, on: route, gate: DevicePolicyGate.current)
         scope.noteRoute(route)
         if let name = route.allowance?.name { ErrorReporter.noteDeviceName(name) }
         return route
+    }
+
+    /// `--app` or `--bundle-id` on a phone: refused here, whichever command took it, before anything reaches the device.
+    static func requireNamedApp(_ app: String?, on route: Route, gate: DevicePolicyGate) throws {
+        guard let app, let allowance = route.allowance else { return }
+        try gate.requireApp(app, on: allowance)
     }
 
     /// Gates a physical device: it must be named with `--device`, and the allow-list and managed policy must both allow it.
@@ -107,6 +114,7 @@ enum DeviceRouter {
 
     /// Pinned apps within the managed ceiling; a phone allowed for any app drives only the app each command names, offsider.login.json's package by default.
     static func appScope(for allowance: DeviceAllowance, policy: PhysicalDevicePolicy, profilePackage: () -> String?) -> AndroidAppScope {
+        if policy.drivesWhole(allowance) { return AndroidAppScope(permitted: [], managedCeiling: nil, wholeDevice: true) }
         let ceiling = policy.managed.allowedBundleIDs.map(Set.init)
         guard allowance.pinnedApps.isEmpty else {
             return AndroidAppScope(permitted: policy.permittedApps(for: allowance) ?? [], managedCeiling: ceiling)

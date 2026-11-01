@@ -1,0 +1,6 @@
+Physical size: 1080x2424
+Override size: 720x1616
+Physical density: 420
+Override density: 300
+  Viewport INTERNAL: displayId=0, uniqueId=local:1000, port=Optional(0), orientation=1, logicalFrame=[0, 0, 2424, 1080], physicalFrame=[0, 0, 1080, 2424], deviceSize=[1080, 2424], isActive=[1]
+API level: 36

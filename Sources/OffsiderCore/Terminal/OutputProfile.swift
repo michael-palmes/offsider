@@ -21,6 +21,19 @@ public enum OutputProfile: String, Sendable, CaseIterable {
         environment: ProcessInfo.processInfo.environment, isTerminal: isatty(STDOUT_FILENO) != 0
     )
 
+    /// Who the person gates treat this run as; `OFFSIDER_OUTPUT=person` changes only what is printed, so it never opens one. Tests inject it through `override`.
+    public static var gated: OutputProfile { override ?? detectedGate }
+
+    private static let detectedGate: OutputProfile = resolveGate(
+        environment: ProcessInfo.processInfo.environment, isTerminal: isatty(STDOUT_FILENO) != 0
+    )
+
+    /// A marker, `OFFSIDER_OUTPUT=agent` or a standard output that is not a terminal is an agent's. A same-user process that clears the markers on a pseudo-terminal still reads as a person.
+    public static func resolveGate(environment: [String: String], isTerminal: Bool) -> OutputProfile {
+        if named(in: environment) == .agent || AgentMarkers.present(in: environment) { return .agent }
+        return isTerminal ? .person : .agent
+    }
+
     /// `OFFSIDER_OUTPUT` when it names a profile; an unknown value is ignored, so a typo never loosens the agent profile.
     public static func named(in environment: [String: String]) -> OutputProfile? {
         environment[variable].flatMap { OutputProfile(rawValue: $0.trimmingCharacters(in: .whitespaces).lowercased()) }

@@ -8,6 +8,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Added
 
+- Test devices: `devices add --test-device`, or "Test device: whole device" in the app menu, lets agents drive all of a phone or tablet a person says holds nothing personal: any app, Settings, system alerts and sheets, with no front-app check and `--app` optional. It asks "Anything personal on it?" with "Yes, stop" chosen, then Touch ID as usual, and offers "Until removed" first. The driving line and `devices status` say so (`"testDevice": true`). On a Mac with any forced Offsider key it is a plain Any app allowance until an administrator forces the new `allowTestDevices` to true, and a forced bundle list always wins. `test-runner.sh --ios-device` and `--android-phone` accept one.
+- `offsider sleep` turns a screen off to limit burn-in, on an allowed iPhone or iPad or an Android device, and `wake` now works on an allowed iPhone or iPad. Neither needs an app in front, and each sends nothing when the screen is already as asked. A test iPhone or iPad also sleeps when its session goes idle or `session stop` ends it, and wakes for the next command.
+- `type --into-id`, `--into-label` and `--into-label-contains` take `--nth` and `--topmost`, as `tap` does, for a field whose id matches twice.
+- `type --unlisted-field`: on Android, types with the keyboard up for a real editor hidden from accessibility, the one thing `no_focused_field` left no way through.
 - `batch` takes a `drag` step, written and limited like `offsider drag`.
 - `app_not_responding` (exit 1): on Android, when the app in front on an unlocked screen has no window the tree can read, as when its main thread is stuck, `describe-ui` and other reads say so instead of telling you to unlock the device.
 - `rn devmenu` lists the items an app registers (`registerDevMenuItems`, or `DevSettings.addMenuItem` in React Native's own Android menu), marked `"custom":true` in `--json` and tagged for a person; `--label` already chose them, and now prefers the menu's item over an app button behind it with the same label. Expo's custom heading also counts as menu evidence, so a menu whose tools those items push off screen is still read.
@@ -31,6 +35,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Changed
 
+- `test-runner.sh` runs every E2E suite in a full mode and takes any listed suite by name (`--android <suite>` for the Android ones), and refuses an unknown name; a `ReactNative*Tests` name that matched nothing used to pass.
+- `type --verify` no longer retries by default, as text that lands late was typed twice, a secret from `--stdin` too; `--replace` keeps its retry, and `--retries` asks for one.
+- `key-sequence` that spells text into a password field exits 64 `secure_field_argument`, as `type` does, unless the sequence holds a modifier. It logs how many keys, not which, and a batch step's record shows `<N keys>`.
+- `key-sequence` on a physical iPhone or iPad, and `type` from `--stdin` or `--file`, now check that a text field has focus, so they read the screen first; an unreadable screen warns and sends.
+- `login` hides the keyboard before the password where an iOS tree names no focused text field, and types the password only with proof of focus: a lost tap could send it to the field that still had it, in clear text.
 - `login`'s `turnstile_required` suggests `turnstile --wait` as its `hint` and says whether `login` may run again once the widget passes. A person at a terminal is told to do the step on the device, not to hand the device to a person.
 - One rule decides what is on screen for `wait`, `assert`, `describe-ui --on-screen` (and `--summary`) and selector `tap`, `--topmost` included: a touch at the element's point must reach it, judged as `tap` judges its target (the simulator's hit-test, Android's drawing order; on a physical iPhone or iPad only pages drawn over a screen). `wait` and `assert` no longer count a match on a screen beneath a pushed page or one another element covers, such as a closed side menu kept mounted under the page, and say what is over it (`under button "…"`, `beneath "…"`), and a match under the on-screen keyboard counts only once the keyboard goes; `--summary` folds those into a closing `# covered: N elements under others: id=…` line, and `--on-screen` JSON leaves them out. On an iOS simulator only elements something else overlaps are hit-tested, all at once, so a screen with no overlap costs nothing and one with overlaps about half a second.
 - `tap --topmost` takes the only match on the front page when a page is drawn over the others, before any hit-test.
@@ -46,9 +55,27 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - `wait --seconds` needs no `--device`, and touches no device even when one is named, so a pause can never fail or be skipped.
 - `describe-ui`, `screenshot` and the `rn logbox` commands exit 1 `device_unresponsive` naming the device after 30 s without an answer from a simulator or emulator, instead of hanging; a `--wait-lock` wait and `rn logbox`'s own waits are added to that. Phones have limits of their own.
 - `logs` on Android joins the lines of one logged message, which logcat prints each under its own header, into one entry: `--grep` and `--exclude` match the whole entry and `.` crosses its lines, `--json` carries it whole, and text output keeps it on one line with `\n`.
+- `wake --unlock`, `unlock-code status`, `doctor` and `boot` say plainly whether a saved PIN or password is wrong. A code typed in full with the lock screen still up 15 s later is `The saved PIN is wrong: ...`, and stays blocked, even through an unlock by hand, until it is saved again. A run that ended before it saw the result, or a marker from an earlier version, is `Offsider can't tell if the saved PIN is right: ...`. Each message names the command that saves it, and that Offsider won't retry because repeated wrong PINs can lock a phone out. Its `ask` asks the user to save the code, not to unlock. The marker now holds the outcome, the time and whether the lock was a PIN or password, and `--json` adds `lastAttempt` (`outcome`, `at`, `credential`, or null) beside `lastAttemptFailed`, which stays true for either.
+- `doctor`'s `android-device.lock` warns instead of passing while a saved code is wrong or unconfirmed.
+- `logs --no-redact` and `rn logbox status|open --no-redact` need a person when an agent runs them (`person_required`, or Touch ID with a terminal on standard input); a person at a terminal is not asked. `OFFSIDER_MASK_SECURE=0` on `record-video` and `stream-video` needs the same.
+- `offsider init` asks before `record-video --unmasked`, `stream-video --unmasked`, `logs --no-redact`, and, in Claude Code, `rn logbox --no-redact` and raw `adb` and `devicectl` called by full path.
+- `wake --unlock` and `type --file` must come straight after the command (exit 64 otherwise), so the permission rules that match the command as typed see them.
 
 ### Fixed
 
+- `button lock` and `button side-button` on an iPhone or iPad no longer open Siri: the plain press held for 0.4 s, exactly where iOS starts Siri, and now holds for 0.34 s.
+- On Xcode 27.1 and later, a system alert, a sheet such as Siri's or Control Center over the pinned app no longer lets a screenshot or input through: the front-app check had lost XCTest's lookup and fell back to the app's own state, which misses them. It now uses XCTest's accessibility client, and an Xcode with no lookup says so in a notice. The runner rebuilds once.
+- A locked iPhone or iPad now says `device_locked` and names `offsider wake`, rather than telling you to open the app, and the check no longer passes in the moment after a lock press.
+- `devices add`'s team menu tells two teams with one name apart: each row says `Free` or `Paid` where Xcode's local preferences say, and shows the account's email when a development certificate's common name holds one. Free teams come last. The email is never saved.
+- `doctor`'s `ios-device.runner-signing` counts Xcode's signed-in teams on Xcode 27, where it said none.
+- `certificate_not_trusted` (exit 7): a runner the device will not launch because it does not trust the certificate names the fix, Settings > General > VPN & Device Management, and carries an `ask`, where it failed with `runner_unavailable` and said to check UI Automation.
+- `screenshot` and `describe-ui` show their spinner while a simulator's frameworks load, which was a silent pause on the first command.
+- `type` refused a focused field with `no_focused_field` when the tree left the field out and a hardware keyboard hid the software one. An iOS simulator now reads points across the screen for a focused text field before refusing; `key-sequence` and `--require-focus-id` do too.
+- `type` on a physical iPhone or iPad with no field focused refuses (`no_focused_field`) instead of sending keys nowhere; the docs promised this and the broker's path skipped it.
+- `type --into-label` no longer takes a neighbouring field that keeps focus and overlaps the tapped one by a sliver for the field it tapped. A focused node must fill most of the field's frame, a text field almost all of it, and a focused web view no longer proves focus for `login`'s password.
+- A field focused beneath a page drawn over it no longer takes `type` on an iOS simulator because a keyboard shows; the refusal names the field.
+- `login` no longer logs the password's length.
+- `type --verify` and `--require-focus-id --verify` read the screen once fewer before the text.
 - A password field a show-password toggle revealed no longer prints: `wait --id`, `assert --id` and their batch steps showed its text in `match.value`, and a `--has-value` miss in `reason`, which now says `has a masked value`; `--has-value` still compares the real text. `record-video` and `stream-video` refuse to start with one on screen.
 - An `offsider.mask.json` match now hides what is nested in it, and its text in a parent's label that copies it, as Android's clickable rows do (`Balance [redacted] Details`), on output, in the tree cache and in selector, cover and page messages.
 - `swipe` and `drag --screenshot-at` honour the evidence run: its masks are painted and each capture is numbered into the run's manifest.
@@ -103,6 +130,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - `rn devmenu` taps the menu's own item when a button of the app behind the menu has the same label, and `--label` naming only a row of that app exits 2 with nothing tapped, where it tapped the sheet's dismiss area, which closed the menu and reported a choice.
 - `rn devmenu --label` on something that is no control, such as a section heading, exits 5 saying nothing happened and leaves the menu open, where closing the menu passed for a choice.
 - A platform that does not exist after a `devices` subcommand (`devices status --platform windows`) gets that subcommand's own message, naming the listing command, where it failed in `devices` with that command's usage. `devices --platform windows` still exits 64, in one line.
+- `wake --unlock` waits up to 15 s for the lock screen to go after typing a code, not about 2.5 s on an emulator and 4 to 6 s on a phone, so a slow first unlock since boot no longer ends the check early, and a right code is not called wrong.
+- `wake --unlock` types nothing into a code field disabled while the lock screen counts down after wrong codes, where a right code could not land.
+- The unlock hints in `boot` and `doctor` name an emulator's AVD for `unlock-code set`, which refuses its serial.
+- An app id with a space, tab or newline around it is refused everywhere, as no check would match it while the device shell ignored the padding, so `--app ' com.android.chrome'` no longer got past a phone's deny-list or managed policy. Every `--app` and `--bundle-id` is checked at parsing (exit 64), `logs` and the input commands too, and a phone's allowance is checked when the command is routed, whichever command names the app; a test walks the command tree so a new one cannot skip either.
+- `logs --rn` and `logs --rn --app` on a phone without "Any app and all logs" keep only that app's own lines. They used to pass on every app's React Native tags.
+- `logs --rn --app --follow` prints a finished entry after 250 ms even while other apps keep logging.
+- `rn open` and `rn prepare` refuse an app a phone's allowance does not permit (`app_not_allowed`) before any `pm`, `am`, `run-as` or `adb reverse` reaches it.
+- `rn open` taps Open only on the `Open in “…”?` prompt naming the app it was told to open; any other, or one when the name is unknown, is reported as `person_required`.
+- Hints printed on a phone allowed for any app or for several name `--app`, so the printed command runs as it stands.
+- A broken `offsider.login.json` exits 64 with its own message from `app`, `notifications` and `logs`. It used to read as naming no app, falling through to a phone's only pin or to the whole log on a simulator or emulator.
+- `OFFSIDER_OUTPUT=person` only changes what Offsider prints. It no longer opens `describe-ui --raw-source` or the unmask check for an agent; a person piping `--raw-source` from their own terminal confirms with Touch ID.
+- A person's own Codex line for an Offsider rule counts whichever way they changed it, so `init` no longer adds a prompt over it and `doctor` no longer warns.
+- A key a newer Offsider wrote on one device's allow-list entry refuses that device alone, saying to update Offsider, where it used to refuse every phone and iPhone. `devices status` and `doctor` show it, and `add` or `remove` for another device keeps the entry as written. A problem at the top of the file, or an entry that does not say which device it is, still refuses everything.
+- `--app` help says what it does for video: the app in front is checked at most every 1 s on Android and every 2 s on an iPhone or iPad.
 
 ## [0.14.0] - 2026-10-22
 

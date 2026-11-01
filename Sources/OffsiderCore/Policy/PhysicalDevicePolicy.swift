@@ -16,6 +16,8 @@ public enum DeviceRefusal: Equatable, Sendable {
     case listUnreadable(String)
     /// The file no longer matches the seal `devices add` stored in the login Keychain.
     case listChanged
+    /// A newer Offsider wrote this device's entry, with a key this build does not know and so cannot honour.
+    case newerEntry(String)
 
     /// True when only an administrator can lift it; `devices add` cannot.
     public var isManaged: Bool {
@@ -35,6 +37,7 @@ public enum DeviceRefusal: Equatable, Sendable {
         case .expired(let date): return "its allow-list entry expired at \(ProcessStamp.timestamp(date))"
         case .listUnreadable(let detail): return "the allow-list could not be read (\(detail))"
         case .listChanged: return "the allow-list was changed outside Offsider"
+        case .newerEntry(let key): return "a newer Offsider wrote its allow-list entry, with a setting this one cannot read (\(TerminalText.quoted(key)))"
         }
     }
 
@@ -48,6 +51,7 @@ public enum DeviceRefusal: Equatable, Sendable {
         case .expired: return "expired"
         case .listUnreadable: return "list_unreadable"
         case .listChanged: return "list_changed"
+        case .newerEntry: return "newer_entry"
         }
     }
 }
@@ -79,9 +83,15 @@ public struct PhysicalDevicePolicy: Equatable, Sendable {
         if !managed.lists(platform: platform, key: key) { return .refused(.managedNotListed) }
         if let listProblem { return .refused(.listUnreadable(listProblem)) }
         if !sealIntact { return .refused(.listChanged) }
+        if let held = list.newerEntry(platform: platform, key: key) { return .refused(.newerEntry(held.unknownKeys[0])) }
         guard let entry = list.entry(platform: platform, key: key) else { return .refused(.notAllowed) }
         guard entry.isActive(now: now) else { return .refused(.expired(entry.expires ?? now)) }
         return .allowed(entry)
+    }
+
+    /// Whether agents may drive all of this device: a person chose a test device, and managed policy leaves it so.
+    public func drivesWhole(_ allowance: DeviceAllowance) -> Bool {
+        allowance.testDevice && managed.testDeviceRefusal == nil
     }
 
     /// The apps the entry pins, within the managed bundle list; nil when neither limits them.
@@ -98,12 +108,20 @@ public struct PhysicalDevicePolicy: Equatable, Sendable {
 
     /// Whether `app` may be driven on the device: never a deny-listed app, and only within `permittedApps`.
     public func permits(app: String, on allowance: DeviceAllowance) -> Bool {
+        guard (try? ExpoDevClient.validate(appID: app)) != nil else { return false }
+        if drivesWhole(allowance) { return true }
         guard !SystemAppDenyList.isDenied(app, platform: allowance.platform) else { return false }
         return permittedApps(for: allowance)?.contains(app) ?? true
     }
 
     /// Why `app` may not be driven or read on the device, in one sentence ending "Nothing was read or sent."; nil when it may.
     public func appRefusal(_ app: String, on allowance: DeviceAllowance, audience: ErrorAudience = .current) -> String? {
+        do {
+            _ = try ExpoDevClient.validate(appID: app)
+        } catch {
+            return "\(error.localizedDescription) Nothing was read or sent."
+        }
+        if drivesWhole(allowance) { return nil }
         if let why = SystemAppDenyList.refusal(app, platform: allowance.platform) {
             return "\(why). Nothing was read or sent."
         }
@@ -131,8 +149,24 @@ public struct PhysicalDevicePolicy: Equatable, Sendable {
             ]
             if let team = entry.team { fields.append(("team", .string(team))) }
             if !entry.metroPorts.isEmpty { fields.append(("metroPorts", .array(entry.metroPorts.map { .integer($0) }))) }
+            if entry.testDevice {
+                fields.append(("testDevice", .bool(true)))
+                if let off = managed.testDeviceRefusal { fields.append(("testDeviceOff", .string(off))) }
+            }
             fields.append(("active", .bool(decision(platform: entry.platform, key: entry.key, now: now) == .allowed(entry))))
             return .object(fields)
+        }
+        let held = list.newer.filter { entry in only.map { $0.platform == entry.platform && $0.key == entry.key } ?? true }.map { entry -> OrderedJSON in
+            var refusal: OrderedJSON = .null
+            if case .refused(let why) = decision(platform: entry.platform, key: entry.key, now: now) { refusal = .string(why.code) }
+            return .object([
+                ("platform", .string(entry.platform.rawValue)),
+                ("id", .string(entry.key)),
+                ("name", .string(entry.name)),
+                ("active", .bool(false)),
+                ("refusal", refusal),
+                ("unknownKeys", .array(entry.unknownKeys.map { .string($0) })),
+            ])
         }
         var fields: [(String, OrderedJSON)] = [
             ("version", .integer(1)),
@@ -141,13 +175,14 @@ public struct PhysicalDevicePolicy: Equatable, Sendable {
                 ("allowPhysicalDevices", .optional(managed.allowPhysicalDevices) { .bool($0) }),
                 ("allowedDeviceIDs", .optional(managed.allowedDeviceIDs) { .array($0.map { .string($0) }) }),
                 ("allowedBundleIDs", .optional(managed.allowedBundleIDs) { .array($0.map { .string($0) }) }),
+                ("allowTestDevices", .optional(managed.allowTestDevices) { .bool($0) }),
                 ("unreadable", .bool(managed.unreadable)),
             ])),
             ("list", .object([
                 ("readable", .bool(listProblem == nil)),
                 ("sealed", .bool(sealIntact)),
             ])),
-            ("devices", .array(devices)),
+            ("devices", .array(devices + held)),
         ]
         if let only {
             let refusal: DeviceRefusal?

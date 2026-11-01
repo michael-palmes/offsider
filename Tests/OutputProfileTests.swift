@@ -108,11 +108,77 @@ struct OutputProfileTests {
         _ = try JSONSerialization.jsonObject(with: Data(encoder.utf8))
     }
 
-    @Test("an agent cannot read --raw-source; a person can")
-    func rawSourceRefused() throws {
-        let refused = #expect(throws: CLIError.self) { try DescribeUI.refuseRawSourceForAgent(profile: .agent) }
+    @Test("the person gates ignore OFFSIDER_OUTPUT=person: a marker or a pipe is an agent, and only a clean terminal is a person", arguments: [
+        ([:], true, OutputProfile.person),
+        ([:], false, .agent),
+        (["OFFSIDER_OUTPUT": "person"], false, .agent),
+        (["OFFSIDER_OUTPUT": "person", "CLAUDE_CODE_CHILD_SESSION": "1"], true, .agent),
+        (["OFFSIDER_OUTPUT": "person"], true, .person),
+        (["OFFSIDER_OUTPUT": "agent"], true, .agent),
+        (["AI_AGENT": "harness"], true, .agent),
+    ] as [([String: String], Bool, OutputProfile)])
+    func gateIgnoresTheDisplayOverride(environment: [String: String], terminal: Bool, expected: OutputProfile) {
+        #expect(OutputProfile.resolveGate(environment: environment, isTerminal: terminal) == expected)
+    }
+
+    @Test("OFFSIDER_OUTPUT=person on a pipe opens no person gate, and the refusal comes before any device", arguments: [
+        ("describe-ui --raw-source", "runs only for a person at a terminal"),
+        ("logs --no-redact", "stay redacted"),
+        ("rn logbox status --no-redact", "stay redacted"),
+    ])
+    func displayOverrideOpensNoGate(command: String, refusal: String) async throws {
+        let result = try await TestHelpers.runOffsiderCommandSeparated("\(command) --device emulator-5554 < /dev/null", environment: ["OFFSIDER_OUTPUT": "person"])
+        #expect(result.exitCode == 1)
+        #expect(result.stderr.contains(refusal), "\(result.stderr)")
+    }
+
+    @Test("an agent's --raw-source and --no-redact are refused with no terminal, ask on one, and a person at a terminal is never asked")
+    func unredactedGates() async throws {
+        UnmaskedConsent.confirmed = false
+        defer { UnmaskedConsent.confirmed = false }
+        let gates: [(String, @Sendable (OutputProfile) async throws -> Void)] = [
+            ("print the device's unredacted tree", { try await DescribeUI.confirmRawSource(profile: $0) }),
+            ("print log messages unredacted", { try await Logs.confirmUnredacted(profile: $0) }),
+        ]
+        for (reason, gate) in gates {
+            UnmaskedConsent.confirmed = false
+            let nobody = FakePresence()
+            let refused = await #expect(throws: CLIError.self) {
+                try await PersonPresence.$terminal.withValue({ false }) {
+                    try await PersonPresence.$current.withValue(nobody) { try await gate(.agent) }
+                }
+            }
+            #expect(refused?.reason == .personRequired)
+            #expect(nobody.reasons.isEmpty)
+            try await PersonPresence.$current.withValue(nobody) { try await gate(.person) }
+            #expect(nobody.reasons.isEmpty)
+
+            let person = FakePresence()
+            try await PersonPresence.$terminal.withValue({ true }) {
+                try await PersonPresence.$current.withValue(person) { try await gate(.agent) }
+            }
+            #expect(person.reasons == [reason])
+        }
+    }
+
+    @Test("OFFSIDER_MASK_SECURE=0 on a video needs a person for an agent; --unmasked and a person at a terminal are not asked")
+    func videoCheckOffNeedsPerson() async throws {
+        UnmaskedConsent.confirmed = false
+        defer { UnmaskedConsent.confirmed = false }
+        let off = ["OFFSIDER_MASK_SECURE": "0"]
+        let nobody = FakePresence()
+        let plain = try VideoMaskOptions.parse([])
+        let refused = await #expect(throws: CLIError.self) {
+            try await PersonPresence.$terminal.withValue({ false }) {
+                try await PersonPresence.$current.withValue(nobody) { try await plain.confirmCheckOff(command: "record-video", environment: off, profile: .agent) }
+            }
+        }
         #expect(refused?.reason == .personRequired)
-        try DescribeUI.refuseRawSourceForAgent(profile: .person)
+        try await PersonPresence.$terminal.withValue({ false }) {
+            try await plain.confirmCheckOff(command: "record-video", environment: [:], profile: .agent)
+            try await plain.confirmCheckOff(command: "record-video", environment: off, profile: .person)
+            try await VideoMaskOptions.parse(["--unmasked"]).confirmCheckOff(command: "record-video", environment: off, profile: .agent)
+        }
     }
 
     @Test("--raw-source refuses a tree past the caps and escapes every hazard it prints")

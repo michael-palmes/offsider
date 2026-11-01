@@ -10,7 +10,9 @@ enum IOSDevicePinning {
         profileBundleID: () -> String? = { (try? LoginProfiles.load(project: nil, warn: { _ in }))??.bundleID }
     ) {
         backend.pinPolicy = { app in refusal(app, allowance: allowance, policy: policy) }
-        if backend.targetApp == nil {
+        backend.drivesWhole = policy.drivesWhole(allowance)
+        // A test device reads what is in front, so a prompt over the app shows; `--app` still names one.
+        if backend.targetApp == nil, !backend.drivesWhole {
             backend.targetApp = defaultPin(profile: profileBundleID(), allowance: allowance)
         }
     }
