@@ -80,6 +80,7 @@ struct StreamVideo: AsyncParsableCommand {
         defer { signalObserver.invalidate() }
 
         let checksSecureField = try masks.requireMaskable(command: "stream-video")
+        try await masks.confirmCheckOff(command: "stream-video")
         let regions = try masks.regions()
         let logger = OffsiderLogger()
         let route = try await DeviceRouter.route(deviceOption.id, logger: logger)

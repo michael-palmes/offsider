@@ -210,9 +210,16 @@ struct Wait: AsyncParsableCommand {
                 try await evaluate(on: route, logger: logger, probesOnMiss: true, notesOtherApp: true, onPrepared: ready)
             }
         }
-        let mask = (try? await AmbientMasks.treeMask()) ?? .none
+        try await show(outcome, on: route)
+    }
+
+    /// Prints `outcome` with what the masks hide on `route` hidden; exits 5 when it was not met.
+    @MainActor
+    func show(_ outcome: WaitOutcome, on route: DeviceRouter.Route, console: Console = .current) async throws {
+        let mask = try await AmbientMasks.shownMask(on: route)
         try Self.report(
-            outcome, success: successLine(outcome), failure: failureLine(outcome), json: json, checked: selector, mask: mask, person: personOutcome
+            outcome, success: successLine(outcome), failure: failureLine(Self.shown(outcome, mask: mask)), json: json, checked: selector, mask: mask, person: personOutcome,
+            console: console
         )
     }
 
@@ -245,14 +252,18 @@ struct Wait: AsyncParsableCommand {
         appOption.apply(to: route)
         try await route.backend.prepare()
         onPrepared()
-        let revealed = settled ? await TreeCache.revealedSecrets(for: route.device, backend: route.backend) : nil
+        let revealed = settled || selector.hasValue != nil ? await TreeCache.revealedSecrets(for: route.device, backend: route.backend) : nil
         let gate = settled ? await Self.settleGate(for: route, revealed: revealed) : nil
-        let condition = condition(gate: gate, platform: route.device.platform)
+        let condition = condition(gate: gate, platform: route.device.platform, revealed: revealed)
         var sources = try await liveSources(on: route, condition: condition, tree: tree, clock: clock)
-        sources.tree = selector.judging(sources.tree, queries: waitsForAny ? selector.queries : [selector.query].compactMap { $0 }, on: route)
-        if let revealed {
+        // A simulator's fill slows each poll by about a second, so two reads could both land in a brief flicker and call it gone.
+        let fills = !gone || route.device.platform != .ios
+        sources.tree = selector.judging(sources.tree, queries: waitsForAny ? selector.queries : [selector.query].compactMap { $0 }, fillingGaps: fills, on: route)
+        if settled {
             // As the cache stores them, so a change message never prints one and the gate compares like with like.
-            let (mask, read) = (TreeValueMask(revealed: revealed), sources.tree)
+            var mask = OutputMasks.current.base
+            mask.revealed = revealed
+            let read = sources.tree
             sources.tree = { try await read().redacted(mask, scope: .cache) }
         }
         if probesOnMiss {
@@ -269,7 +280,7 @@ struct Wait: AsyncParsableCommand {
     /// Tells the reader once that another app in front is holding a wait up.
     static func noteOtherApp(limit: TimeInterval, device: String) {
         let shown = WaitLoop.seconds(limit)
-        Console.current.notice(.note("Another app is in front. Waiting up to \(shown) for yours", agent: "another app is in front on \(device), so nothing is read from it; waiting up to \(shown) for the app under test."))
+        Console.current.notice(.note("Another app or a system prompt is in front. Waiting up to \(shown) for yours", agent: "another app or a system prompt is in front on \(device), so nothing is read from it; waiting up to \(shown) for the app under test."))
     }
 
     /// The gate for the device's last input: this process's own when it sent one (a batch step), masked here as the cache's is at exit, else the cached record's.
@@ -279,7 +290,7 @@ struct Wait: AsyncParsableCommand {
         let environment = TreeCacheEnvironment.current
         let now = environment.now()
         if var activity = ledger.activity(for: route.device), activity.lastInputAt != nil {
-            var mask = OutputMasks.current.mask
+            var mask = OutputMasks.current.base
             mask.revealed = revealed
             activity.tree = activity.tree?.redacted(mask, scope: .cache)
             let record = TreeCacheRecord.committing(activity, previous: nil, command: "wait", inputAtEnd: false, bootMarker: nil, now: now)
@@ -290,8 +301,8 @@ struct Wait: AsyncParsableCommand {
 
     var condition: WaitCondition { condition(gate: nil, platform: .ios) }
 
-    /// `platform` picks the draw hold: Android's tree can change well before its pixels, and an explicit `--settle-by` says what to watch.
-    func condition(gate: SettleGate?, platform: DevicePlatform) -> WaitCondition {
+    /// `platform` picks the draw hold: Android's tree can change well before its pixels, and an explicit `--settle-by` says what to watch; `revealed` keeps a `--has-value` miss from printing one's text.
+    func condition(gate: SettleGate?, platform: DevicePlatform, revealed: RevealedSecrets? = nil) -> WaitCondition {
         if waitsForAny {
             let queries = selector.queries
             let selectors = queries.enumerated().map { index, query in
@@ -300,7 +311,7 @@ struct Wait: AsyncParsableCommand {
             return .anyElement(selectors, stableFor: stableFor, explain: Self.explainAny(queries))
         }
         if let query = selector.query {
-            return .element(probe: selector.probe(for: query), gone: gone, stableFor: stableFor, explain: SelectorQuery.explain(query))
+            return .element(probe: selector.probe(for: query, revealed: revealed), gone: gone, stableFor: stableFor, explain: SelectorQuery.explain(query))
         }
         if settled {
             let holdsDraw = gate != nil && settleBy == nil && platform == .android
@@ -491,12 +502,12 @@ struct Wait: AsyncParsableCommand {
     /// The outcome with its reason, near miss and matched element's screen text redacted.
     static func shown(_ outcome: WaitOutcome, mask: TreeValueMask = .none) -> WaitOutcome {
         var shown = WaitOutcome(
-            met: outcome.met, elapsed: outcome.elapsed, reason: LogRedactor.redactValue(outcome.reason).text,
+            met: outcome.met, elapsed: outcome.elapsed, reason: mask.redactedText(outcome.reason),
             match: outcome.match.map { redacted($0, mask: mask) }, matched: outcome.matched
         )
         shown.onlyTextMoved = outcome.onlyTextMoved
         shown.movingPart = outcome.movingPart.flatMap { LogRedactor.redactValue($0.flag).text == $0.flag ? $0 : nil }
-        shown.nearMiss = outcome.nearMiss.map { WaitNearMiss(summary: LogRedactor.redactValue($0.summary).text, candidates: $0.candidates) }
+        shown.nearMiss = outcome.nearMiss.map { WaitNearMiss(summary: mask.redactedText($0.summary), candidates: $0.candidates) }
         return shown
     }
 
@@ -518,10 +529,11 @@ struct Wait: AsyncParsableCommand {
 
     static let redactedNote = "matched on the real text; describe-ui shows it redacted"
 
+    /// Redacted with its children, whose hidden text its label may copy; the report prints only the element itself.
     private static func redacted(_ node: UINode, mask: TreeValueMask) -> UINode {
-        var single = node
-        single.children = []
-        return UITree(platform: .ios, device: "", roots: [single]).redacted(mask).roots.first ?? single
+        var shown = UITree(platform: .ios, device: "", roots: [node]).redacted(mask).roots.first ?? node
+        shown.children = []
+        return shown
     }
 
     private static func fingerprint(_ rendered: RenderedScreenshot, excludingTop top: Int = 0, bottom: Int = 0, tolerance: Int = 0) throws -> ImageFingerprint {
@@ -539,7 +551,7 @@ struct Wait: AsyncParsableCommand {
         person: ((WaitOutcome, String?) -> Outcome)? = nil, console: Console = .current
     ) throws {
         let note = outcome.met ? redactionNote(outcome, checked: checked, mask: mask) : ""
-        let line = outcome.met ? success + note : LogRedactor.redactValue(failure).text
+        let line = outcome.met ? success + note : mask.redactedText(failure)
         if json {
             console.data(WaitReport(shown(outcome, mask: mask)).jsonLine() + "\n")
             console.data(line + "\n", to: .err)
@@ -548,7 +560,7 @@ struct Wait: AsyncParsableCommand {
             console.show(Page([.person([.outcome(receipt)]), .agent(line + "\n")]))
         } else if let person, console.err.profile == .person {
             let failed = person(shown(outcome, mask: mask), nil)
-            let redacted = Outcome(ok: false, headline: LogRedactor.redactValue(failed.headline).text, details: failed.details.map { LogRedactor.redactValue($0).text })
+            let redacted = Outcome(ok: false, headline: mask.redactedText(failed.headline), details: failed.details.map(mask.redactedText))
             console.data(PersonRenderer.body([.outcome(redacted)], canvas: console.err.canvas), to: .err)
         } else {
             console.data(line + "\n", to: outcome.met ? .out : .err)

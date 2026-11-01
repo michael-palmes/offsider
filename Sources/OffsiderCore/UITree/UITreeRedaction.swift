@@ -31,6 +31,8 @@ public struct TreeValueMask: @unchecked Sendable {
     public var patterns: [NSRegularExpression]
     public var emails: Bool
     public var revealed: RevealedSecrets?
+    /// What the device's reads showed that only their nesting hides, for messages that name one element.
+    public var nested = NestedMasks()
 
     public static let none = TreeValueMask()
 
@@ -76,9 +78,9 @@ public struct TreeValueMask: @unchecked Sendable {
     /// Whether a masked id or label names the element with this trimmed `id` and `label`, so output hides its text.
     public func hides(id: String?, label: String?) -> Bool {
         guard hidesElements else { return false }
-        if let id, ids.contains(id) { return true }
+        if let id, ids.contains(id) || nested.ids.contains(id) { return true }
         guard let label else { return false }
-        if labels.contains(label) { return true }
+        if labels.contains(label) || nested.labels.contains(label) { return true }
         guard !foldedLabels.isEmpty || !labelContains.isEmpty else { return false }
         let folded = Self.folded(label)
         return foldedLabels.contains(folded) || labelContains.contains { folded.contains($0) }
@@ -110,8 +112,25 @@ public struct TreeValueMask: @unchecked Sendable {
     /// A label of the element with `id` as tree output shows it: masked when a mask names the element, else with secrets redacted.
     public func shownLabel(_ label: String, id: String?) -> String {
         if let masked = masked(label, id: id) { return masked }
+        return redactedText(rewritten(label) ?? label)
+    }
+
+    /// A page or window name, which keeps `LogRedactor`'s email, key-value and JWT passes and adds the mask's patterns.
+    public func contextLabel(_ label: String, id: String?) -> String {
+        if let masked = masked(label, id: id) { return masked }
         var count = 0
-        return UITree.redactText(label, mask: self, count: &count)
+        return maskText(LogRedactor.redact(rewritten(label) ?? label).text, count: &count)
+    }
+
+    /// `text` with secrets and the mask's patterns replaced, for a message that holds screen text but names no element.
+    public func redactedText(_ text: String) -> String {
+        var count = 0
+        return UITree.redactText(text, mask: self, count: &count)
+    }
+
+    private func rewritten(_ label: String) -> String? {
+        guard !nested.rewrites.isEmpty, let trimmed = Self.trimmed(label) else { return nil }
+        return nested.rewrites[trimmed]
     }
 
     /// `label` as `maskedLabel` shows it when a mask names the element with `id`, else nil.
@@ -163,26 +182,91 @@ public struct TreeValueMask: @unchecked Sendable {
     }
 }
 
+/// Elements a read showed that no mask names alone: those under a masked element, and labels that copy a masked element's text.
+public struct NestedMasks: Equatable, Sendable {
+    public var ids: Set<String> = []
+    public var labels: Set<String> = []
+    /// A label as read, trimmed, and as output shows it.
+    public var rewrites: [String: String] = [:]
+
+    public init() {}
+
+    var count: Int { ids.count + labels.count + rewrites.count }
+}
+
 /// The masks the elements a command's messages name honour, read the first time one is named.
 public final class OutputMasks: @unchecked Sendable {
     /// None unless the command binds its own; a test binds its own too.
     @TaskLocal public static var current = OutputMasks { .none }
 
+    /// Past this many remembered elements, a long wait over rotating text starts again from its latest read.
+    static let maximumNested = 4096
+
     private let read: @Sendable () -> TreeValueMask
     private let lock = NSLock()
     private var cached: TreeValueMask?
+    private var nested = NestedMasks()
+    private var revealed: RevealedSecrets?
 
     public init(_ read: @escaping @Sendable () -> TreeValueMask) {
         self.read = read
     }
 
+    /// The masks with what this command's reads have shown, for naming one element.
     public var mask: TreeValueMask {
+        var mask = base
+        lock.lock()
+        mask.nested = nested
+        lock.unlock()
+        return mask
+    }
+
+    /// The masks alone, for redacting a whole tree, whose nesting then speaks for itself.
+    public var base: TreeValueMask {
         lock.lock()
         defer { lock.unlock() }
-        if let cached { return cached }
-        let mask = read()
+        var mask = cached ?? read()
         cached = mask
+        if let revealed { mask.revealed = revealed }
         return mask
+    }
+
+    /// The device's revealed password fields, so a message hides a label that copies one's text.
+    public func learn(revealed: RevealedSecrets?) {
+        lock.lock()
+        defer { lock.unlock() }
+        self.revealed = revealed.flatMap { $0.isEmpty ? nil : $0 }
+    }
+
+    /// Remembers what `tree`'s nesting hides, so a later message about one of its elements hides it too.
+    public func note(_ tree: UITree) {
+        let base = base
+        guard base.hidesElements || base.revealed != nil else { return }
+        var seen = NestedMasks()
+        let shown = tree.redacted(base, scope: .cache)
+        for (raw, shown) in zip(tree.roots, shown.roots) {
+            Self.collect(raw, shown: shown, inherited: false, mask: base, into: &seen)
+        }
+        lock.lock()
+        defer { lock.unlock() }
+        if nested.count + seen.count > Self.maximumNested { nested = NestedMasks() }
+        nested.ids.formUnion(seen.ids)
+        nested.labels.formUnion(seen.labels)
+        nested.rewrites.merge(seen.rewrites) { _, new in new }
+    }
+
+    private static func collect(_ raw: UINode, shown: UINode, inherited: Bool, mask: TreeValueMask, into seen: inout NestedMasks) {
+        let own = mask.hidesValue(of: raw)
+        if inherited, !own {
+            if let id = raw.normalizedID { seen.ids.insert(id) }
+            if let label = raw.normalizedLabel { seen.labels.insert(label) }
+        } else if !own, let label = raw.normalizedLabel, let text = shown.label, text != raw.label {
+            seen.rewrites[label] = text
+        }
+        let passes = (inherited || own) && raw.passesMaskDown
+        for (child, shownChild) in zip(raw.children, shown.children) {
+            collect(child, shown: shownChild, inherited: passes, mask: mask, into: &seen)
+        }
     }
 }
 
@@ -198,8 +282,10 @@ extension UITree {
     public func redacted(_ mask: TreeValueMask = .none, scope: TreeRedactionScope = .output) -> UITree {
         var counts = UITreeRedactionCounts()
         var copy = self
+        var hiddenBelow: [(text: String, shown: String)] = []
         for index in copy.roots.indices {
-            Self.redact(&copy.roots[index], mask: mask, scope: scope, counts: &counts)
+            hiddenBelow.removeAll(keepingCapacity: true)
+            Self.redact(&copy.roots[index], mask: mask, scope: scope, inherited: false, hiddenBelow: &hiddenBelow, counts: &counts)
         }
         if scope == .output {
             copy.redaction = counts
@@ -207,14 +293,27 @@ extension UITree {
         return copy
     }
 
-    private static func redact(_ node: inout UINode, mask: TreeValueMask, scope: TreeRedactionScope, counts: inout UITreeRedactionCounts) {
-        if let revealed = mask.revealed, revealed.matches(node) {
-            if node.value?.isEmpty == false || node.native.text?.isEmpty == false { counts.revealed += 1 }
-            node.value = SecureText.masked(node.value)
-            node.native.text = SecureText.masked(node.native.text)
-        } else if mask.hidesValue(of: node) {
+    /// Children first, so `hiddenBelow` holds each hidden descendant's text and how it reads for this node's label, which may copy it.
+    private static func redact(
+        _ node: inout UINode, mask: TreeValueMask, scope: TreeRedactionScope, inherited: Bool, hiddenBelow: inout [(text: String, shown: String)],
+        counts: inout UITreeRedactionCounts
+    ) {
+        let isMasked = inherited || mask.hidesValue(of: node)
+        let revealed = mask.revealed?.matches(node) == true
+        let below = hiddenBelow.count
+        let passes = isMasked && node.passesMaskDown
+        for index in node.children.indices {
+            redact(&node.children[index], mask: mask, scope: scope, inherited: passes, hiddenBelow: &hiddenBelow, counts: &counts)
+        }
+        if !isMasked, hiddenBelow.count > below {
+            rewrite(&node, hiding: hiddenBelow[below...], counts: &counts)
+        }
+        let original = (label: node.label, value: node.value, text: node.native.text)
+        let holdsText = node.value?.isEmpty == false || node.native.text?.isEmpty == false
+        if revealed, holdsText { counts.revealed += 1 }
+        if isMasked {
             let label = node.label.map(mask.maskedLabel)
-            if node.value?.isEmpty == false || node.native.text?.isEmpty == false || label != node.label { counts.redacted += 1 }
+            if (holdsText && !revealed) || label != node.label { counts.redacted += 1 }
             node.native.hideText(label: node.label, shown: label)
             node.label = label
             node.value = hidden(node.value)
@@ -224,13 +323,39 @@ extension UITree {
                 node.value = node.value.map { mask.maskText($0, count: &counts.redacted) }
             case .output:
                 node.label = node.label.map { redactText($0, mask: mask, count: &counts.redacted) }
-                node.value = node.value.map { redactText($0, mask: mask, count: &counts.redacted) }
-                node.native.redactText { redactText($0, mask: mask, count: &counts.redacted) }
+                if !revealed { node.value = node.value.map { redactText($0, mask: mask, count: &counts.redacted) } }
+                node.native.redactText { text in
+                    revealed && (text == original.value || text == original.text) ? LogRedactor.marker : redactText(text, mask: mask, count: &counts.redacted)
+                }
             }
         }
-        for index in node.children.indices {
-            redact(&node.children[index], mask: mask, scope: scope, counts: &counts)
+        if revealed {
+            node.value = SecureText.masked(original.value)
+            node.native.text = SecureText.masked(original.text)
         }
+        guard isMasked || revealed else { return }
+        if isMasked, let label = original.label, let shown = node.label, label != shown { hiddenBelow.append((label, shown)) }
+        for text in [node.role.valueIsScreenText ? original.value : nil, original.text].compactMap({ $0 }) where text.contains(where: { !$0.isWhitespace }) {
+            hiddenBelow.append((text, LogRedactor.marker))
+        }
+    }
+
+    /// An ancestor's copies of hidden descendants' text, longest first, so a text inside another never splits it.
+    private static func rewrite(_ node: inout UINode, hiding hidden: ArraySlice<(text: String, shown: String)>, counts: inout UITreeRedactionCounts) {
+        let longestFirst = hidden.sorted { $0.text.count > $1.text.count }
+        var changed = false
+        let hide = { (text: String) -> String in
+            var result = text
+            for entry in longestFirst where result.contains(entry.text) {
+                result = result.replacingOccurrences(of: entry.text, with: entry.shown)
+            }
+            if result != text { changed = true }
+            return result
+        }
+        node.label = node.label.map(hide)
+        node.value = node.value.map(hide)
+        node.native.redactText(hide)
+        if changed { counts.redacted += 1 }
     }
 
     private static func hidden(_ text: String?) -> String? {
@@ -277,13 +402,28 @@ extension UINative {
         case .ios(var attributes):
             attributes.title = attributes.title.map(transform)
             attributes.help = attributes.help.map(transform)
+            attributes.roleDescription = attributes.roleDescription.map(transform)
+            attributes.customActions = attributes.customActions.map(transform)
             self = .ios(attributes)
         case .android(var attributes):
             attributes.text = attributes.text.map(transform)
             attributes.contentDescription = attributes.contentDescription.map(transform)
             attributes.hint = attributes.hint.map(transform)
             attributes.stateDescription = attributes.stateDescription.map(transform)
+            attributes.roleDescription = attributes.roleDescription.map(transform)
             self = .android(attributes)
         }
     }
+}
+
+extension UIRole {
+    /// A toggle's or range's value is a state such as `1` or `25%`, which no label copies.
+    var valueIsScreenText: Bool {
+        ![.switch, .checkbox, .radioButton, .slider, .progress].contains(self)
+    }
+}
+
+extension UINode {
+    /// A mask on the app or a window names the screen itself, whose name may hold anything, so it stops there.
+    var passesMaskDown: Bool { role != .application && role != .window }
 }

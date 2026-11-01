@@ -62,13 +62,12 @@ public enum ExpoDevClient {
     public static let androidOnboardingKey = "isOnboardingFinished"
     public static let androidShowsAtLaunchKey = "showsAtLaunch"
 
-    /// A bundle ID or Android package: dot-separated letters, digits, hyphens (iOS only) and underscores (Android only).
+    /// A bundle ID or Android package: dot-separated letters, digits, hyphens (iOS only) and underscores (Android only). Padding is refused, as the allowance and deny-list compare the exact id.
     public static func validate(appID: String) throws -> String {
-        let trimmed = appID.trimmingCharacters(in: .whitespaces)
-        guard trimmed.range(of: #"^[A-Za-z0-9_-]+(\.[A-Za-z0-9_-]+)+$"#, options: .regularExpression) != nil else {
-            throw ExpoDevClientError(.invalidAppID, "'\(appID)' is not a bundle ID or package name such as com.example.app.")
+        guard appID.range(of: #"\A[A-Za-z0-9_-]+(\.[A-Za-z0-9_-]+)+\z"#, options: .regularExpression) != nil else {
+            throw ExpoDevClientError(.invalidAppID, "\(TerminalText.quoted(appID)) is not a bundle ID or package name such as com.example.app.")
         }
-        return trimmed
+        return appID
     }
 
     // MARK: iOS

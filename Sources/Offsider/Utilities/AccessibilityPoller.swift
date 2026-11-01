@@ -33,6 +33,7 @@ struct AccessibilityPoller {
         settle: SettlePolicy = .off,
         pick: MatchPicker? = nil,
         coverCheck: CoverCheck? = nil,
+        readsHiddenCovers: Bool = false,
         logger: OffsiderLogger
     ) async throws -> Polled<TapResolution> {
         try await pollForResolution(
@@ -48,6 +49,10 @@ struct AccessibilityPoller {
             logger: logger
         ) {
             var tree = try await backend.accessibilityTree(for: device)
+            // Android's every-view read is cheap, and the only way to see a hidden page over what the tree lists.
+            tree = readsHiddenCovers && tree.platform == .android
+                ? await backend.withGapsFilled(tree, on: device)
+                : await fillingGaps(tree, for: [query], elementType: elementType, allowOffscreen: allowOffscreen, on: backend, device: device)
             // Several matches on a simulator: the hit-tests that tell which one a touch reaches, read at once, which the cover check then reuses.
             if pick == nil, backend is any PointHitTesting, tree.platform == .ios,
                AccessibilityTargetResolver.candidates(roots: tree.roots, query: query, elementType: elementType).onScreen.count > 1 {
@@ -55,6 +60,18 @@ struct AccessibilityPoller {
             }
             return tree
         }
+    }
+
+    /// `tree` with what the app hides from accessibility, read only when no query has a match to act on, so a selector that matches pays nothing.
+    static func fillingGaps(
+        _ tree: UITree, for queries: [AccessibilityQuery], elementType: String?, allowOffscreen: Bool = false, on backend: any DeviceBackend, device: DeviceID
+    ) async -> UITree {
+        let isMissing = { (query: AccessibilityQuery) in
+            let found = AccessibilityTargetResolver.candidates(roots: tree.roots, query: query, elementType: elementType)
+            return allowOffscreen ? found.matches.isEmpty : found.onScreen.isEmpty
+        }
+        guard queries.allSatisfy(isMissing) else { return tree }
+        return await backend.withGapsFilled(tree, on: device)
     }
 
     /// Refuses (`target_covered`), warns or returns the tap to send for a resolved tap; `pollForResolution` retries a refusal until `--wait-timeout`.
@@ -76,7 +93,9 @@ struct AccessibilityPoller {
                 roots: tree.roots, query: query, elementType: elementType, allowOffscreen: allowOffscreen, explainFailures: explain, logger: logger
             )
         }
-        let fetch: () async throws -> UITree = { try await backend.accessibilityTree(for: device) }
+        let fetch: () async throws -> UITree = {
+            await fillingGaps(try await backend.accessibilityTree(for: device), for: [query], elementType: elementType, allowOffscreen: allowOffscreen, on: backend, device: device)
+        }
         let polled = try await poll(
             waitTimeout: waitTimeout,
             pollInterval: pollInterval,

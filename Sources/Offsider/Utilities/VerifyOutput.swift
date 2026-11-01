@@ -225,7 +225,7 @@ enum VerifyOutput {
             styleText = ""
         }
         if outcome.note == .logBoxOpened {
-            return "✗ \(request.subject) was dispatched but the React Native LogBox inspector opened over the app, so its effect cannot be seen. Read the log, then close it with offsider rn logbox dismiss --device \(request.device.rawValue)."
+            return "✗ \(request.subject) was dispatched but the React Native LogBox inspector opened over the app, so its effect cannot be seen. Read the log, then close it with offsider rn logbox dismiss\(CommandScope.current.appArgument(device: request.device.rawValue)) --device \(request.device.rawValue)."
         }
         if let id = request.options.verifyID {
             let whereabouts = outcome.summary.map { ": \($0)" } ?? ""
@@ -340,10 +340,10 @@ enum VerifyOutput {
     static func personUnverified(_ outcome: Verifier.Outcome, for request: VerifyRequest) -> Outcome {
         let subject = request.personSubject ?? request.subject
         let device = request.device.rawValue
-        let look = "offsider describe-ui --summary --device \(device)"
+        let look = CommandScope.current.describeHint(device: device)
         let plural = outcome.attempts == 1 ? "attempt" : "attempts"
         if outcome.note == .logBoxOpened {
-            return .failed("LogBox opened over the app", details: ["\(subject) was sent, but its effect is hidden. Read the log, then close it."], try: ["offsider rn logbox dismiss --device \(device)"])
+            return .failed("LogBox opened over the app", details: ["\(subject) was sent, but its effect is hidden. Read the log, then close it."], try: ["offsider rn logbox dismiss\(CommandScope.current.appArgument(device: device)) --device \(device)"])
         }
         if let id = request.options.verifyID {
             let waited = "\(subject) was sent; waited \(WaitLoop.seconds(request.options.resolvedTimeout)) after \(outcome.attempts) \(plural)"

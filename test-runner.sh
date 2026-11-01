@@ -358,6 +358,7 @@ RN_SUITES=(
     "ReactNativeStickyFooterTests"
     "ReactNativeAppCommandTests"
     "ReactNativeOnScreenTests"
+    "ReactNativeGapFillTests"
     "ReactNativeSettleTests"
     "ReactNativeVerifyHoldTests"
     "ReactNativeLoginTests"
@@ -929,7 +930,7 @@ require_device_allowance() {
         print_device_allow "$allow_name" "$app"
         exit 1
     fi
-    if [[ -n "$app" ]]; then
+    if [[ -n "$app" && "$(allowance_drives_whole "$(printf '%s' "$status" | plutil -extract devices.0 json -o - - 2>/dev/null)")" != 1 ]]; then
         local apps
         apps="$(printf '%s' "$status" | plutil -extract devices.0.apps json -o - - 2>/dev/null || echo '[]')"
         if [[ "$apps" != *"\"$app\""* ]]; then

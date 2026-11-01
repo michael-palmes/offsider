@@ -49,6 +49,44 @@ struct MaskHiddenContentTests {
         #expect(backend.maskReads == 1 && backend.treeReads == 0)
     }
 
+    @Test("a tree the device cut short, on any platform, or an Android read with no window list, cannot prove its masks")
+    func otherUnprovenReasons() {
+        var cut = FakeUI.tree([Self.close])
+        cut.sourceTruncated = true
+        #expect(ScreenCapture.unproven(cut) == "truncated")
+
+        var android = LogBoxTrees.androidTree([Self.close], title: "Playground")
+        android.sourceTruncated = true
+        #expect(ScreenCapture.unproven(android) == "truncated")
+
+        android.sourceTruncated = false
+        android.windows = nil
+        #expect(ScreenCapture.unproven(android) == "no-windows")
+    }
+
+    @Test("each unproven reason warns in its own words, naming what to check")
+    func unprovenWords() {
+        for (reason, words) in [("truncated", "cut this accessibility tree short"), ("no-windows", "lists no windows"), ("modal", "a modal window covers the app")] {
+            let notice = ScreenCapture.unprovenNotice(reason, subject: "the video")
+            let agent = AgentRenderer.notice(notice)
+            #expect(agent.contains(words), "\(agent)")
+            #expect(agent.contains("the video") && agent.contains("(maskUnproven)"), "\(agent)")
+        }
+    }
+
+    @Test("video still starts under an unproven tree, and says so", arguments: [true, false])
+    func videoWarnsUnproven(truncated: Bool) async throws {
+        var tree = truncated ? FakeUI.tree([Self.close]) : LogBoxTrees.androidTree([Self.close], title: "Playground")
+        tree.sourceTruncated = truncated
+        if !truncated { tree.windows = nil }
+        let capture = ConsoleCapture()
+        let device = DeviceID(rawValue: truncated ? "fake-device" : "emulator-5554", platform: truncated ? .ios : .android)
+        try await Console.$current.withValue(AgentOutputTests.agentConsole(capture)) {
+            try await VideoMaskOptions.requireNoSecureField(command: "record-video", backend: FakeDeviceBackend(platform: device.platform, trees: [tree]), device: device)
+        }
+        #expect(capture.err.contains("(maskUnproven)") && capture.err.contains("the video"), "\(capture.err)")
+    }
+
     @Test("over an Android modal window the report and stderr say masks could not see behind it")
     func modalUnproven() async throws {
         let capture = ConsoleCapture()

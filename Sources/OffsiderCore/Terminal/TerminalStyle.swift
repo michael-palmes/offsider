@@ -40,7 +40,7 @@ public struct TerminalStyle: Equatable, Sendable {
 
     /// An emoji that leads a line, two columns wide and one scalar (all but `warning`), or its short ASCII tag.
     public enum Mark: Sendable, CaseIterable {
-        case lock, iPhone, iPad, android, team, app, anyApp, time, keep, type, done, cancel, warning, another, digits
+        case lock, iPhone, iPad, android, team, app, anyApp, testDevice, time, keep, type, done, cancel, warning, another, digits
         case doctor, mac, fix, boot, run, record, screenshot, logs, session, guide, steps, build, key, user, link, clean, nothing, bye, tip
 
         public var emoji: String {
@@ -52,6 +52,7 @@ public struct TerminalStyle: Equatable, Sendable {
             case .team: return "🏢"
             case .app: return "📦"
             case .anyApp: return "✨"
+            case .testDevice: return "🧪"
             case .time: return "⏳"
             case .keep: return "📌"
             case .type: return "📝"
@@ -91,6 +92,7 @@ public struct TerminalStyle: Equatable, Sendable {
             case .team: return "[team]"
             case .app: return "[app]"
             case .anyApp: return "[any]"
+            case .testDevice: return "[test]"
             case .time: return "[time]"
             case .keep: return "[keep]"
             case .type: return "[type]"

@@ -183,13 +183,14 @@ struct Turnstile: AsyncParsableCommand {
         return (phase, .tree)
     }
 
+    @MainActor
     private static func ambiguous(_ phase: TurnstilePhase, device: DeviceID) -> CLIError {
         let count: Int
         if case .ambiguous(let found) = phase { count = found } else { count = 2 }
         return CLIError(
             errorDescription: "\(count) Turnstile checkboxes are on screen. Pass --id to choose the wrapper that holds the one you want.",
             reason: .selectorAmbiguous,
-            hint: "offsider describe-ui --summary --device \(device.rawValue)"
+            hint: CommandScope.current.describeHint(device: device.rawValue)
         )
     }
 

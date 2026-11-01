@@ -26,12 +26,22 @@ struct NotificationsCommandTests {
         #expect(error?.reason == .usage)
     }
 
-    @Test("a phone allowed for any app refuses another app's notifications from a messages or system app", arguments: ["com.google.android.apps.messaging", "com.android.systemui", "com.google.android.gm"])
+    @Test("a phone allowed for any app refuses another app's notifications from a messages or system app", arguments: ["com.google.android.apps.messaging", "com.android.systemui", "com.google.android.gm", " com.android.chrome", "com.google.android.gm "])
     @MainActor
     func anyAppPhoneRefusesDenyList(_ app: String) {
         let any = PolicyFixtures.entry(.android, key: PolicyFixtures.serial, apps: [])
         let error = #expect(throws: CLIError.self) { try NotificationsCommand.app(app, route: Self.route(allowance: any), gate: Self.gate(any), profile: { nil }) }
         #expect(error?.reason == .appNotAllowed)
+    }
+
+    @Test("a broken offsider.login.json exits 64, not a fall through to the pin")
+    @MainActor
+    func brokenProfileRefuses() {
+        let pinned = PolicyFixtures.entry(.android, key: PolicyFixtures.serial, apps: ["com.example.pinned"])
+        let error = #expect(throws: CLIError.self) {
+            try NotificationsCommand.app(nil, route: Self.route(allowance: pinned), gate: Self.gate(pinned), profile: { throw CLIError(errorDescription: "broken", reason: .usage) })
+        }
+        #expect(error?.reason == .usage)
     }
 
     @Test("a phone pinned to one app refuses another app's notifications")
@@ -70,9 +80,9 @@ struct NotificationsCommandTests {
         }
     }
 
-    static func wait(for text: String, new: Bool, timeout: Duration, reads: Reads) async throws -> [String?] {
+    static func wait(for text: String, new: Bool, mask: TreeValueMask = .none, timeout: Duration, reads: Reads) async throws -> [String?] {
         let clock = ContinuousClock()
-        let (_, listed) = try await NotificationsCommand.poll(wait: text, new: new, until: clock.now + timeout, clock: clock, read: { reads.next() }) { _ in
+        let (_, listed) = try await NotificationsCommand.poll(wait: text, new: new, mask: mask, until: clock.now + timeout, clock: clock, read: { reads.next() }) { _ in
             CLIError(errorDescription: "gave up", reason: .conditionNotMet)
         }
         return listed.map(\.notification.title)
@@ -95,11 +105,24 @@ struct NotificationsCommandTests {
         #expect(reads.count == 3)
     }
 
+    @Test("--wait matches the masked text, so it cannot test for a value offsider.mask.json hides, and a list reads masked too")
+    func waitAppliesTheMask() async throws {
+        let mask = TreeValueMask(patterns: [try MaskPlan.compile(#"rc-\d{4}"#)])
+        let posted = Reads([Self.snapshot("Code rc-5521")])
+        await #expect(throws: CLIError.self) { _ = try await Self.wait(for: "rc-5521", new: false, mask: mask, timeout: .seconds(1), reads: posted) }
+        #expect(try await Self.wait(for: "code", new: false, mask: mask, timeout: .seconds(1), reads: Reads([Self.snapshot("Code rc-5521")])) == ["Code [redacted]"])
+
+        let clock = ContinuousClock()
+        let (_, listed) = try await NotificationsCommand.poll(wait: nil, new: false, mask: mask, until: clock.now, clock: clock, read: { Self.snapshot("Code rc-5521") }) { _ in CLIError(errorDescription: "no") }
+        #expect(listed.first?.notification.title == "Code [redacted]")
+        #expect(listed.first?.count == 1)
+    }
+
     @Test("without --wait there is one read and no sleep")
     func listReadsOnce() async throws {
         let reads = Reads([Self.snapshot("A")])
         let clock = ContinuousClock()
-        let (_, listed) = try await NotificationsCommand.poll(wait: nil, new: false, until: clock.now, clock: clock, read: { reads.next() }) { _ in CLIError(errorDescription: "no") }
+        let (_, listed) = try await NotificationsCommand.poll(wait: nil, new: false, mask: .none, until: clock.now, clock: clock, read: { reads.next() }) { _ in CLIError(errorDescription: "no") }
         #expect(listed.count == 1 && reads.count == 1)
     }
 }

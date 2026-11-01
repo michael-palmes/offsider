@@ -24,7 +24,8 @@ struct NotificationsCommand: AsyncParsableCommand {
 
     @Option(
         name: .customLong("app"),
-        help: ArgumentHelp("The app's package (default offsider.login.json's, else a phone's only pinned app).", valueName: "package")
+        help: ArgumentHelp("The app's package (default offsider.login.json's, else a phone's only pinned app).", valueName: "package"),
+        transform: AppID.parse
     )
     var app: String?
 
@@ -46,13 +47,6 @@ struct NotificationsCommand: AsyncParsableCommand {
     var deviceOption: ReadDeviceOption
 
     func validate() throws {
-        if let app {
-            do {
-                _ = try ExpoDevClient.validate(appID: app)
-            } catch {
-                throw ValidationError(error.localizedDescription)
-            }
-        }
         if let wait, wait.trimmingCharacters(in: .whitespaces).isEmpty {
             throw ValidationError("--wait needs text to look for.")
         }
@@ -69,6 +63,7 @@ struct NotificationsCommand: AsyncParsableCommand {
         if DeviceIDClassifier.classify(rawID).platform == .ios {
             throw CLIError(errorDescription: "notifications is Android only: iOS offers no way to read an app's posted notifications. Check the screen with describe-ui or screenshot instead.", reason: .notSupported)
         }
+        let mask = try await AmbientMasks.treeMask()
         let route = try await DeviceRouter.route(rawID, logger: OffsiderLogger())
         let app = try Self.app(app, route: route)
         let clock = ContinuousClock()
@@ -79,7 +74,7 @@ struct NotificationsCommand: AsyncParsableCommand {
             }
             try await route.backend.prepare()
             let id = try await route.backend.requireBootedDevice(route.device).id
-            return try await Self.poll(wait: wait, new: new, until: clock.now + .seconds(limit), clock: clock, read: { try await reader.notifications(of: app, on: id) }) { posted in
+            return try await Self.poll(wait: wait, new: new, mask: mask, until: clock.now + .seconds(limit), clock: clock, read: { try await reader.notifications(of: app, on: id) }) { posted in
                 CLIError(
                     errorDescription: "No notification from \(app) held \(TerminalText.quoted(wait ?? "")) within \(DeviceSettingsReport.number(limit)) s (\(posted) posted). Check that the app may post (`offsider permission show --app \(app) --device \(route.device.rawValue)` on Android 13 and later) and that the push was sent.",
                     reason: .conditionNotMet
@@ -99,13 +94,13 @@ struct NotificationsCommand: AsyncParsableCommand {
 
     /// One read without `wait`; with it, a read each second and a last one at `deadline`, until a notification holds the text.
     static func poll(
-        wait: String?, new: Bool, until deadline: ContinuousClock.Instant, clock: ContinuousClock,
+        wait: String?, new: Bool, mask: TreeValueMask, until deadline: ContinuousClock.Instant, clock: ContinuousClock,
         read: () async throws -> NotificationSnapshot, gaveUp: (Int) -> CLIError
     ) async throws -> (NotificationSnapshot, [(notification: PostedNotification, count: Int)]) {
         var earlier: Set<PostedNotification>?
         while true {
             let snapshot = try await read()
-            let hidden = snapshot.notifications.map { $0.redacted() }
+            let hidden = snapshot.notifications.map { $0.redacted(mask) }
             guard let wait else { return (snapshot, hidden) }
             let baseline = earlier ?? (new ? Set(snapshot.notifications) : [])
             earlier = baseline
@@ -118,7 +113,7 @@ struct NotificationsCommand: AsyncParsableCommand {
     }
 
     /// `--app`, else offsider.login.json's package, else the allowance's only pinned app; on a phone the allowance must permit it.
-    static func app(_ explicit: String?, route: DeviceRouter.Route, gate: DevicePolicyGate = .current, profile: () -> LoginProfile? = { (try? LoginProfiles.load(project: nil, warn: { _ in })) ?? nil }) throws -> String {
+    static func app(_ explicit: String?, route: DeviceRouter.Route, gate: DevicePolicyGate = .current, profile: () throws -> LoginProfile? = { try LoginProfiles.implicit() }) throws -> String {
         try route.app(named: explicit, gate: gate, profile: profile) {
             CLIError(
                 errorDescription: "notifications needs the app: pass --app <package>, or name it in offsider.login.json.",

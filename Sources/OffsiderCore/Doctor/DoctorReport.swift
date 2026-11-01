@@ -306,6 +306,13 @@ public struct DoctorPolicy: Codable, Equatable, Sendable {
         if refusal?.hasPrefix("managed") == true {
             return DoctorCheckResult(id: .devicePolicy, status: .fail, detail: "\(id) is blocked by managed policy on this Mac; the allow-list cannot override it", hint: "Ask the administrator of this Mac.")
         }
+        if refusal == "newer_entry" {
+            return DoctorCheckResult(
+                id: .devicePolicy, status: .fail,
+                detail: "A newer Offsider wrote \(id)'s allow-list entry, and this one cannot read it (newer_entry); no device checks ran",
+                hint: ErrorAudience.current == .person ? "Update Offsider: \(NewerDeviceEntry.updateCommand)." : "Ask the user to run `\(NewerDeviceEntry.updateCommand)` in their own terminal."
+            )
+        }
         return DoctorCheckResult(
             id: .devicePolicy, status: .fail,
             detail: "\(id) is a physical device no one has allowed (\(refusal ?? "not_allowed")); no device checks ran",

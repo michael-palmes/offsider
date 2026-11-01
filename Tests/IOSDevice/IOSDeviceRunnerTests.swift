@@ -205,6 +205,24 @@ struct RunnerSessionTests {
         #expect(try RunnerSessionStore(root: root).read(udid: Self.udid) == nil)
     }
 
+    @Test("an xcodebuild that says the certificate is not trusted fails at once with certificate_not_trusted, naming the setting and not UI Automation", arguments: [true, false])
+    func certificateNotTrusted(exits: Bool) async throws {
+        let root = RunnerTestPaths.temporaryRoot()
+        defer { try? FileManager.default.removeItem(atPath: root) }
+        let processes = FakeRunnerProcesses(launchLog: try IOSDeviceFixtures.data("xcodebuild-runner-certificate-untrusted.log"), exitsOnLaunch: exits)
+        let transport = FakeRunnerTransport()
+        transport.refuseConnections = true
+        let manager = Self.manager(root: root, processes: processes, transport: transport, startTimeout: 20)
+
+        let error = await #expect(throws: IOSDeviceError.self) { _ = try await manager.connect(.device(udid: Self.udid), deviceName: "iPad") }
+
+        #expect(error?.reason == .certificateNotTrusted && error?.reason.exitCode == .deviceUnavailable)
+        #expect(error?.message.contains("Settings > General > VPN & Device Management") == true)
+        #expect(error?.message.contains("UI Automation") == false)
+        #expect(!(error?.message.contains("\n") ?? true))
+        #expect(try RunnerSessionStore(root: root).read(udid: Self.udid) == nil)
+    }
+
     @Test("stop asks the runner to stop, then signals a process that lingers and removes the session and its result bundles")
     func stop() async throws {
         let root = RunnerTestPaths.temporaryRoot()
@@ -866,5 +884,75 @@ final class OverlapTracker: @unchecked Sendable {
 
     func leave() {
         lock.withLock { current -= 1 }
+    }
+}
+
+@Suite("iOS device runner: a system prompt over the app")
+@MainActor
+struct RunnerSystemPromptTests {
+    static let udid = IOSDeviceFixtures.phone
+
+    private static func client(_ transport: FakeRunnerTransport) -> RunnerClient {
+        RunnerClient(udid: udid, token: "token", transport: transport)
+    }
+
+    @Test("a read the runner answers with a prompt names it and asks a person to answer it, exit 7")
+    func namedPrompt() async throws {
+        let transport = FakeRunnerTransport()
+        transport.stuckPrompt = "“Demo” would like to paste from “Notes”"
+        let error = await #expect(throws: IOSDeviceError.self) { _ = try await Self.client(transport).snapshot(app: "com.example.demo") }
+        #expect(error?.reason == .systemPromptInFront)
+        #expect(error?.reason.exitCode == .deviceUnavailable)
+        #expect(error?.message.contains("“Demo” would like to paste from “Notes”") == true)
+        #expect(error?.message.contains("answer it on the device") == true)
+        #expect(error?.reason.personAsk == "Can you answer the system prompt on \(PersonAsk.devicePlaceholder)?")
+        #expect(error?.isOtherAppInFront == true, "a wait keeps waiting behind a prompt, as behind another app")
+    }
+
+    @Test("a prompt's title comes from the device, so it reaches the error on one capped line")
+    func hostileTitle() {
+        let error = IOSDeviceError.systemPromptInFront("Allow\n\u{1B}[31mfake line\n" + String(repeating: "x", count: 500), udid: Self.udid)
+        #expect(!error.message.contains("\n"))
+        #expect(!error.message.contains("\u{1B}"))
+        #expect(error.message.count < 320)
+    }
+
+    @Test("a prompt with no title still says what to do")
+    func untitled() {
+        #expect(IOSDeviceError.systemPromptInFront("  ", udid: Self.udid).message.hasPrefix("A system prompt is in front"))
+    }
+
+    @Test("a runner held by a stuck app is kept, never restarted, as a restart would meet the same prompt")
+    func stuckRunnerIsKept() async throws {
+        let root = RunnerTestPaths.temporaryRoot()
+        defer { try? FileManager.default.removeItem(atPath: root) }
+        try RunnerSessionStore(root: root).write(RunnerSessionTests.record())
+        let processes = FakeRunnerProcesses(alive: [4242])
+        let transport = FakeRunnerTransport()
+        transport.stuckPrompt = "Allow?"
+        let manager = RunnerSessionTests.manager(root: root, processes: processes, transport: transport)
+
+        _ = try await manager.connect(.device(udid: Self.udid), deviceName: "iPhone")
+
+        #expect(processes.launches.isEmpty && processes.terminations.isEmpty)
+        #expect(transport.calls.map(\.path) == ["/ping"])
+    }
+
+    @Test("input the runner dropped after a long wait says it was not sent, and is no tree failure")
+    func droppedInputIsHonest() async throws {
+        let transport = FakeRunnerTransport()
+        transport.failure = (path: "/tap-point", status: 409, code: "queued_too_long")
+        let error = await #expect(throws: IOSDeviceError.self) { try await Self.client(transport).tapPoint(x: 1, y: 2, app: nil) }
+        #expect(error?.reason == .runnerUnavailable)
+        #expect(error?.message.contains("no input was sent") == true)
+    }
+
+    @Test("a timeout with no prompt seen still says a prompt may be why, and how to clear it")
+    func timeoutNamesThePossibility() {
+        let error = IOSDeviceError.runner(.timedOut, udid: Self.udid)
+        #expect(error.reason == .runnerUnavailable)
+        #expect(error.message.contains("If the device shows a system prompt"))
+        #expect(error.message.contains("no input was sent"))
+        #expect(error.hint == "offsider doctor --device \(Self.udid)")
     }
 }

@@ -51,6 +51,12 @@ check "an expired phone and an iPhone leave no phone" $'No Android phone is allo
 check "the iPhone pinned to the playground is picked" $'00008140-000000000000ABCD\tTest iPhone\nrc=0' "$(pick ios com.mpalmes.offsider.playground)"
 check "the iOS playground pin does not count for the RN package" "rc=1" "$(pick ios "$RN" | tail -1)"
 
+devices '{"platform":"ios","id":"00008140-000000000000ABCD","name":"Test iPhone","apps":[],"active":true,"testDevice":true}'
+check "a test device counts for the playground" $'00008140-000000000000ABCD\tTest iPhone\nrc=0' "$(pick ios com.mpalmes.offsider.playground)"
+
+devices '{"platform":"ios","id":"00008140-000000000000ABCD","name":"Test iPhone","apps":[],"active":true,"testDevice":true,"testDeviceOff":"managed policy does not allow test devices on this Mac"}'
+check "a test device managed policy turned off does not count" "rc=1" "$(pick ios com.mpalmes.offsider.playground | tail -1)"
+
 allow="$(OFFSIDER_BIN_PATH="$STUB" bash -c 'source "$1" >/dev/null 2>&1; print_device_allow "Test Pixel" "$2" 2>&1' _ "$ENVIRONMENT" "$RN")"
 check "the allow command names the tested build by its absolute path" "1" "$(grep -cF "  $WORK/my\\ build/offsider devices add" <<<"$allow")"
 

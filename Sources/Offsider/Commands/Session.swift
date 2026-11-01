@@ -108,6 +108,10 @@ struct SessionStop: AsyncParsableCommand {
         let (stopped, cleaned, recordingRunning) = await console.progress("Stopping sessions") {
             let brokers = DeviceSessions.records(device: device)
             let manager = DeviceSessions.manager()
+            // Work on a test device is over, so its screen sleeps here too rather than staying lit until someone remembers.
+            for udid in Set(brokers.map(\.udid) + RunnerSessions.records(device: device).map(\.udid)) {
+                await DeviceSessionServe.sleepTestDevice(udid: udid, key: udid.uppercased(), store: DeviceSessions.store, gate: DevicePolicyGate.current)
+            }
             for record in brokers {
                 await manager.stop(record)
             }

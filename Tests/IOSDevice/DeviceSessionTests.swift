@@ -84,7 +84,7 @@ struct DeviceSessionWireTests {
         DeviceSessionRequest.ping,
         .frame(.png),
         .frame(.bgra),
-        .press(usagePage: 0x0C, usageCode: 0x30, hold: 0.4),
+        .press(usagePage: 0x0C, usageCode: 0x30, hold: 0.34),
         .touch([.touch(.down, x: 10, y: 20), .wait(0.06), .touch(.up, x: 10, y: 20)]),
         .keys([.key(4, down: true), .key(4, down: false)]),
         .displayChanged,
@@ -521,6 +521,26 @@ struct DeviceSessionServerTests {
             try await server.run()
             #expect(hardware.closed)
         }
+    }
+
+    @Test("only an idle stop sleeps the screen: a device that goes or a stop request never does")
+    func idleSleepOnlyWhenIdle() async throws {
+        func ran(idle: Duration, healthy: Bool = true, stop: Bool = false) async throws -> Bool {
+            let hardware = FakeSessionHardware()
+            hardware.healthy = healthy
+            let slept = LockedBox(false)
+            let server = DeviceSessionServer(
+                udid: "U", socketPath: NSTemporaryDirectory() + "ods-\(UUID().uuidString.prefix(8)).sock", hardware: hardware, store: nil,
+                idleTimeout: idle, healthInterval: .milliseconds(50), idleSleep: { slept.value = true }, log: { _, _ in }
+            )
+            if stop { server.requestStop() }
+            try await server.run()
+            #expect(hardware.closed)
+            return slept.value
+        }
+        #expect(try await ran(idle: .milliseconds(100)))
+        #expect(try await !ran(idle: .seconds(30), healthy: false))
+        #expect(try await !ran(idle: .seconds(30), stop: true))
     }
 
     @Test("a client that is not code this broker accepts is closed before it gets a byte, and the refusal is one log line")

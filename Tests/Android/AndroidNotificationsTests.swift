@@ -128,6 +128,35 @@ struct AndroidNotificationsTests {
         #expect(AndroidNotifications.parse("\(AndroidNotifications.dumpMarker)\n\(AndroidNotifications.listMarker)\n", package: Self.package)?.notifications == [])
     }
 
+    @Test("a mask file's value patterns and emails reach notification text, and count")
+    func maskFileReachesText() throws {
+        let mask = TreeValueMask(patterns: [try MaskPlan.compile(#"rc-\d{4}"#)], emails: true)
+        let (hidden, count) = PostedNotification(key: "k", title: "Code rc-5521", text: "Sent to me@example.com").redacted(mask)
+
+        #expect(hidden.title == "Code [redacted]")
+        #expect(hidden.text == "Sent to [redacted email]")
+        #expect(count == 2)
+        #expect(!hidden.contains("rc-5521"))
+    }
+
+    @Test("a code in a tag is hidden in the tag and the key; the raw key stays for telling notifications apart")
+    func tagAndKey() throws {
+        let raw = PostedNotification(key: "0|\(Self.package)|1|otp-482915|10214", tag: "otp-482915")
+        let (hidden, count) = raw.redacted()
+
+        #expect(hidden.tag?.contains("482915") == false)
+        #expect(!hidden.key.contains("482915"))
+        #expect(hidden.key.hasPrefix("0|\(Self.package)|1|") && hidden.key.hasSuffix("|10214"))
+        #expect(count == 1)
+        #expect(raw.key.contains("482915"))
+    }
+
+    @Test("--json marks the key untrusted, since it repeats the app's tag")
+    func keyIsUntrusted() throws {
+        let line = NotificationReport.json([PostedNotification(key: "k")], app: Self.package, source: .keys, redacted: 0, on: DeviceID(rawValue: "emulator-5554", platform: .android))
+        #expect(line.contains(#""notifications[].key""#))
+    }
+
     @Test("one-time codes are hidden and counted, and --wait matches the hidden text, so it cannot probe for a code")
     func redaction() {
         let notification = PostedNotification(key: "k", title: "Your code", text: "Your verification code is 482915")

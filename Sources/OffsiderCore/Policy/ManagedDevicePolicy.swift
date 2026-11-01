@@ -46,22 +46,26 @@ public struct ManagedDevicePolicy: Equatable, Sendable {
     public static let allowedBundleIDsKey = "allowedBundleIDs"
     /// Apps added to the built-in deny-list; an entry ending in `.` denies every id it starts.
     public static let deniedBundleIDsKey = "deniedBundleIDs"
+    /// True lets a test device be driven whole on a managed Mac; without it, or beside a bundle list, it is a plain Any app allowance.
+    public static let allowTestDevicesKey = "allowTestDevices"
 
     public let allowPhysicalDevices: Bool?
     public let allowedDeviceIDs: [String]?
     public let allowedBundleIDs: [String]?
     public let deniedBundleIDs: [String]?
+    public let allowTestDevices: Bool?
     /// A forced key held a value of the wrong type.
     public let unreadable: Bool
 
     public init(
         allowPhysicalDevices: Bool? = nil, allowedDeviceIDs: [String]? = nil, allowedBundleIDs: [String]? = nil, deniedBundleIDs: [String]? = nil,
-        unreadable: Bool = false
+        allowTestDevices: Bool? = nil, unreadable: Bool = false
     ) {
         self.allowPhysicalDevices = allowPhysicalDevices
         self.allowedDeviceIDs = allowedDeviceIDs
         self.allowedBundleIDs = allowedBundleIDs
         self.deniedBundleIDs = deniedBundleIDs
+        self.allowTestDevices = allowTestDevices
         self.unreadable = unreadable
     }
 
@@ -69,17 +73,29 @@ public struct ManagedDevicePolicy: Equatable, Sendable {
 
     /// True when any key is forced.
     public var present: Bool {
-        allowPhysicalDevices != nil || allowedDeviceIDs != nil || allowedBundleIDs != nil || deniedBundleIDs != nil || unreadable
+        allowPhysicalDevices != nil || allowedDeviceIDs != nil || allowedBundleIDs != nil || deniedBundleIDs != nil || allowTestDevices != nil || unreadable
+    }
+
+    /// Why a test device is only a plain Any app allowance on this Mac; nil when it may be driven whole.
+    public var testDeviceRefusal: String? {
+        guard present else { return nil }
+        if allowedBundleIDs != nil || deniedBundleIDs != nil { return "managed policy limits the apps on this Mac" }
+        return allowTestDevices == true ? nil : "managed policy does not allow test devices on this Mac"
     }
 
     public static func read(from source: any ManagedPreferenceSource) -> ManagedDevicePolicy {
         var unreadable = false
-        var allow: Bool?
-        switch source.forcedValue(forKey: allowPhysicalDevicesKey) {
-        case .bool(let value): allow = value
-        case nil: break
-        default: unreadable = true
+        func bool(_ key: String) -> Bool? {
+            switch source.forcedValue(forKey: key) {
+            case .bool(let value): return value
+            case nil: return nil
+            default:
+                unreadable = true
+                return nil
+            }
         }
+        let allow = bool(allowPhysicalDevicesKey)
+        let testDevices = bool(allowTestDevicesKey)
         func strings(_ key: String) -> [String]? {
             switch source.forcedValue(forKey: key) {
             case .strings(let values): return values
@@ -93,7 +109,7 @@ public struct ManagedDevicePolicy: Equatable, Sendable {
         let bundles = strings(allowedBundleIDsKey)
         let denied = strings(deniedBundleIDsKey)
         return ManagedDevicePolicy(
-            allowPhysicalDevices: allow, allowedDeviceIDs: devices, allowedBundleIDs: bundles, deniedBundleIDs: denied, unreadable: unreadable
+            allowPhysicalDevices: allow, allowedDeviceIDs: devices, allowedBundleIDs: bundles, deniedBundleIDs: denied, allowTestDevices: testDevices, unreadable: unreadable
         )
     }
 

@@ -47,12 +47,12 @@ public enum VideoMaskPolicy {
         return checksSecure ? .checkSecureField : .record(warning: nil)
     }
 
-    /// True when the tree shows a password field: one inside the screen, or one with no frame or no screen to place it on.
-    public static func showsSecureField(_ tree: UITree) -> Bool {
+    /// True when the tree shows a password field, or one `revealed` says a toggle turned into plain text: one inside the screen, or one with no frame or no screen to place it on.
+    public static func showsSecureField(_ tree: UITree, revealed: RevealedSecrets? = nil) -> Bool {
         let viewport = tree.viewport
         return tree.roots.contains { root in
             root.flattened().contains { node in
-                guard node.isSecure else { return false }
+                guard node.isSecure || revealed?.matches(node) == true else { return false }
                 guard let viewport, let frame = node.frame else { return true }
                 return frame.isVisible(in: viewport)
             }
