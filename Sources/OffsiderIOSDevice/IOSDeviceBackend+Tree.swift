@@ -5,9 +5,19 @@ extension IOSDeviceBackend: RawAccessibilitySource {
     /// The runner's snapshot JSON before mapping.
     public func rawAccessibilitySource(for id: DeviceID) async throws -> Data {
         try requirePermittedPin(id)
+        if state.drivesWhole { try await prepareWholeDevice(id) }
         let client = try await runner(for: id)
         let app = targetApp
-        return try await host.timing.measure("accessibility") { try await client.snapshot(app: app) }
+        do {
+            return try await host.timing.measure("accessibility") { try await client.snapshot(app: app) }
+        } catch let error as IOSDeviceError where state.drivesWhole && error.kind == .otherAppInFront {
+            guard let app else { throw error }
+            // A test device can open it itself, so nobody needs to be asked.
+            throw IOSDeviceError(
+                .otherAppInFront,
+                "\(app) is not in front on \(id.rawValue), so Offsider read nothing. Leave out --app to read what is in front, or run `offsider app launch --app \(app) --device \(id.rawValue)` first."
+            )
+        }
     }
 
     /// The runner's snapshot through the one iOS mapper; with `point`, the deepest node there as the only root.

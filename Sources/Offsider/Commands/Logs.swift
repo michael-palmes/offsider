@@ -309,7 +309,7 @@ struct Logs: AsyncParsableCommand {
             scoped.source = .app(profileApp)
             return (scoped, "Reading only \(profileApp)'s log, which offsider.login.json names; pass --all for the whole device's.")
         }
-        let whole = allowance.allowsWholeDevice
+        let whole = allowance.allowsWholeDevice || policy.drivesWhole(allowance)
         var scoped = query
         scoped.appOnly = !whole
         switch query.source {

@@ -89,6 +89,11 @@ public struct PhysicalDevicePolicy: Equatable, Sendable {
         return .allowed(entry)
     }
 
+    /// Whether agents may drive all of this device: a person chose a test device, and managed policy leaves it so.
+    public func drivesWhole(_ allowance: DeviceAllowance) -> Bool {
+        allowance.testDevice && managed.testDeviceRefusal == nil
+    }
+
     /// The apps the entry pins, within the managed bundle list; nil when neither limits them.
     public func permittedApps(for allowance: DeviceAllowance) -> Set<String>? {
         let pinned = allowance.pinnedApps.isEmpty ? nil : Set(allowance.pinnedApps)
@@ -103,7 +108,9 @@ public struct PhysicalDevicePolicy: Equatable, Sendable {
 
     /// Whether `app` may be driven on the device: never a deny-listed app, and only within `permittedApps`.
     public func permits(app: String, on allowance: DeviceAllowance) -> Bool {
-        guard (try? ExpoDevClient.validate(appID: app)) != nil, !SystemAppDenyList.isDenied(app, platform: allowance.platform) else { return false }
+        guard (try? ExpoDevClient.validate(appID: app)) != nil else { return false }
+        if drivesWhole(allowance) { return true }
+        guard !SystemAppDenyList.isDenied(app, platform: allowance.platform) else { return false }
         return permittedApps(for: allowance)?.contains(app) ?? true
     }
 
@@ -114,6 +121,7 @@ public struct PhysicalDevicePolicy: Equatable, Sendable {
         } catch {
             return "\(error.localizedDescription) Nothing was read or sent."
         }
+        if drivesWhole(allowance) { return nil }
         if let why = SystemAppDenyList.refusal(app, platform: allowance.platform) {
             return "\(why). Nothing was read or sent."
         }
@@ -141,6 +149,10 @@ public struct PhysicalDevicePolicy: Equatable, Sendable {
             ]
             if let team = entry.team { fields.append(("team", .string(team))) }
             if !entry.metroPorts.isEmpty { fields.append(("metroPorts", .array(entry.metroPorts.map { .integer($0) }))) }
+            if entry.testDevice {
+                fields.append(("testDevice", .bool(true)))
+                if let off = managed.testDeviceRefusal { fields.append(("testDeviceOff", .string(off))) }
+            }
             fields.append(("active", .bool(decision(platform: entry.platform, key: entry.key, now: now) == .allowed(entry))))
             return .object(fields)
         }
@@ -163,6 +175,7 @@ public struct PhysicalDevicePolicy: Equatable, Sendable {
                 ("allowPhysicalDevices", .optional(managed.allowPhysicalDevices) { .bool($0) }),
                 ("allowedDeviceIDs", .optional(managed.allowedDeviceIDs) { .array($0.map { .string($0) }) }),
                 ("allowedBundleIDs", .optional(managed.allowedBundleIDs) { .array($0.map { .string($0) }) }),
+                ("allowTestDevices", .optional(managed.allowTestDevices) { .bool($0) }),
                 ("unreadable", .bool(managed.unreadable)),
             ])),
             ("list", .object([

@@ -51,6 +51,7 @@ struct DeviceSessionServe: AsyncParsableCommand {
             store: store,
             idleTimeout: .seconds(DeviceSessionServer.idleSeconds(ProcessInfo.processInfo.environment)),
             recheck: recheck,
+            idleSleep: { await Self.sleepTestDevice(udid: udid, key: key, store: store, gate: Self.freshGate) },
             log: log
         )
         let signals = [SIGTERM, SIGINT, SIGHUP].map { number -> DispatchSourceSignal in
@@ -68,6 +69,27 @@ struct DeviceSessionServe: AsyncParsableCommand {
     static let freshGate = DevicePolicyGate(policy: {
         DevicePolicyGate.read(store: DevicePolicySources.store(), seal: KeychainDeviceAllowListSeal(), managed: LiveManagedPreferences())
     })
+
+    /// A test device whose screen Offsider has not already put to sleep; read afresh, since the allowance may have changed.
+    static func sleepsWhenIdle(udid: String, key: String, store: DeviceSessionStore, gate: DevicePolicyGate) -> Bool {
+        guard case .allowed(let allowance) = gate.decision(platform: .ios, key: key), gate.policy().drivesWhole(allowance) else { return false }
+        return !store.isMarkedAsleep(udid: udid)
+    }
+
+    /// Through the runner, which reads the screen first, as a blind press would light one already dark; a failure is noted, since the session is ending anyway.
+    @MainActor
+    static func sleepTestDevice(udid: String, key: String, store: DeviceSessionStore, gate: DevicePolicyGate) async {
+        guard sleepsWhenIdle(udid: udid, key: key, store: store, gate: gate), case .allowed(let allowance) = gate.decision(platform: .ios, key: key) else { return }
+        let backend = IOSDeviceBackend.make(logger: OffsiderLogger())
+        IOSDevicePinning.configure(backend, allowance: allowance, policy: gate.policy(), profileBundleID: { nil })
+        backend.runnerTeam = allowance.team
+        do {
+            _ = try await backend.sleepScreen(DeviceID(rawValue: udid, platform: .ios))
+        } catch {
+            Console.current.data("Note: could not turn off the screen of \(udid): \(DeviceAccessAllow.reason(error)). Run `offsider sleep --device \(udid)`.\n", to: .err)
+        }
+        await backend.close()
+    }
 
     /// The refusal a command would get now, through the same gate; nil while the device is still allowed.
     static func allowanceRefusal(key: String, gate: DevicePolicyGate) -> IOSDeviceError? {

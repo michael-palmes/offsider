@@ -110,6 +110,7 @@ enum DeviceRouter {
 
     /// Pinned apps within the managed ceiling; a phone allowed for any app drives only the app each command names, offsider.login.json's package by default.
     static func appScope(for allowance: DeviceAllowance, policy: PhysicalDevicePolicy, profilePackage: () -> String?) -> AndroidAppScope {
+        if policy.drivesWhole(allowance) { return AndroidAppScope(permitted: [], managedCeiling: nil, wholeDevice: true) }
         let ceiling = policy.managed.allowedBundleIDs.map(Set.init)
         guard allowance.pinnedApps.isEmpty else {
             return AndroidAppScope(permitted: policy.permittedApps(for: allowance) ?? [], managedCeiling: ceiling)

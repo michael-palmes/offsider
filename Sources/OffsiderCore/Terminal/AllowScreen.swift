@@ -18,6 +18,12 @@ public enum AllowScreen {
     public static let wifiOnly = "Wi-Fi only, plug in a cable"
     public static let allAllowed = "All connected devices are allowed."
     public static let anyApp = "Any app"
+    public static let testDeviceRow = "Test device: whole device"
+    public static let testDeviceRowDetail = "nothing personal on it"
+    public static let wholeDevice = "test device, whole device"
+    public static let personalQuestion = "Anything personal on it?"
+    public static let personalYes = "Yes, stop"
+    public static let personalNo = "No, nothing personal"
     public static let typeApp = "Type an app ID"
     public static let typeTeam = "Type a team ID"
     public static let freeTeam = "Free"
@@ -64,7 +70,8 @@ public enum AllowScreen {
         return count(Int(seconds / 60), "minute")
     }
 
-    public static func apps(_ apps: [String]) -> String {
+    public static func apps(_ apps: [String], testDevice: Bool = false) -> String {
+        if testDevice { return wholeDevice }
         if apps == [DeviceAllowance.wholeDevicePin] { return "any app and all logs" }
         return apps.isEmpty ? "any app" : apps.map { PromptScreen.label($0) }.joined(separator: ", ") + " only"
     }
@@ -75,9 +82,9 @@ public enum AllowScreen {
     }
 
     /// The bold line above the Touch ID request: what is about to be allowed. `team` is the name shown, or `team <id>` when only the ID is known.
-    public static func summary(_ row: DeviceSummary, apps: [String], lifetime: TimeInterval?, team: String?, metroPorts: [Int] = [], width: Int, style: TerminalStyle) -> [String] {
+    public static func summary(_ row: DeviceSummary, apps: [String], lifetime: TimeInterval?, team: String?, metroPorts: [Int] = [], testDevice: Bool = false, width: Int, style: TerminalStyle) -> [String] {
         let metro = metroPorts.isEmpty ? [] : [Self.metro(metroPorts)]
-        return TerminalUI.summary(mark(row), [name(row), Self.apps(apps)] + metro + [duration(lifetime)] + (team.map { [$0] } ?? []), width: width, style: style)
+        return TerminalUI.summary(mark(row), [name(row), Self.apps(apps, testDevice: testDevice)] + metro + [duration(lifetime)] + (team.map { [$0] } ?? []), width: width, style: style)
     }
 
     /// `until 22:14` today, `until 21 Oct 22:14` on a later day, or `until you remove it`.
@@ -93,10 +100,10 @@ public enum AllowScreen {
     }
 
     /// The closing block for one device: the only place the full ID shows, since the commands need it.
-    public static func allowed(name: String, key: String, until: String, apps: [String], metroPorts: [Int] = [], width: Int, style: TerminalStyle) -> [String] {
+    public static func allowed(name: String, key: String, until: String, apps: [String], metroPorts: [Int] = [], testDevice: Bool = false, width: Int, style: TerminalStyle) -> [String] {
         let key = PromptScreen.visible(key)
         let metro = metroPorts.isEmpty ? "" : ", \(Self.metro(metroPorts))"
-        return TerminalUI.closing("Allowed \(name) \(until), \(Self.apps(apps))\(metro).", commands: [
+        return TerminalUI.closing("Allowed \(name) \(until), \(Self.apps(apps, testDevice: testDevice))\(metro).", commands: [
             ("Withdraw", "offsider devices remove --device \(key)"),
             ("Next", "offsider doctor --device \(key)"),
         ], width: width, style: style)

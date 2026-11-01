@@ -12,10 +12,10 @@ extension HardwareButton {
         }
     }
 
-    /// How long a short press holds the button: the side button ignores presses under 0.29 s and Siri needs a long one.
+    /// How long a short press holds the button: inside the side button's window, as it ignores presses under 0.29 s on some devices and opens Siri from 0.40 s.
     var deviceShortPressHold: TimeInterval {
         switch self {
-        case .lock, .sideButton: return 0.4
+        case .lock, .sideButton: return 0.34
         case .siri: return 0.85
         default: return 0.08
         }

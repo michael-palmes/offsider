@@ -138,6 +138,17 @@ struct DevicePolicyRoutingTests {
         #expect(whole.needsTarget)
     }
 
+    @Test("a test device's phone scope drives everything; managed policy leaves it a plain any-app scope")
+    func testDeviceScope() {
+        let entry = DeviceAllowance(platform: .android, key: "R58M123ABC", name: "Test Pixel", added: Date(), expires: nil, apps: [], testDevice: true)
+        let free = DeviceRouter.appScope(for: entry, policy: PhysicalDevicePolicy(managed: .none, list: .empty), profilePackage: { "com.example.app" })
+        #expect(free.wholeDevice)
+        #expect(!free.needsTarget)
+        let managed = DeviceRouter.appScope(for: entry, policy: PhysicalDevicePolicy(managed: ManagedDevicePolicy(allowPhysicalDevices: true), list: .empty), profilePackage: { "com.example.app" })
+        #expect(!managed.wholeDevice)
+        #expect(managed.needsTarget)
+    }
+
     @Test("an emulator serial is refused when adb lists it over USB or cannot list devices at all, naming how to start adb")
     func emulatorSerialFailsClosed() async throws {
         struct Unreadable: Error {}
