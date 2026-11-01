@@ -21,6 +21,7 @@ public struct IOSDeviceError: LocalizedError, CustomStringConvertible, Equatable
         case locked
         case stateNotReached
         case uiAutomationOff
+        case certificateNotTrusted
         case xcodeTooOld
         case notSupported
         case unsupportedButton
@@ -150,6 +151,11 @@ extension IOSDeviceError {
         )
     }
 
+    /// iOS refuses a developer's apps until a person trusts the certificate on the device.
+    static func runnerCertificateNotTrusted(_ name: String) -> IOSDeviceError {
+        IOSDeviceError(.certificateNotTrusted, "\(name) does not trust the certificate that signs the Offsider runner. On it, go to Settings > General > VPN & Device Management and trust the certificate, then retry.")
+    }
+
     /// A failure on the stream to the device runner, after usbmuxd connected it; nothing was sent to the app.
     public static func runner(_ error: UsbmuxError, udid: String) -> IOSDeviceError {
         switch error {
@@ -190,6 +196,7 @@ extension IOSDeviceError: OffsiderFailure {
         case .locked: return .deviceLocked
         case .stateNotReached: return .stateNotReached
         case .uiAutomationOff: return .uiAutomationOff
+        case .certificateNotTrusted: return .certificateNotTrusted
         case .xcodeTooOld: return .xcodeTooOld
         case .notSupported: return .notSupported
         case .unsupportedButton: return .unsupportedButton

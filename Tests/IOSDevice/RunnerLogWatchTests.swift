@@ -49,6 +49,17 @@ struct RunnerLogWatchTests {
         #expect(RunnerLogWatch.finding(in: line) == .automationNotEnabled)
     }
 
+    @Test("xcodebuild's untrusted certificate line is found, and other mentions of trust or certificates are not", arguments: [
+        ("The application could not be launched because the Developer App Certificate is not trusted.", true),
+        ("    Underlying Error: The application could not be launched because the Developer App Certificate is not trusted.", true),
+        ("Verify the Developer App certificate for your account is trusted on your device.", true),
+        ("Signing Identity: Apple Development: Jane Citizen (PERSON1234)", false),
+        ("This Mac is not trusted by the device", false),
+    ])
+    func certificate(line: String, untrusted: Bool) {
+        #expect(RunnerLogWatch.finding(in: line) == (untrusted ? .certificateNotTrusted : nil))
+    }
+
     @Test("each check reads only what was appended since the last, so a prompt split across two writes is found once")
     func appendedOnly() throws {
         let path = try Self.temporaryLog()

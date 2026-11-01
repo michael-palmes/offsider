@@ -10,13 +10,14 @@ struct KeySequence: AsyncParsableCommand {
         Each key will be pressed and released before the next key is pressed.
         
         Examples:
-          offsider key-sequence 11,8,15,15,18 --device DEVICE_ID    # Type "hello" (h=11, e=8, l=15, l=15, o=18)
-          offsider key-sequence 40,40,40 --device DEVICE_ID          # Press Enter 3 times
-          offsider key-sequence 224,4,225 --device DEVICE_ID        # Ctrl+A (Ctrl=224, A=4, release Ctrl=225)
+          offsider key-sequence --keycodes 11,8,15,15,18 --device DEVICE_ID    # Type "hello" (h=11, e=8, l=15, l=15, o=18)
+          offsider key-sequence --keycodes 40,40,40 --device DEVICE_ID         # Press Enter 3 times
 
         Letters, digits, space and punctuation (the keypad's too) need a text field with focus: with none, nothing is pressed (exit 1,
-        no_focused_field), since keys that reach no field can act as app shortcuts. Return, Tab, arrows and other
-        keys go out unchecked.
+        no_focused_field), since keys that reach no field can act as app shortcuts. With a password field focused they are
+        refused (exit 64, secure_field_argument), since keycodes stay in shell history; use login or type --stdin. A
+        sequence holding a modifier (224 to 231), Return, Tab, arrows and other keys skip that refusal, and Return, Tab,
+        arrows and other keys skip the focus check too.
         """
     )
     
@@ -85,6 +86,11 @@ struct KeySequence: AsyncParsableCommand {
         keycodes.contains { (4...39).contains($0) || (44...56).contains($0) || (84...87).contains($0) || (89...99).contains($0) }
     }
 
+    /// Keys that spell text a password field would keep; a sequence with a modifier in it is a shortcut.
+    static func spellsText(_ keycodes: [Int]) -> Bool {
+        typesText(keycodes) && !keycodes.contains { (224...231).contains($0) }
+    }
+
     @MainActor
     func perform(on route: DeviceRouter.Route, logger: OffsiderLogger) async throws {
         let backend = route.backend
@@ -96,13 +102,15 @@ struct KeySequence: AsyncParsableCommand {
         if Self.typesText(parsedKeycodes) {
             try await Type.checkTextFocus(
                 readTree: { try await backend.accessibilityTree(for: device) }, device: device, clock: .live,
-                warn: { Console.current.notice(.warning(InputPersonView.sentence($0), agent: $0)) }, refusingSecureTarget: nil, keys: true
+                warn: { Console.current.notice(.warning(InputPersonView.sentence($0), agent: $0)) },
+                refusingSecureTarget: Self.spellsText(parsedKeycodes) ? Type.secureFieldRefusal(device: device, keys: true) : nil, keys: true,
+                hitTester: backend as? any PointHitTesting
             )
         }
 
         let keyDelay = delay ?? 0.1  // Default 100ms delay between keys
         
-        logger.info().log("Pressing key sequence: \(parsedKeycodes)")
+        logger.info().log("Pressing \(parsedKeycodes.count) key\(parsedKeycodes.count == 1 ? "" : "s")")
         logger.info().log("Delay between keys: \(keyDelay) seconds")
 
         var events: [InputEvent] = []

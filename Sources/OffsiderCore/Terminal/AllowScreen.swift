@@ -26,6 +26,8 @@ public enum AllowScreen {
     public static let personalNo = "No, nothing personal"
     public static let typeApp = "Type an app ID"
     public static let typeTeam = "Type a team ID"
+    public static let freeTeam = "Free"
+    public static let paidTeam = "Paid"
     public static let noTeam = "No team in your Keychain. Type one, or Return to skip."
     public static let done = "Done"
     public static let confirm = "Touch ID or your password to confirm."
