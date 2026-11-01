@@ -1,4 +1,5 @@
 import Foundation
+import OffsiderCore
 import Testing
 
 /// The one mask rule on a real screen: a password a toggle revealed, text nested in what `offsider.mask.json` names, and what video refuses or warns about.
@@ -13,18 +14,28 @@ struct ReactNativeMaskRuleTests {
     }
 
     /// Runs offsider in `directory`, where it finds `offsider.mask.json`.
-    private static func runIn(_ directory: URL, _ arguments: String, platform: RNPlatform) async throws -> SeparatedCommandOutput {
+    private static func runIn(_ directory: URL, _ arguments: String, platform: RNPlatform, timeout: TimeInterval = 60) async throws -> SeparatedCommandOutput {
+        if platform == .android { try await AndroidE2E.dismissANRDialog() }
         let binary = try TestHelpers.getOffsiderPath()
         let device = try await device(platform)
-        return try await CommandRunner.runSeparated("cd \(AndroidE2E.quote(directory.path)) && \(binary) \(arguments) --device \(device)")
+        return try await CommandRunner.runSeparated("cd \(AndroidE2E.quote(directory.path)) && \(binary) \(arguments) --device \(device)", timeout: timeout)
     }
 
-    /// Starts `record-video` in `directory` and interrupts it after four seconds; a refusal exits before that.
     private static func recordVideo(to output: String, in directory: URL, platform: RNPlatform) async throws -> SeparatedCommandOutput {
-        let binary = try TestHelpers.getOffsiderPath()
-        let device = try await device(platform)
-        let script = "cd \(AndroidE2E.quote(directory.path)) && { \(binary) record-video --output \(AndroidE2E.quote(output)) --device \(device) & pid=$!; sleep 4; kill -INT $pid 2>/dev/null; wait $pid; }"
-        return try await CommandRunner.runSeparated(script, timeout: 60)
+        try await runIn(directory, "record-video --duration 3 --output \(AndroidE2E.quote(output))", platform: platform)
+    }
+
+    /// Every file of the per-device tree cache, as a command leaves it on disk.
+    private static func expectTreeCacheHolds(none secrets: [String]) throws {
+        let folder = try OffsiderPrivateDirectory.ensureSubdirectory(OffsiderPrivateDirectory.treesDirectoryName)
+        let files = try FileManager.default.contentsOfDirectory(atPath: folder)
+        #expect(!files.isEmpty, "no tree was cached, so this proves nothing")
+        for file in files {
+            let text = String(decoding: try Data(contentsOf: URL(fileURLWithPath: folder).appendingPathComponent(file)), as: UTF8.self)
+            for secret in secrets {
+                #expect(!text.contains(secret), "\(file) holds what was masked")
+            }
+        }
     }
 
     private static func isBlack(at frame: (x: Double, y: Double, width: Double, height: Double), in path: String) throws -> Bool {
@@ -46,6 +57,7 @@ struct ReactNativeMaskRuleTests {
         #expect(miss.exitCode != 0)
         #expect(miss.stderr.contains("has a masked value"), "\(miss.stderr)")
         #expect(!(miss.stdout + miss.stderr).contains(Self.password))
+        try Self.expectTreeCacheHolds(none: [Self.password])
 
         try await ReactNativeEnvironmentTests.withTemporaryDirectory { directory in
             let shot = directory.appendingPathComponent("revealed.png").path
@@ -81,6 +93,7 @@ struct ReactNativeMaskRuleTests {
 
             let full = try await Self.runIn(directory, "describe-ui", platform: platform).stdout
             #expect(!full.contains(Self.amount) && !full.contains(Self.holder))
+            try Self.expectTreeCacheHolds(none: [Self.amount, Self.holder])
 
             let shot = directory.appendingPathComponent("nested.png").path
             let capture = try await Self.runIn(directory, "screenshot --scale points --json --output \(AndroidE2E.quote(shot))", platform: platform)

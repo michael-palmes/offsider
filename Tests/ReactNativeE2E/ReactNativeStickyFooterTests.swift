@@ -7,9 +7,7 @@ struct ReactNativeStickyFooterTests {
     static let untouched = "Sticky Footer Pressed: None"
 
     static func frame(of id: String, in tree: [String: Any]) -> (x: Double, y: Double, width: Double, height: Double)? {
-        guard let frame = DescribeUITree.node(id: id, in: tree)?["frame"] as? [String: Double],
-              let x = frame["x"], let y = frame["y"], let width = frame["width"], let height = frame["height"] else { return nil }
-        return (x, y, width, height)
+        DescribeUITree.frame(of: id, in: tree)
     }
 
     static let rowIDs = (1...30).map { "sticky-footer-test-row-\($0)" }

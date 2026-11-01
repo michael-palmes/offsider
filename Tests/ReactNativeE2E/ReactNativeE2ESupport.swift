@@ -152,19 +152,25 @@ struct RNApp: Sendable {
     func rowCentred(under cover: String, rows: [String], list: String) async throws -> String {
         let scroller = try await frame(of: list)
         let x = Int(scroller.x + scroller.width / 2), y = Int(scroller.y + scroller.height / 3)
-        for _ in 0..<8 {
+        var lastTops: [Double]?
+        while true {
             let tree = try await tree()
-            let bar = try #require(ReactNativeStickyFooterTests.frame(of: cover, in: tree))
-            let found = rows.first { id in
-                guard let row = ReactNativeStickyFooterTests.frame(of: id, in: tree) else { return false }
+            let bar = try #require(DescribeUITree.frame(of: cover, in: tree))
+            let frames = rows.map { (id: $0, frame: DescribeUITree.frame(of: $0, in: tree)) }
+            let found = frames.first { entry in
+                guard let row = entry.frame else { return false }
                 let centre = row.y + row.height / 2
                 return centre >= bar.y && centre < bar.y + bar.height && (bar.y - row.y >= 8 || row.y + row.height - bar.y - bar.height >= 8)
             }
-            if let found { return found }
+            if let found { return found.id }
+            let tops = frames.compactMap { $0.frame?.y }
+            guard tops != lastTops else {
+                throw DescribeUIError(description: "\(list) stopped scrolling on this screen before a row's centre came under \(cover); this fixture needs a shorter screen")
+            }
+            lastTops = tops
             try await run("swipe --start-x \(x) --start-y \(y) --end-x \(x) --end-y \(y - 30) --duration 0.8")
             try await run("wait --settled --ignore-values --timeout 5")
         }
-        throw DescribeUIError(description: "no row's centre came under \(cover) with 8 pt of it showing")
     }
 
     /// A node's frame in points or dp, waiting for the node to appear.
