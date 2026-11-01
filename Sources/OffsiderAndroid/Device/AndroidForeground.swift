@@ -21,7 +21,7 @@ enum AndroidForeground {
             let pieces = part.split(separator: "/", omittingEmptySubsequences: false)
             return pieces.count == 2 && pieces.allSatisfy { piece in
                 !piece.isEmpty && piece.allSatisfy { $0.isLetter || $0.isNumber || "._$".contains($0) }
-            } && pieces[0].contains(".")
+            } && (pieces[0].contains(".") || pieces[0] == AndroidWindowFocus.systemOwner)
         }
         guard let token else { return nil }
         let pieces = String(token).components(separatedBy: "/")

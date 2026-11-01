@@ -8,6 +8,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Added
 
+- `screenshot --widget --app <package>` captures only that app's own home screen widget on Android, cropped to the bounds the device reports and masked like any capture; `--widget-nth <n>` picks one of several, and `--json` adds `widget`. The launcher itself is never captured: nothing is written unless the widget is the app's, nothing overlaps it, and the screen held still. New error `widget_not_shown`.
+- On an allowed Android phone, `screenshot` and `describe-ui` read while the allowed app holds focus beneath a system window owned by `android`, and name it: `systemWindow` in `screenshot --json`, `context.window` with `readOnly` in `describe-ui`. Everything else stays refused there.
 - Test devices: `devices add --test-device`, or "Test device: whole device" in the app menu, lets agents drive all of a phone or tablet a person says holds nothing personal: any app, Settings, system alerts and sheets, with no front-app check and `--app` optional. It asks "Anything personal on it?" with "Yes, stop" chosen, then Touch ID as usual, and offers "Until removed" first. The driving line and `devices status` say so (`"testDevice": true`). On a Mac with any forced Offsider key it is a plain Any app allowance until an administrator forces the new `allowTestDevices` to true, and a forced bundle list always wins. `test-runner.sh --ios-device` and `--android-phone` accept one.
 - `offsider sleep` turns a screen off to limit burn-in, on an allowed iPhone or iPad or an Android device, and `wake` now works on an allowed iPhone or iPad. Neither needs an app in front, and each sends nothing when the screen is already as asked. A test iPhone or iPad also sleeps when its session goes idle or `session stop` ends it, and wakes for the next command.
 - `type --into-id`, `--into-label` and `--into-label-contains` take `--nth` and `--topmost`, as `tap` does, for a field whose id matches twice.
@@ -63,6 +65,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Fixed
 
+- On an Android phone, input by coordinates, keys and held touches went through while a system window or the notification shade had focus over an allowed app, as only the resumed activity was checked. Each input step now also reads which window has focus, and is refused unless an allowed app owns it. A capture with no tree read refuses the same way.
 - `button lock` and `button side-button` on an iPhone or iPad no longer open Siri: the plain press held for 0.4 s, exactly where iOS starts Siri, and now holds for 0.34 s.
 - On Xcode 27.1 and later, a system alert, a sheet such as Siri's or Control Center over the pinned app no longer lets a screenshot or input through: the front-app check had lost XCTest's lookup and fell back to the app's own state, which misses them. It now uses XCTest's accessibility client, and an Xcode with no lookup says so in a notice. The runner rebuilds once.
 - A locked iPhone or iPad now says `device_locked` and names `offsider wake`, rather than telling you to open the app, and the check no longer passes in the moment after a lock press.

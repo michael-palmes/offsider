@@ -63,6 +63,41 @@ public protocol MaskTreeReading: AnyObject {
     func prepareMaskTree(for id: DeviceID) async throws
 }
 
+/// What a command that only looks may read on a phone, beyond what a command that can act may.
+public enum PhoneRead {
+    /// Set around `describe-ui` and `screenshot` alone: they may read a system window over the allowed app while that app holds focus. Input never sees it.
+    @TaskLocal public static var overSystemWindow = false
+}
+
+/// A backend whose phone reads can go ahead under a system window, and can name it.
+@MainActor
+public protocol SystemWindowReporting: AnyObject {
+    /// The system window the latest read went ahead under; nil when none did.
+    func systemWindow(for id: DeviceID) -> UITreeContext.Window?
+}
+
+/// One widget on the home screen, as the launcher lays it out.
+public struct HomeWidget: Equatable, Sendable {
+    public let frame: UIFrame
+    public let label: String?
+
+    public init(frame: UIFrame, label: String?) {
+        self.frame = frame
+        self.label = label
+    }
+}
+
+/// A backend that can capture one app's home screen widget and nothing else of the launcher.
+@MainActor
+public protocol WidgetCapturing: AnyObject {
+    /// The app's widgets on the screen in reading order, never empty: refuses unless the home screen is in front, with nothing beyond them showing in their frames.
+    func widgets(of app: String, on id: DeviceID) async throws -> [HomeWidget]
+    /// The launcher's tree for painting masks; never cached or shown.
+    func widgetMaskTree(on id: DeviceID) async throws -> UITree
+    /// The whole screen's pixels, with no front-app check: the caller crops them to a widget `widgets(of:on:)` found, and checks it is still there.
+    func widgetFullScreenPNG(on id: DeviceID) async throws -> Data
+}
+
 extension MaskTreeReading {
     public func prepareMaskTree(for id: DeviceID) async throws {}
 }

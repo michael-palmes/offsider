@@ -39,12 +39,15 @@ public struct UITreeContext: Equatable, Sendable {
         public var package: String?
         /// An untitled modal with nothing in it, as React Native can leave its LogBox dialog on Android.
         public var empty: Bool
+        /// A phone's system window over the allowed app: `describe-ui` and `screenshot` read it, and input stays refused.
+        public var readOnly: Bool
 
-        public init(title: String?, kind: Kind, package: String?, empty: Bool = false) {
+        public init(title: String?, kind: Kind, package: String?, empty: Bool = false, readOnly: Bool = false) {
             self.title = title
             self.kind = kind
             self.package = package
             self.empty = empty
+            self.readOnly = readOnly
         }
     }
 
@@ -157,7 +160,7 @@ public struct UITreeContext: Equatable, Sendable {
     }
 
     public init(tree: UITree) {
-        var window = tree.windows.flatMap(Self.window(in:)) ?? tree.systemPrompt?.window
+        var window = tree.systemWindow ?? tree.windows.flatMap(Self.window(in:)) ?? tree.systemPrompt?.window
         let logBox = KnownOverlays.logBox(in: tree)
         if let found = window, found.kind == .modal, found.package != nil, logBox == nil,
            found.title?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true {
@@ -209,7 +212,7 @@ public struct UITreeContext: Equatable, Sendable {
     public var headerLines: [String] {
         var lines: [String] = []
         if let window, window.kind != .app {
-            lines.append("# window: \(TerminalText.bareOrQuoted(window.title ?? window.package ?? "untitled")) (\(window.kind.rawValue)\(window.empty ? ", empty" : ""))")
+            lines.append("# window: \(TerminalText.bareOrQuoted(window.title ?? window.package ?? "untitled")) (\(window.kind.rawValue)\(window.empty ? ", empty" : "")\(window.readOnly ? ", read only" : ""))")
         }
         if keyboard {
             lines.append("# keyboard shown")
@@ -238,7 +241,7 @@ public struct UITreeContext: Equatable, Sendable {
                     ("kind", .string(window.kind.rawValue)),
                     ("package", .optional(window.package, OrderedJSON.string)),
                     ("empty", .bool(window.empty)),
-                ])
+                ] + (window.readOnly ? [("readOnly", .bool(true))] : []))
             } ?? .null),
             ("keyboard", .bool(keyboard)),
             ("logbox", logBox.map { .object([("logs", .integer($0.logs)), ("inspector", .bool($0.inspector))]) } ?? .null),

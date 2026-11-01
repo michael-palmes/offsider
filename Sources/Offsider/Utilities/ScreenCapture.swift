@@ -136,6 +136,8 @@ enum ScreenCapture {
 
     /// `modal` when an Android modal window, but an empty or opaque LogBox one, hides the windows beneath from the tree.
     nonisolated static func unproven(_ tree: UITree) -> String? {
+        // Android lists no window beneath a touch-modal system window, so the app's password fields can show with no tree to find them.
+        if tree.systemWindow != nil, !(tree.windows ?? []).contains(where: { $0.kind == "application" }) { return "modal" }
         let context = UITreeContext(tree: tree)
         guard tree.platform == .android, let window = context.window, window.kind == .modal, !window.empty, context.logBox?.inspector != true else { return nil }
         return "modal"

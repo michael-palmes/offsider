@@ -13,7 +13,8 @@ struct DescribeUI: AsyncParsableCommand {
         element at the screen's centre once, so context names a view another process presents over the app (presented) and \
         a screen-sized view listed off screen that the centre lands in (staleFrame); on Android, context.hidden counts \
         branches the helper left out as not visible to the user, and context.hiddenBranches names up to five of them \
-        ({id, label, className, frame}, on-screen and larger first).
+        ({id, label, className, frame}, on-screen and larger first). On an allowed phone it still reads while the allowed app \
+        holds focus beneath a system window owned by android, naming it in context.window (readOnly); input stays refused there.
         """
     )
 
@@ -85,7 +86,9 @@ struct DescribeUI: AsyncParsableCommand {
         try await watchdog.guardingRead(of: route.device, extra: DeviceClaims.current.longestWait) {
             try await Self.requireActive(displayOption, on: route, deviceName: deviceOption.id)
             if rawSource { return try Self.rawSourceText(try await Self.rawCapture(on: route)) + "\n" }
-            return try await AccessibilityFetcher.$warnsWhenEmpty.withValue(true) { try await describe(on: route) }
+            return try await PhoneRead.$overSystemWindow.withValue(true) {
+                try await AccessibilityFetcher.$warnsWhenEmpty.withValue(true) { try await describe(on: route) }
+            }
         }
     }
 
