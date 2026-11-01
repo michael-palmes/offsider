@@ -71,6 +71,19 @@ public struct DeviceAllowance: Equatable, Sendable {
     }
 }
 
+/// An entry holding a key this build does not know, as a newer Offsider writes. It allows nothing here, since that key may be a limit this build cannot read, and it is written back as it came.
+public struct NewerDeviceEntry: Equatable, Sendable {
+    public let platform: DevicePlatform
+    public let key: String
+    public let name: String
+    /// The keys this build does not know, sorted.
+    public let unknownKeys: [String]
+    /// The entry as read, with sorted keys.
+    let raw: Data
+
+    public static let updateCommand = "brew upgrade offsider"
+}
+
 /// Why an allow-list file was refused; nothing in it is honoured.
 public struct DeviceAllowListError: Error, Equatable, Sendable, CustomStringConvertible {
     public let detail: String
@@ -82,7 +95,7 @@ public struct DeviceAllowListError: Error, Equatable, Sendable, CustomStringConv
     public var description: String { detail }
 }
 
-/// `~/.config/offsider/allowed-devices.json`: version 1, one entry per physical device. Parsing is strict, so a hand edit that drifts is refused whole.
+/// `~/.config/offsider/allowed-devices.json`: version 1, one entry per physical device. Parsing is strict, so a hand edit that drifts is refused whole; only a key this build does not know, on an entry that names its device, holds back that device alone.
 public struct DeviceAllowList: Equatable, Sendable {
     public static let version = 1
     public static let maximumEntries = 64
@@ -90,9 +103,17 @@ public struct DeviceAllowList: Equatable, Sendable {
     static let entryKeys: Set<String> = ["platform", "id", "name", "added", "expires", "apps", "team", "metroPorts", "testDevice"]
 
     public let entries: [DeviceAllowance]
+    public let newer: [NewerDeviceEntry]
 
-    public init(entries: [DeviceAllowance] = []) {
+    public init(entries: [DeviceAllowance] = [], newer: [NewerDeviceEntry] = []) {
         self.entries = entries
+        self.newer = newer
+    }
+
+    public var isEmpty: Bool { entries.isEmpty && newer.isEmpty }
+
+    public func newerEntry(platform: DevicePlatform, key: String) -> NewerDeviceEntry? {
+        newer.first { $0.platform == platform && $0.key == key }
     }
 
     public static let empty = DeviceAllowList()
@@ -113,16 +134,20 @@ public struct DeviceAllowList: Equatable, Sendable {
 
     /// Replaces any entry for the same device.
     public func adding(_ allowance: DeviceAllowance) -> DeviceAllowList {
-        DeviceAllowList(entries: removing(platform: allowance.platform, key: allowance.key).entries + [allowance])
+        let others = removing(platform: allowance.platform, key: allowance.key)
+        return DeviceAllowList(entries: others.entries + [allowance], newer: others.newer)
     }
 
     public func removing(platform: DevicePlatform, key: String) -> DeviceAllowList {
-        DeviceAllowList(entries: entries.filter { !($0.platform == platform && $0.key == key) })
+        DeviceAllowList(
+            entries: entries.filter { !($0.platform == platform && $0.key == key) },
+            newer: newer.filter { !($0.platform == platform && $0.key == key) }
+        )
     }
 
-    /// Without the entries that have expired.
+    /// Without the entries that have expired; a newer entry's expiry is not read here, so it stays.
     public func pruned(now: Date) -> DeviceAllowList {
-        DeviceAllowList(entries: active(now: now))
+        DeviceAllowList(entries: active(now: now), newer: newer)
     }
 
     public static func parse(_ data: Data) throws -> DeviceAllowList {
@@ -136,28 +161,54 @@ public struct DeviceAllowList: Equatable, Sendable {
         guard let rows = top["devices"] as? [Any] else { throw DeviceAllowListError("devices must be an array") }
         guard rows.count <= maximumEntries else { throw DeviceAllowListError("more than \(maximumEntries) devices") }
         var seen = Set<String>()
-        let entries = try rows.enumerated().map { index, row -> DeviceAllowance in
-            let entry = try parseEntry(row, index: index)
-            guard seen.insert("\(entry.platform.rawValue) \(entry.key)").inserted else {
-                throw DeviceAllowListError("devices[\(index)] repeats \(entry.key)")
+        var entries: [DeviceAllowance] = []
+        var newer: [NewerDeviceEntry] = []
+        for (index, row) in rows.enumerated() {
+            let (platform, key): (DevicePlatform, String)
+            if let held = try parseNewerEntry(row, index: index) {
+                newer.append(held)
+                (platform, key) = (held.platform, held.key)
+            } else {
+                let entry = try parseEntry(row, index: index)
+                entries.append(entry)
+                (platform, key) = (entry.platform, entry.key)
             }
-            return entry
+            guard seen.insert("\(platform.rawValue) \(key)").inserted else {
+                throw DeviceAllowListError("devices[\(index)] repeats \(key)")
+            }
         }
-        return DeviceAllowList(entries: entries)
+        return DeviceAllowList(entries: entries, newer: newer)
+    }
+
+    /// The entry when it holds a key this build does not know; its other fields are not read, as a newer build may have changed them. It must still say which device it is, or the file is refused.
+    private static func parseNewerEntry(_ row: Any, index: Int) throws -> NewerDeviceEntry? {
+        let at = "devices[\(index)]"
+        guard let fields = row as? [String: Any] else { throw DeviceAllowListError("\(at) is not an object") }
+        let extras = Set(fields.keys).subtracting(entryKeys).sorted()
+        guard let extra = extras.first else { return nil }
+        guard let platformText = fields["platform"] as? String, let platform = DevicePlatform(rawValue: platformText),
+              let id = fields["id"] as? String, DeviceAllowance.physicalKey(platform: platform, id: id) == id,
+              let raw = try? JSONSerialization.data(withJSONObject: row, options: .sortedKeys) else {
+            throw DeviceAllowListError("\(at) has unknown key \"\(extra)\"")
+        }
+        let name = (fields["name"] as? String).flatMap { isDeviceName($0) ? $0 : nil } ?? id
+        return NewerDeviceEntry(platform: platform, key: id, name: name, unknownKeys: extras, raw: raw)
+    }
+
+    private static func isDeviceName(_ name: String) -> Bool {
+        (1...DeviceAllowance.maximumNameLength).contains(name.count) && name.unicodeScalars.allSatisfy { !CharacterSet.controlCharacters.contains($0) }
     }
 
     private static func parseEntry(_ row: Any, index: Int) throws -> DeviceAllowance {
         let at = "devices[\(index)]"
         guard let fields = row as? [String: Any] else { throw DeviceAllowListError("\(at) is not an object") }
-        if let extra = Set(fields.keys).subtracting(entryKeys).sorted().first { throw DeviceAllowListError("\(at) has unknown key \"\(extra)\"") }
         guard let platformText = fields["platform"] as? String, let platform = DevicePlatform(rawValue: platformText) else {
             throw DeviceAllowListError("\(at).platform must be ios or android")
         }
         guard let id = fields["id"] as? String, let key = DeviceAllowance.physicalKey(platform: platform, id: id), key == id else {
             throw DeviceAllowListError("\(at).id is not a physical \(platform == .ios ? "iPhone or iPad UDID in uppercase" : "phone serial")")
         }
-        guard let name = fields["name"] as? String, (1...DeviceAllowance.maximumNameLength).contains(name.count),
-              name.unicodeScalars.allSatisfy({ !CharacterSet.controlCharacters.contains($0) }) else {
+        guard let name = fields["name"] as? String, isDeviceName(name) else {
             throw DeviceAllowListError("\(at).name must be 1 to \(DeviceAllowance.maximumNameLength) printable characters")
         }
         guard let addedText = fields["added"] as? String, let added = ProcessStamp.date(fromTimestamp: addedText) else {
@@ -215,6 +266,19 @@ public struct DeviceAllowList: Equatable, Sendable {
         CFGetTypeID(number) == CFBooleanGetTypeID()
     }
 
+    /// A parsed JSON value as written, with sorted keys.
+    private static func ordered(_ value: Any) -> OrderedJSON {
+        switch value {
+        case let text as String: return .string(text)
+        case let number as NSNumber:
+            if isBool(number) { return .bool(number.boolValue) }
+            return Int(exactly: number.doubleValue).map(OrderedJSON.integer) ?? .number(number.doubleValue)
+        case let rows as [Any]: return .array(rows.map(ordered))
+        case let fields as [String: Any]: return .object(fields.keys.sorted().map { ($0, ordered(fields[$0] as Any)) })
+        default: return .null
+        }
+    }
+
     /// Stable, readable JSON with keys in schema order, ending in a newline.
     public func encoded() -> Data {
         let rows = entries.map { entry -> OrderedJSON in
@@ -232,7 +296,8 @@ public struct DeviceAllowList: Equatable, Sendable {
             if entry.testDevice { fields.append(("testDevice", .bool(true))) }
             return .object(fields)
         }
-        let object = OrderedJSON.object([("version", .integer(Self.version)), ("devices", .array(rows))])
+        let kept = newer.compactMap { (try? JSONSerialization.jsonObject(with: $0.raw)).map(Self.ordered) }
+        let object = OrderedJSON.object([("version", .integer(Self.version)), ("devices", .array(rows + kept))])
         return Data((object.rendered() + "\n").utf8)
     }
 }

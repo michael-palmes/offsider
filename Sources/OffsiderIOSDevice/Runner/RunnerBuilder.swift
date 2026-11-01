@@ -451,8 +451,8 @@ public struct XcodeRunnerBuilder: RunnerBuilding {
     static func registrationFailure(udid: String, team: String, output: String, log: URL) -> IOSDeviceError {
         IOSDeviceError(
             .runnerBuildFailed,
-            "Building the Offsider runner app failed: \(udid) is not registered with team \(team), or no provisioning profile covers it. A person registers it by running `offsider runner build --device \(udid) --register-device` in their own terminal, or in Xcode > Window > Devices and Simulators.\(tail(output))",
-            hint: "offsider runner build --device \(udid) --register-device"
+            "Building the Offsider runner app failed: \(udid) is not registered with team \(team), or no provisioning profile covers it. A person registers it by running `offsider runner build --register-device --device \(udid)` in their own terminal, or in Xcode > Window > Devices and Simulators.\(tail(output))",
+            hint: "offsider runner build --register-device --device \(udid)"
         )
     }
 

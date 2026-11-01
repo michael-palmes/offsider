@@ -773,8 +773,8 @@ struct DeviceAccessStatus: AsyncParsableCommand {
             let extra = json ? "" : "\(target.key) is allowed\(entry.expires.map { " until \(ProcessStamp.timestamp($0))" } ?? "").\n"
             return (output + extra, nil)
         case .refused(let refusal):
-            let entry = policy.list.entry(platform: target.platform, key: target.key)
-            return (output, CLIError.deviceNotAllowed(name: entry?.name, key: target.key, refusal: refusal))
+            let name = policy.list.entry(platform: target.platform, key: target.key)?.name ?? policy.list.newerEntry(platform: target.platform, key: target.key)?.name
+            return (output, CLIError.deviceNotAllowed(name: name, key: target.key, refusal: refusal))
         }
     }
 }
@@ -827,12 +827,14 @@ struct DeviceAccessRemove: AsyncParsableCommand {
         let target = try DeviceAccess.physicalKey(device)
         let store = try context.requireStore()
         let existing = try? store.load()
-        let listed = existing.map { $0.list.entry(platform: target.platform, key: target.key) != nil } ?? false
+        let listed = existing.map { $0.list.entry(platform: target.platform, key: target.key) != nil || $0.list.newerEntry(platform: target.platform, key: target.key) != nil } ?? false
         let tampered = existing.map { !context.seal.isIntact($0) } ?? true
         var removed: DeviceAllowance?
+        var removedNewer: NewerDeviceEntry?
         if listed || tampered {
             try store.update({ current in
                 removed = current.list.entry(platform: target.platform, key: target.key)
+                removedNewer = current.list.newerEntry(platform: target.platform, key: target.key)
                 let base = context.seal.isIntact(current) ? current.list : .empty
                 return base.pruned(now: context.now()).removing(platform: target.platform, key: target.key)
             }, commit: { try context.seal.seal($0) })
@@ -840,12 +842,14 @@ struct DeviceAccessRemove: AsyncParsableCommand {
         let hadRunner = target.platform == .ios && context.hasRunner(target.key)
         let stopped = await Console.current.progress("Stopping its sessions") { await context.stopSessions(target.key) }
         if json { return Removal(text: DeviceAccessReport.changeJSON(action: "remove", platform: target.platform, key: target.key, allowance: removed, stopped: stopped)) }
-        var text = removed.map { "Removed \($0.name) (\(target.key)) from the allow-list; Offsider will not drive it again until a person allows it." }
+        let removedName = removed?.name ?? removedNewer?.name
+        var text = removedName.map { "Removed \($0) (\(target.key)) from the allow-list; Offsider will not drive it again until a person allows it." }
             ?? "\(target.key) was not on the allow-list."
         if tampered, existing != nil { text += " The allow-list had been changed outside Offsider, so every entry was dropped." }
         if !stopped.isEmpty { text += " Stopped its \(stopped.joined(separator: " and "))." }
         let sessions = stopped.isEmpty ? nil : "stopped its \(stopped.joined(separator: " and "))"
         let receipt = removed.map { DevicePersonView.receipt("Withdrew \(AccessStatusScreen.name($0))", [sessions]) }
+            ?? removedNewer.map { DevicePersonView.receipt("Withdrew \(PromptScreen.label($0.name))", [sessions]) }
             ?? DevicePersonView.receipt("Nothing to withdraw", ["\(target.key) was not on the list", sessions])
         let dropped: [Notice] = tampered && existing != nil ? [.warning("The list was changed outside Offsider, so every entry was dropped")] : []
         guard hadRunner else { return Removal(text: text, person: receipt, notices: dropped) }
@@ -887,17 +891,21 @@ struct DeviceAccessRemove: AsyncParsableCommand {
             )
         }
         let now = context.now()
-        let entries = AccessStatusScreen.allowed(context.policy(), now: now)
-        guard !entries.isEmpty else { return nil }
+        let policy = context.policy()
+        let entries = AccessStatusScreen.allowed(policy, now: now)
+        let newer = policy.list.newer
+        guard !entries.isEmpty || !newer.isEmpty else { return nil }
         let index = try TerminalPrompt.run(cancelled: "Cancelled; nothing was withdrawn.", descriptor: context.promptDescriptor) { prompt in
             let rows = entries.map { entry in
                 MenuRow(entry.platform == .android ? .android : entry.name.contains("iPad") ? .iPad : .iPhone, [
                     AccessStatusScreen.name(entry), AccessStatusScreen.detail(entry, now: now, timeZone: context.timeZone, team: false, style: prompt.style),
                 ])
+            } + newer.map { entry in
+                MenuRow(entry.platform == .android ? .android : entry.name.contains("iPad") ? .iPad : .iPhone, [PromptScreen.label(entry.name), "needs a newer Offsider"])
             }
             return try prompt.choose(Self.removeQuestion, rows: rows)
         }
-        return entries[index].key
+        return (entries.map(\.key) + newer.map(\.key))[index]
     }
 
     static func cleanCommand(_ udid: String) -> String {

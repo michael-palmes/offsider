@@ -15,6 +15,9 @@ final class CommandScope {
     /// The command path for the tree cache; nil leaves the cache alone (tests that only check closing).
     private(set) var command: String?
 
+    /// The app the command line names, which routing checks against a phone's allowance.
+    private(set) var namedApp: String?
+
     /// Each device the router chose, for the screen check after a failure.
     private(set) var routes: [DeviceRouter.Route] = []
 
@@ -25,8 +28,9 @@ final class CommandScope {
         self.claims = claims
     }
 
-    func configure(command: String) {
+    func configure(command: String, namedApp: String? = nil) {
         self.command = command
+        self.namedApp = namedApp
     }
 
     /// Adopting the same backend twice keeps one entry, so it is closed once.
@@ -43,6 +47,16 @@ final class CommandScope {
 
     /// Takes the agent's banner line instead of stderr, for tests; nil writes it, in every mode, through the console.
     var bannerNote: ((String) -> Void)?
+
+    /// `offsider describe-ui --summary` as a new process on this device can run it, naming the app where it would not otherwise know it.
+    func describeHint(device: String) -> String {
+        "offsider describe-ui --summary\(appArgument(device: device)) --device \(device)"
+    }
+
+    /// ` --app <id>` for a printed command on this device, as `DeviceRouter.Route.appArgument` decides; empty before routing.
+    func appArgument(device: String) -> String {
+        routes.last { $0.device.rawValue == device }?.appArgument ?? ""
+    }
 
     func noteRoute(_ route: DeviceRouter.Route) {
         routes.append(route)

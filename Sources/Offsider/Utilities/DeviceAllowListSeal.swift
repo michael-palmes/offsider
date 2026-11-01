@@ -17,8 +17,8 @@ extension DeviceAllowListSealing {
 
     /// Intact when the file matches the seal; a file with no devices needs none.
     func isIntact(_ snapshot: DeviceAllowListSnapshot) -> Bool {
-        guard let stored = try? storedDigest() else { return snapshot.list.entries.isEmpty }
-        return stored == Self.digest(of: snapshot.data) || snapshot.list.entries.isEmpty
+        guard let stored = try? storedDigest() else { return snapshot.list.isEmpty }
+        return stored == Self.digest(of: snapshot.data) || snapshot.list.isEmpty
     }
 
     func seal(_ data: Data) throws {

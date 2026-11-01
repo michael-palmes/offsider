@@ -57,6 +57,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - `logs` on Android joins the lines of one logged message, which logcat prints each under its own header, into one entry: `--grep` and `--exclude` match the whole entry and `.` crosses its lines, `--json` carries it whole, and text output keeps it on one line with `\n`.
 - `wake --unlock`, `unlock-code status`, `doctor` and `boot` say plainly whether a saved PIN or password is wrong. A code typed in full with the lock screen still up 15 s later is `The saved PIN is wrong: ...`, and stays blocked, even through an unlock by hand, until it is saved again. A run that ended before it saw the result, or a marker from an earlier version, is `Offsider can't tell if the saved PIN is right: ...`. Each message names the command that saves it, and that Offsider won't retry because repeated wrong PINs can lock a phone out. Its `ask` asks the user to save the code, not to unlock. The marker now holds the outcome, the time and whether the lock was a PIN or password, and `--json` adds `lastAttempt` (`outcome`, `at`, `credential`, or null) beside `lastAttemptFailed`, which stays true for either.
 - `doctor`'s `android-device.lock` warns instead of passing while a saved code is wrong or unconfirmed.
+- `logs --no-redact` and `rn logbox status|open --no-redact` need a person when an agent runs them (`person_required`, or Touch ID with a terminal on standard input); a person at a terminal is not asked. `OFFSIDER_MASK_SECURE=0` on `record-video` and `stream-video` needs the same.
+- `offsider init` asks before `record-video --unmasked`, `stream-video --unmasked`, `logs --no-redact`, and, in Claude Code, `rn logbox --no-redact` and raw `adb` and `devicectl` called by full path.
+- `wake --unlock` and `type --file` must come straight after the command (exit 64 otherwise), so the permission rules that match the command as typed see them.
 
 ### Fixed
 
@@ -120,6 +123,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - `wake --unlock` waits up to 15 s for the lock screen to go after typing a code, not about 2.5 s on an emulator and 4 to 6 s on a phone, so a slow first unlock since boot no longer ends the check early, and a right code is not called wrong.
 - `wake --unlock` types nothing into a code field disabled while the lock screen counts down after wrong codes, where a right code could not land.
 - The unlock hints in `boot` and `doctor` name an emulator's AVD for `unlock-code set`, which refuses its serial.
+- An app id with a space, tab or newline around it is refused everywhere, as no check would match it while the device shell ignored the padding, so `--app ' com.android.chrome'` no longer got past a phone's deny-list or managed policy. Every `--app` and `--bundle-id` is checked at parsing (exit 64), `logs` and the input commands too, and a phone's allowance is checked when the command is routed, whichever command names the app; a test walks the command tree so a new one cannot skip either.
+- `logs --rn` and `logs --rn --app` on a phone without "Any app and all logs" keep only that app's own lines. They used to pass on every app's React Native tags.
+- `logs --rn --app --follow` prints a finished entry after 250 ms even while other apps keep logging.
+- `rn open` and `rn prepare` refuse an app a phone's allowance does not permit (`app_not_allowed`) before any `pm`, `am`, `run-as` or `adb reverse` reaches it.
+- `rn open` taps Open only on the `Open in “…”?` prompt naming the app it was told to open; any other, or one when the name is unknown, is reported as `person_required`.
+- Hints printed on a phone allowed for any app or for several name `--app`, so the printed command runs as it stands.
+- A broken `offsider.login.json` exits 64 with its own message from `app`, `notifications` and `logs`. It used to read as naming no app, falling through to a phone's only pin or to the whole log on a simulator or emulator.
+- `OFFSIDER_OUTPUT=person` only changes what Offsider prints. It no longer opens `describe-ui --raw-source` or the unmask check for an agent; a person piping `--raw-source` from their own terminal confirms with Touch ID.
+- A person's own Codex line for an Offsider rule counts whichever way they changed it, so `init` no longer adds a prompt over it and `doctor` no longer warns.
+- A key a newer Offsider wrote on one device's allow-list entry refuses that device alone, saying to update Offsider, where it used to refuse every phone and iPhone. `devices status` and `doctor` show it, and `add` or `remove` for another device keeps the entry as written. A problem at the top of the file, or an entry that does not say which device it is, still refuses everything.
+- `--app` help says what it does for video: the app in front is checked at most every 1 s on Android and every 2 s on an iPhone or iPad.
 
 ## [0.14.0] - 2026-10-22
 

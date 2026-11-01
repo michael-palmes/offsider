@@ -184,8 +184,9 @@ struct AndroidHelperTests {
         try await AndroidE2E.run("tap --id stack-test-open-full")
         _ = try await AndroidE2E.waitForNode { $0["id"] as? String == "stack-test-full-title-1" }
 
-        let raw = try await AndroidE2E.run("describe-ui --raw-source", environment: ["OFFSIDER_OUTPUT": "person"])
-        let object = try #require(try JSONSerialization.jsonObject(with: Data(raw.stdout.utf8)) as? [String: Any])
+        let serial = try await AndroidE2E.serial()
+        let raw = try await TestHelpers.runOffsiderAsPerson("describe-ui --raw-source --device \(serial)")
+        let object = try #require(try JSONSerialization.jsonObject(with: try TestHelpers.jsonObject(in: raw.stdout)) as? [String: Any])
         let dump = try #require(object["source"] as? [String: Any])
         var orders: [String: Int] = [:]
         func visit(_ node: [String: Any]) {

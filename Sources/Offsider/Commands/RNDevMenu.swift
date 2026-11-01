@@ -37,7 +37,7 @@ struct DevMenuDriver {
             throw CLIError(
                 errorDescription: "Offsider cannot open the dev menu on \(route.device.rawValue): a physical iPhone or iPad refuses shake and two-finger touches. Shake the device by hand, or open the menu from the app, then run this again: it uses a menu that is already open.",
                 reason: .notSupported,
-                hint: "offsider rn devmenu --device \(route.device.rawValue)"
+                hint: "offsider rn devmenu\(route.appArgument) --device \(route.device.rawValue)"
             )
         }
         // A menu sliding in moves its items, so a tap waits for two reads that agree.
@@ -58,7 +58,7 @@ struct DevMenuDriver {
         throw CLIError(
             errorDescription: "The React Native dev menu did not open on \(route.device.rawValue) within \(Int(Self.openWait)) s. \(cause)",
             reason: .stateNotReached,
-            hint: "offsider describe-ui --summary --device \(route.device.rawValue)"
+            hint: "offsider describe-ui --summary\(route.appArgument) --device \(route.device.rawValue)"
         )
     }
 
@@ -93,7 +93,7 @@ struct DevMenuDriver {
             if item == .close, android {
                 try await perform(.shortButtonPress(.back))
                 if try await closed(leaving: state.menu) { return "Back" }
-                throw CLIError(errorDescription: "Pressed Back, but the \(state.menu) dev menu is still open.", reason: .notVerified, hint: "offsider describe-ui --summary --device \(route.device.rawValue)")
+                throw CLIError(errorDescription: "Pressed Back, but the \(state.menu) dev menu is still open.", reason: .notVerified, hint: "offsider describe-ui --summary\(route.appArgument) --device \(route.device.rawValue)")
             }
             let name = label.map { "--label '\($0)'" } ?? item?.rawValue ?? "item"
             let advice = android && state.menu == "react-native"
@@ -101,7 +101,7 @@ struct DevMenuDriver {
             throw CLIError(
                 errorDescription: "The \(state.menu) dev menu has no \(name). Its items: \(state.items.map(\.label).joined(separator: ", ")).\(advice)",
                 reason: .selectorNotFound,
-                hint: "offsider rn devmenu --device \(route.device.rawValue)",
+                hint: "offsider rn devmenu\(route.appArgument) --device \(route.device.rawValue)",
                 candidates: state.items.map { entry in FailureCandidate(id: nil, label: entry.label, role: entry.role.rawValue, frame: entry.frame, onScreen: tree.viewport.flatMap { entry.frame?.isVisible(in: $0) }) }
             )
         }
@@ -116,7 +116,7 @@ struct DevMenuDriver {
                 throw CLIError(
                     errorDescription: "Tapped \(TerminalText.quoted(tapped)), but nothing happened: it is not a control in the \(state.menu) dev menu, which is still open. Its items: \(state.items.map(\.label).joined(separator: ", ")).",
                     reason: .notVerified,
-                    hint: "offsider rn devmenu --device \(route.device.rawValue)"
+                    hint: "offsider rn devmenu\(route.appArgument) --device \(route.device.rawValue)"
                 )
             }
             if let close = DevMenu.node(for: .close, label: nil, in: fresh), let closeFrame = close.frame {
@@ -130,7 +130,7 @@ struct DevMenuDriver {
         throw CLIError(
             errorDescription: "Tapped \(node.label.map { TerminalText.quoted($0) } ?? item?.rawValue ?? "the item"), but the dev menu is still open.",
             reason: .notVerified,
-            hint: "offsider describe-ui --summary --device \(route.device.rawValue)"
+            hint: "offsider describe-ui --summary\(route.appArgument) --device \(route.device.rawValue)"
         )
     }
 
@@ -150,7 +150,7 @@ struct DevMenuDriver {
             throw CLIError(
                 errorDescription: "\(TerminalText.quoted(label)) is off screen, \(place) the \(menu) dev menu, so nothing was tapped. Swipe the menu \(below ? "up" : "down") until it shows, then choose it again with `rn devmenu`, which uses the menu that is already open.",
                 reason: .targetOffScreen,
-                hint: "offsider swipe --start-x \(swipe.x) --start-y \(swipe.from) --end-x \(swipe.x) --end-y \(swipe.to) --device \(route.device.rawValue)",
+                hint: "offsider swipe --start-x \(swipe.x) --start-y \(swipe.from) --end-x \(swipe.x) --end-y \(swipe.to)\(route.appArgument) --device \(route.device.rawValue)",
                 candidates: [FailureCandidate(id: node.id, label: label, role: node.role.rawValue, frame: frame, onScreen: false)]
             )
         }

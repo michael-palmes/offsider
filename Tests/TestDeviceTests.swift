@@ -38,6 +38,22 @@ struct TestDeviceAllowanceTests {
         }
     }
 
+    @Test("a test device still refuses an app id no shell should see", arguments: [" com.apple.springboard", "com.apple.springboard\n", "com.apple;reboot", "springboard"])
+    func malformedIDStaysRefused(app: String) {
+        let whole = PhysicalDevicePolicy(managed: .none, list: DeviceAllowList(entries: [wholeEntry]))
+        #expect(!whole.permits(app: app, on: wholeEntry))
+        #expect(whole.appRefusal(app, on: wholeEntry)?.hasSuffix("Nothing was read or sent.") == true)
+    }
+
+    @Test("a test device reads the whole log, and a named app's lines are not cut to that app")
+    func logsReadWhole() throws {
+        let policy = PhysicalDevicePolicy(managed: .none, list: DeviceAllowList(entries: [wholeEntry]))
+        let plain = try Logs.scoped(LogQuery(source: .all, window: .last(.seconds(30))), all: false, platform: .ios, allowance: wholeEntry, policy: policy) { nil }
+        #expect(plain.0.source == .all)
+        let named = try Logs.scoped(LogQuery(source: .reactNative(app: "com.example.other"), window: .last(.seconds(30))), all: false, platform: .ios, allowance: wholeEntry, policy: policy) { nil }
+        #expect(named.0.appOnly == false)
+    }
+
     /// (forced policy, driven whole?)
     static let managedCases: [(ManagedDevicePolicy, Bool)] = [
         (.none, true),

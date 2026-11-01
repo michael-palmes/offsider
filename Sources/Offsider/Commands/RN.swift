@@ -25,23 +25,20 @@ struct RNPrepare: AsyncParsableCommand {
         """
     )
 
-    @Option(name: .customLong("bundle-id"), help: ArgumentHelp("The app's bundle ID on iOS or package on Android.", valueName: "bundle-id|package"))
+    @Option(name: .customLong("bundle-id"), help: ArgumentHelp("The app's bundle ID on iOS or package on Android.", valueName: "bundle-id|package"), transform: AppID.parse)
     var bundleID: String
 
     @OptionGroup
     var deviceOption: DeviceOption
 
-    func validate() throws {
-        do {
-            _ = try ExpoDevClient.validate(appID: bundleID)
-        } catch let error as ExpoDevClientError {
-            throw ValidationError(error.message)
-        }
-    }
-
     func run() async throws {
         let logger = OffsiderLogger()
-        let route = try await DeviceRouter.routeForInput(deviceOption, logger: logger)
+        try await prepare(on: try await DeviceRouter.routeForInput(deviceOption, logger: logger))
+    }
+
+    @MainActor
+    func prepare(on route: DeviceRouter.Route, gate: DevicePolicyGate = .current) async throws {
+        if let allowance = route.allowance { try gate.requireApp(bundleID, on: allowance) }
         guard let preparer = route.backend as? any ExpoDevClientPreparing else {
             throw CLIError(errorDescription: "rn prepare is not available for \(deviceOption.id).", reason: .notSupported)
         }

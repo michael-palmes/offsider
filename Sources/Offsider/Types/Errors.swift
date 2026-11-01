@@ -97,6 +97,15 @@ struct CLIError: LocalizedError, UserFacingError, OffsiderFailure {
                 reason: .deviceNotAllowed
             )
         }
+        if case .newerEntry = refusal {
+            let update = NewerDeviceEntry.updateCommand
+            let step = audience.personStep(update)
+            return CLIError(
+                errorDescription: "\(device) is a physical device and \(refusal.explanation), so nothing was sent to it. \(step.isEmpty ? "Update Offsider: \(update)." : String(step.dropFirst()))",
+                reason: .deviceNotAllowed,
+                hint: update
+            )
+        }
         let again = refusal == .notAllowed ? "" : " again"
         let step = audience.personStep(command, agentTail: "\(again) and choose \(device); an agent cannot allow a device")
         return CLIError(

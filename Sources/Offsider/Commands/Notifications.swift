@@ -24,7 +24,8 @@ struct NotificationsCommand: AsyncParsableCommand {
 
     @Option(
         name: .customLong("app"),
-        help: ArgumentHelp("The app's package (default offsider.login.json's, else a phone's only pinned app).", valueName: "package")
+        help: ArgumentHelp("The app's package (default offsider.login.json's, else a phone's only pinned app).", valueName: "package"),
+        transform: AppID.parse
     )
     var app: String?
 
@@ -46,13 +47,6 @@ struct NotificationsCommand: AsyncParsableCommand {
     var deviceOption: ReadDeviceOption
 
     func validate() throws {
-        if let app {
-            do {
-                _ = try ExpoDevClient.validate(appID: app)
-            } catch {
-                throw ValidationError(error.localizedDescription)
-            }
-        }
         if let wait, wait.trimmingCharacters(in: .whitespaces).isEmpty {
             throw ValidationError("--wait needs text to look for.")
         }
@@ -110,7 +104,7 @@ struct NotificationsCommand: AsyncParsableCommand {
     }
 
     /// `--app`, else offsider.login.json's package, else the allowance's only pinned app; on a phone the allowance must permit it.
-    static func app(_ explicit: String?, route: DeviceRouter.Route, gate: DevicePolicyGate = .current, profile: () -> LoginProfile? = { (try? LoginProfiles.load(project: nil, warn: { _ in })) ?? nil }) throws -> String {
+    static func app(_ explicit: String?, route: DeviceRouter.Route, gate: DevicePolicyGate = .current, profile: () throws -> LoginProfile? = { try LoginProfiles.implicit() }) throws -> String {
         try route.app(named: explicit, gate: gate, profile: profile) {
             CLIError(
                 errorDescription: "notifications needs the app: pass --app <package>, or name it in offsider.login.json.",

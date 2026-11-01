@@ -277,7 +277,7 @@ struct Button: AsyncParsableCommand, VerifiableCommand {
         } else if let writeError {
             writeError(line)
         } else {
-            console.line(line, person: .failed("Home button not verified", details: [detail], try: ["offsider describe-ui --summary --device \(device.rawValue)"]))
+            console.line(line, person: .failed("Home button not verified", details: [detail], try: [CommandScope.current.describeHint(device: device.rawValue)]))
         }
         if report.exitCode != .success {
             throw ExitCode(report.exitCode.rawValue)
@@ -338,7 +338,7 @@ struct Button: AsyncParsableCommand, VerifiableCommand {
         func failed(_ line: String, person: Outcome) {
             if let writeError { return writeError(line) }
             var person = person
-            person.commands = ["offsider describe-ui --summary --device \(device.rawValue)"]
+            person.commands = [CommandScope.current.describeHint(device: device.rawValue)]
             console.line(line, person: person)
         }
         func receipt(_ details: [String] = []) {

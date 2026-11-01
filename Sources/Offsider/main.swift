@@ -65,7 +65,7 @@ struct OffsiderCommand: AsyncParsableCommand {
             parsed = command
             ErrorReporter.prepare(command: command, arguments: arguments)
             let path = CommandPath.of(command)
-            await CommandScope.current.configure(command: path)
+            await CommandScope.current.configure(command: path, namedApp: (command as? any AppNaming)?.namedApp)
             await DeviceClaims.current.configure(
                 command: path,
                 waitOption: (command as? any LockingCommand)?.waitLock

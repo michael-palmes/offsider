@@ -44,7 +44,7 @@ struct AgentPermissionRulesTests {
         let actions = ["add"] + CredentialCommand.Action.allCases.map(\.rawValue)
         for action in actions {
             let command = "offsider credential \(action) --app com.example.app"
-            let codex = AgentPermissionRules.rules.contains { ["offsider", "credential", action, "--app"].starts(with: $0.codex) }
+            let codex = AgentPermissionRules.codexRules.contains { ["offsider", "credential", action, "--app"].starts(with: $0.codex) }
             #expect(matches(command, guarded) == (action != "status"), "\(command)")
             #expect(codex == (action != "status"), "Codex: \(command)")
         }
@@ -97,6 +97,45 @@ struct AgentPermissionRulesTests {
         #expect(try AgentPermissionRules.merge(.claudeCode, existing: deniedAll).added == all.filter { !$0.hasPrefix("Bash(offsider ") }.count)
     }
 
+    @Test("a person's exact Codex line decides its rule, whichever way they changed it, and init adds no prompt over it", arguments: [
+        (#"pattern=["offsider", "credential", "add"], decision="allow""#, #"pattern=["offsider", "credential", "add"], decision="prompt""#),
+        (#"pattern=["offsider", "devices", "add"], decision="prompt""#, #"pattern=["offsider", "devices", "add"], decision="forbidden""#),
+    ])
+    func codexExactEditDecides(line: String, added: String) throws {
+        let edited = AgentPermissionRules.codexHeader + "prefix_rule(\(line), justification=\"mine\")\n"
+        let merge = try AgentPermissionRules.merge(.codex, existing: Data(edited.utf8))
+        let text = String(decoding: try #require(merge.content), as: UTF8.self)
+        #expect(!text.contains(added))
+        #expect(merge.added == AgentPermissionRules.codexRules.count - 1)
+    }
+
+    @Test("a broader allow in Codex still gets the rule added")
+    func codexBroadAllowStillAdds() throws {
+        let edited = AgentPermissionRules.codexHeader + #"prefix_rule(pattern=["offsider"], decision="allow", justification="mine")"# + "\n"
+        #expect(try AgentPermissionRules.merge(.codex, existing: Data(edited.utf8)).added == AgentPermissionRules.codexRules.count)
+    }
+
+    @Test("Claude Code asks before raw adb and devicectl by full path; Codex, which matches words from the start, gets no such line")
+    func fullPathRules() throws {
+        let ask = AgentPermissionRules.patterns(.ask)
+        for pattern in ["Bash(*/adb *)", "Bash(*/devicectl *)", "Bash(*/xcrun devicectl *)"] {
+            #expect(ask.contains(pattern))
+        }
+        let merge = try AgentPermissionRules.merge(.codex, existing: nil)
+        let text = String(decoding: try #require(merge.content), as: UTF8.self)
+        #expect(text.contains(#"pattern=["adb"]"#))
+        #expect(!text.contains("pattern=[]") && !text.contains("*/"))
+        #expect(!AgentPermissionRules.printedJSON().contains("pattern=[]"))
+    }
+
+    @Test("the loosening flags a person gate does not stop ask first")
+    func looseningFlagsAsk() {
+        let ask = AgentPermissionRules.patterns(.ask)
+        for pattern in ["Bash(offsider record-video --unmasked*)", "Bash(offsider stream-video --unmasked*)", "Bash(offsider logs --no-redact*)", "Bash(offsider rn logbox * --no-redact*)", "Bash(offsider batch *type --file*)"] {
+            #expect(ask.contains(pattern))
+        }
+    }
+
     private func json(_ patterns: [String]) -> String {
         "[" + patterns.map { "\"\($0)\"" }.joined(separator: ", ") + "]"
     }
@@ -108,12 +147,12 @@ struct AgentPermissionRulesTests {
         let text = String(decoding: try #require(merge.content), as: UTF8.self)
         #expect(!text.contains(#"pattern=["offsider", "credential"], decision"#))
         #expect(text.contains(#"prefix_rule(pattern=["offsider", "credential", "remove"], decision="prompt""#))
-        #expect(merge.added == AgentPermissionRules.rules.count)
+        #expect(merge.added == AgentPermissionRules.codexRules.count)
         #expect(merge.replaced == 1)
         #expect(try AgentPermissionRules.merge(.codex, existing: merge.content).added == 0)
 
         let commented = AgentPermissionRules.codexHeader + #"# prefix_rule(pattern=["offsider"], decision="forbidden")"# + "\n"
-        #expect(try AgentPermissionRules.merge(.codex, existing: Data(commented.utf8)).added == AgentPermissionRules.rules.count, "a comment decides nothing")
+        #expect(try AgentPermissionRules.merge(.codex, existing: Data(commented.utf8)).added == AgentPermissionRules.codexRules.count, "a comment decides nothing")
 
         for decision in ["forbidden", "allow"] {
             let moved = older.replacingOccurrences(of: #"decision="prompt""#, with: #"decision="\#(decision)""#)
@@ -211,7 +250,7 @@ struct AgentPermissionRulesTests {
     func codexRules() throws {
         let merge = try AgentPermissionRules.merge(.codex, existing: nil)
         let text = String(decoding: try #require(merge.content), as: UTF8.self)
-        #expect(merge.added == AgentPermissionRules.rules.count)
+        #expect(merge.added == AgentPermissionRules.codexRules.count)
         #expect(text.contains(#"prefix_rule(pattern=["offsider", "devices", "add"], decision="forbidden", justification="#))
         #expect(text.contains(#"prefix_rule(pattern=["offsider", "login"], decision="prompt", justification="#))
         #expect(!text.contains("untrusted"))
@@ -270,9 +309,8 @@ struct AgentPermissionRulesTests {
         try FileManager.default.createSymbolicLink(at: claude.appendingPathComponent("settings.json"), withDestinationURL: real)
 
         let first = Init.installRules([.claudeCode, .codex], home: home.path)
-        let count = AgentPermissionRules.rules.count
         #expect(first.failures.isEmpty)
-        #expect(first.lines == ["Rules added to ~/.claude/settings.json (\(count) new)", "Rules added to ~/.codex/rules/offsider.rules (\(count) new)"])
+        #expect(first.lines == ["Rules added to ~/.claude/settings.json (\(AgentPermissionRules.rules.count) new)", "Rules added to ~/.codex/rules/offsider.rules (\(AgentPermissionRules.codexRules.count) new)"])
         #expect(try FileManager.default.destinationOfSymbolicLink(atPath: claude.appendingPathComponent("settings.json").path) == real.path)
         #expect(try settings(Data(contentsOf: real))["theme"] as? String == "dark")
         let mode = try FileManager.default.attributesOfItem(atPath: real.path)[.posixPermissions] as? Int

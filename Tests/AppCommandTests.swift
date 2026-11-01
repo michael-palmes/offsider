@@ -160,6 +160,24 @@ struct AppCommandTests {
         #expect(try AppTarget.resolve(Self.option("com.example.named"), route: Self.route(Self.simulator, allowance: nil), command: "info", profile: { profile }) == "com.example.named")
     }
 
+    @Test("a broken offsider.login.json exits 64 with its own message, and never falls through to a pin")
+    @MainActor
+    func brokenProfileIsNotNoApp() throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("offsider-app-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        try Data(#"{"package":"com.example.other","spare":1}"#.utf8).write(to: folder.appendingPathComponent(LoginProfile.fileName))
+
+        let pinned = PolicyFixtures.entry(.android, key: PolicyFixtures.serial, apps: ["com.example.pinned"])
+        let error = #expect(throws: CLIError.self) {
+            try AppTarget.resolve(Self.option(nil), route: Self.route(Self.phone, allowance: pinned), command: "launch", gate: Self.gate(pinned), profile: { try LoginProfiles.implicit(project: folder.path) })
+        }
+        #expect(error?.reason == .usage)
+        #expect(error?.userFacingDescription.contains("spare") == true)
+        #expect(error?.userFacingDescription.hasSuffix("Nothing was read or sent.") == true)
+        #expect(try AppTarget.resolve(Self.option("com.example.pinned"), route: Self.route(Self.phone, allowance: pinned), command: "launch", gate: Self.gate(pinned), profile: { throw CLIError(errorDescription: "never read") }) == "com.example.pinned")
+    }
+
     @Test("with no app to act on, the command exits 64 naming --app")
     @MainActor
     func targetRequired() {
@@ -181,7 +199,7 @@ struct AppCommandTests {
         #expect(error?.hint == "offsider devices add")
     }
 
-    @Test("a phone allowed for any app still refuses browsers, home screens and system apps", arguments: ["com.android.chrome", "com.android.settings", "com.google.android.apps.nexuslauncher"])
+    @Test("a phone allowed for any app still refuses browsers, home screens and system apps", arguments: ["com.android.chrome", "com.android.settings", "com.google.android.apps.nexuslauncher", " com.android.chrome", "com.android.chrome ", "com.android.chrome\n"])
     @MainActor
     func anyAppPhoneRefusesDenyList(_ app: String) {
         let any = PolicyFixtures.entry(.android, key: PolicyFixtures.serial, apps: [])
@@ -189,6 +207,11 @@ struct AppCommandTests {
             try AppTarget.resolve(Self.option(app), route: Self.route(Self.phone, allowance: any), command: "launch", gate: Self.gate(any), profile: { nil })
         }
         #expect(error?.reason == .appNotAllowed)
+    }
+
+    @Test("a padded --app is refused at parsing, before any device is named", arguments: [" com.android.chrome", "com.android.chrome ", "\tcom.android.chrome"])
+    func paddedAppRefusedAtParsing(_ app: String) {
+        #expect(throws: (any Error).self) { try AppTargetOption.parse(["--app", app]) }
     }
 
     @Test("a phone allowed for any app drives the app a command names")
