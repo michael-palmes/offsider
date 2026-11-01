@@ -8,6 +8,7 @@ import OffsiderCore
 final class TreeCacheFixture {
     let directory: String
     var now = Date(timeIntervalSince1970: 1_800_000_000)
+    var cacheOn = true
     private(set) var sleeps: [Duration] = []
 
     init() throws {
@@ -23,6 +24,7 @@ final class TreeCacheFixture {
         let directory = directory
         return TreeCacheEnvironment(
             directory: { directory },
+            cacheOn: cacheOn,
             now: { self.now },
             sleep: { duration in
                 self.sleeps.append(duration)

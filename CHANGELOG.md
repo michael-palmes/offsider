@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Fixed
+
+- With `OFFSIDER_TREE_CACHE=off`, a password a show-password toggle revealed stays hidden in trees and screenshots and still stops `record-video`. Offsider keeps its private `.secure.json`, which holds where password fields are and no values. The variable still stops the tree files, so `describe-ui --diff`, the tap guard and batch read steps see no earlier tree.
+
 ## [0.15.0] - 2026-11-01
 
 ### Added

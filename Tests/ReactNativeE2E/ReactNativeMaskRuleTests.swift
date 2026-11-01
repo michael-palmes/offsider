@@ -14,15 +14,15 @@ struct ReactNativeMaskRuleTests {
     }
 
     /// Runs offsider in `directory`, where it finds `offsider.mask.json`.
-    private static func runIn(_ directory: URL, _ arguments: String, platform: RNPlatform, timeout: TimeInterval = 60) async throws -> SeparatedCommandOutput {
+    private static func runIn(_ directory: URL, _ arguments: String, platform: RNPlatform, environment: [String: String]? = nil, timeout: TimeInterval = 60) async throws -> SeparatedCommandOutput {
         if platform == .android { try await AndroidE2E.dismissANRDialog() }
         let binary = try TestHelpers.getOffsiderPath()
         let device = try await device(platform)
-        return try await CommandRunner.runSeparated("cd \(AndroidE2E.quote(directory.path)) && \(binary) \(arguments) --device \(device)", timeout: timeout)
+        return try await CommandRunner.runSeparated("cd \(AndroidE2E.quote(directory.path)) && \(binary) \(arguments) --device \(device)", environment: environment, timeout: timeout)
     }
 
-    private static func recordVideo(to output: String, in directory: URL, platform: RNPlatform) async throws -> SeparatedCommandOutput {
-        try await runIn(directory, "record-video --duration 3 --output \(AndroidE2E.quote(output))", platform: platform)
+    private static func recordVideo(to output: String, in directory: URL, platform: RNPlatform, environment: [String: String]? = nil) async throws -> SeparatedCommandOutput {
+        try await runIn(directory, "record-video --duration 3 --output \(AndroidE2E.quote(output))", platform: platform, environment: environment)
     }
 
     /// Every file of the per-device tree cache, as a command leaves it on disk.
@@ -71,6 +71,39 @@ struct ReactNativeMaskRuleTests {
             #expect(recording.exitCode == 1, "\(recording.stderr)")
             #expect(recording.stderr.contains("will not start while a password field is on screen"), "\(recording.stderr)")
             #expect(!FileManager.default.fileExists(atPath: video), "a refused recording wrote a file")
+        }
+    }
+
+    @Test("with the tree cache off, a password a toggle revealed still stays hidden in trees, is painted, and stops video", arguments: RNPlatform.enabled)
+    func revealedPasswordWithCacheOff(platform: RNPlatform) async throws {
+        let app = RNApp(platform)
+        try await app.open("mask-rule-test")
+        let off = ["OFFSIDER_TREE_CACHE": "off"]
+        let folder = try OffsiderPrivateDirectory.ensureSubdirectory(OffsiderPrivateDirectory.treesDirectoryName)
+        let device = try await Self.device(platform)
+        let name = SecureFieldRecord.fileName(platform: platform == .android ? .android : .ios, device: device)
+        OffsiderPrivateDirectory.removeFile(named: name, in: folder)
+
+        try await app.run("tap --id mask-rule-test-reveal", environment: off)
+        #expect(FileManager.default.fileExists(atPath: (folder as NSString).appendingPathComponent(name)), "with the cache off, the tap remembered no password field")
+        try await app.run("wait --label 'Hide Password' --timeout 10", environment: off)
+
+        let summary = try await app.run("describe-ui --summary", environment: off).stdout
+        #expect(summary.contains("revealed password field"), "\(summary)")
+        #expect(try await !app.run("describe-ui", environment: off).stdout.contains(Self.password))
+
+        try await ReactNativeEnvironmentTests.withTemporaryDirectory { directory in
+            let shot = directory.appendingPathComponent("revealed.png").path
+            let json = try await app.run("screenshot --scale points --json --output \(AndroidE2E.quote(shot))", environment: off).stdout
+            let report = try JSONDecoder().decode(ReactNativeEvidenceTests.Shot.self, from: Data(json.utf8))
+            #expect(report.maskedBy?["secure"] == 1, "\(json)")
+
+            let video = directory.appendingPathComponent("revealed.mp4").path
+            let recording = try await Self.recordVideo(to: video, in: directory, platform: platform, environment: off)
+            #expect(recording.exitCode == 1, "\(recording.stderr)")
+            #expect(recording.stderr.contains("will not start while a password field is on screen"), "\(recording.stderr)")
+            #expect(!FileManager.default.fileExists(atPath: video), "a refused recording wrote a file")
+            #expect(try Self.isBlack(at: try await app.frame(of: "mask-rule-test-password"), in: shot), "the revealed password was left unmasked")
         }
     }
 
