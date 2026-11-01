@@ -202,6 +202,18 @@ struct IOSDeviceInputE2ETests {
         try await IOSDeviceE2E.requireBrokerInput()
     }
 
+    @Test("a short slow swipe --hold-end scrolls a list that also takes a long press, and stops where it was left")
+    func swipeHoldEndScrollsHoldPressList() async throws {
+        _ = try IOSDeviceE2E.team()
+        try await IOSDeviceE2E.requireAwake()
+        try await IOSDeviceE2E.open("hold-scroll-test", waitingForLabel: "Long Scroll Row 5")
+        let before = try IOSDeviceE2E.frame(of: try await IOSDeviceE2E.node(labelled: "Long Scroll Row 5")).y
+        try await IOSDeviceE2E.run("swipe --start-x 215 --start-y 700 --end-x 215 --end-y 630 --duration 0.6 --hold-end 400 \(Self.app)")
+        let after = try IOSDeviceE2E.frame(of: try await IOSDeviceE2E.node(labelled: "Long Scroll Row 5")).y
+        #expect(before - after >= 45 && before - after <= 75, "row 5 moved from y \(before) to y \(after)")
+        _ = try await IOSDeviceE2E.node(labelled: "Long Scroll Selected: None")
+    }
+
     @Test("ASCII type reaches the focused field through the broker's keyboard")
     func typeASCII() async throws {
         _ = try IOSDeviceE2E.team()

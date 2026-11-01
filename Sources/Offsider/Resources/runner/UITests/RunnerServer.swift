@@ -21,6 +21,11 @@ struct RunnerResponse {
         envelope(status, ["ok": false, "error": ["code": code, "message": message]])
     }
 
+    /// A system alert or sheet is in front; `title` is what iOS calls it.
+    static func systemPrompt(_ title: String) -> RunnerResponse {
+        failure(409, code: "system_prompt", message: title)
+    }
+
     /// Checked first: an invalid object (a NaN, say) raises an Objective-C exception that `try?` cannot catch.
     private static func envelope(_ status: Int, _ object: [String: Any]) -> RunnerResponse {
         guard JSONSerialization.isValidJSONObject(object), let body = try? JSONSerialization.data(withJSONObject: object) else {
@@ -69,15 +74,75 @@ enum RunnerHTTP {
     }
 }
 
+/// What the main thread is on and the system prompt seen before it began, read off the main thread while a stuck app holds it.
+final class RunnerMainThreadState {
+    /// A tree read can take seconds, so a request on the main thread for longer than this, with a prompt up, counts as stuck behind it.
+    static let stuckAfter: TimeInterval = 3
+    private let lock = NSLock()
+    private var startedAt: Date?
+    private var prompt: String?
+
+    func begin() {
+        lock.withLock {
+            startedAt = Date()
+            prompt = nil
+        }
+    }
+
+    func note(prompt: String) {
+        lock.withLock { self.prompt = prompt }
+    }
+
+    func end() {
+        lock.withLock {
+            startedAt = nil
+            prompt = nil
+        }
+    }
+
+    /// The prompt in front while the main thread is stuck; nil otherwise.
+    var stuckPrompt: String? {
+        lock.withLock {
+            guard let startedAt, Date().timeIntervalSince(startedAt) > Self.stuckAfter else { return nil }
+            return prompt
+        }
+    }
+}
+
+/// One reply per request: a stuck request is answered early, and its handler's late result is dropped.
+final class RunnerReply {
+    private let lock = NSLock()
+    private var answered = false
+    private let deliver: (RunnerResponse) -> Void
+
+    init(deliver: @escaping (RunnerResponse) -> Void) {
+        self.deliver = deliver
+    }
+
+    var isOpen: Bool { lock.withLock { !answered } }
+
+    func send(_ response: RunnerResponse) {
+        let first = lock.withLock {
+            defer { answered = true }
+            return !answered
+        }
+        if first { deliver(response) }
+    }
+}
+
 /// Listens on 127.0.0.1 only; usbmuxd reaches it from the Mac, nothing on the network can.
 final class RunnerServer {
     private let token: String
+    private let mainThread: RunnerMainThreadState
     private let handler: (RunnerRequest) -> RunnerResponse
     private let listener: NWListener
     private let queue = DispatchQueue(label: "com.mpalmes.offsider.runner.server")
+    /// `RunnerClient.timeout`: how long Offsider waits for input it sends.
+    private static let inputQueueLimit: TimeInterval = 5
 
-    init(port: UInt16, token: String, handler: @escaping (RunnerRequest) -> RunnerResponse) throws {
+    init(port: UInt16, token: String, mainThread: RunnerMainThreadState, handler: @escaping (RunnerRequest) -> RunnerResponse) throws {
         self.token = token
+        self.mainThread = mainThread
         self.handler = handler
         let parameters = NWParameters.tcp
         parameters.allowLocalEndpointReuse = true
@@ -128,11 +193,29 @@ final class RunnerServer {
                 guard request.headers["x-offsider-token"] == self.token else {
                     return self.send(.failure(401, code: "unauthorised", message: "missing or wrong X-Offsider-Token"), on: connection)
                 }
-                DispatchQueue.main.async {
-                    let response = self.handler(request)
-                    self.queue.async { self.send(response, on: connection) }
-                }
+                if let prompt = self.mainThread.stuckPrompt { return self.send(.systemPrompt(prompt), on: connection) }
+                self.dispatch(request, reply: RunnerReply { [queue = self.queue] response in
+                    queue.async { self.send(response, on: connection) }
+                })
             }
+        }
+    }
+
+    /// Runs on the main thread, as XCUITest requires. Input that waited longer than the client does is dropped, so a stuck thread never sends it late.
+    private func dispatch(_ request: RunnerRequest, reply: RunnerReply) {
+        let received = Date()
+        DispatchQueue.main.async {
+            guard reply.isOpen else { return }
+            if RunnerCommands.inputRoutes.contains(request.path), Date().timeIntervalSince(received) > Self.inputQueueLimit {
+                return reply.send(.failure(409, code: "queued_too_long", message: "this input waited too long for the runner, so it was not sent"))
+            }
+            self.mainThread.begin()
+            let response = self.handler(request)
+            self.mainThread.end()
+            reply.send(response)
+        }
+        queue.asyncAfter(deadline: .now() + RunnerMainThreadState.stuckAfter + 0.1) { [mainThread] in
+            if let prompt = mainThread.stuckPrompt { reply.send(.systemPrompt(prompt)) }
         }
     }
 
