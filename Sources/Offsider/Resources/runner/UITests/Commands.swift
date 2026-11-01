@@ -3,7 +3,7 @@ import XCTest
 
 /// Every route the runner serves; called on the main thread, as XCUITest requires.
 final class RunnerCommands {
-    static let version = "2"
+    static let version = "3"
 
     let buildKey: String
     private(set) var lastActivity = Date()
@@ -20,6 +20,7 @@ final class RunnerCommands {
         guard let body else { return .failure(400, code: "bad_request", message: "the body is not a JSON object") }
         if request.method == "POST", request.path == "/foreground" { return foreground(body) }
         if let requested = body["app"] as? String, XCUIApplication(bundleIdentifier: requested).state != .runningForeground {
+            if ScreenState.isLocked == true { return .failure(409, code: "screen_locked", message: "the lock screen is up") }
             return .failure(409, code: "app_not_in_front", message: "\(requested) is not the app in front")
         }
         switch (request.method, request.path) {
@@ -32,6 +33,10 @@ final class RunnerCommands {
         case ("POST", "/home"):
             XCUIDevice.shared.press(.home)
             return .ok([String: Any]())
+        case ("GET", "/screen"):
+            return screen()
+        case ("POST", "/lock"):
+            return ScreenState.pressLock() ? .ok([String: Any]()) : .failure(409, code: "lock_unavailable", message: "this Xcode's XCTest cannot press the lock button")
         case ("POST", "/stop"):
             stopRequested = true
             return .ok([String: Any]())
@@ -49,26 +54,41 @@ final class RunnerCommands {
     private func ping() -> RunnerResponse {
         let screen = UIScreen.main
         let scale = screen.nativeScale
-        let active = ActiveApplication.privateActive()
         return .ok([
             "version": Self.version,
             "buildKey": buildKey,
             "screenBounds": ["width": screen.nativeBounds.width / scale, "height": screen.nativeBounds.height / scale],
             "scale": scale,
             "orientation": Self.orientationName(XCUIDevice.shared.orientation),
-            "activeBundleId": active.flatMap(ActiveApplication.bundleID(of:)) as Any? ?? NSNull(),
+            "activeBundleId": ActiveApplication.activeBundleIDs()?.first as Any? ?? NSNull(),
         ])
     }
 
-    /// Whether the named app is in front, by XCTest's private active-app lookup, else, where Xcode lacks it, by the app's own foreground state; a remembered app never stands in for it.
+    private func screen() -> RunnerResponse {
+        guard let on = ScreenState.isOn, let locked = ScreenState.isLocked else {
+            return .failure(409, code: "screen_unreadable", message: "the device did not report its screen state")
+        }
+        return .ok(["on": on, "locked": locked])
+    }
+
+    /// Whether the named app is in front, by XCTest's private active-app lookups, where SpringBoard stands for a sheet or alert over it; else, where Xcode has neither, by the app's own foreground state. A remembered app never stands in.
     private func foreground(_ body: [String: Any]) -> RunnerResponse {
         guard let app = body["app"] as? String, !app.isEmpty else { return .failure(400, code: "bad_request", message: "app is required") }
         let running = XCUIApplication(bundleIdentifier: app).state == .runningForeground
-        guard ActiveApplication.hasPrivateLookup else {
-            return .ok(["inFront": running, "activeBundleId": running ? app as Any : NSNull()])
+        // A dark screen counts as locked: the lock state itself can lag the press by up to a second.
+        let locked = ScreenState.isLocked == true || ScreenState.isOn == false
+        var reply: [String: Any] = ["locked": locked]
+        guard let active = ActiveApplication.activeBundleIDs() else {
+            reply["inFront"] = running && !locked
+            reply["activeBundleId"] = running ? app as Any : NSNull()
+            reply["sheetsVisible"] = false
+            return .ok(reply)
         }
-        let active = ActiveApplication.privateActive().flatMap(ActiveApplication.bundleID(of:))
-        return .ok(["inFront": active == app && running, "activeBundleId": active as Any? ?? NSNull()])
+        let covered = app != ActiveApplication.springBoard && active.contains(ActiveApplication.springBoard)
+        reply["inFront"] = running && active.contains(app) && !covered && !locked
+        reply["activeBundleId"] = active.first as Any? ?? NSNull()
+        reply["sheetsVisible"] = true
+        return .ok(reply)
     }
 
     private func snapshot(_ app: XCUIApplication) -> RunnerResponse {

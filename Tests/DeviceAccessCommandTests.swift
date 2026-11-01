@@ -915,7 +915,7 @@ struct DeviceAccessCommandTests {
     func appMenuOrder() {
         let policy = PhysicalDevicePolicy(managed: .none, list: .empty)
         let front = DeviceAccessAllow.appMenu(Self.apps, platform: .android, policy: policy, profile: nil, front: "com.mpalmes.offsider.playground.rn")
-        #expect(front.choices == [.app(Self.apps[1]), .app(Self.apps[0]), .any, .wholeDevice, .type])
+        #expect(front.choices == [.app(Self.apps[1]), .app(Self.apps[0]), .any, .wholeDevice, .type, .testDevice])
         #expect(front.recommended == 0)
         #expect(front.selected == 0)
         let rows = front.rows()
@@ -928,11 +928,11 @@ struct DeviceAccessCommandTests {
 
         let none = DeviceAccessAllow.appMenu(Array(Self.apps.prefix(2)), platform: .ios, policy: policy, profile: nil, front: "com.example.missing")
         #expect(none.recommended == nil)
-        #expect(none.choices == [.app(Self.apps[0]), .app(Self.apps[1]), .any, .type])
+        #expect(none.choices == [.app(Self.apps[0]), .app(Self.apps[1]), .any, .type, .testDevice])
         #expect(none.selected == 0)
 
         let empty = DeviceAccessAllow.appMenu([], platform: .ios, policy: policy, profile: nil, front: nil)
-        #expect(empty.choices == [.any, .type])
+        #expect(empty.choices == [.any, .type, .testDevice])
         #expect(empty.selected == 1)
     }
 

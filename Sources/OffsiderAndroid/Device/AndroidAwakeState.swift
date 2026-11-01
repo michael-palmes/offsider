@@ -38,6 +38,7 @@ enum AndroidAwakeState {
     static let enterUsage: UInt32 = 40
 
     static let wakeKey = "input keyevent KEYCODE_WAKEUP"
+    static let sleepKey = "input keyevent KEYCODE_SLEEP"
 
     static func wakeScript(screenOn: Bool, lockScreen: LockScreen) -> (script: String, sent: [String])? {
         var commands: [String] = []

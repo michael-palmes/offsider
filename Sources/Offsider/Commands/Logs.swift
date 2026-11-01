@@ -302,7 +302,7 @@ struct Logs: AsyncParsableCommand {
             return (scoped, "Reading only \(profileApp)'s log, which offsider.login.json names; pass --all for the whole device's.")
         }
         let gate = DevicePolicyGate.fixed(policy)
-        let whole = allowance.allowsWholeDevice
+        let whole = allowance.allowsWholeDevice || policy.drivesWhole(allowance)
         let pins = allowance.pinnedApps.filter { policy.permits(app: $0, on: allowance) }
         let fallback = pins.count == 1 ? pins[0] : profileApp(profile(), platform: platform).flatMap { policy.permits(app: $0, on: allowance) ? $0 : nil }
         var scoped = query

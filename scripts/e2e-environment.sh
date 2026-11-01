@@ -147,20 +147,26 @@ offsider_command() {
     printf '%q' "${OFFSIDER_BIN_PATH:-offsider}"
 }
 
-# Prints "id<TAB>name" of the one active allowance for a platform (ios or android) that pins `app`.
+# Prints 1 when one device's JSON row is a test device managed policy leaves in force.
+allowance_drives_whole() {
+    if [[ "$1" == *'"testDevice":true'* && "$1" != *'"testDeviceOff"'* ]]; then printf 1; fi
+}
+
+# Prints "id<TAB>name" of the one active allowance for a platform (ios or android) that pins `app`, or is a test device in force.
 # Anything else prints why in one line and fails, so a device a person allowed for another app is never driven.
 allowed_device_for() {
     local platform="$1" app="$2"
     local status count i
     status="$("$OFFSIDER_BIN_PATH" devices status --json 2>/dev/null)" || status=""
     count="$(printf '%s' "$status" | plutil -extract devices raw -o - - 2>/dev/null)" || count=0
-    local ids=() names=() apps=()
+    local ids=() names=() apps=() whole=()
     for (( i = 0; i < count; i++ )); do
         [[ "$(printf '%s' "$status" | plutil -extract "devices.$i.platform" raw -o - - 2>/dev/null)" == "$platform" ]] || continue
         [[ "$(printf '%s' "$status" | plutil -extract "devices.$i.active" raw -o - - 2>/dev/null)" == true ]] || continue
         ids+=("$(printf '%s' "$status" | plutil -extract "devices.$i.id" raw -o - - 2>/dev/null)")
         names+=("$(printf '%s' "$status" | plutil -extract "devices.$i.name" raw -o - - 2>/dev/null)")
         apps+=("$(printf '%s' "$status" | plutil -extract "devices.$i.apps" json -o - - 2>/dev/null || echo '[]')")
+        whole+=("$(allowance_drives_whole "$(printf '%s' "$status" | plutil -extract "devices.$i" json -o - - 2>/dev/null)")")
     done
     local label="Android phone"
     [[ "$platform" == ios ]] && label="iPhone or iPad"
@@ -174,7 +180,7 @@ allowed_device_for() {
         printf 'More than one %s is allowed (%s), so none is picked.\n' "$label" "${joined%, }"
         return 1
     fi
-    if [[ "${apps[0]}" != *"\"$app\""* ]]; then
+    if [[ "${whole[0]}" != 1 && "${apps[0]}" != *"\"$app\""* ]]; then
         printf '%s is allowed, but its allowance does not pin %s, so it is not picked.\n' "${names[0]}" "$app"
         return 1
     fi

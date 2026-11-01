@@ -8,6 +8,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Added
 
+- Test devices: `devices add --test-device`, or "Test device: whole device" in the app menu, lets agents drive all of a phone or tablet a person says holds nothing personal: any app, Settings, system alerts and sheets, with no front-app check and `--app` optional. It asks "Anything personal on it?" with "Yes, stop" chosen, then Touch ID as usual, and offers "Until removed" first. The driving line and `devices status` say so (`"testDevice": true`). On a Mac with any forced Offsider key it is a plain Any app allowance until an administrator forces the new `allowTestDevices` to true, and a forced bundle list always wins. `test-runner.sh --ios-device` and `--android-phone` accept one.
+- `offsider sleep` turns a screen off to limit burn-in, on an allowed iPhone or iPad or an Android device, and `wake` now works on an allowed iPhone or iPad. Neither needs an app in front, and each sends nothing when the screen is already as asked. A test iPhone or iPad also sleeps when its session goes idle or `session stop` ends it, and wakes for the next command.
 - `type --into-id`, `--into-label` and `--into-label-contains` take `--nth` and `--topmost`, as `tap` does, for a field whose id matches twice.
 - `type --unlisted-field`: on Android, types with the keyboard up for a real editor hidden from accessibility, the one thing `no_focused_field` left no way through.
 - `batch` takes a `drag` step, written and limited like `offsider drag`.
@@ -58,6 +60,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Fixed
 
+- `button lock` and `button side-button` on an iPhone or iPad no longer open Siri: the plain press held for 0.4 s, exactly where iOS starts Siri, and now holds for 0.34 s.
+- On Xcode 27.1 and later, a system alert, a sheet such as Siri's or Control Center over the pinned app no longer lets a screenshot or input through: the front-app check had lost XCTest's lookup and fell back to the app's own state, which misses them. It now uses XCTest's accessibility client, and an Xcode with no lookup says so in a notice. The runner rebuilds once.
+- A locked iPhone or iPad now says `device_locked` and names `offsider wake`, rather than telling you to open the app, and the check no longer passes in the moment after a lock press.
 - `devices add`'s team menu tells two teams with one name apart: each row says `Free` or `Paid` where Xcode's local preferences say, and shows the account's email when a development certificate's common name holds one. Free teams come last. The email is never saved.
 - `doctor`'s `ios-device.runner-signing` counts Xcode's signed-in teams on Xcode 27, where it said none.
 - `certificate_not_trusted` (exit 7): a runner the device will not launch because it does not trust the certificate names the fix, Settings > General > VPN & Device Management, and carries an `ask`, where it failed with `runner_unavailable` and said to check UI Automation.

@@ -14,6 +14,11 @@ final class IOSDeviceState {
     var streamNoticeShown = false
     var captureSources: [String: String] = [:]
     var pinPolicy: (@MainActor (String) -> String?)?
+    /// A test device: no app is pinned and no front-app check is made.
+    var drivesWhole = false
+    var awakeChecked: Set<String> = []
+    var brokerNudged: [String: Date] = [:]
+    var sheetsNoticeShown = false
     var pinConfirmed: [String: Date] = [:]
     /// Devices sent input since their pinned app was last confirmed in front; their next check is timed as `foreground-recheck`.
     var inputSincePinCheck: Set<String> = []
