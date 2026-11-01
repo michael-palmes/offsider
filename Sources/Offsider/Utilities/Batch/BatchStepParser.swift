@@ -56,6 +56,24 @@ struct BatchStepParser {
         if unsupportedFlags.contains(where: has) {
             throw ValidationError(unsupportedFlagsMessage)
         }
+        // Only these two take it, so a step typing this very text is not refused.
+        if [BatchStepKind.swipe.rawValue, BatchStepKind.drag.rawValue].contains(tokens.first), has("--screenshot-at") {
+            throw ValidationError(HoldScreenshotOptions.batchMessage)
+        }
+    }
+
+    /// Refuses before any step runs what the tokens alone rule out, so a batch that can never finish sends nothing.
+    nonisolated static func preflight(_ tokens: [String]) throws {
+        guard let first = tokens.first else { return }
+        guard let kind = BatchStepKind(rawValue: first) else {
+            throw ValidationError("Unsupported batch step '\(first)'.")
+        }
+        guard kind != .sleep else { return }
+        try rejectUnsupportedFlags(tokens)
+        if kind == .rn, tokens.count < 2 || tokens[1] != "devmenu" {
+            throw ValidationError(rnStepMessage)
+        }
+        try rejectPerStepDevice(Array(tokens.dropFirst(kind == .rn ? 2 : 1)))
     }
 
     /// Parses a step; input steps also resolve their targets now, reads run later through `BatchReadable`.
@@ -69,6 +87,7 @@ struct BatchStepParser {
             return .input([])
         }
 
+        try preflight(tokens)
         guard let kind = BatchStepKind(rawValue: firstToken) else {
             throw ValidationError("Unsupported batch step '\(firstToken)'.")
         }
@@ -77,12 +96,7 @@ struct BatchStepParser {
             return .input(try parseSleep(tokens))
         }
 
-        try rejectUnsupportedFlags(tokens)
-        if kind == .rn {
-            guard tokens.count > 1, tokens[1] == "devmenu" else { throw ValidationError(rnStepMessage) }
-        }
         let stepArguments = Array(tokens.dropFirst(kind == .rn ? 2 : 1))
-        try rejectPerStepDevice(stepArguments)
         if let hint = ArgumentHints.hint(for: tokens) {
             throw ValidationError(hint.message)
         }

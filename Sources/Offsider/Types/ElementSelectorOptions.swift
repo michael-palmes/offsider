@@ -197,7 +197,9 @@ struct ElementSelectorOptions: ParsableArguments {
         guard actionable.isEmpty else {
             return actionable.filter { node in !actionable.contains { holds(node, $0) } }
         }
-        return pool.filter { node in !pool.contains { holds($0, node) } }
+        // A copy of a node inside it is the same element, so it hides neither; a tree can even make two matches each hold the other.
+        let outermost = pool.filter { node in !pool.contains { holds($0, node) && !$0.isSameElement(as: node) } }
+        return outermost.isEmpty ? pool : outermost
     }
 
     /// Plain text reads disabled inside a disabled control, since a touch on it goes to that control; a control answers for itself.

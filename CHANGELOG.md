@@ -63,6 +63,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Fixed
 
+- `wait` and `assert` no longer kill an iPhone's first runner start with `device_unresponsive`: every command that reads with a setup bound now runs unbound on a phone or tablet, in `batch` steps too.
+- `wait`, `assert`, `describe-ui`, `screenshot`, `turnstile` and `rn logbox` start an emulator's helper under a bound of its own, so a slow start reaches its uiautomator fallback instead of `device_unresponsive`.
+- A wait after a simulator boot keeps polling through a screen that is not ready yet, up to `--timeout`, and selector input retries it; the failure's reason is now `tree_read_failed`.
+- `wait --settled --ignore-values` no longer calls a moving chart settled on iOS: an element that takes new text and leaves its line counts as moved.
+- `wait --settled` with an `--ignore-region` or `--ignore-id` that leaves out the whole screen exits 64 at once, also with `--settle-by screen`, where it used to pass; one that holds everything under the root says so at the timeout instead of blaming an unreadable tree.
+- `wait --any` beside `--settled`, `--region` or `--seconds` with no selector exits 64 rather than being ignored.
+- `wait --settled --settle-by both --wait-lock` claims the device before its bound starts, as `--settled` does.
+- `assert` and `wait` with `--enabled` or `--disabled` no longer crash on a group holding its own copy, and judge that group beside a separate match.
+- `batch` refuses `--screenshot-at`, a per-step `--device` or `--wait-lock`, bad quoting, an unknown step and a bad `rn` step before sending anything, not after earlier steps ran; `--continue-on-error` still reports an unknown step and runs the rest.
+- `batch` screenshot steps on an iPhone or iPad report `capture`, as `screenshot --json` does.
+- `button home --verify` on an iOS simulator no longer passes on a system alert over an app; it compares the tree there. It and a `--verify` or selector read of a hung simulator now exit `device_unresponsive` instead of holding the device.
+- On a screen turned on its panel (an unfolded iPhone Duo, or any simulator in landscape), system alerts and the home screen report frames in screen points, so label taps reach them.
+
 - iPhone and iPad: a system prompt over the app, such as Allow Paste, no longer leaves every command timing out at `runner_unavailable`. A read exits 7 `system_prompt_in_front` quoting the prompt, within about 3 s and at once after that, and asks a person to answer it on the device; a pinned app's input check names it too. The runner is no longer restarted behind it, and runner input that waited over 5 s is dropped, not sent late.
 - `swipe`: a short slow swipe no longer rests under the finger for its whole step, which a list that also takes a long press read as one, so it never scrolled while the command reported success. The finger now moves at least every 0.1 s unless `--delta` is set, in `gesture` swipe presets too.
 - `swipe` and `drag`: `--hold-end` now stops a list. A fast drag flung on however long the hold, as a list reads its speed from the last moves, so these now slow over the last 3 points; `--hold-end 0` still flings.

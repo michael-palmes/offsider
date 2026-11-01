@@ -75,6 +75,7 @@ struct DescribeUI: AsyncParsableCommand {
         let console = Console.current
         let described = try await console.progress("Reading the screen") {
             try await watchdog.guardingSetup(device: deviceOption.id) { try await route.backend.prepare() }
+            if !rawSource { try await watchdog.guardingTreeStart(on: route) }
             return try await read(on: route, watchdog: watchdog)
         }
         console.data(described)

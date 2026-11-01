@@ -169,6 +169,8 @@ struct Screenshot: AsyncParsableCommand {
         let masks = try await masksWithRunDefaults(maskPlan())
         let report = try await console.progress("Capturing the screen") {
             try await watchdog.guardingSetup(device: deviceOption.id) { try await route.backend.prepare() }
+            let standing = try MaskConfigs.current()?.config.plan
+            if (standing.map(masks.union) ?? masks).needsTree { try await watchdog.guardingTreeStart(on: route) }
             // The bound also covers a --wait-lock wait, since an Android mask's tree read takes the device's lock.
             return try await watchdog.guardingRead(of: route.device, extra: DeviceClaims.current.longestWait) {
                 try await take(request, on: route, masks: masks, plain: !json)
@@ -197,14 +199,12 @@ struct Screenshot: AsyncParsableCommand {
     /// Standalone: a tree mask reads one fresh tree; without one, no tree is read. `plain` allows writing the device's PNG as it came.
     @MainActor
     func take(_ request: ScreenshotRequest, on route: DeviceRouter.Route, masks: MaskPlan, plain: Bool = false) async throws -> ScreenshotReport {
-        var report = try await take(request, on: route, masks: masks, plain: plain) {
+        try await take(request, on: route, masks: masks, plain: plain) {
             guard let reader = route.backend as? any MaskTreeReading else {
                 return try await route.backend.readingWithGaps(on: route.device) { try await route.backend.accessibilityTree(for: route.device) }
             }
             return try await reader.maskTree(for: route.device)
         }
-        report.captureSource = (route.backend as? any CaptureSourceReporting)?.captureSource(for: route.device)
-        return report
     }
 
     private static func milliseconds(since start: ContinuousClock.Instant) -> Int {
@@ -223,8 +223,21 @@ struct Screenshot: AsyncParsableCommand {
     func take(
         _ request: ScreenshotRequest,
         on route: DeviceRouter.Route,
-        masks requested: MaskPlan,
+        masks: MaskPlan,
         plain: Bool = false,
+        tree treeSource: @MainActor () async throws -> UITree
+    ) async throws -> ScreenshotReport {
+        var report = try await capture(request, on: route, masks: masks, plain: plain, tree: treeSource)
+        report.captureSource = (route.backend as? any CaptureSourceReporting)?.captureSource(for: route.device)
+        return report
+    }
+
+    @MainActor
+    private func capture(
+        _ request: ScreenshotRequest,
+        on route: DeviceRouter.Route,
+        masks requested: MaskPlan,
+        plain: Bool,
         tree treeSource: @MainActor () async throws -> UITree
     ) async throws -> ScreenshotReport {
         let backend = route.backend

@@ -66,8 +66,7 @@ extension Wait: BatchReadable {
     var awaitsInputDrawn: Bool { selector.query != nil }
 
     func runInBatch(context: BatchContext, logger: OffsiderLogger) async throws -> BatchReadResult {
-        let readsTree = selector.query != nil || (settled && settleBy != .screen)
-        let outcome = try await context.watchdog.guarding(bound: watchdogBound, device: context.device.rawValue) {
+        let outcome = try await context.watchdog.guarding(bound: watchdogBound, of: context.device) {
             try await evaluate(on: context.route, logger: logger, tree: context.pollingTreeSource())
         }
         if !readsTree {
@@ -80,7 +79,7 @@ extension Wait: BatchReadable {
 
 extension Assert: BatchReadable {
     func runInBatch(context: BatchContext, logger: OffsiderLogger) async throws -> BatchReadResult {
-        let outcome = try await context.watchdog.guarding(bound: 0, device: context.device.rawValue) {
+        let outcome = try await context.watchdog.guarding(bound: 0, of: context.device) {
             try await evaluate(on: context.route, logger: logger, tree: context.pollingTreeSource())
         }
         return try await .redacted(outcome, on: context.route, success: successLine(outcome), failure: failureLine, checked: selector)

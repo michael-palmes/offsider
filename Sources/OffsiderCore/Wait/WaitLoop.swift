@@ -204,6 +204,11 @@ public struct SettleLeaveOut: Equatable, Sendable {
 
     public static let none = SettleLeaveOut()
 
+    /// The flag to name when these leave nothing to watch.
+    var flagName: String {
+        ids.isEmpty ? "--ignore-region" : regions.isEmpty ? "--ignore-id" : "--ignore-id and --ignore-region"
+    }
+
     /// As the detector's keys write them, with a UUID in an id reduced to `<uuid>`.
     var detectorIDs: Set<String> {
         Set(ids.compactMap(ChangeDetector.normalisedIdentifier))
@@ -220,6 +225,19 @@ public struct WaitUnreadableError: LocalizedError, CustomStringConvertible, Equa
     static let settledTree = WaitUnreadableError(
         message: "--settled could not read the accessibility tree: every read was empty or unreadable, so it cannot tell when the screen settles. Use --settle-by screen to compare screenshots instead."
     )
+}
+
+/// A `--settled` wait whose flags leave nothing on the screen to watch, so a pass would prove nothing.
+public struct WaitLeftNothingError: LocalizedError, CustomStringConvertible, Equatable, Sendable {
+    public let flag: String
+
+    public init(flag: String) {
+        self.flag = flag
+    }
+
+    public var message: String { "\(flag) leaves nothing to watch. Use a smaller one." }
+    public var errorDescription: String? { message }
+    public var description: String { message }
 }
 
 @MainActor
@@ -436,7 +454,12 @@ public enum WaitLoop {
                 let snapshot = whole.leavingOut(leaveOut.regions)
                 state.treeReads += 1
                 state.readableTree = state.readableTree || whole.isKnown
-                if let previous = state.snapshot {
+                let coverage = whole.isKnown ? detector.coverage(snapshot) : (roots: true, elements: true)
+                if !coverage.roots { throw WaitLeftNothingError(flag: leaveOut.flagName) }
+                if !coverage.elements {
+                    // A splash screen can hold only what is left out for a moment, so this reads again until the timeout.
+                    change = "\(leaveOut.flagName) leaves nothing to watch on this screen"
+                } else if let previous = state.snapshot {
                     switch detector.compare(previous, snapshot) {
                     case .unchanged: break
                     case .unknown: change = "accessibility tree not readable"

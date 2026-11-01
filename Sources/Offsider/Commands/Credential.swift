@@ -293,7 +293,8 @@ struct CredentialCommand: AsyncParsableCommand {
         let logger = OffsiderLogger()
         let watchdog = DeviceWatchdog()
         let route = try await DeviceRouter.routeForInput(deviceID, logger: logger, watchdog: watchdog, locking: false)
-        return try await watchdog.guarding(setupThen: 0, device: deviceID) { ready in
+        try await watchdog.guardingTreeStart(on: route)
+        return try await watchdog.guarding(setupThen: 0, of: route.device) { ready in
             try await route.backend.prepare()
             ready()
             let tree = try await route.backend.accessibilityTree(for: route.device)

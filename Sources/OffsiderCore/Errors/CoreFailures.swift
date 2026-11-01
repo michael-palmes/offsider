@@ -11,6 +11,11 @@ extension WaitUnreadableError: OffsiderFailure {
     public var failureMessage: String { description }
 }
 
+extension WaitLeftNothingError: OffsiderFailure {
+    public var reason: FailureReason { .usage }
+    public var failureMessage: String { message }
+}
+
 extension WaitBlockedError: OffsiderFailure {
     public var reason: FailureReason { .logBoxInspectorOpen }
     public var failureMessage: String { message }

@@ -55,7 +55,7 @@ public struct ChangeDetector: Sendable {
     public struct Options: Sendable {
         public var framePrecision: Double
         public var ignoredIdentifiers: Set<String>
-        /// Leaves label, value and title out, and the frame of a node whose text changed, so a ticking clock is no change.
+        /// Leaves label, value and title out, and a resize along its line of a node whose text changed, so a ticking clock is no change.
         public var ignoreText: Bool
         /// Leaves frames out, so a moving list is no change.
         public var ignoreFrames: Bool
@@ -291,6 +291,12 @@ public struct ChangeDetector: Sendable {
         return (1...depth).reversed().map { first.prefix($0).joined(separator: separator) + "]" }
     }
 
+    /// What a comparison of `snapshot` can see: any root, and anything under one, once the ignored identifiers are left out.
+    public func coverage(_ snapshot: AccessibilitySnapshot) -> (roots: Bool, elements: Bool) {
+        let roots = liveSiblings(snapshot.roots, parentKey: "")
+        return (!roots.isEmpty, roots.contains { !liveSiblings($0.node.children, parentKey: "").isEmpty })
+    }
+
     public func compare(
         _ before: AccessibilitySnapshot,
         _ after: AccessibilitySnapshot,
@@ -375,9 +381,9 @@ public struct ChangeDetector: Sendable {
     }
 
     private func describeDifference(from before: Entry, to after: Entry, live: Bool) -> String? {
-        // Ignoring text also ignores a resize that came with it, as a right-aligned number's frame follows its digits.
         let textMoved = options.ignoreText
             && (before.node.label != after.node.label || before.node.value != after.node.value || before.node.title != after.node.title)
+            && Self.resizedAlongItsLine(before.signature.frame, after.signature.frame)
         let a = live || textMoved ? before.signature.structural : before.signature
         let b = live || textMoved ? after.signature.structural : after.signature
         let name = after.name
@@ -393,6 +399,12 @@ public struct ChangeDetector: Sendable {
         if a.frame != b.frame { return "\(name) moved or resized" }
         if a.role != b.role || a.subrole != b.subrole { return "role of \(name) changed" }
         return nil
+    }
+
+    /// As a right-aligned number's frame follows its digits. Leaving its line is a move, as when iOS lists a chart's bars by height and each place in the tree takes a new label and frame.
+    private static func resizedAlongItsLine(_ before: [Double]?, _ after: [Double]?) -> Bool {
+        guard let before, let after else { return true }
+        return before[1] == after[1] && before[3] == after[3] && (before[0] == after[0] || before[2] != after[2])
     }
 
     /// Whether a masked id or label names the element, so a summary names it without its text.

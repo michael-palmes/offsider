@@ -122,7 +122,7 @@ A `--verify --json` report also carries `ignored` (`{node, reason}` entries left
 | `state_not_reached` | 1 | The posture or orientation did not take effect in time | Check the device, then retry |
 | `orientation_unknown` | 1 | The device did not report its orientation | Check it with `describe-ui` |
 | `device_restarted` | 1 | The simulator restarted while Offsider connected | Retry |
-| `device_unresponsive` | 1 | The device stopped answering; `describe-ui`, `screenshot` and `rn logbox` give a simulator or emulator 30 s (longer with `--wait-lock`) | `offsider doctor --device <ID>`, or restart the device |
+| `device_unresponsive` | 1 | The device stopped answering; a read gives a simulator or emulator 30 s (longer with `--wait-lock`), and a `--verify` or selector read the same, with time for an emulator's helper to start; a phone or tablet has limits of its own | `offsider doctor --device <ID>`, or restart the device |
 | `device_control_failed` | 1 | A device setting could not be read or changed | Check the device is booted |
 | `app_not_installed` | 1 | `logs --app`, an `app` command or an Android permission command names an app that is not installed | Install it (the `hint` names the SDK's `adb -s <serial> install <path-to-apk>` on Android), or drop `--app` |
 | `link_not_handled` | 1 | `app open` sent a link no screen of the app takes (Android resolved no activity in the package, or on a simulator no app or another app claimed it) | Check the link's scheme and host against the app's URL types or intent filters, or send the app's own scheme |

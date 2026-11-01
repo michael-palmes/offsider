@@ -34,6 +34,7 @@ struct AccessibilityPoller {
         pick: MatchPicker? = nil,
         coverCheck: CoverCheck? = nil,
         readsHiddenCovers: Bool = false,
+        watchdog: DeviceWatchdog = DeviceWatchdog(),
         logger: OffsiderLogger
     ) async throws -> Polled<TapResolution> {
         try await pollForResolution(
@@ -48,17 +49,19 @@ struct AccessibilityPoller {
             coverCheck: coverCheck,
             logger: logger
         ) {
-            var tree = try await backend.accessibilityTree(for: device)
-            // Android's every-view read is cheap, and the only way to see a hidden page over what the tree lists.
-            tree = readsHiddenCovers && tree.platform == .android
-                ? await backend.withGapsFilled(tree, on: device)
-                : await fillingGaps(tree, for: [query], elementType: elementType, allowOffscreen: allowOffscreen, on: backend, device: device)
-            // Several matches on a simulator: the hit-tests that tell which one a touch reaches, read at once, which the cover check then reuses.
-            if pick == nil, backend is any PointHitTesting, tree.platform == .ios,
-               AccessibilityTargetResolver.candidates(roots: tree.roots, query: query, elementType: elementType).onScreen.count > 1 {
-                await FrontJudge.read(matching: [query], elementType: elementType, in: &tree, backend: backend, device: device)
+            try await watchdog.guardingInputRead(of: device) {
+                var tree = try await backend.accessibilityTree(for: device)
+                // Android's every-view read is cheap, and the only way to see a hidden page over what the tree lists.
+                tree = readsHiddenCovers && tree.platform == .android
+                    ? await backend.withGapsFilled(tree, on: device)
+                    : await fillingGaps(tree, for: [query], elementType: elementType, allowOffscreen: allowOffscreen, on: backend, device: device)
+                // Several matches on a simulator: the hit-tests that tell which one a touch reaches, read at once, which the cover check then reuses.
+                if pick == nil, backend is any PointHitTesting, tree.platform == .ios,
+                   AccessibilityTargetResolver.candidates(roots: tree.roots, query: query, elementType: elementType).onScreen.count > 1 {
+                    await FrontJudge.read(matching: [query], elementType: elementType, in: &tree, backend: backend, device: device)
+                }
+                return tree
             }
-            return tree
         }
     }
 
@@ -93,8 +96,11 @@ struct AccessibilityPoller {
                 roots: tree.roots, query: query, elementType: elementType, allowOffscreen: allowOffscreen, explainFailures: explain, logger: logger
             )
         }
+        let watchdog = DeviceWatchdog()
         let fetch: () async throws -> UITree = {
-            await fillingGaps(try await backend.accessibilityTree(for: device), for: [query], elementType: elementType, allowOffscreen: allowOffscreen, on: backend, device: device)
+            try await watchdog.guardingInputRead(of: device) {
+                await fillingGaps(try await backend.accessibilityTree(for: device), for: [query], elementType: elementType, allowOffscreen: allowOffscreen, on: backend, device: device)
+            }
         }
         let polled = try await poll(
             waitTimeout: waitTimeout,

@@ -106,7 +106,8 @@ struct Button: AsyncParsableCommand, VerifiableCommand {
         activity, so --verify-id and --verify-ignore-text are refused and --retries does not apply.
 
         iOS simulator home with --verify: Offsider checks what answers at the screen's centre, so it returns as soon \
-        as SpringBoard is in front; --verify-id or --verify-ignore-text compare the tree instead.
+        as SpringBoard is in front. A system alert over an app answers there before the press too, so that case \
+        compares the tree, as --verify-id and --verify-ignore-text do.
         """
     )
 
@@ -221,6 +222,16 @@ struct Button: AsyncParsableCommand, VerifiableCommand {
         try await VerifyOutput.reportingFailures(command: "button", target: buttonType.rawValue, options: verification) { progress in
             try await execute(progress: progress)
         }
+    }
+
+    /// The tree when SpringBoard already answers at the centre over an app, as a system alert does: it would answer the same after the press, so only a change on screen proves anything. Nil otherwise, and only this case pays for the tree read.
+    @MainActor
+    static func screenUnderAlert(on backend: any PresentationProbing, device: DeviceID, centre: UIPoint, processPath: (Int) -> String?) async -> UITree? {
+        guard let hit = try? await backend.probe(at: centre, on: device), case .ios(let native) = hit.native, let pid = native.pid,
+              let path = processPath(pid), SimulatorHomePress.isSpringBoard(path: path),
+              let tree = try? await backend.accessibilityTree(for: device),
+              SystemPrompt.isForeign(hit, in: tree.roots) || SystemPrompt.alert(in: tree, covers: centre) else { return nil }
+        return tree
     }
 
     /// Prints the verify report: exit 0 once SpringBoard answers at the screen's centre, exit 5 when it never does.
@@ -399,7 +410,10 @@ struct Button: AsyncParsableCommand, VerifiableCommand {
 
     /// Presses the button on `route`; tests pass a fake backend here.
     @MainActor
-    func execute(on route: DeviceRouter.Route, progress: VerifyProgress?, logger: OffsiderLogger) async throws {
+    func execute(
+        on route: DeviceRouter.Route, progress: VerifyProgress?, logger: OffsiderLogger, watchdog: DeviceWatchdog = DeviceWatchdog(),
+        processPath: (Int) -> String? = { Int32(exactly: $0).flatMap(ProcessPath.of(pid:)) }
+    ) async throws {
         let backend = route.backend
         let device = route.device
         try Self.checkAvailability(buttonType, on: device.platform, device: deviceOption.id, physicalIOS: device.isPhysicalIOSDevice)
@@ -414,20 +428,37 @@ struct Button: AsyncParsableCommand, VerifiableCommand {
         let buttonEvent = Self.pressEvent(buttonType, duration: duration, on: device.platform)
 
         if let progress {
+            var alertScreen: UITree?
             if Self.isShortHome(buttonType, duration: duration), verification.verifyID == nil, !verification.ignoreText,
                let prober = backend as? any PresentationProbing, let size = try? await backend.screenSize(for: device), size.width > 0, size.height > 0 {
-                progress.attempts = 1
-                try await Self.pressSimulatorHome(on: prober, device: device, centre: UIPoint(x: size.width / 2, y: size.height / 2), verification: verification)
-                return
+                let centre = UIPoint(x: size.width / 2, y: size.height / 2)
+                alertScreen = await watchdog.guardingRead(of: device) {
+                    await Self.screenUnderAlert(on: prober, device: device, centre: centre, processPath: processPath)
+                }
+                if alertScreen == nil {
+                    progress.attempts = 1
+                    let window = verification.verifyTimeout ?? SimulatorHomePress.window
+                    let presses = 1 + Self.verifyRetries(.home, verification)
+                    try await watchdog.guardingRead(of: device, extra: DeviceWatchdog.setupBound + Double(presses) * window) {
+                        // iPhone's home screen is upright, so a sideways screen's centre can lie past its edge once the press lands.
+                        let watched = size.width > size.height ? UIPoint(x: size.height / 2, y: size.height / 2) : centre
+                        try await Self.pressSimulatorHome(on: prober, device: device, centre: watched, verification: verification, processPath: processPath)
+                    }
+                    return
+                }
             }
+            var options = verification
+            // SpringBoard's clock would otherwise pass for the press's effect.
+            options.ignoreText = options.ignoreText || alertScreen != nil
             let request = VerifyRequest(
                 command: "button",
                 subject: buttonType.description,
                 target: buttonType.rawValue,
                 backend: backend,
                 device: device,
-                options: verification,
-                styles: Array(repeating: nil, count: RetryPolicy.attemptCount(retries: Self.verifyRetries(buttonType, verification)))
+                options: options,
+                styles: Array(repeating: nil, count: RetryPolicy.attemptCount(retries: Self.verifyRetries(buttonType, verification))),
+                initialTree: alertScreen
             )
             try await VerifyOutput.perform(request, progress: progress) { _, session in
                 try await session.perform(buttonEvent)

@@ -129,16 +129,21 @@ final class IOSBackend: DeviceBackend {
             _ = try await screenPointTree(for: id, point: nil, appPIDs: [])
         }
         let layoutPoint = point.map { displayZooms[id.rawValue]?.layoutPoint($0) ?? $0 }
-        let jsonData = try await AccessibilityFetcher.fetchAccessibilityInfoJSONData(
-            from: simulator,
-            point: layoutPoint.map { AccessibilityPoint(x: $0.x, y: $0.y) },
-            appPIDs: appPIDs,
-            logger: logger
-        )
-        var tree = UITree(platform: .ios, device: id.rawValue, roots: try IOSAccessibilityMapping.roots(fromJSON: jsonData))
+        let firstRead: [UINode]
+        do {
+            firstRead = try await roots(of: simulator, at: layoutPoint, appPIDs: appPIDs)
+        } catch {
+            guard let point, displayZooms[id.rawValue] == nil,
+                  let answer = await springBoardAnswer(at: point, of: simulator, reading: { try await self.roots(of: simulator, at: $0, appPIDs: appPIDs) }) else { throw error }
+            return UITree(platform: .ios, device: id.rawValue, roots: answer)
+        }
+        var tree = UITree(platform: .ios, device: id.rawValue, roots: firstRead)
         if foldable {
             if let active = await displayCatalog.activeDisplay(of: simulator, applicationFrame: tree.applicationFrame),
                let geometry = await panelGeometry(on: active, of: simulator) {
+                if Self.isSpringBoard(tree.roots), let turn = geometry.turn {
+                    tree.roots = try await springBoardRoots(tree.roots, turn: turn, at: layoutPoint) { try await self.roots(of: simulator, at: $0, appPIDs: appPIDs) }
+                }
                 tree.roots = UITree.correctingSidewaysApplicationFrame(in: tree.roots, screenWidth: geometry.width, screenHeight: geometry.height)
                 tree.roots = UITree.clippingApplicationFrame(in: tree.roots, screenWidth: geometry.width, screenHeight: geometry.height)
             }
@@ -153,8 +158,48 @@ final class IOSBackend: DeviceBackend {
         }
         if let zoom = displayZooms[id.rawValue] {
             tree.roots = zoom.screenRoots(tree.roots)
+        } else if Self.isSpringBoard(tree.roots), let turn = await mainScreenTurn(of: simulator) {
+            tree.roots = try await springBoardRoots(tree.roots, turn: turn, at: layoutPoint) { try await self.roots(of: simulator, at: $0, appPIDs: appPIDs) }
         }
         return tree
+    }
+
+    private func roots(of simulator: FBSimulator, at point: UIPoint?, appPIDs: Set<Int>) async throws -> [UINode] {
+        try IOSAccessibilityMapping.roots(fromJSON: try await AccessibilityFetcher.fetchAccessibilityInfoJSONData(
+            from: simulator,
+            point: point.map { AccessibilityPoint(x: $0.x, y: $0.y) },
+            appPIDs: appPIDs,
+            logger: logger
+        ))
+    }
+
+    /// `read` in screen points; a point read answered by SpringBoard looked in the wrong space, so it is asked again in its own. An app answering there has its own frames, and not the point asked about, so the first answer stands.
+    private func springBoardRoots(_ read: [UINode], turn: PanelTurn, at point: UIPoint?, rereading: (UIPoint) async throws -> [UINode]) async throws -> [UINode] {
+        guard let point else { return turn.screenRoots(read) }
+        guard let again = try? await rereading(turn.panelPoint(point)), Self.isSpringBoard(again) else { return read }
+        return turn.screenRoots(again)
+    }
+
+    /// A screen point can lie past the panel's edge in SpringBoard's points, so a read that found nothing asks it there before giving up.
+    private func springBoardAnswer(at point: UIPoint, of simulator: FBSimulator, reading: (UIPoint) async throws -> [UINode]) async -> [UINode]? {
+        guard let turn = await springBoardTurn(of: simulator), let answer = try? await reading(turn.panelPoint(point)), Self.isSpringBoard(answer) else { return nil }
+        return turn.screenRoots(answer)
+    }
+
+    private func springBoardTurn(of simulator: FBSimulator) async -> PanelTurn? {
+        guard displayCatalog.isFoldable(simulator) else { return await mainScreenTurn(of: simulator) }
+        guard let active = await displayCatalog.activeDisplay(of: simulator, applicationFrame: nil) else { return nil }
+        return await panelGeometry(on: active, of: simulator)?.turn
+    }
+
+    private func mainScreenTurn(of simulator: FBSimulator) async -> PanelTurn? {
+        guard let screen = simulator.screenInfo, screen.scale > 0,
+              let orientation = await SimulatorOrientationReader.currentOrientation(of: simulator, logger: logger) else { return nil }
+        return PanelTurn(orientation: orientation.coreOrientation, panelWidth: Double(screen.widthPixels) / Double(screen.scale), panelHeight: Double(screen.heightPixels) / Double(screen.scale))
+    }
+
+    private static func isSpringBoard(_ roots: [UINode]) -> Bool {
+        roots.first?.iosPID.flatMap { Int32(exactly: $0) }.flatMap(ProcessPath.of(pid:)).map(SimulatorHomePress.isSpringBoard(path:)) == true
     }
 
     /// Device pixels over scale, swapped when SimulatorKit reports a landscape orientation; on a foldable, the active display's.
@@ -359,8 +404,20 @@ extension IOSBackend: PresentationProbing {
     func probe(at point: UIPoint, on id: DeviceID) async throws -> UINode? {
         let zoom = displayZooms[id.rawValue]
         let layoutPoint = zoom?.layoutPoint(point) ?? point
-        let data = try await AccessibilityFetcher.probeAccessibilityJSONData(from: try await simulator(for: id), at: AccessibilityPoint(x: layoutPoint.x, y: layoutPoint.y))
-        let roots = try IOSAccessibilityMapping.roots(fromJSON: data)
+        let simulator = try await simulator(for: id)
+        let read = { (point: UIPoint) in
+            try IOSAccessibilityMapping.roots(fromJSON: try await AccessibilityFetcher.probeAccessibilityJSONData(from: simulator, at: AccessibilityPoint(x: point.x, y: point.y)))
+        }
+        var roots: [UINode]
+        do {
+            roots = try await read(layoutPoint)
+        } catch {
+            guard zoom == nil, let answer = await springBoardAnswer(at: point, of: simulator, reading: read) else { throw error }
+            return answer.first
+        }
+        if zoom == nil, Self.isSpringBoard(roots), let turn = await springBoardTurn(of: simulator) {
+            roots = try await springBoardRoots(roots, turn: turn, at: point, rereading: read)
+        }
         return (zoom?.screenRoots(roots) ?? roots).first
     }
 
@@ -392,6 +449,11 @@ extension IOSBackend: TreeGapFilling {
     private func filling(_ tree: UITree, on id: DeviceID, samples: GapSamples?) async -> UITree {
         await Timings.measure("gap-fill") {
             guard let simulator = try? await simulator(for: id) else { return tree }
+            // SpringBoard hides nothing, and on a turned screen its point reads would not line up with the tree, so each would look like a hidden element.
+            if Self.isSpringBoard(tree.roots), await springBoardTurn(of: simulator) != nil {
+                _ = await samples?.answers(samples?.points.map { _ in false } ?? []) { _ in false }
+                return tree
+            }
             let read = { (points: [UIPoint], wanted: [Bool], isNew: (UINode) -> Bool) async -> [UINode?] in
                 let elements = await Self.pointElements(at: points, from: simulator, zoom: self.displayZooms[id.rawValue])
                 return self.nodes(from: elements, wanted: wanted, isNew: isNew, on: id)

@@ -459,6 +459,70 @@ struct BatchReadStepTests {
         #expect(disabled.treeReads == 1)
     }
 
+    @Test("a step the tokens alone rule out stops the batch before anything is sent", arguments: [
+        ("swipe --start-x 1 --start-y 1 --end-x 2 --end-y 2 --screenshot-at 100", "Batch steps do not take --screenshot-at"),
+        ("drag --start-x 1 --start-y 1 --end-x 2 --end-y 2 --screenshot-at=100", "Batch steps do not take --screenshot-at"),
+        ("wait --id open --device other", "--device"),
+        ("wait --id open --wait-lock 5", "--wait-lock"),
+        ("nonsense", "Unsupported batch step"),
+        ("rn logbox", "The only rn batch step"),
+    ])
+    func preflightSendsNothing(step: String, message: String) async throws {
+        let backend = FakeDeviceBackend(trees: [Self.closed], screen: Self.screen)
+        let batch = try Batch.parse(["--step", "tap -x 195 -y 122", "--step", step, "--device", Self.device.rawValue])
+
+        let error = await #expect(throws: (any Error).self) {
+            try await batch.run(on: DeviceRouter.Route(backend: backend, device: Self.device), logger: OffsiderLogger())
+        }
+
+        #expect((error as? ValidationError)?.message.contains(message) == true, "\(String(describing: error))")
+        #expect(backend.session.calls.isEmpty)
+    }
+
+    @Test("bad quoting stops the batch before anything is sent")
+    func preflightRefusesBadQuoting() async throws {
+        let backend = FakeDeviceBackend(trees: [Self.closed], screen: Self.screen)
+        let batch = try Batch.parse(["--step", "tap -x 195 -y 122", "--step", "type 'oops", "--device", Self.device.rawValue])
+
+        await #expect(throws: (any Error).self) {
+            try await batch.run(on: DeviceRouter.Route(backend: backend, device: Self.device), logger: OffsiderLogger())
+        }
+        #expect(backend.session.calls.isEmpty)
+    }
+
+    @Test("--continue-on-error reports an unknown step and runs the rest, as it always has")
+    func continueOnErrorKeepsItsContract() async throws {
+        let backend = FakeDeviceBackend(trees: [Self.closed], screen: Self.screen)
+        let batch = try Batch.parse(["--continue-on-error", "--step", "nonsense", "--step", "tap -x 195 -y 122", "--device", Self.device.rawValue])
+
+        await #expect(throws: (any Error).self) {
+            try await batch.run(on: DeviceRouter.Route(backend: backend, device: Self.device), logger: OffsiderLogger())
+        }
+        #expect(backend.session.calls == [.perform(.tapAt(x: 195, y: 122))])
+    }
+
+    @Test("--screenshot-at as the text a type step sends is not refused")
+    func preflightLeavesTypedText() throws {
+        #expect(throws: Never.self) { try BatchStepParser.preflight(["type", "--screenshot-at"]) }
+    }
+
+    @Test("a batch screenshot step on an iPhone says where its image came from")
+    func screenshotStepReportsCapture() async throws {
+        final class Streaming: FakeDeviceBackend, CaptureSourceReporting {
+            func captureSource(for id: DeviceID) -> String? { "devicectl" }
+        }
+        let directory = try Self.temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let captured = Captured()
+
+        try await Self.run(
+            ["screenshot --output '\(directory.appendingPathComponent("step.png").path)'"],
+            on: Streaming(trees: [Self.closed], screenshots: [try Self.png()], screen: Self.screen), json: true, captured: captured
+        )
+
+        #expect(try captured.records().first?["capture"] as? String == "devicectl")
+    }
+
     @Test("--json on a step is refused with a pointer to batch --json")
     func stepJSONRejected() async throws {
         let captured = Captured()
