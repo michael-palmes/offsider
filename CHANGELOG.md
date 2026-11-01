@@ -58,6 +58,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Fixed
 
+- `devices add`'s team menu tells two teams with one name apart: each row says `Free` or `Paid` where Xcode's local preferences say, and shows the account's email when a development certificate's common name holds one. Free teams come last. The email is never saved.
+- `doctor`'s `ios-device.runner-signing` counts Xcode's signed-in teams on Xcode 27, where it said none.
+- `certificate_not_trusted` (exit 7): a runner the device will not launch because it does not trust the certificate names the fix, Settings > General > VPN & Device Management, and carries an `ask`, where it failed with `runner_unavailable` and said to check UI Automation.
 - `screenshot` and `describe-ui` show their spinner while a simulator's frameworks load, which was a silent pause on the first command.
 - `type` refused a focused field with `no_focused_field` when the tree left the field out and a hardware keyboard hid the software one. An iOS simulator now reads points across the screen for a focused text field before refusing; `key-sequence` and `--require-focus-id` do too.
 - `type` on a physical iPhone or iPad with no field focused refuses (`no_focused_field`) instead of sending keys nowhere; the docs promised this and the broker's path skipped it.

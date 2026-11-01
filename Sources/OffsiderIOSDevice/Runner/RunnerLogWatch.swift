@@ -8,6 +8,8 @@ struct RunnerLogWatch {
         case deviceLocked
         /// XCTest gave up enabling UI automation, as when the device's "Enter Passcode for XCTest" prompt goes unanswered.
         case automationNotEnabled
+        /// The device refused to launch the runner until a person trusts its developer certificate.
+        case certificateNotTrusted
     }
 
     static let chunkLimit = 64 * 1024
@@ -35,9 +37,10 @@ struct RunnerLogWatch {
         return nil
     }
 
-    /// The device-preparation unlock error, or XCTest's automation timeout, whatever the device is called.
+    /// The device-preparation unlock error, XCTest's automation timeout or an untrusted certificate, whatever the device is called.
     static func finding(in line: String) -> Finding? {
         if line.range(of: "enabling automation mode", options: .caseInsensitive) != nil { return .automationNotEnabled }
+        if line.range(of: "Developer App Certificate", options: .caseInsensitive) != nil, line.contains("trusted") { return .certificateNotTrusted }
         guard line.contains("com.apple.dt.deviceprep") else { return nil }
         let asksToUnlock = line.range(of: "unlock", options: .caseInsensitive) != nil || line.range(of: "locked", options: .caseInsensitive) != nil
         return asksToUnlock ? .deviceLocked : nil

@@ -1,0 +1,6 @@
+
+Command line invocation:
+    xcodebuild test-without-building -xctestrun Runner.xctestrun -destination id=<UDID> -resultBundlePath result.xcresult
+
+Testing failed:
+	OffsiderRunnerUITests-Runner encountered an error (The application could not be launched because the Developer App Certificate is not trusted.)

@@ -511,12 +511,27 @@ struct DeviceAccessAllow: AsyncParsableCommand {
             }.trimmingCharacters(in: .whitespaces).uppercased()
             return typed.isEmpty ? (nil, "none") : (typed, typed)
         }
-        let rows = teams.map { MenuRow(.team, [PromptScreen.label($0.name), PromptScreen.label($0.id)], recommended: teams.count == 1) } + [MenuRow(.type, [AllowScreen.typeTeam])]
+        let rows = Self.teamRows(teams) + [MenuRow(.type, [AllowScreen.typeTeam])]
         let index = try prompt.choose(AllowScreen.teamQuestion, step: step, rows: rows, keepsChoice: false)
-        if index < teams.count { return (teams[index].id, PromptScreen.label(teams[index].name)) }
+        if index < teams.count { return (teams[index].id, Self.teamShown(teams[index], among: teams)) }
         let typed = try prompt.ask("  Team ID: ") { DeviceAllowance.isTeamID($0.trimmingCharacters(in: .whitespaces)) ? nil : problem }
             .trimmingCharacters(in: .whitespaces).uppercased()
         return (typed, typed)
+    }
+
+    /// The receipt's words for a team, with room for what tells it from a long-named twin.
+    static func teamShown(_ team: SigningTeam, among teams: [SigningTeam]) -> String {
+        PromptScreen.label(team.shown(among: teams), cap: 120)
+    }
+
+    /// A team's name, whether it is free where Xcode says, then its ID and the email its certificate holds, if any, as one dim detail.
+    static func teamRows(_ teams: [SigningTeam]) -> [MenuRow] {
+        let plans = teams.contains { $0.free != nil }
+        return teams.map { team in
+            let plan = team.free.map { $0 ? AllowScreen.freeTeam : AllowScreen.paidTeam } ?? ""
+            let detail = ([team.id] + (team.account.map { [$0] } ?? [])).joined(separator: "  ")
+            return MenuRow(.team, [PromptScreen.label(team.name)] + (plans ? [plan] : []) + [PromptScreen.label(detail)], recommended: teams.count == 1)
+        }
     }
 
     @MainActor
