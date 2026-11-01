@@ -137,3 +137,4 @@ extension Wait: LockingCommand {
 extension Wake: DeviceOptionCommand {}
 extension RecordVideo: DeviceOptionCommand {}
 extension StreamVideo: DeviceOptionCommand {}
+extension SleepCommand: DeviceOptionCommand {}

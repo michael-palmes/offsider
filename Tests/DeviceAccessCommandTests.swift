@@ -142,12 +142,13 @@ struct DeviceAccessCommandTests {
         devices: @escaping @Sendable () -> [DeviceSummary] = { [row] },
         teams: @escaping @Sendable () -> [SigningTeam] = { [] },
         apps: @escaping @Sendable (DeviceSummary) throws -> [InstalledApp] = { _ in [] },
-        stopped: @escaping @Sendable (String) -> [String] = { _ in [] }
+        stopped: @escaping @Sendable (String) -> [String] = { _ in [] },
+        managed: FakeManagedPreferences = FakeManagedPreferences()
     ) -> DeviceAccessContext {
         DeviceAccessContext(
             store: { DeviceAllowListStore(directory: UserConfigDirectory(home: home)) },
             seal: seal,
-            managed: FakeManagedPreferences(),
+            managed: managed,
             now: { PolicyFixtures.now },
             physicalDevices: { (devices(), []) },
             stopSessions: { stopped($0) },
@@ -734,6 +735,25 @@ struct DeviceAccessCommandTests {
         #expect(try DeviceAccessStatus.parse(["--json"]).perform(context: context).0.hasPrefix("{"))
     }
 
+    @Test("the team menu shows the email that tells two teams with one name apart, the receipt names the choice, and the email is never saved or printed")
+    func collidingTeams() async throws {
+        let home = try makePolicyHome()
+        defer { try? FileManager.default.removeItem(atPath: home) }
+        let teams = [
+            SigningTeam(id: "AAAAA11111", name: "Jane Citizen", account: "jane@example.com", free: true),
+            SigningTeam(id: "BBBBB22222", name: "Jane Citizen", free: false),
+        ]
+        let (output, transcript) = try await Self.allow(["--device", PolicyFixtures.phone, "--app", "com.example.app", "--expires", "2h"], answers: ["\r"], context: { terminal in
+            Self.context(home: home, seal: MemorySeal(), terminal: terminal, devices: { [Self.row] }, teams: { teams })
+        })
+        #expect(transcript.contains("Free  AAAAA11111  jane@example.com"))
+        #expect(transcript.contains("Paid  BBBBB22222"))
+        #expect(transcript.contains("Team      Jane Citizen (jane@example.com)"))
+        #expect(try Self.entries(home).first?.team == "AAAAA11111")
+        #expect(!output.contains("jane@example.com"))
+        #expect(!(try String(contentsOfFile: Self.file(home), encoding: .utf8)).contains("jane@example.com"))
+    }
+
     @Test("--json reaches status, add and remove after their name or before it, rather than stopping at devices")
     func jsonReachesTheSubcommand() async throws {
         let home = try makePolicyHome()
@@ -812,6 +832,51 @@ struct DeviceAccessCommandTests {
         #expect(transcript.contains("Keep 8081"))
         #expect(transcript.contains("Keep until"))
         #expect(presence.reasons.count == 1)
+    }
+
+    @Test("a test device changed with Return stays a test device, Touch ID naming it, and asks no new question")
+    func changeKeepsTestDevice() async throws {
+        let home = try makePolicyHome()
+        defer { try? FileManager.default.removeItem(atPath: home) }
+        let seal = MemorySeal()
+        let presence = RecordingPresence()
+        let entry = DeviceAllowance(platform: .android, key: PolicyFixtures.serial, name: "Test Pixel", added: PolicyFixtures.added, expires: nil, apps: [], testDevice: true)
+        try Self.seed(home, seal: seal, [entry])
+        let (_, transcript) = try await Self.allow([], answers: ["\r", "\r", "\r", "\r"], context: { terminal in
+            Self.context(home: home, seal: seal, terminal: terminal, devices: { [Self.androidRow] })
+        }, presence: presence)
+        let kept = try #require(try Self.entries(home).first)
+        #expect(kept.testDevice && kept.expires == nil)
+        #expect(transcript.contains("Keep \(AllowScreen.wholeDevice)"))
+        #expect(!transcript.contains(AllowScreen.personalQuestion))
+        #expect(presence.reasons.first?.contains(AllowScreen.wholeDevice) == true)
+    }
+
+    @Test("a test device managed policy has since turned off cannot be kept: no Keep row, and saving drops its whole-device access")
+    func managedOffDropsTestDevice() async throws {
+        let home = try makePolicyHome()
+        defer { try? FileManager.default.removeItem(atPath: home) }
+        let seal = MemorySeal()
+        let entry = DeviceAllowance(platform: .android, key: PolicyFixtures.serial, name: "Test Pixel", added: PolicyFixtures.added, expires: nil, apps: [], testDevice: true)
+        try Self.seed(home, seal: seal, [entry])
+        let managed = FakeManagedPreferences(values: [ManagedDevicePolicy.allowPhysicalDevicesKey: .bool(true)])
+        let (_, transcript) = try await Self.allow([], answers: ["\r", "\r", "\r", "\r", "\r"], context: { terminal in
+            Self.context(home: home, seal: seal, terminal: terminal, devices: { [Self.androidRow] }, managed: managed)
+        })
+        #expect(!transcript.contains("Keep \(AllowScreen.wholeDevice)"))
+        #expect(try Self.entries(home).first?.testDevice == false)
+    }
+
+    @Test("an ordinary device kept with Return never becomes a test device")
+    func keepNeverWidens() async throws {
+        let home = try makePolicyHome()
+        defer { try? FileManager.default.removeItem(atPath: home) }
+        let seal = MemorySeal()
+        try Self.seed(home, seal: seal, [Self.allowedPhone()])
+        _ = try await Self.allow([], answers: ["\r", "\r", "\r", "\r"], context: { terminal in
+            Self.context(home: home, seal: seal, terminal: terminal, devices: { [Self.androidRow] })
+        })
+        #expect(try Self.entries(home).first?.testDevice == false)
     }
 
     @Test("changing an allowed device adds a Metro port and leaves its app and time, as metro_port_not_allowed sends a person to do")
@@ -955,7 +1020,7 @@ struct DeviceAccessCommandTests {
     func appMenuOrder() {
         let policy = PhysicalDevicePolicy(managed: .none, list: .empty)
         let front = DeviceAccessAllow.appMenu(Self.apps, platform: .android, policy: policy, profile: nil, front: "com.mpalmes.offsider.playground.rn")
-        #expect(front.choices == [.app(Self.apps[1]), .app(Self.apps[0]), .any, .wholeDevice, .type])
+        #expect(front.choices == [.app(Self.apps[1]), .app(Self.apps[0]), .any, .wholeDevice, .type, .testDevice])
         #expect(front.recommended == 0)
         #expect(front.selected == 0)
         let rows = front.rows()
@@ -968,11 +1033,11 @@ struct DeviceAccessCommandTests {
 
         let none = DeviceAccessAllow.appMenu(Array(Self.apps.prefix(2)), platform: .ios, policy: policy, profile: nil, front: "com.example.missing")
         #expect(none.recommended == nil)
-        #expect(none.choices == [.app(Self.apps[0]), .app(Self.apps[1]), .any, .type])
+        #expect(none.choices == [.app(Self.apps[0]), .app(Self.apps[1]), .any, .type, .testDevice])
         #expect(none.selected == 0)
 
         let empty = DeviceAccessAllow.appMenu([], platform: .ios, policy: policy, profile: nil, front: nil)
-        #expect(empty.choices == [.any, .type])
+        #expect(empty.choices == [.any, .type, .testDevice])
         #expect(empty.selected == 1)
     }
 

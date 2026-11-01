@@ -131,6 +131,28 @@ struct AndroidPhoneScopeTests {
         #expect(error?.hint == "offsider permission show --app \(Self.playground) --device \(Self.phone.rawValue)")
     }
 
+    @Test("a test device reads and drives whatever is in front, unless a command named an app, which then holds it to that app")
+    func testDeviceHoldsOnlyWhenNamed() async throws {
+        let (backend, _) = try AndroidBackendHelperTests.phoneBackend(top: "com.android.settings/.Settings")
+        backend.appScopes[Self.phone.rawValue] = AndroidAppScope(permitted: [], managedCeiling: nil, wholeDevice: true)
+        try await backend.requireDrivableForeground(Self.phone.rawValue)
+        try backend.requireDrivable("com.android.systemui", on: Self.phone.rawValue)
+
+        backend.holdToApp(Self.playground, on: Self.phone.rawValue)
+        let error = await #expect(throws: AndroidError.self) { try await backend.requireDrivableForeground(Self.phone.rawValue) }
+        #expect(error?.isOtherAppInFront == true)
+        #expect(throws: AndroidError.self) { try backend.requireDrivable("com.android.systemui", on: Self.phone.rawValue) }
+    }
+
+    @Test("holding to an app changes no scope but a test device's")
+    func holdLeavesOthers() throws {
+        let (backend, _) = try AndroidBackendHelperTests.phoneBackend(top: "\(Self.playground)/.Main")
+        let scope = AndroidAppScope(permitted: [Self.playground], managedCeiling: nil)
+        backend.appScopes[Self.phone.rawValue] = scope
+        backend.holdToApp("com.example.other", on: Self.phone.rawValue)
+        #expect(backend.appScopes[Self.phone.rawValue] == scope)
+    }
+
     @Test("a front app Offsider cannot name counts as another app in front")
     func unknownForegroundIsOtherApp() {
         #expect(AndroidError.foregroundUnknown(Self.phone.rawValue).isOtherAppInFront)

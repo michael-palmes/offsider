@@ -81,6 +81,13 @@ struct VideoMaskOptions: ParsableArguments {
         }
     }
 
+    /// `OFFSIDER_MASK_SECURE=0` turns the password check off, so for an agent a person confirms it, as `screenshot` asks. `--unmasked` has its warning and ask rule instead.
+    @MainActor
+    func confirmCheckOff(command: String, environment: [String: String] = ProcessInfo.processInfo.environment, profile: OutputProfile = .gated) async throws {
+        guard !unmasked, !Screenshot.masksSecure(flag: nil, environment: environment) else { return }
+        try await UnmaskedConsent.confirm(command: command, profile: profile)
+    }
+
     /// Reads one tree before the first frame and refuses with `video_unmasked` when it shows a password field, or anything
     /// `offsider.mask.json` masks, or cannot be read.
     @MainActor
@@ -91,14 +98,14 @@ struct VideoMaskOptions: ParsableArguments {
             if let reader = backend as? any MaskTreeReading {
                 tree = try await reader.maskTree(for: device)
             } else {
-                tree = try await backend.accessibilityTree(for: device)
+                tree = try await backend.readingWithGaps(on: device) { try await backend.accessibilityTree(for: device) }
             }
         } catch let failure as any OffsiderFailure where failure.reason.exitCode.rawValue == OffsiderExitCode.deviceBusy.rawValue {
             throw failure
         } catch {
             throw CLIError(errorDescription: VideoMaskPolicy.unreadableRefusal(command: command, error: OffsiderCommand.message(for: error)), reason: .videoUnmasked)
         }
-        if VideoMaskPolicy.showsSecureField(tree) {
+        if VideoMaskPolicy.showsSecureField(tree, revealed: await TreeCache.revealedSecrets(for: device, backend: backend)) {
             throw CLIError(errorDescription: VideoMaskPolicy.secureFieldRefusal(command: command), reason: .videoUnmasked)
         }
         if let config, let shown = try configMatch(config.config, in: tree) {
@@ -107,6 +114,9 @@ struct VideoMaskOptions: ParsableArguments {
                     + "Leave that screen first, use `screenshot`, which masks it, or pass --unmasked to record anyway.",
                 reason: .videoUnmasked
             )
+        }
+        if let unproven = ScreenCapture.unproven(tree) {
+            Console.current.notice(ScreenCapture.unprovenNotice(unproven, subject: "the video"))
         }
     }
 

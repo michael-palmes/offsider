@@ -37,7 +37,7 @@ offsider batch --device <DEVICE_ID> --json \
 ## Rules
 
 - Use exactly one step source per run: `--step`, `--file` or `--stdin`. `--file` follows the same rules as `type --file`, with `batch --allow-path` for a refused location.
-- A `type` step aimed at a password field exits 64 `secure_field_argument` with nothing typed: sign in with `login` instead.
+- A `type` or text-spelling `key-sequence` step aimed at a password field exits 64 `secure_field_argument` with nothing sent: sign in with `login` instead. A `key-sequence` step's record shows `<N keys>`, never its keycodes.
 - Steps run in order and stop at the first failure; add `--continue-on-error` for best-effort runs.
 - Do not pass `--device` inside step lines; keep it on the batch.
 - After an exploratory run, keep the working sequence as a `batch --file` and re-run it once to prove it replays.

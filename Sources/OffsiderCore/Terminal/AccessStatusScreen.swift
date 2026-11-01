@@ -21,7 +21,8 @@ public enum AccessStatusScreen {
     }
 
     static func apps(_ entry: DeviceAllowance) -> String {
-        entry.apps.isEmpty ? "any app" : entry.allowsWholeDevice ? "any app and all logs" : entry.apps.map { PromptScreen.label($0) }.joined(separator: ", ")
+        if entry.testDevice { return "test device" }
+        return entry.apps.isEmpty ? "any app" : entry.allowsWholeDevice ? "any app and all logs" : entry.apps.map { PromptScreen.label($0) }.joined(separator: ", ")
     }
 
     static func until(_ entry: DeviceAllowance, now: Date, timeZone: TimeZone) -> String {
@@ -37,24 +38,37 @@ public enum AccessStatusScreen {
         policy.list.entries.filter { policy.decision(platform: $0.platform, key: $0.key, now: now) == .allowed($0) }
     }
 
+    /// `Test Pixel needs a newer Offsider.`, or how many do.
+    public static func newerNeeded(_ policy: PhysicalDevicePolicy) -> String? {
+        guard let first = policy.list.newer.first else { return nil }
+        return policy.list.newer.count == 1 ? "\(PromptScreen.label(first.name)) needs a newer Offsider." : "\(policy.list.newer.count) devices need a newer Offsider."
+    }
+
+    /// A test device is marked, and says so when managed policy has turned it into a plain Any app allowance.
+    static func appsCell(_ entry: DeviceAllowance, policy: PhysicalDevicePolicy, style: TerminalStyle) -> Table.Cell {
+        guard entry.testDevice else { return Table.Cell(apps(entry)) }
+        let text = policy.drivesWhole(entry) ? AllowScreen.wholeDevice : "any app, \(policy.managed.testDeviceRefusal ?? "")"
+        return Table.Cell(text, person: style.mark(.testDevice) + " " + text)
+    }
+
     /// The one warning the screen carries, or nil.
     public static func warning(_ policy: PhysicalDevicePolicy, now: Date) -> String? {
         if policy.managed.unreadable || policy.managed.allowPhysicalDevices == false { return managedBlocksAll }
         if policy.listProblem != nil { return listUnreadable }
-        if !policy.sealIntact, !policy.list.entries.isEmpty { return listChanged }
+        if !policy.sealIntact, !policy.list.isEmpty { return listChanged }
         let blocked = policy.list.entries.contains { entry in
             if case .refused(let refusal) = policy.decision(platform: entry.platform, key: entry.key, now: now) { return refusal.isManaged }
             return false
         }
-        return blocked ? managedBlocksSome : nil
+        return blocked ? managedBlocksSome : newerNeeded(policy)
     }
 
     /// A person's page; `agent` is what an agent reads on stdout instead, as it always did.
-    public static func page(_ policy: PhysicalDevicePolicy, now: Date, timeZone: TimeZone, agent: String = "") -> Page {
+    public static func page(_ policy: PhysicalDevicePolicy, now: Date, timeZone: TimeZone, agent: String = "", style: TerminalStyle = .detect(isTerminal: false)) -> Page {
         var notices: [Notice] = []
         if let warning = warning(policy, now: now) {
             let allowAgain = [listChanged, listUnreadable].contains(warning)
-            notices.append(.warning(warning, try: allowAgain ? allowCommand : nil))
+            notices.append(.warning(warning, try: allowAgain ? allowCommand : warning == newerNeeded(policy) ? NewerDeviceEntry.updateCommand : nil))
         }
         let entries = allowed(policy, now: now)
         guard !entries.isEmpty else {
@@ -64,7 +78,7 @@ public enum AccessStatusScreen {
         let rows = entries.map { entry in
             Table.Row([
                 Table.Cell(name(entry)),
-                Table.Cell(apps(entry)),
+                appsCell(entry, policy: policy, style: style),
                 Table.Cell(until(entry, now: now, timeZone: timeZone)),
                 entry.team.map { Table.Cell("team \(PromptScreen.visible($0))") },
             ], status: .on)

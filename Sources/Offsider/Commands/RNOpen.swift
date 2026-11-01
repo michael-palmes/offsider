@@ -33,7 +33,7 @@ struct RNOpen: AsyncParsableCommand {
     @Option(help: ArgumentHelp("Metro's port on this Mac.", valueName: "port"))
     var port: Int
 
-    @Option(name: .customLong("bundle-id"), help: ArgumentHelp("The app's bundle ID on iOS or package on Android.", valueName: "bundle-id|package"))
+    @Option(name: .customLong("bundle-id"), help: ArgumentHelp("The app's bundle ID on iOS or package on Android.", valueName: "bundle-id|package"), transform: AppID.parse)
     var bundleID: String
 
     @Option(help: ArgumentHelp("The dev client's link scheme, such as exp+my-app or the app's own; read from the app when it has exactly one.", valueName: "scheme"))
@@ -86,11 +86,6 @@ struct RNOpen: AsyncParsableCommand {
         guard (1...65_535).contains(port) else {
             throw ValidationError("--port must be from 1 to 65535; got \(port).")
         }
-        do {
-            _ = try ExpoDevClient.validate(appID: bundleID)
-        } catch let error as ExpoDevClientError {
-            throw ValidationError(error.message)
-        }
         if let scheme, scheme.range(of: #"^[A-Za-z][A-Za-z0-9+.-]*$"#, options: .regularExpression) == nil {
             throw ValidationError("--scheme must be a URL scheme such as exp+my-app; got '\(scheme)'.")
         }
@@ -120,11 +115,12 @@ struct RNOpen: AsyncParsableCommand {
 
     /// Checks Metro, sends the link, then polls the tree until the app is up; `metro` and `clock` let tests run without a network or real waits.
     @MainActor
-    func open(on route: DeviceRouter.Route, metro: MetroStatus, clock: PollClock) async throws -> Report {
+    func open(on route: DeviceRouter.Route, metro: MetroStatus, clock: PollClock, gate: DevicePolicyGate = .current) async throws -> Report {
         let device = route.device
         guard let opener = route.backend as? any ExpoDevClientOpening, !device.isPhysicalIOSDevice else {
             throw CLIError(errorDescription: "rn open works on iOS simulators and Android devices; \(device.rawValue) is a physical iPhone or iPad. Open the app's dev client link there yourself.", reason: .notSupported)
         }
+        if let allowance = route.allowance { try gate.requireApp(bundleID, on: allowance) }
         // A phone allowed for any app reads only the app a command names.
         (route.backend as? any AppTargetSelecting)?.selectApp(bundleID, on: device)
         if let unreachable = await metro.unreachable(port: port) { throw unreachable }
@@ -156,6 +152,7 @@ struct RNOpen: AsyncParsableCommand {
         var blank = false
         var bare = false
         var loading = false
+        var appName: String??
         let liveness = route.backend as? any AppLivenessReading
         var watch = AppLivenessWatch()
         func send() async throws {
@@ -177,7 +174,7 @@ struct RNOpen: AsyncParsableCommand {
             let reading = await liveness.appLiveness(bundleID, seen: watch.seen, tree: tree, mayList: watch.takeListing(at: now), on: device)
             guard case .crashed(let process) = watch.record(reading, at: now) else { return }
             let report = await liveness.crashReport(bundleID, process: process, since: firstSend ?? Date(), on: device)
-            throw Self.crashed(bundleID, process: process, report: report, metro: "\(host):\(port)", device: device)
+            throw Self.crashed(bundleID, process: process, report: report, metro: "\(host):\(port)", device: device, appArgument: route.appArgument)
         }
         if restart {
             if case .running(let process) = await liveness?.appLiveness(bundleID, seen: nil, tree: nil, mayList: true, on: device) {
@@ -220,14 +217,17 @@ struct RNOpen: AsyncParsableCommand {
                 throw CLIError(
                     errorDescription: "\(bundleID) could not load its bundle from Metro on \(host):\(port): \(failure)",
                     reason: .rnLoadFailed,
-                    hint: "offsider logs --rn --device \(device.rawValue)"
+                    hint: "offsider logs --rn\(route.appArgument) --device \(device.rawValue)"
                 )
             }
-            // Only the prompt for the link just sent is answered; a later one, perhaps for another app, is reported below.
-            if let open = ExpoDevLauncher.openLinkPrompt(in: tree), let frame = open.frame, clock.now() - lastSend <= Self.resendEvery {
-                let point = try await route.backend.deviceCoordinates(for: [(x: frame.center.x, y: frame.center.y)], tree: tree, on: device)[0]
-                try await route.backend.performTracked(.tapAt(x: point.x, y: point.y), on: device)
-                continue
+            // Only the prompt for the link just sent, naming this app, is answered; any other is reported below.
+            if ExpoDevLauncher.openLinkPrompt(in: tree) != nil, clock.now() - lastSend <= Self.resendEvery {
+                if appName == nil { appName = .some(try? await (route.backend as? any AppLifecycleControlling)?.appInfo(bundleID, on: device).name) }
+                if let name = appName ?? nil, let frame = ExpoDevLauncher.openLinkPrompt(in: tree, appName: name)?.frame {
+                    let point = try await route.backend.deviceCoordinates(for: [(x: frame.center.x, y: frame.center.y)], tree: tree, on: device)[0]
+                    try await route.backend.performTracked(.tapAt(x: point.x, y: point.y), on: device)
+                    continue
+                }
             }
             if ExpoDevLauncher.isLauncher(tree) {
                 launcherSeen = true
@@ -255,7 +255,7 @@ struct RNOpen: AsyncParsableCommand {
                     // A crash leaves the home screen in front, which is no prompt to ask about.
                     try await watchApp(tree, force: true)
                     if watch.hasPendingMiss { continue }
-                    throw covered(by: cover, device: device)
+                    throw covered(by: cover, route: route)
                 }
                 continue
             }
@@ -265,7 +265,7 @@ struct RNOpen: AsyncParsableCommand {
                     let name = blank || bare || Self.isForeign(tree, app: app) ? nil : Self.topElement(of: tree)
                     shown = name.map { (name: $0, since: shown?.name == $0 ? shown?.since ?? now : now) }
                     if let shown, now - shown.since >= Self.otherScreenFor {
-                        throw otherScreen(shown.name, waitID: waitID, after: "it has shown it for \(WaitLoop.seconds(Self.otherScreenFor)), so rn open stopped waiting", device: device)
+                        throw otherScreen(shown.name, waitID: waitID, after: "it has shown it for \(WaitLoop.seconds(Self.otherScreenFor)), so rn open stopped waiting", route: route)
                     }
                     continue
                 }
@@ -296,7 +296,7 @@ struct RNOpen: AsyncParsableCommand {
             throw await readFailure(failing.error, failingFor: clock.now() - failing.since, on: route)
         }
         if let waitID, let shown {
-            throw otherScreen(shown.name, waitID: waitID, after: "it did not appear within \(WaitLoop.seconds(timeout))", device: device)
+            throw otherScreen(shown.name, waitID: waitID, after: "it did not appear within \(WaitLoop.seconds(timeout))", route: route)
         }
         if loading || bare {
             let seen = loading
@@ -305,7 +305,7 @@ struct RNOpen: AsyncParsableCommand {
             throw CLIError(
                 errorDescription: "\(bundleID) did not finish loading from Metro on \(host):\(port) within \(WaitLoop.seconds(timeout)): \(seen)",
                 reason: .conditionNotMet,
-                hint: "offsider describe-ui --summary --device \(device.rawValue)"
+                hint: "offsider describe-ui --summary\(route.appArgument) --device \(device.rawValue)"
             )
         }
         if blank {
@@ -318,7 +318,7 @@ struct RNOpen: AsyncParsableCommand {
         throw CLIError(
             errorDescription: "\(bundleID) did not finish loading from Metro on \(host):\(port) within \(WaitLoop.seconds(timeout))\(launcherSeen ? "; the dev launcher was still showing" : "").",
             reason: .conditionNotMet,
-            hint: "offsider describe-ui --summary --device \(device.rawValue)"
+            hint: "offsider describe-ui --summary\(route.appArgument) --device \(device.rawValue)"
         )
     }
 
@@ -407,7 +407,9 @@ struct RNOpen: AsyncParsableCommand {
         return label.map { TerminalText.quoted(SelectorText.truncated($0)) }
     }
 
-    func covered(by cover: Cover, device: DeviceID) -> CLIError {
+    @MainActor
+    func covered(by cover: Cover, route: DeviceRouter.Route) -> CLIError {
+        let device = route.device
         switch cover {
         case .devMenuIntro:
             return CLIError(
@@ -420,7 +422,7 @@ struct RNOpen: AsyncParsableCommand {
             return CLIError(
                 errorDescription: "\(bundleID) is behind \(prompt.summary)\(choices), so rn open stopped waiting. It never answers a system prompt: ask the user which to choose, answer it, then run rn open again.",
                 reason: .personRequired,
-                hint: buttons.isEmpty ? "offsider screenshot --device \(device.rawValue)" : "offsider describe-ui --summary --device \(device.rawValue)",
+                hint: buttons.isEmpty ? "offsider screenshot\(route.appArgument) --device \(device.rawValue)" : "offsider describe-ui --summary\(route.appArgument) --device \(device.rawValue)",
                 ask: "Can you answer the system prompt on \(PersonAsk.devicePlaceholder)?"
             )
         case .otherApp(let name, let title, let buttons):
@@ -435,15 +437,16 @@ struct RNOpen: AsyncParsableCommand {
 
     private static func other(_ name: String) -> String { TerminalText.quoted(SelectorText.truncated(name)) }
 
-    func otherScreen(_ name: String, waitID: String, after: String, device: DeviceID) -> CLIError {
+    @MainActor
+    func otherScreen(_ name: String, waitID: String, after: String, route: DeviceRouter.Route) -> CLIError {
         CLIError(
             errorDescription: "\(bundleID) shows the screen with \(name), and --wait-id \(Self.shellWord(waitID)) is not on it: \(after). Pass --wait-id with an element of the screen the app opens on, or bring the app to that screen first.",
             reason: .conditionNotMet,
-            hint: "offsider describe-ui --summary --device \(device.rawValue)"
+            hint: "offsider describe-ui --summary\(route.appArgument) --device \(route.device.rawValue)"
         )
     }
 
-    static func crashed(_ bundleID: String, process: AppProcess, report: AppCrashReport?, metro: String, device: DeviceID) -> CLIError {
+    static func crashed(_ bundleID: String, process: AppProcess, report: AppCrashReport?, metro: String, device: DeviceID, appArgument: String = "") -> CLIError {
         let detail = switch report {
         case .file(let path): " Crash report: \(path)"
         case .cause(let cause): " It stopped with \(cause)."
@@ -453,7 +456,7 @@ struct RNOpen: AsyncParsableCommand {
         return CLIError(
             errorDescription: "\(bundleID) crashed while loading from Metro on \(metro): its process \(process.pid) stopped.\(detail)",
             reason: .appCrashed,
-            hint: "offsider logs --rn --device \(device.rawValue)"
+            hint: "offsider logs --rn\(appArgument) --device \(device.rawValue)"
         )
     }
 }

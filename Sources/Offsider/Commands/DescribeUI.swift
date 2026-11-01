@@ -13,7 +13,8 @@ struct DescribeUI: AsyncParsableCommand {
         element at the screen's centre once, so context names a view another process presents over the app (presented) and \
         a screen-sized view listed off screen that the centre lands in (staleFrame); on Android, context.hidden counts \
         branches the helper left out as not visible to the user, and context.hiddenBranches names up to five of them \
-        ({id, label, className, frame}, on-screen and larger first).
+        ({id, label, className, frame}, on-screen and larger first). Both add what the app draws but hides from \
+        accessibility, counted in context.filled; --diff leaves those out.
         """
     )
 
@@ -65,15 +66,17 @@ struct DescribeUI: AsyncParsableCommand {
     }
 
     func run() async throws {
-        if rawSource { try Self.refuseRawSourceForAgent() }
+        if rawSource { try await Self.confirmRawSource() }
         let logger = OffsiderLogger()
         let watchdog = DeviceWatchdog()
         let route = try await DeviceRouter.routeForInput(deviceOption.id, logger: logger, watchdog: watchdog, locking: false)
         await appOption.apply(to: route)
-        try await watchdog.guardingSetup(device: deviceOption.id) { try await route.backend.prepare() }
 
         let console = Console.current
-        let described = try await console.progress("Reading the screen") { try await read(on: route, watchdog: watchdog) }
+        let described = try await console.progress("Reading the screen") {
+            try await watchdog.guardingSetup(device: deviceOption.id) { try await route.backend.prepare() }
+            return try await read(on: route, watchdog: watchdog)
+        }
         console.data(described)
     }
 
@@ -94,8 +97,10 @@ struct DescribeUI: AsyncParsableCommand {
         let base = diff ? await TreeCache.load(for: route.device, backend: route.backend) : nil
         (route.backend as? any ScreenStatusPrefetching)?.prefetchScreenStatus(for: route.device)
         let probe = point == nil && !diff ? await PresentationCheck.start(backend: route.backend, device: route.device) : nil
+        let samples = point == nil && !diff ? await route.backend.startGapSamples(on: route.device) : nil
         var tree = await Self.withScreen(try await route.backend.accessibilityTree(for: route.device, point: try parsedPoint()), on: route)
         if let truncated = tree.truncated { Console.current.notice(truncated.notice) }
+        if point == nil, !diff { tree = await route.backend.withGapsFilled(tree, on: route.device, samples: samples) }
         let centre = await probe?.centre()
         if point == nil {
             DeviceActivityLedger.current.recordScreen(tree.screen, on: route.device)
@@ -167,10 +172,11 @@ struct DescribeUI: AsyncParsableCommand {
     }
 
     /// The raw tree is unredacted and uncapped device text, so only a person at a terminal reads it.
-    static func refuseRawSourceForAgent(profile: OutputProfile = .current) throws {
-        guard profile == .agent else { return }
-        throw CLIError.personRequired(
-            "--raw-source prints the device's unredacted tree, so it runs only for a person at a terminal. Nothing was read. Use describe-ui --json instead."
+    static func confirmRawSource(profile: OutputProfile = .gated) async throws {
+        try await UnmaskedConsent.confirm(
+            reason: "print the device's unredacted tree",
+            refusal: "--raw-source prints the device's unredacted tree, so it runs only for a person at a terminal. Nothing was read. Use describe-ui --json instead.",
+            profile: profile
         )
     }
 

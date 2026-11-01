@@ -171,7 +171,7 @@ struct AndroidBackendHelperTests {
         _ = try await rig.read()
         _ = try await rig.read()
 
-        #expect(rig.log.warnings == ["The screen on emulator-5556 has more than 20,000 accessibility nodes; describe-ui shows the first 20,000."])
+        #expect(rig.log.warnings == ["The screen on emulator-5556 is past 20,000 accessibility nodes or depth 200; describe-ui shows what was read, and masks may miss the rest."])
         await rig.backend.close()
     }
 

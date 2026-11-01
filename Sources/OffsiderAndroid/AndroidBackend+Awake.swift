@@ -1,6 +1,20 @@
 import Foundation
 import OffsiderCore
 
+extension AndroidBackend: ScreenSleeping {
+    /// Sends nothing to a dark screen, then waits until it reads dark.
+    public func sleepScreen(on id: DeviceID) async throws -> ScreenSleepOutcome {
+        let before = try await awakeState(on: id)
+        guard before.screen == .on else { return ScreenSleepOutcome(wasOn: false, sent: false) }
+        _ = try await settingsShell(AndroidAwakeState.sleepKey, on: id.rawValue)
+        for _ in 1...Self.wakePolls {
+            try await host.sleep(Self.awakePollInterval)
+            if try await awakeState(on: id).screen != .on { return ScreenSleepOutcome(wasOn: true, sent: true) }
+        }
+        throw AndroidError(.inputFailed, "The screen of \(id.rawValue) stayed on after the sleep key. Check the device, then retry.")
+    }
+}
+
 extension AndroidBackend: AwakeControlling {
     static let awakePollInterval: Duration = .milliseconds(200)
     /// About 6 s on a phone, where each read takes about 0.2 s; some phones take over 3 s to turn their screen on.

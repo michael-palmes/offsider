@@ -25,6 +25,8 @@ struct DeviceStateTestView: View {
                 .accessibilityValue(result)
             Button("Refresh", action: refresh)
                 .accessibilityIdentifier("device-state-refresh")
+            Button("Ask for Contacts", action: askForContacts)
+                .accessibilityIdentifier("device-state-ask-contacts")
             Button("Authenticate", action: authenticate)
                 .accessibilityIdentifier("device-state-authenticate")
             Spacer()
@@ -44,6 +46,13 @@ struct DeviceStateTestView: View {
             biometry = context.biometryType == .faceID ? "face" : context.biometryType == .touchID ? "finger" : "other"
         } else {
             biometry = "unavailable"
+        }
+    }
+
+    /// Raises the system's permission prompt, so tests can read and answer a real one on a test device.
+    private func askForContacts() {
+        CNContactStore().requestAccess(for: .contacts) { _, _ in
+            DispatchQueue.main.async(execute: refresh)
         }
     }
 

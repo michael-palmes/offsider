@@ -531,6 +531,29 @@ struct RNDevMenuTests {
         #expect(!menu.roots.flatMap { $0.flattened() }.contains { $0.role == .switch && $0.frame?.contains(start) == true })
     }
 
+    @Test("on a phone allowed for any app, the off-screen hint names the app, or the printed command is refused")
+    func offScreenHintNamesApp() async throws {
+        final class Phone: FakeDeviceBackend, AppTargetSelecting {
+            var selected: String?
+            func selectApp(_ appID: String, on id: DeviceID) -> Bool { selected = appID; return true }
+            func selectedApp(on id: DeviceID) -> String? { selected }
+        }
+        let menu = try Self.captured("devmenu-expo-ios")
+        let device = DeviceID(rawValue: "R58MFAKE01", platform: .android)
+        let backend = Phone(platform: .ios, trees: [menu, menu, Self.app], advanceTreeOnInput: true)
+        backend.selected = "com.example.app"
+        let allowance = DeviceAllowance(platform: .android, key: device.rawValue, name: "Test Pixel", added: Date(), expires: nil, apps: [])
+
+        let error = await #expect(throws: CLIError.self) {
+            _ = try await RNDevMenu.parse(["--label", "Tools button", "--device", device.rawValue])
+                .perform(on: DeviceRouter.Route(backend: backend, device: device, allowance: allowance), clock: ScriptedClock().poll)
+        }
+        #expect(error?.reason == .targetOffScreen)
+        let hint = try #require(error?.hint)
+        #expect(hint.hasPrefix("offsider swipe ") && hint.hasSuffix(" --app com.example.app --device R58MFAKE01"))
+    }
+
+
     /// An Expo menu whose scroll view shows y 300 to 700, holding a Clear storage button at `clearStorageY`.
     static func scrolledMenu(clearStorageY: Double) -> UITree {
         let rows = ["Reload", "Go home", "Toggle performance monitor"].enumerated().map { index, label in

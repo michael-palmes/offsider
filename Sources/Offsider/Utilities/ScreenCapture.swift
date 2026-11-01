@@ -134,11 +134,35 @@ enum ScreenCapture {
         var unproven: String? = nil
     }
 
-    /// `modal` when an Android modal window, but an empty or opaque LogBox one, hides the windows beneath from the tree.
+    /// Why this tree cannot prove its masks: `truncated` by the device; on Android, `no-windows` when uiautomator lists none, or `modal` when a window, but an empty or opaque LogBox one, hides those beneath.
     nonisolated static func unproven(_ tree: UITree) -> String? {
+        if tree.sourceTruncated { return "truncated" }
+        guard tree.platform == .android else { return nil }
+        guard tree.windows != nil else { return "no-windows" }
         let context = UITreeContext(tree: tree)
-        guard tree.platform == .android, let window = context.window, window.kind == .modal, !window.empty, context.logBox?.inspector != true else { return nil }
+        guard let window = context.window, window.kind == .modal, !window.empty, context.logBox?.inspector != true else { return nil }
         return "modal"
+    }
+
+    /// The warning for `unproven`'s reason; `subject` is what to check, such as `the image`.
+    nonisolated static func unprovenNotice(_ reason: String, subject: String) -> Notice {
+        switch reason {
+        case "truncated":
+            return .warning(
+                "The screen was too big to read whole; check \(subject)",
+                agent: "the device cut this accessibility tree short, so masks may miss elements past the cut; check \(subject) or add --mask-region (maskUnproven)."
+            )
+        case "no-windows":
+            return .warning(
+                "Masks can't tell if a modal is open; check \(subject)",
+                agent: "this read lists no windows, so a modal hiding what is behind it cannot be told and masks may miss text drawn there; check \(subject) or add --mask-region (maskUnproven)."
+            )
+        default:
+            return .warning(
+                "Masks can't see behind this modal; check \(subject)",
+                agent: "a modal window covers the app and Android leaves what is behind it out of the tree, so masks may miss text drawn there; check \(subject) or add --mask-region (maskUnproven)."
+            )
+        }
     }
 
     /// Paints every mask in `plan` black; a capture that is not upright cannot be mapped, so it is withheld.

@@ -15,10 +15,14 @@ struct ExpoDevClientTests {
         ("com.example;reboot", false),
         ("com.example app", false),
         ("com.example.$(id)", false),
+        (" com.example.app", false),
+        ("com.example.app ", false),
+        ("\tcom.example.app", false),
+        ("com.example.app\n", false),
     ])
-    func validation(appID: String, valid: Bool) {
-        let accepted = (try? ExpoDevClient.validate(appID: appID)) != nil
-        #expect(accepted == valid)
+    func validation(appID: String, valid: Bool) throws {
+        let accepted = try? ExpoDevClient.validate(appID: appID)
+        #expect(accepted == (valid ? appID : nil))
     }
 
     @Test("iOS writes both keys to the app's own plist by path, not the device-wide domain")

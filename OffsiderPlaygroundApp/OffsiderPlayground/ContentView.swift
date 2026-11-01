@@ -77,10 +77,14 @@ struct ContentView: View {
             ModalNavigationTestView()
         case "long-scroll-test":
             LongScrollTestView()
+        case "hold-scroll-test":
+            LongScrollTestView(holdPressRows: true)
         case "parked-sheet-test":
             ParkedSheetTestView()
         case "presented-sheet-test":
             PresentedSheetTestView()
+        case "paste-prompt-test":
+            PastePromptTestView()
         case "environment-test":
             EnvironmentTestView()
         case "device-state":
@@ -156,8 +160,10 @@ struct MainMenuView: View {
             ("context-menu-test", "Context Menu Test", "Long press menu targeting"),
             ("modal-navigation-test", "Modal Navigation Test", "Modal route and nested navigation refresh"),
             ("long-scroll-test", "Long Scroll Test", "Dedicated long scroll coverage"),
+            ("hold-scroll-test", "Hold Scroll Test", "A long list that also takes a long press"),
             ("parked-sheet-test", "Parked Sheet Test", "Closed sheet parked off screen"),
-            ("presented-sheet-test", "Presented Sheet Test", "Photo picker drawn by another process")
+            ("presented-sheet-test", "Presented Sheet Test", "Photo picker drawn by another process"),
+            ("paste-prompt-test", "Paste Prompt Test", "A pasteboard read iOS may ask about")
         ])
     ]
     

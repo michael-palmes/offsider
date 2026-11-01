@@ -21,22 +21,28 @@ enum PresentationCheck {
             return nil
         }
         let point = UIPoint(x: size.width / 2, y: size.height / 2)
+        let zoomKnown = prober.knowsDisplayZoom(on: device)
         let read = Task { @MainActor in (try? await prober.probe(at: point, on: device)) ?? nil }
         // Lets the read send its request before the tree read takes the main actor.
         await Task.yield()
-        return Pending(point: point, read: read)
+        return Pending(point: point, read: read, reread: {
+            guard !zoomKnown, prober.knowsDisplayZoom(on: device) else { return nil }
+            return { try await prober.probe(at: point, on: device) }
+        })
     }
 
     /// A read started with `start`; the `probe` phase is how long the command waits for it once the tree is in.
     struct Pending {
         let point: UIPoint
         let read: Task<UINode?, Never>
+        /// The read to make instead when the tree read found a display zoom this one started without: it looked off centre and its frames are in layout space.
+        let reread: @MainActor () -> (@MainActor () async throws -> UINode?)?
 
         /// Where the read looked and what answered; nil when it failed or took longer than `limit`.
         @MainActor
         func centre() async -> (point: UIPoint, hit: UINode)? {
             defer { read.cancel() }
-            return await PresentationCheck.bounded({ await read.value }).map { (point, $0) }
+            return await PresentationCheck.bounded(reread() ?? { await read.value }).map { (point, $0) }
         }
     }
 

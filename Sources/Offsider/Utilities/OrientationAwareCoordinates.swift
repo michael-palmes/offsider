@@ -96,34 +96,22 @@ struct OrientationAwareCoordinates {
     /// Determines which coordinate mapping to apply for the given simulator.
     ///
     /// Detection flow:
-    /// 1. Fetch AX application frame.
-    /// 2. If an explicit override was supplied → rotation case.
-    /// 3. Otherwise read SimulatorKit private UI orientation.
-    /// 4. If private orientation is unavailable and the AX frame is portrait-shaped → passthrough.
-    /// 5. If unavailable and landscape-shaped, probe screenshot dimensions.
+    /// 1. If an explicit override was supplied → rotation case.
+    /// 2. Otherwise read SimulatorKit private UI orientation.
+    /// 3. If private orientation is unavailable and the AX frame is portrait-shaped → passthrough.
+    /// 4. If unavailable and landscape-shaped, probe screenshot dimensions.
     ///    - Screenshot portrait-shaped (taller than wide) → letterbox case.
     ///    - Screenshot landscape-shaped (wider than tall) → rotated device case.
     ///
     /// - Parameters:
+    ///   - applicationFrame: The AX application frame, converted for Display Zoom by the caller.
     ///   - simulatorUDID: Target simulator UDID.
+    ///   - screenID: The screen whose orientation to read.
     ///   - orientationOverride: Forces a specific rotated-device `SimulatorOrientation`.
     ///     Intended for internal tests or future explicit callers; normal CLI commands
     ///     rely on automatic private orientation detection.
     ///   - logger: Offsider logger instance.
     /// - Returns: The `CoordinateMapping` that applies to the current simulator state.
-    static func detectMapping(
-        for simulatorUDID: String,
-        orientationOverride: SimulatorOrientation? = nil,
-        logger: OffsiderLogger
-    ) async throws -> CoordinateMapping {
-        try await detectMapping(
-            applicationFrame: try await fetchApplicationFrame(for: simulatorUDID, logger: logger),
-            simulatorUDID: simulatorUDID,
-            orientationOverride: orientationOverride,
-            logger: logger
-        )
-    }
-
     static func detectMapping(
         applicationFrame: UIFrame?,
         simulatorUDID: String,
@@ -301,39 +289,6 @@ struct OrientationAwareCoordinates {
 
     // MARK: - Full Pipeline
 
-    /// Detects the appropriate coordinate mapping and translates a single logical
-    /// point to the physical portrait point expected by FBSimulatorHIDEvent.
-    ///
-    /// This is the single entry point used by `Tap`, `Touch`, and `Swipe`.
-    ///
-    /// Handles three cases automatically:
-    /// - Portrait device, portrait app → passthrough.
-    /// - Portrait device, landscape-only app → letterbox scale + offset.
-    /// - Rotated hardware → rotation math.
-    ///
-    /// - Parameters:
-    ///   - point: Logical (x, y) as supplied by the caller.
-    ///   - simulatorUDID: Target simulator UDID.
-    ///   - orientationOverride: Optional explicit rotated-device orientation. Pass
-    ///     `.landscapeFlipped` when the device is rotated counter-clockwise. Leave nil for
-    ///     automatic letterbox detection in portrait-hardware landscape-only apps.
-    ///   - logger: Offsider logger instance.
-    /// - Returns: Physical (x, y) ready for FBSimulatorHIDEvent.
-    static func translate(
-        point: (x: Double, y: Double),
-        for simulatorUDID: String,
-        orientationOverride: SimulatorOrientation? = nil,
-        logger: OffsiderLogger
-    ) async throws -> (x: Double, y: Double) {
-        let mapping = try await detectMapping(
-            for: simulatorUDID,
-            orientationOverride: orientationOverride,
-            logger: logger
-        )
-
-        return applyMapping(mapping, to: point, logger: logger)
-    }
-
     /// Translates several logical points using a single detection round-trip.
     static func translateBatch(
         points: [(x: Double, y: Double)],
@@ -383,51 +338,5 @@ struct OrientationAwareCoordinates {
         }
 
         return physical
-    }
-
-    private static func fetchApplicationFrame(for simulatorUDID: String, logger: OffsiderLogger) async throws -> UIFrame? {
-        let jsonData = try await AccessibilityFetcher.fetchAccessibilityInfoJSONData(for: simulatorUDID, logger: logger)
-        return UITree.applicationFrame(in: try IOSAccessibilityMapping.roots(fromJSON: jsonData))
-    }
-
-    // MARK: - Orientation Detection (legacy, preserved for callers that need it directly)
-
-    /// Determines the current logical orientation by inspecting the accessibility tree.
-    ///
-    /// Prefer `detectMapping(for:orientationOverride:logger:)` for full tap/touch/swipe
-    /// coordinate translation. This method only reads the AX frame and cannot distinguish
-    /// a rotated device from a letterboxed landscape-only app.
-    ///
-    /// - Parameters:
-    ///   - simulatorUDID: Target simulator UDID.
-    ///   - orientationOverride: When non-nil, skip detection and use this value.
-    ///   - logger: Offsider logger instance.
-    /// - Returns: The detected (or overridden) orientation.
-    static func detectOrientation(
-        for simulatorUDID: String,
-        orientationOverride: SimulatorOrientation? = nil,
-        logger: OffsiderLogger
-    ) async throws -> SimulatorOrientation {
-        if let override = orientationOverride {
-            logger.info().log("Using explicit orientation override: \(override.rawValue)")
-            return override
-        }
-
-        guard let appFrame = try await fetchApplicationFrame(for: simulatorUDID, logger: logger) else {
-            logger.info().log("Could not read application frame; assuming portrait orientation")
-            return .portrait
-        }
-
-        if appFrame.width > appFrame.height {
-            logger.info().log(
-                "Detected landscape orientation from application frame \(Int(appFrame.width))x\(Int(appFrame.height))"
-            )
-            return .landscape
-        }
-
-        logger.info().log(
-            "Detected portrait orientation from application frame \(Int(appFrame.width))x\(Int(appFrame.height))"
-        )
-        return .portrait
     }
 }

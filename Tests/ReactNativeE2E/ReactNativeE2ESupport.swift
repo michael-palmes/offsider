@@ -102,6 +102,16 @@ struct RNApp: Sendable {
         return result
     }
 
+    /// `run` on a pseudo-terminal, for the person gates; stderr comes mixed into stdout.
+    func runAsPerson(_ arguments: String, timeout: TimeInterval = 120) async throws -> SeparatedCommandOutput {
+        let device = platform == .android ? try await AndroidE2E.serial() : try IOSRNPlayground.udid()
+        let result = try await TestHelpers.runOffsiderAsPerson("\(arguments) --device \(device)", timeout: timeout)
+        guard result.exitCode == 0 else {
+            throw DescribeUIError(description: "offsider \(arguments) on \(platform.rawValue) exited \(result.exitCode): \(result.stdout)")
+        }
+        return result
+    }
+
     /// Runs offsider on this platform's device and returns whatever it exits with; on Android, first answers an ANR dialog.
     func offsider(_ arguments: String, environment: [String: String]? = nil, timeout: TimeInterval = 120) async throws -> SeparatedCommandOutput {
         switch platform {

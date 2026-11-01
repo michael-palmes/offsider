@@ -28,10 +28,30 @@ public struct RunnerPing: Equatable, Sendable {
 public struct RunnerForeground: Equatable, Sendable {
     public let inFront: Bool
     public let activeBundleID: String?
+    /// What iOS calls a system alert or sheet over the app.
+    public let prompt: String?
+    /// True when the lock screen is up; nil when the device did not say.
+    public let locked: Bool?
+    /// False when this Xcode offers no active-app lookup, so a system sheet over the app goes unseen.
+    public let sheetsVisible: Bool
 
-    public init(inFront: Bool, activeBundleID: String?) {
+    public init(inFront: Bool, activeBundleID: String?, prompt: String? = nil, locked: Bool? = nil, sheetsVisible: Bool = true) {
         self.inFront = inFront
         self.activeBundleID = activeBundleID
+        self.prompt = prompt
+        self.locked = locked
+        self.sheetsVisible = sheetsVisible
+    }
+}
+
+/// What `GET /screen` reports.
+public struct RunnerScreen: Equatable, Sendable {
+    public let on: Bool
+    public let locked: Bool
+
+    public init(on: Bool, locked: Bool) {
+        self.on = on
+        self.locked = locked
     }
 }
 
@@ -44,7 +64,7 @@ public enum RunnerProbe: Equatable, Sendable {
 
 /// The runner's routes, each a fresh connection through `transport`.
 public struct RunnerClient: Sendable {
-    public static let protocolVersion = "2"
+    public static let protocolVersion = "3"
     public static let timeout: TimeInterval = 5
 
     public let udid: String
@@ -75,8 +95,13 @@ public struct RunnerClient: Sendable {
         } catch {
             return .unreachable
         }
-        guard let ping = try? parsePing(try Self.unwrap(response, path: "/ping", udid: udid)) else { return .unreachable }
-        return .answered(ping)
+        do {
+            return .answered(try parsePing(try Self.unwrap(response, path: "/ping", udid: udid)))
+        } catch let error as IOSDeviceError where error.kind == .systemPromptInFront {
+            return .busy
+        } catch {
+            return .unreachable
+        }
     }
 
     func parsePing(_ payload: Any?) throws -> RunnerPing {
@@ -126,7 +151,19 @@ public struct RunnerClient: Sendable {
     public func foreground(app: String) async throws -> RunnerForeground {
         let data = try await call("POST", "/foreground", ["app": app]) as? [String: Any]
         guard let data, let inFront = data["inFront"] as? Bool else { throw malformed("/foreground") }
-        return RunnerForeground(inFront: inFront, activeBundleID: data["activeBundleId"] as? String)
+        return RunnerForeground(
+            inFront: inFront, activeBundleID: data["activeBundleId"] as? String, prompt: data["prompt"] as? String, locked: data["locked"] as? Bool, sheetsVisible: data["sheetsVisible"] as? Bool ?? true
+        )
+    }
+
+    public func screen() async throws -> RunnerScreen {
+        let data = try await call("GET", "/screen", nil) as? [String: Any]
+        guard let on = data?["on"] as? Bool, let locked = data?["locked"] as? Bool else { throw malformed("/screen") }
+        return RunnerScreen(on: on, locked: locked)
+    }
+
+    public func pressLock() async throws {
+        _ = try await call("POST", "/lock", [:])
     }
 
     public func home() async throws {
@@ -170,6 +207,12 @@ public struct RunnerClient: Sendable {
             throw IOSDeviceError(.noFocusedField, "No field on \(udid) has keyboard focus. Tap a text field first, then retry.")
         case "secure_field":
             throw IOSDeviceError(.secureFieldRefused, "The focused field on \(udid) is a secure field, and Offsider does not replace its text. Clear it in the app, or type without --replace.")
+        case "system_prompt":
+            throw IOSDeviceError.systemPromptInFront(message, udid: udid)
+        case "queued_too_long":
+            throw IOSDeviceError(.runnerUnavailable, "The runner on \(udid) was busy for too long, so no input was sent. Retry; if it persists, run `offsider doctor --device \(udid)`.")
+        case "screen_locked":
+            throw IOSDeviceError.screenLocked(udid)
         case "app_not_in_front":
             throw IOSDeviceError(.otherAppInFront, "The app this command may drive is not in front on \(udid), so Offsider did not read or touch it. \(ErrorAudience.current == .person ? "Open it" : "Ask the user to open it"), then retry.")
         default:
