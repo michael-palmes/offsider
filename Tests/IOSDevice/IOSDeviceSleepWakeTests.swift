@@ -96,6 +96,17 @@ struct IOSDeviceSleepWakeTests {
         #expect(!transport.calls.contains { $0.path == "/foreground" })
     }
 
+    @Test("on a test device, --app on an app not in front names the command that opens it, and asks nobody")
+    func wholeNamesLaunch() async throws {
+        let transport = FakeRunnerTransport()
+        transport.failure = ("/snapshot", 409, "app_not_in_front")
+        let backend = try Self.backend(transport, whole: true)
+        backend.targetApp = "com.example.app"
+        let error = await #expect(throws: IOSDeviceError.self) { _ = try await backend.rawAccessibilitySource(for: Self.phone) }
+        #expect(error?.message.contains("offsider app launch --app com.example.app") == true)
+        #expect(error?.message.contains("Ask the user") == false)
+    }
+
     @Test("a test device's next command wakes a screen Offsider put to sleep, once, and clears the mark")
     func nextCommandWakes() async throws {
         let root = try makePolicyHome()
