@@ -20,13 +20,20 @@ public enum UnlockCodeScreen {
         Page([.outcome(.done("Saved the unlock code for \(name)"))], notices: [.next("offsider wake --unlock --device \(device)")])
     }
 
-    /// The device and whether a code is saved; a code that failed last time is a warning naming the command that saves it again.
-    public static func status(name: String, device: String, saved: Bool, lastAttemptFailed: Bool) -> Page {
-        let fields = Block.fields([Field("Device", Table.Cell(name, untrusted: true)), Field("Unlock code", Table.Cell(saved ? "saved" : "none saved"))])
+    /// The device and whether a code is saved; a code known to be wrong, or with no result, is a warning naming the command that saves it again.
+    public static func status(name: String, device: String, saved: Bool, lastAttempt: UnlockAttemptRecord?, timeZone: TimeZone = .current) -> Page {
+        let state: String
+        switch (saved, lastAttempt?.outcome) {
+        case (false, _): state = "none saved"
+        case (true, nil): state = "saved"
+        case (true, .rejected?): state = "saved, but wrong"
+        case (true, .started?): state = "saved, not confirmed"
+        }
+        let fields = Block.fields([Field("Device", Table.Cell(name, untrusted: true)), Field("Unlock code", Table.Cell(state))])
         guard saved else { return Page([fields], notices: [.next(setCommand(device))]) }
-        guard lastAttemptFailed else { return Page([fields]) }
+        guard let lastAttempt else { return Page([fields]) }
         return Page([fields], notices: [
-            .warning("It failed last time, so Offsider won't type it until you unlock by hand or save it again", try: setCommand(device)),
+            .warning("\(lastAttempt.problem(name: name, timeZone: timeZone)) \(lastAttempt.noRetry)", try: setCommand(device)),
         ])
     }
 

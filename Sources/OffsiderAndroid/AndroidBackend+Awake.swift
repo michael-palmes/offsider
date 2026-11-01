@@ -9,7 +9,8 @@ extension AndroidBackend: AwakeControlling {
     static let wakeResendPoll = 8
     /// A PIN, pattern or password lock screen stays up, so `wake` stops waiting once the screen has been on this many polls.
     static let securePolls = 3
-    static let codePolls = 10
+    /// How long the lock screen may stay up after the last key before the code counts as wrong: a slow phone's first unlock since boot takes seconds, and only a wrong code waits it out.
+    static let codeCheckWindow: Duration = .seconds(15)
 
     public func awakeState(on id: DeviceID) async throws -> AwakeReading {
         let output = try await settingsShell(AndroidAwakeState.readScript, on: id.rawValue)
@@ -75,12 +76,12 @@ extension AndroidBackend: AwakeControlling {
         guard state.screen == .on, state.lockScreen == .secure else { return UnlockAttempt(typed: false, reading: state) }
         try beforeTyping()
         try await helper.type([.text(code.text), .key(usage: AndroidAwakeState.enterUsage)])
+        let deadline = host.uptime() + Self.codeCheckWindow
         var current = state
-        for _ in 0..<Self.codePolls {
+        repeat {
             try await host.sleep(Self.awakePollInterval)
             current = try await awakeState(on: id)
-            if current.lockScreen != .secure { break }
-        }
+        } while current.lockScreen == .secure && host.uptime() < deadline
         return UnlockAttempt(typed: true, reading: current)
     }
 
