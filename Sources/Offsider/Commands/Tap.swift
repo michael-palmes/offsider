@@ -168,10 +168,13 @@ struct Tap: AsyncParsableCommand, VerifiableCommand {
         return "value=\(elementValue ?? "")"
     }
 
+    /// What the spinner says, which never claims a tap a dry run will not send.
+    var progressLabel: String { dryRun ? "Checking \(verifyTarget)" : "Tapping \(verifyTarget)" }
+
     private func execute(progress: VerifyProgress?, details: InputDetails? = nil) async throws {
         let logger = OffsiderLogger()
         let route = try await DeviceRouter.routeForInput(deviceOption, logger: logger)
-        try await Console.current.progress("Tapping \(verifyTarget)") {
+        try await Console.current.progress(progressLabel) {
             try await execute(on: route, progress: progress, logger: logger, details: details)
         }
     }

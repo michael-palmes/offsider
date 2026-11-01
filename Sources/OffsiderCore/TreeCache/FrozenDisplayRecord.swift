@@ -23,10 +23,10 @@ public struct FrozenDisplayRecord: Equatable, Sendable {
         hex(SHA256.hash(data: pixels))
     }
 
-    /// What the elements on screen are and where; values stay out, as they can hold what a person typed.
+    /// What the elements on screen are and where; values stay out, as they can hold what a person typed, and so does a screen beneath a page, which draws nothing.
     public static func digest(tree: UITree) -> String {
         let viewport = tree.viewport
-        let lines = tree.roots.flatMap { $0.flattened() }.compactMap { node -> String? in
+        let lines = LiveText.withoutBeneath(tree).roots.flatMap { $0.flattened() }.compactMap { node -> String? in
             if let viewport, let frame = node.frame, !frame.isVisible(in: viewport) { return nil }
             let frame = node.frame.map { "\($0.x),\($0.y),\($0.width),\($0.height)" } ?? ""
             return [node.role.rawValue, node.id ?? "", node.label ?? "", frame].joined(separator: "\u{1F}")

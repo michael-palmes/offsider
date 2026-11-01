@@ -449,6 +449,41 @@ struct CoverAndVerifyTests {
         #expect(backend.session.calls.isEmpty)
     }
 
+    @Test("a verify tap whose second read comes back empty is sent to the first read's point, not refused as gone")
+    func verifyEmptySecondRead() async {
+        let empty = FakeUI.tree([])
+        let backend = FakeDeviceBackend(trees: [FakeUI.tree([Self.save()]), empty, FakeUI.tree([Self.save()])])
+
+        _ = try? await Self.tap(["--id", "save", "--verify", "--verify-timeout", "0.5", "--retries", "0"], on: backend, progress: VerifyProgress())
+
+        #expect(backend.session.calls == [.perform(.tapAt(x: 201, y: 322))])
+    }
+
+    @Test("the frozen display digest ignores a label ticking beneath a full-screen page, and sees one on the page in front")
+    func frozenDigestSkipsBeneath() {
+        func pushed(beneath: String, front: String) -> UITree {
+            FakeUI.tree([
+                FakeUI.node(.group, id: "home", frame: FakeUI.frame(0, 0, 402, 874), children: [
+                    FakeUI.node(.header, label: "Home", frame: FakeUI.frame(60, 70, 282, 22)),
+                    FakeUI.node(.text, label: beneath, frame: FakeUI.frame(16, 300, 370, 22)),
+                ]),
+                FakeUI.node(.group, id: "details", frame: FakeUI.frame(0, 0, 402, 874), children: [
+                    FakeUI.node(.header, label: "Details", frame: FakeUI.frame(60, 70, 282, 22)),
+                    FakeUI.node(.text, label: front, frame: FakeUI.frame(16, 600, 370, 22)),
+                ]),
+            ])
+        }
+        let base = FrozenDisplayRecord.digest(tree: pushed(beneath: "12:01", front: "Ready"))
+        #expect(FrozenDisplayRecord.digest(tree: pushed(beneath: "12:02", front: "Ready")) == base)
+        #expect(FrozenDisplayRecord.digest(tree: pushed(beneath: "12:01", front: "Done")) != base)
+    }
+
+    @Test("the spinner says what a dry run does")
+    func dryRunSpinner() throws {
+        #expect(try Tap.parse(["--id", "a", "--dry-run", "--device", Self.android.rawValue]).progressLabel == "Checking id=a")
+        #expect(try Tap.parse(["--id", "a", "--device", Self.android.rawValue]).progressLabel == "Tapping id=a")
+    }
+
     @Test("a guess about the same cover warns once though each read is judged")
     func verifyWarnsOnce() async throws {
         let banner = FakeUI.node(.button, id: "banner", label: "Banner", frame: FakeUI.frame(0, 280, 402, 90))

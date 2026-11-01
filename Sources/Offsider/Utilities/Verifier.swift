@@ -180,7 +180,7 @@ struct Verifier {
         let targetIsToast = target.map { node in
             (baselineRead.tree ?? firstRead.tree)?.viewport.map { KnownOverlays.logBoxToast(node, viewport: $0) != nil } ?? false
         } ?? false
-        if let tree = secondRead.tree {
+        if secondRead.snapshot.isKnown, let tree = secondRead.tree {
             try await beforeAction(tree)
         }
         let bands = await dependencies.bands()
