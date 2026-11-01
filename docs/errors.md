@@ -121,7 +121,7 @@ A `--verify --json` report also carries `ignored` (`{node, reason}` entries left
 | `state_not_reached` | 1 | The posture or orientation did not take effect in time | Check the device, then retry |
 | `orientation_unknown` | 1 | The device did not report its orientation | Check it with `describe-ui` |
 | `device_restarted` | 1 | The simulator restarted while Offsider connected | Retry |
-| `device_unresponsive` | 1 | The device stopped answering; `describe-ui`, `screenshot` and `rn logbox` give a simulator or emulator 30 s (longer with `--wait-lock`) | `offsider doctor --device <ID>`, or restart the device |
+| `device_unresponsive` | 1 | The device stopped answering; `describe-ui`, `screenshot`, a `--screenshot-at` capture and `rn logbox` give a simulator or emulator 30 s (longer with `--wait-lock`) | `offsider doctor --device <ID>`, or restart the device |
 | `device_control_failed` | 1 | A device setting could not be read or changed | Check the device is booted |
 | `app_not_installed` | 1 | `logs --app`, an `app` command or an Android permission command names an app that is not installed | Install it (the `hint` names the SDK's `adb -s <serial> install <path-to-apk>` on Android), or drop `--app` |
 | `link_not_handled` | 1 | `app open` sent a link no screen of the app takes (Android resolved no activity in the package, or on a simulator no app or another app claimed it) | Check the link's scheme and host against the app's URL types or intent filters, or send the app's own scheme |
@@ -151,8 +151,8 @@ A `--verify --json` report also carries `ignored` (`{node, reason}` entries left
 | `focus_not_confirmed` | 5 | `type --into-id` tapped the field but it never took focus; no text was sent. On an iOS simulator the message says when no keyboard appeared, as with its hardware keyboard connected | Check the field with `describe-ui`, then retry |
 | `text_not_accepted` | 5 | `type --replace` on Android left the field empty or shorter than the text, or a paste did not leave exactly the text: the app filters it, or focus moved | Check the field with `describe-ui`; type what it accepts |
 | `focus_mismatch` | 2 | `type --require-focus-id` found another field (or none) focused; no text was sent | Tap the field, or use `--into-id` |
-| `metro_port_not_allowed` | 7 | `rn open` found no `adb reverse` for `--port` on a USB phone, and the phone's allowance lists no such Metro port, so it set none | Ask the user to run `offsider devices add` and choose that phone and the port under Metro |
-| `metro_not_running` | 9 | `rn open` found no Metro answering on 127.0.0.1 at `--port`, or, before setting a phone's adb reverse, one that does not run as this user | Start Metro on that port, then retry |
+| `metro_port_not_allowed` | 7 | `rn open` found no `adb reverse` for `--port` on a USB phone, and the phone's allowance lists no such Metro port, so it set none; or the reverse there is one Offsider set for a port since withdrawn | Ask the user to run `offsider devices add` and choose that phone and the port under Metro, or remove a withdrawn one with `offsider session stop --device <serial>` |
+| `metro_not_running` | 9 | `rn open` found no Metro answering on 127.0.0.1 at `--port`, or, before setting or using a phone's adb reverse, one that does not run as this user | Start Metro on that port, then retry |
 | `rn_load_failed` | 1 | `rn open` saw the app's load error or red box | Read `logs --rn` and Metro's output |
 | `app_crashed` | 1 | `rn open` saw the app's process stop while it waited (the message names the crash report or the exception) | Read the report, or `logs --rn`, then open the app again |
 | `app_not_responding` | 1 | On Android, the app in front on an unlocked screen has no window the tree can read, as when its main thread is stuck; `rn open` reports it after 10 s | Close the app and open it again (`rn open --restart` for a dev client), then retry |

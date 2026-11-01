@@ -48,6 +48,8 @@ offsider drag --start-x 100 --start-y 300 --end-x 100 --end-y 600 --hold-ms 800 
 - A screenshot takes time (about 0.1 to 0.5 s on a simulator or emulator, more on a phone), so it can start after its offset when the one before ran long, and when one runs past `--hold-end`, the finger stays down until it is done; a person sees a note, and `holdMs` says how long it rested.
 - On Android the gesture goes as separate requests around each screenshot, so the screen read fits between them on the one UiAutomation helper; the helper keeps the finger down throughout, but sends no resting reports while a screenshot runs. A phone's helper starts before the finger goes down, so the first screenshot does not wait for it.
 - Batch `swipe` and `drag` steps do not take `--screenshot-at`; run the gesture on its own.
+- A physical iPhone or iPad cannot hold a finger between requests, so `--screenshot-at` exits 1 (`not_supported`) there before anything is sent. Use an iOS simulator, or `--hold-end <ms>` and a `screenshot` after the lift.
+- Ctrl-C or a kill signal during the hold sends the lift, then exits 130 or 143. A read that never returns on a simulator or emulator ends the command after 30 s with `device_unresponsive`, also lifting first. A `SIGKILL` gets no such chance: on Android the helper's broker cancels the touch when the command's connection goes, and a helper with no broker cancels it as it stops. On a gRPC emulator the emulator lifts it after 120 s.
 
 ### Two fingers and pinch
 

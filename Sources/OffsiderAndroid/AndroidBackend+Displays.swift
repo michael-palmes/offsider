@@ -205,6 +205,24 @@ extension AndroidBackend: ScreenStatusPrefetching {
     }
 }
 
+/// What a reset of recorded overrides did: every phone but `reset`'s keeps its record.
+public struct PostureResetOutcome: Equatable, Sendable {
+    public var reset: [String] = []
+    /// A connected phone whose read or reset failed.
+    public var failed: [String] = []
+    /// Not on adb, or adb could not say.
+    public var notConnected: [String] = []
+    /// The caller does not permit it, so it was sent nothing.
+    public var skipped: [String] = []
+
+    public init(reset: [String] = [], failed: [String] = [], notConnected: [String] = [], skipped: [String] = []) {
+        self.reset = reset
+        self.failed = failed
+        self.notConnected = notConnected
+        self.skipped = skipped
+    }
+}
+
 extension AndroidBackend: PostureControlling, PostureResetting, PostureStateNaming {
     /// `cmd device_state state`; nil when `print-states` lists fewer than two states.
     public func posture(of id: DeviceID) async throws -> Posture? {
@@ -217,6 +235,11 @@ extension AndroidBackend: PostureControlling, PostureResetting, PostureStateNami
 
     public func postureStateName(of id: DeviceID) async -> String? {
         stateReadings[id.rawValue]?.committed.name
+    }
+
+    /// Whether the latest reading shows an override, which stays until a reset; nil before any reading.
+    public func postureIsOverridden(on id: DeviceID) async -> Bool? {
+        stateReadings[id.rawValue].map { $0.override != nil }
     }
 
     public func forgetScreen(of id: DeviceID) {
@@ -252,20 +275,53 @@ extension AndroidBackend: PostureControlling, PostureResetting, PostureStateNami
         }
     }
 
-    /// `state reset` when the target is the hinge's own state, else an override that lasts until reset or reboot, recorded first on a phone.
+    /// `state reset` when the target is the hinge's own state, else an override that lasts until reset or reboot, recorded first on a phone; a record never outlives the override it names, nor goes while one is in place.
     private func overrideState(_ state: AndroidDeviceState.State, reading: AndroidDeviceState.Reading, on serial: String) async throws {
         let resets = reading.override != nil && reading.base?.identifier == state.identifier
         let command = resets ? AndroidDeviceState.resetState : AndroidDeviceState.setState(state)
         let phone = DeviceID(rawValue: serial, platform: .android).isPhysicalAndroidDevice
+        let earlier = phone && !resets ? postureRecords(create: false)?.load(serial: serial) : nil
         if phone, !resets { try await recordOverride(state, on: serial) }
-        let result = try await requireClient().shell(command, on: serial, label: command)
-        if phone, resets || result.status != 0 { postureRecords(create: false)?.remove(serial: serial) }
+        let result: AdbShellResult
+        do {
+            result = try await requireClient().shell(command, on: serial, label: command)
+        } catch {
+            if phone, !resets { await settleRecord(after: error, state: state, earlier: earlier, on: serial) }
+            throw error
+        }
+        if phone {
+            if result.status != 0, !resets {
+                restoreRecord(earlier, on: serial)
+            } else if result.status == 0, resets {
+                postureRecords(create: false)?.remove(serial: serial)
+            }
+        }
         guard result.status == 0 else {
             let detail = (result.stderrText.isEmpty ? result.stdoutText : result.stderrText)
                 .split(whereSeparator: \.isNewline).first.map(String.init) ?? "exit status \(result.status)"
             throw AndroidError.postureFailed(serial, path: "adb `\(command)`", detail: detail)
         }
         log(.debug, "Asked \(serial) for \(state.name) with `\(command)`")
+    }
+
+    /// A set that threw may have landed, so the phone decides which record stands; when it cannot say, an earlier override is the one known to be there, and with none the new record stays.
+    private func settleRecord(after error: any Error, state: AndroidDeviceState.State, earlier: AndroidPostureRecord?, on serial: String) async {
+        let now = try? await deviceStateReading(serial)
+        log(.debug, "Setting \(state.name) on \(serial) did not answer (\(error)); the phone now reads \(now?.override?.name ?? "no override")")
+        if let now {
+            if now.override?.identifier != state.identifier { restoreRecord(earlier, on: serial) }
+        } else if earlier != nil {
+            restoreRecord(earlier, on: serial)
+        }
+    }
+
+    private func restoreRecord(_ earlier: AndroidPostureRecord?, on serial: String) {
+        guard let store = postureRecords(create: false) else { return }
+        if let earlier {
+            try? store.save(earlier)
+        } else {
+            store.remove(serial: serial)
+        }
     }
 
     /// `state reset`, whoever set the override; the record goes with it.
@@ -283,27 +339,46 @@ extension AndroidBackend: PostureControlling, PostureResetting, PostureStateNami
         return true
     }
 
-    /// Resets each recorded override still in place on the same boot, never starting adb; an unplugged phone keeps its record, a rebooted one loses it.
-    public static func resetRecordedPostures(host: AndroidHost, serial: String? = nil, permits: (String) -> Bool = { _ in true }) async -> [String] {
-        guard let directory = host.postureRecordDirectory(false) else { return [] }
+    /// Resets each recorded override still in place on the same boot, never starting adb; an unplugged phone keeps its record for a month, a rebooted one loses it.
+    public static func resetRecordedPostures(host: AndroidHost, serial: String? = nil, permits: (String) -> Bool = { _ in true }) async -> PostureResetOutcome {
+        guard let directory = host.postureRecordDirectory(false) else { return PostureResetOutcome() }
         let store = AndroidPostureRecordStore(directory: directory)
-        let records = (serial.map { store.load(serial: $0).map { [$0] } ?? [] } ?? store.all()).filter { permits($0.serial) }
-        guard !records.isEmpty, let endpoint = try? LoopbackEndpoint.adbServer(environment: host.environment) else { return [] }
+        let all = serial.map { store.load(serial: $0).map { [$0] } ?? [] } ?? store.all()
+        let records = all.filter { permits($0.serial) }
+        var outcome = PostureResetOutcome(skipped: all.map(\.serial).filter { phone in !records.contains { $0.serial == phone } })
+        guard !records.isEmpty else { return outcome }
+        guard let endpoint = try? LoopbackEndpoint.adbServer(environment: host.environment),
+              let rows = try? await AdbClient(endpoint: endpoint, connector: host.adbConnector, timing: host.timing).devices() else {
+            outcome.notConnected = records.map(\.serial)
+            return outcome
+        }
         let client = AdbClient(endpoint: endpoint, connector: host.adbConnector, timing: host.timing)
-        guard let rows = try? await client.devices() else { return [] }
-        var reset: [String] = []
-        for record in records where rows.contains(where: { $0.serial == record.serial && $0.state == .device }) {
+        for record in records {
+            guard rows.contains(where: { $0.serial == record.serial && $0.state == .device }) else {
+                if store.isForgotten(serial: record.serial) {
+                    store.remove(serial: record.serial)
+                } else {
+                    outcome.notConnected.append(record.serial)
+                }
+                continue
+            }
             let script = "\(AndroidPostureRecord.bootIDScript); \(AndroidDeviceState.readState)"
-            guard let output = try? await client.shell(script, on: record.serial, label: "cmd device_state state"), output.status == 0 else { continue }
+            guard let output = try? await client.shell(script, on: record.serial, label: "cmd device_state state"), output.status == 0 else {
+                outcome.failed.append(record.serial)
+                continue
+            }
             let boot = output.stdoutText.split(whereSeparator: \.isNewline).first.map { $0.trimmingCharacters(in: .whitespaces) }
             let reading = AndroidDeviceState.parseReading(output.stdoutText)
             if boot == record.bootID, reading?.override?.identifier == record.identifier {
-                guard (try? await client.shell(AndroidDeviceState.resetState, on: record.serial, label: AndroidDeviceState.resetState))?.status == 0 else { continue }
-                reset.append(record.serial)
+                guard (try? await client.shell(AndroidDeviceState.resetState, on: record.serial, label: AndroidDeviceState.resetState))?.status == 0 else {
+                    outcome.failed.append(record.serial)
+                    continue
+                }
+                outcome.reset.append(record.serial)
             }
             store.remove(serial: record.serial)
         }
-        return reset
+        return outcome
     }
 
     private func postureRecords(create: Bool) -> AndroidPostureRecordStore? {
@@ -320,7 +395,7 @@ extension AndroidBackend: PostureControlling, PostureResetting, PostureStateNami
             throw AndroidError.postureFailed(serial, path: "a device-state override", detail: "the phone's boot id could not be read, so Offsider set none")
         }
         do {
-            try store.save(AndroidPostureRecord(serial: serial, bootID: boot, identifier: state.identifier, name: state.name))
+            try store.save(AndroidPostureRecord(serial: serial, bootID: boot, identifier: state.identifier))
         } catch {
             throw AndroidError.postureFailed(serial, path: "a device-state override", detail: "Offsider could not record it (\(error)), so it set none")
         }

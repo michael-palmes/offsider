@@ -3,6 +3,7 @@ import Darwin
 import Foundation
 @testable import Offsider
 @testable import OffsiderCore
+import OffsiderAndroid
 import OffsiderIOSDevice
 import Testing
 
@@ -142,7 +143,8 @@ struct DeviceAccessCommandTests {
         devices: @escaping @Sendable () -> [DeviceSummary] = { [row] },
         teams: @escaping @Sendable () -> [SigningTeam] = { [] },
         apps: @escaping @Sendable (DeviceSummary) throws -> [InstalledApp] = { _ in [] },
-        stopped: @escaping @Sendable (String) -> [String] = { _ in [] }
+        stopped: @escaping @Sendable (String) -> [String] = { _ in [] },
+        left: @escaping @Sendable (String) -> [DeviceSessionRow.Left] = { _ in [] }
     ) -> DeviceAccessContext {
         DeviceAccessContext(
             store: { DeviceAllowListStore(directory: UserConfigDirectory(home: home)) },
@@ -150,7 +152,7 @@ struct DeviceAccessCommandTests {
             managed: FakeManagedPreferences(),
             now: { PolicyFixtures.now },
             physicalDevices: { (devices(), []) },
-            stopSessions: { stopped($0) },
+            stopSessions: { DeviceAccess.StoppedSessions(stopped: stopped($0), left: left($0)) },
             signingTeams: teams,
             installedApps: { try apps($0) },
             promptDescriptor: terminal?.secondary,
@@ -302,7 +304,7 @@ struct DeviceAccessCommandTests {
         try store.update({ $0.list.adding(PolicyFixtures.entry()) }, commit: { try seal.seal($0) })
         let command = try DeviceAccessRemove.parse(["--device", PolicyFixtures.phone])
         let output = try await PersonPresence.$terminal.withValue({ false }) {
-            try await command.perform(context: Self.context(home: home, seal: seal) { _ in ["session broker", "runner"] })
+            try await command.perform(context: Self.context(home: home, seal: seal, stopped: { _ in ["session broker", "runner"] }))
         }
         #expect(output == "Removed Test iPhone (\(PolicyFixtures.phone)) from the allow-list; Offsider will not drive it again until a person allows it. Stopped its session broker and runner.")
         let snapshot = try store.load()
@@ -622,6 +624,61 @@ struct DeviceAccessCommandTests {
         })
         #expect(transcript.contains("Port 5037 belongs to adb or an emulator, never Metro."))
         #expect(try Self.entries(home).map(\.metroPorts) == [[8081, 8742]])
+    }
+
+    @Test("a narrower allowance takes off the reverses for ports it dropped, naming them, and names what clears one it could not remove")
+    func narrowerAllowanceRemovesReverses() async throws {
+        let home = try makePolicyHome()
+        defer { try? FileManager.default.removeItem(atPath: home) }
+        let keeping = LockedBox<[[Int]]>([])
+        let (output, _) = try await Self.allow(
+            ["--device", Self.androidRow.id, "--app", "com.mpalmes.offsider.playground.rn", "--expires", "12h", "--metro-port", "8742"], answers: []
+        ) { terminal in
+            var context = Self.context(home: home, seal: MemorySeal(), terminal: terminal, devices: { [Self.androidRow] })
+            context.withdrawMetroPorts = { key, ports in
+                keeping.value += [ports]
+                return MetroReverseOutcome(removed: [MetroReverseRemoval(serial: key, ports: [8081])], failed: [MetroReverseRemoval(serial: key, ports: [9000])])
+            }
+            return context
+        }
+        #expect(keeping.value == [[8742]])
+        #expect(output.contains("Removed adb reverse tcp:8081"))
+        #expect(output.contains("Could not remove adb reverse tcp:9000: run `offsider session stop --device \(Self.androidRow.id)`"))
+    }
+
+    @Test("an iPhone's allowance sends no reverse removal")
+    func iPhoneRemovesNoReverse() async throws {
+        let home = try makePolicyHome()
+        defer { try? FileManager.default.removeItem(atPath: home) }
+        let keeping = LockedBox<[[Int]]>([])
+        _ = try await Self.allow(
+            ["--device", PolicyFixtures.phone, "--app", "com.mpalmes.offsider.playground", "--expires", "12h", "--team", "ABCDE12345"], answers: []
+        ) { terminal in
+            var context = Self.context(home: home, seal: MemorySeal(), terminal: terminal)
+            context.withdrawMetroPorts = { _, ports in
+                keeping.value += [ports]
+                return MetroReverseOutcome()
+            }
+            return context
+        }
+        #expect(keeping.value.isEmpty)
+    }
+
+    @Test("devices remove on a phone it cannot reach says what stays and the exact command, in text and JSON")
+    func removeNamesWhatStays() async throws {
+        let home = try makePolicyHome()
+        defer { try? FileManager.default.removeItem(atPath: home) }
+        let seal = MemorySeal()
+        let left = DeviceSessionRow.Left(device: "R58M123ABC", posture: true, why: .notConnected)
+        let context = Self.context(home: home, seal: seal, left: { _ in [left] })
+        let removal = try await DeviceAccessRemove.parse(["--device", "R58M123ABC"]).remove(context: context)
+        #expect(removal.text.contains("`offsider session stop --device R58M123ABC`"))
+        #expect(removal.notices.contains { $0.command == "offsider session stop --device R58M123ABC" })
+
+        let json = try await DeviceAccessRemove.parse(["--device", "R58M123ABC", "--json"]).remove(context: context)
+        let object = try #require(try JSONSerialization.jsonObject(with: Data(json.text.utf8)) as? [String: Any])
+        #expect(object["notRemoved"] as? [String] == ["posture override"])
+        #expect(object["retry"] as? String == "offsider session stop --device R58M123ABC")
     }
 
     @Test("--metro-port skips the step for a phone and none saves no port; an iPhone refuses a port but takes none", arguments: [

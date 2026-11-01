@@ -81,6 +81,8 @@ final class Requests {
                 writeEvents(json, request);
             } else if ("inject".equals(op)) {
                 inject.run(json, connection.automation(), request);
+            } else if ("release".equals(op)) {
+                inject.release(connection.automation());
             } else if ("screenshot".equals(op)) {
                 frame = Capture.run(json, connection.automation(), request);
             } else if ("quit".equals(op)) {
@@ -97,6 +99,15 @@ final class Requests {
             Log.w(OffsiderHelper.TAG, op + " failed", e);
             RequestFailure failure = new RequestFailure(code, op + " failed", HelperFailure.describe(e));
             return new Reply(error(id, failure, events.latest()), false);
+        }
+    }
+
+    /** Best effort before the process ends: nothing stays pressed once the helper has gone. */
+    void releaseInput() {
+        try {
+            inject.release(connection.automation());
+        } catch (RuntimeException e) {
+            Log.w(OffsiderHelper.TAG, "releasing input on the way out failed", e);
         }
     }
 

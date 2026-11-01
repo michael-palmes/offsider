@@ -130,8 +130,8 @@ struct RNOpenCommandTests {
     static let noRoute = ExpoDevClientError(.noRoute, "R58MFAKE01 is a phone with no adb reverse for port 8742, so it cannot reach Metro on this Mac.")
 
     /// Runs `rn open` on a phone without a reverse, allowed `ports` (no allowance when nil), with Metro owned by this user or not.
-    static func openOnPhone(ports: [Int]?, owned: Bool = true, apps: [String] = []) async throws -> (Result<RNOpen.Report, CLIError>, FakeDeviceBackend) {
-        let backend = FakeDeviceBackend(platform: .android, trees: [Self.app])
+    static func openOnPhone(ports: [Int]?, owned: Bool = true, apps: [String] = [], trees: [UITree] = [app]) async throws -> (Result<RNOpen.Report, CLIError>, FakeDeviceBackend) {
+        let backend = FakeDeviceBackend(platform: .android, trees: trees)
         backend.metroHostError = Self.noRoute
         let allowance = ports.map { DeviceAllowance(platform: .android, key: Self.phone.rawValue, name: "Test Pixel", added: Date(), expires: nil, apps: apps, metroPorts: $0) }
         var metro = Self.running
@@ -154,6 +154,70 @@ struct RNOpenCommandTests {
         #expect(report.host == "127.0.0.1" && report.reverseSet)
         #expect(report.jsonLine().hasSuffix(#""reverseSet":true}"#))
         #expect(backend.openedURLs == ["exp+playground://expo-development-client/?url=http%3A%2F%2F127.0.0.1%3A8742"])
+    }
+
+    /// Runs `rn open` on a phone that already has a reverse for port 8742.
+    static func openWithReverse(ports: [Int], recorded: [Int], owned: Bool = true, testDevice: Bool = false) async throws -> Result<RNOpen.Report, CLIError> {
+        let backend = FakeDeviceBackend(platform: .android, trees: [Self.app])
+        backend.reversesRecorded = recorded
+        let allowance = DeviceAllowance(platform: .android, key: Self.phone.rawValue, name: "Test Pixel", added: Date(), expires: nil, apps: [], metroPorts: ports, testDevice: testDevice)
+        var metro = Self.running
+        metro.ownedByThisUser = { _ in owned }
+        let command = try RNOpen.parse(["--port", "8742", "--bundle-id", "com.example.app", "--wait-id", "menu-title", "--device", Self.phone.rawValue])
+        do {
+            let gate = DevicePolicyGate.fixed(PhysicalDevicePolicy(managed: .none, list: DeviceAllowList(entries: [allowance])))
+            return .success(try await command.open(on: DeviceRouter.Route(backend: backend, device: Self.phone, allowance: allowance), metro: metro, clock: ScriptedClock().poll, gate: gate))
+        } catch let error as CLIError {
+            return .failure(error)
+        }
+    }
+
+    @Test("an existing reverse goes to a Metro only when it runs as this user, on either kind of allowance", arguments: [false, true])
+    func existingReverseChecksOwner(testDevice: Bool) async throws {
+        guard case .failure(let error) = try await Self.openWithReverse(ports: [8742], recorded: [8742], owned: false, testDevice: testDevice) else {
+            Issue.record("the dev client was sent to a Metro of another user"); return
+        }
+        #expect(error.reason == .metroNotRunning)
+        #expect(error.userFacingDescription.contains("so it did not send the app there"))
+    }
+
+    @Test("a reverse Offsider set stops working once its port is withdrawn, on either kind of allowance, and names what removes it", arguments: [false, true])
+    func withdrawnPortRefused(testDevice: Bool) async throws {
+        guard case .failure(let error) = try await Self.openWithReverse(ports: [], recorded: [8742], testDevice: testDevice) else {
+            Issue.record("a withdrawn port was used"); return
+        }
+        #expect(error.reason == .metroPortNotAllowed)
+        #expect(error.hint == "offsider session stop --device \(Self.phone.rawValue)")
+    }
+
+    @Test("a person's own reverse keeps working on a port never allowed")
+    func handSetReverseKeepsWorking() async throws {
+        let report = try await Self.openWithReverse(ports: [], recorded: []).get()
+        #expect(report.host == "127.0.0.1" && !report.reverseSet && !report.reverseRecorded)
+    }
+
+    @Test("a retry over a reverse an earlier run set still reports it, so a later success names the undo")
+    func retryReportsRecordedReverse() async throws {
+        let report = try await Self.openWithReverse(ports: [8742], recorded: [8742]).get()
+        #expect(!report.reverseSet && report.reverseRecorded)
+        #expect(report.jsonLine().contains(#""reverseRecorded":true,"reverseSet":false"#))
+    }
+
+    @Test("a run that fails after setting the reverse names it and what removes it; one that set nothing stays quiet")
+    func failureNamesReverse() async throws {
+        let setting = ConsoleCapture()
+        let (result, _) = try await Console.$current.withValue(AgentOutputTests.agentConsole(setting)) {
+            try await Self.openOnPhone(ports: [8742], trees: [])
+        }
+        guard case .failure = result else { Issue.record("the run with no app on screen succeeded"); return }
+        #expect(setting.err.contains("adb reverse tcp:8742 stays set on \(Self.phone.rawValue); `offsider session stop --device \(Self.phone.rawValue)` removes it."))
+
+        let quiet = ConsoleCapture()
+        let (refused, _) = try await Console.$current.withValue(AgentOutputTests.agentConsole(quiet)) {
+            try await Self.openOnPhone(ports: [])
+        }
+        guard case .failure = refused else { Issue.record("a port not allowed was used"); return }
+        #expect(!quiet.err.contains("stays set"))
     }
 
     @Test("a phone pinned to another app exits app_not_allowed with no reverse, stop or link")

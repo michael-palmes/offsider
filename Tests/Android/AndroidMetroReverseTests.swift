@@ -8,6 +8,10 @@ final class FakeReverses: @unchecked Sendable {
     private let lock = NSLock()
     private var mappings: [(phone: String, mac: String)]
     private var refusesRemoval = false
+    /// A link that drops at each `reverse:list-forward`.
+    var dropsList = false
+    /// How a reverse that adbd applied goes unanswered: nil answers it.
+    var afterAdd: FakeAdbServer.Reply?
 
     init(_ mappings: [(phone: String, mac: String)] = [], refusingRemoval: Bool = false) {
         self.mappings = mappings
@@ -19,12 +23,14 @@ final class FakeReverses: @unchecked Sendable {
     func reply(_ service: String) -> FakeAdbServer.Reply? {
         lock.withLock {
             if service == "reverse:list-forward" {
+                if dropsList { return .bytes(Data("OKAY".utf8), thenClose: true) }
                 return FakeAdbServer.okay(payload: mappings.map { "host-27 \($0.phone) \($0.mac)\n" }.joined())
             }
             if service.hasPrefix("reverse:forward:norebind:") {
                 let sides = service.dropFirst("reverse:forward:norebind:".count).split(separator: ";").map(String.init)
                 guard !mappings.contains(where: { $0.phone == sides[0] }) else { return Self.failed("cannot rebind existing socket") }
                 mappings.append((sides[0], sides[1]))
+                if let afterAdd { return afterAdd }
                 let port = String(sides[0].dropFirst(4))
                 return .bytes(Data("OKAYOKAY".utf8) + Data(String(format: "%04x", port.utf8.count).utf8) + Data(port.utf8), thenClose: true)
             }
@@ -153,9 +159,10 @@ struct AndroidMetroReverseTests {
         let reverses = FakeReverses([("tcp:8081", "tcp:8081"), ("tcp:8742", "tcp:9000"), ("tcp:9999", "tcp:9999")])
         let server = Self.server(reverses)
 
-        let removed = await AndroidBackend.removeMetroReverses(host: try Self.host(server, directory: directory), serial: Self.serial)
+        let outcome = await AndroidBackend.removeMetroReverses(host: try Self.host(server, directory: directory), serial: Self.serial)
 
-        #expect(removed == [MetroReverseRemoval(serial: Self.serial, ports: [8081])])
+        #expect(outcome.removed == [MetroReverseRemoval(serial: Self.serial, ports: [8081])])
+        #expect(outcome.failed.isEmpty)
         #expect(Self.reverseRequests(server) == ["reverse:killforward:tcp:8081"])
         #expect(reverses.listed == ["tcp:8742 tcp:9000", "tcp:9999 tcp:9999"])
         #expect(store.load(serial: Self.serial) == nil)
@@ -170,15 +177,15 @@ struct AndroidMetroReverseTests {
         let reverses = FakeReverses([("tcp:8081", "tcp:8081")])
         let server = Self.server(reverses, transportId: "2", serverRunning: serverRunning)
 
-        let removed = await AndroidBackend.removeMetroReverses(host: try Self.host(server, directory: directory))
+        let outcome = await AndroidBackend.removeMetroReverses(host: try Self.host(server, directory: directory))
 
-        #expect(removed.isEmpty)
+        #expect(outcome == MetroReverseOutcome(), "gone with its connection, so nothing is left to report")
         #expect(reverses.listed == ["tcp:8081 tcp:8081"])
         #expect(Self.reverseRequests(server).isEmpty)
         #expect(store.load(serial: Self.serial) == nil)
     }
 
-    @Test("a removal adb refuses keeps the port recorded, so the next session stop tries again")
+    @Test("a removal adb refuses keeps the port recorded and reports it, so the next session stop tries again")
     func failedRemovalKeepsRecord() async throws {
         let directory = try Self.privateDirectory()
         defer { try? FileManager.default.removeItem(atPath: directory) }
@@ -186,10 +193,109 @@ struct AndroidMetroReverseTests {
         try store.save(MetroReverseRecord(serial: Self.serial, transportId: "2", ports: [8081]))
         let server = Self.server(FakeReverses([("tcp:8081", "tcp:8081")], refusingRemoval: true))
 
-        let removed = await AndroidBackend.removeMetroReverses(host: try Self.host(server, directory: directory), serial: Self.serial)
+        let outcome = await AndroidBackend.removeMetroReverses(host: try Self.host(server, directory: directory), serial: Self.serial)
 
-        #expect(removed.isEmpty)
+        #expect(outcome.removed.isEmpty)
+        #expect(outcome.failed == [MetroReverseRemoval(serial: Self.serial, ports: [8081])])
         #expect(store.load(serial: Self.serial)?.ports == [8081])
+    }
+
+    @Test("a reverse list that cannot be read reports every recorded port as not removed")
+    func unreadableListReportsPorts() async throws {
+        let directory = try Self.privateDirectory()
+        defer { try? FileManager.default.removeItem(atPath: directory) }
+        let store = MetroReverseStore(directory: directory)
+        try store.save(MetroReverseRecord(serial: Self.serial, transportId: "2", ports: [8081, 8742]))
+        let reverses = FakeReverses([("tcp:8081", "tcp:8081")])
+        reverses.dropsList = true
+
+        let outcome = await AndroidBackend.removeMetroReverses(host: try Self.host(Self.server(reverses), directory: directory), serial: Self.serial)
+
+        #expect(outcome.failed == [MetroReverseRemoval(serial: Self.serial, ports: [8081, 8742])])
+        #expect(store.load(serial: Self.serial)?.ports == [8081, 8742])
+    }
+
+    @Test("a narrower allowance takes off only the ports it dropped; with none dropped, adb is not reached")
+    func keepingPorts() async throws {
+        let directory = try Self.privateDirectory()
+        defer { try? FileManager.default.removeItem(atPath: directory) }
+        let store = MetroReverseStore(directory: directory)
+        try store.save(MetroReverseRecord(serial: Self.serial, transportId: "2", ports: [8081, 8742]))
+        let reverses = FakeReverses([("tcp:8081", "tcp:8081"), ("tcp:8742", "tcp:8742")])
+        let server = Self.server(reverses)
+        let host = try Self.host(server, directory: directory)
+
+        #expect(await AndroidBackend.removeMetroReverses(host: host, serial: Self.serial, keeping: [8081, 8742]) == MetroReverseOutcome())
+        #expect(server.connectionAttempts == 0)
+
+        let outcome = await AndroidBackend.removeMetroReverses(host: host, serial: Self.serial, keeping: [8742])
+        #expect(outcome.removed == [MetroReverseRemoval(serial: Self.serial, ports: [8081])])
+        #expect(reverses.listed == ["tcp:8742 tcp:8742"])
+        #expect(store.load(serial: Self.serial)?.ports == [8742])
+    }
+
+    @Test("a reverse that may have landed keeps its record, so session stop can still take it off: a dropped link, or no answer at all", arguments: [true, false])
+    func ambiguousAddKeepsRecord(hangs: Bool) async throws {
+        let directory = try Self.privateDirectory()
+        defer { try? FileManager.default.removeItem(atPath: directory) }
+        let reverses = FakeReverses()
+        reverses.afterAdd = hangs ? .hang : .bytes(Data("OKAY".utf8), thenClose: true)
+        let backend = AndroidBackend(host: try Self.host(Self.server(reverses), directory: directory)) { _, _ in }
+
+        await #expect(throws: AndroidError.self) { try await backend.addMetroReverse(port: 8081, on: Self.phone) }
+
+        #expect(reverses.listed == ["tcp:8081 tcp:8081"])
+        #expect(MetroReverseStore(directory: directory).load(serial: Self.serial)?.ports == [8081])
+        reverses.afterAdd = nil
+        let outcome = await AndroidBackend.removeMetroReverses(host: try Self.host(Self.server(reverses), directory: directory), serial: Self.serial)
+        #expect(outcome.removed == [MetroReverseRemoval(serial: Self.serial, ports: [8081])])
+    }
+
+    @Test("on a phone a failed reverse read is that failure: no reverse is set, and no port is refused")
+    func failedReadOnPhone() async throws {
+        let directory = try Self.privateDirectory()
+        defer { try? FileManager.default.removeItem(atPath: directory) }
+        let reverses = FakeReverses([("tcp:8742", "tcp:8742")])
+        reverses.dropsList = true
+        let server = Self.server(reverses)
+        let backend = AndroidBackend(host: try Self.host(server, directory: directory)) { _, _ in }
+
+        await #expect(throws: AndroidError.self) { _ = try await backend.metroHost(port: 8742, on: Self.phone) }
+
+        #expect(Self.reverseRequests(server).isEmpty)
+    }
+
+    @Test("an emulator has its own route to the Mac, so a failed reverse read still reaches Metro")
+    func failedReadOnEmulator() async throws {
+        let directory = try Self.privateDirectory()
+        defer { try? FileManager.default.removeItem(atPath: directory) }
+        let reverses = FakeReverses()
+        reverses.dropsList = true
+        let backend = AndroidBackend(host: try Self.host(Self.server(reverses), directory: directory)) { _, _ in }
+
+        #expect(try await backend.metroHost(port: 8742, on: DeviceID(rawValue: "emulator-5556", platform: .android)) == ExpoDevClient.emulatorHostAlias)
+    }
+
+    @Test("what is recorded reads from this Mac alone, never reaching adb, with a stale connection's record left for stop to judge")
+    func recordedStateReadsNoDevice() async throws {
+        let directory = try Self.privateDirectory()
+        let postures = try Self.privateDirectory()
+        defer {
+            try? FileManager.default.removeItem(atPath: directory)
+            try? FileManager.default.removeItem(atPath: postures)
+        }
+        try MetroReverseStore(directory: directory).save(MetroReverseRecord(serial: Self.serial, transportId: "1", ports: [8081]))
+        try AndroidPostureRecordStore(directory: postures).save(AndroidPostureRecord(serial: "POSTUREONLY1", bootID: AndroidPhonePostureTests.boot, identifier: 0))
+        let server = Self.server(FakeReverses())
+        var host = try Self.host(server, directory: directory)
+        host.postureRecordDirectory = { _ in postures }
+
+        #expect(AndroidBackend.recordedPhoneState(host: host) == [
+            RecordedPhoneState(serial: "POSTUREONLY1", reverses: [], posture: true),
+            RecordedPhoneState(serial: Self.serial, reverses: [8081], posture: false),
+        ])
+        #expect(AndroidBackend.recordedPhoneState(host: host, serial: Self.serial).map(\.serial) == [Self.serial])
+        #expect(server.connectionAttempts == 0)
     }
 
     @Test("with nothing recorded, session stop never reaches adb")
@@ -198,7 +304,7 @@ struct AndroidMetroReverseTests {
         defer { try? FileManager.default.removeItem(atPath: directory) }
         let server = Self.server(FakeReverses([("tcp:8081", "tcp:8081")]))
 
-        #expect(await AndroidBackend.removeMetroReverses(host: try Self.host(server, directory: directory)).isEmpty)
+        #expect(await AndroidBackend.removeMetroReverses(host: try Self.host(server, directory: directory)) == MetroReverseOutcome())
         #expect(server.connectionAttempts == 0)
     }
 }

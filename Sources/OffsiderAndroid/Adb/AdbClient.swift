@@ -85,7 +85,7 @@ actor AdbClient {
         let connection = try await openDevice(serial, service: service, label: service, timeout: timeout)
         try await closing(connection, serial: serial, command: service, timeout: timeout) {
             if case .fail(let message) = try await connection.readStatus() {
-                throw AndroidError.adbCommandFailed(serial: serial, command: service, detail: message)
+                throw AndroidError.adbCommandFailed(serial: serial, command: service, detail: message, refused: true)
             }
         }
     }
@@ -203,11 +203,11 @@ actor AdbClient {
         do {
             try await connection.send("host:transport:" + serial)
             if case .fail(let message) = try await connection.readStatus() {
-                throw transportError(message, serial: serial)
+                throw transportError(message, serial: serial).asAdbRefusal
             }
             try await connection.send(service)
             if case .fail(let message) = try await connection.readStatus() {
-                throw AndroidError.adbCommandFailed(serial: serial, command: label, detail: message)
+                throw AndroidError.adbCommandFailed(serial: serial, command: label, detail: message, refused: true)
             }
             return connection
         } catch {

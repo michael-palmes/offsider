@@ -15,6 +15,7 @@ final class DeviceWatchdog: @unchecked Sendable {
     private let readBound: TimeInterval
     private let fire: @Sendable (String) -> Void
     private var timer: DispatchSourceTimer?
+    private var beforeFire: (@Sendable () -> Void)?
 
     /// What a watchdog made without its own `fire` does when it goes off.
     enum Action: Sendable {
@@ -67,11 +68,17 @@ final class DeviceWatchdog: @unchecked Sendable {
                 guard let self, let source, self.timer === source, !source.isCancelled else { return }
                 self.timer = nil
                 source.cancel()
+                self.beforeFire?()
                 self.fire(message)
             }
             timer = source
             source.resume()
         }
+    }
+
+    /// Runs on the watchdog's own queue just before it goes off, which may end the process; for what must not stay on the device.
+    func beforeFiring(_ body: @escaping @Sendable () -> Void) {
+        queue.sync { beforeFire = body }
     }
 
     func disarm() {

@@ -81,6 +81,26 @@ struct HungReadTests {
         }
     }
 
+    @Test("a screenshot during a hold stops waiting on a read that never returns, and lifts the finger first")
+    func holdLiftsBeforeFiring() async throws {
+        let fired = Fired()
+        let backend = WedgedBackend(trees: [])
+        let route = DeviceRouter.Route(backend: backend, device: Self.simulator)
+        let swipe = try Swipe.parse(["--start-x", "200", "--start-y", "800", "--end-x", "200", "--end-y", "400", "--screenshot-at", "0", "--device", Self.simulator.rawValue])
+        let lift = InputEvent.touch(direction: .up, x: 200, y: 400)
+        let liftedFirst = Fired()
+        let watchdog = DeviceWatchdog(grace: 0.05, readBound: 0) { message in
+            fired.record(message)
+        }
+        backend.session.onPerform = { if $0 == lift { liftedFirst.record(fired.all.isEmpty ? "before" : "after") } }
+
+        try await firesWhile(fired) {
+            try await swipe.holdShots.perform(press: .touch(direction: .down, x: 200, y: 800), lift: lift, holdEnd: 0, on: route, details: InputDetails(), watchdog: watchdog)
+        }
+
+        #expect(liftedFirst.all == ["before"])
+    }
+
     @Test("a read that answers in time disarms, and a --wait-lock wait does not count against it")
     func healthyRead() async throws {
         let fired = Fired()

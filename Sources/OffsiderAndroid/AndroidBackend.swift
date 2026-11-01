@@ -343,6 +343,12 @@ public final class AndroidBackend: DeviceBackend, AccessibilityActionPerforming,
         return nil
     }
 
+    /// A hold's press alone may never rest, so `touchHelper` cannot tell it is coming; without gRPC, only the helper reports the resting finger.
+    public func prepareHold(for id: DeviceID) async throws {
+        guard case .adb = try await transport(for: id.rawValue) else { return }
+        _ = try await gestureHelper(id.rawValue)
+    }
+
     /// The helper for steps `input` on this API level lacks, started if needed; a refusal when the policy or the tree source rules it out.
     private func gapHelper(_ serial: String, for gap: AdbInputGap, apiLevel level: Int) async throws -> HelperInputDriver {
         log(.debug, "`input` on \(serial) (API \(level)) has no \(gap == .motionEvent ? "motionevent" : "keycombination"), so these steps need the helper")
@@ -842,3 +848,5 @@ public final class AndroidBackend: DeviceBackend, AccessibilityActionPerforming,
         (value * 100).rounded() / 100
     }
 }
+
+extension AndroidBackend: HoldPreparing {}

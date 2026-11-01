@@ -71,6 +71,8 @@ public struct AndroidError: LocalizedError, CustomStringConvertible, Equatable, 
     }
 
     public let kind: Kind
+    /// adb's own `FAIL`: the service did not run, unlike a timeout or a dropped link, which leave that open.
+    public private(set) var refusedByAdb = false
     public let message: String
     /// The command to run next, when the message does not quote it.
     public let explicitHint: String?
@@ -147,9 +149,18 @@ public struct AndroidError: LocalizedError, CustomStringConvertible, Equatable, 
         )
     }
 
-    static func adbCommandFailed(serial: String, command: String, detail: String) -> AndroidError {
+    static func adbCommandFailed(serial: String, command: String, detail: String, refused: Bool = false) -> AndroidError {
         let reason = detail.isEmpty ? "" : ": \(detail)"
-        return AndroidError(.adbCommandFailed, "`\(command)` failed on \(serial)\(reason).")
+        var error = AndroidError(.adbCommandFailed, "`\(command)` failed on \(serial)\(reason).")
+        error.refusedByAdb = refused
+        return error
+    }
+
+    /// This error, as adb's own refusal of the service.
+    var asAdbRefusal: AndroidError {
+        var error = self
+        error.refusedByAdb = true
+        return error
     }
 
     static func serialNotRunning(_ serial: String) -> AndroidError {

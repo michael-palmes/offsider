@@ -3,6 +3,25 @@ import Testing
 import OffsiderCore
 @testable import OffsiderAndroid
 
+/// Holds the fake helper's answer until the test opens it.
+final class HelperGate: @unchecked Sendable {
+    private let semaphore = DispatchSemaphore(value: 0)
+    private let lock = NSLock()
+    private var isOpen = false
+
+    var passed: Bool { lock.withLock { isOpen } }
+
+    func wait() {
+        semaphore.wait()
+        semaphore.signal()
+    }
+
+    func open() {
+        lock.withLock { isOpen = true }
+        semaphore.signal()
+    }
+}
+
 /// A broker on a real Unix socket in a fresh private folder, serving a helper on the fake device.
 @MainActor
 final class BrokerFixture {
@@ -420,6 +439,130 @@ struct HelperBrokerTests {
         #expect(AndroidDoctorProbe.warmHelperFact(status(.ready), helloMilliseconds: 2, health: .busy) == .ready(
             launchMilliseconds: 112, pushed: false, helloMilliseconds: 2, pingMilliseconds: nil, protocolVersion: 2, sdkInt: 36
         ))
+    }
+
+    /// A raw client that sends one request, reads its reply and goes, as a killed command's socket does.
+    private static func sendAndGo(_ payload: Data, to fixture: BrokerFixture, untilHelperReceives op: String? = nil) async throws {
+        let client = CloseOnExecSocket.make(AF_UNIX, SOCK_STREAM)
+        try #require(client >= 0)
+        var address = try UnixSocket.address(fixture.socket)
+        let connected = withUnsafePointer(to: &address) {
+            $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { Darwin.connect(client, $0, socklen_t(MemoryLayout<sockaddr_un>.size)) }
+        }
+        try #require(connected == 0)
+        let stream = PosixAdbStream.adopting(client)
+        try await stream.write(try HelperWire.frame(payload), deadline: .now + .seconds(5))
+        if let op {
+            try await fixture.untilHelperReceived(op)
+        } else {
+            _ = try await stream.read(upTo: 64 * 1024, deadline: .now + .seconds(5))
+        }
+        await stream.close()
+    }
+
+    private static let touchDown = HelperValue.object(["kind": .string("touch"), "phase": .string("down"), "pointer": .int(0), "x": .int(10), "y": .int(20)])
+    private static let touchUp = HelperValue.object(["kind": .string("touch"), "phase": .string("up"), "pointer": .int(0), "x": .int(10), "y": .int(20)])
+
+    @Test("a command that went with a finger down is followed by a release, so its killed hold lets go and the next touch is not refused")
+    func goneHolderIsReleased() async {
+        await #expect(processExitsWith: .success) { @MainActor in
+            await recordingErrors {
+                let fixture = BrokerFixture()
+                try await fixture.start()
+                try await fixture.untilReady()
+                try await Self.sendAndGo(try HelperRequest.inject([Self.touchDown], sync: true).payload(id: 7), to: fixture)
+                try await fixture.untilHelperReceived("release")
+                #expect(fixture.device.ops.firstIndex(of: "inject")! < fixture.device.ops.firstIndex(of: "release")!)
+                try await fixture.stop()
+            }
+        }
+    }
+
+    @Test("a command killed during its own slow request is released before the next command's touch gets its turn")
+    func releaseBeatsTheNextTouch() async {
+        await #expect(processExitsWith: .success) { @MainActor in
+            await recordingErrors {
+                let device = FakeHelperDevice()
+                let gate = HelperGate()
+                device.answer = { _, op, _ in
+                    guard op == "inject", !gate.passed else { return nil }
+                    gate.wait()
+                    return nil
+                }
+                let fixture = BrokerFixture(device: device)
+                try await fixture.start()
+                try await fixture.untilReady()
+                try await Self.sendAndGo(try HelperRequest.inject([Self.touchDown], sync: true).payload(id: 7), to: fixture, untilHelperReceives: "inject")
+                let second = Task { @MainActor in
+                    try await Self.sendAndGo(try HelperRequest.inject([Self.touchDown, Self.touchUp], sync: true).payload(id: 8), to: fixture)
+                }
+                try await Task.sleep(for: .milliseconds(100))
+                gate.open()
+                try await second.value
+                let ops = device.ops.filter { $0 == "inject" || $0 == "release" }
+                #expect(ops == ["inject", "release", "inject"])
+                try await fixture.stop()
+            }
+        }
+    }
+
+    @Test("a command that lifted sends no release, so it can never let go of the next command's finger")
+    func liftedNoRelease() async {
+        await #expect(processExitsWith: .success) { @MainActor in
+            await recordingErrors {
+                let fixture = BrokerFixture()
+                try await fixture.start()
+                try await fixture.untilReady()
+                try await Self.sendAndGo(try HelperRequest.inject([Self.touchDown, Self.touchUp], sync: true).payload(id: 7), to: fixture)
+                try await Task.sleep(for: .milliseconds(200))
+                #expect(!fixture.device.ops.contains("release"))
+                try await fixture.stop()
+            }
+        }
+    }
+
+    @Test("a command that only read sends no release")
+    func readerNoRelease() async {
+        await #expect(processExitsWith: .success) { @MainActor in
+            await recordingErrors {
+                let fixture = BrokerFixture()
+                try await fixture.start()
+                try await fixture.untilReady()
+                try await Self.sendAndGo(try HelperRequest.ping.payload(id: 7), to: fixture)
+                try await Task.sleep(for: .milliseconds(200))
+                #expect(!fixture.device.ops.contains("release"))
+                try await fixture.stop()
+            }
+        }
+    }
+
+    @Test("a helper too old to release is asked nothing")
+    func oldHelperIsNotReleased() async {
+        await #expect(processExitsWith: .success) { @MainActor in
+            await recordingErrors {
+                let device = FakeHelperDevice()
+                device.helloOps = ["hello", "ping", "inject", "quit"]
+                let fixture = BrokerFixture(device: device)
+                try await fixture.start()
+                try await fixture.untilReady()
+                try await Self.sendAndGo(try HelperRequest.inject([Self.touchDown], sync: true).payload(id: 7), to: fixture)
+                try await Task.sleep(for: .milliseconds(200))
+                #expect(!device.ops.contains("release"))
+                try await fixture.stop()
+            }
+        }
+    }
+
+    @Test("what a command holds follows its inject steps, fingers and keys, across requests")
+    func heldFollowsSteps() throws {
+        let key = { (phase: String) in HelperValue.object(["kind": .string("key"), "phase": .string(phase), "code": .int(59)]) }
+        let down = try HelperRequest.inject([Self.touchDown, key("down")], sync: true).payload(id: 1)
+        let held = HelperBrokerWire.held(after: down, given: [])
+        #expect(held == ["touch 0", "key 59"])
+        let lifted = try HelperRequest.inject([Self.touchUp], sync: true).payload(id: 2)
+        #expect(HelperBrokerWire.held(after: lifted, given: held) == ["key 59"])
+        let press = try HelperRequest.inject([key("press")], sync: true).payload(id: 3)
+        #expect(HelperBrokerWire.held(after: press, given: []).isEmpty)
     }
 
     @Test("input whose command has gone is never sent")

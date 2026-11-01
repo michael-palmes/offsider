@@ -116,7 +116,7 @@ struct Swipe: AsyncParsableCommand {
 
     func run() async throws {
         try await InputOutput.reporting(command: "swipe", target: target, json: jsonOption.json) { details in
-            if holdShots.isRequested { try await holdShots.prepare(command: "swipe") }
+            if holdShots.isRequested { try await holdShots.prepare(command: "swipe", device: deviceOption.id) }
             try await swipe(details)
         }
     }

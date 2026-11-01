@@ -23,6 +23,8 @@ public protocol ExpoDevClientOpening: DeviceBackend {
 public protocol MetroReverseSetting: DeviceBackend {
     /// Maps the phone's `tcp:<port>` to the Mac's same port and records it for `session stop`; refuses anything but a USB phone.
     func addMetroReverse(port: Int, on id: DeviceID) async throws
+    /// The ports Offsider recorded on this phone for its current connection, which `session stop` removes.
+    func recordedMetroPorts(on id: DeviceID) async -> [Int]
 }
 
 public struct ExpoDevClientError: Error, CustomStringConvertible, LocalizedError, Equatable, Sendable {

@@ -22,8 +22,10 @@ struct DeviceAccessContext: Sendable {
     var now: @Sendable () -> Date
     /// Connected physical devices, as `devices` shows them, and the warnings the scan raised.
     var physicalDevices: @Sendable @MainActor () async throws -> (rows: [DeviceSummary], warnings: [String])
-    /// Stops the device's runner and session broker; returns what stopped.
-    var stopSessions: @Sendable @MainActor (String) async -> [String]
+    /// Stops the device's runner and session broker; returns what stopped and what it left.
+    var stopSessions: @Sendable @MainActor (String) async -> DeviceAccess.StoppedSessions
+    /// Takes the reverses Offsider recorded off a phone, except on the ports given; a narrower allowance holds from now.
+    var withdrawMetroPorts: @Sendable @MainActor (_ key: String, _ keeping: [Int]) async -> MetroReverseOutcome = { _, _ in MetroReverseOutcome() }
     /// Teams with a code-signing identity in the login Keychain.
     var signingTeams: @Sendable () -> [SigningTeam]
     /// The third-party apps on a device the person chose; one query to that device.
@@ -55,6 +57,7 @@ struct DeviceAccessContext: Sendable {
             return (rows.filter { $0.kind == .physical }, warnings)
         },
         stopSessions: { key in await DeviceAccess.stopSessions(udid: key) },
+        withdrawMetroPorts: { key, keeping in await AndroidBackend.removeMetroReverses(host: .cli(), serial: key, keeping: keeping) },
         signingTeams: { SigningTeams.discover() },
         installedApps: { row in
             switch row.platform {
@@ -138,14 +141,23 @@ extension DeviceAccess {
         }
     }
 
+    /// What stopping a device's sessions did, and what it left on the phone.
+    struct StoppedSessions: Equatable {
+        var stopped: [String] = []
+        var left: [DeviceSessionRow.Left] = []
+    }
+
     /// Stops the runner and session broker serving an iPhone or iPad, clearing its screen-sharing indicator, or a phone's warm helper, the adb reverses Offsider set and its posture override.
     @MainActor
-    static func stopSessions(udid: String) async -> [String] {
+    static func stopSessions(udid: String) async -> StoppedSessions {
         if case .androidName = DeviceIDClassifier.classify(udid) {
             let helper = await AndroidBackend.stopWarmHelpers(host: .cli(), serial: udid).isEmpty ? [] : ["warm helper"]
-            let reverses = await AndroidBackend.removeMetroReverses(host: .cli(), serial: udid).flatMap(\.ports).map { "adb reverse tcp:\($0)" }
-            let posture = await AndroidBackend.resetRecordedPostures(host: .cli(), serial: udid).isEmpty ? [] : ["posture override"]
-            return helper + reverses + posture
+            let reverses = await AndroidBackend.removeMetroReverses(host: .cli(), serial: udid)
+            let postures = await AndroidBackend.resetRecordedPostures(host: .cli(), serial: udid)
+            return StoppedSessions(
+                stopped: helper + reverses.removed.flatMap(\.ports).map { "adb reverse tcp:\($0)" } + (postures.reset.isEmpty ? [] : ["posture override"]),
+                left: DeviceSessionRow.left(reverses: reverses.failed, postures: postures)
+            )
         }
         var stopped: [String] = []
         let brokers = DeviceSessions.records(device: udid)
@@ -162,7 +174,7 @@ extension DeviceAccess {
             RunnerSessions.removeLog(udid: record.udid)
         }
         if !runners.isEmpty { stopped.append("runner") }
-        return stopped
+        return StoppedSessions(stopped: stopped)
     }
 }
 
@@ -310,11 +322,19 @@ struct DeviceAccessAllow: AsyncParsableCommand {
                 if droppedTampered {
                     prompt.lines(TerminalUI.warning(Self.droppedTampered, width: prompt.width, style: prompt.style))
                 }
-                prompt.lines(AllowScreen.allowed(name: name, key: choice.key, until: until, apps: choice.apps, metroPorts: choice.metroPorts, testDevice: choice.testDevice, width: prompt.width, style: prompt.style))
+                let withdrawn = choice.row.platform == .android ? await context.withdrawMetroPorts(choice.key, choice.metroPorts) : MetroReverseOutcome()
+                let removedPorts = withdrawn.removed.flatMap(\.ports).map { "adb reverse tcp:\($0)" }
+                let stuckPorts = withdrawn.failed.flatMap(\.ports).map { "adb reverse tcp:\($0)" }
+                let retry = "offsider session stop --device \(choice.key)"
+                let notes = removedPorts.map { "Removed \($0)" } + stuckPorts.map { "Could not remove \($0): run `\(retry)`" }
+                prompt.lines(AllowScreen.allowed(name: name, key: choice.key, until: until, apps: choice.apps, metroPorts: choice.metroPorts, testDevice: choice.testDevice, notes: notes, width: prompt.width, style: prompt.style))
                 prompt.settle()
                 reports.append(json
-                    ? DeviceAccessReport.changeJSON(action: "allow", platform: choice.row.platform, key: choice.key, allowance: entry)
-                    : AllowScreen.allowed(name: name, key: choice.key, until: until, apps: choice.apps, metroPorts: choice.metroPorts, testDevice: choice.testDevice, width: .max, style: .detect(isTerminal: false)).joined(separator: "\n"))
+                    ? DeviceAccessReport.changeJSON(
+                        action: "allow", platform: choice.row.platform, key: choice.key, allowance: entry, stopped: removedPorts,
+                        notRemoved: stuckPorts, retry: stuckPorts.isEmpty ? nil : retry
+                    )
+                    : AllowScreen.allowed(name: name, key: choice.key, until: until, apps: choice.apps, metroPorts: choice.metroPorts, testDevice: choice.testDevice, notes: notes, width: .max, style: .detect(isTerminal: false)).joined(separator: "\n"))
                 allowedNow.insert(choice.key)
                 savedNames.append(name)
                 guard named == nil, !json else { return }
@@ -840,18 +860,26 @@ struct DeviceAccessRemove: AsyncParsableCommand {
             }, commit: { try context.seal.seal($0) })
         }
         let hadRunner = target.platform == .ios && context.hasRunner(target.key)
-        let stopped = await Console.current.progress("Stopping its sessions") { await context.stopSessions(target.key) }
-        if json { return Removal(text: DeviceAccessReport.changeJSON(action: "remove", platform: target.platform, key: target.key, allowance: removed, stopped: stopped)) }
+        let sessionsResult = await Console.current.progress("Stopping its sessions") { await context.stopSessions(target.key) }
+        let stopped = sessionsResult.stopped
+        let left = sessionsResult.left
+        if json {
+            return Removal(text: DeviceAccessReport.changeJSON(
+                action: "remove", platform: target.platform, key: target.key, allowance: removed, stopped: stopped,
+                notRemoved: left.flatMap(\.parts), retry: left.first?.retry
+            ))
+        }
         let removedName = removed?.name ?? removedNewer?.name
         var text = removedName.map { "Removed \($0) (\(target.key)) from the allow-list; Offsider will not drive it again until a person allows it." }
             ?? "\(target.key) was not on the allow-list."
         if tampered, existing != nil { text += " The allow-list had been changed outside Offsider, so every entry was dropped." }
         if !stopped.isEmpty { text += " Stopped its \(stopped.joined(separator: " and "))." }
+        for entry in left { text += " " + entry.sentence }
         let sessions = stopped.isEmpty ? nil : "stopped its \(stopped.joined(separator: " and "))"
         let receipt = removed.map { DevicePersonView.receipt("Withdrew \(AccessStatusScreen.name($0))", [sessions]) }
             ?? removedNewer.map { DevicePersonView.receipt("Withdrew \(PromptScreen.label($0.name))", [sessions]) }
             ?? DevicePersonView.receipt("Nothing to withdraw", ["\(target.key) was not on the list", sessions])
-        let dropped: [Notice] = tampered && existing != nil ? [.warning("The list was changed outside Offsider, so every entry was dropped")] : []
+        let dropped: [Notice] = (tampered && existing != nil ? [.warning("The list was changed outside Offsider, so every entry was dropped")] : []) + left.map(\.notice)
         guard hadRunner else { return Removal(text: text, person: receipt, notices: dropped) }
         let clean = Self.cleanCommand(target.key)
         guard context.interactive() else {
