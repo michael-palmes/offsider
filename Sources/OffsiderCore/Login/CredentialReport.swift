@@ -30,6 +30,8 @@ public struct CredentialReport: Equatable, Sendable {
     public var signIns: [String: [LoginSignIn]]
     /// The raw key last signed in on the device in hand.
     public var signedInHere: String?
+    /// The app was installed again after that sign-in, so the record says nothing about who is signed in now.
+    public var signedInHereStale: Bool
     /// Whether `status` had a device in hand, so its JSON carries `signedInHere` even when nobody is recorded.
     public var deviceInHand: Bool
     /// The `--where` tags `status` chose by, empty when none were passed.
@@ -56,6 +58,7 @@ public struct CredentialReport: Equatable, Sendable {
         changed: Bool? = nil,
         signIns: [String: [LoginSignIn]] = [:],
         signedInHere: String? = nil,
+        signedInHereStale: Bool = false,
         deviceInHand: Bool = false,
         filter: [LoginTag] = [],
         device: String? = nil,
@@ -77,6 +80,7 @@ public struct CredentialReport: Equatable, Sendable {
         self.changed = changed
         self.signIns = signIns
         self.signedInHere = signedInHere
+        self.signedInHereStale = signedInHereStale
         self.deviceInHand = deviceInHand
         self.filter = filter
         self.device = device
@@ -171,6 +175,7 @@ public struct CredentialReport: Equatable, Sendable {
         let showsHere = action == "status" && (deviceInHand || signedInHere != nil)
         if showsHere {
             fields.append(("signedInHere", .optional(signedInHere.map(LoginCredential.displayKey), OrderedJSON.string)))
+            if signedInHereStale { fields.append(("signedInHereStale", .bool(true))) }
         }
         if !filter.isEmpty {
             fields.append(("where", .array(filter.map { .string($0.rawValue) })))
@@ -209,7 +214,7 @@ public struct CredentialReport: Equatable, Sendable {
     }
 
     private var hereLine: [String] {
-        signedInHere.map { ["Signed in here: \(LoginCredential.displayKey($0))"] } ?? []
+        signedInHere.map { ["Signed in here: \(LoginCredential.displayKey($0))" + (signedInHereStale ? " (stale: the app was installed again since)" : "")] } ?? []
     }
 
     /// `tags` always, then each note and `updated` only when set, then `devices` and `confirm` when not the defaults (virtual, false).

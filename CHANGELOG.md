@@ -9,6 +9,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ### Added
 
 - `tap --dry-run` finds the target and judges what a touch there would reach, then stops: nothing is sent and no input session opens, so an irreversible button can be tested safely. It exits as the tap would and says nothing was sent, and `--json` carries `"dryRun":true`. It takes a selector, and a `batch` step refuses it.
+- `wait --wait-timeout` is the same as `wait --timeout`, the name `tap` and other selector commands use.
+- `screen_off` (exit 1): a phone refused because Android keeps system UI in front of a dark or locked screen says so first, with `offsider wake` as the fix.
+- `credential status --device` adds `signedInHereStale: true` on Android when the app was first installed after that sign-in.
+- `screenshot` warns when an iOS simulator's picture matches the last one although the elements on screen changed, as a swipe-up unlock can freeze its display, and `button lock` says to unlock with Home twice.
+- `rn devmenu --json` adds `closedBy: "fallback"` when the item left the menu open and Offsider closed it.
+- `record-video` and `stream-video` take `--wait-lock` for their one tree read.
 
 ### Fixed
 
@@ -24,6 +30,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - A selector tap reads a point again when the shared on-screen read caught an empty screen-sized answer mid-transition, and `tap --verify` picks among several matches as the first read did, so a tap on a screen that never moved no longer reports `unsettled`.
 - A batch tap on an iOS simulator hit-tests several matches, as a lone tap does, and taps the one a touch reaches instead of stopping as `selector_ambiguous`.
 - `wait --gone` and `assert --gone` say what hides an element they count as gone (`is not on screen: under button "Buy" ...`), and `login` waits for the submit button to stop moving after a dismiss tap, and no longer chooses a point on the keyboard's bar or skips rows for controls on a screen beneath a page.
+- Over Android's permission dialog, the refusal names `offsider permission grant`.
+- `rn open` finds a dev client's own scheme when it registers no `exp+` one, or lists them, instead of suggesting `exp+<slug>`.
+- `rn open` says when Metro answers only on `::1`, and its start command stays on 127.0.0.1.
+- `turnstile` reads `passed` over a checkbox left in the tree, across widgets and beside an app's wrapper.
+- `devices status --device <id> --json` prints one JSON document when the device is not allowed.
+- `devices add` lets a person choose a device already allowed to change it, with what it has now preselected, so `metro_port_not_allowed` and `app_not_allowed` no longer send them to a menu that offers nothing.
+- `record-video` and `stream-video` keep exit 8 for a busy device, say only to retry when waiting would not help, and never suggest `--unmasked` for it.
+- `rn open` no longer calls a crash to the home screen a system prompt, and names another app in front as another app.
+- `rn devmenu`'s overlay check follows the label the menu would match, so a custom item or a label the menu lacks asks nothing of a person.
+- `rn devmenu`'s agent line quotes custom labels, and `--json` and `rn logbox status --json` name app text in `untrusted`.
+- `doctor` names `caffeinate -d` for a sleeping display, not a missing desktop session.
+- `app_not_responding` names `offsider app launch --restart`, and the simulator empty-tree hint does too; on a phone not allowed for the app it asks the user.
+- `rn open --json` stays valid JSON with a newline in `--wait-id`.
+- The skill's lasting-state rule names `posture`.
+- The foldables guide says `screenshot --display` needs the display active.
 
 ## [0.15.0] - 2026-11-01
 

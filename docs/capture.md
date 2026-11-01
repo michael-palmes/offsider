@@ -2,7 +2,7 @@
 
 ## Screenshots and video
 
-`screenshot` saves a PNG or JPEG of the active display (`--output`, `--format`, `--quality`). `--display <id>` captures another display of a foldable, `--scale points` makes one pixel one point, `--region x,y,w,h` crops in points, and `--json` prints the image's size, scale, `orientation`, `rotation`, `display` and `posture`, and on an iPhone or iPad `capture`: `stream` or `devicectl`.
+`screenshot` saves a PNG or JPEG of the active display (`--output`, `--format`, `--quality`). `--display <id>` captures a foldable's display by name, once it is active: the password mask reads the tree, which describes the active display alone, so an inactive one is withheld with `mask_unproven` (fold or unfold first with `offsider posture`), `--scale points` makes one pixel one point, `--region x,y,w,h` crops in points, and `--json` prints the image's size, scale, `orientation`, `rotation`, `display` and `posture`, and on an iPhone or iPad `capture`: `stream` or `devicectl`.
 
 Without `--output`, a screenshot goes to the current folder as `Simulator Screenshot - <name> - <time>.png`, `Emulator Screenshot - …` from an emulator, or `Screenshot - …` from a physical iPhone, iPad or Android phone; `record-video` names its file `offsider-video-<time>.mp4` on every device. Captures are written mode 0600. A generated file name never replaces a file: a taken name gets ` 2`, ` 3` and so on, and the device name in it loses separators, control and bidi characters. `--output` naming an existing file replaces it whole only when it is a regular image or video file (png, jpg, jpeg, heic, tiff, mp4, mov, m4v) that you own; a link, a directory or another file is refused, and nothing is deleted first.
 

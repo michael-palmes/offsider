@@ -72,7 +72,7 @@ struct Wait: AsyncParsableCommand {
     @Option(help: ArgumentHelp("Wait this long, from 0 to \(Wait.maximumSeconds) seconds, then exit 0. Ignores --timeout.", valueName: "seconds"))
     var seconds: Double?
 
-    @Option(help: ArgumentHelp("Give up after this many seconds, from 0 to \(Wait.maximumSeconds), and exit 5.", valueName: "seconds"))
+    @Option(name: [.customLong("timeout"), .customLong("wait-timeout")], help: ArgumentHelp("Give up after this many seconds, from 0 to \(Wait.maximumSeconds), and exit 5.", valueName: "seconds"))
     var timeout: Double = 10
 
     @Option(name: .customLong("poll-interval"), help: ArgumentHelp("Seconds between reads, from 0.05 to 5.", valueName: "seconds"))

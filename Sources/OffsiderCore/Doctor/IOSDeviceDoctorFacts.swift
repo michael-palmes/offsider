@@ -47,9 +47,16 @@ public struct IOSDeviceDoctorFacts: Equatable, Sendable {
         case failed(String)
     }
 
+    /// What this process's desktop session offers the screen stream.
+    public enum Desktop: Equatable, Sendable {
+        case awake
+        case asleep
+        case none
+    }
+
     /// The device's session broker, read without starting it or its stream.
     public enum SessionFact: Equatable, Sendable {
-        case notRunning(guiSession: Bool)
+        case notRunning(Desktop)
         /// `stream` is the broker's stream state (`opening`, `live`, `failed`, `closed`).
         case running(stream: String, detail: String?)
         /// Its process is alive but its socket did not answer.
