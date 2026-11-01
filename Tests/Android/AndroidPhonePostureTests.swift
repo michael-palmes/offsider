@@ -226,6 +226,26 @@ struct AndroidPhonePostureTests {
         #expect(store.load(serial: Self.serial) == nil)
     }
 
+    @Test("a phone no longer allowed and gone for over a month goes too; one still connected, or recent, stays named and is sent nothing")
+    func oldSkippedRecordForgotten() async throws {
+        let records = try Self.directory()
+        let store = AndroidPostureRecordStore(directory: records)
+        try store.save(AndroidPostureRecord(serial: Self.serial, bootID: Self.boot, identifier: 0))
+        let path = (records as NSString).appendingPathComponent(AndroidPostureRecord.fileName(serial: Self.serial))
+        let phone = Phone(override: 0)
+        phone.connected = false
+        #expect(await AndroidBackend.resetRecordedPostures(host: try Self.host(phone, records: records), permits: { _ in false }) == PostureResetOutcome(skipped: [Self.serial]))
+
+        try FileManager.default.setAttributes([.modificationDate: Date(timeIntervalSinceNow: -AndroidPostureRecordStore.forgottenAfter - 60)], ofItemAtPath: path)
+        phone.connected = true
+        #expect(await AndroidBackend.resetRecordedPostures(host: try Self.host(phone, records: records), permits: { _ in false }) == PostureResetOutcome(skipped: [Self.serial]))
+        #expect(phone.commands.isEmpty)
+
+        phone.connected = false
+        #expect(await AndroidBackend.resetRecordedPostures(host: try Self.host(phone, records: records), permits: { _ in false }) == PostureResetOutcome())
+        #expect(store.load(serial: Self.serial) == nil)
+    }
+
     @Test("with no adb server, a recorded override is kept and named as not connected, and adb is not started")
     func noServerKeepsRecord() async throws {
         let records = try Self.directory()

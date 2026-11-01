@@ -521,6 +521,23 @@ struct HelperBrokerTests {
         }
     }
 
+    @Test("a touch the helper refused injected nothing, so its command leaves nothing to release")
+    func refusedTouchNoRelease() async {
+        await #expect(processExitsWith: .success) { @MainActor in
+            await recordingErrors {
+                let device = FakeHelperDevice()
+                device.answer = { _, op, _ in op == "inject" ? .error(code: "bad-request", message: "step 0: pointer 0 is already down") : nil }
+                let fixture = BrokerFixture(device: device)
+                try await fixture.start()
+                try await fixture.untilReady()
+                try await Self.sendAndGo(try HelperRequest.inject([Self.touchDown], sync: true).payload(id: 7), to: fixture)
+                try await Task.sleep(for: .milliseconds(200))
+                #expect(!device.ops.contains("release"))
+                try await fixture.stop()
+            }
+        }
+    }
+
     @Test("a command that only read sends no release")
     func readerNoRelease() async {
         await #expect(processExitsWith: .success) { @MainActor in

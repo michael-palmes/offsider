@@ -155,7 +155,7 @@ extension DeviceAccess {
             let reverses = await AndroidBackend.removeMetroReverses(host: .cli(), serial: udid)
             let postures = await AndroidBackend.resetRecordedPostures(host: .cli(), serial: udid)
             return StoppedSessions(
-                stopped: helper + reverses.removed.flatMap(\.ports).map { "adb reverse tcp:\($0)" } + (postures.reset.isEmpty ? [] : ["posture override"]),
+                stopped: helper + reverses.removed.flatMap(\.ports).map(MetroReverse.label) + (postures.reset.isEmpty ? [] : ["posture override"]),
                 left: DeviceSessionRow.left(reverses: reverses.failed, postures: postures)
             )
         }
@@ -323,8 +323,8 @@ struct DeviceAccessAllow: AsyncParsableCommand {
                     prompt.lines(TerminalUI.warning(Self.droppedTampered, width: prompt.width, style: prompt.style))
                 }
                 let withdrawn = choice.row.platform == .android ? await context.withdrawMetroPorts(choice.key, choice.metroPorts) : MetroReverseOutcome()
-                let removedPorts = withdrawn.removed.flatMap(\.ports).map { "adb reverse tcp:\($0)" }
-                let stuckPorts = withdrawn.failed.flatMap(\.ports).map { "adb reverse tcp:\($0)" }
+                let removedPorts = withdrawn.removed.flatMap(\.ports).map(MetroReverse.label)
+                let stuckPorts = withdrawn.failed.flatMap(\.ports).map(MetroReverse.label)
                 let retry = "offsider session stop --device \(choice.key)"
                 let notes = removedPorts.map { "Removed \($0)" } + stuckPorts.map { "Could not remove \($0): run `\(retry)`" }
                 prompt.lines(AllowScreen.allowed(name: name, key: choice.key, until: until, apps: choice.apps, metroPorts: choice.metroPorts, testDevice: choice.testDevice, notes: notes, width: prompt.width, style: prompt.style))

@@ -345,14 +345,23 @@ extension AndroidBackend: PostureControlling, PostureResetting, PostureStateNami
         let store = AndroidPostureRecordStore(directory: directory)
         let all = serial.map { store.load(serial: $0).map { [$0] } ?? [] } ?? store.all()
         let records = all.filter { permits($0.serial) }
-        var outcome = PostureResetOutcome(skipped: all.map(\.serial).filter { phone in !records.contains { $0.serial == phone } })
-        guard !records.isEmpty else { return outcome }
-        guard let endpoint = try? LoopbackEndpoint.adbServer(environment: host.environment),
-              let rows = try? await AdbClient(endpoint: endpoint, connector: host.adbConnector, timing: host.timing).devices() else {
+        let unpermitted = all.map(\.serial).filter { phone in !records.contains { $0.serial == phone } }
+        var outcome = PostureResetOutcome()
+        guard !all.isEmpty else { return outcome }
+        let endpoint = try? LoopbackEndpoint.adbServer(environment: host.environment)
+        let client = endpoint.map { AdbClient(endpoint: $0, connector: host.adbConnector, timing: host.timing) }
+        guard let rows = try? await client?.devices() else {
             outcome.notConnected = records.map(\.serial)
+            outcome.skipped = unpermitted
             return outcome
         }
-        let client = AdbClient(endpoint: endpoint, connector: host.adbConnector, timing: host.timing)
+        // Asks adb only who is connected, so an unpermitted phone is still sent nothing.
+        outcome.skipped = unpermitted.filter { phone in
+            guard !rows.contains(where: { $0.serial == phone }), store.isForgotten(serial: phone) else { return true }
+            store.remove(serial: phone)
+            return false
+        }
+        guard let client, !records.isEmpty else { return outcome }
         for record in records {
             guard rows.contains(where: { $0.serial == record.serial && $0.state == .device }) else {
                 if store.isForgotten(serial: record.serial) {

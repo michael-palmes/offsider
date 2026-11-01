@@ -304,8 +304,8 @@ final class HelperBroker {
             ) {
                 unsent = Self.unsent(op: request.op, peerClosed: stream.peerClosed(), waited: .now - arrival, timeout: timeout)
                 return unsent != nil
-            } follow: {
-                if request.op == "inject" { input.held = HelperBrokerWire.held(after: payload, given: input.held) }
+            } follow: { reply in
+                if request.op == "inject", HelperBrokerWire.isOK(reply) { input.held = HelperBrokerWire.held(after: payload, given: input.held) }
                 // A command killed during this request: the release goes before a request waiting behind it can be refused.
                 guard !input.held.isEmpty, stream.peerClosed(), session.ops.contains("release"), let release = releaseRequest() else { return nil }
                 input.held = []

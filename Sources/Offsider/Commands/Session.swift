@@ -386,7 +386,7 @@ struct DeviceSessionRow: Equatable {
         /// `runner`, `session broker`, `warm helper`, `input session`, `adb reverse tcp:8081` and `posture override`, those that stopped.
         var parts: [String] {
             [runner ? "runner" : nil, broker ? "session broker" : nil, helper ? "warm helper" : nil, input ? "input session" : nil].compactMap { $0 }
-                + reverses.map { "adb reverse tcp:\($0)" } + (posture ? ["posture override"] : [])
+                + reverses.map(MetroReverse.label) + (posture ? ["posture override"] : [])
         }
     }
 
@@ -422,7 +422,7 @@ struct DeviceSessionRow: Equatable {
         let why: Why
 
         var parts: [String] {
-            reverses.map { "adb reverse tcp:\($0)" } + (posture ? ["posture override"] : [])
+            reverses.map(MetroReverse.label) + (posture ? ["posture override"] : [])
         }
 
         var retry: String { "offsider session stop --device \(device)" }
@@ -474,6 +474,6 @@ struct DeviceSessionRow: Equatable {
 extension RecordedPhoneState {
     /// `adb reverse tcp:8081` and `posture override`, as `session status` lists them.
     var parts: [String] {
-        reverses.map { "adb reverse tcp:\($0)" } + (posture ? ["posture override"] : [])
+        reverses.map(MetroReverse.label) + (posture ? ["posture override"] : [])
     }
 }
