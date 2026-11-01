@@ -426,6 +426,29 @@ struct CoverAndVerifyTests {
         #expect(moved.session.calls.first == .perform(.tapAt(x: 201, y: 362)))
     }
 
+    @Test("a verify tap on an element only the filled read holds is resolved again from a filled read, not refused as gone")
+    func verifyRefillsHiddenTarget() async {
+        let backend = FillingBackend(plain: FakeUI.tree([FakeUI.node(.header, label: "Next", frame: FakeUI.frame(60, 70, 282, 22))])) { _ in [Self.save()] }
+
+        _ = try? await Self.tap(["--id", "save", "--verify", "--verify-timeout", "0.5", "--retries", "0"], on: backend, progress: VerifyProgress())
+
+        #expect(backend.session.calls == [.perform(.tapAt(x: 201, y: 322))])
+    }
+
+    @Test("with --fail-if-covered on Android, a hidden page that arrives by the verifier's read refuses the tap, as it would on the first read")
+    func verifyReadsHiddenCoverAgain() async {
+        let target = FakeUI.node(.button, id: "save", label: "Save", frame: FakeUI.frame(16, 300, 370, 44), platform: .android, drawingOrder: 1)
+        let cover = FakeUI.node(.button, id: "hidden-cover", label: "Cover", frame: FakeUI.frame(0, 280, 402, 90), platform: .android, drawingOrder: 2)
+        let backend = FillingBackend(plain: FakeUI.tree(platform: .android, [target])) { fill in fill == 1 ? [] : [cover] }
+
+        let error = await #expect(throws: CLIError.self) {
+            try await Self.tap(["--id", "save", "--fail-if-covered", "--verify", "--verify-timeout", "0.5", "--retries", "0"], on: backend, device: Self.android, progress: VerifyProgress())
+        }
+
+        #expect(error?.coveredBy?.id == "hidden-cover")
+        #expect(backend.session.calls.isEmpty)
+    }
+
     @Test("a guess about the same cover warns once though each read is judged")
     func verifyWarnsOnce() async throws {
         let banner = FakeUI.node(.button, id: "banner", label: "Banner", frame: FakeUI.frame(0, 280, 402, 90))
@@ -741,5 +764,29 @@ struct CoverAndVerifyTests {
         #expect(outcome.met)
         #expect(outcome.reason.hasPrefix("gone for "), "\(outcome.reason)")
         #expect(outcome.reason.contains(#": under button "Filter Chip""#), "\(outcome.reason)")
+    }
+}
+
+/// A plain read that leaves out what `hidden` gives for each fill, counted from 1.
+@MainActor
+private final class FillingBackend: FakeDeviceBackend, TreeGapFilling {
+    private let hidden: (Int) -> [UINode]
+    private var fills = 0
+
+    init(plain: UITree, hidden: @escaping (Int) -> [UINode]) {
+        self.hidden = hidden
+        super.init(platform: plain.platform, trees: [plain])
+    }
+
+    func startGapSamples(on id: DeviceID) async -> GapSamples? { nil }
+
+    func fillingGaps(in tree: UITree, on id: DeviceID, samples: GapSamples?) async -> UITree {
+        fills += 1
+        let added = hidden(fills)
+        guard !added.isEmpty else { return tree }
+        var filled = tree
+        filled.roots[0].children += added
+        filled.filledFromGaps = added.count
+        return filled
     }
 }

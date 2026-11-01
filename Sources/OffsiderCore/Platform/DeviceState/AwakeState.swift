@@ -180,30 +180,38 @@ public struct LockReport: Codable, Equatable, Sendable {
     /// `none`, `pin`, `pattern` or `password`; nil when unreadable.
     public let type: String?
     public let savedCode: Bool
+    /// Any marker, whatever its outcome: Offsider will not type the saved code.
     public let lastAttemptFailed: Bool
+    public let lastAttempt: UnlockAttemptRecord?
     public let userUnlocked: Bool?
     public let screen: String?
     public let lockScreen: String?
 
-    public init(type: String?, savedCode: Bool, lastAttemptFailed: Bool, userUnlocked: Bool?, screen: String?, lockScreen: String?) {
+    public init(type: String?, savedCode: Bool, lastAttempt: UnlockAttemptRecord?, userUnlocked: Bool?, screen: String?, lockScreen: String?) {
         self.type = type
         self.savedCode = savedCode
-        self.lastAttemptFailed = lastAttemptFailed
+        self.lastAttemptFailed = lastAttempt != nil
+        self.lastAttempt = lastAttempt
         self.userUnlocked = userUnlocked
         self.screen = screen
         self.lockScreen = lockScreen
     }
 
     /// Null lock fields when the state could not be read.
-    public init(_ reading: AwakeReading?, savedCode: Bool, lastAttemptFailed: Bool) {
+    public init(_ reading: AwakeReading?, savedCode: Bool, lastAttempt: UnlockAttemptRecord?) {
         self.init(
             type: reading?.credential,
             savedCode: savedCode,
-            lastAttemptFailed: lastAttemptFailed,
+            lastAttempt: lastAttempt,
             userUnlocked: reading?.userUnlocked,
             screen: reading?.screen.rawValue,
             lockScreen: reading?.lockScreen.name
         )
+    }
+
+    /// The record that stops Offsider typing a code saved for a PIN or password.
+    public var blockingAttempt: UnlockAttemptRecord? {
+        savedCode && type != "pattern" ? lastAttempt : nil
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -211,6 +219,7 @@ public struct LockReport: Codable, Equatable, Sendable {
         try container.encode(type, forKey: .type)
         try container.encode(savedCode, forKey: .savedCode)
         try container.encode(lastAttemptFailed, forKey: .lastAttemptFailed)
+        try container.encode(lastAttempt, forKey: .lastAttempt)
         try container.encode(userUnlocked, forKey: .userUnlocked)
         try container.encode(screen, forKey: .screen)
         try container.encode(lockScreen, forKey: .lockScreen)
@@ -219,16 +228,16 @@ public struct LockReport: Codable, Equatable, Sendable {
     /// `wake --unlock` types digits and letters, so a pattern is a person's job.
     public static let patternHint = "Unlock it on the device: `offsider wake --unlock` types a PIN or password, never a pattern."
 
-    /// The next step for a device waiting for its first unlock.
-    public func unlockHint(deviceID: String) -> String {
+    /// The next step for a device that may need unlocking; `codeKey` is what its code is saved under, an emulator's AVD name rather than its serial.
+    public func unlockHint(deviceID: String, codeKey: String) -> String {
         if type == "pattern" {
             return LockReport.patternHint
         }
         if !savedCode {
-            return "Unlock it on the device, or save its code in your own terminal with `offsider unlock-code set --device \(deviceID)`, then run `offsider wake --unlock --device \(deviceID)`."
+            return "Unlock it on the device, or save its code in your own terminal with `\(UnlockCodeScreen.setCommand(codeKey))`, then run `offsider wake --unlock --device \(deviceID)`."
         }
-        if lastAttemptFailed {
-            return "The saved code failed last time: unlock it on the device, or save the right code with `offsider unlock-code set --device \(deviceID)`."
+        if let blockingAttempt {
+            return blockingAttempt.fix(device: codeKey)
         }
         return "Run `offsider wake --unlock --device \(deviceID)` to type the saved code, or unlock it on the device."
     }
@@ -240,9 +249,18 @@ extension DeviceStateReport {
             ("type", .optional(report.type) { .string($0) }),
             ("savedCode", .bool(report.savedCode)),
             ("lastAttemptFailed", .bool(report.lastAttemptFailed)),
+            ("lastAttempt", .optional(report.lastAttempt) { attempt($0) }),
             ("userUnlocked", .optional(report.userUnlocked) { .bool($0) }),
             ("screen", .optional(report.screen) { .string($0) }),
             ("lockScreen", .optional(report.lockScreen) { .string($0) }),
+        ])
+    }
+
+    static func attempt(_ record: UnlockAttemptRecord) -> OrderedJSON {
+        .object([
+            ("outcome", .string(record.outcome.rawValue)),
+            ("at", .optional(record.at) { .string($0.formatted(.iso8601)) }),
+            ("credential", .optional(record.credential) { .string($0) }),
         ])
     }
 
@@ -276,13 +294,14 @@ extension DeviceStateReport {
     }
 
     /// `unlock-code`: whether a code is saved, never the code.
-    public static func unlockCode(_ action: String, device: String, saved: Bool, lastAttemptFailed: Bool) -> String {
+    public static func unlockCode(_ action: String, device: String, saved: Bool, lastAttempt: UnlockAttemptRecord?) -> String {
         OrderedJSON.object([
             ("version", .integer(1)),
             ("action", .string(action)),
             ("device", .string(device)),
             ("saved", .bool(saved)),
-            ("lastAttemptFailed", .bool(lastAttemptFailed)),
+            ("lastAttemptFailed", .bool(lastAttempt != nil)),
+            ("lastAttempt", .optional(lastAttempt) { attempt($0) }),
         ]).rendered(compact: true)
     }
 }

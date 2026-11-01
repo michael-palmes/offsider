@@ -122,6 +122,15 @@ extension IOSDeviceError {
         IOSDeviceError(.locked, "\(name) is locked, so \(nothingSent(sent)). Unlock the iPhone or iPad and retry; Offsider never types a passcode. `offsider doctor --device \(udid)` shows its state.")
     }
 
+    /// The runner saw the lock screen, so nothing was read; `wake` clears it unless a passcode is set.
+    static func screenLocked(_ udid: String) -> IOSDeviceError {
+        IOSDeviceError(
+            .locked,
+            "\(udid) is locked, so Offsider did not read or touch its screen. Run `offsider wake --device \(udid)`, then retry; Offsider never types a passcode.",
+            hint: "offsider wake --device \(udid)"
+        )
+    }
+
     static func uiAutomationOff(_ name: String, udid: String, sent: Bool) -> IOSDeviceError {
         IOSDeviceError(
             .uiAutomationOff,

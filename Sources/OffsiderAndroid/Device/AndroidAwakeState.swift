@@ -38,6 +38,7 @@ enum AndroidAwakeState {
     static let enterUsage: UInt32 = 40
 
     static let wakeKey = "input keyevent KEYCODE_WAKEUP"
+    static let sleepKey = "input keyevent KEYCODE_SLEEP"
 
     static func wakeScript(screenOn: Bool, lockScreen: LockScreen) -> (script: String, sent: [String])? {
         var commands: [String] = []
@@ -137,7 +138,8 @@ enum AndroidAwakeState {
     static func lockScreenCodeField(in roots: [UINode]) -> UINode? {
         func search(_ node: UINode, insideSystemUI: Bool) -> UINode? {
             let inside = insideSystemUI || node.id?.hasPrefix("com.android.systemui:") == true
-            if inside, node.role == .secureTextField, node.state.focused == true { return node }
+            // A field disabled while the lock screen counts down after wrong codes would take no keys, and a right code would read as wrong.
+            if inside, node.role == .secureTextField, node.state.focused == true, node.enabled != false { return node }
             for child in node.children {
                 if let found = search(child, insideSystemUI: inside) { return found }
             }

@@ -203,6 +203,36 @@ struct LogsCommandTests {
         return try Logs.scoped(query, all: all, platform: platform, allowance: allowance, policy: policy, profile: { profile })
     }
 
+    @Test("a phone without whole-log access reads --rn as the app's own lines alone; whole-log phones, emulators and simulators keep React Native's tags from every app", arguments: [
+        (LogSource.reactNative(app: nil), ["com.example.app"] as [String]?, true),
+        (LogSource.reactNative(app: "com.example.app"), ["com.example.app"], true),
+        (LogSource.reactNative(app: "com.example.app"), [], true),
+        (LogSource.reactNative(app: "com.example.app"), ["*"], false),
+        (LogSource.reactNative(app: nil), ["*"], false),
+        (LogSource.reactNative(app: "com.example.app"), nil, false),
+        (LogSource.reactNative(app: nil), nil, false),
+    ] as [(LogSource, [String]?, Bool)])
+    func appOnlyFollowsTheAllowance(source: LogSource, apps: [String]?, appOnly: Bool) throws {
+        #expect(try Self.scoped(source, apps: apps).0.appOnly == appOnly)
+    }
+
+    @Test("a broken offsider.login.json exits 64 rather than reading the whole log, and only a read that needs the file opens it")
+    func brokenProfileRefuses() throws {
+        let broken = { () throws -> LoginProfile? in throw CLIError(errorDescription: "offsider.login.json has an unknown key.", reason: .usage) }
+        let read = { (source: LogSource, all: Bool, apps: [String]?) throws in
+            var query = Self.window
+            query.source = source
+            let allowance = apps.map { PolicyFixtures.entry(.android, key: PolicyFixtures.serial, apps: $0) }
+            let policy = allowance.map { PhysicalDevicePolicy(managed: .none, list: DeviceAllowList(entries: [$0])) }
+            return try Logs.scoped(query, all: all, platform: .android, allowance: allowance, policy: policy, profile: broken).0.source
+        }
+        let error = #expect(throws: CLIError.self) { try read(.all, false, nil) }
+        #expect(error?.reason == .usage)
+        #expect(throws: CLIError.self) { try read(.all, false, []) }
+        #expect(try read(.all, true, nil) == .all)
+        #expect(try read(.app("com.example.app"), false, ["com.example.app", "com.example.two"]) == .app("com.example.app"))
+    }
+
     @Test("on a simulator or emulator offsider.login.json's app replaces the whole log, saying so; --all and named sources are kept")
     func profileDefault() throws {
         let android = try Self.scoped(.all, profile: Self.profile)
@@ -459,7 +489,7 @@ struct LogsCommandTests {
 
     @Test("conflicting flags are named", arguments: [
         (["--rn", "--process", "x"], "--process reads one process alone: drop --rn, or drop --process. --rn and --app combine."),
-        (["--rn", "--app", "x", "--process", "y"], "--process reads one process alone: drop --rn and --app, or drop --process. --rn and --app combine."),
+        (["--rn", "--app", "com.example.x", "--process", "y"], "--process reads one process alone: drop --rn and --app, or drop --process. --rn and --app combine."),
         (["--last", "1m", "--follow"], "Use only one of --last, --since, --duration or --follow; got --last and --follow."),
         (["--since", "0", "--duration", "2"], "Use only one of --last, --since, --duration or --follow; got --since and --duration."),
     ])

@@ -49,9 +49,16 @@ struct Assert: AsyncParsableCommand {
                 try await evaluate(on: route, logger: logger, probesOnMiss: true, onPrepared: ready)
             }
         }
-        let mask = (try? await AmbientMasks.treeMask()) ?? .none
+        try await show(outcome, on: route)
+    }
+
+    /// Prints `outcome` with what the masks hide on `route` hidden; exits 5 when it was not met.
+    @MainActor
+    func show(_ outcome: WaitOutcome, on route: DeviceRouter.Route, console: Console = .current) async throws {
+        let mask = try await AmbientMasks.shownMask(on: route)
         try Wait.report(
-            outcome, success: successLine(outcome), failure: failureLine(outcome), json: json, checked: selector, mask: mask, person: personOutcome
+            outcome, success: successLine(outcome), failure: failureLine(Wait.shown(outcome, mask: mask)), json: json, checked: selector, mask: mask, person: personOutcome,
+            console: console
         )
     }
 
@@ -71,8 +78,9 @@ struct Assert: AsyncParsableCommand {
         if probesOnMiss {
             sources.probe = Wait.presentationProbe(on: route)
         }
+        let revealed = selector.hasValue == nil ? nil : await TreeCache.revealedSecrets(for: route.device, backend: route.backend)
         return try await WaitLoop.run(
-            .element(probe: selector.probe(for: query), gone: gone, explain: SelectorQuery.explain(query)),
+            .element(probe: selector.probe(for: query, revealed: revealed), gone: gone, explain: SelectorQuery.explain(query)),
             timeout: 0,
             interval: 0,
             sources: sources

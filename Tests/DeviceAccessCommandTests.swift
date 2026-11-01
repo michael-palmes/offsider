@@ -734,6 +734,25 @@ struct DeviceAccessCommandTests {
         #expect(try DeviceAccessStatus.parse(["--json"]).perform(context: context).0.hasPrefix("{"))
     }
 
+    @Test("the team menu shows the email that tells two teams with one name apart, the receipt names the choice, and the email is never saved or printed")
+    func collidingTeams() async throws {
+        let home = try makePolicyHome()
+        defer { try? FileManager.default.removeItem(atPath: home) }
+        let teams = [
+            SigningTeam(id: "AAAAA11111", name: "Jane Citizen", account: "jane@example.com", free: true),
+            SigningTeam(id: "BBBBB22222", name: "Jane Citizen", free: false),
+        ]
+        let (output, transcript) = try await Self.allow(["--device", PolicyFixtures.phone, "--app", "com.example.app", "--expires", "2h"], answers: ["\r"], context: { terminal in
+            Self.context(home: home, seal: MemorySeal(), terminal: terminal, devices: { [Self.row] }, teams: { teams })
+        })
+        #expect(transcript.contains("Free  AAAAA11111  jane@example.com"))
+        #expect(transcript.contains("Paid  BBBBB22222"))
+        #expect(transcript.contains("Team      Jane Citizen (jane@example.com)"))
+        #expect(try Self.entries(home).first?.team == "AAAAA11111")
+        #expect(!output.contains("jane@example.com"))
+        #expect(!(try String(contentsOfFile: Self.file(home), encoding: .utf8)).contains("jane@example.com"))
+    }
+
     @Test("--json reaches status, add and remove after their name or before it, rather than stopping at devices")
     func jsonReachesTheSubcommand() async throws {
         let home = try makePolicyHome()
@@ -896,7 +915,7 @@ struct DeviceAccessCommandTests {
     func appMenuOrder() {
         let policy = PhysicalDevicePolicy(managed: .none, list: .empty)
         let front = DeviceAccessAllow.appMenu(Self.apps, platform: .android, policy: policy, profile: nil, front: "com.mpalmes.offsider.playground.rn")
-        #expect(front.choices == [.app(Self.apps[1]), .app(Self.apps[0]), .any, .wholeDevice, .type])
+        #expect(front.choices == [.app(Self.apps[1]), .app(Self.apps[0]), .any, .wholeDevice, .type, .testDevice])
         #expect(front.recommended == 0)
         #expect(front.selected == 0)
         let rows = front.rows()
@@ -909,11 +928,11 @@ struct DeviceAccessCommandTests {
 
         let none = DeviceAccessAllow.appMenu(Array(Self.apps.prefix(2)), platform: .ios, policy: policy, profile: nil, front: "com.example.missing")
         #expect(none.recommended == nil)
-        #expect(none.choices == [.app(Self.apps[0]), .app(Self.apps[1]), .any, .type])
+        #expect(none.choices == [.app(Self.apps[0]), .app(Self.apps[1]), .any, .type, .testDevice])
         #expect(none.selected == 0)
 
         let empty = DeviceAccessAllow.appMenu([], platform: .ios, policy: policy, profile: nil, front: nil)
-        #expect(empty.choices == [.any, .type])
+        #expect(empty.choices == [.any, .type, .testDevice])
         #expect(empty.selected == 1)
     }
 

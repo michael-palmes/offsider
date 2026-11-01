@@ -13,7 +13,7 @@ public enum AgentPermissionRules {
     public struct Rule: Equatable, Sendable {
         /// The command as Claude Code's `Bash(...)` pattern sees it.
         public let claude: String
-        /// The same command as a Codex `prefix_rule` pattern: argv words matched from the start.
+        /// The same command as a Codex `prefix_rule` pattern: argv words matched from the start. Empty for a pattern only Claude Code can match.
         public let codex: [String]
         public let decision: Decision
         public let reason: String
@@ -45,10 +45,18 @@ public enum AgentPermissionRules {
              reason: "Saves the device unlock code; a person runs it."),
         Rule(claude: "offsider wake --unlock*", codex: ["offsider", "wake", "--unlock"], decision: .deny,
              reason: "Types the saved unlock code into a device."),
+        Rule(claude: "*/adb *", codex: [], decision: .ask,
+             reason: "Raw adb reaches any attached phone without Offsider's checks."),
+        Rule(claude: "*/devicectl *", codex: [], decision: .ask,
+             reason: "Raw devicectl reaches any attached iPhone without Offsider's checks."),
+        Rule(claude: "*/xcrun devicectl *", codex: [], decision: .ask,
+             reason: "Raw devicectl reaches any attached iPhone without Offsider's checks."),
         Rule(claude: "adb *", codex: ["adb"], decision: .ask,
              reason: "Raw adb reaches any attached phone without Offsider's checks."),
         Rule(claude: "devicectl *", codex: ["devicectl"], decision: .ask,
              reason: "Raw devicectl reaches any attached iPhone without Offsider's checks."),
+        Rule(claude: "offsider batch *type --file*", codex: [], decision: .ask,
+             reason: "Types a file's contents, which may hold a secret."),
         Rule(claude: "offsider batch --no-mask-secure*", codex: ["offsider", "batch", "--no-mask-secure"], decision: .ask,
              reason: "Captures password fields unmasked."),
         Rule(claude: "offsider credential add*", codex: ["offsider", "credential", "add"], decision: .ask,
@@ -63,15 +71,26 @@ public enum AgentPermissionRules {
              reason: "Clears the record of who is signed in."),
         Rule(claude: "offsider login*", codex: ["offsider", "login"], decision: .ask,
              reason: "Signs in with a saved test password."),
+        Rule(claude: "offsider logs --no-redact*", codex: ["offsider", "logs", "--no-redact"], decision: .ask,
+             reason: "Prints passwords and tokens from the device's log."),
         Rule(claude: "offsider permission*", codex: ["offsider", "permission"], decision: .ask,
              reason: "Grants or revokes app permissions that outlive the command."),
+        Rule(claude: "offsider record-video --unmasked*", codex: ["offsider", "record-video", "--unmasked"], decision: .ask,
+             reason: "Records with no check for password fields or masked text."),
+        Rule(claude: "offsider rn logbox * --no-redact*", codex: [], decision: .ask,
+             reason: "Prints passwords and tokens from LogBox messages."),
         Rule(claude: "offsider screenshot --no-mask-secure*", codex: ["offsider", "screenshot", "--no-mask-secure"], decision: .ask,
              reason: "Captures password fields unmasked."),
+        Rule(claude: "offsider stream-video --unmasked*", codex: ["offsider", "stream-video", "--unmasked"], decision: .ask,
+             reason: "Streams with no check for password fields or masked text."),
         Rule(claude: "offsider type --file*", codex: ["offsider", "type", "--file"], decision: .ask,
              reason: "Types a file's contents, which may hold a secret."),
         Rule(claude: "xcrun devicectl *", codex: ["xcrun", "devicectl"], decision: .ask,
              reason: "Raw devicectl reaches any attached iPhone without Offsider's checks."),
     ]
+
+    /// The rules Codex can express.
+    public static var codexRules: [Rule] { rules.filter { !$0.codex.isEmpty } }
 
     public static func patterns(_ decision: Decision) -> [String] {
         rules.filter { $0.decision == decision }.map(\.claudePattern)
@@ -223,7 +242,7 @@ public enum AgentPermissionRules {
         }
         let lines = codexPrefixRules(text)
         let moved = replacedRules.filter { old in !outdated.contains(old) && lines.contains { $0.words == old.codex } }
-        let missing = rules.filter { !text.contains($0.codexKey) && !isDecided($0, codex: lines, moved: moved) }
+        let missing = codexRules.filter { !text.contains($0.codexKey) && !isDecided($0, codex: lines, moved: moved) }
         guard !missing.isEmpty || !outdated.isEmpty else { return Merge(content: nil, added: 0) }
         if text.isEmpty {
             text = codexHeader
@@ -244,8 +263,9 @@ public enum AgentPermissionRules {
         }
     }
 
-    /// `isDecided` for Codex: a covering line that prompts or forbids at least as much, or a `moved` earlier rule.
+    /// `isDecided` for Codex: the person's exact line whatever its decision, a covering line that prompts or forbids at least as much, or a `moved` earlier rule.
     static func isDecided(_ rule: Rule, codex lines: [(words: [String], decision: String)], moved: [Rule]) -> Bool {
+        if lines.contains(where: { $0.words == rule.codex }) { return true }
         let strict = rule.decision == .deny ? ["forbidden"] : ["forbidden", "prompt"]
         if lines.contains(where: { strict.contains($0.decision) && rule.codex.starts(with: $0.words) }) { return true }
         return moved.contains { $0.decision == rule.decision && rule.codex.starts(with: $0.codex) }
@@ -265,11 +285,11 @@ public enum AgentPermissionRules {
         ])
         let codex = OrderedJSON.object([
             ("file", .string("~/" + Agent.codex.rulesFile)),
-            ("rules", .array(rules.map { .string($0.codexRule) })),
+            ("rules", .array(codexRules.map { .string($0.codexRule) })),
         ])
         let reasons = OrderedJSON.array(rules.map { rule in
             .object([
-                ("command", .string(rule.codex.joined(separator: " "))),
+                ("command", .string(rule.codex.isEmpty ? rule.claude : rule.codex.joined(separator: " "))),
                 ("decision", .string(rule.decision.rawValue)),
                 ("reason", .string(rule.reason)),
             ])

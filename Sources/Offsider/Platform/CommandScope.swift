@@ -15,6 +15,9 @@ final class CommandScope {
     /// The command path for the tree cache; nil leaves the cache alone (tests that only check closing).
     private(set) var command: String?
 
+    /// The app the command line names, which routing checks against a phone's allowance.
+    private(set) var namedApp: String?
+
     /// Each device the router chose, for the screen check after a failure.
     private(set) var routes: [DeviceRouter.Route] = []
 
@@ -25,8 +28,9 @@ final class CommandScope {
         self.claims = claims
     }
 
-    func configure(command: String) {
+    func configure(command: String, namedApp: String? = nil) {
         self.command = command
+        self.namedApp = namedApp
     }
 
     /// Adopting the same backend twice keeps one entry, so it is closed once.
@@ -44,11 +48,23 @@ final class CommandScope {
     /// Takes the agent's banner line instead of stderr, for tests; nil writes it, in every mode, through the console.
     var bannerNote: ((String) -> Void)?
 
+    /// `offsider describe-ui --summary` as a new process on this device can run it, naming the app where it would not otherwise know it.
+    func describeHint(device: String) -> String {
+        "offsider describe-ui --summary\(appArgument(device: device)) --device \(device)"
+    }
+
+    /// ` --app <id>` for a printed command on this device, as `DeviceRouter.Route.appArgument` decides; empty before routing.
+    func appArgument(device: String) -> String {
+        routes.last { $0.device.rawValue == device }?.appArgument ?? ""
+    }
+
     func noteRoute(_ route: DeviceRouter.Route) {
         routes.append(route)
         guard let allowance = route.allowance, announced.insert("\(allowance.platform.rawValue) \(allowance.key)").inserted else { return }
-        let managed = DevicePolicyGate.current.policy().managed.present
-        let line = Self.banner(for: allowance, managed: managed)
+        let policy = DevicePolicyGate.current.policy()
+        let managed = policy.managed.present
+        let whole = policy.drivesWhole(allowance)
+        let line = Self.banner(for: allowance, managed: managed, wholeDevice: whole)
         if let bannerNote {
             bannerNote(line)
             return
@@ -56,16 +72,16 @@ final class CommandScope {
         let console = Console.current
         let err = console.err
         // Never a notice: a safety line is never deduped or capped.
-        console.data(err.profile == .person ? Self.personBanner(for: allowance, managed: managed, now: Date(), timeZone: .current, canvas: err.canvas) : line + "\n", to: .err)
+        console.data(err.profile == .person ? Self.personBanner(for: allowance, managed: managed, wholeDevice: whole, now: Date(), timeZone: .current, canvas: err.canvas) : line + "\n", to: .err)
     }
 
     /// A person's one dim line: `🔐  Driving Test iPhone · allowed until 18:00 · com.example.app only`, broken between parts when narrow.
-    nonisolated static func personBanner(for allowance: DeviceAllowance, managed: Bool, now: Date, timeZone: TimeZone, canvas: Canvas) -> String {
+    nonisolated static func personBanner(for allowance: DeviceAllowance, managed: Bool, wholeDevice: Bool = false, now: Date, timeZone: TimeZone, canvas: Canvas) -> String {
         let style = canvas.style
         let lead = style.mark(.lock) + (style.ascii ? " " : "  ")
         let indent = String(repeating: " ", count: TerminalText.width(lead))
         let parts = [
-            "Driving \(AccessStatusScreen.name(allowance))", "allowed " + AllowScreen.until(allowance.expires, now: now, timeZone: timeZone), AllowScreen.apps(allowance.apps),
+            "Driving \(AccessStatusScreen.name(allowance))", "allowed " + AllowScreen.until(allowance.expires, now: now, timeZone: timeZone), AllowScreen.apps(allowance.apps, testDevice: wholeDevice),
         ] + (managed ? ["managed policy applies"] : [])
         // Two columns short, for the separator `pack` leaves at the end of a broken line.
         let lines = PromptScreen.pack(parts, separator: " \(style.dot) ", width: max(canvas.usable - indent.count - 2, 10))
@@ -73,11 +89,11 @@ final class CommandScope {
     }
 
     /// The one line a command prints before it drives a physical device.
-    nonisolated static func banner(for allowance: DeviceAllowance, managed: Bool) -> String {
+    nonisolated static func banner(for allowance: DeviceAllowance, managed: Bool, wholeDevice: Bool = false) -> String {
         let kind = allowance.platform == .ios ? "iPhone or iPad" : "Android phone"
         let until = allowance.expires.map { "allowed until \(ProcessStamp.timestamp($0))" } ?? "allowed until removed"
         let named = allowance.apps.map { $0 == DeviceAllowance.wholeDevicePin ? "any app and all logs" : $0 }
-        let apps = named.isEmpty ? "" : " for \(named.joined(separator: ", "))"
+        let apps = wholeDevice ? " as a \(AllowScreen.wholeDevice)" : named.isEmpty ? "" : " for \(named.joined(separator: ", "))"
         return "Offsider: driving physical \(kind) \"\(allowance.name)\" (\(allowance.key)), \(until)\(apps) (managed policy: \(managed ? "applies" : "none")). "
             + "offsider devices remove --device \(allowance.key) withdraws it."
     }

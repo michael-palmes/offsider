@@ -48,7 +48,7 @@ struct RunnerBuildCommand: AsyncParsableCommand {
     func run() async throws {
         let udid = try RunnerSessions.physicalUDID(device, command: "runner build")
         if registerDevice {
-            let instead = "Ask the user to run `offsider runner build --device \(udid) --register-device` in their own terminal."
+            let instead = "Ask the user to run `offsider runner build --register-device --device \(udid)` in their own terminal."
             try PersonPresence.requireTerminal(instead: instead)
             guard isatty(STDOUT_FILENO) != 0 else {
                 throw CLIError.personRequired("This step needs a person at a terminal, and standard output is not one. Nothing was changed. \(instead)")

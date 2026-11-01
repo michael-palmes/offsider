@@ -97,6 +97,19 @@ struct AccessibilityFetcher {
         return try serializedAccessibilityData(from: accessibilityElement, keys: TraitsRequest.process.keys)
     }
 
+    /// Just the hit-test of a point read, which many can make at once and alongside a tree read; the element stays open until it is serialised or closed.
+    nonisolated static func pointElement(from target: FBSimulator, at point: AccessibilityPoint) async throws -> FBAccessibilityElement {
+        try await target.accessibilityElement(at: point.cgPoint)
+    }
+
+    /// Serialising is one thread's work: the platform elements share state, so two at once crash.
+    static func serialized(_ element: FBAccessibilityElement, keys: Set<FBAXKeys>) throws -> Data {
+        try serializedAccessibilityData(from: element, keys: keys)
+    }
+
+    /// Enough of a point read to tell whether the tree already lists what answered, at about a third of the round trips.
+    static let identityKeys: Set<FBAXKeys> = [.label, .frame, .frameDict, .uniqueID, .type, .role, .pid]
+
     /// Reads `point` again while it answers with an empty screen-sized group; one from a process outside `appPIDs` is that process's view, so it is the answer.
     static func retryingTransientPointFallback(
         at point: AccessibilityPoint,

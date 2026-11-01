@@ -201,8 +201,6 @@ public struct IOSDeviceDoctorProbe {
 
     /// Distinct team ids from Xcode's signed-in accounts; account names never leave this function.
     public static let signedInTeams: @Sendable () -> [String] = {
-        guard let accounts = UserDefaults(suiteName: "com.apple.dt.Xcode")?.dictionary(forKey: "IDEProvisioningTeams") else { return [] }
-        let teams = accounts.values.compactMap { $0 as? [[String: Any]] }.flatMap { $0 }.compactMap { $0["teamID"] as? String }
-        return Array(Set(teams)).sorted()
+        XcodeTeams.signedIn().keys.sorted()
     }
 }

@@ -50,7 +50,6 @@ struct DeviceAllowListTests {
         #"{"version":1,"devices":[],"extra":1}"#,
         #"{"version":1}"#,
         #"[]"#,
-        #"{"version":1,"devices":[{"platform":"ios","id":"00008130-0000000000000ABC","name":"A","added":"2026-09-21T14:13:20Z","expires":null,"apps":[],"note":"x"}]}"#,
         #"{"version":1,"devices":[{"platform":"ios","id":"00008130-0000000000000abc","name":"A","added":"2026-09-21T14:13:20Z","expires":null,"apps":[]}]}"#,
         #"{"version":1,"devices":[{"platform":"ios","id":"ABCDEF00-0000-4000-8000-00000000ABCD","name":"A","added":"2026-09-21T14:13:20Z","expires":null,"apps":[]}]}"#,
         #"{"version":1,"devices":[{"platform":"android","id":"emulator-5554","name":"A","added":"2026-09-21T14:13:20Z","expires":null,"apps":[]}]}"#,

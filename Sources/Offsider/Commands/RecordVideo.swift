@@ -79,6 +79,7 @@ struct RecordVideo: AsyncParsableCommand {
         defer { signalObserver.invalidate() }
 
         let checksSecureField = try masks.requireMaskable(command: "record-video")
+        try await masks.confirmCheckOff(command: "record-video")
         let regions = try masks.regions()
         let logger = OffsiderLogger()
         let route = try await DeviceRouter.route(deviceOption.id, logger: logger)

@@ -174,7 +174,7 @@ public struct SettleGate: Equatable, Sendable {
     public func showsEffect(in tree: UITree, ignoreValues: Bool, leaveOut: SettleLeaveOut = .none) -> Bool {
         guard let before else { return false }
         let detector = ChangeDetector(options: .init(ignoredIdentifiers: leaveOut.detectorIDs, ignoreText: ignoreValues))
-        let masked = tree.redacted(OutputMasks.current.mask, scope: .cache)
+        let masked = tree.redacted(OutputMasks.current.base, scope: .cache)
         let now = AccessibilitySnapshot(tree: masked, native: false).leavingOut(leaveOut.regions)
         if case .changed = detector.compare(before.leavingOut(leaveOut.regions), now) {
             return true

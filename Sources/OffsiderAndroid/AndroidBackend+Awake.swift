@@ -1,6 +1,20 @@
 import Foundation
 import OffsiderCore
 
+extension AndroidBackend: ScreenSleeping {
+    /// Sends nothing to a dark screen, then waits until it reads dark.
+    public func sleepScreen(on id: DeviceID) async throws -> ScreenSleepOutcome {
+        let before = try await awakeState(on: id)
+        guard before.screen == .on else { return ScreenSleepOutcome(wasOn: false, sent: false) }
+        _ = try await settingsShell(AndroidAwakeState.sleepKey, on: id.rawValue)
+        for _ in 1...Self.wakePolls {
+            try await host.sleep(Self.awakePollInterval)
+            if try await awakeState(on: id).screen != .on { return ScreenSleepOutcome(wasOn: true, sent: true) }
+        }
+        throw AndroidError(.inputFailed, "The screen of \(id.rawValue) stayed on after the sleep key. Check the device, then retry.")
+    }
+}
+
 extension AndroidBackend: AwakeControlling {
     static let awakePollInterval: Duration = .milliseconds(200)
     /// About 6 s on a phone, where each read takes about 0.2 s; some phones take over 3 s to turn their screen on.
@@ -9,7 +23,8 @@ extension AndroidBackend: AwakeControlling {
     static let wakeResendPoll = 8
     /// A PIN, pattern or password lock screen stays up, so `wake` stops waiting once the screen has been on this many polls.
     static let securePolls = 3
-    static let codePolls = 10
+    /// How long the lock screen may stay up after the last key before the code counts as wrong: a slow phone's first unlock since boot takes seconds, and only a wrong code waits it out.
+    static let codeCheckWindow: Duration = .seconds(15)
 
     public func awakeState(on id: DeviceID) async throws -> AwakeReading {
         let output = try await settingsShell(AndroidAwakeState.readScript, on: id.rawValue)
@@ -75,12 +90,12 @@ extension AndroidBackend: AwakeControlling {
         guard state.screen == .on, state.lockScreen == .secure else { return UnlockAttempt(typed: false, reading: state) }
         try beforeTyping()
         try await helper.type([.text(code.text), .key(usage: AndroidAwakeState.enterUsage)])
+        let deadline = host.uptime() + Self.codeCheckWindow
         var current = state
-        for _ in 0..<Self.codePolls {
+        repeat {
             try await host.sleep(Self.awakePollInterval)
             current = try await awakeState(on: id)
-            if current.lockScreen != .secure { break }
-        }
+        } while current.lockScreen == .secure && host.uptime() < deadline
         return UnlockAttempt(typed: true, reading: current)
     }
 

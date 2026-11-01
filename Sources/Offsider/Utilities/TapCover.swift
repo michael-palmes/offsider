@@ -114,7 +114,7 @@ struct TapCover {
         }
         // Before the hit-test, which on a simulator can answer with the field beneath the keyboard.
         if judging.keyboard != nil {
-            throw Tap.keyboardCoverError(selector: selector, at: resolution.point, device: device)
+            throw Tap.keyboardCoverError(selector: selector, at: resolution.point, device: device, appArgument: CommandScope.current.appArgument(device: device.rawValue))
         }
         guard judging.isContested else {
             return resolution
@@ -129,7 +129,7 @@ struct TapCover {
             return resolution
         }
         if AccessibilityTargetResolver.isUnderKeyboard(verdict.cover, in: judging.roots) {
-            throw Tap.keyboardCoverError(selector: selector, at: resolution.point, device: device)
+            throw Tap.keyboardCoverError(selector: selector, at: resolution.point, device: device, appArgument: CommandScope.current.appArgument(device: device.rawValue))
         }
         if verdict.leavesPartShowing, !allowCovered, tree.platform == .ios, let coverFrame = verdict.touchFrame,
            let reader = FrontJudge.PointReader(backend: backend, device: device),
@@ -206,6 +206,7 @@ struct TapCover {
     }
 
     /// Refuses a confident cover, or a guessed one with `--fail-if-covered`, and warns of the rest.
+    @MainActor
     private func act(on verdict: CoverVerdict, selector: String, at point: UIPoint, viewport: UIFrame, device: DeviceID) throws {
         let pointText = VerifyOutput.pointDescription(x: point.x, y: point.y)
         let cover = Self.describe(verdict)
@@ -229,13 +230,13 @@ struct TapCover {
             throw CLIError(
                 errorDescription: "\(selector) at \(pointText) is covered by \(cover) (\(Self.evidence(verdict.evidence))), so the tap would land on it. Nothing was sent. Close what covers it or wait for it to go (--wait-timeout), or \(override).",
                 reason: .targetCovered,
-                hint: "offsider describe-ui --device \(device.rawValue) --summary",
+                hint: CommandScope.current.describeHint(device: device.rawValue),
                 coveredBy: CoverReport(verdict)
             )
         }
         let message = "\(selector) at \(pointText) may be covered by \(cover); the tap may land on it."
         if failIfCovered {
-            throw CLIError(errorDescription: "\(message) Nothing was sent.", reason: .targetCovered, hint: "offsider describe-ui --device \(device.rawValue) --summary", coveredBy: CoverReport(verdict))
+            throw CLIError(errorDescription: "\(message) Nothing was sent.", reason: .targetCovered, hint: CommandScope.current.describeHint(device: device.rawValue), coveredBy: CoverReport(verdict))
         }
         notices.say(.warning(
             "\(selector) may be covered by \(cover); the tap may land on it",
@@ -244,12 +245,13 @@ struct TapCover {
     }
 
     /// The drag that moves the dev menu button at `button`'s frame into the other half of the screen.
+    @MainActor
     static func dragClear(_ button: UINode, viewport: UIFrame, device: DeviceID) -> String? {
         guard let centre = button.frame?.center else { return nil }
         let bottom = viewport.y + viewport.height
         let endY = centre.y >= viewport.y + viewport.height / 2 ? max(viewport.y + 40, centre.y - 240) : min(bottom - 40, centre.y + 240)
         let x = VerifyOutput.number(centre.x)
-        return "offsider drag --start-x \(x) --start-y \(VerifyOutput.number(centre.y)) --end-x \(x) --end-y \(VerifyOutput.number(endY)) --duration 0.8 --hold-end 300 --device \(device.rawValue)"
+        return "offsider drag --start-x \(x) --start-y \(VerifyOutput.number(centre.y)) --end-x \(x) --end-y \(VerifyOutput.number(endY)) --duration 0.8 --hold-end 300\(CommandScope.current.appArgument(device: device.rawValue)) --device \(device.rawValue)"
     }
 
     /// A prompt another process draws over the app takes the tap, so it refuses unless `--allow-covered`.

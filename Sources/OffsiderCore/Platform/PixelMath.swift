@@ -24,6 +24,14 @@ public enum PixelMath {
         (1...maxSide).contains(value)
     }
 
+    /// The longest a finger stays still between points of a swipe: longer can read as a long press, which then stops a list under it from scrolling.
+    public static let longestSwipeRest = 0.1
+
+    /// The spacing for a swipe with no spacing asked for: `ceiling`, or closer when a slow swipe would otherwise rest too long, allowing for the step count rounding down.
+    public static func swipeDelta(distance: Double, duration: Double, ceiling: Double) -> Double {
+        min(ceiling, distance / (duration / longestSwipeRest + 1))
+    }
+
     /// A step count from a `Double` ratio, clamped to 1 to `maxSwipeSteps` before it becomes an `Int`; NaN is 1.
     public static func swipeSteps(_ ratio: Double) -> Int {
         guard !ratio.isNaN else { return 1 }

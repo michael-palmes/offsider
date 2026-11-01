@@ -228,10 +228,10 @@ enum VerifyOutput {
             styleText = ""
         }
         if outcome.note == .logBoxOpened {
-            return "✗ \(request.subject) was dispatched but the React Native LogBox inspector opened over the app, so its effect cannot be seen. Read the log, then close it with offsider rn logbox dismiss --device \(request.device.rawValue)."
+            return "✗ \(request.subject) was dispatched but the React Native LogBox inspector opened over the app, so its effect cannot be seen. Read the log, then close it with offsider rn logbox dismiss\(CommandScope.current.appArgument(device: request.device.rawValue)) --device \(request.device.rawValue)."
         }
         if outcome.note == .devMenuOpened {
-            return "✗ \(request.subject) was dispatched but the dev menu opened, so the tap reached its floating button rather than the target. Close it with offsider rn devmenu close --device \(request.device.rawValue), then drag the button clear."
+            return "✗ \(request.subject) was dispatched but the dev menu opened, so the tap reached its floating button rather than the target. Close it with offsider rn devmenu close\(CommandScope.current.appArgument(device: request.device.rawValue)) --device \(request.device.rawValue), then drag the button clear."
         }
         if outcome.note == .unreadable {
             return "✗ \(request.subject) was dispatched once, but nothing could be read before it, so Offsider cannot tell what it changed. It was not sent again. Check the screen with a screenshot."
@@ -349,16 +349,16 @@ enum VerifyOutput {
     static func personUnverified(_ outcome: Verifier.Outcome, for request: VerifyRequest) -> Outcome {
         let subject = request.personSubject ?? request.subject
         let device = request.device.rawValue
-        let look = "offsider describe-ui --summary --device \(device)"
+        let look = CommandScope.current.describeHint(device: device)
         let plural = outcome.attempts == 1 ? "attempt" : "attempts"
         if outcome.note == .logBoxOpened {
-            return .failed("LogBox opened over the app", details: ["\(subject) was sent, but its effect is hidden. Read the log, then close it."], try: ["offsider rn logbox dismiss --device \(device)"])
+            return .failed("LogBox opened over the app", details: ["\(subject) was sent, but its effect is hidden. Read the log, then close it."], try: ["offsider rn logbox dismiss\(CommandScope.current.appArgument(device: device)) --device \(device)"])
         }
         if outcome.note == .devMenuOpened {
-            return .failed("The dev menu opened", details: ["\(subject) reached its floating button, not the target. Close the menu, then drag the button clear."], try: ["offsider rn devmenu close --device \(device)"])
+            return .failed("The dev menu opened", details: ["\(subject) reached its floating button, not the target. Close the menu, then drag the button clear."], try: ["offsider rn devmenu close\(CommandScope.current.appArgument(device: device)) --device \(device)"])
         }
         if outcome.note == .unreadable {
-            return .failed("Could not read the screen", details: ["\(subject) was sent once; not sent again"], try: ["offsider screenshot --device \(device)"])
+            return .failed("Could not read the screen", details: ["\(subject) was sent once; not sent again"], try: ["offsider screenshot\(CommandScope.current.appArgument(device: device)) --device \(device)"])
         }
         if let id = request.options.verifyID {
             let waited = "\(subject) was sent; waited \(WaitLoop.seconds(request.options.resolvedTimeout)) after \(outcome.attempts) \(plural)"

@@ -20,6 +20,7 @@ import { LateDrawTestScreen } from './LateDrawTestScreen';
 import { LiveChartTestScreen } from './LiveChartTestScreen';
 import { LiveTickerTestScreen } from './LiveTickerTestScreen';
 import { LongScrollTestScreen } from './LongScrollTestScreen';
+import { GapTabsTestScreen } from './GapTabsTestScreen';
 import { MaskSheetTestScreen } from './MaskSheetTestScreen';
 import { ModalNavigationTestScreen } from './ModalNavigationTestScreen';
 import { MultiTouchScreen } from './MultiTouchScreen';
@@ -71,6 +72,7 @@ export const screens: Record<RouteId, ComponentType> = {
   'sticky-footer-test': StickyFooterTestScreen,
   'parked-sheet-test': ParkedSheetTestScreen,
   'mask-sheet-test': MaskSheetTestScreen,
+  'gap-tabs-test': GapTabsTestScreen,
   'stack-test': StackTestScreen,
   'overlay-test': OverlayTestScreen,
   'rows-test': RowsTestScreen,

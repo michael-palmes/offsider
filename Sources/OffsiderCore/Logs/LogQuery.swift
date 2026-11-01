@@ -104,11 +104,14 @@ public struct LogQuery: Equatable, Sendable {
     public var window: LogWindow
     /// An extra NSPredicate, combined with the source by AND; iOS only.
     public var predicate: String?
+    /// `--rn --app` keeps only the app's own lines, not every app's React Native tags: a phone allowed one app at a time.
+    public var appOnly: Bool
 
-    public init(source: LogSource = .all, window: LogWindow, predicate: String? = nil) {
+    public init(source: LogSource = .all, window: LogWindow, predicate: String? = nil, appOnly: Bool = false) {
         self.source = source
         self.window = window
         self.predicate = predicate
+        self.appOnly = appOnly
     }
 }
 

@@ -161,7 +161,7 @@ public struct MaskTargets: Equatable, Sendable {
         groups.append(MaskGroup(kind: kind, nodes: matches))
     }
 
-    /// Places matches by tree position: frames painted beneath a page, and with `skip` the skippable ones left out of `frames`; an unplaceable group is painted whole.
+    /// Places matches by tree position: frames painted beneath a page, and with `skip` the skippable ones left out of `frames`; an unplaceable group is painted whole, and a match standing for several identical copies is beneath only when all are.
     public mutating func placeBeneath(in tree: UITree, skip: Bool) -> (painted: [MaskKind: [UIFrame?]], skipped: [MaskKind: Int]) {
         guard groups.contains(where: { !$0.nodes.isEmpty }) else { return ([:], [:]) }
         let stack = ScreenStack.build(roots: tree.roots, viewport: tree.viewport)
@@ -171,22 +171,25 @@ public struct MaskTargets: Equatable, Sendable {
         var skipped: [MaskKind: Int] = [:]
         var placed: [MaskKind: [UIFrame?]] = [:]
         for group in groups {
-            // Equal elements match alike, so a group's matches are the elements equal to one of them.
-            let positions = flat.indices.filter { index in group.nodes.contains { $0.isSameElement(as: flat[index]) } }
-            guard positions.count == group.nodes.count else {
+            let copies = group.nodes.map { node in flat.indices.filter { node.isSameElement(as: flat[$0]) } }
+            guard !copies.contains(where: \.isEmpty) else {
                 placed[group.kind, default: []] += group.nodes.map(\.frame)
                 continue
             }
-            for position in positions {
-                let frame = flat[position].frame
-                if stack.isBeneath(index: position) {
+            var taken: [Int: Int] = [:]
+            for (node, positions) in zip(group.nodes, copies) {
+                let turn = taken[positions[0], default: 0]
+                taken[positions[0]] = turn + 1
+                // As many matches as copies are told apart by position; fewer stand for all of them.
+                let isListed = copies.count { $0 == positions } == positions.count
+                if isListed ? stack.isBeneath(index: positions[turn]) : positions.allSatisfy(stack.isBeneath(index:)) {
                     if skip, group.kind.skippableBeneath {
                         skipped[group.kind, default: 0] += 1
                         continue
                     }
-                    painted[group.kind, default: []].append(frame)
+                    painted[group.kind, default: []].append(node.frame)
                 }
-                placed[group.kind, default: []].append(frame)
+                placed[group.kind, default: []].append(node.frame)
             }
         }
         for kind in Set(groups.map(\.kind)) {

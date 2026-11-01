@@ -18,7 +18,7 @@ struct Verifier {
         /// Wall time, to date the first read against the cached tree.
         var date: @MainActor () -> Date = { Date() }
         /// What hides values in the change list, as `describe-ui` hides them, and in the cached tree.
-        var valueMask: @MainActor () async -> TreeValueMask = { .none }
+        var valueMask: @MainActor () async throws -> TreeValueMask = { .none }
         /// The tree with the shared on-screen judgement read for the `--verify-id` element, so one beneath a page or covered is not in front.
         var judge: @MainActor (UITree, String) async -> UITree = { tree, _ in tree }
     }
@@ -162,7 +162,7 @@ struct Verifier {
         // Without a tree to catch the change, a second before-shot lets motion the input starts count.
         let firstShot = capturesBaseline && !first.isKnown ? try? await dependencies.screenshot() : nil
         let firstShotTime = dependencies.now()
-        let valueMask = await dependencies.valueMask()
+        let valueMask = try await dependencies.valueMask()
         var live: Set<String> = []
         if !ignoringText, let tree = firstRead.tree {
             // The cached tree's masked values are compared with this read masked alike, so they never count as live text.
@@ -224,14 +224,12 @@ struct Verifier {
             }
         }
 
-        func verified(_ summary: String, read current: Read, attempt: Attempt, attemptStart: TimeInterval) -> Outcome {
-            finish(
-                Outcome(verified: true, attempts: attempt.number, change: .accessibilityTree, style: attempt.style, summary: summary)
-                    .listing(
-                        from: baselineRead.compared.map { detector.maskingLive($0, live: live).redacted(valueMask) },
-                        to: current.compared.map { detector.maskingLive($0, live: live).redacted(valueMask) },
-                        skipping: volatileIdentities
-                    ),
+        func verified(read current: Read, attempt: Attempt, attemptStart: TimeInterval) -> Outcome {
+            let before = baselineRead.compared.map { detector.maskingLive($0, live: live).redacted(valueMask) }
+            let after = current.compared.map { detector.maskingLive($0, live: live).redacted(valueMask) }
+            return finish(
+                Outcome(verified: true, attempts: attempt.number, change: .accessibilityTree, style: attempt.style, summary: shownSummary(from: before, to: after))
+                    .listing(from: before, to: after, skipping: volatileIdentities),
                 attemptStart: attemptStart
             )
         }
@@ -242,6 +240,13 @@ struct Verifier {
             if !targetIsToast, LiveText.logBoxOpened(before: before, after: after) { return .logBoxOpened }
             if let expectsDevMenu, !expectsDevMenu(before), DevMenu.read(before) == nil, DevMenu.read(after) != nil { return .devMenuOpened }
             return nil
+        }
+
+        /// What changed, told from the trees as output shows them, so it never quotes what they hide; nil when they read alike.
+        func shownSummary(from before: UITree?, to after: UITree?) -> String? {
+            guard let before, let after,
+                  case .changed(let summary) = detector.compare(AccessibilitySnapshot(tree: before), AccessibilitySnapshot(tree: after), ignoring: volatile, live: live) else { return nil }
+            return summary
         }
 
         func unverified(_ attempt: Attempt, note: VerifyNote? = nil) -> Outcome {
@@ -283,11 +288,11 @@ struct Verifier {
                             pending = nil
                             lastUnchanged = currentRead
                             lastRead = currentRead
-                        case .changed(let summary):
+                        case .changed:
                             seenChange = true
                             lastRead = currentRead
                             if let pending, detector.compare(pending, current, ignoring: volatile, live: live) == .unchanged {
-                                return verified(summary, read: currentRead, attempt: attempt, attemptStart: attemptStart)
+                                return verified(read: currentRead, attempt: attempt, attemptStart: attemptStart)
                             }
                             pending = current
                         }
@@ -297,8 +302,8 @@ struct Verifier {
                 if let polled { return (polled, false, nil, nil) }
             }
             // A change that never settled counts only while the latest read still shows it.
-            if seenChange, let lastRead, case .changed(let summary) = detector.compare(baseline, lastRead.snapshot, ignoring: volatile, live: live) {
-                return (verified(summary, read: lastRead, attempt: attempt, attemptStart: attemptStart), false, nil, nil)
+            if seenChange, let lastRead, case .changed = detector.compare(baseline, lastRead.snapshot, ignoring: volatile, live: live) {
+                return (verified(read: lastRead, attempt: attempt, attemptStart: attemptStart), false, nil, nil)
             }
 
             if !ignoringText, let shot = baselineShots.last {
@@ -343,8 +348,8 @@ struct Verifier {
                 return (finish(Outcome(verified: false, attempts: attempt.number, change: .none, style: style, summary: nil, note: surprise), attemptStart: attemptStart), false, nil, nil)
             }
             noteIgnored(lateRead)
-            if case .changed(let summary) = detector.compare(baseline, lateRead.snapshot, ignoring: volatile, live: live) {
-                return (verified(summary, read: lateRead, attempt: attempt, attemptStart: attemptStart), false, nil, nil)
+            if case .changed = detector.compare(baseline, lateRead.snapshot, ignoring: volatile, live: live) {
+                return (verified(read: lateRead, attempt: attempt, attemptStart: attemptStart), false, nil, nil)
             }
             if lateRead.snapshot.isKnown {
                 lastUnchanged = lateRead
@@ -563,7 +568,7 @@ extension Verifier.Dependencies {
             now: { ProcessInfo.processInfo.systemUptime },
             bands: { await backend.volatileScreenBands(for: device) },
             cachedRecord: { await TreeCache.load(for: device, backend: backend) },
-            valueMask: { (try? AmbientMasks.treeMask(revealed: await TreeCache.revealedSecrets(for: device, backend: backend))) ?? .none },
+            valueMask: { try AmbientMasks.treeMask(revealed: await TreeCache.revealedSecrets(for: device, backend: backend)) },
             judge: { tree, id in await Verifier.judged(tree, id: id, backend: backend, device: device) }
         )
         if let waiting = backend as? any AccessibilityChangeWaiting {
