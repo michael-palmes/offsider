@@ -149,6 +149,7 @@ extension TestHelpers {
         case "context-menu-test": return .identifier("context-menu-test-target")
         case "modal-navigation-test": return .identifier("modal-navigation-test-open")
         case "long-scroll-test": return .identifier("long-scroll-test-scroll-view")
+        case "paste-prompt-test": return .identifier("paste-prompt-test-read")
         case "parked-sheet-test": return .identifier("parked-sheet-test-open")
         case "presented-sheet-test": return .identifier("presented-sheet-test-open")
         case "environment-test": return .identifier("environment-test-scheme")

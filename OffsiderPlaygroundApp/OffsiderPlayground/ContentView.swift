@@ -81,6 +81,8 @@ struct ContentView: View {
             ParkedSheetTestView()
         case "presented-sheet-test":
             PresentedSheetTestView()
+        case "paste-prompt-test":
+            PastePromptTestView()
         case "environment-test":
             EnvironmentTestView()
         case "device-state":
@@ -157,7 +159,8 @@ struct MainMenuView: View {
             ("modal-navigation-test", "Modal Navigation Test", "Modal route and nested navigation refresh"),
             ("long-scroll-test", "Long Scroll Test", "Dedicated long scroll coverage"),
             ("parked-sheet-test", "Parked Sheet Test", "Closed sheet parked off screen"),
-            ("presented-sheet-test", "Presented Sheet Test", "Photo picker drawn by another process")
+            ("presented-sheet-test", "Presented Sheet Test", "Photo picker drawn by another process"),
+            ("paste-prompt-test", "Paste Prompt Test", "A pasteboard read iOS may ask about")
         ])
     ]
     

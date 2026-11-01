@@ -130,6 +130,18 @@ struct IOSDevicePinningTests {
         #expect(transport.calls.last?.body["app"] == AnyHashable(Self.playground))
     }
 
+    @Test("input for a pinned app under a system prompt names the prompt, not SpringBoard, with nothing sent")
+    func promptOverPinnedApp() async throws {
+        let transport = FakeRunnerTransport()
+        transport.foregroundApp = "com.apple.springboard"
+        transport.foregroundPrompt = "“Demo” would like to paste from “Notes”"
+        let backend = try Self.backend(transport)
+        let error = await #expect(throws: IOSDeviceError.self) { try await backend.openInputSession(for: Self.phone).perform(.tapAt(x: 10, y: 20)) }
+        #expect(error?.reason == .systemPromptInFront)
+        #expect(error?.message.contains("“Demo” would like to paste from “Notes”") == true)
+        #expect(!transport.calls.contains { $0.path == "/tap-point" })
+    }
+
     static func foregroundChecks(_ transport: FakeRunnerTransport) -> Int {
         transport.calls.filter { $0.path == "/foreground" }.count
     }

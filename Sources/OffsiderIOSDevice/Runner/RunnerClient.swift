@@ -28,14 +28,17 @@ public struct RunnerPing: Equatable, Sendable {
 public struct RunnerForeground: Equatable, Sendable {
     public let inFront: Bool
     public let activeBundleID: String?
+    /// What iOS calls a system alert or sheet over the app.
+    public let prompt: String?
     /// True when the lock screen is up; nil when the device did not say.
     public let locked: Bool?
     /// False when this Xcode offers no active-app lookup, so a system sheet over the app goes unseen.
     public let sheetsVisible: Bool
 
-    public init(inFront: Bool, activeBundleID: String?, locked: Bool? = nil, sheetsVisible: Bool = true) {
+    public init(inFront: Bool, activeBundleID: String?, prompt: String? = nil, locked: Bool? = nil, sheetsVisible: Bool = true) {
         self.inFront = inFront
         self.activeBundleID = activeBundleID
+        self.prompt = prompt
         self.locked = locked
         self.sheetsVisible = sheetsVisible
     }
@@ -92,8 +95,13 @@ public struct RunnerClient: Sendable {
         } catch {
             return .unreachable
         }
-        guard let ping = try? parsePing(try Self.unwrap(response, path: "/ping", udid: udid)) else { return .unreachable }
-        return .answered(ping)
+        do {
+            return .answered(try parsePing(try Self.unwrap(response, path: "/ping", udid: udid)))
+        } catch let error as IOSDeviceError where error.kind == .systemPromptInFront {
+            return .busy
+        } catch {
+            return .unreachable
+        }
     }
 
     func parsePing(_ payload: Any?) throws -> RunnerPing {
@@ -144,7 +152,7 @@ public struct RunnerClient: Sendable {
         let data = try await call("POST", "/foreground", ["app": app]) as? [String: Any]
         guard let data, let inFront = data["inFront"] as? Bool else { throw malformed("/foreground") }
         return RunnerForeground(
-            inFront: inFront, activeBundleID: data["activeBundleId"] as? String, locked: data["locked"] as? Bool, sheetsVisible: data["sheetsVisible"] as? Bool ?? true
+            inFront: inFront, activeBundleID: data["activeBundleId"] as? String, prompt: data["prompt"] as? String, locked: data["locked"] as? Bool, sheetsVisible: data["sheetsVisible"] as? Bool ?? true
         )
     }
 
@@ -199,6 +207,8 @@ public struct RunnerClient: Sendable {
             throw IOSDeviceError(.noFocusedField, "No field on \(udid) has keyboard focus. Tap a text field first, then retry.")
         case "secure_field":
             throw IOSDeviceError(.secureFieldRefused, "The focused field on \(udid) is a secure field, and Offsider does not replace its text. Clear it in the app, or type without --replace.")
+        case "system_prompt":
+            throw IOSDeviceError.systemPromptInFront(message, udid: udid)
         case "screen_locked":
             throw IOSDeviceError.screenLocked(udid)
         case "app_not_in_front":
