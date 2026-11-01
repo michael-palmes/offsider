@@ -7,9 +7,9 @@ struct Swipe: AsyncParsableCommand {
         abstract: "Perform a swipe gesture from one point to another on the screen.",
         discussion: """
         The finger moves from the start to the end over --duration (default 1 s), a point every --delta \
-        (default 50), and lifts with little or no pause, so a list may fling on. --hold-end holds it still \
-        at the end for that many milliseconds before it lifts, sent as a drag, so the motion stops first, \
-        as when you pause before letting go.
+        (default 50, closer on a slow swipe so it never rests over 0.1 s), and lifts with little or no pause, so a list may fling on. \
+        --hold-end slows it over the last 3 points and holds it still at the end for that many milliseconds before it lifts, \
+        sent as a drag, so the motion stops first, as when you pause before letting go.
 
         --screenshot-at takes a screenshot that many milliseconds after the finger comes to rest at the end, \
         before it lifts, masked as `screenshot` masks; the hold lasts until the last one unless --hold-end is set, \
@@ -24,6 +24,8 @@ struct Swipe: AsyncParsableCommand {
 
     static let defaultDuration: TimeInterval = 1.0
     static let defaultDelta = 50.0
+    /// The longest a finger stays still between points: longer can read as a long press, which then stops a list under it from scrolling.
+    static let longestRest: TimeInterval = 0.1
     
     @Option(name: .customLong("start-x"), help: "The X coordinate of the starting point.")
     var startX: Double
@@ -40,7 +42,7 @@ struct Swipe: AsyncParsableCommand {
     @Option(name: .customLong("duration"), help: "Duration of the swipe in seconds.")
     var duration: Double?
     
-    @Option(name: .customLong("delta"), help: "Distance in points (dp on Android) between touch points.")
+    @Option(name: .customLong("delta"), help: "Distance in points (dp on Android) between touch points (default 50, closer on a slow swipe so the finger never rests over 0.1 s).")
     var delta: Double?
     
     @Option(name: .customLong("pre-delay"), help: "Delay before starting the swipe in seconds.")
@@ -135,7 +137,7 @@ struct Swipe: AsyncParsableCommand {
         try await backend.prepare()
 
         let swipeDuration = duration ?? Self.defaultDuration
-        let swipeDelta = delta ?? Self.defaultDelta
+        let swipeDelta = stepDelta
         
         logger.info().log("Performing swipe from (\(startX), \(startY)) to (\(endX), \(endY))")
         logger.info().log("Duration: \(swipeDuration)s, Delta: \(swipeDelta)")
@@ -201,9 +203,8 @@ extension Swipe {
     /// idb's or adb's swipe, which lifts while moving; with --hold-end, a drag of the same pace that stops and holds before the lift.
     func swipeEvent(from start: (x: Double, y: Double), to end: (x: Double, y: Double)) throws -> InputEvent {
         let swipeDuration = duration ?? Self.defaultDuration
-        let swipeDelta = delta ?? Self.defaultDelta
         guard let holdEnd else {
-            return .swipe(start.x, yStart: start.y, xEnd: end.x, yEnd: end.y, delta: swipeDelta, duration: swipeDuration)
+            return .swipe(start.x, yStart: start.y, xEnd: end.x, yEnd: end.y, delta: stepDelta, duration: swipeDuration)
         }
         return try InputEvent.compositeDrag(
             from: start,
@@ -211,18 +212,28 @@ extension Swipe {
             duration: swipeDuration,
             steps: dragSteps,
             initialHold: 0,
-            finalHold: Double(holdEnd) / 1000
+            finalHold: Double(holdEnd) / 1000,
+            settling: holdEnd > 0
         )
     }
 
     /// The drag form of the swipe up to its end hold, leaving the finger down at `end`, for --screenshot-at.
     func pressEvent(from start: (x: Double, y: Double), to end: (x: Double, y: Double)) throws -> InputEvent {
-        try InputEvent.compositeDragPress(from: start, to: end, duration: duration ?? Self.defaultDuration, steps: dragSteps, initialHold: 0)
+        try InputEvent.compositeDragPress(from: start, to: end, duration: duration ?? Self.defaultDuration, steps: dragSteps, initialHold: 0, settling: true)
     }
 
-    /// Steps follow the points the caller gave, as a swipe's delta does, not the backend's input space.
+    /// A held swipe stops where it is sent, so without --delta it moves as `drag` does; --delta follows the points the caller gave, not the backend's input space.
     private var dragSteps: Int {
-        PixelMath.swipeSteps(hypot(endX - startX, endY - startY) / (delta ?? Self.defaultDelta))
+        delta.map { PixelMath.swipeSteps(distance / $0) } ?? Drag.defaultSteps
+    }
+
+    /// --delta, else `defaultDelta`, or the spacing that leaves no rest over `longestRest` once the step count rounds down.
+    var stepDelta: Double {
+        delta ?? min(Self.defaultDelta, distance / ((duration ?? Self.defaultDuration) / Self.longestRest + 1))
+    }
+
+    private var distance: Double {
+        hypot(endX - startX, endY - startY)
     }
 }
 

@@ -7,7 +7,7 @@ struct Drag: AsyncParsableCommand {
         abstract: "Perform a low-level point-to-point drag using explicit touch move events.",
         discussion: """
         The finger goes down at the start, holds for --hold-ms, moves in --steps even steps over --duration, \
-        holds still at the end for --hold-end, then lifts. Raise --hold-ms past an app's long-press delay \
+        holds still at the end for --hold-end (slowing over the last 3 points when you set it), then lifts. Raise --hold-ms past an app's long-press delay \
         (often 500 ms) to pick up something that drags only after a long press; `gesture long-press-drag` is \
         the same with an 800 ms hold. Raise --hold-end so a list stops without a fling, or a dragged item \
         settles over its drop target before the release.
@@ -25,7 +25,7 @@ struct Drag: AsyncParsableCommand {
     )
 
     private static let defaultDuration: TimeInterval = 0.6
-    private static let defaultSteps = 60
+    static let defaultSteps = 60
     static let maxSteps = PixelMath.maxSwipeSteps
     static let maxDuration: Double = 30
     static let defaultHoldMilliseconds = 50
@@ -184,13 +184,14 @@ struct Drag: AsyncParsableCommand {
             duration: duration,
             steps: steps,
             initialHold: Double(holdMs) / 1000,
-            finalHold: Double(finalHoldMilliseconds) / 1000
+            finalHold: Double(finalHoldMilliseconds) / 1000,
+            settling: (holdEnd ?? 0) > 0 || holdShots.isRequested
         )
     }
 
     /// Down, the --hold-ms hold and the moves, leaving the finger down at `end`, for --screenshot-at.
     func pressEvent(from start: (x: Double, y: Double), to end: (x: Double, y: Double)) throws -> InputEvent {
-        try InputEvent.compositeDragPress(from: start, to: end, duration: duration, steps: steps, initialHold: Double(holdMs) / 1000)
+        try InputEvent.compositeDragPress(from: start, to: end, duration: duration, steps: steps, initialHold: Double(holdMs) / 1000, settling: true)
     }
 
     /// --hold-end, else the default stretched to reach the last --screenshot-at.

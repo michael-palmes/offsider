@@ -61,6 +61,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ### Fixed
 
 - iPhone and iPad: a system prompt over the app, such as Allow Paste, no longer leaves every command timing out at `runner_unavailable`. A read exits 7 `system_prompt_in_front` quoting the prompt, within about 3 s and at once after that, and asks a person to answer it on the device; a pinned app's input check names it too. The runner is no longer restarted behind it, and runner input that waited over 5 s is dropped, not sent late.
+- `swipe`: a short slow swipe no longer rests under the finger for its whole step, which a list that also takes a long press read as one, so it never scrolled while the command reported success. The finger now moves at least every 0.1 s unless `--delta` is set.
+- `swipe` and `drag`: `--hold-end` now stops a list. A fast drag flung on however long the hold, as a list reads its speed from the last moves, so these now slow over the last 3 points; `--hold-end 0` still flings.
 - `button lock` and `button side-button` on an iPhone or iPad no longer open Siri: the plain press held for 0.4 s, exactly where iOS starts Siri, and now holds for 0.34 s.
 - On Xcode 27.1 and later, a system alert, a sheet such as Siri's or Control Center over the pinned app no longer lets a screenshot or input through: the front-app check had lost XCTest's lookup and fell back to the app's own state, which misses them. It now uses XCTest's accessibility client, and an Xcode with no lookup says so in a notice. The runner rebuilds once.
 - A locked iPhone or iPad now says `device_locked` and names `offsider wake`, rather than telling you to open the app, and the check no longer passes in the moment after a lock press.

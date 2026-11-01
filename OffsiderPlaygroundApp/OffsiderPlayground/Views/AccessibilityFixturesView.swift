@@ -284,6 +284,8 @@ struct ModalNavigationTestView: View {
 }
 
 struct LongScrollTestView: View {
+    /// A press held on the list counts as a long press before it can scroll, as a chart or a reorderable row does.
+    var holdPressRows = false
     private let rows = Array(1...80)
     @State private var selectedRow = "None"
 
@@ -295,7 +297,7 @@ struct LongScrollTestView: View {
                 .accessibilityIdentifier("long-scroll-test-state")
                 .accessibilityValue(selectedRow)
 
-            LongScrollTableView(rows: rows, selectedRow: $selectedRow)
+            LongScrollTableView(rows: rows, holdPressRows: holdPressRows, selectedRow: $selectedRow)
         }
         .navigationTitle("Long Scroll")
         .navigationBarTitleDisplayMode(.inline)
@@ -304,6 +306,7 @@ struct LongScrollTestView: View {
 
 private struct LongScrollTableView: UIViewRepresentable {
     let rows: [Int]
+    let holdPressRows: Bool
     @Binding var selectedRow: String
 
     func makeCoordinator() -> Coordinator {
@@ -317,6 +320,9 @@ private struct LongScrollTableView: UIViewRepresentable {
         tableView.rowHeight = 64
         tableView.accessibilityIdentifier = "long-scroll-test-scroll-view"
         tableView.register(UITableViewCell.self, forCellReuseIdentifier: Coordinator.cellReuseIdentifier)
+        if holdPressRows {
+            tableView.addGestureRecognizer(UILongPressGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.held(_:))))
+        }
         return tableView
     }
 
@@ -348,6 +354,10 @@ private struct LongScrollTableView: UIViewRepresentable {
             cell.accessibilityIdentifier = identifier(for: indexPath.row)
             cell.accessibilityTraits.insert(.button)
             return cell
+        }
+
+        @objc func held(_ recogniser: UILongPressGestureRecognizer) {
+            if recogniser.state == .began { selectedRow.wrappedValue = "Held" }
         }
 
         func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {

@@ -15,19 +15,20 @@ extension InputEvent {
         return events.count == 1 ? events[0] : .composite(events)
     }
 
-    /// Touch down, hold, `steps` evenly spaced moves over `duration`, hold, touch up.
+    /// Touch down, hold, `steps` evenly spaced moves over `duration`, hold, touch up; `settling` slows the last moves, as below.
     static func compositeDrag(
         from start: (x: Double, y: Double),
         to end: (x: Double, y: Double),
         duration: TimeInterval,
         steps: Int,
         initialHold: TimeInterval,
-        finalHold: TimeInterval
+        finalHold: TimeInterval,
+        settling: Bool = false
     ) throws -> InputEvent {
         guard finalHold >= 0 else {
             throw CLIError(errorDescription: "Drag hold durations must be non-negative.", reason: .usage)
         }
-        var events = try pressEvents(from: start, to: end, duration: duration, steps: steps, initialHold: initialHold)
+        var events = try pressEvents(from: start, to: end, duration: duration, steps: steps, initialHold: initialHold, settling: settling)
         events.append(.delay(finalHold))
         events.append(.touch(direction: .up, x: end.x, y: end.y))
         return .composite(events)
@@ -52,9 +53,10 @@ extension InputEvent {
         to end: (x: Double, y: Double),
         duration: TimeInterval,
         steps: Int,
-        initialHold: TimeInterval
+        initialHold: TimeInterval,
+        settling: Bool = false
     ) throws -> InputEvent {
-        .composite(try pressEvents(from: start, to: end, duration: duration, steps: steps, initialHold: initialHold))
+        .composite(try pressEvents(from: start, to: end, duration: duration, steps: steps, initialHold: initialHold, settling: settling))
     }
 
     private static func pressEvents(
@@ -62,7 +64,8 @@ extension InputEvent {
         to end: (x: Double, y: Double),
         duration: TimeInterval,
         steps: Int,
-        initialHold: TimeInterval
+        initialHold: TimeInterval,
+        settling: Bool
     ) throws -> [InputEvent] {
         guard duration >= 0 else {
             throw CLIError(errorDescription: "Drag duration must be non-negative.", reason: .usage)
@@ -74,19 +77,34 @@ extension InputEvent {
             throw CLIError(errorDescription: "Drag hold durations must be non-negative.", reason: .usage)
         }
 
-        let movePoints = try compositeDragMovePoints(from: start, to: end, steps: steps)
-        let stepDelay = duration / Double(steps)
         var events: [InputEvent] = [
             .touch(direction: .down, x: start.x, y: start.y),
             .delay(initialHold)
         ]
-
-        for point in movePoints {
-            events.append(.delay(stepDelay))
-            events.append(.touch(direction: .down, x: point.x, y: point.y))
+        let distance = hypot(end.x - start.x, end.y - start.y)
+        guard settling, distance > settleDistance else {
+            events += moves(from: start, to: end, duration: duration, steps: steps)
+            return events
         }
-
+        let fraction = settleDistance / distance
+        let approach = (x: end.x - (end.x - start.x) * fraction, y: end.y - (end.y - start.y) * fraction)
+        let slow = min(settleDuration, duration / 2)
+        events += moves(from: start, to: approach, duration: duration - slow, steps: min(steps, PixelMath.maxSwipeSteps - settleSteps))
+        events += moves(from: approach, to: end, duration: slow, steps: settleSteps)
         return events
+    }
+
+    /// The last stretch of a drag that stops: a finger held still sends no new moves, so the speed a list reads at the lift is that of these, however long the hold.
+    private static let settleDistance = 3.0
+    private static let settleDuration: TimeInterval = 0.15
+    private static let settleSteps = 8
+
+    private static func moves(from start: (x: Double, y: Double), to end: (x: Double, y: Double), duration: TimeInterval, steps: Int) -> [InputEvent] {
+        let stepDelay = duration / Double(steps)
+        return (1...steps).flatMap { step -> [InputEvent] in
+            let progress = Double(step) / Double(steps)
+            return [.delay(stepDelay), .touch(direction: .down, x: start.x + (end.x - start.x) * progress, y: start.y + (end.y - start.y) * progress)]
+        }
     }
 
     static func compositeDragMovePoints(

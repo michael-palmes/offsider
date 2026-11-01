@@ -17,6 +17,82 @@ struct SwipeHoldEndTests {
         #expect(event == .swipe(200, yStart: 800, xEnd: 200, yEnd: 400, delta: 50, duration: 0.4))
     }
 
+    private static func shortSwipe(_ arguments: [String]) throws -> Swipe {
+        try Swipe.parse(["--start-x", "215", "--start-y", "700", "--end-x", "215", "--end-y", "630"] + arguments + ["--device", "emulator-5554"])
+    }
+
+    /// The longest the finger stays still before each move, up to the end of the moves.
+    private static func longestRest(_ event: InputEvent) throws -> Double {
+        guard case .composite(let events) = event else { throw CLIError(errorDescription: "expected a composite drag, got \(event)") }
+        let moves = events.dropLast(2)
+        return moves.compactMap { if case .delay(let seconds) = $0 { return seconds } else { return nil } }.max() ?? 0
+    }
+
+    @Test("a short slow --hold-end swipe keeps moving: a finger still for half a second is a long press, and the list under it never scrolls")
+    func shortHoldEndKeepsMoving() throws {
+        let swipe = try Self.shortSwipe(["--duration", "0.6", "--hold-end", "400"])
+        #expect(try Self.longestRest(swipe.swipeEvent(from: (x: 215, y: 700), to: (x: 215, y: 630))) <= Swipe.longestRest * 1.01)
+    }
+
+    @Test("a short slow plain swipe moves as often: its steps come from the same pace", arguments: [0.6, 1.0, 5.0, 30.0])
+    func shortPlainKeepsMoving(duration: Double) throws {
+        let event = try Self.shortSwipe(["--duration", "\(duration)"]).swipeEvent(from: (x: 215, y: 700), to: (x: 215, y: 630))
+        guard case let .swipe(_, _, _, _, delta, seconds) = event else {
+            Issue.record("expected one swipe, got \(event)")
+            return
+        }
+        let steps = PixelMath.swipeSteps(70 / delta)
+        #expect(seconds / Double(steps) <= Swipe.longestRest * 1.01)
+    }
+
+    @Test("--delta still sets the spacing, and a fast swipe keeps its 50 point spacing, so its fling is what it was")
+    func deltaWins() throws {
+        #expect(try Self.shortSwipe(["--duration", "0.6", "--delta", "35"]).stepDelta == 35)
+        #expect(try Self.swipe(["--duration", "0.3"]).stepDelta == 50)
+    }
+
+    /// Each move with the pause before it, from the touch down on.
+    private static func moves(_ event: InputEvent) throws -> [(pause: Double, y: Double)] {
+        guard case .composite(let events) = event else { throw CLIError(errorDescription: "expected a composite drag, got \(event)") }
+        var moves: [(pause: Double, y: Double)] = []
+        var pause = 0.0
+        for item in events {
+            switch item {
+            case .delay(let seconds): pause += seconds
+            case .touch(.down, _, let y):
+                moves.append((pause, y))
+                pause = 0
+            default: break
+            }
+        }
+        return moves
+    }
+
+    @Test("--hold-end ends slowly at the exact point in the same time, because a list reads its fling from the last moves, however long the hold")
+    func holdEndSettles() throws {
+        let event = try Self.swipe(["--duration", "0.6", "--hold-end", "400"]).swipeEvent(from: (x: 200, y: 800), to: (x: 200, y: 400))
+        let moves = try Self.moves(event).dropFirst()
+        #expect(abs(moves.map(\.pause).reduce(0, +) - 0.6) < 1e-9)
+        #expect(moves.last?.y == 400)
+        let last = Array(moves.suffix(4))
+        let speed = (last.first!.y - last.last!.y) / last.dropFirst().map(\.pause).reduce(0, +)
+        #expect(speed < 100, "the last moves ran at \(speed) points a second, enough to fling")
+    }
+
+    @Test("--hold-end 0 lifts at full speed, so a swipe can still fling")
+    func holdEndZeroFlings() throws {
+        let event = try Self.swipe(["--duration", "0.4", "--hold-end", "0"]).swipeEvent(from: (x: 200, y: 800), to: (x: 200, y: 400))
+        let moves = try Self.moves(event).dropFirst()
+        let last = Array(moves.suffix(2))
+        #expect((last[0].y - last[1].y) / last[1].pause > 500)
+    }
+
+    @Test("a swipe too short to slow down still ends where it was sent")
+    func tinyHoldEnd() throws {
+        let swipe = try Swipe.parse(["--start-x", "10", "--start-y", "12", "--end-x", "10", "--end-y", "10", "--hold-end", "100", "--device", "emulator-5554"])
+        #expect(try Self.moves(swipe.swipeEvent(from: (x: 10, y: 12), to: (x: 10, y: 10))).last?.y == 10)
+    }
+
     @Test("--hold-end sends a drag: down at the start with no hold, moves over --duration, the hold at the end point, then up there")
     func holdEndIsDrag() throws {
         let event = try Self.swipe(["--duration", "0.4", "--hold-end", "500"]).swipeEvent(from: (x: 200, y: 800), to: (x: 200, y: 400))
@@ -94,6 +170,28 @@ struct SwipeHoldEndTests {
 
 @Suite("Swipe Command Tests", .serialized, .enabled(if: isE2EEnabled))
 struct SwipeTests {
+    /// Row 5's y on the list that also takes a long press.
+    private func rowY() async throws -> Double {
+        let state = try await TestHelpers.getUIState()
+        return try #require(UIStateParser.findElement(in: state, withIdentifier: "long-scroll-test-row-5")?.frame?.y)
+    }
+
+    @Test("a short slow swipe --hold-end scrolls a list that takes a long press, and a fast one stops where it was left")
+    func holdEndScrollsAndStops() async throws {
+        for (startY, endY, duration) in [(600, 530, 0.6), (700, 400, 0.6)] {
+            try await TestHelpers.launchPlaygroundApp(to: "hold-scroll-test")
+            let before = try await rowY()
+            try await TestHelpers.runOffsiderCommand(
+                "swipe --start-x 200 --start-y \(startY) --end-x 200 --end-y \(endY) --duration \(duration) --hold-end 400",
+                simulatorUDID: defaultSimulatorUDID
+            )
+            try await Task.sleep(for: .seconds(1))
+            let moved = before - (try await rowY())
+            let asked = Double(startY - endY)
+            #expect(moved >= asked - 25 && moved <= asked + 5, "asked for \(asked), moved \(moved)")
+        }
+    }
+
     @Test("Basic swipe registers on screen")
     func basicSwipe() async throws {
         // Arrange
