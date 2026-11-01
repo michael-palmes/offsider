@@ -148,6 +148,25 @@ struct RNApp: Sendable {
         try await describeUI.screenSize()
     }
 
+    /// A row whose centre lies under `cover` with 8 pt of it showing, scrolling `list` a little when this screen's size leaves every centre clear.
+    func rowCentred(under cover: String, rows: [String], list: String) async throws -> String {
+        let scroller = try await frame(of: list)
+        let x = Int(scroller.x + scroller.width / 2), y = Int(scroller.y + scroller.height / 3)
+        for _ in 0..<8 {
+            let tree = try await tree()
+            let bar = try #require(ReactNativeStickyFooterTests.frame(of: cover, in: tree))
+            let found = rows.first { id in
+                guard let row = ReactNativeStickyFooterTests.frame(of: id, in: tree) else { return false }
+                let centre = row.y + row.height / 2
+                return centre >= bar.y && centre < bar.y + bar.height && (bar.y - row.y >= 8 || row.y + row.height - bar.y - bar.height >= 8)
+            }
+            if let found { return found }
+            try await run("swipe --start-x \(x) --start-y \(y) --end-x \(x) --end-y \(y - 30) --duration 0.8")
+            try await run("wait --settled --ignore-values --timeout 5")
+        }
+        throw DescribeUIError(description: "no row's centre came under \(cover) with 8 pt of it showing")
+    }
+
     /// A node's frame in points or dp, waiting for the node to appear.
     func frame(of id: String) async throws -> (x: Double, y: Double, width: Double, height: Double) {
         let node = try await waitForNode { $0["id"] as? String == id }
