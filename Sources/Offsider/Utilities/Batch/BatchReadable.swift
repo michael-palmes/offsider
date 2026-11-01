@@ -97,7 +97,7 @@ extension DescribeUI: BatchReadable {
         if let point = try parsedPoint() {
             tree = try await context.backend.accessibilityTree(for: context.device, point: point)
         } else {
-            tree = try await context.accessibilityTree()
+            tree = await context.backend.withGapsFilled(try await context.accessibilityTree(), on: context.device)
             tree.systemPrompt = await SystemPromptProbe.find(in: tree, backend: context.backend, device: context.device)
         }
         let options = try output.renderOptions()
@@ -114,7 +114,9 @@ extension Screenshot: BatchReadable {
     func runInBatch(context: BatchContext, logger: OffsiderLogger) async throws -> BatchReadResult {
         let masks = masksWithRunDefaults(try maskPlan(batchDefault: context.maskSecure))
         let report = try await take(try request(), on: context.route, masks: masks) {
-            guard let reader = context.backend as? any MaskTreeReading else { return try await context.accessibilityTree() }
+            guard let reader = context.backend as? any MaskTreeReading else {
+                return try await context.backend.readingWithGaps(on: context.device) { try await context.accessibilityTree() }
+            }
             return try await reader.maskTree(for: context.device)
         }
         guard let comparison = report.comparison else {

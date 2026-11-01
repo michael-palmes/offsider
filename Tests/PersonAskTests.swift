@@ -8,7 +8,7 @@ import Testing
 @Suite("Asking the user for a hands-on step")
 struct PersonAskTests {
     private let handsOn: [FailureReason] = [
-        .turnstileRequired, .deviceLocked, .deviceUntrusted, .developerModeOff, .uiAutomationOff, .certificateNotTrusted, .deviceNotWired, .usbmuxUnavailable,
+        .turnstileRequired, .deviceLocked, .deviceUntrusted, .developerModeOff, .uiAutomationOff, .systemPromptInFront, .certificateNotTrusted, .deviceNotWired, .usbmuxUnavailable,
     ]
 
     private func summary(_ id: String, name: String, state: String = "Booted", os: String? = "iOS 26.4") -> DeviceSummary {

@@ -117,7 +117,7 @@ enum TreeCache {
                 let previous = read(device, in: directory, bootMarker: marker, now: now)
                 var activity = activity
                 if let tree = activity.tree {
-                    activity.tree = maskedForCache(tree, device: device, directory: directory, bootMarker: marker, now: now, written: &written)
+                    activity.tree = maskedForCache(tree, filled: activity.filled, device: device, directory: directory, bootMarker: marker, now: now, written: &written)
                 }
                 guard let record = TreeCacheRecord.committing(
                     activity, previous: previous, command: command,
@@ -137,14 +137,14 @@ enum TreeCache {
     }
 
     /// The tree with the config's and run's masked values and revealed password fields hidden, and the device's password
-    /// fields recorded beside it; nil, so no tree is cached, when `offsider.mask.json` cannot be used.
+    /// fields recorded beside it, those a gap fill found too; nil, so no tree is cached, when `offsider.mask.json` cannot be used.
     private static func maskedForCache(
-        _ tree: UITree, device: DeviceID, directory: String, bootMarker: String?, now: Date, written: inout Set<String>
+        _ tree: UITree, filled: [UINode], device: DeviceID, directory: String, bootMarker: String?, now: Date, written: inout Set<String>
     ) -> UITree? {
         let previous = readSecure(device, in: directory, bootMarker: bootMarker, now: now)
         guard let mask = try? AmbientMasks.treeMask(revealed: previous.map(RevealedSecrets.init)) else { return nil }
         let name = SecureFieldRecord.fileName(platform: device.platform, device: device.rawValue)
-        if let next = SecureFieldRecord.next(previous: previous, tree: tree, bootMarker: bootMarker, now: now) {
+        if let next = SecureFieldRecord.next(previous: previous, tree: tree, filled: filled, bootMarker: bootMarker, now: now) {
             try? OffsiderPrivateDirectory.writeAtomically(next.encoded(), named: name, in: directory)
             written.insert(name)
         } else if previous != nil {

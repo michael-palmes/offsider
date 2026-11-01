@@ -256,7 +256,9 @@ struct Wait: AsyncParsableCommand {
         let gate = settled ? await Self.settleGate(for: route, revealed: revealed) : nil
         let condition = condition(gate: gate, platform: route.device.platform, revealed: revealed)
         var sources = try await liveSources(on: route, condition: condition, tree: tree, clock: clock)
-        sources.tree = selector.judging(sources.tree, queries: waitsForAny ? selector.queries : [selector.query].compactMap { $0 }, on: route)
+        // A simulator's fill slows each poll by about a second, so two reads could both land in a brief flicker and call it gone.
+        let fills = !gone || route.device.platform != .ios
+        sources.tree = selector.judging(sources.tree, queries: waitsForAny ? selector.queries : [selector.query].compactMap { $0 }, fillingGaps: fills, on: route)
         if settled {
             // As the cache stores them, so a change message never prints one and the gate compares like with like.
             var mask = OutputMasks.current.base
@@ -278,7 +280,7 @@ struct Wait: AsyncParsableCommand {
     /// Tells the reader once that another app in front is holding a wait up.
     static func noteOtherApp(limit: TimeInterval, device: String) {
         let shown = WaitLoop.seconds(limit)
-        Console.current.notice(.note("Another app is in front. Waiting up to \(shown) for yours", agent: "another app is in front on \(device), so nothing is read from it; waiting up to \(shown) for the app under test."))
+        Console.current.notice(.note("Another app or a system prompt is in front. Waiting up to \(shown) for yours", agent: "another app or a system prompt is in front on \(device), so nothing is read from it; waiting up to \(shown) for the app under test."))
     }
 
     /// The gate for the device's last input: this process's own when it sent one (a batch step), masked here as the cache's is at exit, else the cached record's.

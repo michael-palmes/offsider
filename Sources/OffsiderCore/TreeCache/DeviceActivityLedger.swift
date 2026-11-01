@@ -13,6 +13,8 @@ public final class DeviceActivityLedger {
         public var treeReadAt: Date?
         public var screen: UIScreenInfo?
         public var lastInputAt: Date?
+        /// Every node of the last gap fill's tree; never written to a file.
+        public var filled: [UINode] = []
 
         public init(
             device: DeviceID,
@@ -46,7 +48,13 @@ public final class DeviceActivityLedger {
             activity.firstReadStartedAt = activity.firstReadStartedAt ?? startedAt
             activity.tree = tree
             activity.treeReadAt = now()
+            activity.filled = []
         }
+    }
+
+    /// A gap fill's result stays in memory: only its password fields' places reach a file, so showing one later still masks it.
+    public func recordFill(_ tree: UITree, on device: DeviceID) {
+        update(device) { $0.filled = tree.roots.flatMap { $0.flattened() } }
     }
 
     public func recordScreen(_ screen: UIScreenInfo?, on device: DeviceID) {

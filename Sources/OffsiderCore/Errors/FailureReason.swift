@@ -98,6 +98,7 @@ public enum FailureReason: String, CaseIterable, Sendable {
     case developerModeOff = "developer_mode_off"
     case devicePreparing = "device_preparing"
     case uiAutomationOff = "ui_automation_off"
+    case systemPromptInFront = "system_prompt_in_front"
     case certificateNotTrusted = "certificate_not_trusted"
     case deviceNotAllowed = "device_not_allowed"
 
@@ -136,7 +137,7 @@ public enum FailureReason: String, CaseIterable, Sendable {
         case .selectorAmbiguous, .selectorAmbiguousSwitch, .userAmbiguous:
             return .ambiguousSelector
         case .deviceNotFound, .deviceNotBooted, .deviceNotReady, .deviceUnauthorised, .deviceLocked, .deviceAmbiguous, .avdNotFound,
-             .deviceNotWired, .deviceUntrusted, .developerModeOff, .devicePreparing, .uiAutomationOff, .certificateNotTrusted, .deviceNotAllowed, .metroPortNotAllowed:
+             .deviceNotWired, .deviceUntrusted, .developerModeOff, .devicePreparing, .uiAutomationOff, .systemPromptInFront, .certificateNotTrusted, .deviceNotAllowed, .metroPortNotAllowed:
             return .deviceUnavailable
         case .deviceBusy, .uiautomationBusy, .deviceLeased:
             return .deviceBusy
