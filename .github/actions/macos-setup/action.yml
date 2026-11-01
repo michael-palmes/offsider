@@ -12,6 +12,14 @@ inputs:
   xcodegen-sha256:
     description: The SHA-256 of that release's xcodegen.zip.
     default: "4d9e34b62172d645eed6457cac13fc222569974098ef4ee9c3368bedf0196806"
+  debug-build-cache:
+    description: "true restores .build for a debug build, check only looks it up; either saves it on a miss. For unit test jobs only, never a release path."
+    default: "false"
+
+outputs:
+  debug-build-cache-hit:
+    description: Whether .build was restored for this exact key.
+    value: ${{ steps.debug-build.outputs.cache-hit }}
 
 runs:
   using: composite
@@ -66,6 +74,16 @@ runs:
           build_products/Frameworks
           build_products/XCFrameworks
         key: idb-arm64-xcode-${{ steps.xcode.outputs.build }}-${{ steps.idb.outputs.ref }}-xcodegen-${{ inputs.xcodegen-version }}-${{ hashFiles('scripts/build.sh', 'Package.swift') }}
+
+    # A fresh checkout's new timestamps recompile Offsider's own code every time, so only dependencies and SDK modules are reused.
+    - name: Cache the debug build
+      id: debug-build
+      if: inputs.debug-build-cache != 'false'
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: .build
+        key: debug-build-arm64-xcode-${{ steps.xcode.outputs.build }}-${{ steps.idb.outputs.ref }}-${{ hashFiles('Package.swift', 'Package.resolved') }}
+        lookup-only: ${{ inputs.debug-build-cache == 'check' }}
 
     - name: Build idb frameworks
       shell: bash

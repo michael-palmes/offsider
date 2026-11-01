@@ -46,9 +46,11 @@ jobs:
           set -euo pipefail
           bash scripts/ci-changes.test.sh
           bash scripts/ci-gate.test.sh
+          bash scripts/failed-tests.test.sh
+          bash scripts/lib/unit-tests.test.sh
 
       - name: Every CI job gates merges
-        run: scripts/ci-gate.sh --check-needs .github/workflows/ci.yml ci-passed asan-unit-tests asan-issue
+        run: scripts/ci-gate.sh --check-needs .github/workflows/ci.yml ci-passed asan-unit-tests asan-issue seed-debug-build
 
       # Full strictness on the release script; upstream scripts gated at error level until cleaned up.
       - name: shellcheck
@@ -217,9 +219,31 @@ jobs:
       - uses: ./.github/actions/macos-setup
         with:
           xcode-app: ${{ env.XCODE_APP }}
+          debug-build-cache: "true"
 
       - name: Unit tests
         run: OFFSIDER_REUSE_IDB=1 ./test-runner.sh --unit-tests
+
+  # Pull requests read only their own caches and main's, and the unit test job does not run on main, so this fills main's.
+  seed-debug-build:
+    name: Seed the debug build cache
+    if: github.event_name == 'push'
+    runs-on: ${{ vars.MACOS_RUNNER || 'xcode-27' }}
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: ./.github/actions/macos-setup
+        id: setup
+        with:
+          xcode-app: ${{ env.XCODE_APP }}
+          debug-build-cache: check
+
+      - name: Build, unless the cache already holds this key
+        if: steps.setup.outputs.debug-build-cache-hit != 'true'
+        run: swift build --build-tests --force-resolved-versions
 
   release-rehearsal:
     name: Release build and rehearsal (ad-hoc)
