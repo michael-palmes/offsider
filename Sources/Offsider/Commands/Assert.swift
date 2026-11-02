@@ -89,7 +89,13 @@ struct Assert: AsyncParsableCommand {
 
     /// `✓ --id 'count' is on screen with value '3'` or `✓ --id 'banner' is gone`.
     func successLine(_ outcome: WaitOutcome) -> String {
-        "✓ \(subject) is \(gone ? "gone" : selector.presentState)"
+        "✓ \(metState(outcome))"
+    }
+
+    /// `--id 'count' is on screen with value '3'`, `--id 'banner' is gone`, or for one the app still holds, `--id 'row' is not on screen: under ...`.
+    private func metState(_ outcome: WaitOutcome) -> String {
+        if gone, let hidden = outcome.goneBecause { return "\(subject) is not on screen: \(LogRedactor.redactValue(hidden).text)" }
+        return "\(subject) is \(gone ? "gone" : selector.presentState)"
     }
 
     /// `✗ Assertion failed: --id 'count' has value '2', expected '3'.`, or for a miss `... was not found (nearest: ...).`
@@ -103,7 +109,7 @@ struct Assert: AsyncParsableCommand {
         guard shown.met else {
             return .failed("\(subject) \(Self.predicate(shown.reason))", details: shown.nearMiss.map { ["Nearest  \($0.summary)"] } ?? [])
         }
-        return .done("\(subject) is \(gone ? "gone" : selector.presentState)", details: note.map { [$0] } ?? [])
+        return .done(metState(shown), details: note.map { [$0] } ?? [])
     }
 
     private var subject: String {

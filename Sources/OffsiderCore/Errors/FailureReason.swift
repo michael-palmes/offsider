@@ -26,6 +26,7 @@ public enum FailureReason: String, CaseIterable, Sendable {
     case baselineMismatch = "baseline_mismatch"
     case displayUnreadable = "display_unreadable"
     case displayOff = "display_off"
+    case screenOff = "screen_off"
     case notSupported = "not_supported"
     case postureFailed = "posture_failed"
     case stateNotReached = "state_not_reached"

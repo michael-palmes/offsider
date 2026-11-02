@@ -235,8 +235,19 @@ final class HitTestingFakeBackend: FakeDeviceBackend, PointHitTesting {
     private(set) var hitAppPIDs: [Set<Int>] = []
     /// When set, answers hit-tests in place of the next tree, as another process's view the tree does not hold.
     var hits: ((UIPoint) -> UINode?)?
+    /// When set, answers the no-retry read in place of `hits`, as a point caught mid-transition does.
+    var quickHits: ((UIPoint) -> UINode?)?
     /// What `processName(of:on:)` serves.
     var processNames: [Int: String] = [:]
+
+    func quickHitTest(at point: UIPoint, on id: DeviceID) async throws -> UINode? {
+        if let quickHits {
+            hitTests += 1
+            hitPoints.append(point)
+            return quickHits(point)
+        }
+        return try await hitTest(at: point, on: id, appPIDs: [])
+    }
 
     func hitTest(at point: UIPoint, on id: DeviceID, appPIDs: Set<Int>) async throws -> UINode? {
         hitTests += 1

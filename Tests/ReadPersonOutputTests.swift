@@ -315,7 +315,7 @@ struct ReadPersonOutputTests {
             listed
         ⚠️  com.example.playground is running but its accessibility tree is
             empty; relaunch it, or reboot the simulator if that fails
-            Try  xcrun simctl terminate \(udid) com.example.playground && xcrun simctl launch \(udid) com.example.playground
+            Try  offsider app launch --restart --app com.example.playground --device \(udid)
 
         """)
     }

@@ -73,7 +73,8 @@ extension IOSBackend: ExpoDevClientOpening {
             throw ExpoDevClient.iosNotInstalled(bundleID: bundleID, udid: id.rawValue)
         }
         let plist = UntrustedRead.contents(atPath: (app as NSString).appendingPathComponent("Info.plist")) ?? Data()
-        return ExpoDevClient.schemes(fromInfoPlist: plist)
+        let expo = ExpoDevClient.schemes(fromInfoPlist: plist)
+        return expo.isEmpty ? ExpoDevClient.ownSchemes(fromInfoPlist: plist) : expo
     }
 
     /// A simulator shares the Mac's loopback.

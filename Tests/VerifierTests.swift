@@ -444,6 +444,122 @@ struct VerifierTests {
         #expect(fake.clock < 5)
     }
 
+    /// A page pushed over a screen; `clock` ticks on the screen beneath, `saved` adds to the page in front.
+    private func pushed(clock: String, saved: Bool = false) -> UITree {
+        let home = FakeUI.node(.group, id: "home", frame: FakeUI.frame(0, 0, 402, 874), children: [
+            FakeUI.node(.header, label: "Home", frame: FakeUI.frame(60, 70, 282, 22)),
+            FakeUI.node(.text, id: "clock", label: clock, frame: FakeUI.frame(16, 300, 370, 22)),
+        ])
+        var front = [
+            FakeUI.node(.header, label: "Summary", frame: FakeUI.frame(60, 70, 282, 22)),
+            FakeUI.node(.button, id: "finish", label: "Finish", frame: FakeUI.frame(16, 790, 370, 44), enabled: false),
+        ]
+        if saved { front.append(FakeUI.node(.text, id: "saved", label: "Saved", frame: FakeUI.frame(16, 500, 370, 22))) }
+        return FakeUI.tree([home, FakeUI.node(.group, id: "summary-page", frame: FakeUI.frame(0, 0, 402, 874), children: front)])
+    }
+
+    @Test("Text ticking on the screen beneath the page in front does not verify a tap on a disabled button; the same change on the page in front does")
+    func changesBeneathThePageDoNotVerify() async throws {
+        let ticking = FakeSimulator(trees: (0..<40).map { pushed(clock: "12:\($0)") })
+        var actions: [Verifier.Attempt] = []
+        var retries: [Int] = []
+        let outcome = try await run(ticking, styles: [nil], timeout: .seconds(1), actions: &actions, retries: &retries)
+        #expect(!outcome.verified)
+
+        let effect = FakeSimulator(trees: [pushed(clock: "12:01"), pushed(clock: "12:01"), pushed(clock: "12:02", saved: true)])
+        let verified = try await run(effect, styles: [nil], timeout: .seconds(1), actions: &actions, retries: &retries)
+        #expect(verified.verified)
+        #expect(verified.changes.allSatisfy { !$0.node.contains("clock") }, "\(verified.changes)")
+    }
+
+    @Test("A tap aimed at an element beneath a page, as --allow-covered can send, still counts its change there")
+    func aimedBeneathThePageCounts() async throws {
+        let fake = FakeSimulator(trees: [pushed(clock: "12:01"), pushed(clock: "12:01"), pushed(clock: "12:02")])
+        let clock = try #require(pushed(clock: "12:01").roots[0].flattened().first { $0.id == "clock" })
+        let outcome = try await Verifier.run(styles: [nil], timeout: .seconds(1), dependencies: fake.dependencies, target: clock, action: { _ in })
+        #expect(outcome.verified)
+    }
+
+    private func devMenuTree() -> UITree {
+        FakeUI.tree(["Reload", "Go home", "Toggle element inspector"].enumerated().map { index, label in
+            FakeUI.node(.button, label: label, frame: FakeUI.frame(16, 200 + Double(index) * 60, 370, 44))
+        })
+    }
+
+    @Test("The dev menu opening over the app fails the check with a note and no retry, unless the input aimed at it")
+    func devMenuOpeningDoesNotVerify() async throws {
+        let before = tree(count: "1")
+        var actions = 0
+        let surprised = FakeSimulator(trees: [before, before, devMenuTree()])
+        let outcome = try await Verifier.run(
+            styles: [.simulator, .physical], timeout: .seconds(1),
+            dependencies: surprised.dependencies,
+            expectsDevMenu: { _ in false },
+            action: { _ in actions += 1 }
+        )
+        #expect(!outcome.verified)
+        #expect(outcome.note == .devMenuOpened)
+        #expect(actions == 1)
+
+        let expecting = FakeSimulator(trees: [before, before, devMenuTree()])
+        let aimed = try await Verifier.run(
+            styles: [nil], timeout: .seconds(1),
+            dependencies: expecting.dependencies,
+            expectsDevMenu: { _ in true },
+            action: { _ in }
+        )
+        #expect(aimed.verified)
+    }
+
+    @Test("A failed read just before the input leaves the first read as the baseline: the check runs for its whole window and a real change verifies")
+    func failedSecondReadUsesFirst() async throws {
+        let fake = FakeSimulator(trees: [emptyTree, tree(count: "1"), tree(count: "2")])
+        let outcome = try await Verifier.run(styles: [.simulator, .physical], timeout: .seconds(1), dependencies: fake.dependencies, initialTree: tree(count: "1"), action: { _ in })
+        #expect(outcome.verified)
+        #expect(outcome.change == .accessibilityTree)
+    }
+
+    @Test("Without a change after a failed read, the input is watched its whole window before any retry, not sent again at once")
+    func failedSecondReadWatchesWindow() async throws {
+        let same = tree(count: "1")
+        let fake = FakeSimulator(trees: [emptyTree, same])
+        var sentAt: [TimeInterval] = []
+        let outcome = try await Verifier.run(
+            styles: [.simulator, .physical], timeout: .seconds(2), dependencies: fake.dependencies, initialTree: same,
+            action: { _ in sentAt.append(fake.clock) }
+        )
+        #expect(!outcome.verified)
+        try #require(sentAt.count == 2)
+        #expect(sentAt[1] - sentAt[0] >= 2, "\(sentAt)")
+    }
+
+    @Test("With no read and no screenshot to compare, a switch's tap is sent once, waits out its window and says nothing could be read")
+    func nothingReadableIsNotRetried() async throws {
+        let fake = FakeSimulator(trees: [emptyTree])
+        let toggle = FakeUI.node(.switch, id: "alerts", label: "Alerts", value: "0", frame: FakeUI.frame(300, 200, 60, 36))
+        var actions = 0
+        let outcome = try await Verifier.run(
+            styles: [.physical, .simulator], timeout: .seconds(2), dependencies: fake.dependencies, target: toggle,
+            action: { _ in actions += 1 }
+        )
+        #expect(!outcome.verified)
+        #expect(actions == 1)
+        #expect(outcome.note == .unreadable)
+        #expect(fake.clock >= 2)
+    }
+
+    @Test("--verify-ignore-text with a screen it cannot read does not retry on no evidence")
+    func ignoreTextUnreadable() async throws {
+        let fake = FakeSimulator(trees: [emptyTree])
+        var actions = 0
+        let outcome = try await Verifier.run(
+            styles: [.simulator, .physical], timeout: .seconds(1), dependencies: fake.dependencies, mode: .change(ignoringText: true),
+            action: { _ in actions += 1 }
+        )
+        #expect(actions == 1)
+        #expect(outcome.note == .unreadable)
+    }
+
     @Test("An unknown baseline goes straight to the screenshot check")
     func unknownBaselineUsesScreenshot() async throws {
         let fake = FakeSimulator(trees: [emptyTree], screens: [screen(shade: 10), screen(shade: 10), screen(shade: 200)])

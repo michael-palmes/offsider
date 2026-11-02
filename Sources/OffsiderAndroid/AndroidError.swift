@@ -533,6 +533,16 @@ public struct AndroidError: LocalizedError, CustomStringConvertible, Equatable, 
         )
     }
 
+    /// `app` is the one this command drives, when it names one; the dialog's words stay unread, so `permission show` names what is left to grant.
+    static func permissionDialogInFront(_ serial: String, app: String?) -> AndroidError {
+        let grant = "offsider permission grant <service> --app \(app ?? "<app>") --device \(serial)"
+        return AndroidError(
+            .otherAppInFront,
+            "A permission dialog is in front on \(serial), and Offsider never answers one on a physical phone, so it did nothing. Run `\(grant)` with the service the app asked for, such as notifications or camera, then open the app again.",
+            hint: app.map { "offsider permission show --app \($0) --device \(serial)" }
+        )
+    }
+
     /// The app a command names is outside this phone's allowance, whatever is in front.
     static func appNotPermitted(_ serial: String, package: String, byManagedPolicy: Bool, audience: ErrorAudience = .current) -> AndroidError {
         if byManagedPolicy {

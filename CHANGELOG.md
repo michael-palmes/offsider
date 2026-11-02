@@ -6,9 +6,62 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- `tap --dry-run` finds the target and judges what a touch there would reach, then stops: nothing is sent and no input session opens, so an irreversible button can be tested safely. It exits as the tap would and says nothing was sent, and `--json` carries `"dryRun":true`. It takes a selector, and a `batch` step refuses it.
+- `wait --wait-timeout` is the same as `wait --timeout`, the name `tap` and other selector commands use.
+- `screen_off` (exit 1): a phone refused because Android keeps system UI in front of a dark or locked screen says so first, with `offsider wake` as the fix.
+- `credential status --device` adds `signedInHereStale: true` on Android when the app was first installed after that sign-in.
+- `screenshot` warns when an iOS simulator's picture matches the last one although the elements on screen changed, as a swipe-up unlock can freeze its display, and `button lock` says to unlock with Home twice.
+- `rn devmenu --json` adds `closedBy: "fallback"` when the item left the menu open and Offsider closed it.
+- `record-video` and `stream-video` take `--wait-lock` for their one tree read.
+
 ### Changed
 
+- `record-video` with no `--duration` stops and saves at 10 minutes, with a note and `reachedLimit` in `--json`, so a lost background recording cannot block logins for ever. Pass `--duration`, up to 3600, for longer.
+- `session stop --device <id>` also stops and saves a recording on that device, and says so only once it has ended. `doctor --device` warns `device.recording` while one runs, and the refusal `login`, `wake --unlock` and `type --stdin` give names its pid, with `kill -INT <pid>` as the `hint`.
+- `app open` on an iPhone or iPad says `Sent the link to`, as iOS reports only that it delivered the link. `--json` adds `linkHandled`: `true` once Android or a simulator showed the app took the link, `null` on an iPhone or iPad.
+- `record-video` and `stream-video` end when a simulator or emulator gives no frame for 30 s (exit 1, `device_unresponsive`); a recording saves its frames first.
 - `test-runner.sh --unit-tests` runs in parallel. A test that fails there reruns alone and must pass, and is flagged when it does; a stall or an unclear result reruns everything serially. CI reuses the debug build's dependencies on pull requests.
+
+### Fixed
+
+- `tap` refuses a target under the 50 pt circle of Expo's floating dev menu button, though the tree gives only its 26 pt icon (`evidence` `devMenuTouchArea`, with the `drag` that moves it clear as the hint), and `--verify` no longer passes when the dev menu opens over the app (exit 5, `note` `devmenu_opened`).
+- `--verify` no longer passes on text ticking on a screen beneath the front page, so a tap on a disabled button stays unverified.
+- `tap --verify` runs the keyboard and cover checks again on its last read before it sends, so a target that has gone, or come under a cover, is refused with nothing sent instead of tapped where it was.
+- A `--verify` read that fails just before the input no longer sends a retry at once and can no longer flip a switch back: the read before it stands as the baseline, and with nothing to compare at all the input goes once and exits 5 with `note` `unreadable`.
+- A cover from the page just left no longer refuses a tap for about a second after it: within 2 s of an input a refused cover is read again for up to 1 s (`--no-settle` skips it).
+- `--fail-if-covered` no longer refuses a sheet's button because of a spinner on the screen beneath the sheet, when the hit-test finds the button.
+- `wait`, `assert`, `--verify-id` and `describe-ui --on-screen` agree with `tap` on an element past the edge of its scroll view, which is not on screen, and on a row beside a cover, whose visible part a tap reaches. They read a part only once the centre is covered, and stay within 24 hit-tests a read.
+- On Android, `assert`, `wait` and `tap` count a screen-sized group as covered by a dialog drawn beside it.
+- A tap moved beside a cover no longer presses another control inside a group target, and a wide switch's tap keeps its knob's x, or is refused when the knob is covered.
+- A selector tap reads a point again when the shared on-screen read caught an empty screen-sized answer mid-transition, and `tap --verify` picks among several matches as the first read did, so a tap on a screen that never moved no longer reports `unsettled`.
+- A batch tap on an iOS simulator hit-tests several matches, as a lone tap does, and taps the one a touch reaches instead of stopping as `selector_ambiguous`.
+- `wait --gone` and `assert --gone` say what hides an element they count as gone (`is not on screen: under button "Buy" ...`), and `login` waits for the submit button to stop moving after a dismiss tap, and no longer chooses a point on the keyboard's bar or skips rows for controls on a screen beneath a page.
+- Over Android's permission dialog, the refusal names `offsider permission grant`.
+- `rn open` finds a dev client's own scheme when it registers no `exp+` one, or lists them, instead of suggesting `exp+<slug>`.
+- `rn open` says when Metro answers only on `::1`, and its start command stays on 127.0.0.1.
+- `turnstile` reads `passed` over a checkbox left in the tree, across widgets and beside an app's wrapper.
+- `devices status --device <id> --json` prints one JSON document when the device is not allowed.
+- `devices add` lets a person choose a device already allowed to change it, with what it has now preselected, so `metro_port_not_allowed` and `app_not_allowed` no longer send them to a menu that offers nothing.
+- `record-video` and `stream-video` keep exit 8 for a busy device, say only to retry when waiting would not help, and never suggest `--unmasked` for it.
+- `rn open` no longer calls a crash to the home screen a system prompt, and names another app in front as another app.
+- `rn devmenu`'s overlay check follows the label the menu would match, so a custom item or a label the menu lacks asks nothing of a person.
+- `rn devmenu`'s agent line quotes custom labels, and `--json` and `rn logbox status --json` name app text in `untrusted`.
+- `doctor` names `caffeinate -d` for a sleeping display, not a missing desktop session.
+- `app_not_responding` names `offsider app launch --restart`, and the simulator empty-tree hint does too; on a phone not allowed for the app it asks the user.
+- `rn open --json` stays valid JSON with a newline in `--wait-id`.
+- The skill's lasting-state rule names `posture`.
+- The foldables guide says `screenshot --display` needs the display active.
+- `app stop` on an iPhone or iPad could end an app extension and report the app stopped, and `app launch` could misreport the start. Only the process directly in the bundle now counts as the app.
+- `app stop` on an iPhone or iPad reported "was not running" when `devicectl` named no bundle location; it now says it cannot tell and stops nothing, and `app launch` leaves `start` empty.
+- A `devicectl` failure holding the letters "locked", such as "blocked", no longer reads as `device_locked`, and a real lock keeps `devicectl`'s words.
+- `app open` on Android reported success when the link landed on the chooser or another app; that is now `link_not_handled`.
+- `app open --restart` on Android checks the link before it stops the app, and any refusal after a stop, there or on a simulator, says the app was stopped.
+- An `am start` exception reads as its cause, with the fix for a screen that is not exported, instead of "status unknown"; `Status: timeout` says the app may still be starting.
+- `notifications`: multi-line text no longer stops at a line ending in `)` and no longer takes in an app's own extras; a mistyped package is `app_not_installed`, not an empty list; on Android 8 to 10 a line at the margin ending in `:` in any app's text no longer drops later records, and the archive after the list stays off the cable; `--wait` runs its whole `--timeout` with a last read at the end, so `--new --timeout 1` can succeed.
+- A stuck capture or writer can no longer make a recording unstoppable: a stop or `--duration` during a hung capture saves the frames so far, and a stop that still cannot finish ends the process within seconds with the staging folder removed. A failed writer ends the recording instead of waiting for ever.
+- `stream-video`: a stop before the first frame ends it at once with exit 1 and nothing streamed, and a stalled reader can no longer hold up a stop.
 
 ## [0.15.0] - 2026-11-01
 

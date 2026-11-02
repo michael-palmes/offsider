@@ -45,6 +45,9 @@ extension AndroidBackend {
             return
         }
         if let scope { try requireDrivableTarget(of: scope, on: serial) }
+        if SystemAppDenyList.isPermissionDialog(package, platform: .android) {
+            throw AndroidError.permissionDialogInFront(serial, app: scope?.target ?? scope?.permitted.onlyElement)
+        }
         if let refusal = SystemAppDenyList.refusal(package, platform: .android) {
             throw AndroidError.otherAppRefused(serial, refusal: refusal)
         }
@@ -135,6 +138,10 @@ extension AndroidBackend: AppTargetSelecting {
     public func selectedApp(on id: DeviceID) -> String? {
         appScopes[id.rawValue]?.target
     }
+}
+
+private extension Set {
+    var onlyElement: Element? { count == 1 ? first : nil }
 }
 
 /// Set by an input session around its foreground check, so every input step on a phone reads the front app again.

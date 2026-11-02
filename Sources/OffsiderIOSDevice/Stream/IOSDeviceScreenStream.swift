@@ -210,11 +210,6 @@ public final class IOSDeviceScreenStream {
         return Displays(active: activeRead ? active : nil, online: onlineRead ? online : nil)
     }
 
-    /// A desktop session with a display awake, which the stream needs.
-    nonisolated static func hasDisplay() -> Bool {
-        displays() == .awake
-    }
-
     private static func openSocket(_ target: Target, feature: String) async throws -> CoreDeviceServiceSocket {
         do {
             return try await CoreDeviceServiceSocket.open(deviceIdentifier: target.deviceIdentifier, feature: feature, version: target.version)

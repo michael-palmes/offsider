@@ -43,4 +43,65 @@ struct RecordingMarkerTests {
         try Data("pid=1\n".utf8).write(to: URL(fileURLWithPath: path))
         #expect(!RecordingMarker.isLive(key, root: root))
     }
+
+    @Test("each live recording of a device is named, oldest first, and an ended marker names nobody")
+    func pidsOfRecordings() throws {
+        let root = try Self.root()
+        defer { try? FileManager.default.removeItem(atPath: root) }
+        let key = DeviceLockKey(platform: .ios, id: "SIM-3")
+        #expect(RecordingMarker.pids(key, root: root, isRecorder: { _, _ in true }).isEmpty)
+
+        let first = try RecordingMarker.create(key, root: root)
+        let second = try RecordingMarker.create(key, root: root)
+        #expect(RecordingMarker.pids(key, root: root, isRecorder: { _, _ in true }) == [getpid()])
+        first.remove()
+        second.remove()
+        #expect(RecordingMarker.pids(key, root: root, isRecorder: { _, _ in true }).isEmpty)
+    }
+
+    @Test("two recorders' lines both survive in the shared marker, and each is checked before it is named")
+    func sharedMarkerKeepsBoth() throws {
+        let root = try Self.root()
+        defer { try? FileManager.default.removeItem(atPath: root) }
+        let key = DeviceLockKey(platform: .android, id: "emulator-5554")
+        let marker = try RecordingMarker.create(key, root: root)
+        defer { marker.remove() }
+        let other = try #require(FileHandle(forWritingAtPath: marker.path))
+        try other.seekToEnd()
+        other.write(Data("pid=4242\nstarted=1793434196\npid=4243\nstarted=1793434197\n".utf8))
+        try other.close()
+
+        var asked: [(Int32, TimeInterval)] = []
+        let named = RecordingMarker.pids(key, root: root) { pid, started in
+            asked.append((pid, started.timeIntervalSince1970))
+            return pid != 4243
+        }
+        #expect(named == [getpid(), 4242])
+        #expect(asked.count == 3)
+        #expect(asked[1].0 == 4242 && asked[1].1 == 1_793_434_196)
+    }
+
+    @Test("anyLive sees a live recording on that platform only, so an AVD's name is resolved only when one could match")
+    func anyLiveByPlatform() throws {
+        let root = try Self.root()
+        defer { try? FileManager.default.removeItem(atPath: root) }
+        #expect(!RecordingMarker.anyLive(platform: .android, root: root))
+        let marker = try RecordingMarker.create(DeviceLockKey(platform: .android, id: "emulator-5554"), root: root)
+        #expect(RecordingMarker.anyLive(platform: .android, root: root))
+        #expect(!RecordingMarker.anyLive(platform: .ios, root: root))
+        marker.remove()
+        #expect(!RecordingMarker.anyLive(platform: .android, root: root))
+    }
+
+    @Test("a pid that is not an Offsider process, as a reused one, is never named")
+    func foreignPidIsNotNamed() throws {
+        let root = try Self.root()
+        defer { try? FileManager.default.removeItem(atPath: root) }
+        let key = DeviceLockKey(platform: .ios, id: "SIM-4")
+        let marker = try RecordingMarker.create(key, root: root)
+        defer { marker.remove() }
+        #expect(RecordingMarker.isLive(key, root: root))
+        #expect(RecordingMarker.pids(key, root: root).isEmpty)
+        #expect(!RecordingMarker.isOffsider(1, started: Date()))
+    }
 }

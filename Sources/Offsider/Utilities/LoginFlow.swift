@@ -380,12 +380,25 @@ enum LoginFlow {
             try await services.tap(point, current)
             tried.append(point)
             current = try await readUntil(clear, services: services)
-            if clear(current) { return current }
+            if clear(current) { return try await readUntilStill(submit, from: current, services: services) }
         }
         try await services.hideKeyboard()
         current = try await readUntil(clear, services: services)
         if !clear(current) { throw keyboardError() }
-        return current
+        return try await readUntilStill(submit, from: current, services: services)
+    }
+
+    /// A layout still shifting after the keys go can lose the tap, so submit's frame must agree across two reads, for at most `keyboardSettle`.
+    private static func readUntilStill(_ submit: UINode, from tree: UITree, services: Services) async throws -> UITree {
+        let deadline = services.clock.now() + keyboardSettle
+        var current = tree
+        while true {
+            try await services.clock.sleep(.milliseconds(100))
+            let next = try await services.readTree()
+            guard let before = LoginForm.match(submit, in: current)?.frame, let after = LoginForm.match(submit, in: next)?.frame,
+                  !before.isWithinTolerance(of: after), services.clock.now() < deadline else { return next }
+            current = next
+        }
     }
 
     private static func keyboardOnScreen(_ keyboards: [UINode], in tree: UITree) -> Bool {

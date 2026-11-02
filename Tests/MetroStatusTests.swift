@@ -14,6 +14,27 @@ struct MetroStatusTests {
         #expect(await refused.problem(port: 8743) == "nothing answered within 2 s")
     }
 
+    @Test("Metro answering only on ::1 is named as such, and every start command stays on 127.0.0.1")
+    func onlyOnIPv6() async throws {
+        let running = Data("packager-status:running".utf8)
+        let v6 = MetroStatus(fetch: { url, _ in
+            guard url.host == "::1" || url.host == "[::1]" else { throw URLError(.cannotConnectToHost) }
+            return (200, running)
+        })
+        let named = try #require(await v6.unreachable(port: 8742))
+        #expect(named.reason == .metroNotRunning)
+        #expect(named.userFacingDescription.hasPrefix("Metro answers on [::1]:8742 but not on 127.0.0.1:8742"))
+        #expect(named.hint == "NODE_OPTIONS=--dns-result-order=ipv4first npx expo start --dev-client --localhost --port 8742")
+
+        let down = try #require(await MetroStatus(fetch: { _, _ in throw URLError(.cannotConnectToHost) }).unreachable(port: 8742))
+        #expect(down.userFacingDescription.hasPrefix("Metro is not running on 127.0.0.1:8742 (nothing answered within 2 s)."))
+        #expect(down.hint == named.hint)
+
+        let other = try #require(await MetroStatus(fetch: { url, _ in (200, Data((url.host == "127.0.0.1" ? "<html>" : "packager-status:running").utf8)) }).unreachable(port: 8742))
+        #expect(other.userFacingDescription.contains("something else answered"))
+        #expect(await MetroStatus(fetch: { _, _ in (200, running) }).unreachable(port: 8742) == nil)
+    }
+
     @Test("the request always goes to loopback, with a 2 s timeout")
     func loopbackOnly() async {
         let seen = Recorder()

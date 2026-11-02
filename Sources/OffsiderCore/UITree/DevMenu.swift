@@ -242,24 +242,36 @@ public enum DevMenu {
     }
 
     public static func jsonLine(_ state: State) -> String {
-        OrderedJSON.object([
+        UntrustedPaths.marked(.object([
             ("version", .integer(1)),
             ("menu", .string(state.menu)),
             ("items", .array(state.items.map { entry in
                 .object([("label", .string(entry.label)), ("role", .string(entry.role.rawValue))] + (entry.custom ? [("custom", .bool(true))] : []))
             })),
-        ]).rendered(compact: true)
+        ]), ["items[].label"]).rendered(compact: true)
     }
 
-    /// `rn devmenu <item> --json`: the menu that was open, the item asked for (null for `--label`) and the label tapped.
-    public static func choiceJSONLine(menu: String, item: Item?, label: String) -> String {
-        OrderedJSON.object([
+    /// `rn devmenu <item> --json`: the menu that was open, the item asked for (null for `--label`) and the label tapped; `closedBy` only when Offsider closed the menu, not the item.
+    public static func choiceJSONLine(menu: String, item: Item?, label: String, closedByFallback: Bool = false) -> String {
+        UntrustedPaths.marked(.object([
             ("version", .integer(1)),
             ("menu", .string(menu)),
             ("item", item.map { .string($0.rawValue) } ?? .null),
             ("label", .string(label)),
             ("closed", .bool(true)),
-        ]).rendered(compact: true)
+        ] + (closedByFallback ? [("closedBy", .string("fallback"))] : [])), ["label"]).rendered(compact: true)
+    }
+
+    /// True for a label of the built-in performance monitor, whole or at the end of an Android button's "<icon> <label>", by `matchedLabel`'s case rule.
+    public static func namesPerfMonitor(_ label: String) -> Bool {
+        let text = label.trimmingCharacters(in: .whitespacesAndNewlines)
+        return Item.perfMonitor.labels.contains { text == $0 || text.hasSuffix(" " + $0) }
+    }
+
+    /// Whether a choice from the open menu in `tree` would tap the built-in performance monitor; an item the app registered never counts.
+    public static func picksPerfMonitor(item: Item?, label: String?, in tree: UITree) -> Bool {
+        guard let (node, matched) = match(for: item, label: label, in: tree), namesPerfMonitor(matched) else { return false }
+        return !customItems(in: tree).contains { $0.node.isSameElement(as: node) }
     }
 
     public static func toolsJSONLine(inspector: String, perfMonitor: String) -> String {
