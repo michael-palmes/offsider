@@ -77,8 +77,13 @@ struct SignInTracker {
 
     /// The raw key last signed in on the device; reads no boot marker.
     func signedInHere(app: String, deviceID: String) -> String? {
+        recordHere(app: app, deviceID: deviceID)?.key
+    }
+
+    /// The record behind `signedInHere`, to check against the app's install time.
+    func recordHere(app: String, deviceID: String) -> SignInRecord? {
         guard let device = key(of: deviceID) else { return nil }
-        return ledger.record(platform: device.platform, device: device.key, app: app)?.key
+        return ledger.record(platform: device.platform, device: device.key, app: app)
     }
 
     /// Clears the device's record for the app; a device with no stable key is named by its id, and had nothing recorded.

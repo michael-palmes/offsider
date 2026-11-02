@@ -313,7 +313,7 @@ struct Gesture: AsyncParsableCommand {
         }
         let (start, end) = preset.endpoints(in: screen)
         let gestureDuration = duration ?? preset.defaultDuration
-        let gestureDelta = delta ?? preset.defaultDelta
+        let gestureDelta = delta ?? PixelMath.swipeDelta(distance: hypot(end.x - start.x, end.y - start.y), duration: gestureDuration, ceiling: preset.defaultDelta)
 
         logger.info().log("Screen size: \(screen.width)x\(screen.height)")
         logger.info().log("Coordinates: (\(start.x), \(start.y)) to (\(end.x), \(end.y))")

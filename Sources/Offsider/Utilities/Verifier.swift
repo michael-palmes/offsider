@@ -18,7 +18,7 @@ struct Verifier {
         /// Wall time, to date the first read against the cached tree.
         var date: @MainActor () -> Date = { Date() }
         /// What hides values in the change list, as `describe-ui` hides them, and in the cached tree.
-        var valueMask: @MainActor () async -> TreeValueMask = { .none }
+        var valueMask: @MainActor () async throws -> TreeValueMask = { .none }
         /// The tree with the shared on-screen judgement read for the `--verify-id` element, so one beneath a page or covered is not in front.
         var judge: @MainActor (UITree, String) async -> UITree = { tree, _ in tree }
     }
@@ -74,7 +74,8 @@ struct Verifier {
         let snapshot: AccessibilitySnapshot
         let toasts: [LogBoxToast]
 
-        init(_ tree: UITree?) {
+        /// `keepingBeneath` keeps a screen beneath a page in the comparison, for an input aimed at it.
+        init(_ tree: UITree?, keepingBeneath: Bool = false) {
             self.tree = tree
             guard let tree else {
                 compared = nil
@@ -83,8 +84,8 @@ struct Verifier {
                 return
             }
             let stripped = LiveText.withoutLogBoxToasts(tree)
-            compared = stripped.tree
-            snapshot = AccessibilitySnapshot(tree: stripped.tree)
+            compared = keepingBeneath ? stripped.tree : LiveText.withoutBeneath(stripped.tree)
+            snapshot = AccessibilitySnapshot(tree: compared ?? stripped.tree)
             toasts = stripped.toasts.isEmpty ? [] : KnownOverlays.logBoxToasts(in: tree.roots, viewport: tree.viewport)
         }
     }
@@ -109,6 +110,7 @@ struct Verifier {
     }
 
     /// `initialTree`, the tree the selector was resolved on, stands in for the first read; `beforeAction` sees the second; a retry is held for one more window after a change that did not last, a failed read or `targetStays` false.
+    /// `expectsDevMenu` says from the read before the input whether the input aims at the dev menu; nil when it opening says nothing.
     static func run(
         styles: [TapDeliveryStyle?],
         timeout: Duration,
@@ -118,6 +120,7 @@ struct Verifier {
         initialTree: UITree? = nil,
         target: UINode? = nil,
         targetStays: ((UITree) async -> Bool)? = nil,
+        expectsDevMenu: ((UITree) -> Bool)? = nil,
         beforeAction: (UITree) async throws -> Void = { _ in },
         onRetry: (Attempt, Attempt) -> Void = { _, _ in },
         onHold: (Attempt) -> Void = { _ in },
@@ -139,12 +142,15 @@ struct Verifier {
         let start = dependencies.now()
         var phases = VerifyPhases()
 
-        let firstRead: Read
+        let firstTree: UITree?
         if let initialTree {
-            firstRead = Read(initialTree)
+            firstTree = initialTree
         } else {
-            firstRead = Read(try? await dependencies.tree())
+            firstTree = try? await dependencies.tree()
         }
+        let keepsBeneath = target.flatMap { node in firstTree.map { ScreenStack.build(roots: $0.roots, viewport: $0.viewport).isBeneath(node, in: $0.roots) } } ?? false
+        func read(_ tree: UITree?) -> Read { Read(tree, keepingBeneath: keepsBeneath) }
+        let firstRead = read(firstTree)
         let first = firstRead.snapshot
         let firstReadAt = dependencies.date()
         let capturesBaseline = !ignoringText && !(target.map { stateRoles.contains($0.role) } ?? false)
@@ -156,7 +162,7 @@ struct Verifier {
         // Without a tree to catch the change, a second before-shot lets motion the input starts count.
         let firstShot = capturesBaseline && !first.isKnown ? try? await dependencies.screenshot() : nil
         let firstShotTime = dependencies.now()
-        let valueMask = await dependencies.valueMask()
+        let valueMask = try await dependencies.valueMask()
         var live: Set<String> = []
         if !ignoringText, let tree = firstRead.tree {
             // The cached tree's masked values are compared with this read masked alike, so they never count as live text.
@@ -164,7 +170,9 @@ struct Verifier {
             live = LiveText.learn(cached: await dependencies.cachedRecord(), first: masked, readAt: firstReadAt, detector: detector)
         }
         try await dependencies.sleep(pollInterval)
-        var baselineRead = Read(try? await dependencies.tree())
+        let secondRead = read(try? await dependencies.tree())
+        // A failed read says nothing, so the first stands as the baseline, and the input is still watched for its whole window.
+        var baselineRead = secondRead.snapshot.isKnown || !first.isKnown ? secondRead : firstRead
         var baseline = baselineRead.snapshot
         let volatile = detector.volatileKeys(first, baseline)
         let volatileIdentities = Self.volatileIdentities(firstRead.compared, baselineRead.compared)
@@ -172,7 +180,7 @@ struct Verifier {
         let targetIsToast = target.map { node in
             (baselineRead.tree ?? firstRead.tree)?.viewport.map { KnownOverlays.logBoxToast(node, viewport: $0) != nil } ?? false
         } ?? false
-        if let tree = baselineRead.tree {
+        if secondRead.snapshot.isKnown, let tree = secondRead.tree {
             try await beforeAction(tree)
         }
         let bands = await dependencies.bands()
@@ -216,16 +224,29 @@ struct Verifier {
             }
         }
 
-        func verified(_ summary: String, read current: Read, attempt: Attempt, attemptStart: TimeInterval) -> Outcome {
-            finish(
-                Outcome(verified: true, attempts: attempt.number, change: .accessibilityTree, style: attempt.style, summary: summary)
-                    .listing(
-                        from: baselineRead.compared.map { detector.maskingLive($0, live: live).redacted(valueMask) },
-                        to: current.compared.map { detector.maskingLive($0, live: live).redacted(valueMask) },
-                        skipping: volatileIdentities
-                    ),
+        func verified(read current: Read, attempt: Attempt, attemptStart: TimeInterval) -> Outcome {
+            let before = baselineRead.compared.map { detector.maskingLive($0, live: live).redacted(valueMask) }
+            let after = current.compared.map { detector.maskingLive($0, live: live).redacted(valueMask) }
+            return finish(
+                Outcome(verified: true, attempts: attempt.number, change: .accessibilityTree, style: attempt.style, summary: shownSummary(from: before, to: after))
+                    .listing(from: before, to: after, skipping: volatileIdentities),
                 attemptStart: attemptStart
             )
+        }
+
+        /// What the read shows opened over the app that is no effect of this input.
+        func surprise(_ current: Read) -> VerifyNote? {
+            guard let before = baselineRead.tree, let after = current.tree else { return nil }
+            if !targetIsToast, LiveText.logBoxOpened(before: before, after: after) { return .logBoxOpened }
+            if let expectsDevMenu, !expectsDevMenu(before), DevMenu.read(before) == nil, DevMenu.read(after) != nil { return .devMenuOpened }
+            return nil
+        }
+
+        /// What changed, told from the trees as output shows them, so it never quotes what they hide; nil when they read alike.
+        func shownSummary(from before: UITree?, to after: UITree?) -> String? {
+            guard let before, let after,
+                  case .changed(let summary) = detector.compare(AccessibilitySnapshot(tree: before), AccessibilitySnapshot(tree: after), ignoring: volatile, live: live) else { return nil }
+            return summary
         }
 
         func unverified(_ attempt: Attempt, note: VerifyNote? = nil) -> Outcome {
@@ -251,11 +272,11 @@ struct Verifier {
                         } else {
                             try await dependencies.sleep(pollInterval)
                         }
-                        let currentRead = Read(try? await dependencies.tree())
+                        let currentRead = read(try? await dependencies.tree())
                         let current = currentRead.snapshot
-                        if !targetIsToast, let before = baselineRead.tree, let after = currentRead.tree, LiveText.logBoxOpened(before: before, after: after) {
+                        if let surprise = surprise(currentRead) {
                             return finish(
-                                Outcome(verified: false, attempts: attempt.number, change: .none, style: style, summary: nil, note: .logBoxOpened),
+                                Outcome(verified: false, attempts: attempt.number, change: .none, style: style, summary: nil, note: surprise),
                                 attemptStart: attemptStart
                             )
                         }
@@ -267,11 +288,11 @@ struct Verifier {
                             pending = nil
                             lastUnchanged = currentRead
                             lastRead = currentRead
-                        case .changed(let summary):
+                        case .changed:
                             seenChange = true
                             lastRead = currentRead
                             if let pending, detector.compare(pending, current, ignoring: volatile, live: live) == .unchanged {
-                                return verified(summary, read: currentRead, attempt: attempt, attemptStart: attemptStart)
+                                return verified(read: currentRead, attempt: attempt, attemptStart: attemptStart)
                             }
                             pending = current
                         }
@@ -281,8 +302,8 @@ struct Verifier {
                 if let polled { return (polled, false, nil, nil) }
             }
             // A change that never settled counts only while the latest read still shows it.
-            if seenChange, let lastRead, case .changed(let summary) = detector.compare(baseline, lastRead.snapshot, ignoring: volatile, live: live) {
-                return (verified(summary, read: lastRead, attempt: attempt, attemptStart: attemptStart), false, nil, nil)
+            if seenChange, let lastRead, case .changed = detector.compare(baseline, lastRead.snapshot, ignoring: volatile, live: live) {
+                return (verified(read: lastRead, attempt: attempt, attemptStart: attemptStart), false, nil, nil)
             }
 
             if !ignoringText, let shot = baselineShots.last {
@@ -322,10 +343,13 @@ struct Verifier {
 
             // A slow push may land after the poll: one more read before any retry, so it verifies on this attempt.
             guard baseline.isKnown else { return (nil, false, nil, lastUnchanged) }
-            let lateRead = Read(try? await dependencies.tree())
+            let lateRead = read(try? await dependencies.tree())
+            if let surprise = surprise(lateRead) {
+                return (finish(Outcome(verified: false, attempts: attempt.number, change: .none, style: style, summary: nil, note: surprise), attemptStart: attemptStart), false, nil, nil)
+            }
             noteIgnored(lateRead)
-            if case .changed(let summary) = detector.compare(baseline, lateRead.snapshot, ignoring: volatile, live: live) {
-                return (verified(summary, read: lateRead, attempt: attempt, attemptStart: attemptStart), false, nil, nil)
+            if case .changed = detector.compare(baseline, lateRead.snapshot, ignoring: volatile, live: live) {
+                return (verified(read: lateRead, attempt: attempt, attemptStart: attemptStart), false, nil, nil)
             }
             if lateRead.snapshot.isKnown {
                 lastUnchanged = lateRead
@@ -339,6 +363,12 @@ struct Verifier {
             try await Timings.measure("dispatch") { try await action(attempt) }
             phases.dispatch += dependencies.now() - dispatchStart
             let attemptStart = dependencies.now()
+            // Nothing to compare with: a second input would go out blind, and could flip back a switch the first one set.
+            if !baseline.isKnown, baselineShots.isEmpty {
+                try await dependencies.sleep(timeout)
+                phases.verify += dependencies.now() - attemptStart
+                return unverified(attempt, note: .unreadable)
+            }
             let checked = try await check(attempt, from: attemptStart)
             if let outcome = checked.outcome { return outcome }
 
@@ -538,7 +568,7 @@ extension Verifier.Dependencies {
             now: { ProcessInfo.processInfo.systemUptime },
             bands: { await backend.volatileScreenBands(for: device) },
             cachedRecord: { await TreeCache.load(for: device, backend: backend) },
-            valueMask: { (try? AmbientMasks.treeMask(revealed: await TreeCache.revealedSecrets(for: device, backend: backend))) ?? .none },
+            valueMask: { try AmbientMasks.treeMask(revealed: await TreeCache.revealedSecrets(for: device, backend: backend)) },
             judge: { tree, id in await Verifier.judged(tree, id: id, backend: backend, device: device) }
         )
         if let waiting = backend as? any AccessibilityChangeWaiting {

@@ -137,7 +137,7 @@ struct TapCommandTests {
         }
 
         let label = AccessibilityTargetResolverTests.bannerLabel
-        #expect(error?.userFacingDescription == "--id 'tab-search' at (201, 814.5) may be covered by other \"\(label)\" (0, 767) 402x107; the tap may land on it.")
+        #expect(error?.userFacingDescription == "--id 'tab-search' at (201, 814.5) may be covered by other \"\(label)\" (0, 767) 402x107; the tap may land on it. Nothing was sent.")
         #expect(error?.coveredBy?.evidence == .treeOrder)
         #expect(backend.openedSessions.isEmpty)
         #expect(backend.session.calls.isEmpty)

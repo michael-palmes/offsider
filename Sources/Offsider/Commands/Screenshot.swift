@@ -219,7 +219,9 @@ struct Screenshot: AsyncParsableCommand {
     @MainActor
     func take(_ request: ScreenshotRequest, on route: DeviceRouter.Route, masks: MaskPlan, plain: Bool = false) async throws -> ScreenshotReport {
         var report = try await take(request, on: route, masks: masks, plain: plain) {
-            guard let reader = route.backend as? any MaskTreeReading else { return try await route.backend.accessibilityTree(for: route.device) }
+            guard let reader = route.backend as? any MaskTreeReading else {
+                return try await route.backend.readingWithGaps(on: route.device) { try await route.backend.accessibilityTree(for: route.device) }
+            }
             return try await reader.maskTree(for: route.device)
         }
         report.captureSource = (route.backend as? any CaptureSourceReporting)?.captureSource(for: route.device)
@@ -305,6 +307,7 @@ struct Screenshot: AsyncParsableCommand {
             capture = try await ScreenCapture.capture(backend, device: booted.id)
         }
         let captureMs = Self.milliseconds(since: captureStarted)
+        if let tree, selected == nil { FrozenDisplay.check(capture, tree: tree, device: booted.id) }
         let systemWindow = shownWidget == nil ? Self.namedSystemWindow(on: backend, device: booted.id) : nil
         var masked: ScreenCapture.MaskResult?
         if !masks.isEmpty {
@@ -317,11 +320,8 @@ struct Screenshot: AsyncParsableCommand {
             capture = result.capture
             masked = result
             let console = Console.current
-            if result.unproven != nil {
-                console.notice(.warning(
-                    "Masks can't see behind this modal; check the image",
-                    agent: "a modal window covers the app and Android leaves what is behind it out of the tree, so masks may miss text drawn there; check the image or add --mask-region (maskUnproven)."
-                ))
+            if let unproven = result.unproven {
+                console.notice(ScreenCapture.unprovenNotice(unproven, subject: "the image"))
             }
             if !result.unmatched.isEmpty {
                 let names = result.unmatched.joined(separator: ", ")

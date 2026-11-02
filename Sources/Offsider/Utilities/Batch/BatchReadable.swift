@@ -30,12 +30,15 @@ struct BatchReadResult {
 
     /// The outcome as `Wait.report` shows it: screen text redacted, with the note when the check matched on hidden text.
     @MainActor
-    static func redacted(_ outcome: WaitOutcome, success: String, failure: String, checked: ElementSelectorOptions?) -> BatchReadResult {
-        let mask = (try? AmbientMasks.treeMask()) ?? .none
+    static func redacted(
+        _ outcome: WaitOutcome, on route: DeviceRouter.Route, success: String, failure: (WaitOutcome) -> String, checked: ElementSelectorOptions?
+    ) async throws -> BatchReadResult {
+        let mask = try await AmbientMasks.shownMask(on: route)
+        let shown = Wait.shown(outcome, mask: mask)
         return BatchReadResult(
-            Wait.shown(outcome, mask: mask),
+            shown,
             success: success + Wait.redactionNote(outcome, checked: checked, mask: mask),
-            failure: LogRedactor.redactValue(failure).text
+            failure: mask.redactedText(failure(shown))
         )
     }
 }
@@ -71,7 +74,7 @@ extension Wait: BatchReadable {
             // Time passed without a tree read, so the cached tree may be stale.
             context.invalidateTree()
         }
-        return .redacted(outcome, success: successLine(outcome), failure: failureLine(outcome), checked: selector.query == nil ? nil : selector)
+        return try await .redacted(outcome, on: context.route, success: successLine(outcome), failure: failureLine, checked: selector.query == nil ? nil : selector)
     }
 }
 
@@ -80,7 +83,7 @@ extension Assert: BatchReadable {
         let outcome = try await context.watchdog.guarding(bound: 0, device: context.device.rawValue) {
             try await evaluate(on: context.route, logger: logger, tree: context.pollingTreeSource())
         }
-        return .redacted(outcome, success: successLine(outcome), failure: failureLine(outcome), checked: selector)
+        return try await .redacted(outcome, on: context.route, success: successLine(outcome), failure: failureLine, checked: selector)
     }
 }
 
@@ -99,7 +102,7 @@ extension DescribeUI: BatchReadable {
         if let point = try parsedPoint() {
             tree = try await context.backend.accessibilityTree(for: context.device, point: point)
         } else {
-            tree = try await context.accessibilityTree()
+            tree = await context.backend.withGapsFilled(try await context.accessibilityTree(), on: context.device)
             tree.systemPrompt = await SystemPromptProbe.find(in: tree, backend: context.backend, device: context.device)
         }
         let options = try output.renderOptions()
@@ -117,7 +120,9 @@ extension Screenshot: BatchReadable {
         let masks = masksWithRunDefaults(try maskPlan(batchDefault: context.maskSecure))
         let report = try await PhoneRead.$overSystemWindow.withValue(true) {
             try await take(try request(), on: context.route, masks: masks) {
-                guard let reader = context.backend as? any MaskTreeReading else { return try await context.accessibilityTree() }
+                guard let reader = context.backend as? any MaskTreeReading else {
+                    return try await context.backend.readingWithGaps(on: context.device) { try await context.accessibilityTree() }
+                }
                 return try await reader.maskTree(for: context.device)
             }
         }

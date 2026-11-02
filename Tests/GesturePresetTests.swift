@@ -217,6 +217,17 @@ struct GestureRotatedInputTests {
         #expect(event == .swipe(301, yStart: 437, xEnd: 101, yEnd: 437, delta: 25, duration: 0.5))
     }
 
+    @Test("a slow preset moves closer together, so the finger never rests long enough to read as a long press")
+    func slowPresetKeepsMoving() async throws {
+        let event = try await gestureEvent(["swipe-from-left-edge", "--duration", "5"], applicationFrame: landscapeAppFrame)
+        guard case let .swipe(xStart, yStart, xEnd, yEnd, delta, duration) = event else {
+            Issue.record("expected one swipe, got \(event)")
+            return
+        }
+        let steps = PixelMath.swipeSteps(hypot(xEnd - xStart, yEnd - yStart) / delta)
+        #expect(duration / Double(steps) <= PixelMath.longestSwipeRest * 1.01)
+    }
+
     @Test("a --screen-width override replaces the app frame width and is still rotated")
     func screenWidthOverrideIsRotated() async throws {
         let event = try await gestureEvent(["swipe-from-left-edge", "--screen-width", "800"], applicationFrame: landscapeAppFrame)

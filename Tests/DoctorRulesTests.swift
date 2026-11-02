@@ -236,7 +236,7 @@ struct DoctorRulesTests {
         let verdict = DoctorRules.accessibility(.emptyWithApp(SimLaunchctl.App(bundleID: "com.example.app", pid: 4242)), udid: "SIM-UDID")
         #expect(verdict.status == .fail)
         #expect(verdict.detail == "com.example.app is running (pid 4242) but its accessibility tree is empty")
-        #expect(verdict.hint == "Relaunch the app: xcrun simctl terminate SIM-UDID com.example.app && xcrun simctl launch SIM-UDID com.example.app. If the tree stays empty, reboot the simulator: xcrun simctl shutdown SIM-UDID && xcrun simctl boot SIM-UDID.")
+        #expect(verdict.hint == "Relaunch the app: offsider app launch --restart --app com.example.app --device SIM-UDID. If the tree stays empty, reboot the simulator: xcrun simctl shutdown SIM-UDID && xcrun simctl boot SIM-UDID.")
         #expect(DoctorRules.bootedSimulators(count: 0).status == .warn)
         #expect(DoctorRules.bootedSimulators(count: 2).status == .pass)
     }

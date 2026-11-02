@@ -57,7 +57,8 @@ extension UITreeContext {
         }
         self.init(
             window: window, keyboard: object["keyboard"] as? Bool ?? false, logBox: logBox, presented: presented, staleFrame: staleFrame,
-            hidden: (object["hidden"] as? NSNumber)?.intValue, hiddenBranches: hiddenBranches
+            hidden: (object["hidden"] as? NSNumber)?.intValue, hiddenBranches: hiddenBranches,
+            filled: (object["filled"] as? NSNumber)?.intValue
         )
     }
 }

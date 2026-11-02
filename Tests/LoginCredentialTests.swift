@@ -581,6 +581,25 @@ struct LoginCredentialTests {
         #expect(!paused)
     }
 
+    @Test("status marks signedInHere stale only when the app was first installed after that sign-in")
+    func staleSignedInHere() throws {
+        var fixture = try SignInTrackerFixture(now: Self.stamp)
+        defer { fixture.remove() }
+        let store = try savedPair()
+        fixture.tracker.record(app: "com.example.app", foreground: "com.example.app", key: "qa-admin", deviceID: "emulator-5554")
+        let tracker = fixture.tracker
+        func status(installed: Date?, json: Bool = true) throws -> String {
+            try CredentialCommand.perform(.status, app: "com.example.app", key: nil, json: json, store: store, tracker: tracker, deviceID: "emulator-5554", firstInstalled: installed) {
+                try #require(LoginCredential(username: "x", password: "x"))
+            }
+        }
+
+        #expect(try status(installed: Self.stamp + 60).contains(#""signedInHere":"qa-admin","signedInHereStale":true,"#))
+        #expect(try status(installed: Self.stamp + 60, json: false).contains("Signed in here: qa-admin (stale: the app was installed again since)"))
+        #expect(!(try status(installed: Self.stamp - 60)).contains("signedInHereStale"))
+        #expect(!(try status(installed: nil)).contains("signedInHereStale"))
+    }
+
     @Test("status shows where each login was last signed in, and who is signed in on the device in hand")
     func statusShowsSignIns() throws {
         var fixture = try SignInTrackerFixture(now: Self.stamp)

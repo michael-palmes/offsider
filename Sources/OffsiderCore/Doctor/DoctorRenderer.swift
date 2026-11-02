@@ -162,7 +162,7 @@ extension DoctorRenderer {
     /// This Mac, Android and the device, each keeping the report's order.
     private static func sections(_ report: DoctorReport) -> [Section] {
         func isDevice(_ id: DoctorCheckID) -> Bool {
-            id.isPerSimulator || id.isPerAndroidDevice || id.isPerIOSDevice || id == .deviceLease || id == .devicePolicy
+            id.isPerSimulator || id.isPerAndroidDevice || id.isPerIOSDevice || id == .deviceLease || id == .deviceRecording || id == .devicePolicy
         }
         let device = report.device.map { TerminalText.field(DeviceName.display($0.id, label: $0.name), profile: .person) } ?? "Device"
         return [

@@ -39,6 +39,8 @@ public struct IOSDeviceError: LocalizedError, CustomStringConvertible, Equatable
         case appNotAllowed
         /// `app_not_allowed` only because of what is in front now; it clears when the app under test comes back.
         case otherAppInFront
+        /// A system alert or sheet is over the app.
+        case systemPromptInFront
         /// A physical iPhone or iPad needs a pinned app and none was named.
         case appRequired
         /// The device's allowance lapsed while a session broker ran (expired, removed or its seal broken).
@@ -160,12 +162,21 @@ extension IOSDeviceError {
     public static func runner(_ error: UsbmuxError, udid: String) -> IOSDeviceError {
         switch error {
         case .timedOut:
-            return IOSDeviceError(.runnerUnavailable, "The runner on \(udid) did not answer in time, so no input was sent. Retry; if it persists, run `offsider doctor --device \(udid)`.")
+            let answer = ErrorAudience.current == .person ? "answer it on the device" : "ask the user to answer it on the device"
+            return IOSDeviceError(.runnerUnavailable, "The runner on \(udid) did not answer in time, so no input was sent. If the device shows a system prompt, \(answer). Otherwise retry; if it persists, run `offsider doctor --device \(udid)`.")
         case .socketUnavailable, .notOnUSB, .notAttached, .result:
             return usbmux(error, udid: udid)
         case .closed, .malformed:
             return IOSDeviceError(.runnerUnavailable, "The runner on \(udid) closed the connection or sent a reply Offsider could not read, so no input was sent. Retry; if it persists, run `offsider doctor --device \(udid)`.")
         }
+    }
+
+    /// A system alert or sheet the app may be waiting on, which stalls every read of it. `title` comes from the device, so it is cleaned and capped.
+    static func systemPromptInFront(_ title: String, udid: String) -> IOSDeviceError {
+        let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        let prompt = trimmed.isEmpty ? "A system prompt" : "The system prompt \(TerminalText.quoted(SelectorText.truncated(trimmed, limit: 120)))"
+        let answer = ErrorAudience.current == .person ? "Answer it on the device" : "Ask the user to answer it on the device"
+        return IOSDeviceError(.systemPromptInFront, "\(prompt) is in front on \(udid), so Offsider did not read or touch the app. \(answer), then retry.")
     }
 
     static func runnerNotListening(_ udid: String) -> IOSDeviceError {
@@ -175,7 +186,7 @@ extension IOSDeviceError {
 
 /// Another app in front clears when the app under test comes back, so a wait counts it as not yet met.
 extension IOSDeviceError: OtherAppFailure {
-    public var isOtherAppInFront: Bool { kind == .otherAppInFront }
+    public var isOtherAppInFront: Bool { kind == .otherAppInFront || kind == .systemPromptInFront }
 }
 
 extension IOSDeviceError: OffsiderFailure {
@@ -196,6 +207,7 @@ extension IOSDeviceError: OffsiderFailure {
         case .locked: return .deviceLocked
         case .stateNotReached: return .stateNotReached
         case .uiAutomationOff: return .uiAutomationOff
+        case .systemPromptInFront: return .systemPromptInFront
         case .certificateNotTrusted: return .certificateNotTrusted
         case .xcodeTooOld: return .xcodeTooOld
         case .notSupported: return .notSupported

@@ -26,6 +26,7 @@ public enum FailureReason: String, CaseIterable, Sendable {
     case baselineMismatch = "baseline_mismatch"
     case displayUnreadable = "display_unreadable"
     case displayOff = "display_off"
+    case screenOff = "screen_off"
     case notSupported = "not_supported"
     case postureFailed = "posture_failed"
     case stateNotReached = "state_not_reached"
@@ -99,6 +100,7 @@ public enum FailureReason: String, CaseIterable, Sendable {
     case developerModeOff = "developer_mode_off"
     case devicePreparing = "device_preparing"
     case uiAutomationOff = "ui_automation_off"
+    case systemPromptInFront = "system_prompt_in_front"
     case certificateNotTrusted = "certificate_not_trusted"
     case deviceNotAllowed = "device_not_allowed"
 
@@ -137,7 +139,7 @@ public enum FailureReason: String, CaseIterable, Sendable {
         case .selectorAmbiguous, .selectorAmbiguousSwitch, .userAmbiguous:
             return .ambiguousSelector
         case .deviceNotFound, .deviceNotBooted, .deviceNotReady, .deviceUnauthorised, .deviceLocked, .deviceAmbiguous, .avdNotFound,
-             .deviceNotWired, .deviceUntrusted, .developerModeOff, .devicePreparing, .uiAutomationOff, .certificateNotTrusted, .deviceNotAllowed, .metroPortNotAllowed:
+             .deviceNotWired, .deviceUntrusted, .developerModeOff, .devicePreparing, .uiAutomationOff, .systemPromptInFront, .certificateNotTrusted, .deviceNotAllowed, .metroPortNotAllowed:
             return .deviceUnavailable
         case .deviceBusy, .uiautomationBusy, .deviceLeased:
             return .deviceBusy

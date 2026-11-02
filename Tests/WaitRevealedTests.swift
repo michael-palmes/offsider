@@ -42,6 +42,96 @@ struct WaitRevealedTests {
             .evaluate(on: DeviceRouter.Route(backend: backend, device: device), logger: OffsiderLogger(), clock: ScriptedClock().poll)
     }
 
+    static var route: DeviceRouter.Route {
+        DeviceRouter.Route(backend: FakeDeviceBackend(trees: [screen()]), device: device)
+    }
+
+    /// `command`'s run on the revealed screen, with everything it prints.
+    static func printed(_ run: (Console) async throws -> Void) async -> String {
+        let capture = ConsoleCapture()
+        try? await run(AgentOutputTests.agentConsole(capture))
+        return capture.out + capture.err
+    }
+
+    @Test("assert --json never prints a revealed password field's text in its match")
+    func assertMatchHidesRevealed() async throws {
+        let fixture = try TreeCacheFixture()
+        _ = try Self.revealed(fixture)
+        let command = try Assert.parse(["--id", "password-field", "--json", "--device", Self.device.rawValue])
+
+        let shown = try await fixture.run {
+            let outcome = try await command.evaluate(on: Self.route, logger: OffsiderLogger())
+            #expect(outcome.met)
+            return await Self.printed { try await command.show(outcome, on: Self.route, console: $0) }
+        }
+
+        #expect(!shown.contains("hunter"), "\(shown)")
+        #expect(shown.contains("••••••••"), "\(shown)")
+    }
+
+    @Test("wait --json never prints a revealed password field's text in its match")
+    func waitMatchHidesRevealed() async throws {
+        let fixture = try TreeCacheFixture()
+        _ = try Self.revealed(fixture)
+        let command = try Wait.parse(["--id", "password-field", "--json", "--timeout", "0", "--device", Self.device.rawValue])
+
+        let shown = try await fixture.run {
+            let outcome = try await command.evaluate(on: Self.route, logger: OffsiderLogger(), clock: ScriptedClock().poll)
+            return await Self.printed { try await command.show(outcome, on: Self.route, console: $0) }
+        }
+
+        #expect(!shown.contains("hunter"), "\(shown)")
+    }
+
+    @Test("--has-value still compares the real text, and a miss prints no revealed text in its reason or line")
+    func hasValueMissHidesRevealed() async throws {
+        let fixture = try TreeCacheFixture()
+        _ = try Self.revealed(fixture)
+        let right = try Assert.parse(["--id", "password-field", "--has-value", "hunter22", "--device", Self.device.rawValue])
+        let wrong = try Assert.parse(["--id", "password-field", "--has-value", "nope", "--json", "--device", Self.device.rawValue])
+
+        let (met, missed, shown) = try await fixture.run {
+            let met = try await right.evaluate(on: Self.route, logger: OffsiderLogger())
+            let missed = try await wrong.evaluate(on: Self.route, logger: OffsiderLogger())
+            return (met, missed, await Self.printed { try await wrong.show(missed, on: Self.route, console: $0) })
+        }
+
+        #expect(met.met)
+        #expect(!missed.met)
+        #expect(missed.reason == "has a masked value, expected 'nope'")
+        #expect(!shown.contains("hunter"), "\(shown)")
+    }
+
+    @Test("a batch's assert and wait steps never print a revealed password field's text")
+    func batchStepsHideRevealed() async throws {
+        let fixture = try TreeCacheFixture()
+        _ = try Self.revealed(fixture)
+        let outcome = WaitOutcome(met: false, elapsed: 0, reason: "has value 'hunter22', expected 'nope'", match: Self.screen().roots[0].children[0])
+
+        let result = try await fixture.run {
+            try await BatchReadResult.redacted(outcome, on: Self.route, success: "ok", failure: { "✗ \($0.match?.value ?? "") \($0.reason)" }, checked: nil)
+        }
+
+        guard case .wait(let shown) = result.detail else {
+            Issue.record("expected a wait record")
+            return
+        }
+        #expect(shown.match?.value == "••••••••")
+    }
+
+    @Test("video refuses to start with a revealed password field on screen")
+    func videoSeesRevealed() async throws {
+        let fixture = try TreeCacheFixture()
+        _ = try Self.revealed(fixture)
+        let backend = FakeDeviceBackend(trees: [Self.screen()], screen: UIScreenInfo(width: 402, height: 874, scale: 3))
+
+        let error = await #expect(throws: CLIError.self) {
+            try await fixture.run { try await VideoMaskOptions.requireNoSecureField(command: "record-video", backend: backend, device: Self.device) }
+        }
+
+        #expect(error?.reason == .videoUnmasked)
+    }
+
     @Test("a timeout while a revealed password field's text changes names the field, never its text, in the line and the JSON")
     func changeMessageHidesRevealedText() async throws {
         let fixture = try TreeCacheFixture()

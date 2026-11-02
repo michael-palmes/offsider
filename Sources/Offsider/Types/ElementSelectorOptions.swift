@@ -125,8 +125,8 @@ struct ElementSelectorOptions: ParsableArguments {
         try SelectorQuery.validate(ids: elementIDs, labels: elementLabels, labelsContaining: elementLabelsContaining, values: elementValues, allowingSeveral: true)
     }
 
-    /// Present when a qualifying candidate exists, even several; on-screen only unless `--allow-offscreen` or the tree has no screen.
-    func probe(for query: AccessibilityQuery) -> (UITree) -> ElementProbe {
+    /// Present when a qualifying candidate exists, even several; on-screen only unless `--allow-offscreen` or the tree has no screen; `revealed` keeps a `--has-value` miss from printing one's text.
+    func probe(for query: AccessibilityQuery, revealed: RevealedSecrets? = nil) -> (UITree) -> ElementProbe {
         let elementType = elementType
         let allowOffscreen = allowOffscreen
         let hasValue = hasValue
@@ -161,14 +161,14 @@ struct ElementSelectorOptions: ParsableArguments {
                 let reached = zip(pool, reasons).filter { $0.1 == nil }.map(\.0)
                 guard !reached.isEmpty else {
                     let more = pool.count > 1 ? " (and \(pool.count - 1) more)" : ""
-                    return absent("\(reasons[0] ?? "covered")\(more), so a tap would not reach it")
+                    return absent("\(reasons[0] ?? "covered")\(more)\(ElementProbe.notReached)")
                 }
                 pool = reached
             }
             if let hasValue {
                 let valued = pool.filter { Self.value(of: $0, equals: hasValue) }
                 guard !valued.isEmpty else {
-                    let hidden = OutputMasks.current.mask.hidesValue(of: pool[0])
+                    let hidden = revealed?.matches(pool[0]) == true || OutputMasks.current.mask.hidesValue(of: pool[0])
                     let actual = pool[0].normalizedValue.map { hidden ? "has a masked value" : "has value '\(LogRedactor.redactValue(TerminalText.line($0, keepsTab: false)).text)'" } ?? "has no value"
                     let labelled = pool.contains { AccessibilityQuery.label(hasValue).matches($0) }
                     let hint = labelled ? "; '\(hasValue)' is its label: use --label '\(hasValue)'" : ""
@@ -223,13 +223,18 @@ struct ElementSelectorOptions: ParsableArguments {
         return requiredEnabled.map { "\(valued) and \($0 ? "enabled" : "disabled")" } ?? valued
     }
 
-    /// `source` with the shared on-screen judgement read for the on-screen matches of `queries`, so a match a touch would not reach does not count; unchanged with `--allow-offscreen`.
+    /// `source` with what the app hides from accessibility read when nothing matches, then the shared on-screen judgement read for the on-screen matches of `queries`, so a match a touch would not reach does not count; with `--allow-offscreen`, no judgement.
     @MainActor
-    func judging(_ source: @escaping Wait.TreeSource, queries: [AccessibilityQuery], on route: DeviceRouter.Route) -> Wait.TreeSource {
-        guard !allowOffscreen, !queries.isEmpty else { return source }
+    func judging(_ source: @escaping Wait.TreeSource, queries: [AccessibilityQuery], fillingGaps: Bool = true, on route: DeviceRouter.Route) -> Wait.TreeSource {
+        guard !queries.isEmpty else { return source }
         let elementType = elementType
+        let allowOffscreen = allowOffscreen
         return {
-            var tree = try await source()
+            let plain = try await source()
+            var tree = fillingGaps
+                ? await AccessibilityPoller.fillingGaps(plain, for: queries, elementType: elementType, allowOffscreen: allowOffscreen, on: route.backend, device: route.device)
+                : plain
+            if allowOffscreen { return tree }
             await FrontJudge.read(matching: queries, elementType: elementType, in: &tree, backend: route.backend, device: route.device)
             return tree
         }

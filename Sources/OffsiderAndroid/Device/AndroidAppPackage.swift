@@ -36,13 +36,22 @@ enum AndroidAppPackage {
         preamble(ExpoDevClient.shellQuote(package), stop: true)
     }
 
-    /// The trailing package limits the intent to that app; the link is single-quoted, so `&`, `?` and `;` reach it whole.
+    /// The trailing package limits the intent to that app; the link is single-quoted, so `&`, `?` and `;` reach it whole. A restart asks Android first, so a link it would refuse or send to a chooser stops nothing.
     static func openScript(url: String, package: String, restart: Bool) -> String {
-        preamble(ExpoDevClient.shellQuote(package), stop: restart) + """
+        let link = ExpoDevClient.shellQuote(url)
+        let stop = restart ? """
 
-        am start -W -a android.intent.action.VIEW -d \(ExpoDevClient.shellQuote(url)) "$p"
+        c=$(cmd package resolve-activity --brief -a android.intent.action.VIEW -d \(link) "$p" 2>/dev/null | tail -n 1)
+        case "$c" in "$p"/*) ;; "No activity found"*) echo '\(marker) no-activity'; exit 0 ;; *\(resolverActivity)*) echo '\(marker) chooser'; exit 0 ;; esac
+        am force-stop "$p"
+        """ : ""
+        return preamble(ExpoDevClient.shellQuote(package), stop: false) + stop + """
+
+        am start -W -a android.intent.action.VIEW -d \(link) "$p"
         """
     }
+
+    private static let resolverActivity = "ResolverActivity"
 
     enum State: Equatable {
         case notInstalled
@@ -63,30 +72,62 @@ enum AndroidAppPackage {
     }
 
     static func hasNoLauncher(_ output: String) -> Bool {
-        output.split(whereSeparator: \.isNewline).contains { $0.trimmingCharacters(in: .whitespaces) == "\(marker) no-launcher" }
+        hasMarker("no-launcher", in: output)
     }
 
-    /// What `am start -W` printed: its `Status`, `LaunchState` (Android 10 and later), `TotalTime`, and its first `Error:` line.
+    /// A `--restart` link Android knows no screen for; nothing was stopped.
+    static func hasNoActivity(_ output: String) -> Bool {
+        hasMarker("no-activity", in: output)
+    }
+
+    /// A `--restart` link that would land on Android's chooser; nothing was stopped.
+    static func hasChooser(_ output: String) -> Bool {
+        hasMarker("chooser", in: output)
+    }
+
+    private static func hasMarker(_ name: String, in output: String) -> Bool {
+        output.split(whereSeparator: \.isNewline).contains { $0.trimmingCharacters(in: .whitespaces) == "\(marker) \(name)" }
+    }
+
+    /// What `am start -W` printed: its `Status`, `Activity`, `LaunchState` (Android 10 and later), `TotalTime`, and its first `Error:` or exception line.
     struct StartReply: Equatable {
         var status: String?
+        var activity: String?
         var launchState: String?
         var totalTime: Int?
         var error: String?
 
         var unresolved: Bool { error?.contains("unable to resolve Intent") == true }
+
+        /// `Activity:` names another package than `package`; absent says nothing, as Android can leave it out.
+        func landedOutside(_ package: String) -> Bool {
+            activity.map { !$0.hasPrefix("\(package)/") } ?? false
+        }
+
+        /// Android's own chooser, not one of the app's screens that happens to share its name.
+        func landedOnChooser(_ package: String) -> Bool {
+            landedOutside(package) && activity?.contains(resolverActivity) == true
+        }
     }
 
     static func startReply(_ output: String) -> StartReply {
         var reply = StartReply()
+        var afterException = false
         for line in output.split(whereSeparator: \.isNewline).map({ $0.trimmingCharacters(in: .whitespaces) }) {
             if line.hasPrefix("Status:") {
                 reply.status = value(after: "Status:", in: line)
+            } else if line.hasPrefix("Activity:") {
+                reply.activity = value(after: "Activity:", in: line)
             } else if line.hasPrefix("LaunchState:") {
                 reply.launchState = value(after: "LaunchState:", in: line)?.split(separator: " ").first.map(String.init)
             } else if line.hasPrefix("TotalTime:") {
                 // 0 when the app was already in front and nothing started.
                 reply.totalTime = value(after: "TotalTime:", in: line).flatMap { Int($0) }.flatMap { $0 > 0 ? $0 : nil }
             } else if line.hasPrefix("Error:"), reply.error == nil {
+                reply.error = line
+            } else if line.hasPrefix("Exception occurred") {
+                afterException = true
+            } else if reply.error == nil, afterException || line.hasPrefix("java.lang.") && line.contains("Exception") {
                 reply.error = line
             }
         }

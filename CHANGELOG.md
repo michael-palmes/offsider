@@ -8,8 +8,67 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Added
 
+- `tap --dry-run` finds the target and judges what a touch there would reach, then stops: nothing is sent and no input session opens, so an irreversible button can be tested safely. It exits as the tap would and says nothing was sent, and `--json` carries `"dryRun":true`. It takes a selector, and a `batch` step refuses it.
+- `wait --wait-timeout` is the same as `wait --timeout`, the name `tap` and other selector commands use.
+- `screen_off` (exit 1): a phone refused because Android keeps system UI in front of a dark or locked screen says so first, with `offsider wake` as the fix.
+- `credential status --device` adds `signedInHereStale: true` on Android when the app was first installed after that sign-in.
+- `screenshot` warns when an iOS simulator's picture matches the last one although the elements on screen changed, as a swipe-up unlock can freeze its display, and `button lock` says to unlock with Home twice.
+- `rn devmenu --json` adds `closedBy: "fallback"` when the item left the menu open and Offsider closed it.
+- `record-video` and `stream-video` take `--wait-lock` for their one tree read.
 - `screenshot --widget --app <package>` captures only that app's own home screen widget on Android, cropped to the bounds the device reports and masked like any capture; `--widget-nth <n>` picks one of several, and `--json` adds `widget`. The launcher itself is never captured: nothing is written unless the widget is the app's, nothing overlaps it, and the screen held still. New error `widget_not_shown`.
 - On an allowed Android phone, `screenshot` and `describe-ui` read while the allowed app holds focus beneath a system window owned by `android`, and name it: `systemWindow` in `screenshot --json`, `context.window` with `readOnly` in `describe-ui`. Everything else stays refused there.
+
+### Changed
+
+- `record-video` with no `--duration` stops and saves at 10 minutes, with a note and `reachedLimit` in `--json`, so a lost background recording cannot block logins for ever. Pass `--duration`, up to 3600, for longer.
+- `session stop --device <id>` also stops and saves a recording on that device, and says so only once it has ended. `doctor --device` warns `device.recording` while one runs, and the refusal `login`, `wake --unlock` and `type --stdin` give names its pid, with `kill -INT <pid>` as the `hint`.
+- `app open` on an iPhone or iPad says `Sent the link to`, as iOS reports only that it delivered the link. `--json` adds `linkHandled`: `true` once Android or a simulator showed the app took the link, `null` on an iPhone or iPad.
+- `record-video` and `stream-video` end when a simulator or emulator gives no frame for 30 s (exit 1, `device_unresponsive`); a recording saves its frames first.
+
+### Fixed
+
+- `tap` refuses a target under the 50 pt circle of Expo's floating dev menu button, though the tree gives only its 26 pt icon (`evidence` `devMenuTouchArea`, with the `drag` that moves it clear as the hint), and `--verify` no longer passes when the dev menu opens over the app (exit 5, `note` `devmenu_opened`).
+- `--verify` no longer passes on text ticking on a screen beneath the front page, so a tap on a disabled button stays unverified.
+- `tap --verify` runs the keyboard and cover checks again on its last read before it sends, so a target that has gone, or come under a cover, is refused with nothing sent instead of tapped where it was.
+- A `--verify` read that fails just before the input no longer sends a retry at once and can no longer flip a switch back: the read before it stands as the baseline, and with nothing to compare at all the input goes once and exits 5 with `note` `unreadable`.
+- A cover from the page just left no longer refuses a tap for about a second after it: within 2 s of an input a refused cover is read again for up to 1 s (`--no-settle` skips it).
+- `--fail-if-covered` no longer refuses a sheet's button because of a spinner on the screen beneath the sheet, when the hit-test finds the button.
+- `wait`, `assert`, `--verify-id` and `describe-ui --on-screen` agree with `tap` on an element past the edge of its scroll view, which is not on screen, and on a row beside a cover, whose visible part a tap reaches. They read a part only once the centre is covered, and stay within 24 hit-tests a read.
+- On Android, `assert`, `wait` and `tap` count a screen-sized group as covered by a dialog drawn beside it.
+- A tap moved beside a cover no longer presses another control inside a group target, and a wide switch's tap keeps its knob's x, or is refused when the knob is covered.
+- A selector tap reads a point again when the shared on-screen read caught an empty screen-sized answer mid-transition, and `tap --verify` picks among several matches as the first read did, so a tap on a screen that never moved no longer reports `unsettled`.
+- A batch tap on an iOS simulator hit-tests several matches, as a lone tap does, and taps the one a touch reaches instead of stopping as `selector_ambiguous`.
+- `wait --gone` and `assert --gone` say what hides an element they count as gone (`is not on screen: under button "Buy" ...`), and `login` waits for the submit button to stop moving after a dismiss tap, and no longer chooses a point on the keyboard's bar or skips rows for controls on a screen beneath a page.
+- Over Android's permission dialog, the refusal names `offsider permission grant`.
+- `rn open` finds a dev client's own scheme when it registers no `exp+` one, or lists them, instead of suggesting `exp+<slug>`.
+- `rn open` says when Metro answers only on `::1`, and its start command stays on 127.0.0.1.
+- `turnstile` reads `passed` over a checkbox left in the tree, across widgets and beside an app's wrapper.
+- `devices status --device <id> --json` prints one JSON document when the device is not allowed.
+- `devices add` lets a person choose a device already allowed to change it, with what it has now preselected, so `metro_port_not_allowed` and `app_not_allowed` no longer send them to a menu that offers nothing.
+- `record-video` and `stream-video` keep exit 8 for a busy device, say only to retry when waiting would not help, and never suggest `--unmasked` for it.
+- `rn open` no longer calls a crash to the home screen a system prompt, and names another app in front as another app.
+- `rn devmenu`'s overlay check follows the label the menu would match, so a custom item or a label the menu lacks asks nothing of a person.
+- `rn devmenu`'s agent line quotes custom labels, and `--json` and `rn logbox status --json` name app text in `untrusted`.
+- `doctor` names `caffeinate -d` for a sleeping display, not a missing desktop session.
+- `app_not_responding` names `offsider app launch --restart`, and the simulator empty-tree hint does too; on a phone not allowed for the app it asks the user.
+- `rn open --json` stays valid JSON with a newline in `--wait-id`.
+- The skill's lasting-state rule names `posture`.
+- The foldables guide says `screenshot --display` needs the display active.
+- `app stop` on an iPhone or iPad could end an app extension and report the app stopped, and `app launch` could misreport the start. Only the process directly in the bundle now counts as the app.
+- `app stop` on an iPhone or iPad reported "was not running" when `devicectl` named no bundle location; it now says it cannot tell and stops nothing, and `app launch` leaves `start` empty.
+- A `devicectl` failure holding the letters "locked", such as "blocked", no longer reads as `device_locked`, and a real lock keeps `devicectl`'s words.
+- `app open` on Android reported success when the link landed on the chooser or another app; that is now `link_not_handled`.
+- `app open --restart` on Android checks the link before it stops the app, and any refusal after a stop, there or on a simulator, says the app was stopped.
+- An `am start` exception reads as its cause, with the fix for a screen that is not exported, instead of "status unknown"; `Status: timeout` says the app may still be starting.
+- `notifications`: multi-line text no longer stops at a line ending in `)` and no longer takes in an app's own extras; a mistyped package is `app_not_installed`, not an empty list; on Android 8 to 10 a line at the margin ending in `:` in any app's text no longer drops later records, and the archive after the list stays off the cable; `--wait` runs its whole `--timeout` with a last read at the end, so `--new --timeout 1` can succeed.
+- A stuck capture or writer can no longer make a recording unstoppable: a stop or `--duration` during a hung capture saves the frames so far, and a stop that still cannot finish ends the process within seconds with the staging folder removed. A failed writer ends the recording instead of waiting for ever.
+- `stream-video`: a stop before the first frame ends it at once with exit 1 and nothing streamed, and a stalled reader can no longer hold up a stop.
+- On an Android phone, input by coordinates, keys and held touches went through while a system window or the notification shade had focus over an allowed app, as only the resumed activity was checked. Each input step now also reads which window has focus, and is refused unless an allowed app owns it. A capture with no tree read refuses the same way.
+
+## [0.15.0] - 2026-11-01
+
+### Added
+
 - Test devices: `devices add --test-device`, or "Test device: whole device" in the app menu, lets agents drive all of a phone or tablet a person says holds nothing personal: any app, Settings, system alerts and sheets, with no front-app check and `--app` optional. It asks "Anything personal on it?" with "Yes, stop" chosen, then Touch ID as usual, and offers "Until removed" first. The driving line and `devices status` say so (`"testDevice": true`). On a Mac with any forced Offsider key it is a plain Any app allowance until an administrator forces the new `allowTestDevices` to true, and a forced bundle list always wins. `test-runner.sh --ios-device` and `--android-phone` accept one.
 - `offsider sleep` turns a screen off to limit burn-in, on an allowed iPhone or iPad or an Android device, and `wake` now works on an allowed iPhone or iPad. Neither needs an app in front, and each sends nothing when the screen is already as asked. A test iPhone or iPad also sleeps when its session goes idle or `session stop` ends it, and wakes for the next command.
 - `type --into-id`, `--into-label` and `--into-label-contains` take `--nth` and `--topmost`, as `tap` does, for a field whose id matches twice.
@@ -65,7 +124,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Fixed
 
-- On an Android phone, input by coordinates, keys and held touches went through while a system window or the notification shade had focus over an allowed app, as only the resumed activity was checked. Each input step now also reads which window has focus, and is refused unless an allowed app owns it. A capture with no tree read refuses the same way.
+- iPhone and iPad: a system prompt over the app, such as Allow Paste, no longer leaves every command timing out at `runner_unavailable`. A read exits 7 `system_prompt_in_front` quoting the prompt, within about 3 s and at once after that, and asks a person to answer it on the device; a pinned app's input check names it too. The runner is no longer restarted behind it, and runner input that waited over 5 s is dropped, not sent late.
+- `swipe`: a short slow swipe no longer rests under the finger for its whole step, which a list that also takes a long press read as one, so it never scrolled while the command reported success. The finger now moves at least every 0.1 s unless `--delta` is set, in `gesture` swipe presets too.
+- `swipe` and `drag`: `--hold-end` now stops a list. A fast drag flung on however long the hold, as a list reads its speed from the last moves, so these now slow over the last 3 points; `--hold-end 0` still flings.
 - `button lock` and `button side-button` on an iPhone or iPad no longer open Siri: the plain press held for 0.4 s, exactly where iOS starts Siri, and now holds for 0.34 s.
 - On Xcode 27.1 and later, a system alert, a sheet such as Siri's or Control Center over the pinned app no longer lets a screenshot or input through: the front-app check had lost XCTest's lookup and fell back to the app's own state, which misses them. It now uses XCTest's accessibility client, and an Xcode with no lookup says so in a notice. The runner rebuilds once.
 - A locked iPhone or iPad now says `device_locked` and names `offsider wake`, rather than telling you to open the app, and the check no longer passes in the moment after a lock press.
@@ -79,6 +140,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - A field focused beneath a page drawn over it no longer takes `type` on an iOS simulator because a keyboard shows; the refusal names the field.
 - `login` no longer logs the password's length.
 - `type --verify` and `--require-focus-id --verify` read the screen once fewer before the text.
+- A password field a show-password toggle revealed no longer prints: `wait --id`, `assert --id` and their batch steps showed its text in `match.value`, and a `--has-value` miss in `reason`, which now says `has a masked value`; `--has-value` still compares the real text. `record-video` and `stream-video` refuse to start with one on screen.
+- An `offsider.mask.json` match now hides what is nested in it, and its text in a parent's label that copies it, as Android's clickable rows do (`Balance [redacted] Details`), on output, in the tree cache and in selector, cover and page messages.
+- `swipe` and `drag --screenshot-at` honour the evidence run: its masks are painted and each capture is numbered into the run's manifest.
+- A broken `offsider.mask.json` stops every command that reads the screen or sends input with exit 64 before anything reaches the device, and `notifications`. `assert`, `wait`, batch reads and `--verify` used to run unmasked, dropping the evidence run's masks too.
+- `--verify` tells what changed from the trees as output shows them, so a rotating code, a value pattern match or a revealed field no longer prints in the summary when the change list is empty.
+- Page, presented view, stale frame and hidden branch names take `offsider.mask.json`'s value patterns and the secret redaction, in `tap` refusals, `assert` and `wait`, and `wait` and `assert` failure lines take the patterns too.
+- `notifications` applies `offsider.mask.json`'s value patterns and emails and the evidence run's email mask, and hides codes in the tag, channel and `key`, which `--json` now marks untrusted.
+- `screenshot`'s `maskUnproven` also reads `truncated` when the device cut the tree short and `no-windows` when an Android read lists no windows, each with a warning; `record-video` and `stream-video` warn when their check cannot prove what it saw.
+- On iOS a masked element's custom actions and role description are hidden, and an unmasked one's take the redaction; so does Android's role description. A revealed field's label takes the file's masks and the redaction, in output and the cache.
+- A screenshot mask match the tree lists twice, as a parent and an identical child, now counts in `maskedBeneath` and `--mask-skip-beneath` skips it, when every copy is beneath the page; before, it was always painted and reported nothing.
+- `describe-ui` and selectors see what an app draws but hides from accessibility, such as a hand-rolled tab panel's other tabs or a side panel kept hidden until a screen reader is on: rows were missing from the tree while a screenshot showed them. They are listed with `# filled: 12 elements the app hides from accessibility` (`context.filled`), and `tap`, `type --into-*`, `slider`, `wait` and `assert` reach them when nothing matches on screen, so a selector that matches costs nothing more. Android adds one every-view read (about 30 ms on a warm emulator) and keeps real drawing order, so a page beneath a hidden page counts as beneath, and `tap --fail-if-covered` makes that read too. An iOS simulator reads points alongside the tree read and scans further, for at most 1.5 s, only when one finds something unlisted; a hidden page over elements the tree lists stays out of its reach. Filled elements go through the same masks, screenshots and video checks on an iOS simulator now see them too, and only a password field's place reaches the tree cache. `--diff` compares what the plain read lists.
+- With Display Zoom on an iOS simulator, the first `describe-ui` of a process reads the screen's centre again once the tree read has found the zoom: it looked off centre and read frames in layout space, which could lose `staleFrame`, name the app's own widget as `presented` and lose a centred alert's title.
 - On Android, `describe-ui` frames the keyboard by its keys and buttons, not by its window, which spans the screen around a floating or compact keyboard such as Gboard's toolbar with a hardware keyboard connected. `target_under_keyboard` names `button back` only over docked keys: with only a toolbar showing, Back goes to the app and can leave the screen.
 - `login` on an iOS simulator no longer refuses every field when the tree's order puts a view from another process over the form, such as a Turnstile web widget at the screen's centre: a hit-test at each field's own point decides, as for `tap --fail-if-covered`. `describe-ui` no longer names web content the app draws in its own smaller view as `presented`.
 - `type --into-id`, and so `login`, on an iOS simulator confirm focus from the field itself: a connected hardware keyboard, which hides the software one, no longer stops them with `focus_not_confirmed`, and a keyboard already up for another field no longer types with an unconfirmed-focus warning. When focus never comes, the message says no keyboard appeared and names the hardware keyboard as a cause.
@@ -919,7 +992,8 @@ First release of Offsider, forked from [AXe](https://github.com/cameroncooke/axe
 - Shortened HID broker socket names so they stay within the Unix socket path limit.
 - Builds now honour an explicit `OFFSIDER_VERSION` when generating the version string.
 
-[Unreleased]: https://github.com/michael-palmes/offsider/compare/v0.14.0...HEAD
+[Unreleased]: https://github.com/michael-palmes/offsider/compare/v0.15.0...HEAD
+[0.15.0]: https://github.com/michael-palmes/offsider/compare/v0.14.0...v0.15.0
 [0.14.0]: https://github.com/michael-palmes/offsider/compare/v0.13.0...v0.14.0
 [0.13.0]: https://github.com/michael-palmes/offsider/compare/v0.12.0...v0.13.0
 [0.12.0]: https://github.com/michael-palmes/offsider/compare/v0.11.0...v0.12.0

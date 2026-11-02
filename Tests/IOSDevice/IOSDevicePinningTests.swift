@@ -130,6 +130,42 @@ struct IOSDevicePinningTests {
         #expect(transport.calls.last?.body["app"] == AnyHashable(Self.playground))
     }
 
+    @Test("input for a pinned app under a system prompt names the prompt, not SpringBoard, with nothing sent")
+    func promptOverPinnedApp() async throws {
+        let transport = FakeRunnerTransport()
+        transport.foregroundApp = "com.apple.springboard"
+        transport.foregroundPrompt = "“Demo” would like to paste from “Notes”"
+        let backend = try Self.backend(transport)
+        let error = await #expect(throws: IOSDeviceError.self) { try await backend.openInputSession(for: Self.phone).perform(.tapAt(x: 10, y: 20)) }
+        #expect(error?.reason == .systemPromptInFront)
+        #expect(error?.message.contains("“Demo” would like to paste from “Notes”") == true)
+        #expect(!transport.calls.contains { $0.path == "/tap-point" })
+    }
+
+    @Test("a read under a system prompt tells a test device's agent it may tap the prompt, and any other device's only to ask")
+    func promptAdviceFollowsTheAllowance() async throws {
+        let transport = FakeRunnerTransport()
+        transport.foregroundApp = Self.playground
+        let pinned = try Self.backend(transport)
+        pinned.targetApp = Self.playground
+        transport.stuckPrompt = "Allow?"
+        let asks = await #expect(throws: IOSDeviceError.self) { _ = try await pinned.rawAccessibilitySource(for: Self.phone) }
+        #expect(asks?.reason == .systemPromptInFront)
+        #expect(asks?.message.contains("test device") == false)
+
+        var host = IOSDeviceHost.fake(try FakeDevicectl.listing("devicectl-list-xcode26.json"), usbmux: FakeUsbmuxListing.onUSB(IOSDeviceFixtures.phone))
+        host.runnerConnector = FakeRunnerConnector(transport: transport)
+        let whole = IOSDeviceBackend(host: host) { _, _ in }
+        whole.input.coreDeviceVersion = { CoreDeviceVersion("518.24") }
+        let allowance = DeviceAllowance(platform: .ios, key: IOSDeviceFixtures.phone, name: "Test iPhone", added: Date(), expires: nil, apps: [], testDevice: true)
+        IOSDevicePinning.configure(whole, allowance: allowance, policy: PhysicalDevicePolicy(managed: .none, list: DeviceAllowList(entries: [allowance])), profileBundleID: { nil })
+        whole.targetApp = Self.playground
+        let may = await #expect(throws: IOSDeviceError.self) { _ = try await whole.rawAccessibilitySource(for: Self.phone) }
+        #expect(may?.reason == .systemPromptInFront)
+        #expect(may?.message.contains("On this test device you may tap") == true)
+        #expect(may?.hint == "offsider screenshot --device \(IOSDeviceFixtures.phone)")
+    }
+
     static func foregroundChecks(_ transport: FakeRunnerTransport) -> Int {
         transport.calls.filter { $0.path == "/foreground" }.count
     }

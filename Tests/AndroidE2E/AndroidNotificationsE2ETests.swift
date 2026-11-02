@@ -1,4 +1,6 @@
 import Foundation
+@testable import OffsiderAndroid
+import OffsiderCore
 import Testing
 
 @Suite("Android notifications E2E", .serialized, .enabled(if: isAndroidE2EEnabled))
@@ -46,6 +48,41 @@ struct AndroidNotificationsE2ETests {
         let result = try await found
         #expect(result.exitCode == 0, "\(result.stderr)")
         #expect((try Self.json(result.stdout)["notifications"] as? [[String: Any]])?.first?["tag"] as? String == "\(tag)-fresh")
+    }
+
+    /// The Android 8 to 10 path, run by the device's own shell, with `cmd notification` made to fail so the script takes it.
+    static func dumpPath(_ package: String) async throws -> String {
+        try await AndroidE2E.shell("cmd() { return 255; }\n" + AndroidNotifications.script(package: package))
+    }
+
+    @Test("the dump path in the device's own shell keeps a line ending in : in the app's text, hides it from another app and tells a mistyped package")
+    func dumpPathOnTheDevice() async throws {
+        guard try await AndroidE2E.apiLevel() >= 29 else { return }
+        let tag = "offsider-dump-\(UUID().uuidString.prefix(8).lowercased())"
+        _ = try await AndroidE2E.shell("cmd notification post -S bigtext -t 'Dump (\(tag))' \(tag) $'Ready (today)\\nShopping list:\\nTotal 5.00'")
+        var found: PostedNotification?
+        for _ in 0..<20 where found == nil {
+            let output = try await Self.dumpPath(Self.shell)
+            found = AndroidNotifications.parse(output, package: Self.shell)?.notifications.first { $0.tag == tag }
+            if found == nil { try await Task.sleep(for: .milliseconds(250)) }
+        }
+        #expect(found?.text == "Ready (today)\nShopping list:\nTotal 5.00")
+
+        let other = try await Self.dumpPath(AndroidE2E.package)
+        #expect(!other.contains(tag) && !other.contains("Shopping list"))
+        #expect(AndroidNotifications.parse(other, package: AndroidE2E.package)?.notifications.allSatisfy { $0.tag != tag } == true)
+        #expect(!AndroidNotifications.notInstalled(other))
+
+        #expect(AndroidNotifications.notInstalled(try await Self.dumpPath("com.exmaple.absent")))
+    }
+
+    @Test("a mistyped package exits 1 with app_not_installed at once, not at the end of a --wait")
+    func mistypedPackage() async throws {
+        let started = ContinuousClock.now
+        let result = try await AndroidE2E.offsider("notifications --app com.exmaple.absent --wait 'x' --timeout 30 --json")
+        #expect(result.exitCode == 1)
+        #expect((result.stdout + result.stderr).contains("app_not_installed"))
+        #expect(ContinuousClock.now - started < .seconds(20))
     }
 
     @Test("a wait for text no notification holds exits 5 at its timeout")

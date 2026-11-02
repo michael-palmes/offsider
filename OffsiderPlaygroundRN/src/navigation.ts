@@ -165,6 +165,12 @@ export const routeInfo = {
     menuTitle: 'Parked Sheet Test',
     subtitle: 'Sheet kept mounted and parked off screen',
   },
+  'gap-tabs-test': {
+    section: 'Real-world RN',
+    title: 'Gap Tabs',
+    menuTitle: 'Gap Tabs Test',
+    subtitle: 'Drawn tabs and a panel hidden from accessibility',
+  },
   'mask-sheet-test': {
     section: 'Real-world RN',
     title: 'Mask Sheet',
