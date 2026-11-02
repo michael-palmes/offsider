@@ -45,7 +45,8 @@ struct Assert: AsyncParsableCommand {
         let locking = DeviceIDClassifier.classify(deviceOption.id).platform == .android
         let route = try await DeviceRouter.routeForInput(deviceOption.id, logger: logger, watchdog: watchdog, locking: locking)
         let outcome = try await Console.current.progress("Checking \(subject)") {
-            try await watchdog.guarding(setupThen: 0, device: deviceOption.id) { ready in
+            try await watchdog.guardingTreeStart(on: route)
+            return try await watchdog.guarding(setupThen: 0, of: route.device) { ready in
                 try await evaluate(on: route, logger: logger, probesOnMiss: true, onPrepared: ready)
             }
         }

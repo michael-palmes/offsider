@@ -329,7 +329,7 @@ final class Inject {
     }
 
     /** Best effort after a failure: cancels the gesture and lets go of held keys, so nothing stays pressed. */
-    private void release(UiAutomation automation) {
+    void release(UiAutomation automation) {
         long now = SystemClock.uptimeMillis();
         try {
             if (!fingers.isEmpty()) {

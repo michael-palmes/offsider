@@ -113,7 +113,7 @@ struct Drag: AsyncParsableCommand {
 
     func run() async throws {
         try await InputOutput.reporting(command: "drag", target: target, json: jsonOption.json) { details in
-            if holdShots.isRequested { try await holdShots.prepare(command: "drag") }
+            if holdShots.isRequested { try await holdShots.prepare(command: "drag", device: deviceOption.id) }
             try await drag(details)
         }
     }

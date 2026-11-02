@@ -72,12 +72,14 @@ struct RNOpen: AsyncParsableCommand {
         var waitID: String?
         var elapsedMs: Int
         var bundleMs: Int
+        /// Offsider recorded a reverse for this port, set by this run or an earlier one, which `session stop` removes.
+        var reverseRecorded = false
         /// Whether this run set the phone's adb reverse for the port.
         var reverseSet = false
 
         func jsonLine() -> String {
             ExpoDevClient.openReportJSONLine(
-                bundleID: bundleID, url: url, host: host, port: port, sends: sends, launcherSeen: launcherSeen, waitID: waitID, elapsedMs: elapsedMs, bundleMs: bundleMs, reverseSet: reverseSet
+                bundleID: bundleID, url: url, host: host, port: port, sends: sends, launcherSeen: launcherSeen, waitID: waitID, elapsedMs: elapsedMs, bundleMs: bundleMs, reverseRecorded: reverseRecorded, reverseSet: reverseSet
             )
         }
     }
@@ -94,26 +96,31 @@ struct RNOpen: AsyncParsableCommand {
         }
     }
 
+    @MainActor
     func run() async throws {
         let logger = OffsiderLogger()
         let route = try await DeviceRouter.routeForInput(deviceOption, logger: logger)
         let console = Console.current
+        // Ctrl-C leaves a reverse this run set, so it is named on the way out, as a failure names it.
+        let interrupt = route.device.isPhysicalAndroidDevice ? InterruptedExit { await noteReverseLeft(on: route) } : nil
+        defer { interrupt?.invalidate() }
         let report = try await console.progress("Loading \(bundleID) from Metro") { try await open(on: route, metro: MetroStatus(), clock: .live) }
         let took = WaitLoop.seconds(Double(report.elapsedMs) / 1000)
         let sends = "\(report.sends) send\(report.sends == 1 ? "" : "s")"
-        let reverse = report.reverseSet ? "; set adb reverse tcp:\(port), which `offsider session stop --device \(route.device.rawValue)` removes" : ""
+        let remover = "`offsider session stop --device \(route.device.rawValue)`"
+        let reverse = report.reverseSet ? "; set adb reverse tcp:\(port), which \(remover) removes" : report.reverseRecorded ? "; adb reverse tcp:\(port) stays set, which \(remover) removes" : ""
         let line = "✓ \(bundleID) loaded from Metro on port \(port) in \(took) (\(sends)\(report.launcherSeen ? ", launcher seen" : ""))\(reverse)"
         if json {
             console.data(report.jsonLine() + "\n")
             console.data(line + "\n", to: .err)
         } else {
             let details = "Port \(port), \(took), \(sends)" + (report.launcherSeen ? ", launcher seen" : "")
-            let undo = report.reverseSet ? ["set adb reverse tcp:\(port); offsider session stop --device \(route.device.rawValue) removes it"] : []
+            let undo = report.reverseSet || report.reverseRecorded ? ["\(report.reverseSet ? "set" : "kept") adb reverse tcp:\(port); offsider session stop --device \(route.device.rawValue) removes it"] : []
             console.show(InputPersonView.receipt("\(bundleID) loaded from Metro", details: [details] + undo, agent: line + "\n"))
         }
     }
 
-    /// Checks Metro, sends the link, then polls the tree until the app is up; `metro` and `clock` let tests run without a network or real waits.
+    /// A failed run leaves its reverse set, as a successful one does, so it says so.
     @MainActor
     func open(on route: DeviceRouter.Route, metro: MetroStatus, clock: PollClock, gate: DevicePolicyGate = .current) async throws -> Report {
         let device = route.device
@@ -121,6 +128,31 @@ struct RNOpen: AsyncParsableCommand {
             throw CLIError(errorDescription: "rn open works on iOS simulators and Android devices; \(device.rawValue) is a physical iPhone or iPad. Open the app's dev client link there yourself.", reason: .notSupported)
         }
         if let allowance = route.allowance { try gate.requireApp(bundleID, on: allowance) }
+        do {
+            return try await load(opener, on: route, metro: metro, clock: clock)
+        } catch {
+            await noteReverseLeft(on: route)
+            throw error
+        }
+    }
+
+    /// Names a reverse recorded for this port, whichever run set it.
+    @MainActor
+    func noteReverseLeft(on route: DeviceRouter.Route) async {
+        guard let setter = route.backend as? any MetroReverseSetting, route.device.isPhysicalAndroidDevice,
+              await setter.recordedMetroPorts(on: route.device).contains(port) else { return }
+        Console.current.notice(Self.reverseNotice(port: port, device: route.device))
+    }
+
+    static func reverseNotice(port: Int, device: DeviceID) -> Notice {
+        let undo = "offsider session stop --device \(device.rawValue)"
+        return .note("adb reverse tcp:\(port) stays set", agent: "adb reverse tcp:\(port) stays set on \(device.rawValue); `\(undo)` removes it.", see: undo, label: "Remove")
+    }
+
+    /// Checks Metro, sends the link, then polls the tree until the app is up; `metro` and `clock` let tests run without a network or real waits.
+    @MainActor
+    private func load(_ opener: any ExpoDevClientOpening, on route: DeviceRouter.Route, metro: MetroStatus, clock: PollClock) async throws -> Report {
+        let device = route.device
         // A phone allowed for any app reads only the app a command names.
         (route.backend as? any AppTargetSelecting)?.selectApp(bundleID, on: device)
         if let unreachable = await metro.unreachable(port: port) { throw unreachable }
@@ -128,6 +160,7 @@ struct RNOpen: AsyncParsableCommand {
         let url: String
         let host: String
         let reverseSet: Bool
+        let reverseRecorded: Bool
         do {
             let chosen: String
             if let scheme {
@@ -135,7 +168,7 @@ struct RNOpen: AsyncParsableCommand {
             } else {
                 chosen = try ExpoDevClient.singleScheme(try await opener.devClientSchemes(bundleID, on: device), appID: bundleID)
             }
-            (host, reverseSet) = try await reachMetro(opener, route: route, metro: metro)
+            (host, reverseSet, reverseRecorded) = try await reachMetro(opener, route: route, metro: metro)
             url = ExpoDevClient.devClientURL(scheme: chosen, host: host, port: port)
         } catch let error as ExpoDevClientError {
             throw CLIError(errorDescription: error.message, reason: .expoDevClientFailed)
@@ -289,7 +322,7 @@ struct RNOpen: AsyncParsableCommand {
             }
             return Report(
                 bundleID: bundleID, url: url, host: host, port: port, sends: sends, launcherSeen: launcherSeen, waitID: waitID,
-                elapsedMs: Int(((now - start) * 1000).rounded()), bundleMs: Int(((now - lastSend) * 1000).rounded()), reverseSet: reverseSet
+                elapsedMs: Int(((now - start) * 1000).rounded()), bundleMs: Int(((now - lastSend) * 1000).rounded()), reverseRecorded: reverseRecorded, reverseSet: reverseSet
             )
         }
         if let failing, !anyRead || clock.now() - failing.since >= Self.failingFor / 2 {
@@ -322,12 +355,24 @@ struct RNOpen: AsyncParsableCommand {
         )
     }
 
-    /// The host the device reaches Metro on; a phone without a reverse gets one only for an allowed port whose Metro runs as this user.
+    /// The host the device reaches Metro on; a phone without a reverse gets one only for an allowed port, and a dev client goes only to a Metro that runs as this user. A person's own reverse keeps working on a port not allowed; one Offsider set does not.
     @MainActor
-    func reachMetro(_ opener: any ExpoDevClientOpening, route: DeviceRouter.Route, metro: MetroStatus) async throws -> (host: String, reverseSet: Bool) {
+    func reachMetro(_ opener: any ExpoDevClientOpening, route: DeviceRouter.Route, metro: MetroStatus) async throws -> (host: String, reverseSet: Bool, recorded: Bool) {
         let device = route.device
         do {
-            return (try await opener.metroHost(port: port, on: device), false)
+            let host = try await opener.metroHost(port: port, on: device)
+            guard let setter = route.backend as? any MetroReverseSetting, let allowance = route.allowance, allowance.platform == .android else { return (host, false, false) }
+            let recorded = await setter.recordedMetroPorts(on: device).contains(port)
+            if recorded, !allowance.metroPorts.contains(port) {
+                let undo = "offsider session stop --device \(device.rawValue)"
+                throw CLIError(
+                    errorDescription: "\(device.rawValue) has the adb reverse Offsider set for port \(port), and port \(port) is no longer a Metro port allowed on \(allowance.name), so Offsider did not use it. `\(undo)` removes it.",
+                    reason: .metroPortNotAllowed,
+                    hint: undo
+                )
+            }
+            guard await metro.ownedByThisUser(port) else { throw Self.notOwned(port: port, outcome: "so it did not send the app there") }
+            return (host, false, recorded)
         } catch let error as ExpoDevClientError where error.kind == .noRoute {
             guard let setter = route.backend as? any MetroReverseSetting, let allowance = route.allowance, allowance.platform == .android else { throw error }
             guard allowance.metroPorts.contains(port) else {
@@ -338,16 +383,18 @@ struct RNOpen: AsyncParsableCommand {
                     hint: "offsider devices add"
                 )
             }
-            guard await metro.ownedByThisUser(port) else {
-                throw CLIError(
-                    errorDescription: "Offsider could not confirm that the Metro answering on 127.0.0.1:\(port) runs as this user (another user's, or it did not accept a connection within a second), so it set no adb reverse to it. Try again; if it repeats, start your own Metro (\(MetroStatus.startCommand(port: port))).",
-                    reason: .metroNotRunning,
-                    hint: MetroStatus.startCommand(port: port)
-                )
-            }
+            guard await metro.ownedByThisUser(port) else { throw Self.notOwned(port: port, outcome: "so it set no adb reverse to it") }
             try await setter.addMetroReverse(port: port, on: device)
-            return (try await opener.metroHost(port: port, on: device), true)
+            return (try await opener.metroHost(port: port, on: device), true, true)
         }
+    }
+
+    static func notOwned(port: Int, outcome: String) -> CLIError {
+        CLIError(
+            errorDescription: "Offsider could not confirm that the Metro answering on 127.0.0.1:\(port) runs as this user (another user's, or it did not accept a connection within a second), \(outcome). Try again; if it repeats, start your own Metro (\(MetroStatus.startCommand(port: port))).",
+            reason: .metroNotRunning,
+            hint: MetroStatus.startCommand(port: port)
+        )
     }
 
     static func shellWord(_ text: String) -> String {

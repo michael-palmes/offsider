@@ -15,6 +15,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - `screenshot` warns when an iOS simulator's picture matches the last one although the elements on screen changed, as a swipe-up unlock can freeze its display, and `button lock` says to unlock with Home twice.
 - `rn devmenu --json` adds `closedBy: "fallback"` when the item left the menu open and Offsider closed it.
 - `record-video` and `stream-video` take `--wait-lock` for their one tree read.
+- `app install <apk>` and `app uninstall` on Android, pinned to the allowance: the package is read from the APK on the Mac and enforced by Android too, so an APK that declares another app exits 1 `package_mismatch`. On a phone both need the app pinned by name; a phone allowed for any app is refused, and a test device needs no pin.
+- `app launch --cold`, another name for `--restart`; `--json` adds `waitMilliseconds` and `launchState` on Android beside `milliseconds`, Android's `WaitTime`, `LaunchState` and `TotalTime`.
+- `app prefs --app <id>` on Android lists a debuggable app's shared preference names and types, never values: the device filters them, and no option asks for one. A release build exits 1 `not_debuggable`, naming the fix. An active run records each read with its key count.
+- `app broadcast <action> --app <id>` on Android sends to that app's own receivers (`--receiver` for one), which is how to refresh a home-screen widget. Protected system actions exit 1 `broadcast_refused` and list the app's own, a receiver that is not exported is refused rather than dropped silently, and a missing one exits 1 `receiver_not_found`.
+- `airplane [on|off]` reads or sets Android's airplane mode; `session stop` and `devices remove` turn it off only if this command turned it on.
+- `init --print-rules` lists `allowOnce`: rule lines a person can add once for the commands above, so an agent needs no raw adb and no prompt per call.
+- `screenshot --widget --app <package>` captures only that app's own home screen widget on Android, cropped to the bounds the device reports and masked like any capture; `--widget-nth <n>` picks one of several, and `--json` adds `widget`. The launcher itself is never captured: nothing is written unless the widget is the app's, nothing overlaps it, and the screen held still. New error `widget_not_shown`.
+- On an allowed Android phone, `screenshot` and `describe-ui` read while the allowed app holds focus beneath a system window owned by `android`, and name it: `systemWindow` in `screenshot --json`, `context.window` with `readOnly` in `describe-ui`. Everything else stays refused there.
 
 ### Changed
 
@@ -62,6 +70,27 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - A stuck capture or writer can no longer make a recording unstoppable: a stop or `--duration` during a hung capture saves the frames so far, and a stop that still cannot finish ends the process within seconds with the staging folder removed. A failed writer ends the recording instead of waiting for ever.
 - `stream-video`: a stop before the first frame ends it at once with exit 1 and nothing streamed, and a stalled reader can no longer hold up a stop.
 - With `OFFSIDER_TREE_CACHE=off`, a password a show-password toggle revealed stays hidden in trees and screenshots and still stops `record-video`. Offsider keeps its private `.secure.json`, which holds where password fields are and no values. The variable still stops the tree files, so `describe-ui --diff`, the tap guard and batch read steps see no earlier tree.
+- A signal during `swipe` or `drag --screenshot-at` lifts the finger, then exits 130 or 143, and a read that never returns there ends the command after 30 s, lifting first. A `SIGKILL` no longer leaves a warm Android helper refusing the next touch: its broker cancels what a command that has gone left held, and any helper does so as it stops. A touch still refused names `offsider session stop`.
+- `swipe` and `drag --screenshot-at` on a physical iPhone or iPad exit `not_supported` at once, naming what works, before any folder is made or delay slept.
+- A `--screenshot-at` hold on Android with no gRPC goes through the helper from the press, or warns once when it cannot, instead of sending no resting reports with no word.
+- `orientation portrait` on Android puts auto-rotate back even when the app in front refuses portrait, and that timeout names the next step rather than the same command. With auto-rotate back on, a phone is watched for a moment and reports what its screen shows, with a warning when the sensor turned it away.
+- `posture` keeps the record of the override in place when a set or reset fails or the link drops, so `session stop` and `devices remove` can still take it off, and its "stays until reset" note appears only when an override is left.
+- `session status` lists the adb reverses, posture overrides and airplane mode recorded on a device, read from this Mac (`recorded` in `--json`), so a device with only those no longer reads as having no sessions.
+- `session stop` names what it left with the command that clears it (`notRemoved` in `--json`), including a phone that is unplugged or no longer allowed, and exits non-zero when a removal fails. `devices remove` says the same (`notRemoved` and `retry` in `--json`).
+- `rn open` checks that a Metro runs as you before it uses a reverse already on a phone, refuses a reverse Offsider set once its port is withdrawn, reports a failed reverse read as that rather than a missing reverse, and names a recorded reverse on success, failure and Ctrl-C (`reverseRecorded` in `--json`). `devices add` takes off the reverses for ports it drops. A reverse that may have landed when adb stopped answering keeps its record.
+- On an Android phone, input by coordinates, keys and held touches went through while a system window or the notification shade had focus over an allowed app, as only the resumed activity was checked. Each input step now also reads which window has focus, and is refused unless an allowed app owns it. A capture with no tree read refuses the same way.
+- `wait` and `assert` no longer kill an iPhone's first runner start with `device_unresponsive`: every command that reads with a setup bound now runs unbound on a phone or tablet, in `batch` steps too.
+- `wait`, `assert`, `describe-ui`, `screenshot`, `turnstile` and `rn logbox` start an emulator's helper under a bound of its own, so a slow start reaches its uiautomator fallback instead of `device_unresponsive`.
+- A wait after a simulator boot keeps polling through a screen that is not ready yet, up to `--timeout`, and selector input retries it; the failure's reason is now `tree_read_failed`.
+- `wait --settled --ignore-values` no longer calls a moving chart settled on iOS: an element that takes new text and leaves its line counts as moved.
+- `wait --settled` with an `--ignore-region` or `--ignore-id` that leaves out the whole screen exits 64 at once, also with `--settle-by screen`, where it used to pass; one that holds everything under the root says so at the timeout instead of blaming an unreadable tree.
+- `wait --any` beside `--settled`, `--region` or `--seconds` with no selector exits 64 rather than being ignored.
+- `wait --settled --settle-by both --wait-lock` claims the device before its bound starts, as `--settled` does.
+- `assert` and `wait` with `--enabled` or `--disabled` no longer crash on a group holding its own copy, and judge that group beside a separate match.
+- `batch` refuses `--screenshot-at`, `tap --dry-run`, a per-step `--device` or `--wait-lock`, bad quoting, an unknown step and a bad `rn` step before sending anything, not after earlier steps ran; `--continue-on-error` still reports an unknown step and runs the rest.
+- `batch` screenshot steps on an iPhone or iPad report `capture`, as `screenshot --json` does.
+- `button home --verify` on an iOS simulator no longer passes on a system alert over an app; it compares the tree there. It and a `--verify` or selector read of a hung simulator now exit `device_unresponsive` instead of holding the device.
+- On a screen turned on its panel (an unfolded iPhone Duo, or any simulator in landscape), system alerts and the home screen report frames in screen points, so label taps reach them.
 
 ## [0.15.0] - 2026-11-01
 

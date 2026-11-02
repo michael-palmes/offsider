@@ -14,6 +14,11 @@ public enum MetroReverse {
         return nil
     }
 
+    /// How output names one reverse.
+    public static func label(port: Int) -> String {
+        "adb reverse tcp:\(port)"
+    }
+
     /// `norebind`, so a reverse someone set meanwhile is refused rather than replaced.
     public static func addService(port: Int) -> String {
         "reverse:forward:norebind:tcp:\(port);tcp:\(port)"

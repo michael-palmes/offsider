@@ -258,18 +258,21 @@ struct Tap: AsyncParsableCommand, VerifiableCommand {
             func resolvedAgain(in tree: UITree, waitTimeout: TimeInterval, coverSettle: TimeInterval = 0) async throws -> TapResolution {
                 guard let query else { return resolution }
                 var first: UITree? = tree
+                let watchdog = DeviceWatchdog()
                 return try await AccessibilityPoller.pollForResolution(
                     query: query, waitTimeout: waitTimeout, pollInterval: resolvedPollInterval, elementType: elementType, allowOffscreen: allowOffscreen,
                     pick: picker, coverCheck: checkCover, coverSettle: coverSettle, logger: logger
                 ) {
-                    let read: UITree
-                    if let held = first {
-                        read = held
-                        first = nil
-                    } else {
-                        read = try await backend.accessibilityTree(for: device)
+                    try await watchdog.guardingInputRead(of: device) {
+                        let read: UITree
+                        if let held = first {
+                            read = held
+                            first = nil
+                        } else {
+                            read = try await backend.accessibilityTree(for: device)
+                        }
+                        return await AccessibilityPoller.judged(read, query: query, elementType: elementType, allowOffscreen: allowOffscreen, readsHiddenCovers: failIfCovered, pick: picker, backend: backend, device: device)
                     }
-                    return await AccessibilityPoller.judged(read, query: query, elementType: elementType, allowOffscreen: allowOffscreen, readsHiddenCovers: failIfCovered, pick: picker, backend: backend, device: device)
                 }.value
             }
             func isAimed(_ point: (x: Double, y: Double)) -> Bool {

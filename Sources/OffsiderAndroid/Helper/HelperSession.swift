@@ -276,7 +276,8 @@ final class HelperSession {
 
     /// A broker's relay of a command's request, waiting until `deadline` but `atLeast` once sent; nil, unsent, when `skip` says so on its turn.
     func relay(
-        payload: Data, op: String, id: Int, deadline: ContinuousClock.Instant, atLeast minimum: Duration = .zero, skip: () -> Bool = { false }
+        payload: Data, op: String, id: Int, deadline: ContinuousClock.Instant, atLeast minimum: Duration = .zero, skip: () -> Bool = { false },
+        follow: (_ reply: Data) -> (payload: Data, op: String, id: Int)? = { _ in nil }
     ) async throws -> HelperConnection.Outcome? {
         await queue.acquire()
         defer { queue.release() }
@@ -286,7 +287,11 @@ final class HelperSession {
             payload: payload, op: op, id: id, timeout: max(deadline - .now, minimum), expectingPayload: op == "screenshot"
         )
         switch outcome {
-        case .reply, .replyWithPayload: break
+        case .reply(let reply), .replyWithPayload(let reply, _):
+            // Sent before the queue moves on, so a request waiting behind this one finds it done.
+            if let next = follow(reply) {
+                _ = try? await connection.exchange(payload: next.payload, op: next.op, id: next.id, timeout: max(minimum, .seconds(1)))
+            }
         case .bye, .lost, .timedOut: await drop(connection)
         }
         return outcome

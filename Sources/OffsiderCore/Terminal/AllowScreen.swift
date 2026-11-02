@@ -105,10 +105,10 @@ public enum AllowScreen {
     }
 
     /// The closing block for one device: the only place the full ID shows, since the commands need it.
-    public static func allowed(name: String, key: String, until: String, apps: [String], metroPorts: [Int] = [], testDevice: Bool = false, width: Int, style: TerminalStyle) -> [String] {
+    public static func allowed(name: String, key: String, until: String, apps: [String], metroPorts: [Int] = [], testDevice: Bool = false, notes: [String] = [], width: Int, style: TerminalStyle) -> [String] {
         let key = PromptScreen.visible(key)
         let metro = metroPorts.isEmpty ? "" : ", \(Self.metro(metroPorts))"
-        return TerminalUI.closing("Allowed \(name) \(until), \(Self.apps(apps, testDevice: testDevice))\(metro).", commands: [
+        return TerminalUI.closing("Allowed \(name) \(until), \(Self.apps(apps, testDevice: testDevice))\(metro).", notes: notes, commands: [
             ("Withdraw", "offsider devices remove --device \(key)"),
             ("Next", "offsider doctor --device \(key)"),
         ], width: width, style: style)

@@ -99,9 +99,9 @@ struct PostureCommand: AsyncParsableCommand {
         DevicePersonView.emit(result.text(json: json), json: json, person: person, notices: Self.notices(result, set: target != nil, on: route.device), console: console)
     }
 
-    /// After folding an allowed phone, how a person takes the override off; it outlives the command.
+    /// After folding an allowed phone, how a person takes the override off; it outlives the command, unless this posture was the hinge's own and left none.
     static func notices(_ result: Result, set: Bool, on device: DeviceID) -> [Notice] {
-        guard set, device.isPhysicalAndroidDevice, result.state != nil, result.previous != result.current else { return [] }
+        guard set, device.isPhysicalAndroidDevice, result.overrideLeft == true, result.previous != result.current else { return [] }
         let undo = "offsider posture reset --device \(device.rawValue)"
         return [DevicePersonView.lasting("The fold stays until reset", undo: undo, label: "Reset", agent: "Note: the posture stays \(result.current.rawValue) on \(device.rawValue) until `\(undo)` or a reboot; `session stop` also resets it.")]
     }
@@ -135,6 +135,8 @@ struct PostureCommand: AsyncParsableCommand {
         let screen: UIScreenInfo?
         let platform: DevicePlatform
         let state: String?
+        /// Whether the device reads an override that stays until a reset.
+        var overrideLeft: Bool? = nil
 
         func text(json: Bool) -> String {
             json
@@ -211,8 +213,9 @@ struct PostureCommand: AsyncParsableCommand {
             }
         }
         let screen = try? await backend.screenInfo(for: device)
-        let state = await (folder as? any PostureStateNaming)?.postureStateName(of: device)
-        return Result(current: current, previous: target == nil && angle == nil ? nil : previous, screen: screen, platform: device.platform, state: state)
+        let named = folder as? any PostureStateNaming
+        let state = await named?.postureStateName(of: device)
+        return Result(current: current, previous: target == nil && angle == nil ? nil : previous, screen: screen, platform: device.platform, state: state, overrideLeft: await named?.postureIsOverridden(on: device))
     }
 
     /// Waits for the hinge to read `angle`, then for the posture to settle: which panel shows depends on the way the hinge moved, not only where it stops. A hinge already there with its panel showing is not moved.

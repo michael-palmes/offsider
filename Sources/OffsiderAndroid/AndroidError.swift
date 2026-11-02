@@ -41,6 +41,8 @@ public struct AndroidError: LocalizedError, CustomStringConvertible, Equatable, 
         case appNotAllowed
         /// `app_not_allowed` only because of what is in front now; it clears when the app under test comes back.
         case otherAppInFront
+        /// The named app's widget is not on the screen, or something beyond it would show in the crop.
+        case widgetNotShown
         case textNotAccepted
         case unsupportedKey
         case unsupportedButton
@@ -71,6 +73,8 @@ public struct AndroidError: LocalizedError, CustomStringConvertible, Equatable, 
     }
 
     public let kind: Kind
+    /// adb's own `FAIL`: the service did not run, unlike a timeout or a dropped link, which leave that open.
+    public private(set) var refusedByAdb = false
     public let message: String
     /// The command to run next, when the message does not quote it.
     public let explicitHint: String?
@@ -147,9 +151,18 @@ public struct AndroidError: LocalizedError, CustomStringConvertible, Equatable, 
         )
     }
 
-    static func adbCommandFailed(serial: String, command: String, detail: String) -> AndroidError {
+    static func adbCommandFailed(serial: String, command: String, detail: String, refused: Bool = false) -> AndroidError {
         let reason = detail.isEmpty ? "" : ": \(detail)"
-        return AndroidError(.adbCommandFailed, "`\(command)` failed on \(serial)\(reason).")
+        var error = AndroidError(.adbCommandFailed, "`\(command)` failed on \(serial)\(reason).")
+        error.refusedByAdb = refused
+        return error
+    }
+
+    /// This error, as adb's own refusal of the service.
+    var asAdbRefusal: AndroidError {
+        var error = self
+        error.refusedByAdb = true
+        return error
     }
 
     static func serialNotRunning(_ serial: String) -> AndroidError {
@@ -578,6 +591,19 @@ public struct AndroidError: LocalizedError, CustomStringConvertible, Equatable, 
         )
     }
 
+    /// A system window over the app takes input that Offsider never sends it; a person closes it.
+    static func systemWindowCovers(_ serial: String, title: String?) -> AndroidError {
+        let name = title.flatMap(AndroidWindowFocus.shown).map { "(\(TerminalText.quoted($0))) " } ?? ""
+        return AndroidError(
+            .otherAppInFront,
+            "A system window \(name)covers the app on \(serial), so Offsider did nothing. Only `describe-ui` and `screenshot` read over it, and nothing taps it. Can you close it on \(serial)?"
+        )
+    }
+
+    static func widgetNotShown(_ message: String, hint: String? = nil) -> AndroidError {
+        AndroidError(.widgetNotShown, message, hint: hint)
+    }
+
     static func foregroundUnknown(_ serial: String) -> AndroidError {
         AndroidError(
             .otherAppInFront,
@@ -797,6 +823,7 @@ extension AndroidError: OffsiderFailure {
         case .fieldNotEditable: return .fieldNotEditable
         case .securePasteRefused: return .securePasteRefused
         case .appNotAllowed, .otherAppInFront: return .appNotAllowed
+        case .widgetNotShown: return .widgetNotShown
         case .textNotAccepted: return .textNotAccepted
         case .unsupportedKey: return .unsupportedKey
         case .unsupportedButton: return .unsupportedButton

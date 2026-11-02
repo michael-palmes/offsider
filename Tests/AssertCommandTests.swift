@@ -131,6 +131,33 @@ struct AssertCommandTests {
         }
     }
 
+    @Test("a group holding its own copy judges --enabled and --disabled instead of crashing", arguments: [
+        (["--id", "screen", "--enabled"], true),
+        (["--id", "screen", "--disabled"], false),
+    ])
+    func identicalNestedMatches(arguments: [String], met: Bool) async throws {
+        let copy = FakeUI.node(.other, id: "screen", label: "Screen", frame: FakeUI.frame(0, 0, 393, 852), enabled: true)
+        var group = copy
+        group.children = [copy]
+
+        let (_, outcome, _) = try await Self.check(arguments, on: FakeUI.tree(width: 393, height: 852, [group]))
+
+        #expect(outcome.met == met)
+        #expect(met || outcome.reason == "is enabled, expected disabled")
+    }
+
+    @Test("a separate match does not stand in for a group holding its own copy")
+    func identicalNestedBesideASeparateMatch() async throws {
+        let copy = FakeUI.node(.other, id: "screen", label: "Screen", frame: FakeUI.frame(0, 0, 393, 400), enabled: true)
+        var group = copy
+        group.children = [copy]
+        let separate = FakeUI.node(.other, id: "screen", label: "Screen", frame: FakeUI.frame(0, 400, 393, 400), enabled: false)
+
+        let (_, enabled, _) = try await Self.check(["--id", "screen", "--enabled"], on: FakeUI.tree(width: 393, height: 852, [group, separate]))
+
+        #expect(enabled.met, "only the separate match is disabled, and the group is enabled")
+    }
+
     @Test("a disabled button and the enabled text inside it read as the one disabled button")
     func nestedTextFollowsItsButton() async throws {
         let tree = FakeUI.tree(width: 393, height: 852, [

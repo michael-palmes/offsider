@@ -52,15 +52,21 @@ public struct AppLaunch: Equatable, Sendable {
     public var restarted: Bool
     /// Android's `TotalTime` from `am start -W`.
     public var milliseconds: Int?
+    /// Android's `WaitTime` from `am start -W`.
+    public var waitMilliseconds: Int?
+    /// Android's `LaunchState`: `COLD`, `WARM`, `HOT` or `UNKNOWN`.
+    public var launchState: String?
     public var pid: Int?
     /// For a link: true once the platform showed the named app took it; nil when it only says the link was delivered, as on an iPhone or iPad.
     public var linkHandled: Bool?
 
-    public init(app: String, start: AppStart?, restarted: Bool, milliseconds: Int? = nil, pid: Int? = nil, linkHandled: Bool? = nil) {
+    public init(app: String, start: AppStart?, restarted: Bool, milliseconds: Int? = nil, waitMilliseconds: Int? = nil, launchState: String? = nil, pid: Int? = nil, linkHandled: Bool? = nil) {
         self.app = app
         self.start = start
         self.restarted = restarted
         self.milliseconds = milliseconds
+        self.waitMilliseconds = waitMilliseconds
+        self.launchState = launchState
         self.pid = pid
         self.linkHandled = linkHandled
     }
@@ -83,6 +89,12 @@ public struct AppLifecycleError: Error, Equatable, Sendable, CustomStringConvert
         case noLauncher
         case linkNotHandled
         case failed
+        case apkUnreadable
+        case packageMismatch
+        case installFailed
+        case notDebuggable
+        case broadcastRefused
+        case receiverNotFound
     }
 
     public let kind: Kind
@@ -161,6 +173,8 @@ public enum AppReport {
             ("start", .optional(launch.start) { .string($0.rawValue) }),
             ("restarted", .bool(launch.restarted)),
             ("milliseconds", .optional(launch.milliseconds) { .integer($0) }),
+            ("waitMilliseconds", .optional(launch.waitMilliseconds) { .integer($0) }),
+            ("launchState", .optional(launch.launchState) { .string($0) }),
             ("pid", .optional(launch.pid) { .integer($0) }),
         ]
         return OrderedJSON.object(members).rendered(compact: true)

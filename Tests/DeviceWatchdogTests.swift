@@ -95,7 +95,7 @@ struct DeviceWatchdogTests {
         let fired = Fired()
         // Far past any stall of a full parallel run, which has held a 200 ms sleep for over 10 s.
         let watchdog = DeviceWatchdog(grace: 0.1, setupBound: 600) { fired.record($0) }
-        let value = await watchdog.guarding(setupThen: 0, device: "SIM-1") { ready in
+        let value = await watchdog.guarding(setupThen: 0, of: DeviceID(rawValue: "SIM-1", platform: .ios)) { ready in
             try? await Task.sleep(for: .milliseconds(200))
             #expect(fired.all.isEmpty)
             ready()
@@ -111,7 +111,7 @@ struct DeviceWatchdogTests {
     func readyRearmsForBound() async throws {
         let fired = Fired()
         let watchdog = DeviceWatchdog(grace: 0.05, setupBound: 10) { fired.record($0) }
-        await watchdog.guarding(setupThen: 0, device: "SIM-1") { ready in
+        await watchdog.guarding(setupThen: 0, of: DeviceID(rawValue: "SIM-1", platform: .ios)) { ready in
             ready()
             try? await waitBriefly { !fired.all.isEmpty }
         }

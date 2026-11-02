@@ -36,6 +36,12 @@ public enum FailureReason: String, CaseIterable, Sendable {
     case deviceControlFailed = "device_control_failed"
     case appNotInstalled = "app_not_installed"
     case linkNotHandled = "link_not_handled"
+    case apkUnreadable = "apk_unreadable"
+    case packageMismatch = "package_mismatch"
+    case installFailed = "install_failed"
+    case notDebuggable = "not_debuggable"
+    case broadcastRefused = "broadcast_refused"
+    case receiverNotFound = "receiver_not_found"
     case logStreamFailed = "log_stream_failed"
     case videoFailed = "video_failed"
     case videoUnmasked = "video_unmasked"
@@ -83,6 +89,7 @@ public enum FailureReason: String, CaseIterable, Sendable {
     case notVerified = "not_verified"
     case conditionNotMet = "condition_not_met"
 
+    case widgetNotShown = "widget_not_shown"
     case selectorAmbiguous = "selector_ambiguous"
     case selectorAmbiguousSwitch = "selector_ambiguous_switch"
     case userAmbiguous = "user_ambiguous"
@@ -131,7 +138,7 @@ public enum FailureReason: String, CaseIterable, Sendable {
 
     public var exitCode: OffsiderExitCode {
         switch self {
-        case .selectorNotFound, .selectorFilteredByType, .targetOffScreen, .focusMismatch, .userNotFound:
+        case .selectorNotFound, .selectorFilteredByType, .targetOffScreen, .focusMismatch, .userNotFound, .widgetNotShown:
             return .selectorNotFound
         case .notVerified, .conditionNotMet, .focusNotConfirmed, .textNotAccepted:
             return .unverified
