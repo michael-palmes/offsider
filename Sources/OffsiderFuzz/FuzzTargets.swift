@@ -191,7 +191,9 @@ enum FuzzTargets {
         let webView = AndroidDoctorRules.webViewVersion(fromDump: output)
         let set = AndroidAwakeState.parseSet(output)
         let reading = AndroidAwakeState.parse(output)
-        return foreground.top != nil || enrolled != nil || webView != nil || set != nil || reading != nil
+        let focus = AndroidWindowFocus.parse(output)
+        let placed = AndroidWidgets.placed(in: output)
+        return foreground.top != nil || enrolled != nil || webView != nil || set != nil || reading != nil || focus != nil || !placed.isEmpty
     }
 
     /// The same mapping the media stream tests use, from a plist to the XPC value the parser reads.

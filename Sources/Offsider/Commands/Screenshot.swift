@@ -29,7 +29,11 @@ struct Screenshot: AsyncParsableCommand {
         page found nothing is skipped. Use it only when the page on top is opaque: a translucent or animating page shows what is \
         beneath, so check the image. \
         Masks cover what the tree describes: web views, canvases, images and text drawn after the tree read can \
-        still show. Video is never masked: record-video and stream-video refuse while a password field is on screen.
+        still show. Video is never masked: record-video and stream-video refuse while a password field is on screen. \
+        --widget captures only the app's own home screen widget on Android, cropped to the bounds the device reports and masked \
+        like any capture; the launcher itself is never captured, and nothing is written unless the widget holds still and \
+        nothing covers it. On an allowed phone a capture still works while the allowed app holds focus beneath a system window \
+        owned by android, and names it in systemWindow; input stays refused there.
         """
     )
 
@@ -93,6 +97,12 @@ struct Screenshot: AsyncParsableCommand {
     @Flag(name: .customLong("mask-skip-beneath"), help: "Leave matches of the other masks and the run's email and id masks unpainted on a screen beneath a page. Password fields and --mask-region are always painted.")
     var maskSkipBeneath = false
 
+    @Flag(name: .customLong("widget"), help: "On Android, capture only --app's widget on the home screen, cropped to its bounds on the device. The launcher itself is never captured.")
+    var widget = false
+
+    @Option(name: .customLong("widget-nth"), help: ArgumentHelp("With --widget, which of the app's widgets on the screen, from 1, top to bottom and then left to right.", valueName: "n"))
+    var widgetNth: Int?
+
     @Flag(name: .customLong("json"), help: "Print one JSON object to stdout; human text goes to stderr.")
     var json = false
 
@@ -113,6 +123,14 @@ struct Screenshot: AsyncParsableCommand {
             throw ValidationError(error.description)
         } catch let error as ScreenRegionError {
             throw ValidationError(error.message)
+        }
+        if widget {
+            guard region == nil else { throw ValidationError("--widget crops to the widget, so it cannot be used with --region.") }
+            guard displayOption.id == nil else { throw ValidationError("--widget captures the active display, so it cannot be used with --display.") }
+        }
+        if let widgetNth {
+            guard widget else { throw ValidationError("--widget-nth applies to --widget only.") }
+            guard widgetNth >= 1 else { throw ValidationError("--widget-nth counts from 1; got \(widgetNth).") }
         }
         if let diffOutput {
             guard compare != nil else { throw ValidationError("--diff-output applies to --compare only.") }
@@ -167,11 +185,14 @@ struct Screenshot: AsyncParsableCommand {
         await appOption.apply(to: route)
         let console = Console.current
         let masks = try await masksWithRunDefaults(maskPlan())
+        let shot = try await pickingWidget(on: route, watchdog: watchdog)
         let report = try await console.progress("Capturing the screen") {
             try await watchdog.guardingSetup(device: deviceOption.id) { try await route.backend.prepare() }
             // The bound also covers a --wait-lock wait, since an Android mask's tree read takes the device's lock.
             return try await watchdog.guardingRead(of: route.device, extra: DeviceClaims.current.longestWait) {
-                try await take(request, on: route, masks: masks, plain: !json)
+                try await PhoneRead.$overSystemWindow.withValue(true) {
+                    try await shot.take(request, on: route, masks: masks, plain: !json)
+                }
             }
         }
 
@@ -221,13 +242,14 @@ struct Screenshot: AsyncParsableCommand {
     /// Captures, paints `masks` (reading the tree from `tree` only when a mask needs it), writes the image when asked and compares; prints only the stderr notes.
     @MainActor
     func take(
-        _ request: ScreenshotRequest,
+        _ asked: ScreenshotRequest,
         on route: DeviceRouter.Route,
         masks requested: MaskPlan,
         plain: Bool = false,
         tree treeSource: @MainActor () async throws -> UITree
     ) async throws -> ScreenshotReport {
         let backend = route.backend
+        var request = asked
         let own = requested
         let config = try MaskConfigs.current()?.config
         let masks = config.map { requested.union($0.plan) } ?? requested
@@ -235,6 +257,8 @@ struct Screenshot: AsyncParsableCommand {
         let booted = try await backend.requireBootedDevice(route.device)
         let recorder = EvidenceRecorder.current
         let token = try recorder.begin(device: booted.id, kind: "screenshot")
+        let shownWidget = widget ? try await chosenWidget(on: route) : nil
+        if let shownWidget { request.region = shownWidget.crop }
 
         var devicePNG: Data?
         if plain, isPlain(request, masks: masks, platform: route.device.platform) {
@@ -243,6 +267,7 @@ struct Screenshot: AsyncParsableCommand {
             if let size = PNGHeader.size(of: png) {
                 var report = try writePlain(png, size: size, booted: booted, token: token, recorder: recorder)
                 report.captureMs = Self.milliseconds(since: started)
+                report.systemWindow = Self.namedSystemWindow(on: backend, device: booted.id)
                 return report
             }
             devicePNG = png
@@ -258,11 +283,18 @@ struct Screenshot: AsyncParsableCommand {
             }
             // Read before the capture, so the frames describe the screen the pixels show.
             let started = ContinuousClock.now
-            tree = try await Timings.measure("accessibility") { try await treeSource() }
+            tree = try await Timings.measure("accessibility") {
+                if let shownWidget { return try await shownWidget.capturer.widgetMaskTree(on: booted.id) }
+                return try await treeSource()
+            }
             treeReadMs = Self.milliseconds(since: started)
         }
         let revealed = tree != nil && masks.secure ? await TreeCache.revealedSecrets(for: booted.id, backend: backend) : nil
         let captureStarted = ContinuousClock.now
+        if let shownWidget {
+            devicePNG = try await shownWidget.capturer.widgetFullScreenPNG(on: booted.id)
+            try await Self.requireStill(shownWidget, on: booted.id)
+        }
         var capture: CapturedScreen
         if let devicePNG {
             capture = try ScreenCapture.make(png: devicePNG, platform: route.device.platform, screen: try? await backend.screenInfo(for: booted.id))
@@ -276,6 +308,7 @@ struct Screenshot: AsyncParsableCommand {
         }
         let captureMs = Self.milliseconds(since: captureStarted)
         if let tree, selected == nil { FrozenDisplay.check(capture, tree: tree, device: booted.id) }
+        let systemWindow = shownWidget == nil ? Self.namedSystemWindow(on: backend, device: booted.id) : nil
         var masked: ScreenCapture.MaskResult?
         if !masks.isEmpty {
             var result = try Timings.measure("mask") { try ScreenCapture.masking(capture, plan: masks, tree: tree, revealed: revealed) }
@@ -341,6 +374,8 @@ struct Screenshot: AsyncParsableCommand {
             report.runFile = runFile
             report.treeReadMs = treeReadMs
             report.captureMs = captureMs
+            report.systemWindow = systemWindow
+            report.widget = shownWidget?.report
             return report
         }
 
@@ -358,6 +393,8 @@ struct Screenshot: AsyncParsableCommand {
         report.runFile = runFile
         report.treeReadMs = treeReadMs
         report.captureMs = captureMs
+        report.systemWindow = systemWindow
+        report.widget = shownWidget?.report
         recorder.update(token) { entry in
             entry.changed = result.outcome == .changed
             entry.expect = result.expected.rawValue
@@ -440,10 +477,108 @@ struct Screenshot: AsyncParsableCommand {
         MaskConfig(ids: plan.ids, labels: plan.labels, labelContains: plan.labelsContaining, valuePatterns: plan.texts).selectorNames
     }
 
+    /// The system window this capture went ahead under, named on stderr; nil when there is none.
+    @MainActor
+    private static func namedSystemWindow(on backend: any DeviceBackend, device: DeviceID) -> UITreeContext.Window? {
+        guard let window = (backend as? any SystemWindowReporting)?.systemWindow(for: device) else { return nil }
+        let name = TerminalText.quoted(TerminalText.line(window.title ?? window.package ?? "untitled", cap: 60))
+        Console.current.notice(.note(
+            "System window in front: \(name). Input stays refused",
+            agent: "a system window (\(name)) is over the allowed app, which still holds focus; only describe-ui and screenshot read it, and input stays refused (systemWindow)."
+        ))
+        return window
+    }
+
     /// `Screenshot saved to <path> (W x H px)` on stderr for an agent; a person reads the receipt.
     private static func saved(_ path: String, width: Int, height: Int) {
         let size = "\(width) x \(height) px"
         ReadPersonView.saved("Screenshot saved to \(path) (\(size))", person: "Screenshot saved to \(TerminalText.homePath(path)) · \(size)")
+    }
+}
+
+/// The one widget a `--widget` capture holds to, and what can read and capture it.
+struct ChosenWidget {
+    let capturer: any WidgetCapturing
+    let app: String
+    let widget: HomeWidget
+    let nth: Int
+    let count: Int
+
+    var report: ScreenshotReport.Widget {
+        ScreenshotReport.Widget(app: app, label: widget.label, nth: nth, count: count)
+    }
+
+    /// The widget's frame less a point each side, as a crop rounds outward to whole pixels and the launcher can set widgets edge to edge.
+    var crop: PointRegion {
+        let frame = widget.frame
+        let inset = min(1, min(frame.width, frame.height) / 4)
+        return PointRegion(x: frame.x + inset, y: frame.y + inset, width: frame.width - 2 * inset, height: frame.height - 2 * inset)
+    }
+}
+
+extension Screenshot {
+    /// The app's widget this command captures; several with no `--widget-nth` is a usage error that names each.
+    @MainActor
+    func chosenWidget(on route: DeviceRouter.Route) async throws -> ChosenWidget {
+        guard let capturer = route.backend as? any WidgetCapturing else {
+            throw CLIError(errorDescription: "--widget is for Android. On an iOS simulator, capture the home screen with --region.", reason: .notSupported)
+        }
+        let app = try Self.widgetApp(appOption.bundleID, route: route)
+        let widgets = try await capturer.widgets(of: app, on: route.device)
+        if widgets.count > 1, widgetNth == nil {
+            let rows = widgets.enumerated().map { "\($0.offset + 1): \($0.element.frame.summary)" }.joined(separator: "; ")
+            throw CLIError(
+                errorDescription: "\(widgets.count) of \(app)'s widgets are on the screen (\(rows)), so Offsider captured nothing. Name one with --widget-nth.",
+                reason: .selectorAmbiguous,
+                hint: "--widget-nth 1"
+            )
+        }
+        let nth = widgetNth ?? 1
+        guard nth <= widgets.count else {
+            throw CLIError(errorDescription: "--widget-nth \(nth) asks for more than the \(widgets.count) of \(app)'s widgets on the screen, so Offsider captured nothing.", reason: .usage)
+        }
+        return ChosenWidget(capturer: capturer, app: app, widget: widgets[nth - 1], nth: nth, count: widgets.count)
+    }
+
+    /// `--app`, else offsider.login.json's package, else the allowance's only pinned app; on a phone the allowance must permit it.
+    @MainActor
+    static func widgetApp(_ explicit: String?, route: DeviceRouter.Route, gate: DevicePolicyGate = .current, profile: () throws -> LoginProfile? = { try LoginProfiles.implicit() }) throws -> String {
+        try route.app(named: explicit, gate: gate, profile: profile) {
+            CLIError(
+                errorDescription: "--widget needs the app: pass --app <package>, or name it in offsider.login.json.",
+                reason: .usage,
+                hint: "offsider screenshot --widget --app <package> --device \(route.device.rawValue)"
+            )
+        }
+    }
+
+    /// A page turned or a window opened during the capture would put something else in the crop, so the image is dropped before anything is written.
+    @MainActor
+    static func requireStill(_ shown: ChosenWidget, on device: DeviceID) async throws {
+        let now = try await shown.capturer.widgets(of: shown.app, on: device)
+        guard now.count == shown.count, now.contains(where: { $0.frame == shown.widget.frame }) else {
+            throw CLIError(errorDescription: "The home screen changed during the capture, so Offsider wrote nothing. Retry.", reason: .widgetNotShown)
+        }
+    }
+
+    /// On a person's terminal, a menu when several of the app's widgets show; else this command as it was given.
+    @MainActor
+    func pickingWidget(on route: DeviceRouter.Route, watchdog: DeviceWatchdog) async throws -> Screenshot {
+        guard widget, widgetNth == nil, OutputProfile.gated == .person, PersonPresence.terminal() else { return self }
+        let widgets: [HomeWidget] = try await Console.current.progress("Looking for the widget") {
+            guard let capturer = route.backend as? any WidgetCapturing else { return [] }
+            try await watchdog.guardingSetup(device: deviceOption.id) { try await route.backend.prepare() }
+            return try await watchdog.guardingRead(of: route.device, extra: DeviceClaims.current.longestWait) {
+                try await capturer.widgets(of: try Self.widgetApp(appOption.bundleID, route: route), on: route.device)
+            }
+        }
+        guard widgets.count > 1 else { return self }
+        let index = try TerminalPrompt.run(cancelled: "Cancelled; nothing was captured.") { prompt in
+            try prompt.choose("Which widget?", rows: widgets.map { MenuRow(nil, [TerminalText.line($0.label ?? "Widget", cap: 40), $0.frame.summary]) })
+        }
+        var shot = self
+        shot.widgetNth = index + 1
+        return shot
     }
 }
 

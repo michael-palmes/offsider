@@ -34,7 +34,7 @@ offsider assert --id <identifier> --has-value <text> --device <DEVICE_ID>
 
 ## Rules
 
-- Wait on a condition, never a guess: `wait --id`, `--gone` (`--stable-for`), `--has-value`, `--settled` (`--ignore-values` for ticking text, `--ignore-id` or `--ignore-region` for a live chart). Never tap an element just to pass time.
+- Wait on a condition: `wait --id`, `--gone` (`--stable-for`), `--has-value`, `--settled` (`--ignore-values` for ticking text, `--ignore-id` or `--ignore-region` for a live chart). Never tap an element just to pass time.
 - `type` adds to the focused field. Tap the field (or pass `--into-id <id>`, `--nth` for twins), then `type --replace 'text'` sets it exactly (`''` clears it); a trailing newline presses Return; single quotes inline, `--stdin` or `--file` for shell-sensitive text (`guide selectors`).
 - Secure fields read as bullets, one per character: find them by `--id` or `--label` (`--value` never matches them). Secrets go through `login` or `type --stdin`, never as an argument; screenshots mask password fields, and what `offsider.mask.json` names, by default (`guide screenshots`).
 - For a report, `run start <dir>` numbers screenshots and logs into one folder, masking password fields and emails by default (`guide evidence`).
@@ -44,7 +44,7 @@ offsider assert --id <identifier> --has-value <text> --device <DEVICE_ID>
 - `appearance`, `content-size`, `orientation`, `permission`, `status-bar`, `biometric`, `stay-awake`, `posture` and `airplane` stay changed: read the current value first, and set it back when done (`guide device-state`).
 - A physical iPhone or iPad works over USB only, unlocked, with UI Automation on, inside one app: pass `--app` to every screen command (not on a test device). Input starts a background session: run `offsider session stop --device <UDID> --clean` when done (`guide ios-device`).
 - React Native debug builds: `rn open` (Metro, `--restart`), `rn logbox status|open|dismiss` (`--index n`), `rn devmenu` (also a batch step), `logs --rn --app <id>` (`guide react-native`). `logs` reads the project's app; `--all` reads every app.
-- When an error says the screen is off or locked, run `offsider wake --device <DEVICE_ID>`; exit 7 `device_locked` means a passcode, PIN or password: ask the user to unlock it.
+- When an error says the screen is off or locked, run `offsider wake --device <DEVICE_ID>`; exit 7 `device_locked` means a passcode or PIN: ask the user to unlock it.
 
 ## Exit codes
 
@@ -70,7 +70,7 @@ Every input command takes `--json` (`guide verify`); a failure prints `exitCode`
 | `login` | You sign in, choose or switch test users, or save or describe one |
 | `foldables` | The device folds or has more than one display |
 | `batch` | A flow has three or more steps |
-| `screenshots` | You need pixels: charts, maps, web views, a frame mid-swipe, masked secure fields or video |
+| `screenshots` | You need pixels: charts, maps, web views, a frame mid-swipe, masked secure fields, video or a home screen widget |
 | `evidence` | You need numbered screenshots and logs for a report, masked or redacted, a pixel diff, or log entries as JSON |
 | `describe-ui` | You need more than `--summary`: JSON, filters, the byte budget or `--diff` |
 | `device-state` | You change appearance, text size, orientation, permissions, the status bar or biometrics, or keep an Android screen awake and unlocked |

@@ -87,8 +87,10 @@ public struct BatchStepRecord: Sendable {
     private var untrustedPaths: [String] {
         let error = UntrustedPaths.under("error", UntrustedPaths.errorFields)
         switch detail {
-        case .none, .screenshot:
+        case .none:
             return error
+        case .screenshot:
+            return error + ScreenshotReport.untrustedPaths
         case .wait:
             return error + WaitReport.untrustedPaths
         case .describe(_, let options):

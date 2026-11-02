@@ -21,6 +21,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - `app broadcast <action> --app <id>` on Android sends to that app's own receivers (`--receiver` for one), which is how to refresh a home-screen widget. Protected system actions exit 1 `broadcast_refused` and list the app's own, a receiver that is not exported is refused rather than dropped silently, and a missing one exits 1 `receiver_not_found`.
 - `airplane [on|off]` reads or sets Android's airplane mode; `session stop` and `devices remove` turn it off only if this command turned it on.
 - `init --print-rules` lists `allowOnce`: rule lines a person can add once for the commands above, so an agent needs no raw adb and no prompt per call.
+- `screenshot --widget --app <package>` captures only that app's own home screen widget on Android, cropped to the bounds the device reports and masked like any capture; `--widget-nth <n>` picks one of several, and `--json` adds `widget`. The launcher itself is never captured: nothing is written unless the widget is the app's, nothing overlaps it, and the screen held still. New error `widget_not_shown`.
+- On an allowed Android phone, `screenshot` and `describe-ui` read while the allowed app holds focus beneath a system window owned by `android`, and name it: `systemWindow` in `screenshot --json`, `context.window` with `readOnly` in `describe-ui`. Everything else stays refused there.
 
 ### Changed
 
@@ -75,6 +77,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - `session status` lists the adb reverses and posture overrides recorded on a phone, read from this Mac (`recorded` in `--json`), so a phone with only those no longer reads as having no sessions.
 - `session stop` names what it left with the command that clears it (`notRemoved` in `--json`), including a phone that is unplugged or no longer allowed, and exits non-zero when a removal fails. `devices remove` says the same (`notRemoved` and `retry` in `--json`).
 - `rn open` checks that a Metro runs as you before it uses a reverse already on a phone, refuses a reverse Offsider set once its port is withdrawn, reports a failed reverse read as that rather than a missing reverse, and names a recorded reverse on success, failure and Ctrl-C (`reverseRecorded` in `--json`). `devices add` takes off the reverses for ports it drops. A reverse that may have landed when adb stopped answering keeps its record.
+- On an Android phone, input by coordinates, keys and held touches went through while a system window or the notification shade had focus over an allowed app, as only the resumed activity was checked. Each input step now also reads which window has focus, and is refused unless an allowed app owns it. A capture with no tree read refuses the same way.
 
 ## [0.15.0] - 2026-11-01
 
