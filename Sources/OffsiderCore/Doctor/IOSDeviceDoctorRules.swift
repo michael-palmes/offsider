@@ -177,6 +177,8 @@ public enum IOSDeviceDoctorRules {
         switch fact {
         case nil:
             return (.skip, "the device did not answer", nil)
+        case .locked?:
+            return (.warn, "Locked", "Unlock it before driving it; Offsider never types an iPhone passcode.")
         case .unreadable(let message)?:
             return (.skip, "could not read it: \(message)", nil)
         case .read(let passcodeRequired, let backlightOn)?:

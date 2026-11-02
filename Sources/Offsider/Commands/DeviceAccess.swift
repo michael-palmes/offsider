@@ -577,14 +577,20 @@ struct DeviceAccessAllow: AsyncParsableCommand {
         func keep(_ entry: DeviceAllowance) -> (value: (apps: [String], testDevice: Bool), shown: String) {
             ((entry.apps, entry.testDevice), AllowScreen.apps(entry.apps, testDevice: entry.testDevice))
         }
-        let listed: [InstalledApp]
-        let front: String?
-        do {
-            (listed, front) = try await TerminalSpinner.run("Reading its apps", terminal: prompt.terminalDescriptor) {
-                (try await context.installedApps(row), await context.frontApp(row))
+        var listed: [InstalledApp] = []
+        var front: String?
+        var problem = row.platform == .ios && row.state == IOSDeviceReadiness.developerModeOff.stateText ? AllowScreen.appsDeveloperModeOff : nil
+        if problem == nil {
+            do {
+                (listed, front) = try await TerminalSpinner.run("Reading its apps", terminal: prompt.terminalDescriptor) {
+                    (try await context.installedApps(row), await context.frontApp(row))
+                }
+            } catch {
+                problem = Self.appsProblem(error)
             }
-        } catch {
-            prompt.lines(TerminalUI.warning("Could not read its apps (\(Self.reason(error))). Unlock it, or type an app ID.", width: prompt.width, style: prompt.style))
+        }
+        if let problem {
+            prompt.lines(TerminalUI.warning(problem, width: prompt.width, style: prompt.style))
             let lead = step.map { "\($0) " } ?? "  "
             if let kept {
                 let answer = try typeApp(on: prompt, platform: row.platform, policy: policy, label: lead + "App ID (Return to keep \(keep(kept).shown)): ")
@@ -605,6 +611,20 @@ struct DeviceAccessAllow: AsyncParsableCommand {
             guard answer == Self.personalNoIndex else { throw PromptCancelled() }
             return (([], true), AllowScreen.wholeDevice)
         case .type: return apps(try typeApp(on: prompt, platform: row.platform, policy: policy, label: "  App ID: "))
+        }
+    }
+
+    /// Why the app menu is missing, in the person's words: never a raw `devicectl` error, or a `doctor` that refuses a device not yet allowed.
+    static func appsProblem(_ error: any Error) -> String {
+        switch (error as? any OffsiderFailure)?.reason {
+        case .deviceLocked?: return AllowScreen.appsLocked
+        case .developerModeOff?: return AllowScreen.appsDeveloperModeOff
+        default: break
+        }
+        switch (error as? IOSDeviceError)?.kind {
+        case .diskImageFailed?: return AllowScreen.appsDiskImageFailed
+        case .devicectlFailed?: return AllowScreen.appsUnread
+        default: return "Could not read its apps (\(reason(error))). Type an app ID."
         }
     }
 

@@ -25,6 +25,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Fixed
 
+- `devicectl`'s failures on an iPhone or iPad now give its real cause, not only its first line: a locked device is `device_locked` and Developer Mode off is `developer_mode_off`, in every command. Any other failed disk image mount says to retry, then update Xcode. `doctor --device`'s `ios-device.lock-state` warns `Locked` when `devicectl` says so.
+- `devices add` says at the app step when an iPhone or iPad has Developer Mode off, without trying to read its apps, and words a failed read in one line with its fix, with no raw error, device id or `doctor` hint (which refuses a device not yet allowed).
 - `tap` refuses a target under the 50 pt circle of Expo's floating dev menu button, though the tree gives only its 26 pt icon (`evidence` `devMenuTouchArea`, with the `drag` that moves it clear as the hint), and `--verify` no longer passes when the dev menu opens over the app (exit 5, `note` `devmenu_opened`).
 - `--verify` no longer passes on text ticking on a screen beneath the front page, so a tap on a disabled button stays unverified.
 - `tap --verify` runs the keyboard and cover checks again on its last read before it sends, so a target that has gone, or come under a cover, is refused with nothing sent instead of tapped where it was.
