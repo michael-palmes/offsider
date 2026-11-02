@@ -77,22 +77,19 @@ public struct IOSDeviceError: LocalizedError, CustomStringConvertible, Equatable
     }
 
     /// `cause` is devicectl's own error: what it names beats its first line, which only says what it was trying.
-    static func devicectlFailed(_ command: String, udid: String?, detail: String, cause: CoreDeviceErrorInfo?) -> IOSDeviceError {
-        guard let udid, let cause else { return devicectlFailed(command, udid: udid, detail: detail) }
-        if cause.isLocked {
-            return IOSDeviceError(.locked, "\(udid) is locked, so Xcode could not reach it. Unlock it, then retry; Offsider never types a passcode.")
+    static func devicectlFailed(_ command: String, udid: String?, detail: String, cause: CoreDeviceErrorInfo? = nil) -> IOSDeviceError {
+        if let udid, let cause {
+            if cause.isLocked {
+                return IOSDeviceError(.locked, "\(udid) is locked, so Xcode could not reach it. Unlock it, then retry; Offsider never types a passcode.")
+            }
+            if cause.isDeveloperModeOff { return developerModeOff(udid) }
+            if cause.isDiskImageMountFailure {
+                return IOSDeviceError(
+                    .diskImageFailed,
+                    "Xcode could not mount its developer disk image on \(udid): \(TerminalText.line(cause.rootCause, cap: 200)). Keep it connected and unlocked, then retry; if it fails again, update Xcode."
+                )
+            }
         }
-        if cause.isDeveloperModeOff { return developerModeOff(udid) }
-        if cause.isDiskImageMountFailure {
-            return IOSDeviceError(
-                .diskImageFailed,
-                "Xcode could not mount its developer disk image on \(udid): \(TerminalText.line(cause.rootCause, cap: 200)). Keep it connected and unlocked, then retry; if it fails again, update Xcode."
-            )
-        }
-        return devicectlFailed(command, udid: udid, detail: detail)
-    }
-
-    static func devicectlFailed(_ command: String, udid: String?, detail: String) -> IOSDeviceError {
         let reason = detail.isEmpty ? "" : ": \(detail)"
         let next = udid.map { "Run `offsider doctor --device \($0)` to check the device." } ?? "Run `offsider doctor` to check Xcode."
         return IOSDeviceError(.devicectlFailed, "`devicectl \(command)` failed\(reason). \(next)")

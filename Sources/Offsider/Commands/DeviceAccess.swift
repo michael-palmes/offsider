@@ -577,20 +577,14 @@ struct DeviceAccessAllow: AsyncParsableCommand {
         func keep(_ entry: DeviceAllowance) -> (value: (apps: [String], testDevice: Bool), shown: String) {
             ((entry.apps, entry.testDevice), AllowScreen.apps(entry.apps, testDevice: entry.testDevice))
         }
-        var listed: [InstalledApp] = []
-        var front: String?
-        var problem = row.platform == .ios && row.state == IOSDeviceReadiness.developerModeOff.stateText ? AllowScreen.appsDeveloperModeOff : nil
-        if problem == nil {
-            do {
-                (listed, front) = try await TerminalSpinner.run("Reading its apps", terminal: prompt.terminalDescriptor) {
-                    (try await context.installedApps(row), await context.frontApp(row))
-                }
-            } catch {
-                problem = Self.appsProblem(error)
+        let listed: [InstalledApp]
+        let front: String?
+        do {
+            (listed, front) = try await TerminalSpinner.run("Reading its apps", terminal: prompt.terminalDescriptor) {
+                (try await context.installedApps(row), await context.frontApp(row))
             }
-        }
-        if let problem {
-            prompt.lines(TerminalUI.warning(problem, width: prompt.width, style: prompt.style))
+        } catch {
+            prompt.lines(TerminalUI.warning(Self.appsProblem(error, row: row), width: prompt.width, style: prompt.style))
             let lead = step.map { "\($0) " } ?? "  "
             if let kept {
                 let answer = try typeApp(on: prompt, platform: row.platform, policy: policy, label: lead + "App ID (Return to keep \(keep(kept).shown)): ")
@@ -615,7 +609,8 @@ struct DeviceAccessAllow: AsyncParsableCommand {
     }
 
     /// Why the app menu is missing, in the person's words: never a raw `devicectl` error, or a `doctor` that refuses a device not yet allowed.
-    static func appsProblem(_ error: any Error) -> String {
+    static func appsProblem(_ error: any Error, row: DeviceSummary) -> String {
+        if row.platform == .ios, row.state == IOSDeviceReadiness.developerModeOff.stateText { return AllowScreen.appsDeveloperModeOff }
         switch (error as? any OffsiderFailure)?.reason {
         case .deviceLocked?: return AllowScreen.appsLocked
         case .developerModeOff?: return AllowScreen.appsDeveloperModeOff

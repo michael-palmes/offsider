@@ -624,19 +624,29 @@ struct DeviceAccessCommandTests {
         #expect(try Self.entries(home).map(\.apps) == [["com.example.app"]])
     }
 
-    @Test("an iPhone that lists Developer Mode off says so without trying to read its apps")
-    func developerModeOffSkipsAppRead() async throws {
+    static let developerModeOffRow = DeviceSummary(
+        id: PolicyFixtures.phone, platform: .ios, state: IOSDeviceReadiness.developerModeOff.stateText, name: "Test iPhone", osVersion: "iOS 27.2", deviceType: "iPhone 17 Pro", kind: .physical, connection: "usb"
+    )
+
+    @Test("when a read fails on an iPhone listed with Developer Mode off, that is the fix named, even if it is also locked")
+    func developerModeOffNamedOnFailure() async throws {
         let home = try makePolicyHome()
         defer { try? FileManager.default.removeItem(atPath: home) }
-        let listed = DeviceSummary(
-            id: PolicyFixtures.phone, platform: .ios, state: IOSDeviceReadiness.developerModeOff.stateText, name: "Test iPhone", osVersion: "iOS 27.2", deviceType: "iPhone 17 Pro", kind: .physical, connection: "usb"
-        )
-        let reads = CallCounter()
         let (_, transcript) = try await Self.allow([], answers: ["1", "\r", "com.example.app\r", "\r"], context: { terminal in
-            Self.context(home: home, seal: MemorySeal(), terminal: terminal, devices: { [listed] }, apps: { _ in _ = reads.tick(); return [] })
+            Self.context(home: home, seal: MemorySeal(), terminal: terminal, devices: { [Self.developerModeOffRow] }, apps: { _ in throw IOSDeviceError(.locked, "Locked.") })
         })
-        #expect(reads.count == 0)
         #expect(Self.oneLine(transcript).contains(AllowScreen.appsDeveloperModeOff))
+        #expect(try Self.entries(home).map(\.apps) == [["com.example.app"]])
+    }
+
+    @Test("an iPhone listed with Developer Mode off still gets its app menu when the read works, as that row can be stale")
+    func developerModeOffRowStillReads() async throws {
+        let home = try makePolicyHome()
+        defer { try? FileManager.default.removeItem(atPath: home) }
+        let (_, transcript) = try await Self.allow([], answers: ["1", "\r", "\r", "\r"], context: { terminal in
+            Self.context(home: home, seal: MemorySeal(), terminal: terminal, devices: { [Self.developerModeOffRow] }, apps: { _ in [InstalledApp(id: "com.example.app", name: "Example")] })
+        })
+        #expect(!Self.oneLine(transcript).contains(AllowScreen.appsDeveloperModeOff))
         #expect(try Self.entries(home).map(\.apps) == [["com.example.app"]])
     }
 

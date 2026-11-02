@@ -90,6 +90,13 @@ struct DevicectlFailureTests {
         #expect(error?.reason == .deviceLocked)
     }
 
+    @Test("a lock listed among several underlying errors is still device_locked")
+    func lockedAmongSeveral() async {
+        let stdout = #"{"error":{"code":12040,"domain":"com.apple.dt.CoreDeviceError","userInfo":{"NSMultipleUnderlyingErrorsKey":[{"error":{"code":1,"domain":"Other"}},{"error":{"code":10003,"domain":"com.apple.dt.CoreDeviceError"}}]}}}"#
+        let error = await Self.failure(from: ProcessCaptureResult(status: 1, stdout: stdout, stderr: Self.firstLine))
+        #expect(error?.reason == .deviceLocked)
+    }
+
     @Test("doctor reports the lock devicectl names, instead of a lock state it could not read")
     func doctorReadsLocked() async throws {
         let devicectl = try FakeDevicectl.listing("devicectl-list-xcode27-disconnected.json", extra: [
@@ -97,6 +104,9 @@ struct DevicectlFailureTests {
         ])
         let facts = await IOSDeviceDoctorProbe(host: .fake(devicectl), xcodeTeams: { [] }).run(udid: Self.phone).facts
         #expect(facts.lock == .locked)
+        let ddi = IOSDeviceDoctorRules.checks(facts).first { $0.id == .iosDeviceDDI }
+        #expect(ddi?.fixable != true)
+        #expect(!IOSDeviceDoctorRules.isDDIFixable(facts))
     }
 
     @Test("the pairing error that already meant locked still does")

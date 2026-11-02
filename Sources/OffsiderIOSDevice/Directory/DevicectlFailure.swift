@@ -19,11 +19,13 @@ extension CoreDeviceErrorInfo {
             guard let value = value as? [String: Any] else { return nil }
             return CoreDeviceErrorInfo(devicectlError: value["error"] as? [String: Any] ?? value)
         }
+        let many = info["NSMultipleUnderlyingErrorsKey"]
         self.init(
             domain: domain,
             code: code,
             description: text("NSLocalizedDescription") ?? text("NSLocalizedFailureReason"),
-            underlying: nested(info["NSUnderlyingError"]).map { [$0] } ?? []
+            underlying: (nested(info["NSUnderlyingError"]).map { [$0] } ?? [])
+                + ((many as? [Any]) ?? ((many as? [String: Any])?["array"] as? [Any]) ?? []).compactMap(nested)
         )
     }
 }
