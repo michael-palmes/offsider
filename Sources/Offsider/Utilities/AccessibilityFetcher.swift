@@ -156,10 +156,10 @@ struct AccessibilityFetcher {
     /// An agent reads the doctor's detail and hint as one `Warning:` line; a person the cause in a few words and the relaunch to try.
     nonisolated static func emptyTreeNotice(_ app: SimLaunchctl.App, udid: String) -> Notice {
         let hint = DoctorRules.emptyTreeHint(app, udid: udid)
-        let relaunch = "xcrun simctl terminate \(udid) \(app.bundleID) && xcrun simctl launch \(udid) \(app.bundleID)"
+        let relaunch = DoctorRules.relaunchCommand(app, udid: udid)
         return .warning(
             "\(app.bundleID) is running but its accessibility tree is empty; relaunch it, or reboot the simulator if that fails",
-            agent: "\(DoctorRules.emptyTreeDetail(app)). \(hint)", try: hint.contains(relaunch) ? relaunch : nil
+            agent: "\(DoctorRules.emptyTreeDetail(app)). \(hint)", try: relaunch
         )
     }
 
@@ -431,18 +431,25 @@ struct AccessibilityFetcher {
               element.normalizedUniqueId == nil,
               element.normalizedValue == nil,
               element.children?.isEmpty != false,
-              let frame = element.frame,
-              abs(frame.x) < 1,
-              abs(frame.y) < 1 else {
+              let frame = element.frame else {
             return false
         }
-        let containsPoint = point.x >= frame.x
-            && point.x <= frame.x + frame.width
-            && point.y >= frame.y
-            && point.y <= frame.y + frame.height
-        return containsPoint
-            && min(frame.width, frame.height) >= 300
-            && max(frame.width, frame.height) >= 600
+        return isScreenSized(x: frame.x, y: frame.y, width: frame.width, height: frame.height, holding: point)
+    }
+
+    /// `isTransientPointFallback` for a point answer already read into a node.
+    nonisolated static func isTransientPointFallback(_ hit: UINode, at point: AccessibilityPoint) -> Bool {
+        guard hit.role == .group || hit.role == .other, hit.normalizedLabel == nil, hit.normalizedID == nil, hit.normalizedValue == nil, hit.children.isEmpty,
+              let frame = hit.frame else { return false }
+        return isScreenSized(x: frame.x, y: frame.y, width: frame.width, height: frame.height, holding: point)
+    }
+
+    /// A frame from the screen's corner, as big as a screen, around `point`.
+    nonisolated private static func isScreenSized(x: Double, y: Double, width: Double, height: Double, holding point: AccessibilityPoint) -> Bool {
+        abs(x) < 1 && abs(y) < 1
+            && point.x >= x && point.x <= x + width && point.y >= y && point.y <= y + height
+            && min(width, height) >= 300
+            && max(width, height) >= 600
     }
 
     private static func hasMeaningfulValue(_ value: Any?) -> Bool {

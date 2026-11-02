@@ -20,8 +20,8 @@ public enum LiveText {
               isUsable(record, readAt: readAt) else {
             return []
         }
-        let old = AccessibilitySnapshot(tree: withoutLogBoxToasts(cachedTree).tree, native: false)
-        let new = AccessibilitySnapshot(tree: withoutLogBoxToasts(first).tree, native: false)
+        let old = AccessibilitySnapshot(tree: withoutBeneath(withoutLogBoxToasts(cachedTree).tree), native: false)
+        let new = AccessibilitySnapshot(tree: withoutBeneath(withoutLogBoxToasts(first).tree), native: false)
         guard old.isKnown, new.isKnown, detector.sharedKeyFraction(old, new) >= minimumSharedKeys else {
             return []
         }
@@ -60,6 +60,25 @@ public enum LiveText {
     }
 
     /// True when the LogBox inspector covers the app in `after` and did not in `before`.
+    /// The tree with every screen beneath a full-screen page taken out: text ticking on a page nobody can see says nothing about an input.
+    public static func withoutBeneath(_ tree: UITree) -> UITree {
+        let stack = ScreenStack.build(roots: tree.roots, viewport: tree.viewport)
+        guard !stack.beneath.isEmpty else { return tree }
+        var index = 0
+        func kept(_ nodes: [UINode]) -> [UINode] {
+            nodes.compactMap { node in
+                let position = index
+                index += 1
+                var copy = node
+                copy.children = kept(node.children)
+                return stack.isBeneath(index: position) ? nil : copy
+            }
+        }
+        var front = tree
+        front.roots = kept(tree.roots)
+        return front
+    }
+
     public static func logBoxOpened(before: UITree, after: UITree) -> Bool {
         KnownOverlays.logBoxInspector(in: after.roots, viewport: after.viewport) != nil
             && KnownOverlays.logBoxInspector(in: before.roots, viewport: before.viewport) == nil

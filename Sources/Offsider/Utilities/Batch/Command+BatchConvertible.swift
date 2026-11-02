@@ -18,6 +18,7 @@ private func resolveBatchTapPoint(
     settle: SettlePolicy,
     pick: MatchPicker?,
     coverCheck: AccessibilityPoller.CoverCheck?,
+    coverSettle: TimeInterval,
     logger: OffsiderLogger
 ) async throws -> Polled<TapResolution> {
     let fetchTree = context.pollingTreeSource()
@@ -30,9 +31,10 @@ private func resolveBatchTapPoint(
         settle: settle,
         pick: pick,
         coverCheck: coverCheck,
+        coverSettle: coverSettle,
         logger: logger
     ) {
-        try await fetchTree()
+        await AccessibilityPoller.judgingMatches(try await fetchTree(), query: query, elementType: elementType, pick: pick, backend: context.backend, device: context.device)
     }
 }
 
@@ -68,6 +70,9 @@ extension Tap: BatchConvertible {
         let resolution: TapResolution
         let resolvedTree: UITree?
 
+        guard !dryRun else {
+            throw ValidationError("A batch step cannot take tap --dry-run: run it on its own.")
+        }
         if let pointX, let pointY {
             resolution = TapResolution(point: (x: pointX, y: pointY), isSwitchLikeControl: false)
             resolvedTree = nil
@@ -93,6 +98,7 @@ extension Tap: BatchConvertible {
                 settle: context.settlePolicy(stepOptedOut: noSettle),
                 pick: matchPicker(query: query, backend: context.backend, device: context.device),
                 coverCheck: coverCheck(selector: query.selectorDescription, backend: context.backend, device: context.device),
+                coverSettle: context.coverSettle(stepOptedOut: noSettle),
                 logger: logger
             )
             resolution = resolved.value

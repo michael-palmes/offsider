@@ -18,6 +18,8 @@ public struct InputReport: Equatable, Sendable {
     public var holdMs: Int?
     /// What `--screenshot-at` captured, in order.
     public var screenshots: [HeldScreenshot]
+    /// True for `tap --dry-run`, which found and judged the target and sent nothing.
+    public var dryRun: Bool
     /// From the command's start to the report, in seconds.
     public let elapsed: TimeInterval
     public let error: ErrorPayload?
@@ -25,9 +27,10 @@ public struct InputReport: Equatable, Sendable {
     public init(
         command: String, target: String, dispatched: DispatchState,
         point: UIPoint? = nil, percent: Double? = nil, value: String? = nil,
-        holdMs: Int? = nil, screenshots: [HeldScreenshot] = [],
+        holdMs: Int? = nil, screenshots: [HeldScreenshot] = [], dryRun: Bool = false,
         elapsed: TimeInterval = 0, error: ErrorPayload? = nil
     ) {
+        self.dryRun = dryRun
         self.command = command
         self.target = target
         self.dispatched = dispatched
@@ -60,6 +63,7 @@ public struct InputReport: Equatable, Sendable {
         if let percent { members.append(("percent", .number(Self.rounded(percent)))) }
         if let value { members.append(("value", .string(value))) }
         if let holdMs { members.append(("holdMs", .integer(holdMs))) }
+        if dryRun { members.append(("dryRun", .bool(true))) }
         if !screenshots.isEmpty { members.append(("screenshots", .array(screenshots.map(\.jsonValue)))) }
         members += [
             ("elapsedMs", .integer(VerifyPhases.milliseconds(elapsed))),

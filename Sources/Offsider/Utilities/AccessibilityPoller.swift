@@ -33,6 +33,7 @@ struct AccessibilityPoller {
         settle: SettlePolicy = .off,
         pick: MatchPicker? = nil,
         coverCheck: CoverCheck? = nil,
+        coverSettle: TimeInterval = 0,
         readsHiddenCovers: Bool = false,
         logger: OffsiderLogger
     ) async throws -> Polled<TapResolution> {
@@ -46,20 +47,35 @@ struct AccessibilityPoller {
             settle: settle,
             pick: pick,
             coverCheck: coverCheck,
+            coverSettle: coverSettle,
             logger: logger
         ) {
-            var tree = try await backend.accessibilityTree(for: device)
-            // Android's every-view read is cheap, and the only way to see a hidden page over what the tree lists.
-            tree = readsHiddenCovers && tree.platform == .android
-                ? await backend.withGapsFilled(tree, on: device)
-                : await fillingGaps(tree, for: [query], elementType: elementType, allowOffscreen: allowOffscreen, on: backend, device: device)
-            // Several matches on a simulator: the hit-tests that tell which one a touch reaches, read at once, which the cover check then reuses.
-            if pick == nil, backend is any PointHitTesting, tree.platform == .ios,
-               AccessibilityTargetResolver.candidates(roots: tree.roots, query: query, elementType: elementType).onScreen.count > 1 {
-                await FrontJudge.read(matching: [query], elementType: elementType, in: &tree, backend: backend, device: device)
-            }
-            return tree
+            await judged(
+                try await backend.accessibilityTree(for: device), query: query, elementType: elementType, allowOffscreen: allowOffscreen,
+                readsHiddenCovers: readsHiddenCovers, pick: pick, backend: backend, device: device
+            )
         }
+    }
+
+    /// `read` as a selector tap judges it: what the app hides filled in where it is needed, and several matches hit-tested.
+    static func judged(
+        _ read: UITree, query: AccessibilityQuery, elementType: String?, allowOffscreen: Bool, readsHiddenCovers: Bool, pick: MatchPicker?, backend: any DeviceBackend, device: DeviceID
+    ) async -> UITree {
+        // Android's every-view read is cheap, and the only way to see a hidden page over what the tree lists.
+        let tree = readsHiddenCovers && read.platform == .android
+            ? await backend.withGapsFilled(read, on: device)
+            : await fillingGaps(read, for: [query], elementType: elementType, allowOffscreen: allowOffscreen, on: backend, device: device)
+        return await judgingMatches(tree, query: query, elementType: elementType, pick: pick, backend: backend, device: device)
+    }
+
+    /// Several matches on a simulator: `tree` with the hit-tests that tell which one a touch reaches, read at once, which the cover check then reuses.
+    static func judgingMatches(_ read: UITree, query: AccessibilityQuery, elementType: String?, pick: MatchPicker?, backend: any DeviceBackend, device: DeviceID) async -> UITree {
+        var tree = read
+        if pick == nil, backend is any PointHitTesting, tree.platform == .ios,
+           AccessibilityTargetResolver.candidates(roots: tree.roots, query: query, elementType: elementType).onScreen.count > 1 {
+            await FrontJudge.read(matching: [query], elementType: elementType, in: &tree, backend: backend, device: device)
+        }
+        return tree
     }
 
     /// `tree` with what the app hides from accessibility, read only when no query has a match to act on, so a selector that matches pays nothing.
@@ -121,6 +137,7 @@ struct AccessibilityPoller {
         settle: SettlePolicy = .off,
         pick: MatchPicker? = nil,
         coverCheck: CoverCheck? = nil,
+        coverSettle: TimeInterval = 0,
         logger: OffsiderLogger,
         clock: PollClock = .live,
         treeFetcher: () async throws -> UITree
@@ -137,7 +154,7 @@ struct AccessibilityPoller {
                 var checked = polled
                 checked.value = try await coverCheck(polled.value, polled.tree)
                 return checked
-            } catch where TapCover.isRefusal(error) && clock.now() - start < waitTimeout {
+            } catch where TapCover.isRefusal(error) && clock.now() - start < max(waitTimeout, coverSettle) {
                 logger.info().log("Target covered, checking again in \(pollInterval)s…")
                 try await clock.sleep(.seconds(pollInterval))
             } catch where TapCover.isKeyboardRefusal(error) && clock.now() - start < max(waitTimeout, TapCover.keyboardSettle) {

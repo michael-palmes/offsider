@@ -40,8 +40,10 @@ public final class RecordingMarker: @unchecked Sendable {
                 Darwin.close(descriptor)
                 continue
             }
+            // Appended, as two recordings of one device share the file and each must stay findable.
             let line = Array("pid=\(getpid())\nstarted=\(Int(Date().timeIntervalSince1970))\n".utf8)
-            _ = unsafe pwrite(descriptor, line, line.count, 0)
+            _ = fcntl(descriptor, F_SETFL, O_APPEND)
+            _ = unsafe write(descriptor, line, line.count)
             return RecordingMarker(path: path, descriptor: descriptor)
         }
         throw PrivateDirectoryError(.system(operation: "open", code: EAGAIN), path: path)
@@ -58,6 +60,46 @@ public final class RecordingMarker: @unchecked Sendable {
         }
         _ = flock(descriptor, LOCK_UN)
         return false
+    }
+
+    /// True while any recording of a `platform` device runs.
+    public static func anyLive(platform: DevicePlatform, root: String = OffsiderPrivateDirectory.root) -> Bool {
+        let folder = (root as NSString).appendingPathComponent(OffsiderPrivateDirectory.locksDirectoryName)
+        let prefix = "\(platform.rawValue)-"
+        let suffix = ".recording"
+        let names = (try? FileManager.default.contentsOfDirectory(atPath: folder)) ?? []
+        return names.contains { name in
+            guard name.hasPrefix(prefix), name.hasSuffix(suffix) else { return false }
+            return isLive(DeviceLockKey(platform: platform, id: String(name.dropFirst(prefix.count).dropLast(suffix.count))), root: root)
+        }
+    }
+
+    /// The pids of `key`'s running recordings, oldest first; one that has ended or whose pid was reused is left out.
+    public static func pids(
+        _ key: DeviceLockKey, root: String = OffsiderPrivateDirectory.root,
+        isRecorder: (Int32, _ started: Date) -> Bool = { isOffsider($0, started: $1) }
+    ) -> [Int32] {
+        guard isLive(key, root: root), let data = try? UntrustedRead.data(atPath: path(for: key, root: root), maxBytes: maximumMarkerBytes) else { return [] }
+        var found: [Int32] = []
+        var pid: Int32?
+        for line in String(decoding: data, as: UTF8.self).split(separator: "\n") {
+            if line.hasPrefix("pid=") {
+                pid = Int32(line.dropFirst("pid=".count))
+            } else if line.hasPrefix("started="), let current = pid, let seconds = TimeInterval(line.dropFirst("started=".count)) {
+                if !found.contains(current), isRecorder(current, Date(timeIntervalSince1970: seconds)) { found.append(current) }
+                pid = nil
+            }
+        }
+        return found
+    }
+
+    private static let maximumMarkerBytes = 1 << 16
+
+    /// A running `offsider` that started by the time the marker names; a reused pid starts later.
+    public static func isOffsider(_ pid: Int32, started: Date) -> Bool {
+        guard let path = ProcessPath.of(pid: pid), (path as NSString).lastPathComponent == "offsider",
+              let began = ProcessStartTime.date(of: pid) else { return false }
+        return began.timeIntervalSince(started) <= 1
     }
 
     /// Releases this recording's hold; the file goes once no other recording holds it.
