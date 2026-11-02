@@ -3,7 +3,7 @@ import Foundation
 public enum ChangeKind: String, Codable, Sendable {
     case accessibilityTree = "accessibility-tree"
     case screenshot
-    /// Android `button home`: the launcher came to the front.
+    /// `button home`: the launcher, or on a simulator SpringBoard, came to the front.
     case activity
     /// The `--verify-id` element came on screen.
     case element

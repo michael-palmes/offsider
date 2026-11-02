@@ -33,6 +33,13 @@ struct DescribeUITree {
         nodes(in: tree).first { $0["id"] as? String == id }
     }
 
+    /// A node's frame in points or dp.
+    static func frame(of id: String, in tree: [String: Any]) -> (x: Double, y: Double, width: Double, height: Double)? {
+        guard let frame = node(id: id, in: tree)?["frame"] as? [String: Double],
+              let x = frame["x"], let y = frame["y"], let width = frame["width"], let height = frame["height"] else { return nil }
+        return (x, y, width, height)
+    }
+
     /// The centre of a node's frame, rounded, in points or dp.
     static func centre(of node: [String: Any]) -> (x: Int, y: Int)? {
         guard let frame = node["frame"] as? [String: Double],
