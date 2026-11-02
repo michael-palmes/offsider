@@ -288,6 +288,7 @@ struct Screenshot: AsyncParsableCommand {
             capture = try await ScreenCapture.capture(backend, device: booted.id)
         }
         let captureMs = Self.milliseconds(since: captureStarted)
+        if let tree, selected == nil { FrozenDisplay.check(capture, tree: tree, device: booted.id) }
         var masked: ScreenCapture.MaskResult?
         if !masks.isEmpty {
             var result = try Timings.measure("mask") { try ScreenCapture.masking(capture, plan: masks, tree: tree, revealed: revealed) }

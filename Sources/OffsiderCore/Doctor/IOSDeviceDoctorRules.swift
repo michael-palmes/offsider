@@ -229,9 +229,11 @@ public enum IOSDeviceDoctorRules {
         switch fact {
         case nil:
             return (.skip, "not checked: the device is not ready for input", nil)
-        case .notRunning(true)?:
+        case .notRunning(.awake)?:
             return (.skip, "not running; the next screenshot or input on the device starts it", nil)
-        case .notRunning(false)?:
+        case .notRunning(.asleep)?:
+            return (.skip, "not running, and this Mac's display is asleep, so screenshots would use devicectl", "Keep the display awake for the screen stream: caffeinate -d")
+        case .notRunning(.none)?:
             return (.skip, "not running, and this process has no desktop session, so screenshots would use devicectl", "Run Offsider from a terminal on the Mac's desktop for the screen stream.")
         case .unanswered?:
             return (.warn, "its process is running but did not answer", "Run \(restart); the next command starts a new one.")

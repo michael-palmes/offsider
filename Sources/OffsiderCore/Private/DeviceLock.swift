@@ -51,13 +51,16 @@ public struct DeviceBusy: Error, Equatable, Sendable {
     /// The `--wait-lock` bound that ran out, nil when the claim did not wait.
     public let waited: Duration?
     public let now: Date
+    /// False for a refusal `--wait-lock` cannot end, as a video refused while `login` holds the device.
+    public let canWait: Bool
 
-    public init(device: String, command: String, holder: DeviceLockHolder?, waited: Duration?, now: Date = Date()) {
+    public init(device: String, command: String, holder: DeviceLockHolder?, waited: Duration?, now: Date = Date(), canWait: Bool = true) {
         self.device = device
         self.command = command
         self.holder = holder
         self.waited = waited
         self.now = now
+        self.canWait = canWait
     }
 }
 
@@ -78,10 +81,10 @@ extension DeviceBusy: OffsiderFailure {
         if let waited {
             return "Device \(device) is still in use by \(who) after waiting \(Self.seconds(waited)) s. Retry when it finishes, or pass a longer --wait-lock <seconds>."
         }
-        return "Device \(device) is in use by \(who). Retry when it finishes, or pass --wait-lock <seconds>."
+        return "Device \(device) is in use by \(who). Retry when it finishes\(canWait ? ", or pass --wait-lock <seconds>" : "")."
     }
 
-    public var hint: String? { Self.retryHint }
+    public var hint: String? { canWait ? Self.retryHint : "retry when it finishes" }
 
     /// Plain words, never a rebuilt command line, so no typed text is echoed back.
     public static let retryHint = "add --wait-lock 30 to the same command"

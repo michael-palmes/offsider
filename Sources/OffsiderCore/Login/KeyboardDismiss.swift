@@ -24,7 +24,9 @@ public enum KeyboardDismiss {
         }
         let keys = coverageFrames(in: tree)
         if let top = keys.map(\.y).min(), let viewport = tree.viewport {
-            let avoid = keys + fields.map { $0.outset(by: fieldMargin) }
+            // The bar above the keys, which a wrapper listed after it can hide from the chain.
+            let bar = nodes.filter { $0.id?.hasPrefix("SystemInputAssistant") == true }.compactMap(\.frame)
+            let avoid = keys + bar + fields.map { $0.outset(by: fieldMargin) }
             let aboveForm = fields.map(\.y).min().map { scan(tree, from: $0 - fieldMargin - 8, viewport: viewport, avoiding: avoid) } ?? []
             let nearKeys = scan(tree, from: top - 24, viewport: viewport, avoiding: avoid)
             for index in 0..<max(aboveForm.count, nearKeys.count) {
@@ -43,8 +45,11 @@ public enum KeyboardDismiss {
     private static func scan(_ tree: UITree, from start: Double, viewport: UIFrame, avoiding avoid: [UIFrame]) -> [UIPoint] {
         let xs = [viewport.x + viewport.width * 0.5, viewport.x + 40, viewport.x + viewport.width - 40]
             .filter { $0 >= viewport.x && $0 < viewport.x + viewport.width }
-        // Any branch, as a wrapper listed after the keyboard's Passwords bar hides that button from the chain.
-        let controls = tree.roots.flatMap { $0.flattened() }.filter(\.isActionable).compactMap(\.frame)
+        // Any branch of what is in front, as a wrapper can hide a control from the chain; a screen beneath a page takes no touch.
+        let stack = ScreenStack.build(roots: tree.roots, viewport: viewport)
+        let controls = tree.roots.flatMap { $0.flattened() }.enumerated()
+            .filter { $0.element.isActionable && !stack.isBeneath(index: $0.offset) }
+            .compactMap(\.element.frame)
         var found: [UIPoint] = []
         for backgroundOnly in [true, false] {
             var y = start

@@ -54,4 +54,23 @@ struct ReactNativeAppCommandTests {
         #expect(result.exitCode == 1)
         #expect((result.stdout + result.stderr).contains("link_not_handled"))
     }
+
+    @Test("--restart with a link no screen takes says so: Android stops nothing, and a simulator says it stopped the app", arguments: RNPlatform.enabled)
+    func restartWithUnhandledLink(platform: RNPlatform) async throws {
+        let app = RNApp(platform)
+        try await app.open("rows-test")
+        let result = try await app.offsider("app open 'offsider-nowhere://screen/x' --restart --app \(Self.app) --json")
+        #expect(result.exitCode == 1)
+        let said = result.stdout + result.stderr
+        #expect(said.contains("link_not_handled"))
+        #expect(said.contains("was stopped first") == (platform == .ios))
+    }
+
+    @Test("a link the app took reports linkHandled", arguments: RNPlatform.enabled)
+    func linkHandled(platform: RNPlatform) async throws {
+        let app = RNApp(platform)
+        try await app.open("rows-test")
+        let opened = try Self.json(try await app.run("app open 'offsiderplaygroundrn://screen/live-ticker' --app \(Self.app) --json"))
+        #expect(opened["linkHandled"] as? Bool == true)
+    }
 }

@@ -24,7 +24,7 @@ Exit 0 means `login` tapped submit, not that the app accepted the user. Trust th
 
 ## Switch users
 
-After `login` exits 0, Offsider records which user it submitted on that device and app. `status` shows each user's `signedIn` (`device`, `platform`, `since`). With `--device`, a top-level `signedInHere` names the user signed in there (null when none), and each listed user carries a `signedInHere` boolean. A record means Offsider submitted the form, not that the app accepted it, and selection ignores it.
+After `login` exits 0, Offsider records which user it submitted on that device and app. `status` shows each user's `signedIn` (`device`, `platform`, `since`). With `--device`, a top-level `signedInHere` names the user signed in there (null when none), and each listed user carries a `signedInHere` boolean. On Android, `signedInHereStale` is `true` when the app was first installed after that sign-in, as an uninstall wipes its data: expect its first screen, not a signed-in one. Reading that takes one read of the device, so an allowed phone shows its driving line; a device that does not answer leaves the mark off. A record means Offsider submitted the form, not that the app accepted it, and selection ignores it.
 
 1. Sign out in the app, with taps or one `batch`. Offsider never signs out.
 2. `offsider credential signed-out --device <DEVICE_ID>` clears the record for the app in front (`--app` names another), and exits 0 even when there was none. It takes no name and always needs `--device`.
@@ -99,7 +99,7 @@ Exit 0 means the submit button was tapped, not that the server accepted the logi
 | `app_not_allowed` | A browser or system app is in front, or the password field is inside a web view | Bring the app under test to the front; web sign-in needs the user's opt-in |
 | `person_required` | Touch ID or the password was cancelled or unavailable (plain ssh), or a link no person confirmed | Hand back; the message names the command for the user |
 | `device_not_allowed` | A physical phone not allowed, or a user saved without `--devices any` | Ask the user; never loosen it yourself |
-| `device_busy` (exit 8) | `record-video` is recording the device; nothing was typed | Stop the recording, then retry |
+| `device_busy` (exit 8) | `record-video` or `stream-video` is running on the device; nothing was typed | Run the `hint`, `kill -INT <pid>`, which saves it, then retry |
 
 On an iOS simulator, iOS can offer to save the password a second or more after a sign-in. `describe-ui` then shows `# window: Save Password? (system)` without its buttons, and a selector `tap` under it refuses with `target_covered` (`evidence` `otherProcess`) rather than spend the tap dismissing it. Take a screenshot and tap Not Now by its coordinates (`tap -x <X> -y <Y>`), or tap its backdrop as the refusal says, then wait until the header has gone. Never tap Save.
 

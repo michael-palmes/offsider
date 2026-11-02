@@ -33,6 +33,25 @@ struct TurnstileTests {
         [node(role: .application, label: "App", frame: screen, children: children)]
     }
 
+    @Test("Success on one widget outranks a checkbox left on another, an app wrapper's Success counts beside Cloudflare's container, and a logo's Success beats a stale prompt box")
+    func passedOutranksStaleCheckbox() {
+        let frame = UIFrame(x: 24, y: 369, width: 365, height: 66)
+        let box = UIFrame(x: 32, y: 389, width: 164, height: 25)
+        let stale = node(role: .group, id: "cf-chl-widget-a", frame: frame, children: [node(role: .checkbox, label: "Verify you are human", frame: box)])
+        let passed = node(role: .group, id: "cf-chl-widget-b", frame: frame, children: [node(role: .group, label: "Success!", frame: box)])
+        #expect(TurnstileWidget.phase(in: roots([stale, passed]), viewport: screen) == .passed)
+
+        let wrapper = node(role: .group, id: "turnstile-widget", frame: frame, children: [node(role: .group, label: "Success!", frame: box), stale])
+        #expect(TurnstileWidget.phase(in: roots([wrapper]), viewport: screen) == .passed)
+
+        let logo = node(role: .button, label: "Cloudflare, opens in a new tab", frame: UIFrame(x: 305, y: 381, width: 74, height: 31))
+        let loose = [node(role: .checkbox, label: "Verify you are human", frame: box), node(role: .group, label: "Success!", frame: box), logo]
+        #expect(TurnstileWidget.phase(in: roots(loose), viewport: screen) == .passed)
+
+        let grid = node(role: .group, id: "cf-chl-widget-c", frame: frame, children: [node(role: .other, label: "Select all squares with a bridge", frame: box)])
+        #expect(TurnstileWidget.phase(in: roots([passed, grid]), viewport: screen) == .visualChallenge)
+    }
+
     @Test("a checkbox reads as ready with its frame, the words included")
     func checkboxIsReady() {
         let phase = TurnstileWidget.phase(in: roots([checkboxWidget()]), viewport: screen)

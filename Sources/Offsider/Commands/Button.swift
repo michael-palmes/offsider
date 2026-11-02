@@ -199,6 +199,15 @@ struct Button: AsyncParsableCommand, VerifiableCommand {
         ])
     }
 
+    /// How to unlock a simulator after `button lock`; a swipe up can freeze its display while its tree moves on.
+    static func unlockNote(_ button: ButtonType, device: String) -> Notice? {
+        guard button == .lock, case .iosSimulator = DeviceIDClassifier.classify(device) else { return nil }
+        let home = "offsider button home --device \(device)"
+        return .note(
+            "To unlock, press Home twice; a swipe up can freeze the display", agent: "To unlock this simulator, run `\(home)` twice: a swipe up can freeze its display.", see: home, label: "Try"
+        )
+    }
+
     /// A short Android `home` press checks the foreground activity instead of the tree.
     static func isShortHome(_ button: ButtonType, duration: Double?) -> Bool {
         button == .home && duration == nil
@@ -216,11 +225,13 @@ struct Button: AsyncParsableCommand, VerifiableCommand {
             try await InputOutput.reporting(command: "button", target: buttonType.rawValue, json: verification.json) { _ in
                 try await execute(progress: nil)
                 Console.current.show(InputPersonView.receipt("Pressed \(buttonType.personName)", aside: duration.map(InputPersonView.held)))
+                if let note = Self.unlockNote(buttonType, device: deviceOption.id) { Console.current.notice(note) }
             }
             return
         }
         try await VerifyOutput.reportingFailures(command: "button", target: buttonType.rawValue, options: verification) { progress in
             try await execute(progress: progress)
+            if let note = Self.unlockNote(buttonType, device: deviceOption.id) { Console.current.notice(note) }
         }
     }
 

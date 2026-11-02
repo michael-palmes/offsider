@@ -12,6 +12,8 @@ public enum CoverEvidence: String, Sendable {
     case logBoxTouchArea
     /// The iOS simulator's hit-test found a view another process draws over the app, such as a system prompt.
     case otherProcess
+    /// The touch area of Expo's floating dev menu button, a circle wider than the icon the tree gives.
+    case devMenuTouchArea
 }
 
 /// What a selector tap would land on instead of its target.
@@ -28,6 +30,17 @@ public struct CoverVerdict: Equatable, Sendable {
         self.evidence = evidence
         self.isConfident = isConfident
         self.screen = screen
+    }
+
+    /// True when the tap may still go to a part of the target beside the cover, once a hit-test there finds the target.
+    public var leavesPartShowing: Bool {
+        isConfident && (evidence == .hitTest || evidence == .devMenuTouchArea)
+    }
+
+    /// Where the cover takes touches.
+    public var touchFrame: UIFrame? {
+        guard evidence == .devMenuTouchArea else { return cover.frame }
+        return cover.frame.map(KnownOverlays.devMenuButtonTouchFrame(of:))
     }
 }
 
@@ -50,6 +63,10 @@ public enum CoverJudge {
         var context = Context(target: target, matched: matched, point: point, candidates: candidates, roots: roots, viewport: viewport, stack: stack)
         context.logBoxInset = logBoxInset
         context.otherProcessCovers = otherProcessCovers
+        // A hit-test answers only for the icon, so it can name the target inside the button's circle.
+        if let button = context.devMenuButtonCover() {
+            return context.verdict(button, .devMenuTouchArea, confident: true)
+        }
         let judged = judged(context, hit: hit)
         if judged?.isConfident == true {
             return judged
@@ -349,8 +366,8 @@ public enum CoverJudge {
             if let page = pageGroup(placed) {
                 return .cover(page, confident: true)
             }
-            // An unlabelled container holds what lies inside its frame, which an iOS simulator lists beside it rather than within.
-            if !target.isActionable, target.normalizedLabel == nil, pageOverTarget == nil, let mine = target.frame, let theirs = (placed ?? hit).frame,
+            // An unlabelled container holds what lies inside its frame, which an iOS simulator lists beside it rather than within; Android nests it.
+            if !target.isActionable, target.normalizedLabel == nil, pageOverTarget == nil, !(placed?.isAndroidNode ?? false), let mine = target.frame, let theirs = (placed ?? hit).frame,
                mine.encloses(theirs, tolerance: TransitionGuard.frameTolerance) {
                 return .clear
             }
@@ -428,9 +445,43 @@ public enum CoverJudge {
             return candidates.filter { candidate in
                 guard !isOwn(candidate), let frame = candidate.frame, frame.contains(point), !CoverJudge.spans(frame, viewport),
                       !inside.contains(where: { $0.isSameElement(as: candidate) }),
-                      !candidate.flattened().contains(where: { $0.isSameElement(as: scroll) }) else { return false }
+                      !candidate.flattened().contains(where: { $0.isSameElement(as: scroll) }),
+                      !isOnScreenBeneathTarget(candidate) else { return false }
                 return scroll.frame.map { !frame.encloses($0, tolerance: 0) } ?? true
             }.min { $0.area < $1.area }
+        }
+
+        /// On a page or screen-sized view the target is not on, with the target listed after it: the screen a sheet was presented over, which a clean hit-test is right about.
+        private func isOnScreenBeneathTarget(_ candidate: UINode) -> Bool {
+            guard pageOverTarget == nil, let path = UITree.indexPath(to: candidate, in: roots), let targetPath = UITree.indexPath(to: target, in: roots) else { return false }
+            if let index = ScreenStack.index(of: candidate, in: roots), let page = stack.page(holding: index),
+               let held = ScreenStack.index(of: target, in: roots), !page.content.contains(held) {
+                return true
+            }
+            let shared = zip(path, targetPath).prefix { $0 == $1 }.count
+            guard shared < path.count, shared < targetPath.count, targetPath[shared] > path[shared] else { return false }
+            var branch = roots[path[0]]
+            for index in path[1..<(shared + 1)] {
+                branch = branch.children[index]
+            }
+            guard let shown = branch.frame?.intersection(viewport) else { return false }
+            return ScreenStack.share(of: shown, in: viewport) >= ScreenStack.minimumShare
+        }
+
+        /// Expo's floating dev menu button when its circle takes the point: never the target's own icon, one inside the target, one beneath a page or one Android draws below it.
+        func devMenuButtonCover() -> UINode? {
+            KnownOverlays.devMenuButtons(in: roots, viewport: viewport).first { button in
+                guard let frame = button.frame, KnownOverlays.devMenuButton(at: frame, takes: point), !isOwn(button), !stack.isBeneath(button, in: roots) else { return false }
+                if let order = UITree.zOrder(of: button, over: target, in: roots), order.byDrawingOrder, !order.isAbove { return false }
+                return !holdsDevMenuIcon(frame)
+            }
+        }
+
+        /// The target wraps the icon, as a control no bigger than the button does, or a container holds it: a row wider than the button can lie under it.
+        private func holdsDevMenuIcon(_ icon: UIFrame) -> Bool {
+            guard let mine = target.frame, mine.encloses(icon, tolerance: TransitionGuard.frameTolerance) else { return false }
+            let wrapper = 2 * KnownOverlays.devMenuButtonRadius + 10
+            return (mine.width <= wrapper && mine.height <= wrapper) || (!target.isActionable && target.normalizedLabel == nil)
         }
 
         /// The first control over the point that is neither the target's own, inside its frame, nor a backdrop: a root hit says nothing, so it is only a guess.
@@ -505,7 +556,7 @@ extension UIFrame {
     var area: Double { width * height }
 
     /// Each edge and size within `TransitionGuard.frameTolerance`.
-    func isWithinTolerance(of other: UIFrame) -> Bool {
+    public func isWithinTolerance(of other: UIFrame) -> Bool {
         let tolerance = TransitionGuard.frameTolerance
         return abs(x - other.x) <= tolerance && abs(y - other.y) <= tolerance
             && abs(width - other.width) <= tolerance && abs(height - other.height) <= tolerance
