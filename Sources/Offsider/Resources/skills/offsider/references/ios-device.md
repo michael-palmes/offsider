@@ -94,13 +94,14 @@ A refusal only the user's hands can clear carries `error.ask` (an `Ask:` line wi
 | `developer_mode_off` | 7 | Ask the user to turn on Developer Mode and restart |
 | `device_preparing` | 7 | Wait for Xcode, then retry |
 | `device_locked` | 7 | Run `offsider wake --device <UDID>`; if a passcode stays up, ask the user to unlock the device |
+| `system_prompt_in_front` | 7 | A system prompt such as Allow Paste is over the app. Ask the user to answer it on the device; only on a test device may you tap it, by coordinates from a `screenshot`. Nothing was read or sent |
 | `ui_automation_off` | 7 | Ask the user to enter the passcode if the device shows `Enter Passcode for "XCTest"`, else to turn on Settings > Developer > UI Automation |
 | `certificate_not_trusted` | 7 | Pass on `error.ask`: the user trusts the certificate in Settings > General > VPN & Device Management |
 | `xcode_too_old` | 9 | The command needs Xcode 27; use a runner command or ask the user |
 | `team_missing` | 9 | Ask the user to run `offsider devices add` and choose a team, or to set `OFFSIDER_IOS_TEAM_ID` |
 | `usbmux_unavailable` | 9 | Ask the user to unplug and replug the cable |
 | `runner_build_failed` | 1 | Read the build log the hint names; a hint of `runner build --register-device` is for the user to run |
-| `runner_unavailable` | 1 | Nothing was sent; retry once, then run `doctor` |
+| `runner_unavailable` | 1 | Nothing was sent; a `screenshot` shows any system prompt to answer; else retry once, then run `doctor` |
 | `hid_broker_failed` | 1 | Nothing was sent; retry once, then `session stop` and retry |
 | `input_outcome_unknown` | 1 | Check the screen before resending |
 

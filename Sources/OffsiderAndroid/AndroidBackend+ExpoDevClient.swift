@@ -45,8 +45,17 @@ extension AndroidBackend: ExpoDevClientOpening {
             throw ExpoDevClient.androidNotInstalled(package: package, serial: id.rawValue)
         }
         let dump = try await client.shell(ExpoDevClient.androidPackageDumpCommand(package: package), on: id.rawValue, timeout: .seconds(20), label: "dumpsys package")
-        return ExpoDevClient.schemes(fromPackageDump: dump.stdoutText)
+        let expo = ExpoDevClient.schemes(fromPackageDump: dump.stdoutText)
+        guard expo.isEmpty else { return expo }
+        var own: [String] = []
+        for scheme in ExpoDevClient.ownSchemes(fromPackageDump: dump.stdoutText).prefix(Self.ownSchemesChecked) {
+            let resolved = try await client.shell(ExpoDevClient.androidResolveCommand(scheme: scheme, package: package), on: id.rawValue, label: "cmd package resolve-activity")
+            if ExpoDevClient.androidResolves(resolved.stdoutText, package: package) { own.append(scheme) }
+        }
+        return own
     }
+
+    private static var ownSchemesChecked: Int { 8 }
 
     /// Reads `adb reverse` only; `addMetroReverse` is the one place Offsider sets one.
     public func metroHost(port: Int, on id: DeviceID) async throws -> String {

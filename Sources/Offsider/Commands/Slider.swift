@@ -308,7 +308,9 @@ struct Slider: AsyncParsableCommand {
     }
 
     private func resolveSliderElementAndTree(query: AccessibilityQuery, on target: SliderTarget) async throws -> (match: AccessibilityMatch, tree: UITree) {
-        let tree = try await target.backend.accessibilityTree(for: target.device)
+        let tree = await AccessibilityPoller.fillingGaps(
+            try await target.backend.accessibilityTree(for: target.device), for: [query], elementType: elementType, allowOffscreen: allowOffscreen, on: target.backend, device: target.device
+        )
         let match = try AccessibilityTargetResolver.resolveElement(
             roots: tree.roots,
             query: query,

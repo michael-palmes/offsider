@@ -317,8 +317,10 @@ final class IOSBackend: DeviceBackend {
 
     /// The status bar; the home indicator does not change on its own.
     func volatileScreenBands(for id: DeviceID) async -> ScreenBands {
-        ScreenBands(top: 60, bottom: 0)
+        ScreenBands(top: Self.statusBarHeight, bottom: 0)
     }
+
+    static let statusBarHeight = 60.0
 
     func simulator(for id: DeviceID) async throws -> FBSimulator {
         if let simulator = simulators[id.rawValue] {
@@ -360,6 +362,83 @@ extension IOSBackend: PresentationProbing {
         let data = try await AccessibilityFetcher.probeAccessibilityJSONData(from: try await simulator(for: id), at: AccessibilityPoint(x: layoutPoint.x, y: layoutPoint.y))
         let roots = try IOSAccessibilityMapping.roots(fromJSON: data)
         return (zoom?.screenRoots(roots) ?? roots).first
+    }
+
+    func knowsDisplayZoom(on id: DeviceID) -> Bool {
+        displayZooms[id.rawValue] != nil
+    }
+}
+
+extension IOSBackend: TreeGapFilling {
+    func startGapSamples(on id: DeviceID) async -> GapSamples? {
+        guard let size = try? await screenSize(for: id), size.width > 0, size.height > 0,
+              let simulator = try? await simulator(for: id) else { return nil }
+        let points = TreeGapFill.samplePoints(in: UIFrame(x: 0, y: 0, width: size.width, height: size.height), rows: TreeGapFill.earlySampleRows, belowStatusBar: Self.statusBarHeight)
+        let hits = Task { await Self.pointElements(at: points, from: simulator, zoom: self.displayZooms[id.rawValue]) }
+        // Lets the hit-tests send their requests before the tree read takes the main actor.
+        await Task.yield()
+        return GapSamples(points: points, answers: { wanted, isNew in
+            await self.nodes(from: await hits.value, wanted: wanted, isNew: isNew, on: id)
+        }, zoomKnown: knowsDisplayZoom(on: id))
+    }
+
+    func fillingGaps(in tree: UITree, on id: DeviceID, samples: GapSamples?) async -> UITree {
+        let filled = try? await DoctorProbes.withTimeout(TreeGapFill.overallLimit, operation: "Reading what the app hides") {
+            await self.filling(tree, on: id, samples: samples)
+        }
+        return filled ?? tree
+    }
+
+    private func filling(_ tree: UITree, on id: DeviceID, samples: GapSamples?) async -> UITree {
+        await Timings.measure("gap-fill") {
+            guard let simulator = try? await simulator(for: id) else { return tree }
+            let read = { (points: [UIPoint], wanted: [Bool], isNew: (UINode) -> Bool) async -> [UINode?] in
+                let elements = await Self.pointElements(at: points, from: simulator, zoom: self.displayZooms[id.rawValue])
+                return self.nodes(from: elements, wanted: wanted, isNew: isNew, on: id)
+            }
+            // Started with no zoom known on a device that has one, the sample hit-tests looked in the wrong place.
+            if let samples, samples.zoomKnown || !knowsDisplayZoom(on: id) {
+                return await TreeGapFill.filling(tree, points: samples.points, samples: samples.answers) { points, isNew in
+                    await read(points, points.map { _ in true }, isNew)
+                }
+            }
+            guard let viewport = tree.visibleRect else { return tree }
+            let points = TreeGapFill.samplePoints(in: viewport, belowStatusBar: Self.statusBarHeight)
+            return await TreeGapFill.filling(tree, points: points, samples: { wanted, isNew in
+                await read(points, wanted, isNew)
+            }, read: { points, isNew in
+                await read(points, points.map { _ in true }, isNew)
+            })
+        }
+    }
+
+    /// All the hit-tests at once, in layout points on a zoomed device; a failed one leaves nil.
+    nonisolated private static func pointElements(at points: [UIPoint], from simulator: FBSimulator, zoom: DisplayZoom?) async -> [FBAccessibilityElement?] {
+        await withTaskGroup(of: (Int, FBAccessibilityElement?).self) { group in
+            for (index, point) in points.enumerated() {
+                group.addTask {
+                    let layout = zoom?.layoutPoint(point) ?? point
+                    return (index, try? await AccessibilityFetcher.pointElement(from: simulator, at: AccessibilityPoint(x: layout.x, y: layout.y)))
+                }
+            }
+            var elements = [FBAccessibilityElement?](repeating: nil, count: points.count)
+            for await (index, element) in group { elements[index] = element }
+            return elements
+        }
+    }
+
+    /// Serialises one at a time what `wanted` marks: identity first, everything only for what `isNew` picks. Closes every element.
+    private func nodes(from elements: [FBAccessibilityElement?], wanted: [Bool], isNew: (UINode) -> Bool, on id: DeviceID) -> [UINode?] {
+        let zoom = displayZooms[id.rawValue]
+        func node(_ element: FBAccessibilityElement, keys: Set<FBAXKeys>) -> UINode? {
+            guard let data = try? AccessibilityFetcher.serialized(element, keys: keys), let roots = try? IOSAccessibilityMapping.roots(fromJSON: data) else { return nil }
+            return (zoom?.screenRoots(roots) ?? roots).first
+        }
+        defer { elements.forEach { $0?.close() } }
+        return zip(elements, wanted).map { element, wanted in
+            guard wanted, let element, let identity = node(element, keys: AccessibilityFetcher.identityKeys) else { return nil }
+            return isNew(identity) ? node(element, keys: TraitsRequest.process.keys) ?? identity : identity
+        }
     }
 }
 

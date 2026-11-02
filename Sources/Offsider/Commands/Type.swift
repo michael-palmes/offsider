@@ -219,7 +219,9 @@ struct Type: AsyncParsableCommand, VerifiableCommand {
         var last: UITree?
         repeat {
             try await clock.sleep(Self.focusPoll)
-            if let tree = try? await backend.accessibilityTree(for: device) {
+            if let plain = try? await backend.accessibilityTree(for: device) {
+                // A field only a gap fill found can only show its focus there.
+                let tree = polled.tree.filledFromGaps == nil ? plain : await backend.withGapsFilled(plain, on: device)
                 last = tree
                 if Self.hasFocus(field, query: query, in: tree, keyboardOnly: simulator && !keyboardAlreadyUp) {
                     logger.info().log("\(query.selectorDescription) has focus")
@@ -418,7 +420,7 @@ struct Type: AsyncParsableCommand, VerifiableCommand {
         backend: any DeviceBackend, device: DeviceID, recordingLive: (DeviceLockKey) -> Bool = { RecordingMarker.isLive($0) }
     ) async throws {
         guard recordingLive(DeviceLockKey(platform: device.platform, id: device.rawValue)) else { return }
-        if let tree = try? await backend.accessibilityTree(for: device), !VideoMaskPolicy.showsSecureField(tree) { return }
+        if let tree = try? await backend.accessibilityTree(for: device), !VideoMaskPolicy.showsSecureField(tree, revealed: await TreeCache.revealedSecrets(for: device, backend: backend)) { return }
         try RecordingMarker.refuseTyping("with a password field on screen", command: "type", on: device, recordingLive: recordingLive)
     }
 

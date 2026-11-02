@@ -98,12 +98,14 @@ struct VideoMaskOptions: ParsableArguments {
             if let reader = backend as? any MaskTreeReading {
                 tree = try await reader.maskTree(for: device)
             } else {
-                tree = try await backend.accessibilityTree(for: device)
+                tree = try await backend.readingWithGaps(on: device) { try await backend.accessibilityTree(for: device) }
             }
+        } catch let failure as any OffsiderFailure where failure.reason.exitCode.rawValue == OffsiderExitCode.deviceBusy.rawValue {
+            throw failure
         } catch {
             throw CLIError(errorDescription: VideoMaskPolicy.unreadableRefusal(command: command, error: OffsiderCommand.message(for: error)), reason: .videoUnmasked)
         }
-        if VideoMaskPolicy.showsSecureField(tree) {
+        if VideoMaskPolicy.showsSecureField(tree, revealed: await TreeCache.revealedSecrets(for: device, backend: backend)) {
             throw CLIError(errorDescription: VideoMaskPolicy.secureFieldRefusal(command: command), reason: .videoUnmasked)
         }
         if let config, let shown = try configMatch(config.config, in: tree) {
@@ -112,6 +114,9 @@ struct VideoMaskOptions: ParsableArguments {
                     + "Leave that screen first, use `screenshot`, which masks it, or pass --unmasked to record anyway.",
                 reason: .videoUnmasked
             )
+        }
+        if let unproven = ScreenCapture.unproven(tree) {
+            Console.current.notice(ScreenCapture.unprovenNotice(unproven, subject: "the video"))
         }
     }
 
@@ -139,6 +144,35 @@ struct VideoMaskOptions: ParsableArguments {
 struct VideoFrame {
     let image: CGImage
     let held: Bool
+}
+
+/// How one bounded capture ended.
+enum FrameWait {
+    case frame(VideoFrame)
+    case failed(any Error)
+    /// A stop or `--duration` came and the capture did not finish in time; it is left behind.
+    case ended
+    /// The device gave no answer within the read limit.
+    case hung
+}
+
+/// The first of a capture and what bounds it; later arrivals are ignored, since a hung capture may never come back.
+@MainActor
+private final class FrameRace {
+    private var continuation: CheckedContinuation<FrameWait, Never>?
+    var settled: Bool { continuation == nil }
+
+    func wait(_ start: () -> Void) async -> FrameWait {
+        await withCheckedContinuation { continuation in
+            self.continuation = continuation
+            start()
+        }
+    }
+
+    func settle(_ outcome: FrameWait) {
+        continuation?.resume(returning: outcome)
+        continuation = nil
+    }
 }
 
 /// Video frames, upright, with `--mask-region` painted; the device scales them only when it captures frames itself.
@@ -238,6 +272,42 @@ final class VideoFrameSource {
         holding = false
         self.lastGood = masked.capture.image
         return VideoFrame(image: masked.capture.image, held: false)
+    }
+
+    /// How long a capture in flight has to finish once the video is ending, so a healthy last frame is kept.
+    static let endGrace: Duration = .seconds(2)
+    private static let boundCheck: Duration = .milliseconds(50)
+
+    /// `next()` that cannot outlast a stop, `endsAt` or `readLimit`, so a hung capture still ends the video with the frames it has.
+    func next(stop: RecordingStop, endsAt: ContinuousClock.Instant? = nil, readLimit: Duration?) async -> FrameWait {
+        let race = FrameRace()
+        return await race.wait {
+            let capture = Task { @MainActor in
+                do {
+                    race.settle(.frame(try await self.next()))
+                } catch {
+                    race.settle(.failed(error))
+                }
+            }
+            Task { @MainActor in
+                let clock = ContinuousClock()
+                let started = clock.now
+                var ending: ContinuousClock.Instant?
+                while !race.settled {
+                    let now = clock.now
+                    if ending == nil, stop.isRequested || endsAt.map({ now >= $0 }) == true { ending = now }
+                    if let ending, now - ending >= Self.endGrace {
+                        capture.cancel()
+                        race.settle(.ended)
+                    } else if let readLimit, now - started >= readLimit {
+                        capture.cancel()
+                        race.settle(.hung)
+                    } else {
+                        try? await Task.sleep(for: Self.boundCheck)
+                    }
+                }
+            }
+        }
     }
 
     private var holding = false

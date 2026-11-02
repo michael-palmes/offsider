@@ -41,7 +41,8 @@ struct ReactNativeFixtureSmokeTests {
         let app = RNApp(platform)
         try await app.open("overlay-test")
         let ids = DescribeUITree.nodes(in: try await app.tree()).compactMap { $0["id"] as? String }
-        #expect(!ids.contains("overlay-test-hidden-action"))
+        // Android's every-view read lists it; a simulator's hit-test answers with the listed frame around it.
+        #expect(ids.contains("overlay-test-hidden-action") == (platform == .android))
 
         let frame = try await app.centre(of: "overlay-test-hidden-frame")
         try await app.run("tap -x \(frame.x) -y \(frame.y)")

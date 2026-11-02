@@ -538,6 +538,11 @@ struct AccessibilityTargetResolver {
         )
     }
 
+    /// A switch that toggles only at its trailing knob, not across its whole row.
+    static func isWideSwitch(_ element: UINode, frame: UIFrame) -> Bool {
+        element.isSwitch && frame.width > wideSwitchActivationWidthThreshold
+    }
+
     /// Less than this much of an element showing on either axis inside its scroll view is too little to tap safely.
     static let minimumVisibleExtent = 8.0
 
@@ -557,13 +562,24 @@ struct AccessibilityTargetResolver {
         try? shownPart(of: element, frame: frame, viewport: viewport, roots: roots, selector: "")
     }
 
+    /// The side of its scroll view an element with too little showing lies past; nil when it shows.
+    static func sidePastScrollView(of element: UINode, frame: UIFrame, viewport: UIFrame, roots: [UINode]) -> OffScreenSide? {
+        do {
+            _ = try shownPart(of: element, frame: frame, viewport: viewport, roots: roots, selector: "")
+            return nil
+        } catch ElementResolutionError.beyondScrollView(_, _, _, let side) {
+            return side
+        } catch {
+            return nil
+        }
+    }
+
     /// `resolution` moved to `point`, with what may draw over it there.
     static func resolution(of resolution: TapResolution, at point: UIPoint, roots: [UINode], viewport: UIFrame) -> TapResolution {
         var moved = TapResolution(
             point: (x: point.x, y: point.y), isSwitchLikeControl: resolution.isSwitchLikeControl,
             target: resolution.target, matched: resolution.matched, stack: resolution.stack
         )
-        moved.aim = UIPoint(x: resolution.aim.x + point.x - resolution.point.x, y: resolution.aim.y + point.y - resolution.point.y)
         guard let target = resolution.target ?? resolution.matched else { return moved }
         let candidates = coverCandidates(of: target, matched: resolution.matched ?? target, at: point, viewport: viewport, roots: roots)
         let stack = resolution.stack ?? ScreenStack.build(roots: roots, viewport: viewport)
@@ -889,7 +905,7 @@ struct AccessibilityTargetResolver {
     ) -> (x: Double, y: Double) {
         let centerY = frame.y + (frame.height / 2.0)
 
-        if element.isSwitch, frame.width > wideSwitchActivationWidthThreshold {
+        if isWideSwitch(element, frame: frame) {
             return (x: frame.x + frame.width - switchTrailingActivationInset, y: centerY)
         }
 

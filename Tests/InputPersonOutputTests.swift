@@ -335,7 +335,7 @@ struct InputPersonOutputTests {
             DevMenu.Entry(label: "Clear cache", role: .button, frame: nil, custom: true),
             DevMenu.Entry(label: "Go home", role: .button, frame: nil),
         ]))
-        #expect(Self.show(custom.page, person: false).out == "expo dev menu: Reload, Go home; custom: Clear cache\n")
+        #expect(Self.show(custom.page, person: false).out == "expo dev menu: Reload, Go home; custom: \"Clear cache\"\n")
         let customPerson = Self.show(custom.page, person: true).out
         #expect(customPerson.contains("Expo · 3 items") && customPerson.contains("\n  Clear cache custom\n") && customPerson.contains("\n  Go home\n"))
         let chose = RNDevMenu.Outcome.chose(menu: "expo", item: .reload, label: "Reload")

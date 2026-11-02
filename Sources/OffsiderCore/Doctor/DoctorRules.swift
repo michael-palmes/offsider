@@ -373,7 +373,11 @@ public enum DoctorRules {
 
     /// No simulator service restart reliably brings the tree back, so the fix is a relaunch, then a reboot.
     public static func emptyTreeHint(_ app: SimLaunchctl.App, udid: String) -> String {
-        "Relaunch the app: xcrun simctl terminate \(udid) \(app.bundleID) && xcrun simctl launch \(udid) \(app.bundleID). If the tree stays empty, reboot the simulator: xcrun simctl shutdown \(udid) && xcrun simctl boot \(udid)."
+        "Relaunch the app: \(relaunchCommand(app, udid: udid)). If the tree stays empty, reboot the simulator: xcrun simctl shutdown \(udid) && xcrun simctl boot \(udid)."
+    }
+
+    public static func relaunchCommand(_ app: SimLaunchctl.App, udid: String) -> String {
+        "offsider app launch --restart --app \(app.bundleID) --device \(udid)"
     }
 
     static func plural(_ count: Int, _ noun: String) -> String {

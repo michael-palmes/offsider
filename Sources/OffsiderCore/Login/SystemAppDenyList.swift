@@ -89,6 +89,13 @@ public enum SystemAppDenyList {
         "com.google.android.apps.adm": .findMy
     ]
 
+    /// What draws Android's runtime permission dialog.
+    static let androidPermissionDialogs: Set<String> = ["com.android.permissioncontroller", "com.google.android.permissioncontroller"]
+
+    public static func isPermissionDialog(_ appID: String, platform: DevicePlatform) -> Bool {
+        platform == .android && androidPermissionDialogs.contains(appID)
+    }
+
     /// Chrome's Beta, Dev and Canary (`com.chrome.`), every Firefox channel including Nightly, Focus and Klar (`org.mozilla.`),
     /// Samsung Internet and Samsung's system apps (`com.sec.android.app.`) and Samsung Messages.
     static let androidPrefixes: [(String, Category)] = [

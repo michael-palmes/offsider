@@ -22,6 +22,10 @@ final class FakeRunnerTransport: RunnerTransport, @unchecked Sendable {
     var pingTimesOut = false
     /// The bundle id `/foreground` reports as active; nil reports none.
     var foregroundApp: String?
+    /// The title `/foreground` reports for a system alert over the app.
+    var foregroundPrompt: String?
+    /// The title every route answers with while a stuck app holds the runner's main thread.
+    var stuckPrompt: String?
     /// What `/screen` reports; `/lock` darkens and locks, `/home` lights a dark screen, then clears the lock screen unless a passcode holds it.
     var screenOn = true
     var screenLocked = false
@@ -43,6 +47,7 @@ final class FakeRunnerTransport: RunnerTransport, @unchecked Sendable {
         if pingTimesOut, path == "/ping" { throw UsbmuxError.timedOut }
         let object = body.flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: AnyHashable] } ?? [:]
         lock.withLock { recorded.append(RunnerCall(method: method, path: path, token: token, body: object)) }
+        if let stuckPrompt { return Self.response(409, ["ok": false, "error": ["code": "system_prompt", "message": stuckPrompt]]) }
         if let failure, failure.path == path {
             return Self.response(failure.status, ["ok": false, "error": ["code": failure.code, "message": "scripted"]])
         }
@@ -51,7 +56,7 @@ final class FakeRunnerTransport: RunnerTransport, @unchecked Sendable {
             return Self.response(200, ["ok": true, "data": ["version": RunnerClient.protocolVersion, "buildKey": buildKey, "screenBounds": ["width": 430, "height": 932], "scale": 3, "orientation": "portrait"]])
         case "/foreground":
             let active: Any = foregroundApp ?? NSNull()
-            return Self.response(200, ["ok": true, "data": ["inFront": foregroundApp != nil && object["app"] as? String == foregroundApp && !screenLocked, "activeBundleId": active, "locked": screenLocked]])
+            return Self.response(200, ["ok": true, "data": ["inFront": foregroundApp != nil && object["app"] as? String == foregroundApp && !screenLocked, "activeBundleId": active, "prompt": foregroundPrompt as Any? ?? NSNull(), "locked": screenLocked]])
         case "/screen":
             return Self.response(200, ["ok": true, "data": ["on": screenOn, "locked": screenLocked]])
         case "/lock":

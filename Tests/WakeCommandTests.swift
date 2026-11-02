@@ -1,5 +1,6 @@
 import ArgumentParser
 import Foundation
+import OffsiderAndroid
 import OffsiderCore
 import Testing
 @testable import Offsider
@@ -449,6 +450,22 @@ struct WakeCommandTests {
         #expect(wrapped.hint == "offsider wake --device ZY22FAKE01")
     }
 
+    @Test("a front-app refusal on a dark or locked phone says the screen first, as screen_off with wake as the fix, and a usable screen keeps the refusal")
+    func frontAppRefusalOnDarkScreen() async throws {
+        let refusal = AndroidError(.otherAppInFront, "com.android.systemui is part of the system UI, which Offsider never signs in to or drives on a physical phone.")
+        let annotated = try #require(await ScreenStateHint.annotate(refusal, routes: Self.route(Self.backend(Self.locked))) as? ScreenStateFailure)
+        #expect(annotated.reason == .screenOff && annotated.reason.exitCode == .failure)
+        #expect(annotated.failureMessage.hasPrefix("The screen of Motorola (ZY22FAKE01) is off"))
+        #expect(!annotated.failureMessage.contains("system UI"))
+        #expect(annotated.hint == "offsider wake --device ZY22FAKE01")
+
+        let usable = await ScreenStateHint.annotate(refusal, routes: Self.route(Self.backend()))
+        #expect((usable as? AndroidError)?.reason == .appNotAllowed)
+
+        let notFront = AndroidError(.appNotAllowed, "No app was named.")
+        #expect(await ScreenStateHint.annotate(notFront, routes: Self.route(Self.backend(Self.locked))) is AndroidError)
+    }
+
     @Test("a usable screen, another reason or two devices leave the failure unchanged")
     func hintSkipped() async {
         let notFound = CLIError(errorDescription: "missing", reason: .selectorNotFound)
@@ -468,12 +485,24 @@ struct WakeCommandTests {
         hung.foregrounds = [ForegroundActivities(top: "com.example.app/com.example.app.MainActivity", home: home)]
         let annotated = try #require(await ScreenStateHint.annotate(noWindow, routes: Self.route(hung)) as? CLIError)
         #expect(annotated.reason == .appNotResponding)
-        #expect(annotated.userFacingDescription == "com.example.app is in front on ZY22FAKE01, but Android lists no window for it, so the app is not responding or still starting. Wait a moment and retry; if it lasts, close the app and open it again.")
+        #expect(annotated.userFacingDescription == "com.example.app is in front on ZY22FAKE01, but Android lists no window for it, so the app is not responding or still starting. Wait a moment and retry; if it lasts, run `offsider app launch --restart --app com.example.app --device ZY22FAKE01`.")
+        #expect(annotated.hint == "offsider app launch --restart --app com.example.app --device ZY22FAKE01")
         #expect(hung.stateCalls == ["awake read"])
 
         let launcher = Self.backend()
         launcher.foregrounds = [ForegroundActivities(top: home, home: home)]
         #expect((await ScreenStateHint.annotate(noWindow, routes: Self.route(launcher)) as? CLIError)?.reason == .noWindow)
+    }
+
+    @Test("a phone whose allowance does not permit the stuck app asks the person instead of naming a restart it would refuse")
+    func hungAppOutsideTheAllowance() throws {
+        let allowance = DeviceAllowance(platform: .android, key: Self.phone.rawValue, name: "Test Pixel", added: Date(), expires: nil, apps: ["com.example.other"])
+        let route = DeviceRouter.Route(backend: Self.backend(), device: Self.phone, allowance: allowance)
+        let failure = AppNotResponding.failure(package: "com.example.app", route: route, policy: { PhysicalDevicePolicy(managed: .none, list: DeviceAllowList(entries: [allowance])) })
+        #expect(failure.reason == .appNotResponding)
+        #expect(failure.hint == nil)
+        #expect(failure.ask == "Can you close and reopen com.example.app on \(PersonAsk.devicePlaceholder)?")
+        #expect(!failure.userFacingDescription.contains("app launch"))
     }
 
     @Test("the screen check runs once per command, so an early report and the final error share one probe")

@@ -1,3 +1,4 @@
+import ArgumentParser
 import Darwin
 import Foundation
 import OffsiderCore
@@ -299,6 +300,47 @@ struct HoldScreenshotTests {
         #expect(details.screenshots.first?.report.masked == 1)
         let image = try ScreenImage.decode(try Data(contentsOf: URL(fileURLWithPath: path)))
         #expect(ScreenshotMaskTests.pixel(image, 600, 870) == ScreenshotMaskTests.black)
+    }
+
+    @Test("every command with --screenshot-at looks for the evidence run, so its captures are masked and numbered")
+    func recordersCoverEveryHoldCommand() {
+        func commands(_ type: any ParsableCommand.Type, path: String) -> [String] {
+            let configuration = type.configuration
+            let name = configuration.commandName ?? "\(type)".lowercased()
+            let here = path.isEmpty ? name : path + " " + name
+            let groups = configuration.groupedSubcommands.flatMap(\.subcommands) + configuration.subcommands
+            return (type.helpMessage(columns: 200).contains("--screenshot-at") ? [here] : []) + groups.flatMap { commands($0, path: here) }
+        }
+        let holding = (OffsiderCommand.configuration.groupedSubcommands.flatMap(\.subcommands) + OffsiderCommand.configuration.subcommands)
+            .flatMap { commands($0, path: "") }
+
+        #expect(Set(holding).isSuperset(of: ["swipe", "drag"]), "\(holding)")
+        for command in holding {
+            #expect(EvidenceRecorder.records(command), "\(command) takes --screenshot-at but looks for no run")
+        }
+    }
+
+    @Test("a hold's screenshot in a run masks the run's emails and adds its manifest line", arguments: ["swipe", "drag"])
+    func runMasksHoldShots(command: String) async throws {
+        let fixture = try RunFixture()
+        _ = try fixture.start(masks: RunMasks(emails: true))
+        let device = DeviceID(rawValue: "fake-device", platform: .ios)
+        let email = FakeUI.node(.text, label: "me@example.com", frame: FakeUI.frame(100, 200, 200, 40))
+        let backend = FakeDeviceBackend(trees: [FakeUI.tree(width: 390, height: 844, [email])], screenshots: [try ScreenshotMaskTests.whitePNG()], screen: ScreenshotMaskTests.screen)
+        let path = ScreenshotMaskTests.temporaryPath()
+        defer { try? FileManager.default.removeItem(atPath: path) }
+        let arguments = Self.start + ["--screenshot-at", "0", "--output", path, "--device", device.rawValue]
+        let shots = command == "swipe" ? try Swipe.parse(arguments).holdShots : try Drag.parse(arguments).holdShots
+
+        try await fixture.command(fixture.recorder(command)) {
+            try await shots.perform(press: Self.press, lift: Self.lift, holdEnd: 0, on: DeviceRouter.Route(backend: backend, device: device), details: InputDetails())
+        }
+
+        let image = try ScreenImage.decode(try Data(contentsOf: URL(fileURLWithPath: path)))
+        #expect(ScreenshotMaskTests.point(image, 200, 220) == ScreenshotMaskTests.black)
+        let line = try #require(fixture.manifest().first)
+        #expect(line.command == command)
+        #expect(line.masked == 1)
     }
 
     @Test("--json lists the hold and each screenshot with its timing beside the screenshot's own fields")

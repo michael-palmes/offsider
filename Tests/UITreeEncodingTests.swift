@@ -36,7 +36,8 @@ struct UITreeEncodingTests {
             "presented": null,
             "staleFrame": null,
             "hidden": null,
-            "hiddenBranches": null
+            "hiddenBranches": null,
+            "filled": null
           },
           "roots": []
         }

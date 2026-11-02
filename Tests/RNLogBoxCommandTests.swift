@@ -154,7 +154,7 @@ struct RNLogBoxCommandTests {
     @Test("status reads each toast's index, count and message as JSON")
     func statusJSON() {
         let state = LogBoxState(tree: FakeUI.tree([Self.toast(2)]))
-        #expect(state.jsonLine() == #"{"version":1,"logs":2,"toasts":[{"index":1,"count":2,"message":"Request failed","frame":{"x":10,"y":806,"width":382,"height":48}}],"inspector":false,"emptyDialog":false}"#)
+        #expect(state.jsonLine() == #"{"version":1,"logs":2,"toasts":[{"index":1,"count":2,"message":"Request failed","frame":{"x":10,"y":806,"width":382,"height":48}}],"inspector":false,"emptyDialog":false,"untrusted":["toasts[].message"]}"#)
         #expect(state.text() == "LogBox: 2 logs in 1 toast, bottom first\n  1. Request failed (2 logs)")
     }
 

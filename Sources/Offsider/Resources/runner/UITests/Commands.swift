@@ -4,14 +4,18 @@ import XCTest
 /// Every route the runner serves; called on the main thread, as XCUITest requires.
 final class RunnerCommands {
     static let version = "3"
+    static let inputRoutes: Set<String> = ["/tap-point", "/tap-element", "/type", "/swipe", "/home", "/lock"]
 
     let buildKey: String
     private(set) var lastActivity = Date()
     private(set) var stopRequested = false
     private var rememberedApp: String?
 
-    init(buildKey: String) {
+    private let mainThread: RunnerMainThreadState
+
+    init(buildKey: String, mainThread: RunnerMainThreadState) {
         self.buildKey = buildKey
+        self.mainThread = mainThread
     }
 
     func handle(_ request: RunnerRequest) -> RunnerResponse {
@@ -19,6 +23,12 @@ final class RunnerCommands {
         let body = (try? JSONSerialization.jsonObject(with: request.body.isEmpty ? Data("{}".utf8) : request.body)) as? [String: Any]
         guard let body else { return .failure(400, code: "bad_request", message: "the body is not a JSON object") }
         if request.method == "POST", request.path == "/foreground" { return foreground(body) }
+        let requested = body["app"] as? String
+        if request.path == "/snapshot" || Self.inputRoutes.contains(request.path), let prompt = systemPrompt(over: requested) {
+            mainThread.note(prompt: prompt)
+            // A touch or text through XCUITest would reach the prompt, not the app.
+            if requested != nil, Self.inputRoutes.contains(request.path) { return .systemPrompt(prompt) }
+        }
         if let requested = body["app"] as? String, XCUIApplication(bundleIdentifier: requested).state != .runningForeground {
             if ScreenState.isLocked == true { return .failure(409, code: "screen_locked", message: "the lock screen is up") }
             return .failure(409, code: "app_not_in_front", message: "\(requested) is not the app in front")
@@ -43,6 +53,13 @@ final class RunnerCommands {
         default:
             return .failure(404, code: "not_found", message: "\(request.method) \(request.path) is not a runner route")
         }
+    }
+
+    /// What iOS calls a system alert or sheet over `app`. The active list comes first, as it costs about 10 ms and looking for one about 70 ms.
+    private func systemPrompt(over app: String?) -> String? {
+        guard app != ActiveApplication.springBoard, ActiveApplication.activeBundleIDs()?.contains(ActiveApplication.springBoard) == true else { return nil }
+        let springBoard = XCUIApplication(bundleIdentifier: ActiveApplication.springBoard)
+        return [springBoard.alerts.firstMatch, springBoard.sheets.firstMatch].first(where: \.exists)?.label
     }
 
     private func app(_ body: [String: Any]) -> XCUIApplication {
@@ -85,6 +102,7 @@ final class RunnerCommands {
             return .ok(reply)
         }
         let covered = app != ActiveApplication.springBoard && active.contains(ActiveApplication.springBoard)
+        if covered, let prompt = systemPrompt(over: app) { reply["prompt"] = prompt }
         reply["inFront"] = running && active.contains(app) && !covered && !locked
         reply["activeBundleId"] = active.first as Any? ?? NSNull()
         reply["sheetsVisible"] = true

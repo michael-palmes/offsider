@@ -7,6 +7,15 @@ import Testing
 @Suite("Button platforms")
 @MainActor
 struct ButtonPlatformTests {
+    @Test("lock on a simulator says to unlock with Home twice; other buttons and devices say nothing")
+    func lockSaysHowToUnlock() throws {
+        let simulator = "00000000-0000-0000-0000-000000000001"
+        let note = try #require(Button.unlockNote(.lock, device: simulator))
+        #expect(note.agentText == "To unlock this simulator, run `offsider button home --device \(simulator)` twice: a swipe up can freeze its display.")
+        #expect(Button.unlockNote(.home, device: simulator) == nil)
+        #expect(Button.unlockNote(.lock, device: "emulator-5554") == nil)
+    }
+
     @Test("an iOS-only button with an Android ID is a usage error before any device work")
     func iosButtonOnAndroidExits64() async throws {
         let result = try await TestHelpers.runOffsiderWithoutAndroid("button siri --device emulator-5556")

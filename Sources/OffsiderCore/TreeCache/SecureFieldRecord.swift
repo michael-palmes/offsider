@@ -45,9 +45,9 @@ public struct SecureFieldRecord: Equatable, Sendable {
         return age >= 0 && age < TreeCacheRecord.lifetime && bootMarker == current
     }
 
-    /// The fields to remember after `tree`: its password fields, and earlier ones it still shows revealed; nil when there are none.
-    public static func next(previous: SecureFieldRecord?, tree: UITree, bootMarker: String?, now: Date) -> SecureFieldRecord? {
-        let nodes = tree.roots.flatMap { $0.flattened() }
+    /// The fields to remember after `tree` and what a gap fill added to it: their password fields, and earlier ones they still show revealed; nil when there are none.
+    public static func next(previous: SecureFieldRecord?, tree: UITree, filled: [UINode] = [], bootMarker: String?, now: Date) -> SecureFieldRecord? {
+        let nodes = tree.roots.flatMap { $0.flattened() } + filled
         var entries = nodes.filter(\.isSecure).map { Entry(id: $0.normalizedID, frame: $0.frame) }
         if let previous {
             let revealed = RevealedSecrets(previous)

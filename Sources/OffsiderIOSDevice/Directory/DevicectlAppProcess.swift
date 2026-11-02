@@ -44,7 +44,7 @@ public enum DevicectlAppProcess {
         return App(info: info, bundleURL: text("url"))
     }
 
-    /// The first process whose executable sits inside the app's bundle.
+    /// The first process whose executable sits directly in the app's bundle, as an iOS main executable does; an extension under `PlugIns/` is not the app.
     public static func pid(_ data: Data, bundleURL: String) throws -> Int? {
         let result = try resultObject(data)
         guard let rows = result["runningProcesses"] as? [[String: Any]] else {
@@ -54,6 +54,8 @@ public enum DevicectlAppProcess {
         for row in rows {
             guard let executable = row["executable"] as? String, executable.hasPrefix(bundle),
                   let pid = (row["processIdentifier"] as? NSNumber)?.intValue, pid > 0 else { continue }
+            let inside = executable.dropFirst(bundle.count)
+            guard !inside.isEmpty, !inside.contains("/") else { continue }
             return pid
         }
         return nil
