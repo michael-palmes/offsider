@@ -221,6 +221,10 @@ jobs:
           xcode-app: ${{ env.XCODE_APP }}
           debug-build-cache: "true"
 
+      # Temporary: shows which targets a cached build recompiles.
+      - name: Build with its progress shown
+        run: swift build --build-tests 2>&1 | grep --line-buffered -E '^\[|Build complete|error:'
+
       - name: Unit tests
         run: OFFSIDER_REUSE_IDB=1 ./test-runner.sh --unit-tests
 
