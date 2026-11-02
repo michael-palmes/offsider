@@ -4,8 +4,10 @@ import OffsiderCore
 /// Ends the process when a device read hangs past a command's own bound, which an in-loop deadline cannot catch on a blocked main actor.
 final class DeviceWatchdog: @unchecked Sendable {
     static let grace: TimeInterval = 15
-    /// The bound for routing and `prepare`: a cold emulator's adb server, helper push and first dump can pass the grace alone.
+    /// The bound for routing and `prepare`: a cold emulator's adb server can pass the grace alone.
     static let setupBound: TimeInterval = 45
+    /// The bound for starting an emulator's helper: another command's start under the lock (45 s), its broker's hello (35 s), then a direct start (30 s) before the uiautomator fallback.
+    static let treeStartBound: TimeInterval = 110
     /// The bound for one read of a screen or tree: 30 s with the grace, past the slowest healthy read with every hit-test.
     static let readBound: TimeInterval = 15
 
@@ -13,6 +15,7 @@ final class DeviceWatchdog: @unchecked Sendable {
     private let grace: TimeInterval
     private let setupBound: TimeInterval
     private let readBound: TimeInterval
+    private let treeStartBound: TimeInterval
     private let fire: @Sendable (String) -> Void
     private var timer: DispatchSourceTimer?
     private var beforeFire: (@Sendable () -> Void)?
@@ -42,11 +45,13 @@ final class DeviceWatchdog: @unchecked Sendable {
         grace: TimeInterval = DeviceWatchdog.grace,
         setupBound: TimeInterval = DeviceWatchdog.setupBound,
         readBound: TimeInterval = DeviceWatchdog.readBound,
+        treeStartBound: TimeInterval = DeviceWatchdog.treeStartBound,
         fire: (@Sendable (String) -> Void)? = nil
     ) {
         self.grace = grace
         self.setupBound = setupBound
         self.readBound = readBound
+        self.treeStartBound = treeStartBound
         if let fire {
             action = nil
             self.fire = fire
@@ -102,17 +107,43 @@ final class DeviceWatchdog: @unchecked Sendable {
         try await guarding(bound: setupBound, device: device, body)
     }
 
-    /// Runs one read of a simulator or emulator armed for `readBound` plus `extra`; a physical device has limits of its own, and a first iPhone read can build the runner.
-    func guardingRead<T>(of device: DeviceID, extra: TimeInterval = 0, _ body: () async throws -> T) async rethrows -> T {
-        guard !device.isPhysicalAndroidDevice, !device.isPhysicalIOSDevice else { return try await body() }
-        return try await guarding(bound: readBound + extra, device: device.rawValue, body)
+    private static func hasOwnLimits(_ device: DeviceID) -> Bool {
+        device.isPhysicalAndroidDevice || device.isPhysicalIOSDevice
     }
 
-    /// Runs `body` armed for the setup bound until it calls `ready` (after routing and `prepare`), then for `bound`.
-    func guarding<T>(setupThen bound: TimeInterval, device: String, _ body: (_ ready: @escaping @Sendable () -> Void) async throws -> T) async rethrows -> T {
-        try await guardingSetup(device: device) {
-            try await body { [self] in arm(bound: bound, device: device) }
+    /// Runs `body` on a simulator or emulator armed for `bound` plus the grace; a physical device has limits of its own, and a first iPhone read can build the runner.
+    func guarding<T>(bound: TimeInterval, of device: DeviceID, _ body: () async throws -> T) async rethrows -> T {
+        guard !Self.hasOwnLimits(device) else { return try await body() }
+        return try await guarding(bound: bound, device: device.rawValue, body)
+    }
+
+    /// Runs one read armed for `readBound` plus `extra`, on a simulator or emulator only.
+    func guardingRead<T>(of device: DeviceID, extra: TimeInterval = 0, _ body: () async throws -> T) async rethrows -> T {
+        try await guarding(bound: readBound + extra, of: device, body)
+    }
+
+    /// Runs `body` armed for the setup bound until it calls `ready` (after routing and `prepare`), then for `bound`; a physical device runs unarmed, as above.
+    func guarding<T>(setupThen bound: TimeInterval, of device: DeviceID, _ body: (_ ready: @escaping @Sendable () -> Void) async throws -> T) async rethrows -> T {
+        try await guarding(bound: setupBound, of: device) {
+            try await body { [self] in
+                guard !Self.hasOwnLimits(device) else { return }
+                arm(bound: bound, device: device.rawValue)
+            }
         }
+    }
+
+    /// Starts what an emulator's tree reads go through, outside any shorter bound, so a slow helper reaches its uiautomator fallback; also covers a `--wait-lock` wait, since the start claims the device. A phone's read has no bound to outrun.
+    @MainActor
+    func guardingTreeStart(on route: DeviceRouter.Route, claims: DeviceClaims = .current) async throws {
+        guard let reader = route.backend as? any MaskTreeReading, !Self.hasOwnLimits(route.device) else { return }
+        try await guarding(bound: treeStartBound + claims.longestWait, of: route.device) {
+            try await reader.prepareMaskTree(for: route.device)
+        }
+    }
+
+    /// One read of an input command, whose helper may not have started yet.
+    func guardingInputRead<T>(of device: DeviceID, _ body: () async throws -> T) async rethrows -> T {
+        try await guardingRead(of: device, extra: device.platform == .android ? treeStartBound : 0, body)
     }
 
     static func message(seconds: TimeInterval, device: String) -> String {

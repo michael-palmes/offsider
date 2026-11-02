@@ -36,9 +36,49 @@ struct AccessibilityFetcherTests {
         await #expect {
             _ = try await read(failing: Self.bootstrapError(4), times: 2)
         } throws: { error in
-            let failure = error as? CLIError
-            return failure?.reason == .commandFailed && failure?.hint == "offsider doctor --device TEST-UDID" && failure?.errorDescription?.contains("shut the simulator down and boot it") == true
+            let failure = error as? AccessibilityStartupFailure
+            return failure?.reason == .treeReadFailed && failure?.hint == "offsider doctor --device TEST-UDID" && failure?.errorDescription?.contains("shut the simulator down and boot it") == true
         }
+    }
+
+    /// Reads failing as a simulator with no screen yet does, for `failing` reads, then a tree with `done` on it.
+    private static func waitAfterBoot(failing: Int, timeout: TimeInterval) async throws -> WaitOutcome {
+        var (reads, now) = (0, 0.0)
+        return try await WaitLoop.run(
+            .element(probe: { _ in .present(nil) }, gone: false), timeout: timeout, interval: 1,
+            sources: WaitSources(
+                tree: {
+                    reads += 1
+                    now += 11
+                    if reads <= failing { throw AccessibilityStartupFailure(simulatorUDID: "TEST-UDID") }
+                    return FakeUI.tree([FakeUI.node(.button, id: "done", frame: FakeUI.frame(0, 0, 10, 10))])
+                },
+                fingerprint: { throw CancellationError() },
+                sleep: { _ in },
+                now: { now }
+            )
+        )
+    }
+
+    @Test("A wait with time left counts a simulator with no screen yet as not met, and says so only if no read ever worked")
+    func startupFailureInsideAWait() async throws {
+        #expect(try await Self.waitAfterBoot(failing: 2, timeout: 60).met)
+        await #expect(throws: AccessibilityStartupFailure.self) { _ = try await Self.waitAfterBoot(failing: .max, timeout: 30) }
+    }
+
+    @Test("A selector tries again after a startup failure too")
+    func startupFailureInsideASelector() async throws {
+        var reads = 0
+        let backend = FakeDeviceBackend(trees: [FakeUI.tree([FakeUI.node(.button, id: "done", frame: FakeUI.frame(0, 0, 10, 10))])])
+        backend.onTreeRead = { reads += 1 }
+        let polled = try await AccessibilityPoller.pollForResolution(
+            query: .id("done"), waitTimeout: 5, pollInterval: 0.01, elementType: nil, logger: OffsiderLogger(), clock: PollClock(now: { 0 }, sleep: { _ in })
+        ) {
+            if reads == 0 { reads += 1; throw AccessibilityStartupFailure(simulatorUDID: "TEST-UDID") }
+            return try await backend.accessibilityTree(for: DeviceID(rawValue: "TEST-UDID", platform: .ios))
+        }
+        #expect(polled.value.matched?.id == "done")
+        #expect(reads == 2)
     }
 
     @Test("Any other error is not retried, and no answer at a point is that point's own")

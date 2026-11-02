@@ -94,7 +94,7 @@ application "Playground" (0,0 402x874)
 # off-screen: 34 elements folded into runs; check one with assert --label-contains <text> --allow-offscreen
 ```
 
-On a foldable the header line ends with the display and posture, such as `inner open`.
+On a foldable the header line ends with the display and posture, such as `inner open`. When the screen is turned on its panel, SpringBoard's alerts and home screen are given in the screen's points, as an app's are.
 
 `--summary` is short for `--flat --on-screen --labelled --format text --max-bytes 16384`. `--flat` lists nodes without nesting under `nodes`, each with `index`, `parent` and `depth`; `--on-screen` keeps nodes that are on screen as selectors judge it (see [What counts as on screen](#what-counts-as-on-screen)), in every format; `--labelled` keeps nodes with a label, id or value; `--actionable` keeps controls; `--fields` picks keys; `--format json|ndjson|text` picks the format, where `ndjson` prints a screen line and then one node per line; `--compact` prints JSON on one line. Without these flags the output is unchanged.
 

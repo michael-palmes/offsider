@@ -78,6 +78,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - `session stop` names what it left with the command that clears it (`notRemoved` in `--json`), including a phone that is unplugged or no longer allowed, and exits non-zero when a removal fails. `devices remove` says the same (`notRemoved` and `retry` in `--json`).
 - `rn open` checks that a Metro runs as you before it uses a reverse already on a phone, refuses a reverse Offsider set once its port is withdrawn, reports a failed reverse read as that rather than a missing reverse, and names a recorded reverse on success, failure and Ctrl-C (`reverseRecorded` in `--json`). `devices add` takes off the reverses for ports it drops. A reverse that may have landed when adb stopped answering keeps its record.
 - On an Android phone, input by coordinates, keys and held touches went through while a system window or the notification shade had focus over an allowed app, as only the resumed activity was checked. Each input step now also reads which window has focus, and is refused unless an allowed app owns it. A capture with no tree read refuses the same way.
+- `wait` and `assert` no longer kill an iPhone's first runner start with `device_unresponsive`: every command that reads with a setup bound now runs unbound on a phone or tablet, in `batch` steps too.
+- `wait`, `assert`, `describe-ui`, `screenshot`, `turnstile` and `rn logbox` start an emulator's helper under a bound of its own, so a slow start reaches its uiautomator fallback instead of `device_unresponsive`.
+- A wait after a simulator boot keeps polling through a screen that is not ready yet, up to `--timeout`, and selector input retries it; the failure's reason is now `tree_read_failed`.
+- `wait --settled --ignore-values` no longer calls a moving chart settled on iOS: an element that takes new text and leaves its line counts as moved.
+- `wait --settled` with an `--ignore-region` or `--ignore-id` that leaves out the whole screen exits 64 at once, also with `--settle-by screen`, where it used to pass; one that holds everything under the root says so at the timeout instead of blaming an unreadable tree.
+- `wait --any` beside `--settled`, `--region` or `--seconds` with no selector exits 64 rather than being ignored.
+- `wait --settled --settle-by both --wait-lock` claims the device before its bound starts, as `--settled` does.
+- `assert` and `wait` with `--enabled` or `--disabled` no longer crash on a group holding its own copy, and judge that group beside a separate match.
+- `batch` refuses `--screenshot-at`, `tap --dry-run`, a per-step `--device` or `--wait-lock`, bad quoting, an unknown step and a bad `rn` step before sending anything, not after earlier steps ran; `--continue-on-error` still reports an unknown step and runs the rest.
+- `batch` screenshot steps on an iPhone or iPad report `capture`, as `screenshot --json` does.
+- `button home --verify` on an iOS simulator no longer passes on a system alert over an app; it compares the tree there. It and a `--verify` or selector read of a hung simulator now exit `device_unresponsive` instead of holding the device.
+- On a screen turned on its panel (an unfolded iPhone Duo, or any simulator in landscape), system alerts and the home screen report frames in screen points, so label taps reach them.
 
 ## [0.15.0] - 2026-11-01
 

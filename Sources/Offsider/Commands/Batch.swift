@@ -147,8 +147,11 @@ struct Batch: AsyncParsableCommand {
             throw ValidationError("No executable steps found.")
         }
         for line in stepLines {
-            if let tokens = try? ShellTokenizer.tokenize(line) {
-                try BatchStepParser.rejectUnsupportedFlags(tokens)
+            // --continue-on-error reports a step that cannot run and goes on, so only what never runs is refused for it.
+            if continueOnError {
+                if let tokens = try? ShellTokenizer.tokenize(line) { try BatchStepParser.rejectUnsupportedFlags(tokens) }
+            } else {
+                try BatchStepParser.preflight(try ShellTokenizer.tokenize(line))
             }
         }
 
@@ -170,7 +173,8 @@ struct Batch: AsyncParsableCommand {
             )
         }
 
-        try? await watchdog.guardingSetup(device: device.rawValue) { await Self.prepareScreenshots(stepLines, maskSecure: maskSecure, backend: backend, device: device) }
+        if stepLines.contains(where: { Self.readsTree($0, maskSecure: maskSecure) }) { try? await watchdog.guardingTreeStart(on: route) }
+        await Self.prepareScreenshots(stepLines, maskSecure: maskSecure, backend: backend, device: device)
         let session = try await watchdog.guardingSetup(device: device.rawValue) { try await backend.openInputSession(for: device) }
         let output = BatchOutput.console(json: json)
         let clock = ContinuousClock()
@@ -192,6 +196,11 @@ struct Batch: AsyncParsableCommand {
         await session.close()
 
         output.completed(steps: stepLines.count, elapsed: Self.seconds(clock.now - started))
+    }
+
+    private static func readsTree(_ line: String, maskSecure: Bool?) -> Bool {
+        guard let first = (try? ShellTokenizer.tokenize(line))?.first, let kind = BatchStepKind(rawValue: first) else { return false }
+        return kind == .screenshot ? maskSecure != false : !kind.mayChangeScreen
     }
 
     /// Starts what a screenshot step's mask reads through before the first step, so a phone's helper start, about 0.5 s, never lands between a tap and the screenshot after it.

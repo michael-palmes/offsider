@@ -24,6 +24,7 @@ struct RNLogBox: AsyncParsableCommand {
     @MainActor
     static func guarding<T>(on route: DeviceRouter.Route, watchdog: DeviceWatchdog, extra: TimeInterval = 0, _ body: () async throws -> T) async throws -> T {
         try await watchdog.guardingSetup(device: route.device.rawValue) { try await route.backend.prepare() }
+        try await watchdog.guardingTreeStart(on: route)
         return try await watchdog.guardingRead(of: route.device, extra: extra, body)
     }
 

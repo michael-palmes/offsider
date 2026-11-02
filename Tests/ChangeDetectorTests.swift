@@ -152,6 +152,18 @@ struct ChangeDetectorTests {
         #expect(detector.compare(before, added) == .changed(summary: "element added: StaticText#toast"))
     }
 
+    @Test("ignoring text alone, a place in the tree that takes new text and leaves its line has moved, as a chart iOS lists by height does", arguments: [
+        [20.0, 300, 200, 30],
+        [20, 100, 200, 90],
+        [90, 100, 200, 30],
+    ])
+    func ignoreTextCountsAMoveThatCameWithIt(frame: [Double]) throws {
+        let detector = ChangeDetector(options: .init(ignoreText: true))
+        let before = try app(children: [element(label: "Bar 5", frame: [20, 100, 200, 30])])
+        let after = try app(children: [element(label: "Bar 4", frame: frame)])
+        #expect(detector.compare(before, after) == .changed(summary: #"StaticText "Bar 4" moved or resized"#))
+    }
+
     @Test("ignoring text alone, a ticking label is unchanged even as it resizes with its text, but a move of steady text still counts")
     func ignoreTextKeepsFrames() throws {
         let detector = ChangeDetector(options: .init(ignoreText: true))
