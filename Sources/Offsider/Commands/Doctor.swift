@@ -94,7 +94,7 @@ struct Doctor: AsyncParsableCommand {
             xcode: result.xcode,
             booted: result.booted,
             android: AndroidDoctorRules.summary(facts, device: nil),
-            checks: result.checks + AndroidDoctorRules.hostChecks(facts, deviceNamed: false) + (udid.map { [Self.leaseCheck(platform: .ios, key: $0.uppercased(), lockID: $0)] } ?? []),
+            checks: result.checks + AndroidDoctorRules.hostChecks(facts, deviceNamed: false) + (udid.map { [Self.leaseCheck(platform: .ios, key: $0.uppercased(), lockID: $0)] + Self.recordingCheck(platform: .ios, lockID: $0) } ?? []),
             fixes: fixes
         )
     }
@@ -125,7 +125,8 @@ struct Doctor: AsyncParsableCommand {
             android: AndroidDoctorRules.summary(facts.host, device: facts.device),
             checks: AndroidDoctorRules.hostChecks(facts.host, deviceNamed: true)
                 + AndroidDoctorRules.deviceChecks(facts.device, hostBlocker: AndroidDoctorRules.hostBlocker(facts.host))
-                + [Self.leaseCheck(platform: .android, key: Self.leaseKey(facts.device, id: id), lockID: serial)],
+                + [Self.leaseCheck(platform: .android, key: Self.leaseKey(facts.device, id: id), lockID: serial)]
+                + Self.recordingCheck(platform: .android, lockID: serial),
             fixes: fixes
         )
     }
@@ -149,7 +150,7 @@ struct Doctor: AsyncParsableCommand {
             xcode: XcodeSummary(developerDir: result.xcode?.developerDirectory, version: result.xcode?.version, build: result.xcode?.build, coreSimulator: nil),
             booted: [],
             android: nil,
-            checks: IOSDeviceDoctorRules.checks(result.facts) + [Self.leaseCheck(platform: .ios, key: udid.uppercased(), lockID: udid)],
+            checks: IOSDeviceDoctorRules.checks(result.facts) + [Self.leaseCheck(platform: .ios, key: udid.uppercased(), lockID: udid)] + Self.recordingCheck(platform: .ios, lockID: udid),
             fixes: fixes
         )
     }
@@ -267,6 +268,21 @@ struct Doctor: AsyncParsableCommand {
             holder: holder(DeviceLockKey(platform: platform, id: lockID))
         )
         return DoctorCheckResult(id: .deviceLease, verdict: verdict)
+    }
+
+    /// `device.recording`, only while one runs, as it holds back `login`, `wake --unlock` and `type --stdin` on a password screen.
+    static func recordingCheck(
+        platform: DevicePlatform, lockID: String, root: String = OffsiderPrivateDirectory.root,
+        recorders: (DeviceLockKey, String) -> [Int32] = { RecordingMarker.pids($0, root: $1) }
+    ) -> [DoctorCheckResult] {
+        let key = DeviceLockKey(platform: platform, id: lockID)
+        guard RecordingMarker.isLive(key, root: root) else { return [] }
+        let pids = recorders(key, root).map(String.init).joined(separator: " and ")
+        return [DoctorCheckResult(
+            id: .deviceRecording, status: .warn,
+            detail: "A recording is running\(pids.isEmpty ? "" : " (pid \(pids))"). Logins and typed passwords wait until it stops.",
+            hint: "offsider session stop --device \(lockID)"
+        )]
     }
 
     /// The Keychain is read (attributes only) only for a device with a credential; an emulator's code is saved under its AVD name.

@@ -54,10 +54,24 @@ struct IOSDeviceDoctorTests {
         #expect(checks[2].detail == "Apple iPhone (\(Self.udid)), iOS 27.2")
     }
 
+    @Test("a sleeping display names caffeinate, and no desktop session names the Mac's desktop")
+    func sessionDesktopHints() {
+        var facts = Self.facts()
+        facts.session = .notRunning(.asleep)
+        let asleep = IOSDeviceDoctorRules.checks(facts).first { $0.id == .iosDeviceSession }
+        #expect(asleep?.detail.contains("display is asleep") == true)
+        #expect(asleep?.hint?.contains("caffeinate -d") == true)
+        facts.session = .notRunning(.none)
+        let none = IOSDeviceDoctorRules.checks(facts).first { $0.id == .iosDeviceSession }
+        #expect(none?.detail.contains("no desktop session") == true)
+        #expect(none?.hint?.contains("caffeinate") == false)
+    }
+
     @Test("a broker that is not running is a skip, never started; a silent one or a failed stream warns with the restart command", arguments: [
         (IOSDeviceDoctorFacts.SessionFact?.none, CheckStatus.skip),
-        (.notRunning(guiSession: true), .skip),
-        (.notRunning(guiSession: false), .skip),
+        (.notRunning(.awake), .skip),
+        (.notRunning(.asleep), .skip),
+        (.notRunning(.none), .skip),
         (.running(stream: "opening", detail: nil), .pass),
         (.running(stream: "failed", detail: "no desktop"), .warn),
         (.unanswered, .warn),

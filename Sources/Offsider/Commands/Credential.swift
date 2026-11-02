@@ -162,10 +162,11 @@ struct CredentialCommand: AsyncParsableCommand {
                     console.data(Self.keychainWriteNotice, to: .err)
                 }
             }
+            let installed = parsed == .status ? await Self.firstInstalled(app: app, deviceID: deviceID, tracker: .live(), store: store) : nil
             let perform = {
                 try Self.perform(
                     parsed, app: app, key: key, update: update, edit: edit, settings: settings, personConfirmed: confirmed, where: filter, json: json, styled: styled,
-                    store: store, tracker: .live(), deviceID: deviceID,
+                    store: store, tracker: .live(), deviceID: deviceID, firstInstalled: installed,
                     keychainWillWrite: { DispatchQueue.global().asyncAfter(deadline: .now() + 3, execute: notice) },
                     keychainDidWrite: { notice.cancel() },
                     warn: { console.line(Self.warning, person: .warning(Self.personWarning)) },
@@ -289,6 +290,15 @@ struct CredentialCommand: AsyncParsableCommand {
         return try await readForeground(deviceID)
     }
 
+    /// When the app last signed in on the device was first installed there; only Android keeps that, and a device that does not answer leaves the record unmarked.
+    @MainActor
+    static func firstInstalled(app: String, deviceID: String?, tracker: SignInTracker, store: any LoginCredentialStoring) async -> Date? {
+        guard let deviceID, let canonical = try? store.canonical(of: app), let record = tracker.recordHere(app: canonical, deviceID: deviceID), record.platform == .android,
+              let route = try? await DeviceRouter.routeForInput(deviceID, logger: OffsiderLogger(), locking: false),
+              let reader = route.backend as? any AppLifecycleControlling else { return nil }
+        return try? await reader.appInfo(record.foreground, on: route.device).firstInstalled
+    }
+
     private func readForeground(_ deviceID: String) async throws -> String {
         let logger = OffsiderLogger()
         let watchdog = DeviceWatchdog()
@@ -322,6 +332,7 @@ struct CredentialCommand: AsyncParsableCommand {
         questions: (any CredentialQuestions)? = nil,
         tracker: SignInTracker? = nil,
         deviceID: String? = nil,
+        firstInstalled: Date? = nil,
         now: Date = Date(),
         keychainWillWrite: () -> Void = {},
         keychainDidWrite: () -> Void = {},
@@ -369,30 +380,32 @@ struct CredentialCommand: AsyncParsableCommand {
         case .status:
             let entries = try store.entries(app: canonical)
             let recorded = tracker?.signIns(app: canonical) ?? [:]
-            let here = deviceID.flatMap { tracker?.signedInHere(app: canonical, deviceID: $0) }
+            let record = deviceID.flatMap { tracker?.recordHere(app: canonical, deviceID: $0) }
+            let here = record?.key
+            let stale = record?.isStale(firstInstalled: firstInstalled) == true
             let inHand = deviceID != nil
             if !filter.isEmpty {
                 let entry = try LoginCommand.resolveLogin(nil, where: filter, app: app, entries: entries, device: nil)
                 let report = CredentialReport(
                     action: "status", app: app, key: entry.key, saved: true, isDefault: entry.isDefault || entries.count == 1,
-                    also: shared, context: entry.context, signIns: recorded, signedInHere: here, deviceInHand: inHand, filter: filter
+                    also: shared, context: entry.context, signIns: recorded, signedInHere: here, signedInHereStale: stale, deviceInHand: inHand, filter: filter
                 )
                 return render(report)
             }
             if let key {
                 guard let entry = entries.first(where: { $0.key == key }), let saved = try store.load(app: canonical, key: key) else {
-                    return render(CredentialReport(action: "status", app: app, key: key, saved: false, also: shared, signedInHere: here, deviceInHand: inHand))
+                    return render(CredentialReport(action: "status", app: app, key: key, saved: false, also: shared, signedInHere: here, signedInHereStale: stale, deviceInHand: inHand))
                 }
                 let report = CredentialReport(
                     action: "status", app: app, key: key, username: saved.username, saved: true, isDefault: entry.isDefault || entries.count == 1,
-                    also: shared, context: entry.context, signIns: recorded, signedInHere: here, deviceInHand: inHand
+                    also: shared, context: entry.context, signIns: recorded, signedInHere: here, signedInHereStale: stale, deviceInHand: inHand
                 )
                 return render(report)
             }
             var listed = entries
             if listed.count == 1 { listed[0].isDefault = true }
             let report = CredentialReport(
-                action: "status", app: app, saved: !listed.isEmpty, listed: listed, also: shared, signIns: recorded, signedInHere: here, deviceInHand: inHand
+                action: "status", app: app, saved: !listed.isEmpty, listed: listed, also: shared, signIns: recorded, signedInHere: here, signedInHereStale: stale, deviceInHand: inHand
             )
             return render(report)
         case .describe:

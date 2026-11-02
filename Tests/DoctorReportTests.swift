@@ -130,6 +130,7 @@ struct DoctorReportTests {
             "ios-device.usbmuxd",
             "ios-device.runner-signing",
             "device.lease",
+            "device.recording",
             "device.policy",
             "host.load",
             "host.disk",

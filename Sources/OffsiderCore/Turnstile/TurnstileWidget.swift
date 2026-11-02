@@ -47,6 +47,8 @@ public enum TurnstileWidget {
         }
 
         let phases = widgets.map { assess($0, viewport: viewport) }
+        // A Success outranks a checkbox, which can stay in the tree after the box passes; an image grid still needs a person.
+        if !phases.contains(.visualChallenge), phases.contains(.passed) || wrapperPassed(in: roots, viewport: viewport) { return .passed }
         let ready = phases.compactMap { phase -> TurnstileTarget? in
             if case .ready(let target) = phase { return target }
             return nil
@@ -54,7 +56,6 @@ public enum TurnstileWidget {
         if ready.count > 1 { return .ambiguous(ready.count) }
         if let target = ready.first { return .ready(target) }
         if phases.contains(.visualChallenge) { return .visualChallenge }
-        if phases.contains(.passed) { return .passed }
         return .checking
     }
 
@@ -122,6 +123,14 @@ public enum TurnstileWidget {
         return nodes.filter { $0.id == "turnstile-widget" }
     }
 
+    /// An app's wrapper reading Success beside Cloudflare's container, which `containers` looks at alone.
+    private static func wrapperPassed(in roots: [UINode], viewport: UIFrame?) -> Bool {
+        roots.flatMap { $0.flattened() }.contains { node in
+            node.id == "turnstile-widget" && onScreen(node, viewport: viewport)
+                && node.flattened().contains { onScreen($0, viewport: viewport) && isSuccess($0) }
+        }
+    }
+
     private static func assess(_ widget: UINode, viewport: UIFrame?) -> TurnstilePhase {
         let nodes = widget.flattened().filter { onScreen($0, viewport: viewport) }
         let checkbox = nodes.first { $0.role == .checkbox && $0.frame != nil }
@@ -150,11 +159,11 @@ public enum TurnstileWidget {
     private static func fallbackCheckbox(in roots: [UINode], viewport: UIFrame?) -> TurnstilePhase {
         let nodes = roots.flatMap { $0.flattened() }.filter { onScreen($0, viewport: viewport) }
         let boxes = nodes.filter { $0.role == .checkbox && $0.frame != nil && isPrompt($0) }
-        if boxes.count > 1 { return .ambiguous(boxes.count) }
         let logo = nodes.first { isLogo($0) }?.frame
+        if logo != nil, nodes.contains(where: { isSuccess($0) }) { return .passed }
+        if boxes.count > 1 { return .ambiguous(boxes.count) }
         guard let box = boxes.first, let frame = box.frame else {
             guard logo != nil else { return .absent }
-            if nodes.contains(where: { isSuccess($0) }) { return .passed }
             if nodes.contains(where: { isChecking($0) }) { return .checking }
             return .absent
         }

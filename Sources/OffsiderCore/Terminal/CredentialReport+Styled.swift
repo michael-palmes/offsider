@@ -85,7 +85,7 @@ extension CredentialReport {
     }
 
     private var here: [String] {
-        signedInHere.map { ["📱 signed in here: \(LoginCredential.displayKey($0))"] } ?? []
+        signedInHere.map { ["📱 signed in here: \(LoginCredential.displayKey($0))" + (signedInHereStale ? " (stale: installed again since)" : "")] } ?? []
     }
 
     /// Dim rows for tags, notes, the stamp and each sign-in. Every emoji draws as one without a variation selector.

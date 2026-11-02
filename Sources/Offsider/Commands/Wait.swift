@@ -72,7 +72,7 @@ struct Wait: AsyncParsableCommand {
     @Option(help: ArgumentHelp("Wait this long, from 0 to \(Wait.maximumSeconds) seconds, then exit 0. Ignores --timeout.", valueName: "seconds"))
     var seconds: Double?
 
-    @Option(help: ArgumentHelp("Give up after this many seconds, from 0 to \(Wait.maximumSeconds), and exit 5.", valueName: "seconds"))
+    @Option(name: [.customLong("timeout"), .customLong("wait-timeout")], help: ArgumentHelp("Give up after this many seconds, from 0 to \(Wait.maximumSeconds), and exit 5.", valueName: "seconds"))
     var timeout: Double = 10
 
     @Option(name: .customLong("poll-interval"), help: ArgumentHelp("Seconds between reads, from 0.05 to 5.", valueName: "seconds"))
@@ -340,6 +340,9 @@ struct Wait: AsyncParsableCommand {
             return ("--\(matched.by) '\(matched.text)' is \(selector.presentState)", after, "\(matched.position) of \(matched.of) selectors")
         }
         if let query = selector.query {
+            if gone, let hidden = outcome.goneBecause {
+                return ("\(query.selectorDescription) is not on screen: \(LogRedactor.redactValue(hidden).text)", after, nil)
+            }
             return ("\(query.selectorDescription) is \(gone ? "gone" : selector.presentState)", after, nil)
         }
         if settled { return ("Screen settled", after, nil) }
@@ -506,6 +509,7 @@ struct Wait: AsyncParsableCommand {
             match: outcome.match.map { redacted($0, mask: mask) }, matched: outcome.matched
         )
         shown.onlyTextMoved = outcome.onlyTextMoved
+        shown.goneBecause = outcome.goneBecause.map { LogRedactor.redactValue($0).text }
         shown.movingPart = outcome.movingPart.flatMap { LogRedactor.redactValue($0.flag).text == $0.flag ? $0 : nil }
         shown.nearMiss = outcome.nearMiss.map { WaitNearMiss(summary: mask.redactedText($0.summary), candidates: $0.candidates) }
         return shown

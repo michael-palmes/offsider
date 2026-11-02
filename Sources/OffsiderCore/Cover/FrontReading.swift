@@ -8,6 +8,8 @@ public struct FrontReading: Equatable, Sendable {
     public var covered: [Int: CoverVerdict]
     /// Each element judged by a touch, covered or not, so a tap at the same point needs no second hit-test.
     public var judged: [Int: Judged]
+    /// Elements inside the screen but past an edge of their scroll view, by pre-order index, with the side they lie on.
+    public var clipped: [Int: OffScreenSide]
 
     /// The point judged and the judge's verdict there, a guess included; nil when the touch reaches the element.
     public struct Judged: Equatable, Sendable {
@@ -15,24 +17,28 @@ public struct FrontReading: Equatable, Sendable {
         public var verdict: CoverVerdict?
         /// Whether the simulator's hit-test answered with the element or something inside it; nil when none was read.
         public var ownHit: Bool?
+        /// The answer may be a point read mid-transition, so a tap reads it again rather than reuse it.
+        public var unsure: Bool
 
-        public init(point: UIPoint, verdict: CoverVerdict?, ownHit: Bool? = nil) {
+        public init(point: UIPoint, verdict: CoverVerdict?, ownHit: Bool? = nil, unsure: Bool = false) {
             self.point = point
             self.verdict = verdict
             self.ownHit = ownHit
+            self.unsure = unsure
         }
     }
 
-    public init(beneath: [Int: String] = [:], covered: [Int: CoverVerdict] = [:], judged: [Int: Judged] = [:]) {
+    public init(beneath: [Int: String] = [:], covered: [Int: CoverVerdict] = [:], judged: [Int: Judged] = [:], clipped: [Int: OffScreenSide] = [:]) {
         self.beneath = beneath
         self.covered = covered
         self.judged = judged
+        self.clipped = clipped
     }
 
-    public var isEmpty: Bool { beneath.isEmpty && covered.isEmpty }
+    public var isEmpty: Bool { beneath.isEmpty && covered.isEmpty && clipped.isEmpty }
 
     /// Pre-order indexes of every element a touch would not reach.
-    public var unreached: Set<Int> { Set(beneath.keys).union(covered.keys) }
+    public var unreached: Set<Int> { Set(beneath.keys).union(covered.keys).union(clipped.keys) }
 
     /// True when a touch at the element at `index` lands elsewhere: a sure cover, or anything else the simulator's hit-test answered with, a backdrop included.
     public func misses(at index: Int) -> Bool {
@@ -43,6 +49,9 @@ public struct FrontReading: Equatable, Sendable {
     public func reason(at index: Int) -> String? {
         if let page = beneath[index] {
             return "beneath \(UITreeRenderer.quoted(SelectorText.truncated(page, limit: 40)))"
+        }
+        if clipped[index] != nil {
+            return "past the edge of its scroll view"
         }
         guard let verdict = covered[index] else { return nil }
         var parts = ["under", verdict.cover.role.rawValue]

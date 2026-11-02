@@ -113,6 +113,38 @@ struct KeyboardDismissTests {
         #expect(point.y < 546)
     }
 
+    @Test("space in the keyboard's bar outside any button is never chosen, though a wrapper listed after it counts as background")
+    func emptyPasswordsBarUnderWrapper() throws {
+        let bar = FakeUI.node(.group, id: "SystemInputAssistantView", frame: FakeUI.frame(0, 500, 402, 90))
+        let wrapper = FakeUI.node(.group, frame: FakeUI.frame(0, 500, 402, 374))
+        let keyboard = FakeUI.node(.keyboard, frame: FakeUI.frame(0, 590, 402, 226), children: [
+            FakeUI.node(.button, label: "q", frame: FakeUI.frame(3, 597, 40, 50)),
+        ])
+
+        let point = try #require(KeyboardDismiss.point(in: FakeUI.tree([bar, wrapper, keyboard])))
+
+        #expect(point.y < 500)
+    }
+
+    @Test("a control on a screen beneath a page takes no touch, so it removes no row from the scan")
+    func coveredControlLeavesRows() throws {
+        let beneath = FakeUI.node(.group, id: "home", frame: FakeUI.frame(0, 0, 402, 874), children: [
+            FakeUI.node(.header, label: "Home", frame: FakeUI.frame(60, 70, 282, 22)),
+            FakeUI.node(.button, id: "home-action", label: "Open", frame: FakeUI.frame(0, 100, 402, 600)),
+        ])
+        let front = FakeUI.node(.group, id: "sign-in", frame: FakeUI.frame(0, 0, 402, 874), children: [
+            FakeUI.node(.header, label: "Sign in", frame: FakeUI.frame(60, 70, 282, 22)),
+            FakeUI.node(.text, label: "Welcome", frame: FakeUI.frame(16, 750, 370, 20)),
+        ])
+        let keyboard = FakeUI.node(.keyboard, frame: FakeUI.frame(0, 700, 402, 174), children: [
+            FakeUI.node(.button, label: "q", frame: FakeUI.frame(3, 710, 40, 50)),
+        ])
+
+        let point = try #require(KeyboardDismiss.point(in: FakeUI.tree([beneath, front, keyboard])))
+
+        #expect(point.y > 600)
+    }
+
     @Test("a hide keyboard control is preferred, and a short scroll view is not a safe tap")
     func hideOrSafePoint() {
         let hide = FakeUI.node(.button, label: "Hide keyboard", frame: FakeUI.frame(300, 800, 80, 30))

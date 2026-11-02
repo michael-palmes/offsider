@@ -30,6 +30,11 @@ public struct SignInRecord: Equatable, Sendable {
         self.bootMarker = bootMarker
     }
 
+    /// True when the app was first installed after this sign-in: an uninstall went first, which wiped the app's data and the session with it.
+    public func isStale(firstInstalled: Date?) -> Bool {
+        firstInstalled.map { $0 > since } ?? false
+    }
+
     /// `{"v":1,"app":…,"foreground":…,"key":…,"platform":…,"device":…,"since":…,"bootMarker":…}`, with no `bootMarker` when unknown.
     public func encoded() -> Data {
         var members: [(String, OrderedJSON)] = [

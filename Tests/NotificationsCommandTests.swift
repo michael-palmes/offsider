@@ -64,4 +64,65 @@ struct NotificationsCommandTests {
         let result = try await TestHelpers.runOffsiderCommandAllowFailure("notifications --app com.example.app \(options) --device 00000000-0000-0000-0000-000000000001")
         #expect(result.exitCode == 64)
     }
+
+    static func snapshot(_ titles: String...) -> NotificationSnapshot {
+        NotificationSnapshot(notifications: titles.map { PostedNotification(key: $0, title: $0) }, source: .keys)
+    }
+
+    /// Reads in order, the last one for good, counting them.
+    final class Reads: @unchecked Sendable {
+        private(set) var count = 0
+        private let script: [NotificationSnapshot]
+        init(_ script: [NotificationSnapshot]) { self.script = script }
+        func next() -> NotificationSnapshot {
+            defer { count += 1 }
+            return script[min(count, script.count - 1)]
+        }
+    }
+
+    static func wait(for text: String, new: Bool, mask: TreeValueMask = .none, timeout: Duration, reads: Reads) async throws -> [String?] {
+        let clock = ContinuousClock()
+        let (_, listed) = try await NotificationsCommand.poll(wait: text, new: new, mask: mask, until: clock.now + timeout, clock: clock, read: { reads.next() }) { _ in
+            CLIError(errorDescription: "gave up", reason: .conditionNotMet)
+        }
+        return listed.map(\.notification.title)
+    }
+
+    @Test("--new --timeout 1 can succeed: the first read is the baseline and the deadline gets a read of its own")
+    func newWithOneSecond() async throws {
+        let reads = Reads([Self.snapshot(), Self.snapshot("Order filled")])
+        #expect(try await Self.wait(for: "order", new: true, timeout: .seconds(1), reads: reads) == ["Order filled"])
+        #expect(reads.count == 2)
+    }
+
+    @Test("a push at the last moment is seen: a wait runs its whole timeout and reads again at its end")
+    func runsItsWholeTimeout() async throws {
+        let reads = Reads([Self.snapshot()])
+        let started = ContinuousClock.now
+        await #expect(throws: CLIError.self) { _ = try await Self.wait(for: "order", new: false, timeout: .seconds(1.5), reads: reads) }
+        let took = ContinuousClock.now - started
+        #expect(took >= .seconds(1.5), "\(took)")
+        #expect(reads.count == 3)
+    }
+
+    @Test("--wait matches the masked text, so it cannot test for a value offsider.mask.json hides, and a list reads masked too")
+    func waitAppliesTheMask() async throws {
+        let mask = TreeValueMask(patterns: [try MaskPlan.compile(#"rc-\d{4}"#)])
+        let posted = Reads([Self.snapshot("Code rc-5521")])
+        await #expect(throws: CLIError.self) { _ = try await Self.wait(for: "rc-5521", new: false, mask: mask, timeout: .seconds(1), reads: posted) }
+        #expect(try await Self.wait(for: "code", new: false, mask: mask, timeout: .seconds(1), reads: Reads([Self.snapshot("Code rc-5521")])) == ["Code [redacted]"])
+
+        let clock = ContinuousClock()
+        let (_, listed) = try await NotificationsCommand.poll(wait: nil, new: false, mask: mask, until: clock.now, clock: clock, read: { Self.snapshot("Code rc-5521") }) { _ in CLIError(errorDescription: "no") }
+        #expect(listed.first?.notification.title == "Code [redacted]")
+        #expect(listed.first?.count == 1)
+    }
+
+    @Test("without --wait there is one read and no sleep")
+    func listReadsOnce() async throws {
+        let reads = Reads([Self.snapshot("A")])
+        let clock = ContinuousClock()
+        let (_, listed) = try await NotificationsCommand.poll(wait: nil, new: false, mask: .none, until: clock.now, clock: clock, read: { reads.next() }) { _ in CLIError(errorDescription: "no") }
+        #expect(listed.count == 1 && reads.count == 1)
+    }
 }

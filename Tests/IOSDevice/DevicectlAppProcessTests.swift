@@ -42,6 +42,25 @@ struct DevicectlAppProcessTests {
         #expect(try DevicectlAppProcess.pid(Data(none.utf8), bundleURL: Self.bundleURL) == nil)
     }
 
+    static let appDir = "file:///private/var/containers/Bundle/Application/00000000-0000-4000-8000-000000000001/OffsiderPlayground.app"
+
+    @Test("an extension under PlugIns is not the app, whichever row comes first")
+    func extensionIsNotTheApp() throws {
+        let both = """
+        {"info":{"outcome":"success"},"result":{"runningProcesses":[
+          {"executable":"\(Self.appDir)/PlugIns/Widget.appex/Widget","processIdentifier":70},
+          {"executable":"\(Self.appDir)/OffsiderPlayground","processIdentifier":4021}
+        ]}}
+        """
+        #expect(try DevicectlAppProcess.pid(Data(both.utf8), bundleURL: Self.bundleURL) == 4021)
+        let extensionOnly = """
+        {"info":{"outcome":"success"},"result":{"runningProcesses":[
+          {"executable":"\(Self.appDir)/PlugIns/Widget.appex/Widget","processIdentifier":70}
+        ]}}
+        """
+        #expect(try DevicectlAppProcess.pid(Data(extensionOnly.utf8), bundleURL: Self.bundleURL) == nil)
+    }
+
     @Test("a launch reply gives the new process")
     func launchReply() {
         let reply = #"{"info":{"outcome":"success"},"result":{"process":{"executableURL":{"relative":"file:///x"},"processIdentifier":4022}}}"#
