@@ -52,7 +52,7 @@ protocol AndroidSerialRecord {
 typealias AndroidPostureRecordStore = AndroidSerialRecordStore<AndroidPostureRecord>
 
 struct AndroidSerialRecordStore<Record: AndroidSerialRecord> {
-    /// An override ends with a reboot, so a record this old for a phone not seen since is dropped rather than named on every stop.
+    /// A record this old for a device not seen since is dropped rather than named on every stop.
     static var forgottenAfter: TimeInterval { 30 * 86_400 }
 
     let directory: String

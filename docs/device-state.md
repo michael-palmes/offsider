@@ -76,7 +76,7 @@ offsider airplane on --device <DEVICE_ID>
 offsider session stop --device <DEVICE_ID>
 ```
 
-- It outlives the command and a reboot, so Offsider records that it turned it on, in the private directory's `airplane/`, before asking Android. `session stop` (and `devices remove`) turns it off only then, and `airplane off` drops the record. Already on when you ran it, it stays on: `resetBySessionStop` in `--json` says which.
+- It outlives the command and a reboot, so Offsider records that it turned it on, in the private directory's `airplane/`, before asking Android. `session stop` (and `devices remove`) turns it off only then, and `airplane off` drops the record. Already on when you ran it, it stays on: `resetBySessionStop` in `--json` says which. `session stop` names a device it could not reach with the command that retries it, and `session status` lists the record; a stop drops a record for a device not connected for 30 days.
 - A phone allowed for any app takes it, as it names no app. An unnamed `session stop` leaves a phone that is no longer allowed alone. An AVD is found by name, so `--device` takes its name or serial, another AVD on the same serial is left alone, and a stopped AVD's record waits for it.
 - USB stays connected. An emulator loses its route to the Mac at `10.0.2.2`, so a React Native debug build cannot reach Metro until it is off.
 

@@ -154,10 +154,10 @@ struct SessionStop: AsyncParsableCommand {
             var recording: (key: DeviceLockKey, ended: Bool, pids: [Int32])?
             if let device { recording = await Self.stopRecording(device: device, serial: serial) }
             let stopped = DeviceSessionRow.stopped(
-                runners: runners.map(\.udid), brokers: brokers.map(\.udid), helpers: helpers, inputs: inputs, reverses: reverses.removed, postures: postures.reset, airplanes: airplanes,
+                runners: runners.map(\.udid), brokers: brokers.map(\.udid), helpers: helpers, inputs: inputs, reverses: reverses.removed, postures: postures.reset, airplanes: airplanes.reset,
                 recordings: recording.flatMap { $0.ended ? [$0.key.id] : nil } ?? []
             )
-            let left = DeviceSessionRow.left(reverses: reverses.failed, postures: postures)
+            let left = DeviceSessionRow.left(reverses: reverses.failed, postures: postures, airplanes: airplanes)
             if let recording, !recording.ended { console.notice(Self.recordingKept(recording.key, pids: recording.pids)) }
             var cleaned: RunnerCleanupReport?
             if let cleanUDID {
@@ -354,7 +354,7 @@ struct DeviceSessionRow: Equatable {
                 "broker": row.broker.map { brokerFields($0, formatter) as Any } ?? NSNull(),
                 "helper": row.helper.map { helperFields($0, formatter) as Any } ?? NSNull(),
                 "input": row.input.map { inputFields($0, formatter) as Any } ?? NSNull(),
-                "recorded": row.recorded.map { ["reverses": $0.reverses, "posture": $0.posture] as Any } ?? NSNull(),
+                "recorded": row.recorded.map { ["reverses": $0.reverses, "posture": $0.posture, "airplane": $0.airplane] as Any } ?? NSNull(),
             ]
         }
         let data = (try? JSONSerialization.data(withJSONObject: ["sessions": sessions], options: [.sortedKeys])) ?? Data("{}".utf8)
@@ -457,10 +457,11 @@ struct DeviceSessionRow: Equatable {
         let device: String
         var reverses: [Int] = []
         var posture = false
+        var airplane = false
         let why: Why
 
         var parts: [String] {
-            reverses.map(MetroReverse.label) + (posture ? ["posture override"] : [])
+            reverses.map(MetroReverse.label) + (posture ? ["posture override"] : []) + (airplane ? ["airplane mode"] : [])
         }
 
         var retry: String { "offsider session stop --device \(device)" }
@@ -486,13 +487,14 @@ struct DeviceSessionRow: Equatable {
         }
     }
 
-    static func left(reverses: [MetroReverseRemoval], postures: PostureResetOutcome) -> [Left] {
-        let failing = Set(reverses.map(\.serial) + postures.failed).sorted().map { serial in
-            Left(device: serial, reverses: reverses.filter { $0.serial == serial }.flatMap(\.ports), posture: postures.failed.contains(serial), why: .failed)
+    static func left(reverses: [MetroReverseRemoval], postures: RecordResetOutcome, airplanes: RecordResetOutcome = RecordResetOutcome()) -> [Left] {
+        let failing = Set(reverses.map(\.serial) + postures.failed + airplanes.failed).sorted().map { serial in
+            Left(device: serial, reverses: reverses.filter { $0.serial == serial }.flatMap(\.ports), posture: postures.failed.contains(serial), airplane: airplanes.failed.contains(serial), why: .failed)
         }
-        return failing
-            + postures.notConnected.sorted().map { Left(device: $0, posture: true, why: .notConnected) }
-            + postures.skipped.sorted().map { Left(device: $0, posture: true, why: .notAllowed) }
+        func staying(_ posture: [String], _ airplane: [String], _ why: Left.Why) -> [Left] {
+            Set(posture + airplane).sorted().map { Left(device: $0, posture: posture.contains($0), airplane: airplane.contains($0), why: why) }
+        }
+        return failing + staying(postures.notConnected, airplanes.notConnected, .notConnected) + staying(postures.skipped, airplanes.skipped, .notAllowed)
     }
 
     static func stoppedJSON(_ stopped: [Stopped], clean: [String: Any]? = nil, left: [Left] = [], recordingRunning: Bool = false) -> String {
@@ -500,7 +502,7 @@ struct DeviceSessionRow: Equatable {
             ["device": $0.device, "runner": $0.runner, "broker": $0.broker, "helper": $0.helper, "input": $0.input, "reverses": $0.reverses, "posture": $0.posture, "airplane": $0.airplane, "recording": $0.recording]
         }
         let notRemoved: [[String: Any]] = left.map {
-            ["device": $0.device, "reverses": $0.reverses, "posture": $0.posture, "why": $0.why.rawValue, "retry": $0.retry]
+            ["device": $0.device, "reverses": $0.reverses, "posture": $0.posture, "airplane": $0.airplane, "why": $0.why.rawValue, "retry": $0.retry]
         }
         var object: [String: Any] = ["stopped": entries, "notRemoved": notRemoved]
         if let clean { object["clean"] = clean }
@@ -511,8 +513,8 @@ struct DeviceSessionRow: Equatable {
 }
 
 extension RecordedPhoneState {
-    /// `adb reverse tcp:8081` and `posture override`, as `session status` lists them.
+    /// `adb reverse tcp:8081`, `posture override` and `airplane mode`, as `session status` lists them.
     var parts: [String] {
-        reverses.map(MetroReverse.label) + (posture ? ["posture override"] : [])
+        reverses.map(MetroReverse.label) + (posture ? ["posture override"] : []) + (airplane ? ["airplane mode"] : [])
     }
 }

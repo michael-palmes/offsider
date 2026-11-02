@@ -531,9 +531,9 @@ struct AndroidAirplaneTests {
         let change = try await AndroidBackend(host: host) { _, _ in }.setAirplaneMode(true, on: Self.phone)
         #expect(change == AirplaneChange(previous: false, current: true, resetBySessionStop: true))
         #expect(radio.isOn)
-        #expect(await AndroidBackend.resetRecordedAirplaneModes(host: host, serial: Self.phone.rawValue) == [Self.phone.rawValue])
+        #expect(await AndroidBackend.resetRecordedAirplaneModes(host: host, serial: Self.phone.rawValue).reset == [Self.phone.rawValue])
         #expect(!radio.isOn)
-        #expect(await AndroidBackend.resetRecordedAirplaneModes(host: host, serial: Self.phone.rawValue).isEmpty)
+        #expect(await AndroidBackend.resetRecordedAirplaneModes(host: host, serial: Self.phone.rawValue) == RecordResetOutcome())
     }
 
     @Test("what a person turned on stays on: session stop leaves it, and says nothing")
@@ -543,7 +543,7 @@ struct AndroidAirplaneTests {
         let host = try Self.host(radio, serial: Self.phone.rawValue, directory: directory)
         let change = try await AndroidBackend(host: host) { _, _ in }.setAirplaneMode(true, on: Self.phone)
         #expect(!change.resetBySessionStop)
-        #expect(await AndroidBackend.resetRecordedAirplaneModes(host: host, serial: Self.phone.rawValue).isEmpty)
+        #expect(await AndroidBackend.resetRecordedAirplaneModes(host: host, serial: Self.phone.rawValue) == RecordResetOutcome())
         #expect(radio.isOn)
         #expect(radio.changes.isEmpty)
     }
@@ -556,7 +556,7 @@ struct AndroidAirplaneTests {
         let backend = AndroidBackend(host: host) { _, _ in }
         _ = try await backend.setAirplaneMode(true, on: Self.phone)
         #expect(try await backend.setAirplaneMode(true, on: Self.phone).resetBySessionStop)
-        #expect(await AndroidBackend.resetRecordedAirplaneModes(host: host).count == 1)
+        #expect(await AndroidBackend.resetRecordedAirplaneModes(host: host).reset.count == 1)
     }
 
     @Test("off clears the record, so a person turning it on later is not undone")
@@ -568,7 +568,7 @@ struct AndroidAirplaneTests {
         _ = try await backend.setAirplaneMode(true, on: Self.phone)
         _ = try await backend.setAirplaneMode(false, on: Self.phone)
         _ = radio.reply("cmd connectivity airplane-mode enable")
-        #expect(await AndroidBackend.resetRecordedAirplaneModes(host: host).isEmpty)
+        #expect(await AndroidBackend.resetRecordedAirplaneModes(host: host) == RecordResetOutcome())
         #expect(radio.isOn)
     }
 
@@ -580,7 +580,7 @@ struct AndroidAirplaneTests {
         _ = try await AndroidBackend(host: host) { _, _ in }.setAirplaneMode(true, on: Self.phone)
         _ = radio.reply("cmd connectivity airplane-mode disable")
         let before = radio.changes.count
-        #expect(await AndroidBackend.resetRecordedAirplaneModes(host: host).isEmpty)
+        #expect(await AndroidBackend.resetRecordedAirplaneModes(host: host) == RecordResetOutcome())
         #expect(radio.changes.count == before)
         #expect(AndroidAirplaneRecordStore(directory: directory.path).all().isEmpty)
     }
@@ -602,7 +602,7 @@ struct AndroidAirplaneTests {
         let host = try Self.host(radio, serial: Self.phone.rawValue, directory: directory)
         await #expect(throws: AppLifecycleError.self) { try await AndroidBackend(host: host) { _, _ in }.setAirplaneMode(true, on: Self.phone) }
         radio.land()
-        #expect(await AndroidBackend.resetRecordedAirplaneModes(host: host) == [Self.phone.rawValue])
+        #expect(await AndroidBackend.resetRecordedAirplaneModes(host: host).reset == [Self.phone.rawValue])
         #expect(!radio.isOn)
     }
 
@@ -616,13 +616,39 @@ struct AndroidAirplaneTests {
         #expect(radio.changes.isEmpty)
     }
 
+    @Test("a reset that does not land keeps the record and reports failed, so the stop can name it")
+    func resetThatFails() async throws {
+        let radio = Radio(on: true, late: true)
+        let directory = try Self.directory()
+        let host = try Self.host(radio, serial: Self.phone.rawValue, directory: directory)
+        let store = AndroidAirplaneRecordStore(directory: directory.path)
+        try store.save(AndroidAirplaneRecord(serial: Self.phone.rawValue, avd: nil))
+        #expect(await AndroidBackend.resetRecordedAirplaneModes(host: host) == RecordResetOutcome(failed: [Self.phone.rawValue]))
+        #expect(store.load(serial: Self.phone.rawValue) != nil)
+    }
+
+    @Test("an unplugged phone keeps its record and is reported, until a month has passed")
+    func unpluggedPhone() async throws {
+        let directory = try Self.directory()
+        let host = try Self.host(Radio(on: true), serial: "OTHERPHONE1", directory: directory)
+        let store = AndroidAirplaneRecordStore(directory: directory.path)
+        try store.save(AndroidAirplaneRecord(serial: Self.phone.rawValue, avd: nil))
+        #expect(await AndroidBackend.resetRecordedAirplaneModes(host: host) == RecordResetOutcome(notConnected: [Self.phone.rawValue]))
+        #expect(store.load(serial: Self.phone.rawValue) != nil)
+
+        let old = Date(timeIntervalSinceNow: -AndroidAirplaneRecordStore.forgottenAfter - 60)
+        try FileManager.default.setAttributes([.modificationDate: old], ofItemAtPath: directory.appendingPathComponent(AndroidPostureRecord.fileName(serial: Self.phone.rawValue)).path)
+        #expect(await AndroidBackend.resetRecordedAirplaneModes(host: host) == RecordResetOutcome())
+        #expect(store.load(serial: Self.phone.rawValue) == nil)
+    }
+
     @Test("a phone no longer allowed is left alone on an unnamed stop")
     func unpermittedLeftAlone() async throws {
         let radio = Radio(on: true)
         let directory = try Self.directory()
         let host = try Self.host(radio, serial: Self.phone.rawValue, directory: directory)
         try AndroidAirplaneRecordStore(directory: directory.path).save(AndroidAirplaneRecord(serial: Self.phone.rawValue, avd: nil))
-        #expect(await AndroidBackend.resetRecordedAirplaneModes(host: host, permits: { _ in false }).isEmpty)
+        #expect(await AndroidBackend.resetRecordedAirplaneModes(host: host, permits: { _ in false }) == RecordResetOutcome(skipped: [Self.phone.rawValue]))
         #expect(radio.isOn)
     }
 
@@ -633,7 +659,7 @@ struct AndroidAirplaneTests {
         let host = try Self.host(radio, serial: Self.emulator.rawValue, directory: directory)
         let store = AndroidAirplaneRecordStore(directory: directory.path)
         try store.save(AndroidAirplaneRecord(serial: Self.emulator.rawValue, avd: "Someone_Elses_AVD"))
-        #expect(await AndroidBackend.resetRecordedAirplaneModes(host: host, serial: Self.emulator.rawValue).isEmpty)
+        #expect(await AndroidBackend.resetRecordedAirplaneModes(host: host, serial: Self.emulator.rawValue) == RecordResetOutcome(notConnected: [Self.emulator.rawValue]))
         #expect(radio.isOn)
         #expect(store.load(serial: Self.emulator.rawValue) != nil)
     }
@@ -646,8 +672,8 @@ struct AndroidAirplaneTests {
         let store = AndroidAirplaneRecordStore(directory: directory.path)
         try store.save(AndroidAirplaneRecord(serial: Self.phone.rawValue, avd: nil))
         try store.save(AndroidAirplaneRecord(serial: "OTHERPHONE1", avd: nil))
-        #expect(await AndroidBackend.resetRecordedAirplaneModes(host: host, serial: "OTHERPHONE2").isEmpty)
-        #expect(await AndroidBackend.resetRecordedAirplaneModes(host: host, serial: Self.phone.rawValue) == [Self.phone.rawValue])
+        #expect(await AndroidBackend.resetRecordedAirplaneModes(host: host, serial: "OTHERPHONE2") == RecordResetOutcome())
+        #expect(await AndroidBackend.resetRecordedAirplaneModes(host: host, serial: Self.phone.rawValue).reset == [Self.phone.rawValue])
         #expect(store.load(serial: "OTHERPHONE1") != nil)
     }
 

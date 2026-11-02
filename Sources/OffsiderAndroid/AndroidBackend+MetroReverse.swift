@@ -28,11 +28,13 @@ public struct RecordedPhoneState: Equatable, Sendable {
     public let serial: String
     public let reverses: [Int]
     public let posture: Bool
+    public let airplane: Bool
 
-    public init(serial: String, reverses: [Int], posture: Bool) {
+    public init(serial: String, reverses: [Int], posture: Bool, airplane: Bool = false) {
         self.serial = serial
         self.reverses = reverses
         self.posture = posture
+        self.airplane = airplane
     }
 }
 
@@ -129,7 +131,7 @@ extension AndroidBackend: MetroReverseSetting {
         return outcome
     }
 
-    /// The reverses and overrides Offsider recorded, on `serial` or on every phone, without reaching adb.
+    /// The reverses, overrides and airplane modes Offsider recorded, on `serial` or on every device, without reaching adb.
     public static func recordedPhoneState(host: AndroidHost, serial: String? = nil) -> [RecordedPhoneState] {
         let reverses = host.metroReverseDirectory(false).map { directory -> [MetroReverseRecord] in
             let store = MetroReverseStore(directory: directory)
@@ -139,8 +141,11 @@ extension AndroidBackend: MetroReverseSetting {
             let store = AndroidPostureRecordStore(directory: directory)
             return (serial.map { store.load(serial: $0).map { [$0] } ?? [] } ?? store.all()).map(\.serial)
         } ?? []
-        return Set(reverses.map(\.serial) + postures).sorted().map { phone in
-            RecordedPhoneState(serial: phone, reverses: reverses.first { $0.serial == phone }?.ports ?? [], posture: postures.contains(phone))
+        let airplanes = host.airplaneRecordDirectory(false).map { directory in
+            AndroidAirplaneRecordStore(directory: directory).all().filter { serial == nil || $0.serial == serial || $0.avd == serial }.map(\.serial)
+        } ?? []
+        return Set(reverses.map(\.serial) + postures + airplanes).sorted().map { phone in
+            RecordedPhoneState(serial: phone, reverses: reverses.first { $0.serial == phone }?.ports ?? [], posture: postures.contains(phone), airplane: airplanes.contains(phone))
         }
     }
 

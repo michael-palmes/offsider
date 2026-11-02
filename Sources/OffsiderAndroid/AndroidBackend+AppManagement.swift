@@ -138,25 +138,51 @@ extension AndroidBackend: AirplaneControlling {
     }
 
     /// Turns off each recorded airplane mode still on, never starting adb. `device` is a serial or AVD name; nil means all. An unplugged phone or a stopped AVD keeps its record, and another AVD on the same serial is left alone.
-    public static func resetRecordedAirplaneModes(host: AndroidHost, serial device: String? = nil, permits: (String) -> Bool = { _ in true }) async -> [String] {
-        guard let directory = host.airplaneRecordDirectory(false) else { return [] }
+    public static func resetRecordedAirplaneModes(host: AndroidHost, serial device: String? = nil, permits: (String) -> Bool = { _ in true }) async -> RecordResetOutcome {
+        guard let directory = host.airplaneRecordDirectory(false) else { return RecordResetOutcome() }
         let store = AndroidAirplaneRecordStore(directory: directory)
-        let records = store.all().filter { record in permits(record.serial) && (device == nil || record.serial == device || record.avd == device) }
-        guard !records.isEmpty, let endpoint = try? LoopbackEndpoint.adbServer(environment: host.environment) else { return [] }
-        let client = AdbClient(endpoint: endpoint, connector: host.adbConnector, timing: host.timing)
-        guard let rows = try? await client.devices() else { return [] }
-        var reset: [String] = []
+        let all = store.all().filter { device == nil || $0.serial == device || $0.avd == device }
+        let records = all.filter { permits($0.serial) }
+        let unpermitted = all.map(\.serial).filter { phone in !records.contains { $0.serial == phone } }
+        var outcome = RecordResetOutcome()
+        guard !all.isEmpty else { return outcome }
+        let endpoint = try? LoopbackEndpoint.adbServer(environment: host.environment)
+        let client = endpoint.map { AdbClient(endpoint: $0, connector: host.adbConnector, timing: host.timing) }
+        guard let client, let rows = try? await client.devices() else {
+            outcome.notConnected = records.map(\.serial)
+            outcome.skipped = unpermitted
+            return outcome
+        }
+        // Asks adb only who is connected, so an unpermitted phone is still sent nothing.
+        outcome.skipped = unpermitted.filter { phone in
+            guard !rows.contains(where: { $0.serial == phone }), store.isForgotten(serial: phone) else { return true }
+            store.remove(serial: phone)
+            return false
+        }
         for record in records {
-            guard let serial = currentSerial(of: record, host: host), rows.contains(where: { $0.serial == serial && $0.state == .device }),
-                  let output = try? await client.shell(AndroidAirplaneRecord.readScript, on: serial, label: AndroidAirplaneRecord.readScript),
-                  let on = AndroidAirplaneRecord.parseSetting(output.stdoutText) else { continue }
+            guard let serial = currentSerial(of: record, host: host), rows.contains(where: { $0.serial == serial && $0.state == .device }) else {
+                if store.isForgotten(serial: record.serial) {
+                    store.remove(serial: record.serial)
+                } else {
+                    outcome.notConnected.append(record.serial)
+                }
+                continue
+            }
+            guard let output = try? await client.shell(AndroidAirplaneRecord.readScript, on: serial, label: AndroidAirplaneRecord.readScript),
+                  let on = AndroidAirplaneRecord.parseSetting(output.stdoutText) else {
+                outcome.failed.append(record.serial)
+                continue
+            }
             if on {
-                guard (try? await client.changeAirplaneMode(false, on: serial, timing: host, polls: airplanePolls, interval: airplanePollInterval)) == true else { continue }
-                reset.append(serial)
+                guard (try? await client.changeAirplaneMode(false, on: serial, timing: host, polls: airplanePolls, interval: airplanePollInterval)) == true else {
+                    outcome.failed.append(record.serial)
+                    continue
+                }
+                outcome.reset.append(serial)
             }
             store.remove(serial: record.serial)
         }
-        return reset
+        return outcome
     }
 
     /// A phone keeps its serial; an AVD takes whichever port is free, so it is found by name and never assumed from the serial.

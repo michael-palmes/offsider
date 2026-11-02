@@ -205,10 +205,10 @@ extension AndroidBackend: ScreenStatusPrefetching {
     }
 }
 
-/// What a reset of recorded overrides did: every phone but `reset`'s keeps its record.
-public struct PostureResetOutcome: Equatable, Sendable {
+/// What undoing recorded device state did: every device but `reset`'s keeps its record.
+public struct RecordResetOutcome: Equatable, Sendable {
     public var reset: [String] = []
-    /// A connected phone whose read or reset failed.
+    /// A connected device whose read or reset failed.
     public var failed: [String] = []
     /// Not on adb, or adb could not say.
     public var notConnected: [String] = []
@@ -340,13 +340,13 @@ extension AndroidBackend: PostureControlling, PostureResetting, PostureStateNami
     }
 
     /// Resets each recorded override still in place on the same boot, never starting adb; an unplugged phone keeps its record for a month, a rebooted one loses it.
-    public static func resetRecordedPostures(host: AndroidHost, serial: String? = nil, permits: (String) -> Bool = { _ in true }) async -> PostureResetOutcome {
-        guard let directory = host.postureRecordDirectory(false) else { return PostureResetOutcome() }
+    public static func resetRecordedPostures(host: AndroidHost, serial: String? = nil, permits: (String) -> Bool = { _ in true }) async -> RecordResetOutcome {
+        guard let directory = host.postureRecordDirectory(false) else { return RecordResetOutcome() }
         let store = AndroidPostureRecordStore(directory: directory)
         let all = serial.map { store.load(serial: $0).map { [$0] } ?? [] } ?? store.all()
         let records = all.filter { permits($0.serial) }
         let unpermitted = all.map(\.serial).filter { phone in !records.contains { $0.serial == phone } }
-        var outcome = PostureResetOutcome()
+        var outcome = RecordResetOutcome()
         guard !all.isEmpty else { return outcome }
         let endpoint = try? LoopbackEndpoint.adbServer(environment: host.environment)
         let client = endpoint.map { AdbClient(endpoint: $0, connector: host.adbConnector, timing: host.timing) }

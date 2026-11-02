@@ -188,28 +188,28 @@ struct AndroidPhonePostureTests {
 
         let set = Phone(override: 0)
         try store.save(ours)
-        #expect(await AndroidBackend.resetRecordedPostures(host: try Self.host(set, records: records)) == PostureResetOutcome(reset: [Self.serial]))
+        #expect(await AndroidBackend.resetRecordedPostures(host: try Self.host(set, records: records)) == RecordResetOutcome(reset: [Self.serial]))
         #expect(set.currentOverride == nil && store.load(serial: Self.serial) == nil)
 
         let changed = Phone(override: 2)
         try store.save(ours)
-        #expect(await AndroidBackend.resetRecordedPostures(host: try Self.host(changed, records: records), serial: Self.serial) == PostureResetOutcome())
+        #expect(await AndroidBackend.resetRecordedPostures(host: try Self.host(changed, records: records), serial: Self.serial) == RecordResetOutcome())
         #expect(changed.currentOverride == 2 && store.load(serial: Self.serial) == nil)
 
         let rebooted = Phone(override: 0, bootID: "4f1d2b8e-0000-4000-8000-000000000002")
         try store.save(ours)
-        #expect(await AndroidBackend.resetRecordedPostures(host: try Self.host(rebooted, records: records)) == PostureResetOutcome())
+        #expect(await AndroidBackend.resetRecordedPostures(host: try Self.host(rebooted, records: records)) == RecordResetOutcome())
         #expect(rebooted.currentOverride == 0 && store.load(serial: Self.serial) == nil)
 
         let unplugged = Phone(override: 0)
         unplugged.connected = false
         try store.save(ours)
-        #expect(await AndroidBackend.resetRecordedPostures(host: try Self.host(unplugged, records: records)) == PostureResetOutcome(notConnected: [Self.serial]))
+        #expect(await AndroidBackend.resetRecordedPostures(host: try Self.host(unplugged, records: records)) == RecordResetOutcome(notConnected: [Self.serial]))
         #expect(store.load(serial: Self.serial) == ours)
 
         let refusing = Phone(override: 0)
         refusing.refusesChange = true
-        #expect(await AndroidBackend.resetRecordedPostures(host: try Self.host(refusing, records: records)) == PostureResetOutcome(failed: [Self.serial]))
+        #expect(await AndroidBackend.resetRecordedPostures(host: try Self.host(refusing, records: records)) == RecordResetOutcome(failed: [Self.serial]))
         #expect(refusing.currentOverride == 0 && store.load(serial: Self.serial) == ours)
     }
 
@@ -222,7 +222,7 @@ struct AndroidPhonePostureTests {
         try FileManager.default.setAttributes([.modificationDate: Date(timeIntervalSinceNow: -AndroidPostureRecordStore.forgottenAfter - 60)], ofItemAtPath: path)
         let unplugged = Phone(override: 0)
         unplugged.connected = false
-        #expect(await AndroidBackend.resetRecordedPostures(host: try Self.host(unplugged, records: records)) == PostureResetOutcome())
+        #expect(await AndroidBackend.resetRecordedPostures(host: try Self.host(unplugged, records: records)) == RecordResetOutcome())
         #expect(store.load(serial: Self.serial) == nil)
     }
 
@@ -234,15 +234,15 @@ struct AndroidPhonePostureTests {
         let path = (records as NSString).appendingPathComponent(AndroidPostureRecord.fileName(serial: Self.serial))
         let phone = Phone(override: 0)
         phone.connected = false
-        #expect(await AndroidBackend.resetRecordedPostures(host: try Self.host(phone, records: records), permits: { _ in false }) == PostureResetOutcome(skipped: [Self.serial]))
+        #expect(await AndroidBackend.resetRecordedPostures(host: try Self.host(phone, records: records), permits: { _ in false }) == RecordResetOutcome(skipped: [Self.serial]))
 
         try FileManager.default.setAttributes([.modificationDate: Date(timeIntervalSinceNow: -AndroidPostureRecordStore.forgottenAfter - 60)], ofItemAtPath: path)
         phone.connected = true
-        #expect(await AndroidBackend.resetRecordedPostures(host: try Self.host(phone, records: records), permits: { _ in false }) == PostureResetOutcome(skipped: [Self.serial]))
+        #expect(await AndroidBackend.resetRecordedPostures(host: try Self.host(phone, records: records), permits: { _ in false }) == RecordResetOutcome(skipped: [Self.serial]))
         #expect(phone.commands.isEmpty)
 
         phone.connected = false
-        #expect(await AndroidBackend.resetRecordedPostures(host: try Self.host(phone, records: records), permits: { _ in false }) == PostureResetOutcome())
+        #expect(await AndroidBackend.resetRecordedPostures(host: try Self.host(phone, records: records), permits: { _ in false }) == RecordResetOutcome())
         #expect(store.load(serial: Self.serial) == nil)
     }
 
@@ -255,7 +255,7 @@ struct AndroidPhonePostureTests {
         let server = FakeAdbServer(connect: .refuse, handler: { _ in .hang })
         var host = AndroidTestHost.make(home: try AndroidTestHost.homeWithSDK(), adb: server)
         host.postureRecordDirectory = { _ in records }
-        #expect(await AndroidBackend.resetRecordedPostures(host: host) == PostureResetOutcome(notConnected: [Self.serial]))
+        #expect(await AndroidBackend.resetRecordedPostures(host: host) == RecordResetOutcome(notConnected: [Self.serial]))
         #expect(store.load(serial: Self.serial) == ours)
     }
 
@@ -266,7 +266,7 @@ struct AndroidPhonePostureTests {
         let ours = AndroidPostureRecord(serial: Self.serial, bootID: Self.boot, identifier: 0)
         try store.save(ours)
         let phone = Phone(override: 0)
-        #expect(await AndroidBackend.resetRecordedPostures(host: try Self.host(phone, records: records), permits: { _ in false }) == PostureResetOutcome(skipped: [Self.serial]))
+        #expect(await AndroidBackend.resetRecordedPostures(host: try Self.host(phone, records: records), permits: { _ in false }) == RecordResetOutcome(skipped: [Self.serial]))
         #expect(phone.currentOverride == 0 && phone.commands.isEmpty)
         #expect(store.load(serial: Self.serial) == ours)
     }

@@ -280,21 +280,27 @@ struct AndroidMetroReverseTests {
     func recordedStateReadsNoDevice() async throws {
         let directory = try Self.privateDirectory()
         let postures = try Self.privateDirectory()
+        let airplanes = try Self.privateDirectory()
         defer {
             try? FileManager.default.removeItem(atPath: directory)
             try? FileManager.default.removeItem(atPath: postures)
+            try? FileManager.default.removeItem(atPath: airplanes)
         }
         try MetroReverseStore(directory: directory).save(MetroReverseRecord(serial: Self.serial, transportId: "1", ports: [8081]))
+        try AndroidAirplaneRecordStore(directory: airplanes).save(AndroidAirplaneRecord(serial: "emulator-5554", avd: "Offsider_E2E"))
         try AndroidPostureRecordStore(directory: postures).save(AndroidPostureRecord(serial: "POSTUREONLY1", bootID: AndroidPhonePostureTests.boot, identifier: 0))
         let server = Self.server(FakeReverses())
         var host = try Self.host(server, directory: directory)
         host.postureRecordDirectory = { _ in postures }
+        host.airplaneRecordDirectory = { _ in airplanes }
 
         #expect(AndroidBackend.recordedPhoneState(host: host) == [
             RecordedPhoneState(serial: "POSTUREONLY1", reverses: [], posture: true),
             RecordedPhoneState(serial: Self.serial, reverses: [8081], posture: false),
+            RecordedPhoneState(serial: "emulator-5554", reverses: [], posture: false, airplane: true),
         ])
         #expect(AndroidBackend.recordedPhoneState(host: host, serial: Self.serial).map(\.serial) == [Self.serial])
+        #expect(AndroidBackend.recordedPhoneState(host: host, serial: "Offsider_E2E").map(\.serial) == ["emulator-5554"], "an AVD is found by its name")
         #expect(server.connectionAttempts == 0)
     }
 
