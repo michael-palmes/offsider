@@ -58,9 +58,35 @@ struct SessionStatus: AsyncParsableCommand {
 }
 
 struct SessionStop: AsyncParsableCommand {
+    /// The named device's recording, stopped and saved; a person's recording on another device is never touched.
+    @MainActor
+    private static func stopRecording(device: String, serial: String?) async -> (key: DeviceLockKey, ended: Bool, pids: [Int32])? {
+        let named = device.trimmingCharacters(in: .whitespacesAndNewlines)
+        let kind = DeviceIDClassifier.classify(named)
+        let id: String
+        switch kind {
+        case .iosSimulator(let udid), .iosDevice(let udid): id = udid
+        default: id = serial ?? named
+        }
+        guard let platform = kind.platform else { return nil }
+        var key = DeviceLockKey(platform: platform, id: id)
+        // A marker is kept under the serial; an AVD's name goes to adb only while an Android recording runs, so this never starts an adb server for nothing.
+        if case .androidName = kind, !RecordingMarker.isLive(key), RecordingMarker.anyLive(platform: .android) {
+            let backend = AndroidBackend(host: .cli(), log: { _, _ in })
+            if let resolved = try? await backend.resolveAndroidName(named) { key = DeviceLockKey(platform: platform, id: resolved) }
+            await backend.close()
+        }
+        return await RecordingMarker.stopRecordings(key).map { (key, $0.ended, $0.pids) }
+    }
+
+    private static func recordingKept(_ key: DeviceLockKey, pids: [Int32]) -> Notice {
+        let list = pids.map(String.init).joined(separator: " ")
+        return .warning(pids.isEmpty ? "A recording on \(key.id) is still running, and Offsider could not find its pid." : "The recording on \(key.id) is still running. Stop it with `kill -INT \(list)`.")
+    }
+
     static let configuration = CommandConfiguration(
         commandName: "stop",
-        abstract: "Stop the runner, session broker, warm helper or input session on one device, remove the adb reverses rn open set and turn off the airplane mode Offsider turned on, or on every device when --device is left out."
+        abstract: "Stop the runner, session broker, warm helper or input session on one device, remove the adb reverses rn open set and turn off the airplane mode Offsider turned on, or on every device when --device is left out. With --device it also stops and saves a recording on that device."
     )
 
     @Option(name: .customLong("device"), help: ArgumentHelp("The device whose sessions to stop.", valueName: "id"))
@@ -80,7 +106,7 @@ struct SessionStop: AsyncParsableCommand {
     func run() async throws {
         let cleanUDID = try clean ? RunnerSessions.cleanableUDID(device ?? "", command: "session stop --clean") : nil
         let console = Console.current
-        let (stopped, cleaned) = await console.progress("Stopping sessions") {
+        let (stopped, cleaned, recordingRunning) = await console.progress("Stopping sessions") {
             let brokers = DeviceSessions.records(device: device)
             let manager = DeviceSessions.manager()
             // Work on a test device is over, so its screen sleeps here too rather than staying lit until someone remembers.
@@ -118,18 +144,22 @@ struct SessionStop: AsyncParsableCommand {
                 return false
             })
             let inputs = await SimulatorInputSessions.stop(device: device)
+            var recording: (key: DeviceLockKey, ended: Bool, pids: [Int32])?
+            if let device { recording = await Self.stopRecording(device: device, serial: serial) }
             let stopped = DeviceSessionRow.stopped(
-                runners: runners.map(\.udid), brokers: brokers.map(\.udid), helpers: helpers, inputs: inputs, reverses: reverses, postures: postures, airplanes: airplanes
+                runners: runners.map(\.udid), brokers: brokers.map(\.udid), helpers: helpers, inputs: inputs, reverses: reverses, postures: postures, airplanes: airplanes,
+                recordings: recording.flatMap { $0.ended ? [$0.key.id] : nil } ?? []
             )
+            if let recording, !recording.ended { console.notice(Self.recordingKept(recording.key, pids: recording.pids)) }
             var cleaned: RunnerCleanupReport?
             if let cleanUDID {
                 console.relabel("Uninstalling the runner")
                 cleaned = await RunnerSessions.clean(udid: cleanUDID)
             }
-            return (stopped, cleaned)
+            return (stopped, cleaned, recording?.ended == false)
         }
         if json {
-            console.data(DeviceSessionRow.stoppedJSON(stopped, clean: cleaned.map(RunnerSessions.cleanFields)) + "\n")
+            console.data(DeviceSessionRow.stoppedJSON(stopped, clean: cleaned.map(RunnerSessions.cleanFields), recordingRunning: recordingRunning) + "\n")
             return
         }
         var text = DeviceSessionRow.stoppedText(stopped, device: device)
@@ -363,11 +393,13 @@ struct DeviceSessionRow: Equatable {
         var posture = false
         /// Airplane mode Offsider turned on, now off.
         var airplane = false
+        /// A recording that has stopped and saved.
+        var recording = false
 
-        /// `runner`, `session broker`, `warm helper`, `input session`, `adb reverse tcp:8081`, `posture override` and `airplane mode`, those that stopped.
+        /// `runner`, `session broker`, `warm helper`, `input session`, `adb reverse tcp:8081`, `posture override`, `airplane mode` and `recording`, those that stopped.
         var parts: [String] {
             [runner ? "runner" : nil, broker ? "session broker" : nil, helper ? "warm helper" : nil, input ? "input session" : nil].compactMap { $0 }
-                + reverses.map { "adb reverse tcp:\($0)" } + (posture ? ["posture override"] : []) + (airplane ? ["airplane mode"] : [])
+                + reverses.map { "adb reverse tcp:\($0)" } + (posture ? ["posture override"] : []) + (airplane ? ["airplane mode"] : []) + (recording ? ["recording"] : [])
         }
     }
 
@@ -378,22 +410,23 @@ struct DeviceSessionRow: Equatable {
     }
 
     static func stopped(
-        runners: [String], brokers: [String], helpers: [String] = [], inputs: [String] = [], reverses: [MetroReverseRemoval] = [], postures: [String] = [], airplanes: [String] = []
+        runners: [String], brokers: [String], helpers: [String] = [], inputs: [String] = [], reverses: [MetroReverseRemoval] = [], postures: [String] = [], airplanes: [String] = [], recordings: [String] = []
     ) -> [Stopped] {
-        Set(runners + brokers + helpers + inputs + reverses.map(\.serial) + postures + airplanes).sorted().map { device in
+        Set(runners + brokers + helpers + inputs + reverses.map(\.serial) + postures + airplanes + recordings).sorted().map { device in
             Stopped(
                 device: device, runner: runners.contains(device), broker: brokers.contains(device), helper: helpers.contains(device), input: inputs.contains(device),
-                reverses: reverses.filter { $0.serial == device }.flatMap(\.ports), posture: postures.contains(device), airplane: airplanes.contains(device)
+                reverses: reverses.filter { $0.serial == device }.flatMap(\.ports), posture: postures.contains(device), airplane: airplanes.contains(device), recording: recordings.contains(device)
             )
         }
     }
 
-    static func stoppedJSON(_ stopped: [Stopped], clean: [String: Any]? = nil) -> String {
+    static func stoppedJSON(_ stopped: [Stopped], clean: [String: Any]? = nil, recordingRunning: Bool = false) -> String {
         let entries: [[String: Any]] = stopped.map {
-            ["device": $0.device, "runner": $0.runner, "broker": $0.broker, "helper": $0.helper, "input": $0.input, "reverses": $0.reverses, "posture": $0.posture, "airplane": $0.airplane]
+            ["device": $0.device, "runner": $0.runner, "broker": $0.broker, "helper": $0.helper, "input": $0.input, "reverses": $0.reverses, "posture": $0.posture, "airplane": $0.airplane, "recording": $0.recording]
         }
         var object: [String: Any] = ["stopped": entries]
         if let clean { object["clean"] = clean }
+        if recordingRunning { object["recordingRunning"] = true }
         let data = (try? JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])) ?? Data("{}".utf8)
         return String(decoding: data, as: UTF8.self)
     }

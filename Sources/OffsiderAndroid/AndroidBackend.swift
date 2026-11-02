@@ -3,7 +3,9 @@ import OffsiderCore
 
 /// Android emulators and USB phones over the adb server; lives for one command run, so its caches do too.
 @MainActor
-public final class AndroidBackend: DeviceBackend, AccessibilityActionPerforming, AccessibilityChangeWaiting, MaskTreeReading {
+public final class AndroidBackend: DeviceBackend, AccessibilityActionPerforming, AccessibilityChangeWaiting, MaskTreeReading, TreeGapFilling {
+    /// Apps a notifications read has confirmed installed, so a --wait checks once.
+    var notificationAppsSeen: Set<String> = []
     let host: AndroidHost
     let log: AndroidLog
     private var sdk: AndroidSDK?
@@ -166,6 +168,14 @@ public final class AndroidBackend: DeviceBackend, AccessibilityActionPerforming,
     public func maskTree(for id: DeviceID) async throws -> UITree {
         try await requireDrivableForeground(id.rawValue)
         return try await readTree(id, point: nil, checkingWindows: true, everyView: true)
+    }
+
+    public func startGapSamples(on id: DeviceID) async -> GapSamples? { nil }
+
+    /// One more read through the helper with every view, about a quarter longer than a plain one, under the same foreground and window checks; it stays out of the tree cache and the session's node index. Uiautomator's slow dump is not repeated.
+    public func fillingGaps(in tree: UITree, on id: DeviceID, samples: GapSamples?) async -> UITree {
+        guard case .helper? = try? await treeSource(for: id.rawValue), let everyView = try? await maskTree(for: id) else { return tree }
+        return TreeGapFill.filling(tree, from: everyView)
     }
 
     /// Starts the helper (or settles on uiautomator) now, so a phone's helper start never lands inside a held gesture.

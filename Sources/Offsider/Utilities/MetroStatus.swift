@@ -18,6 +18,11 @@ struct MetroStatus {
         URL(string: "http://\(host):\(port)/status")!
     }
 
+    /// Metro on loopback only. `--localhost` binds the first address `localhost` resolves to, and ipv4first makes that 127.0.0.1, not ::1.
+    static func startCommand(port: Int) -> String {
+        "NODE_OPTIONS=--dns-result-order=ipv4first npx expo start --dev-client --localhost --port \(port)"
+    }
+
     /// Nil when Metro answers as running; otherwise why not, for the error.
     func problem(port: Int) async -> String? {
         do {
@@ -27,8 +32,32 @@ struct MetroStatus {
             let text = String(decoding: body, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
             return text == Self.runningBody ? nil : "something else answered on that port"
         } catch {
-            return "nothing answered within \(Int(Self.timeout)) s"
+            return Self.nothingAnswered
         }
+    }
+
+    private static var nothingAnswered: String { "nothing answered within \(Int(timeout)) s" }
+
+    /// `expo start --localhost` can bind ::1 alone, which neither a device nor this check reaches.
+    private func runsOnIPv6Only(port: Int) async -> Bool {
+        guard let url = URL(string: "http://[::1]:\(port)/status"), let (status, body) = try? await fetch(url, Self.timeout) else { return false }
+        return status == 200 && String(decoding: body, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines) == Self.runningBody
+    }
+
+    /// The `metro_not_running` failure, or nil when Metro answers as running.
+    func unreachable(port: Int) async -> CLIError? {
+        guard let problem = await problem(port: port) else { return nil }
+        let start = Self.startCommand(port: port)
+        if problem == Self.nothingAnswered, await runsOnIPv6Only(port: port) {
+            return CLIError(
+                errorDescription: "Metro answers on [::1]:\(port) but not on 127.0.0.1:\(port), the address Offsider and devices use. Stop it and start it with `\(start)`, then try again.",
+                reason: .metroNotRunning, hint: start
+            )
+        }
+        return CLIError(
+            errorDescription: "Metro is not running on 127.0.0.1:\(port) (\(problem)). Start it with `\(start)`, then try again.",
+            reason: .metroNotRunning, hint: start
+        )
     }
 
     static let liveOwned: @Sendable (Int) async -> Bool = { port in

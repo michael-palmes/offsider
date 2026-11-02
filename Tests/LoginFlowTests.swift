@@ -331,6 +331,53 @@ struct LoginFlowTests {
         #expect(report.submitLabel == "Log in")
     }
 
+    @Test("a layout still shifting after the keys go is read until submit holds still, so the tap goes where it ended up")
+    func submitMovesAfterDismiss() async throws {
+        let bullets = String(repeating: String(SecureText.bullet), count: password.count)
+        func filled(submitY: Double?, keyboard: Bool = false) -> UITree {
+            var tree = SignInFixture.tree(emailValue: username, passwordValue: bullets, submitEnabled: true, lowKeyboard: keyboard)
+            if let submitY {
+                tree.roots[0].children = tree.roots[0].children.map { node in
+                    guard node.id == "login-button" else { return node }
+                    var moved = node
+                    moved.frame = FakeUI.frame(16, submitY, 370, 44)
+                    return moved
+                }
+            }
+            return tree
+        }
+        let script = LoginScript(trees: [
+            SignInFixture.tree(),
+            SignInFixture.tree(emailValue: username),
+            filled(submitY: nil, keyboard: true),
+            filled(submitY: 500),
+            filled(submitY: 600),
+            filled(submitY: 700),
+            filled(submitY: 700),
+        ])
+        script.advanceOnSleep = true
+        script.advanceOnTap = true
+
+        _ = try await run(script)
+
+        #expect(script.taps.count == 2)
+        #expect(script.taps.last?.y == 722, "\(script.taps)")
+    }
+
+    @Test("with submit unmatched after the dismiss tap, no settle is spent on it")
+    func unmatchedSubmitSpendsNoSettle() async throws {
+        let bullets = String(repeating: String(SecureText.bullet), count: password.count)
+        let script = LoginScript(trees: [
+            SignInFixture.tree(),
+            SignInFixture.tree(emailValue: username),
+            SignInFixture.tree(emailValue: username, passwordValue: bullets, submitEnabled: true, lowKeyboard: true),
+            SignInFixture.tree(emailValue: username, passwordValue: bullets, submitEnabled: true),
+        ])
+        script.advanceOnTap = true
+        _ = try await run(script)
+        #expect(script.time < 1, "\(script.time)")
+    }
+
     @Test("a username the field shows a read late is waited for, not refused")
     func usernameShowsLate() async throws {
         let bullets = String(repeating: String(SecureText.bullet), count: password.count)

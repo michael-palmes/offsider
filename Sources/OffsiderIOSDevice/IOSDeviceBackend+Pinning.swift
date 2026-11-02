@@ -35,6 +35,9 @@ extension IOSDeviceBackend {
             if answer.locked == true {
                 throw IOSDeviceError.screenLocked(id.rawValue)
             }
+            if let prompt = answer.prompt {
+                throw IOSDeviceError.systemPromptInFront(prompt, udid: id.rawValue)
+            }
             let active = answer.activeBundleID.map { "\($0) is in front" } ?? "another app or the system is in front"
             throw IOSDeviceError(
                 .otherAppInFront,

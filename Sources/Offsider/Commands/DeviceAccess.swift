@@ -231,6 +231,8 @@ struct DeviceAccessAllow: AsyncParsableCommand {
         let apps: [String]
         let lifetime: TimeInterval?
         var metroPorts: [Int] = []
+        /// The end a change kept, which Touch ID's wait must not push back.
+        var keptExpiry: Date?
         var testDevice = false
     }
 
@@ -362,7 +364,7 @@ struct DeviceAccessAllow: AsyncParsableCommand {
             let entry = DeviceAllowance(
                 platform: platform, key: key, name: PromptScreen.label(chosen.row.name, cap: 100),
                 added: Date(timeIntervalSince1970: now.timeIntervalSince1970.rounded(.down)),
-                expires: chosen.lifetime.map { Date(timeIntervalSince1970: now.addingTimeInterval($0).timeIntervalSince1970.rounded(.down)) },
+                expires: chosen.keptExpiry ?? chosen.lifetime.map { Date(timeIntervalSince1970: now.addingTimeInterval($0).timeIntervalSince1970.rounded(.down)) },
                 apps: chosen.apps,
                 team: chosen.team,
                 metroPorts: chosen.metroPorts,
@@ -407,6 +409,9 @@ struct DeviceAccessAllow: AsyncParsableCommand {
                 throw CLIError(errorDescription: problem, reason: .appNotAllowed)
             }
         }
+        // A device already allowed is being changed: each step starts on what it has now, since saving replaces the whole entry.
+        var current: DeviceAllowance?
+        if case .allowed(let entry) = policy.decision(platform: row.platform, key: key, now: context.now()) { current = entry }
         if testDevice, let off = policy.managed.testDeviceRefusal {
             throw CLIError(errorDescription: "\(off), so \(key) cannot be a test device. Nothing was saved.", reason: .appNotAllowed)
         }
@@ -423,24 +428,28 @@ struct DeviceAccessAllow: AsyncParsableCommand {
         var chosenTeam = team
         var shownTeam = team.map { "team \($0)" }
         if row.platform == .ios, team == nil {
-            let picked = try await step("Team") { try await pickTeam(on: prompt, context: context, step: $0) }
+            let picked = try await step("Team") { try await pickTeam(on: prompt, context: context, current: current?.team, step: $0) }
             chosenTeam = picked.value
             shownTeam = picked.value == nil ? nil : picked.shown
         }
         var chosenApps = apps
         var chosenWhole = testDevice
         if apps.isEmpty, !testDevice {
-            (chosenApps, chosenWhole) = try await step("App") { try await pickApp(on: prompt, row: row, context: context, policy: policy, step: $0) }.value
+            (chosenApps, chosenWhole) = try await step("App") { try await pickApp(on: prompt, row: row, context: context, policy: policy, current: current, step: $0) }.value
         }
         var chosenPorts = metroPorts ?? []
         if row.platform == .android, metroPorts == nil {
-            chosenPorts = try await step("Metro") { try pickMetroPorts(on: prompt, step: $0) }.value
+            chosenPorts = try await step("Metro") { try pickMetroPorts(on: prompt, current: current?.metroPorts ?? [], step: $0) }.value
         }
         let lifetime: TimeInterval?
+        var keptExpiry: Date?
         if let expires {
             lifetime = try DeviceAccess.expiry(expires)
         } else {
-            lifetime = try await step("How long") { try pickExpiry(on: prompt, step: $0, testDevice: chosenWhole) }.value
+            let kept = current.map { entry in (entry.expires?.timeIntervalSince(context.now()), AllowScreen.until(entry.expires, now: context.now(), timeZone: context.timeZone)) }
+            let picked = try await step("How long") { try pickExpiry(on: prompt, current: kept, step: $0, testDevice: chosenWhole) }
+            lifetime = picked.value
+            if picked.shown == kept?.1 { keptExpiry = current?.expires }
         }
         let name = AllowScreen.name(row)
         let start = prompt.mark
@@ -450,7 +459,7 @@ struct DeviceAccessAllow: AsyncParsableCommand {
         let whole = chosenWhole ? " as a \(AllowScreen.wholeDevice)" : ""
         try await PersonPresence.confirm(reason: "allow Offsider to drive \(name) (\(PromptScreen.visible(key)))\(whole)\(reach)")
         prompt.rewind(to: start)
-        return Choice(row: row, key: key, team: chosenTeam, apps: chosenApps, lifetime: lifetime, metroPorts: chosenPorts, testDevice: chosenWhole)
+        return Choice(row: row, key: key, team: chosenTeam, apps: chosenApps, lifetime: lifetime, metroPorts: chosenPorts, keptExpiry: keptExpiry, testDevice: chosenWhole)
     }
 
     /// The steps this run shows, in order; a flag given on the command line skips its step.
@@ -509,8 +518,9 @@ struct DeviceAccessAllow: AsyncParsableCommand {
                     rescan: true, keepsChoice: false
                 )
                 prompt.rewind(to: start)
-                prompt.lines([TerminalUI.receipt("Device", AllowScreen.name(wired[index]), style: prompt.style)])
-                return (wired[index], wired)
+                let chosen = index < wired.count ? wired[index] : allowed[index - wired.count].0
+                prompt.lines([TerminalUI.receipt("Device", AllowScreen.name(chosen), style: prompt.style)])
+                return (chosen, index < wired.count ? wired : [])
             } catch is PromptRefresh {
                 prompt.rewind(to: start)
             }
@@ -518,7 +528,7 @@ struct DeviceAccessAllow: AsyncParsableCommand {
     }
 
     @MainActor
-    private func pickTeam(on prompt: TerminalPrompt, context: DeviceAccessContext, step: String?) async throws -> (value: String?, shown: String) {
+    private func pickTeam(on prompt: TerminalPrompt, context: DeviceAccessContext, current: String?, step: String?) async throws -> (value: String?, shown: String) {
         let teams = try await TerminalSpinner.run("Reading your signing teams", terminal: prompt.terminalDescriptor) { context.signingTeams() }
         let problem = "A team ID is 10 letters and digits, such as ABCDE12345."
         guard !teams.isEmpty else {
@@ -527,10 +537,12 @@ struct DeviceAccessAllow: AsyncParsableCommand {
                 let text = answer.trimmingCharacters(in: .whitespaces)
                 return text.isEmpty || DeviceAllowance.isTeamID(text) ? nil : problem
             }.trimmingCharacters(in: .whitespaces).uppercased()
-            return typed.isEmpty ? (nil, "none") : (typed, typed)
+            return typed.isEmpty ? (current, current ?? "none") : (typed, typed)
         }
         let rows = Self.teamRows(teams) + [MenuRow(.type, [AllowScreen.typeTeam])]
-        let index = try prompt.choose(AllowScreen.teamQuestion, step: step, rows: rows, keepsChoice: false)
+        let kept = current.map { AllowScreen.keepRow(PromptScreen.label($0)) }
+        let index = try prompt.choose(AllowScreen.teamQuestion, step: step, rows: (kept.map { [$0] } ?? []) + rows, keepsChoice: false) - (kept == nil ? 0 : 1)
+        if index < 0, let current { return (current, PromptScreen.label(current)) }
         if index < teams.count { return (teams[index].id, Self.teamShown(teams[index], among: teams)) }
         let typed = try prompt.ask("  Team ID: ") { DeviceAllowance.isTeamID($0.trimmingCharacters(in: .whitespaces)) ? nil : problem }
             .trimmingCharacters(in: .whitespaces).uppercased()
@@ -554,9 +566,17 @@ struct DeviceAccessAllow: AsyncParsableCommand {
 
     /// The apps chosen, and whether the person chose a test device, after answering that nothing personal is on it.
     @MainActor
-    private func pickApp(on prompt: TerminalPrompt, row: DeviceSummary, context: DeviceAccessContext, policy: PhysicalDevicePolicy, step: String?) async throws -> (value: (apps: [String], testDevice: Bool), shown: String) {
+    private func pickApp(on prompt: TerminalPrompt, row: DeviceSummary, context: DeviceAccessContext, policy: PhysicalDevicePolicy, current: DeviceAllowance?, step: String?) async throws -> (value: (apps: [String], testDevice: Bool), shown: String) {
         func apps(_ picked: (value: [String], shown: String)) -> (value: (apps: [String], testDevice: Bool), shown: String) {
             ((picked.value, false), picked.shown)
+        }
+        // What can stay as it is: never whole-device access managed policy has since turned off, nor an app it no longer permits.
+        let kept = current.flatMap { entry -> DeviceAllowance? in
+            if entry.testDevice, policy.managed.testDeviceRefusal != nil { return nil }
+            return entry.pinnedApps.contains { Self.appProblem($0, platform: row.platform, policy: policy) != nil } ? nil : entry
+        }
+        func keep(_ entry: DeviceAllowance) -> (value: (apps: [String], testDevice: Bool), shown: String) {
+            ((entry.apps, entry.testDevice), AllowScreen.apps(entry.apps, testDevice: entry.testDevice))
         }
         let listed: [InstalledApp]
         let front: String?
@@ -566,10 +586,17 @@ struct DeviceAccessAllow: AsyncParsableCommand {
             }
         } catch {
             prompt.lines(TerminalUI.warning("Could not read its apps (\(Self.reason(error))). Unlock it, or type an app ID.", width: prompt.width, style: prompt.style))
-            return apps(try typeApp(on: prompt, platform: row.platform, policy: policy, label: (step.map { "\($0) " } ?? "  ") + "App ID (Return for any app): "))
+            let lead = step.map { "\($0) " } ?? "  "
+            if let kept {
+                let answer = try typeApp(on: prompt, platform: row.platform, policy: policy, label: lead + "App ID (Return to keep \(keep(kept).shown)): ")
+                return answer.value.isEmpty ? keep(kept) : apps(answer)
+            }
+            return apps(try typeApp(on: prompt, platform: row.platform, policy: policy, label: lead + "App ID (Return for any app): "))
         }
         let menu = Self.appMenu(listed, platform: row.platform, policy: policy, profile: context.profile(), front: front)
-        let index = try prompt.choose(AllowScreen.appQuestion, step: step, rows: menu.rows(), selected: menu.selected, keepsChoice: false)
+        let rows = (kept.map { [AllowScreen.keepRow(keep($0).shown)] } ?? []) + menu.rows()
+        let index = try prompt.choose(AllowScreen.appQuestion, step: step, rows: rows, selected: kept == nil ? menu.selected : 0, keepsChoice: false) - (kept == nil ? 0 : 1)
+        if index < 0, let kept { return keep(kept) }
         switch menu.choices[index] {
         case .app(let app): return apps(([app.id], PromptScreen.label(app.name ?? app.id)))
         case .any: return apps(([], AllowScreen.apps([])))
@@ -649,19 +676,22 @@ struct DeviceAccessAllow: AsyncParsableCommand {
 
     /// None first and chosen by default: a reverse opens Metro to every app on the phone.
     @MainActor
-    private func pickMetroPorts(on prompt: TerminalPrompt, step: String?) throws -> (value: [Int], shown: String) {
-        let rows = [
+    private func pickMetroPorts(on prompt: TerminalPrompt, current: [Int], step: String?) throws -> (value: [Int], shown: String) {
+        let now = current.map(String.init).joined(separator: ", ")
+        let kept = current.isEmpty ? [] : [AllowScreen.keepRow(now)]
+        let rows = kept + [
             MenuRow(.lock, [AllowScreen.noMetro, AllowScreen.noMetroDetail], recommended: true),
             MenuRow(.link, ["8081", AllowScreen.metroPortDetail]),
             MenuRow(.type, [AllowScreen.typePorts]),
         ]
-        let index = try prompt.choose(AllowScreen.metroQuestion, step: step, rows: rows, selected: 0, keepsChoice: false)
+        let index = try prompt.choose(AllowScreen.metroQuestion, step: step, rows: rows, selected: 0, keepsChoice: false) - kept.count
         let ports: [Int]
         switch index {
+        case -1: ports = current
         case 0: ports = []
         case 1: ports = [8081]
         default:
-            let typed = try prompt.ask("  Ports (such as 8081 8742, Return for none): ") { answer in
+            let typed = try prompt.ask("  Ports (\(current.isEmpty ? "" : "now \(now); ")such as 8081 8742, Return for none): ") { answer in
                 do {
                     _ = try DeviceAccess.metroPorts(answer)
                     return nil
@@ -677,10 +707,12 @@ struct DeviceAccessAllow: AsyncParsableCommand {
     }
 
     @MainActor
-    private func pickExpiry(on prompt: TerminalPrompt, step: String?, testDevice: Bool = false) throws -> (value: TimeInterval?, shown: String) {
+    private func pickExpiry(on prompt: TerminalPrompt, current: (lifetime: TimeInterval?, shown: String)?, step: String?, testDevice: Bool = false) throws -> (value: TimeInterval?, shown: String) {
         let (options, recommended) = Self.expiryRows(testDevice: testDevice)
         let rows = options.enumerated().map { MenuRow($1.mark, [$1.label], recommended: $0 == recommended) }
-        let index = try prompt.choose(AllowScreen.expiryQuestion, step: step, rows: rows, selected: recommended, keepsChoice: false)
+        let kept = current.map { [AllowScreen.keepRow($0.shown)] } ?? []
+        let index = try prompt.choose(AllowScreen.expiryQuestion, step: step, rows: kept + rows, selected: kept.isEmpty ? recommended : 0, keepsChoice: false) - kept.count
+        if index < 0, let current { return (current.lifetime, current.shown) }
         if let value = options[index].value {
             let lifetime = try DeviceAccess.expiry(value)
             return (lifetime, AllowScreen.duration(lifetime))
@@ -746,7 +778,8 @@ struct DeviceAccessStatus: AsyncParsableCommand {
         }
         let (output, refusal) = try perform(context: context)
         console.data(output)
-        if let refusal { throw refusal }
+        // Its one JSON document is on stdout, so the failure adds only its stderr line and exit code.
+        if let refusal { throw json ? ReportedFailure(underlying: refusal, exitCode: refusal.exitCode) : refusal }
     }
 
     /// The whole list: a person's screen, and beside it the text agents parse.

@@ -125,6 +125,11 @@ final class BatchContext {
     }
 
     /// The guard's baseline: this batch's latest tree, with its last input or else the disk record's.
+    /// How long a step's refused cover is read again, as a page the last input left can stay in the tree over its successor.
+    func coverSettle(stepOptedOut: Bool) -> TimeInterval {
+        noSettle || stepOptedOut ? 0 : TapCover.coverSettle(lastInput: lastInputAt ?? cachedRecord?.lastInputAt)
+    }
+
     func settlePolicy(stepOptedOut: Bool) -> SettlePolicy {
         guard !noSettle, !stepOptedOut else { return .off }
         guard let lastTree else { return .guarded(record: lastInputAt == nil ? cachedRecord : record(lastInputAt: lastInputAt, tree: nil)) }

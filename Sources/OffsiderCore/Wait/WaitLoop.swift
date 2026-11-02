@@ -63,6 +63,9 @@ extension ElementProbe {
     /// The reason a probe gives when nothing matched the selector at all.
     public static let notFound = "not found"
 
+    /// How a probe ends the reason for a match a touch would not reach.
+    public static let notReached = ", so a tap would not reach it"
+
     /// True for `notFound`, alone or with a note after it such as `; LogBox inspector open`.
     static func foundNothing(_ reason: String) -> Bool {
         reason == notFound || reason.hasPrefix(notFound + ";")
@@ -133,6 +136,8 @@ public struct WaitOutcome: Equatable, Sendable {
     public var nearMiss: WaitNearMiss?
     /// For `--settled`: the part of the screen that kept moving, which `--ignore-id` or `--ignore-region` leaves out.
     public var movingPart: MovingPart?
+    /// For `--gone`: what hides the element, when the app still holds it, such as `under button "Buy" (16, 790) 370x44`.
+    public var goneBecause: String?
 
     public init(met: Bool, elapsed: TimeInterval, reason: String, match: UINode? = nil, matched: WaitMatch? = nil) {
         self.met = met
@@ -169,7 +174,7 @@ public struct SettleGate: Equatable, Sendable {
     public func showsEffect(in tree: UITree, ignoreValues: Bool, leaveOut: SettleLeaveOut = .none) -> Bool {
         guard let before else { return false }
         let detector = ChangeDetector(options: .init(ignoredIdentifiers: leaveOut.detectorIDs, ignoreText: ignoreValues))
-        let masked = tree.redacted(OutputMasks.current.mask, scope: .cache)
+        let masked = tree.redacted(OutputMasks.current.base, scope: .cache)
         let now = AccessibilitySnapshot(tree: masked, native: false).leavingOut(leaveOut.regions)
         if case .changed = detector.compare(before.leavingOut(leaveOut.regions), now) {
             return true
@@ -254,7 +259,9 @@ public enum WaitLoop {
                 succeededOnce = true
                 otherApp = nil
                 if step.met {
-                    return WaitOutcome(met: true, elapsed: sources.now() - start, reason: step.reason, match: step.match, matched: step.matched)
+                    var outcome = WaitOutcome(met: true, elapsed: sources.now() - start, reason: step.reason, match: step.match, matched: step.matched)
+                    outcome.goneBecause = state.goneBecause
+                    return outcome
                 }
                 lastReason = step.reason
                 lastBlock = try holdBlock(step.block, gone: gone, state: &state, sources: sources)
@@ -336,6 +343,8 @@ public enum WaitLoop {
         var reads = 0
         var treeReads = 0
         var readableTree = false
+        /// What hides a `--gone` element on the latest read, when it is still in the tree.
+        var goneBecause: String?
         /// When an element condition began to hold, and the reads since; a miss resets both.
         var metSince: TimeInterval?
         var metReads = 0
@@ -388,6 +397,7 @@ public enum WaitLoop {
             case .absent(let reason):
                 step = Step(met: gone, reason: reason)
                 state.missed = ElementProbe.foundNothing(reason)
+                state.goneBecause = gone && reason.hasSuffix(ElementProbe.notReached) ? String(reason.dropLast(ElementProbe.notReached.count)) : nil
             case .blocked(let block):
                 step = Step(met: false, reason: LogBoxBlock.reason, block: block)
             }
@@ -563,7 +573,8 @@ public enum WaitLoop {
         let heldFor = now - since
         let place = gone ? "gone" : "on screen"
         if state.metReads >= 2, heldFor + 1e-9 >= stableFor {
-            return Step(met: true, reason: "\(place) for \(seconds(heldFor))", match: step.match, matched: step.matched)
+            let hidden = state.goneBecause.map { ": \($0)" } ?? ""
+            return Step(met: true, reason: "\(place) for \(seconds(heldFor))\(hidden)", match: step.match, matched: step.matched)
         }
         return Step(met: false, reason: "\(place) for \(seconds(heldFor)) of \(seconds(stableFor))")
     }

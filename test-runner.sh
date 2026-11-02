@@ -359,6 +359,7 @@ RN_SUITES=(
     "ReactNativeStickyFooterTests"
     "ReactNativeAppCommandTests"
     "ReactNativeOnScreenTests"
+    "ReactNativeGapFillTests"
     "ReactNativeSettleTests"
     "ReactNativeVerifyHoldTests"
     "ReactNativeLoginTests"

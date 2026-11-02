@@ -40,7 +40,6 @@ public enum ArgumentHints {
     /// Per command: an option it lacks, and what to use instead.
     static let misnamed: [String: [String: String]] = [
         "wait": partialLabel("wait").merging([
-            "--wait-timeout": "wait takes --timeout <seconds>, not --wait-timeout.",
             "--verify-timeout": "wait takes --timeout <seconds>, not --verify-timeout.",
         ]) { $1 },
         "assert": partialLabel("assert").merging([
