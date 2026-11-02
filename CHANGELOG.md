@@ -15,6 +15,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - `screenshot` warns when an iOS simulator's picture matches the last one although the elements on screen changed, as a swipe-up unlock can freeze its display, and `button lock` says to unlock with Home twice.
 - `rn devmenu --json` adds `closedBy: "fallback"` when the item left the menu open and Offsider closed it.
 - `record-video` and `stream-video` take `--wait-lock` for their one tree read.
+- `app install <apk>` and `app uninstall` on Android, pinned to the allowance: the package is read from the APK on the Mac and enforced by Android too, so an APK that declares another app exits 1 `package_mismatch`. On a phone both need the app pinned by name; a phone allowed for any app is refused, and a test device needs no pin.
+- `app launch --cold`, another name for `--restart`; `--json` adds `waitMilliseconds` and `launchState` on Android beside `milliseconds`, Android's `WaitTime`, `LaunchState` and `TotalTime`.
+- `app prefs --app <id>` on Android lists a debuggable app's shared preference names and types, never values: the device filters them, and no option asks for one. A release build exits 1 `not_debuggable`, naming the fix. An active run records each read with its key count.
+- `app broadcast <action> --app <id>` on Android sends to that app's own receivers (`--receiver` for one), which is how to refresh a home-screen widget. Protected system actions exit 1 `broadcast_refused` and list the app's own, a receiver that is not exported is refused rather than dropped silently, and a missing one exits 1 `receiver_not_found`.
+- `airplane [on|off]` reads or sets Android's airplane mode; `session stop` and `devices remove` turn it off only if this command turned it on.
+- `init --print-rules` lists `allowOnce`: rule lines a person can add once for the commands above, so an agent needs no raw adb and no prompt per call.
 
 ### Changed
 

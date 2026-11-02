@@ -89,6 +89,23 @@ public enum AgentPermissionRules {
              reason: "Raw devicectl reaches any attached iPhone without Offsider's checks."),
     ]
 
+    /// Commands a person may allow once rather than approve per call, as each reaches only allowed apps; `init` never adds them by itself.
+    public static let allowOnce: [(command: [String], reason: String)] = [
+        (["offsider", "app", "install"], "Installs an APK checked against the allowed app."),
+        (["offsider", "app", "uninstall"], "Removes an allowed app and its data."),
+        (["offsider", "app", "prefs"], "Lists an allowed app's preference names, never values."),
+        (["offsider", "app", "broadcast"], "Sends a broadcast to an allowed app's own receivers."),
+        (["offsider", "airplane"], "Turns airplane mode on or off; session stop resets it."),
+    ]
+
+    public static var allowOnceClaude: [String] {
+        allowOnce.map { "Bash(\($0.command.joined(separator: " "))*)" }
+    }
+
+    public static var allowOnceCodex: [String] {
+        allowOnce.map { "prefix_rule(pattern=[\($0.command.map { "\"\($0)\"" }.joined(separator: ", "))], decision=\"allow\", justification=\"\($0.reason)\")" }
+    }
+
     /// The rules Codex can express.
     public static var codexRules: [Rule] { rules.filter { !$0.codex.isEmpty } }
 
@@ -294,7 +311,11 @@ public enum AgentPermissionRules {
                 ("reason", .string(rule.reason)),
             ])
         })
-        return OrderedJSON.object([("claude", claude), ("codex", codex), ("rules", reasons)]).rendered() + "\n"
+        let optional = OrderedJSON.object([
+            ("claude", .array(allowOnceClaude.map(OrderedJSON.string))),
+            ("codex", .array(allowOnceCodex.map(OrderedJSON.string))),
+        ])
+        return OrderedJSON.object([("claude", claude), ("codex", codex), ("rules", reasons), ("allowOnce", optional)]).rendered() + "\n"
     }
 
     /// `Rules added to ~/.claude/settings.json (15 new)`, `Rules updated in ...` or `Rules already present in ...`.

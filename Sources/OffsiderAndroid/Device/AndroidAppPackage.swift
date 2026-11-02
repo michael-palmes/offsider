@@ -12,7 +12,7 @@ enum AndroidAppPackage {
     }
 
     /// Whether the app is installed and running, then the optional stop, so one round trip answers both.
-    private static func preamble(_ quoted: String, stop: Bool) -> String {
+    static func preamble(_ quoted: String, stop: Bool) -> String {
         """
         p=\(quoted)
         [ -n "$(pm path "$p" 2>/dev/null)" ] || { echo '\(marker) not-installed'; exit 0; }
@@ -89,12 +89,13 @@ enum AndroidAppPackage {
         output.split(whereSeparator: \.isNewline).contains { $0.trimmingCharacters(in: .whitespaces) == "\(marker) \(name)" }
     }
 
-    /// What `am start -W` printed: its `Status`, `Activity`, `LaunchState` (Android 10 and later), `TotalTime`, and its first `Error:` or exception line.
+    /// What `am start -W` printed: its `Status`, `Activity`, `LaunchState` (Android 10 and later), `TotalTime`, `WaitTime`, and its first `Error:` or exception line.
     struct StartReply: Equatable {
         var status: String?
         var activity: String?
         var launchState: String?
         var totalTime: Int?
+        var waitTime: Int?
         var error: String?
 
         var unresolved: Bool { error?.contains("unable to resolve Intent") == true }
@@ -119,10 +120,12 @@ enum AndroidAppPackage {
             } else if line.hasPrefix("Activity:") {
                 reply.activity = value(after: "Activity:", in: line)
             } else if line.hasPrefix("LaunchState:") {
-                reply.launchState = value(after: "LaunchState:", in: line)?.split(separator: " ").first.map(String.init)
+                reply.launchState = value(after: "LaunchState:", in: line)?.split(separator: " ").first.map(String.init).flatMap { $0.allSatisfy(\.isLetter) ? $0 : nil }
             } else if line.hasPrefix("TotalTime:") {
                 // 0 when the app was already in front and nothing started.
                 reply.totalTime = value(after: "TotalTime:", in: line).flatMap { Int($0) }.flatMap { $0 > 0 ? $0 : nil }
+            } else if line.hasPrefix("WaitTime:") {
+                reply.waitTime = value(after: "WaitTime:", in: line).flatMap { Int($0) }.flatMap { $0 > 0 ? $0 : nil }
             } else if line.hasPrefix("Error:"), reply.error == nil {
                 reply.error = line
             } else if line.hasPrefix("Exception occurred") {

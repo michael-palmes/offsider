@@ -23,6 +23,9 @@ enum FuzzTargets {
         "dumpsys-package": dumpsysPackage,
         "dumpsys-display": dumpsysDisplay,
         "dumpsys-state": dumpsysState,
+        "apk-manifest": apkManifest,
+        "app-prefs": appPrefs,
+        "query-receivers": queryReceivers,
     ]
 
     /// A stream decoder sees the bytes in chunks; the first byte picks the chunk size so splits vary with the input.
@@ -130,6 +133,31 @@ enum FuzzTargets {
         let report = NotificationReport.json(hidden, app: dumpPackage, source: snapshot.source, redacted: redacted, on: DeviceID(rawValue: "emulator-5554", platform: .android))
         precondition((try? JSONSerialization.jsonObject(with: Data(report.utf8))) != nil, "the notification report is not JSON")
         return true
+    }
+
+    static func apkManifest(_ data: Data) -> Bool {
+        let bytes = [UInt8](data)
+        let package = try? ApkManifest.package(size: bytes.count) { offset, count in
+            offset >= 0 && count >= 0 && offset <= bytes.count && count <= bytes.count - offset ? Data(bytes[offset..<(offset + count)]) : nil
+        }
+        if let package { precondition((try? ExpoDevClient.validate(appID: package)) != nil, "an invalid package passed") }
+        return package != nil
+    }
+
+    static func appPrefs(_ data: Data) -> Bool {
+        guard let preferences = AndroidAppPackage.preferences(String(decoding: data, as: UTF8.self), package: dumpPackage) else { return false }
+        precondition(preferences.files.allSatisfy { $0.keys.allSatisfy { AndroidAppPackage.keyTypes.contains($0.type) && $0.name.count <= AndroidAppPackage.maximumKeyCharacters + 1 } }, "a key passed its type list or cap")
+        let report = AppManagementReport.preferences(preferences, on: DeviceID(rawValue: "emulator-5554", platform: .android))
+        precondition((try? JSONSerialization.jsonObject(with: Data(report.utf8))) != nil, "the preferences report is not JSON")
+        return true
+    }
+
+    static func queryReceivers(_ data: Data) -> Bool {
+        let text = String(decoding: data, as: UTF8.self)
+        let found = AndroidAppPackage.receivers(text)
+        _ = AndroidAppPackage.broadcastReply(text)
+        _ = AndroidAppPackage.declaredActions(text, package: "com.example.fixture")
+        return !found.isEmpty
     }
 
     static func dumpsysPackage(_ data: Data) -> Bool {

@@ -8,19 +8,20 @@ struct AppLaunchCommand: AsyncParsableCommand {
         abstract: "Launch an installed app, or bring it to the front.",
         discussion: """
         Starts the app as a tap on its icon does: a running app comes to the front (a warm start), a stopped one \
-        starts afresh (cold). --restart stops it first, so the start is always cold. Android starts its launcher \
-        activity with `am start -W` and reports the launch time; an iPhone or iPad uses `devicectl device process \
+        starts afresh (cold). --restart, or its other name --cold, stops it first, so the start is always cold. Android \
+        starts its launcher activity with `am start -W`, and --json gives its TotalTime (milliseconds), WaitTime \
+        (waitMilliseconds) and LaunchState; an iPhone or iPad uses `devicectl device process \
         launch`, a simulator `simctl launch`. A locked iPhone refuses with device_locked.
 
         Example:
-          offsider app launch --restart --app com.example.app --device DEVICE_ID
+          offsider app launch --cold --json --app com.example.app --device DEVICE_ID
         """
     )
 
     @OptionGroup
     var appOption: AppTargetOption
 
-    @Flag(help: "Stop the app first, so it starts cold.")
+    @Flag(name: [.customLong("restart"), .customLong("cold")], help: "Stop the app first, so it starts cold.")
     var restart = false
 
     @Flag(name: .customLong("json"), help: "Print one JSON object to stdout.")

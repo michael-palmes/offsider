@@ -154,8 +154,9 @@ extension DeviceAccess {
             let helper = await AndroidBackend.stopWarmHelpers(host: .cli(), serial: udid).isEmpty ? [] : ["warm helper"]
             let reverses = await AndroidBackend.removeMetroReverses(host: .cli(), serial: udid)
             let postures = await AndroidBackend.resetRecordedPostures(host: .cli(), serial: udid)
+            let airplane = await AndroidBackend.resetRecordedAirplaneModes(host: .cli(), serial: udid).isEmpty ? [] : ["airplane mode"]
             return StoppedSessions(
-                stopped: helper + reverses.removed.flatMap(\.ports).map(MetroReverse.label) + (postures.reset.isEmpty ? [] : ["posture override"]),
+                stopped: helper + reverses.removed.flatMap(\.ports).map(MetroReverse.label) + (postures.reset.isEmpty ? [] : ["posture override"]) + airplane,
                 left: DeviceSessionRow.left(reverses: reverses.failed, postures: postures)
             )
         }

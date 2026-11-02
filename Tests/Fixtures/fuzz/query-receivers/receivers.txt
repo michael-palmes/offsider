@@ -1,0 +1,23 @@
+offsider: stopped
+2 receivers found:
+  Receiver #0:
+    priority=0 preferredOrder=0 match=0x108000 specificIndex=-1 isDefault=false
+    ActivityInfo:
+      name=com.example.fixture.Open
+      packageName=com.example.fixture
+      enabled=true exported=true directBootAware=false
+      ApplicationInfo:
+        name=com.example.fixture.App
+        packageName=com.example.fixture
+        enabled=true minSdkVersion=24 targetSdkVersion=36 versionCode=0 targetSandboxVersion=1
+  Receiver #1:
+    ActivityInfo:
+      name=com.example.fixture.Closed
+      enabled=true exported=false directBootAware=false
+Broadcast completed: result=42
+Receiver Resolver Table:
+  Non-Data Actions:
+      com.example.fixture.action.RELOAD:
+        b81cbf0 com.example.fixture/.Open filter e072569
+
+Packages:

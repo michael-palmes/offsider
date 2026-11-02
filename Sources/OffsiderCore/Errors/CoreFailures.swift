@@ -43,6 +43,12 @@ extension AppLifecycleError: OffsiderFailure {
         case .noLauncher: return .notSupported
         case .linkNotHandled: return .linkNotHandled
         case .failed: return .commandFailed
+        case .apkUnreadable: return .apkUnreadable
+        case .packageMismatch: return .packageMismatch
+        case .installFailed: return .installFailed
+        case .notDebuggable: return .notDebuggable
+        case .broadcastRefused: return .broadcastRefused
+        case .receiverNotFound: return .receiverNotFound
         }
     }
     public var failureMessage: String { message }

@@ -2,7 +2,7 @@ import Foundation
 import OffsiderCore
 
 /// The device-state override Offsider set on a USB phone, kept until `posture reset`, `session stop` or `devices remove` takes it off.
-struct AndroidPostureRecord: Equatable, Sendable {
+struct AndroidPostureRecord: AndroidSerialRecord, Equatable, Sendable {
     static let maximumBytes = 1_024
     static let directoryName = "postures"
     static let bootIDScript = "cat /proc/sys/kernel/random/boot_id"
@@ -41,9 +41,19 @@ struct AndroidPostureRecord: Equatable, Sendable {
     }
 }
 
-struct AndroidPostureRecordStore {
+/// A record of what Offsider changed on one device, kept in one private file named by a hash of its serial.
+protocol AndroidSerialRecord {
+    static var maximumBytes: Int { get }
+    var serial: String { get }
+    func encoded() -> Data
+    init?(data: Data)
+}
+
+typealias AndroidPostureRecordStore = AndroidSerialRecordStore<AndroidPostureRecord>
+
+struct AndroidSerialRecordStore<Record: AndroidSerialRecord> {
     /// An override ends with a reboot, so a record this old for a phone not seen since is dropped rather than named on every stop.
-    static let forgottenAfter: TimeInterval = 30 * 86_400
+    static var forgottenAfter: TimeInterval { 30 * 86_400 }
 
     let directory: String
 
@@ -55,10 +65,10 @@ struct AndroidPostureRecordStore {
     }
 
     /// The record for `serial`, or nil; a corrupt or foreign one is removed, and one that cannot be read safely is left and reads as none.
-    func load(serial: String) -> AndroidPostureRecord? {
+    func load(serial: String) -> Record? {
         let name = AndroidPostureRecord.fileName(serial: serial)
-        guard let data = try? OffsiderPrivateDirectory.readOwnedFile(named: name, in: directory, maxBytes: AndroidPostureRecord.maximumBytes) else { return nil }
-        guard let record = AndroidPostureRecord(data: data), record.serial == serial else {
+        guard let data = try? OffsiderPrivateDirectory.readOwnedFile(named: name, in: directory, maxBytes: Record.maximumBytes) else { return nil }
+        guard let record = Record(data: data), record.serial == serial else {
             OffsiderPrivateDirectory.removeFile(named: name, in: directory)
             return nil
         }
@@ -66,11 +76,11 @@ struct AndroidPostureRecordStore {
     }
 
     /// Every record, under the same rules as `load`.
-    func all() -> [AndroidPostureRecord] {
+    func all() -> [Record] {
         let names = (try? FileManager.default.contentsOfDirectory(atPath: directory)) ?? []
         return names.filter { $0.hasSuffix(".json") }.sorted().compactMap { name in
-            guard let data = try? OffsiderPrivateDirectory.readOwnedFile(named: name, in: directory, maxBytes: AndroidPostureRecord.maximumBytes) else { return nil }
-            guard let record = AndroidPostureRecord(data: data), AndroidPostureRecord.fileName(serial: record.serial) == name else {
+            guard let data = try? OffsiderPrivateDirectory.readOwnedFile(named: name, in: directory, maxBytes: Record.maximumBytes) else { return nil }
+            guard let record = Record(data: data), AndroidPostureRecord.fileName(serial: record.serial) == name else {
                 OffsiderPrivateDirectory.removeFile(named: name, in: directory)
                 return nil
             }
@@ -78,7 +88,7 @@ struct AndroidPostureRecordStore {
         }
     }
 
-    func save(_ record: AndroidPostureRecord) throws {
+    func save(_ record: Record) throws {
         try OffsiderPrivateDirectory.writeAtomically(record.encoded(), named: AndroidPostureRecord.fileName(serial: record.serial), in: directory)
     }
 

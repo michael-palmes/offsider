@@ -27,7 +27,7 @@ struct OffsiderCommand: AsyncParsableCommand {
             ]),
             CommandGroup(name: "Device state", subcommands: [
                 AppCommand.self, OrientationCommand.self, PostureCommand.self, AppearanceCommand.self, ContentSizeCommand.self, PermissionCommand.self,
-                StatusBarCommand.self, BiometricCommand.self, StayAwakeCommand.self, Wake.self, SleepCommand.self, UnlockCodeCommand.self,
+                StatusBarCommand.self, BiometricCommand.self, StayAwakeCommand.self, AirplaneCommand.self, Wake.self, SleepCommand.self, UnlockCodeCommand.self,
             ]),
             CommandGroup(name: "Physical devices", subcommands: [RunnerCommand.self]),
             CommandGroup(name: "Sessions", subcommands: [SessionCommand.self, RunCommand.self, LeaseCommand.self]),
