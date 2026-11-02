@@ -24,7 +24,7 @@ enum GuideTopic: String, CaseIterable, ExpressibleByArgument {
         case .verify: "You need proof an input worked, `--verify` exited 5, or you are waiting on a condition"
         case .errors: "A command exited non-zero, the device is busy, or doctor reports a problem"
         case .android: "The device is an Android emulator or a USB phone"
-        case .iosDevice: "The device is a physical iPhone or iPad, named by its UDID"
+        case .iosDevice: "The device is a physical iPhone or iPad"
         case .reactNative: "The app is React Native or Expo, debug or release"
         case .turnstile: "A Cloudflare Turnstile widget is on screen, or `login` exited with `turnstile_required`"
         case .login: "You sign in, choose or switch test users, or save or describe one"

@@ -2,6 +2,19 @@ import Foundation
 import OffsiderCore
 
 /// Every physical iOS device failure a user can see; each message says what happened and what to do next.
+extension IOSDeviceError {
+    /// Why sign-in text cannot go as key presses; never holds the text.
+    static func keysOnlyRefusal(_ text: String, device: DeviceID) -> IOSDeviceError {
+        guard TextToHIDEvents.validateText(text) else {
+            return IOSDeviceError(.notSupported, "Offsider signs in on \(device.rawValue) with US keyboard keys, and this login has a character they cannot type. Nothing was typed. Use a test password with plain letters, digits and symbols.")
+        }
+        return .notSupportedOnDevice(
+            "Signing in without the device session",
+            instead: "Retry once `offsider doctor --device \(device.rawValue)` passes. It needs Xcode 27 and a logged-in desktop on this Mac."
+        )
+    }
+}
+
 public struct IOSDeviceError: LocalizedError, CustomStringConvertible, Equatable, Sendable {
     public enum Kind: String, Equatable, Sendable {
         case notYetSupported

@@ -30,8 +30,8 @@ public enum ArgumentHints {
     /// `credential` takes its action first, so a permission rule such as `offsider credential remove*` sees every write.
     public static let credentialActionFirst = "Put the action straight after credential, such as offsider credential status --app com.example.app."
 
-    /// The options a permission rule matches from the start of the command: `wake --unlock` types a saved code, and `type --file` a file's contents.
-    static let flagsFirst = ["wake": "--unlock", "type": "--file"]
+    /// The options a permission rule matches from the start of the command: `type --file` types a file's contents.
+    static let flagsFirst = ["type": "--file"]
 
     public static func flagFirst(command: String, flag: String) -> String {
         "Put \(flag) straight after \(command), such as offsider \(command) \(flag)\(flag == "--file" ? " notes.txt" : "") --device <id>."

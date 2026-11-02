@@ -109,7 +109,8 @@ public enum IOSAccessibilityMapping {
                 customActions: (dictionary["custom_actions"] as? [Any] ?? []).compactMap(text),
                 contentRequired: dictionary["content_required"] as? Bool,
                 pid: (dictionary["pid"] as? NSNumber)?.intValue,
-                axFrame: text(dictionary["AXFrame"])
+                axFrame: text(dictionary["AXFrame"]),
+                bundleID: text(dictionary["bundleId"])
             ))
         )
     }

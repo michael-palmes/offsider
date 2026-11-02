@@ -90,7 +90,8 @@ struct CLIError: LocalizedError, UserFacingError, OffsiderFailure {
     /// A physical device the allow-list or managed policy refuses; only a person (or an administrator) can change that.
     static func deviceNotAllowed(name: String?, key: String, refusal: DeviceRefusal, audience: ErrorAudience = .current) -> CLIError {
         let device = name.map { "\($0) (\(key))" } ?? key
-        let command = "offsider devices add"
+        // A person gets the short form and its menus; an agent hands over the whole line.
+        let command = audience == .person ? "offsider devices add" : "offsider devices add --device \(key)"
         if refusal.isManaged {
             return CLIError(
                 errorDescription: "\(device) is a physical device and \(refusal.explanation). Nothing was sent to it. Ask the administrator of this Mac.",
@@ -107,7 +108,7 @@ struct CLIError: LocalizedError, UserFacingError, OffsiderFailure {
             )
         }
         let again = refusal == .notAllowed ? "" : " again"
-        let step = audience.personStep(command, agentTail: "\(again) and choose \(device); an agent cannot allow a device")
+        let step = audience.personStep(command, agentTail: "\(again); an agent cannot allow a device")
         return CLIError(
             errorDescription: "\(device) is a physical device and \(refusal.explanation), so nothing was sent to it.\(step)",
             reason: .deviceNotAllowed,

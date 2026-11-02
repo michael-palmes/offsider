@@ -2,8 +2,10 @@ import Foundation
 
 /// `devices status` text and JSON, version 1.
 public enum DeviceAccessReport {
-    public static func changeJSON(action: String, platform: DevicePlatform, key: String, allowance: DeviceAllowance?, stopped: [String] = []) -> String {
-        OrderedJSON.object([
+    /// `ready` and `needs` come from `add`: whether Offsider proved it can drive the device, and what stopped it.
+    public static func changeJSON(action: String, platform: DevicePlatform, key: String, allowance: DeviceAllowance?, stopped: [String] = [], ready: Bool? = nil, needs: String? = nil) -> String {
+        let setup: [(String, OrderedJSON)] = (ready.map { [("ready", OrderedJSON.bool($0))] } ?? []) + (needs.map { [("needs", OrderedJSON.string($0))] } ?? [])
+        return OrderedJSON.object([
             ("version", .integer(1)),
             ("action", .string(action)),
             ("platform", .string(platform.rawValue)),
@@ -21,7 +23,7 @@ public enum DeviceAccessReport {
                 return .object(fields)
             }),
             ("stopped", .array(stopped.map { .string($0) })),
-        ]).rendered(compact: true)
+        ] + setup).rendered(compact: true)
     }
 
     /// The `status` text: managed policy first, then one line per device.
@@ -45,7 +47,7 @@ public enum DeviceAccessReport {
             lines.append("The allow-list at \(path) was changed outside Offsider; no physical device is allowed until a person runs `offsider devices add` again.")
         }
         if policy.list.isEmpty {
-            lines.append("No physical device is allowed. A person allows one by running `offsider devices add` in their own terminal.")
+            lines.append("No physical device is allowed. `offsider devices add --plan` prints the command a person runs to add one.")
         }
         for entry in policy.list.entries {
             let state: String

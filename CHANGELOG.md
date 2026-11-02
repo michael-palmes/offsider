@@ -8,6 +8,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Added
 
+- `devices add --plan` (`--json`) prints the complete command for each connected phone, as a test device or for one app, with the teams on this Mac and any step only a person can do. It changes nothing, reaches no phone and needs no terminal, so an agent can read it and hand over one line.
+- `devices add` finishes the job under its one Touch ID: it registers an iPhone or iPad with its team, builds the runner, starts it and says `Ready` once it answers, asking by name for anything on the phone and watching for it. `--json` adds `ready` and `needs`.
+- `devices add` ends with "Add a test login?" (Skip chosen), which saves one in the same run, with no second command or Touch ID.
+- `login` signs in on an added iPhone or iPad, typing only as key presses through the session broker, so a password never reaches `runner.log`.
 - `tap --dry-run` finds the target and judges what a touch there would reach, then stops: nothing is sent and no input session opens, so an irreversible button can be tested safely. It exits as the tap would and says nothing was sent, and `--json` carries `"dryRun":true`. It takes a selector, and a `batch` step refuses it.
 - `wait --wait-timeout` is the same as `wait --timeout`, the name `tap` and other selector commands use.
 - `screen_off` (exit 1): a phone refused because Android keeps system UI in front of a dark or locked screen says so first, with `offsider wake` as the fix.
@@ -18,6 +22,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Changed
 
+- `offsider init` denies nothing, and no longer asks before `login`, so an agent can read `--help` for every command: `devices add`, `credential join`, `unlock-code set`, `runner build --register-device` and `describe-ui --raw-source` refuse by themselves without a person. The next `init --rules-only` takes the older rules out, and `doctor` warns until then.
+- `wake --unlock` on a phone that is not a test device asks for Touch ID or the password each time, where the deny rule was its only gate. Emulators and test devices are not asked, and `--unlock` may come anywhere in the command.
+- `devices add` asks only what it cannot work out: a new "How will you use it?" comes first, one connected phone or one team needs no menu, a step on the phone is asked for by name and watched, and `--test-device` or `--app` settles the rest. One app now defaults to 7 days; any app stays at 12 hours and a test device until removed.
+- On a test device any saved login signs in with no Touch ID, on every platform. `--devices any` now covers iPhones and iPads too.
+- `device_not_allowed` names `offsider devices add --device <ID>` in full, and an agent's skill now hands over the full command, and may pick an added test device without being told.
 - `record-video` with no `--duration` stops and saves at 10 minutes, with a note and `reachedLimit` in `--json`, so a lost background recording cannot block logins for ever. Pass `--duration`, up to 3600, for longer.
 - `session stop --device <id>` also stops and saves a recording on that device, and says so only once it has ended. `doctor --device` warns `device.recording` while one runs, and the refusal `login`, `wake --unlock` and `type --stdin` give names its pid, with `kill -INT <pid>` as the `hint`.
 - `app open` on an iPhone or iPad says `Sent the link to`, as iOS reports only that it delivered the link. `--json` adds `linkHandled`: `true` once Android or a simulator showed the app took the link, `null` on an iPhone or iPad.
