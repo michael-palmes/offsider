@@ -468,12 +468,14 @@ struct AndroidAirplaneTests {
         private var commands: [String] = []
         let refuses: Bool
         private let late: Bool
+        private let losesReadBack: Bool
         private var landed = false
 
-        init(on: Bool = false, refuses: Bool = false, late: Bool = false) {
+        init(on: Bool = false, refuses: Bool = false, late: Bool = false, losesReadBack: Bool = false) {
             self.on = on
             self.refuses = refuses
             self.late = late
+            self.losesReadBack = losesReadBack
         }
 
         /// A change that was slow takes effect now; every later one is prompt.
@@ -489,7 +491,10 @@ struct AndroidAirplaneTests {
 
         func reply(_ command: String) -> FakeAdbServer.Reply {
             lock.withLock {
-                if command == AndroidAirplaneRecord.readScript { return FakeAdbServer.shell(stdout: on ? "1\n" : "0\n") }
+                if command == AndroidAirplaneRecord.readScript {
+                    if losesReadBack, !commands.isEmpty, !landed { return FakeAdbServer.fail("device offline") }
+                    return FakeAdbServer.shell(stdout: on ? "1\n" : "0\n")
+                }
                 if command.hasPrefix("cmd connectivity airplane-mode ") {
                     commands.append(command)
                     if refuses { return FakeAdbServer.shell(stderr: "Unknown command\n", status: 1) }
@@ -606,6 +611,16 @@ struct AndroidAirplaneTests {
         #expect(!radio.isOn)
     }
 
+    @Test("adb going quiet after Android took the command keeps the record, so session stop still undoes it")
+    func lostReadBack() async throws {
+        let radio = Radio(losesReadBack: true)
+        let directory = try Self.directory()
+        let host = try Self.host(radio, serial: Self.phone.rawValue, directory: directory)
+        await #expect(throws: (any Error).self) { try await AndroidBackend(host: host) { _, _ in }.setAirplaneMode(true, on: Self.phone) }
+        #expect(radio.isOn)
+        #expect(AndroidAirplaneRecordStore(directory: directory.path).load(serial: Self.phone.rawValue) != nil)
+    }
+
     @Test("with no private folder it stays off rather than leave a change nothing can undo")
     func noFolder() async throws {
         let radio = Radio()
@@ -659,9 +674,37 @@ struct AndroidAirplaneTests {
         let host = try Self.host(radio, serial: Self.emulator.rawValue, directory: directory)
         let store = AndroidAirplaneRecordStore(directory: directory.path)
         try store.save(AndroidAirplaneRecord(serial: Self.emulator.rawValue, avd: "Someone_Elses_AVD"))
-        #expect(await AndroidBackend.resetRecordedAirplaneModes(host: host, serial: Self.emulator.rawValue) == RecordResetOutcome(notConnected: [Self.emulator.rawValue]))
+        #expect(await AndroidBackend.resetRecordedAirplaneModes(host: host, serial: Self.emulator.rawValue) == RecordResetOutcome(notConnected: ["Someone_Elses_AVD"]), "named by its AVD, as the serial is another's now")
         #expect(radio.isOn)
         #expect(store.load(serial: Self.emulator.rawValue) != nil)
+    }
+
+    @Test("an AVD that moved port is found by the serial it runs on now, and its old serial no longer names it")
+    func movedAVD() async throws {
+        let radio = Radio(on: true)
+        let directory = try Self.directory()
+        let home = try AndroidTestHost.homeWithSDK()
+        try AndroidTestHost.write("avd.id=Offsider_E2E\nport.serial=5556\n", to: "Library/Caches/TemporaryItems/avd/running/pid_50144.ini", in: home)
+        let server = FakeAdbServer(handler: FakeAdbServer.devices(
+            ["emulator-5556"],
+            host: { service in
+                switch service {
+                case "host:version": return FakeAdbServer.okay(payload: "0029")
+                case "host:devices-l": return FakeAdbServer.okay(payload: "emulator-5556 device transport_id:2\n")
+                default: return .hang
+                }
+            },
+            device: { _, service in radio.reply(String(service.dropFirst("shell,v2,raw:".count))) }
+        ))
+        var host = AndroidTestHost.make(home: home, adb: server, liveProcesses: [50144])
+        host.airplaneRecordDirectory = { _ in directory.path }
+        try AndroidAirplaneRecordStore(directory: directory.path).save(AndroidAirplaneRecord(serial: "emulator-5554", avd: "Offsider_E2E"))
+
+        #expect(AndroidBackend.recordedPhoneState(host: host, serial: "emulator-5556").map(\.serial) == ["emulator-5556"])
+        #expect(await AndroidBackend.resetRecordedAirplaneModes(host: host, serial: "emulator-5554") == RecordResetOutcome())
+        #expect(radio.isOn)
+        #expect(await AndroidBackend.resetRecordedAirplaneModes(host: host, serial: "emulator-5556").reset == ["emulator-5556"])
+        #expect(!radio.isOn)
     }
 
     @Test("a named stop finds a phone's record by serial, and leaves another device's")

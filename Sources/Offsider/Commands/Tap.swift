@@ -258,11 +258,12 @@ struct Tap: AsyncParsableCommand, VerifiableCommand {
             func resolvedAgain(in tree: UITree, waitTimeout: TimeInterval, coverSettle: TimeInterval = 0) async throws -> TapResolution {
                 guard let query else { return resolution }
                 var first: UITree? = tree
+                let watchdog = DeviceWatchdog()
                 return try await AccessibilityPoller.pollForResolution(
                     query: query, waitTimeout: waitTimeout, pollInterval: resolvedPollInterval, elementType: elementType, allowOffscreen: allowOffscreen,
                     pick: picker, coverCheck: checkCover, coverSettle: coverSettle, logger: logger
                 ) {
-                    try await DeviceWatchdog().guardingInputRead(of: device) {
+                    try await watchdog.guardingInputRead(of: device) {
                         let read: UITree
                         if let held = first {
                             read = held

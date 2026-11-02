@@ -33,6 +33,7 @@ struct AndroidSystemWindowTests {
                 return FakeAdbServer.shell(stdout: "top=  topResumedActivity=ActivityRecord{1a2b u0 \(top) t12}\nhome=com.example.launcher/.Home\n")
             }
             if command == AndroidWindowFocus.readScript { return FakeAdbServer.shell(stdout: focus ?? "") }
+            if command == AndroidWindowFocus.keyboardScript { return FakeAdbServer.shell(stdout: "com.example.keyboard/.Service\n") }
             if command.hasSuffix(AndroidDisplayGeometry.probeScript) { return FakeAdbServer.shell(stdout: AndroidBackendTests.geometryOutput) }
             return FakeAdbServer.shell()
         }
@@ -301,6 +302,15 @@ struct AndroidSystemWindowTests {
         let session = try await backend.openInputSession(for: Self.phone)
         try await session.perform(.tapAt(x: 10, y: 10))
         #expect(server.services.contains { $0.contains("input ") })
+    }
+
+    @Test("an app that titles its own window InputMethod is not the keyboard")
+    func titleIsNotTheKeyboard() async throws {
+        let (backend, server) = try await Self.backend(focus: Self.focus(title: "InputMethod", owner: "com.example.other"))
+        let session = try await backend.openInputSession(for: Self.phone)
+        let error = await #expect(throws: AndroidError.self) { try await session.perform(.tapAt(x: 10, y: 10)) }
+        #expect(error?.message.contains("com.example.other") == true)
+        #expect(!server.services.contains { $0.contains("input ") })
     }
 
     @Test("input forgets the last focus read, so the capture after it reads again")

@@ -356,19 +356,11 @@ extension AndroidBackend: PostureControlling, PostureResetting, PostureStateNami
             return outcome
         }
         // Asks adb only who is connected, so an unpermitted phone is still sent nothing.
-        outcome.skipped = unpermitted.filter { phone in
-            guard !rows.contains(where: { $0.serial == phone }), store.isForgotten(serial: phone) else { return true }
-            store.remove(serial: phone)
-            return false
-        }
+        outcome.skipped = store.keptNaming(unpermitted, connected: rows.map(\.serial))
         guard let client, !records.isEmpty else { return outcome }
         for record in records {
             guard rows.contains(where: { $0.serial == record.serial && $0.state == .device }) else {
-                if store.isForgotten(serial: record.serial) {
-                    store.remove(serial: record.serial)
-                } else {
-                    outcome.notConnected.append(record.serial)
-                }
+                outcome.notConnected += store.keptNaming([record.serial], connected: [])
                 continue
             }
             let script = "\(AndroidPostureRecord.bootIDScript); \(AndroidDeviceState.readState)"

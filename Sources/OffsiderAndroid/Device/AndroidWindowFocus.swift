@@ -9,6 +9,8 @@ struct AndroidWindowFocus: Equatable, Sendable {
     /// One `dumpsys`; window titles stay on this Mac and are parsed only to find the focused one.
     static let readScript = "dumpsys window | grep -E '^ *(Window #[0-9]+ Window[{]|mOwnerUid=|mCurrentFocus=|mFocusedApp=)'"
 
+    static let keyboardScript = "settings get secure default_input_method"
+
     /// The focused window's title as the window manager lists it.
     var title: String
     /// The package the window manager says owns it; nil when it does not list that window.
@@ -16,7 +18,7 @@ struct AndroidWindowFocus: Equatable, Sendable {
     /// Each display's focused activity package, nulls left out.
     var focusedApps: [String]
 
-    /// Whether this is the input method, which never counts as an app in front.
+    /// Whether this says it is the input method, which never counts as an app in front; `isKeyboard` checks its owner.
     var isInputMethod: Bool { title == "InputMethod" }
 
     /// A title as output shows it: masked, redacted and cut, as a hidden branch's label is.

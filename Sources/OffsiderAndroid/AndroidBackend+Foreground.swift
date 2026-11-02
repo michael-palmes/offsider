@@ -43,7 +43,7 @@ extension AndroidBackend {
     /// An activity stays resumed beneath a system window or the notification shade, so input also asks which window would take it.
     private func requireInputFocus(_ serial: String) async throws {
         let focus = try await host.timing.measure(.foregroundRecheck) { try await windowFocus(serial) }
-        guard let focus, let owner = focus.owner, !focus.isInputMethod else { return }
+        guard let focus, let owner = focus.owner, try await !isKeyboard(focus, on: serial) else { return }
         try requireDrivableWindow(owner, title: focus.title, on: serial)
     }
 
@@ -51,6 +51,13 @@ extension AndroidBackend {
     func windowFocus(_ serial: String) async throws -> AndroidWindowFocus? {
         let result = try await requireClient().shell(AndroidWindowFocus.readScript, on: serial, timeout: .seconds(5), label: "dumpsys window")
         return AndroidWindowFocus.parse(result.stdoutText)
+    }
+
+    /// An app sets its own window's title, so the keyboard is also the input method Android has chosen; only a window with that title pays this read.
+    private func isKeyboard(_ focus: AndroidWindowFocus, on serial: String) async throws -> Bool {
+        guard focus.isInputMethod else { return false }
+        let chosen = try await requireClient().shell(AndroidWindowFocus.keyboardScript, on: serial, timeout: .seconds(5), label: "default_input_method")
+        return chosen.stdoutText.trimmingCharacters(in: .whitespacesAndNewlines).split(separator: "/").first.map(String.init) == focus.owner
     }
 
     /// One window's owner must be drivable; a system_server window is named as what it is.
@@ -111,7 +118,7 @@ extension AndroidBackend {
         guard PhoneRead.overSystemWindow, !readsAnyWindow(serial) else { return }
         if let checked = systemWindowChecks[serial], ContinuousClock.now - checked.at < Self.foregroundCheckLifetime { return }
         var window: UITreeContext.Window?
-        if let focus = try await windowFocus(serial), let owner = focus.owner, !focus.isInputMethod {
+        if let focus = try await windowFocus(serial), let owner = focus.owner, try await !isKeyboard(focus, on: serial) {
             if owner == AndroidWindowFocus.systemOwner {
                 try requireSystemWindowPermitted(on: serial)
                 window = try readableSystemWindow(focus, alongside: [], title: focus.title, on: serial)

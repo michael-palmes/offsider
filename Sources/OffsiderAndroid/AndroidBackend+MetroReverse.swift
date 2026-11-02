@@ -142,7 +142,7 @@ extension AndroidBackend: MetroReverseSetting {
             return (serial.map { store.load(serial: $0).map { [$0] } ?? [] } ?? store.all()).map(\.serial)
         } ?? []
         let airplanes = host.airplaneRecordDirectory(false).map { directory in
-            AndroidAirplaneRecordStore(directory: directory).all().filter { serial == nil || $0.serial == serial || $0.avd == serial }.map(\.serial)
+            AndroidAirplaneRecordStore(directory: directory).all().filter { serial == nil || isRecord($0, of: serial!, host: host) }.map { currentSerial(of: $0, host: host) ?? $0.name }
         } ?? []
         return Set(reverses.map(\.serial) + postures + airplanes).sorted().map { phone in
             RecordedPhoneState(serial: phone, reverses: reverses.first { $0.serial == phone }?.ports ?? [], posture: postures.contains(phone), airplane: airplanes.contains(phone))

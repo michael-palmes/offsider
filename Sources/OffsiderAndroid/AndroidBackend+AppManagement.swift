@@ -125,11 +125,11 @@ extension AndroidBackend: AirplaneControlling {
         let took: Bool
         do {
             took = try await requireClient().changeAirplaneMode(enabled, on: serial, timing: host, polls: Self.airplanePolls, interval: Self.airplanePollInterval)
-        } catch {
+        } catch let refusal as AppLifecycleError {
             if enabled { store?.remove(serial: serial) }
-            throw error
+            throw refusal
         }
-        // Android took the command, so the change may land late: the record stays, and `session stop` drops it if the mode stayed off.
+        // Android took the command, or adb went quiet around it, so the change may land late: the record stays, and `session stop` drops it if the mode stayed off.
         guard took else {
             throw AppLifecycleError(.failed, "\(serial) did not turn airplane mode \(enabled ? "on" : "off") in time. Can you set it in Quick Settings on \(serial)?")
         }
@@ -141,7 +141,7 @@ extension AndroidBackend: AirplaneControlling {
     public static func resetRecordedAirplaneModes(host: AndroidHost, serial device: String? = nil, permits: (String) -> Bool = { _ in true }) async -> RecordResetOutcome {
         guard let directory = host.airplaneRecordDirectory(false) else { return RecordResetOutcome() }
         let store = AndroidAirplaneRecordStore(directory: directory)
-        let all = store.all().filter { device == nil || $0.serial == device || $0.avd == device }
+        let all = store.all().filter { device == nil || isRecord($0, of: device!, host: host) }
         let records = all.filter { permits($0.serial) }
         let unpermitted = all.map(\.serial).filter { phone in !records.contains { $0.serial == phone } }
         var outcome = RecordResetOutcome()
@@ -149,33 +149,25 @@ extension AndroidBackend: AirplaneControlling {
         let endpoint = try? LoopbackEndpoint.adbServer(environment: host.environment)
         let client = endpoint.map { AdbClient(endpoint: $0, connector: host.adbConnector, timing: host.timing) }
         guard let client, let rows = try? await client.devices() else {
-            outcome.notConnected = records.map(\.serial)
+            outcome.notConnected = records.map(\.name)
             outcome.skipped = unpermitted
             return outcome
         }
         // Asks adb only who is connected, so an unpermitted phone is still sent nothing.
-        outcome.skipped = unpermitted.filter { phone in
-            guard !rows.contains(where: { $0.serial == phone }), store.isForgotten(serial: phone) else { return true }
-            store.remove(serial: phone)
-            return false
-        }
+        outcome.skipped = store.keptNaming(unpermitted, connected: rows.map(\.serial))
         for record in records {
             guard let serial = currentSerial(of: record, host: host), rows.contains(where: { $0.serial == serial && $0.state == .device }) else {
-                if store.isForgotten(serial: record.serial) {
-                    store.remove(serial: record.serial)
-                } else {
-                    outcome.notConnected.append(record.serial)
-                }
+                if !store.keptNaming([record.serial], connected: []).isEmpty { outcome.notConnected.append(record.name) }
                 continue
             }
             guard let output = try? await client.shell(AndroidAirplaneRecord.readScript, on: serial, label: AndroidAirplaneRecord.readScript),
                   let on = AndroidAirplaneRecord.parseSetting(output.stdoutText) else {
-                outcome.failed.append(record.serial)
+                outcome.failed.append(serial)
                 continue
             }
             if on {
                 guard (try? await client.changeAirplaneMode(false, on: serial, timing: host, polls: airplanePolls, interval: airplanePollInterval)) == true else {
-                    outcome.failed.append(record.serial)
+                    outcome.failed.append(serial)
                     continue
                 }
                 outcome.reset.append(serial)
@@ -185,8 +177,14 @@ extension AndroidBackend: AirplaneControlling {
         return outcome
     }
 
+    /// Whether `device`, a serial or AVD name, names this record's device: an AVD running elsewhere is not the one now on its old serial.
+    static func isRecord(_ record: AndroidAirplaneRecord, of device: String, host: AndroidHost) -> Bool {
+        if record.avd == device { return true }
+        return (currentSerial(of: record, host: host) ?? record.serial) == device
+    }
+
     /// A phone keeps its serial; an AVD takes whichever port is free, so it is found by name and never assumed from the serial.
-    private static func currentSerial(of record: AndroidAirplaneRecord, host: AndroidHost) -> String? {
+    static func currentSerial(of record: AndroidAirplaneRecord, host: AndroidHost) -> String? {
         guard let avd = record.avd else { return record.serial }
         return EmulatorDiscovery.live(host: host).first { $0.avdID == avd }.flatMap(\.consolePort).map { "emulator-\($0)" }
     }

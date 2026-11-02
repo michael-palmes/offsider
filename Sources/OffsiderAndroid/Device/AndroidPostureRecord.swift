@@ -64,6 +64,15 @@ struct AndroidSerialRecordStore<Record: AndroidSerialRecord> {
         return now.timeIntervalSince(written) > Self.forgottenAfter
     }
 
+    /// Of `serials`, those whose record stays to be named; one not in `connected` and past `forgottenAfter` is dropped.
+    func keptNaming(_ serials: [String], connected: [String]) -> [String] {
+        serials.filter { serial in
+            guard !connected.contains(serial), isForgotten(serial: serial) else { return true }
+            remove(serial: serial)
+            return false
+        }
+    }
+
     /// The record for `serial`, or nil; a corrupt or foreign one is removed, and one that cannot be read safely is left and reads as none.
     func load(serial: String) -> Record? {
         let name = AndroidPostureRecord.fileName(serial: serial)

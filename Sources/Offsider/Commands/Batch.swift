@@ -174,7 +174,7 @@ struct Batch: AsyncParsableCommand {
         }
 
         if stepLines.contains(where: { Self.readsTree($0, maskSecure: maskSecure) }) { try? await watchdog.guardingTreeStart(on: route) }
-        await Self.prepareScreenshots(stepLines, maskSecure: maskSecure, backend: backend, device: device)
+        await watchdog.guarding(bound: DeviceWatchdog.treeStartBound, of: device) { await Self.prepareScreenshots(stepLines, maskSecure: maskSecure, backend: backend, device: device) }
         let session = try await watchdog.guardingSetup(device: device.rawValue) { try await backend.openInputSession(for: device) }
         let output = BatchOutput.console(json: json)
         let clock = ContinuousClock()

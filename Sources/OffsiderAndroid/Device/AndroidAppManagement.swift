@@ -208,6 +208,9 @@ struct AndroidAirplaneRecord: AndroidSerialRecord, Equatable, Sendable {
     /// An emulator's serial is only its port, so another AVD can take it and this AVD can move; a phone's serial is its own and this stays nil.
     let avd: String?
 
+    /// What a device with this record is called while it is not running, which `session stop --device` takes.
+    var name: String { avd ?? serial }
+
     static func script(enabled: Bool) -> String {
         "cmd connectivity airplane-mode \(enabled ? "enable" : "disable")"
     }

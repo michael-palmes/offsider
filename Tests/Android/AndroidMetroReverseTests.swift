@@ -295,12 +295,12 @@ struct AndroidMetroReverseTests {
         host.airplaneRecordDirectory = { _ in airplanes }
 
         #expect(AndroidBackend.recordedPhoneState(host: host) == [
+            RecordedPhoneState(serial: "Offsider_E2E", reverses: [], posture: false, airplane: true),
             RecordedPhoneState(serial: "POSTUREONLY1", reverses: [], posture: true),
             RecordedPhoneState(serial: Self.serial, reverses: [8081], posture: false),
-            RecordedPhoneState(serial: "emulator-5554", reverses: [], posture: false, airplane: true),
         ])
         #expect(AndroidBackend.recordedPhoneState(host: host, serial: Self.serial).map(\.serial) == [Self.serial])
-        #expect(AndroidBackend.recordedPhoneState(host: host, serial: "Offsider_E2E").map(\.serial) == ["emulator-5554"], "an AVD is found by its name")
+        #expect(AndroidBackend.recordedPhoneState(host: host, serial: "Offsider_E2E").map(\.serial) == ["Offsider_E2E"], "a stopped AVD is named, as its old serial may be another's")
         #expect(server.connectionAttempts == 0)
     }
 
