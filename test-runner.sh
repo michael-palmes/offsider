@@ -357,6 +357,7 @@ RN_SUITES=(
     "ReactNativeMaskRuleTests"
     "ReactNativeLiveTests"
     "ReactNativeStackCoverTests"
+    "ReactNativePageOverTests"
     "ReactNativeStickyFooterTests"
     "ReactNativeAppCommandTests"
     "ReactNativeOnScreenTests"

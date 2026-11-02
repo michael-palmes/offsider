@@ -15,13 +15,14 @@ enum FrontJudge {
         var reading = tree.front ?? FrontReading()
         let judged = tree
         await Timings.measure("front") {
-            let plan = Plan(tree: judged, indexes: indexes, reading: reading)
+            let plan = Plan(tree: judged, indexes: indexes, reading: reading, spareReads: reader == nil ? nil : everyPoint ? hitLimit : 0)
             let contested = Array((everyPoint ? plan.unblocked : plan.contested).prefix(hitLimit))
             let hits = await hitTests(contested.map { ($0.index, $0.judging) }, reader: reader)
             plan.record(into: &reading, hits: hits, hitTested: reader != nil, platform: judged.platform)
             if let reader {
                 await readParts(of: contested, into: &reading, in: judged, reader: reader)
             }
+            plan.settleGroups(in: &reading)
         }
         tree.front = reading
     }
@@ -96,12 +97,26 @@ enum FrontJudge {
         /// Inside the screen, but past an edge of its scroll view.
         var clipped: [Int: OffScreenSide] = [:]
         var entries: [Entry] = []
+        /// Each unlabelled group asked about, with the labelled elements and controls it holds.
+        var groups: [Int: [Int]] = [:]
 
-        init(tree: UITree, indexes: some Sequence<Int>, reading: FrontReading) {
+        /// `spareReads` is how many points may be hit-tested for what a group holds, beyond those asked about: a group needing more stays as its own point says. Nil when reading costs nothing.
+        init(tree: UITree, indexes: some Sequence<Int>, reading: FrontReading, spareReads: Int? = nil) {
             guard let viewport = tree.viewport else { return }
             let flat = tree.roots.flatMap { $0.flattened() }
             let stack = ScreenStack.build(roots: tree.roots, viewport: viewport)
-            for index in indexes where index < flat.count && reading.judged[index] == nil && reading.beneath[index] == nil && reading.clipped[index] == nil {
+            let indicators = ScrollIndicator.all(in: tree.roots)
+            var asked = Set(indexes)
+            for index in asked.sorted() where index < flat.count && Self.isGroup(flat[index]) && reading.covered[index] == nil && reading.beneath[index] == nil {
+                let held = (index + 1)..<(index + flat[index].flattened().count)
+                let telling = held.filter { position in
+                    flat[position].isTelling && flat[position].frame?.isVisible(in: viewport) == true && !indicators.contains { $0.isSameElement(as: flat[position]) }
+                }
+                guard !telling.isEmpty, spareReads.map({ telling.filter { !asked.contains($0) }.count <= $0 }) ?? true else { continue }
+                groups[index] = telling
+                asked.formUnion(telling)
+            }
+            for index in asked.sorted() where index < flat.count && reading.judged[index] == nil && reading.beneath[index] == nil && reading.clipped[index] == nil {
                 let node = flat[index]
                 guard !Self.containerRoles.contains(node.role), let frame = node.frame, node.hasPositiveFrame, frame.isVisible(in: viewport) else { continue }
                 if let page = stack.page(over: index) {
@@ -114,6 +129,23 @@ enum FrontJudge {
                 }
                 guard let judging = TapCover.Judging(resolution, in: tree, beneath: false) else { continue }
                 entries.append(Entry(index: index, resolution: resolution, judging: judging))
+            }
+        }
+
+        private static func isGroup(_ node: UINode) -> Bool {
+            !containerRoles.contains(node.role) && !node.role.isActionable && node.normalizedLabel == nil && !node.children.isEmpty
+        }
+
+        /// A group is drawn on with what it holds, so its own point says little: one whose every labelled element and control a touch would miss is out of reach too.
+        func settleGroups(in reading: inout FrontReading) {
+            for (group, held) in groups.sorted(by: { $0.key > $1.key }) where reading.covered[group] == nil && reading.beneath[group] == nil {
+                guard held.allSatisfy(reading.unreached.contains) else { continue }
+                if let page = held.compactMap({ [beneath = reading.beneath] in beneath[$0] }).first {
+                    reading.beneath[group] = page
+                } else if let verdict = held.compactMap({ [covered = reading.covered] in covered[$0] }).first {
+                    reading.covered[group] = verdict
+                    reading.judged[group]?.verdict = verdict
+                }
             }
         }
 
