@@ -466,6 +466,7 @@ struct BatchReadStepTests {
         ("wait --id open --wait-lock 5", "--wait-lock"),
         ("nonsense", "Unsupported batch step"),
         ("rn logbox", "The only rn batch step"),
+        ("tap --id open --dry-run", "tap --dry-run"),
     ])
     func preflightSendsNothing(step: String, message: String) async throws {
         let backend = FakeDeviceBackend(trees: [Self.closed], screen: Self.screen)

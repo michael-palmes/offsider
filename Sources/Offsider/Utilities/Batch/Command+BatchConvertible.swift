@@ -71,7 +71,7 @@ extension Tap: BatchConvertible {
         let resolvedTree: UITree?
 
         guard !dryRun else {
-            throw ValidationError("A batch step cannot take tap --dry-run: run it on its own.")
+            throw ValidationError(BatchStepParser.dryRunStepMessage)
         }
         if let pointX, let pointY {
             resolution = TapResolution(point: (x: pointX, y: pointY), isSwitchLikeControl: false)

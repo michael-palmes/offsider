@@ -176,14 +176,23 @@ final class IOSBackend: DeviceBackend {
     /// `read` in screen points; a point read answered by SpringBoard looked in the wrong space, so it is asked again in its own. An app answering there has its own frames, and not the point asked about, so the first answer stands.
     private func springBoardRoots(_ read: [UINode], turn: PanelTurn, at point: UIPoint?, rereading: (UIPoint) async throws -> [UINode]) async throws -> [UINode] {
         guard let point else { return turn.screenRoots(read) }
-        guard let again = try? await rereading(turn.panelPoint(point)), Self.isSpringBoard(again) else { return read }
-        return turn.screenRoots(again)
+        let panelPoint = turn.panelPoint(point)
+        guard let again = try? await rereading(panelPoint), Self.isSpringBoard(again) else { return read }
+        return Self.screenAnswer(again, turn: turn, at: panelPoint) ?? read
+    }
+
+    /// `answer` in screen points; nil for SpringBoard's empty screen-sized view, which says nothing about what lies at the point.
+    nonisolated static func screenAnswer(_ answer: [UINode], turn: PanelTurn, at panelPoint: UIPoint) -> [UINode]? {
+        guard let first = answer.first, !AccessibilityFetcher.isTransientPointFallback(first, at: AccessibilityPoint(x: panelPoint.x, y: panelPoint.y)) else { return nil }
+        return turn.screenRoots(answer)
     }
 
     /// A screen point can lie past the panel's edge in SpringBoard's points, so a read that found nothing asks it there before giving up.
     private func springBoardAnswer(at point: UIPoint, of simulator: FBSimulator, reading: (UIPoint) async throws -> [UINode]) async -> [UINode]? {
-        guard let turn = await springBoardTurn(of: simulator), let answer = try? await reading(turn.panelPoint(point)), Self.isSpringBoard(answer) else { return nil }
-        return turn.screenRoots(answer)
+        guard let turn = await springBoardTurn(of: simulator) else { return nil }
+        let panelPoint = turn.panelPoint(point)
+        guard let answer = try? await reading(panelPoint), Self.isSpringBoard(answer) else { return nil }
+        return Self.screenAnswer(answer, turn: turn, at: panelPoint)
     }
 
     private func springBoardTurn(of simulator: FBSimulator) async -> PanelTurn? {

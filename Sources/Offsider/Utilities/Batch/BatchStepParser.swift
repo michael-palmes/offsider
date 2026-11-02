@@ -44,6 +44,7 @@ struct BatchStepParser {
     nonisolated static let unsupportedFlagsMessage = "Batch steps do not support --verify. Run the command on its own with --verify, or check with describe-ui after the batch."
     nonisolated static let stepJSONMessage = "Batch steps do not take --json. Use batch --json for one JSON line per step."
     nonisolated static let rnStepMessage = "The only rn batch step is rn devmenu with an item or --label, such as rn devmenu reload; listing the menu leaves it open, so run that on its own."
+    nonisolated static let dryRunStepMessage = "A batch step cannot take tap --dry-run: run it on its own."
 
     nonisolated static func rejectUnsupportedFlags(_ tokens: [String]) throws {
         let arguments = tokens.dropFirst()
@@ -59,6 +60,9 @@ struct BatchStepParser {
         // Only these two take it, so a step typing this very text is not refused.
         if [BatchStepKind.swipe.rawValue, BatchStepKind.drag.rawValue].contains(tokens.first), has("--screenshot-at") {
             throw ValidationError(HoldScreenshotOptions.batchMessage)
+        }
+        if tokens.first == BatchStepKind.tap.rawValue, has("--dry-run") {
+            throw ValidationError(dryRunStepMessage)
         }
     }
 

@@ -69,7 +69,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - `wait --any` beside `--settled`, `--region` or `--seconds` with no selector exits 64 rather than being ignored.
 - `wait --settled --settle-by both --wait-lock` claims the device before its bound starts, as `--settled` does.
 - `assert` and `wait` with `--enabled` or `--disabled` no longer crash on a group holding its own copy, and judge that group beside a separate match.
-- `batch` refuses `--screenshot-at`, a per-step `--device` or `--wait-lock`, bad quoting, an unknown step and a bad `rn` step before sending anything, not after earlier steps ran; `--continue-on-error` still reports an unknown step and runs the rest.
+- `batch` refuses `--screenshot-at`, `tap --dry-run`, a per-step `--device` or `--wait-lock`, bad quoting, an unknown step and a bad `rn` step before sending anything, not after earlier steps ran; `--continue-on-error` still reports an unknown step and runs the rest.
 - `batch` screenshot steps on an iPhone or iPad report `capture`, as `screenshot --json` does.
 - `button home --verify` on an iOS simulator no longer passes on a system alert over an app; it compares the tree there. It and a `--verify` or selector read of a hung simulator now exit `device_unresponsive` instead of holding the device.
 - On a screen turned on its panel (an unfolded iPhone Duo, or any simulator in landscape), system alerts and the home screen report frames in screen points, so label taps reach them.

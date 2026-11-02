@@ -52,4 +52,23 @@ struct PanelTurnTests {
         #expect(turned.children[0].frame == UIFrame(x: 316, y: 134, width: 320, height: 366))
         #expect(turned.children[0].children[0].frame == UIFrame(x: 332, y: 324, width: 288, height: 48))
     }
+
+    @Test("SpringBoard's empty screen-sized answer is no answer, so it cannot pass for a cover over the app")
+    func emptyAnswerSaysNothing() throws {
+        let turn = try #require(Self.turn(.landscape))
+        let point = turn.panelPoint(UIPoint(x: 903, y: 148))
+        let empty = FakeUI.node(.group, frame: FakeUI.frame(0, 0, 1398, 2034))
+
+        #expect(IOSBackend.screenAnswer([empty], turn: turn, at: point) == nil)
+    }
+
+    @Test("a labelled answer at the point comes back in screen points")
+    func labelledAnswerIsTurned() throws {
+        let turn = try #require(Self.turn(.landscape))
+        let button = FakeUI.node(.button, label: "Allow", frame: FakeUI.frame(324, 331, 48, 288))
+
+        let answer = try #require(IOSBackend.screenAnswer([button], turn: turn, at: UIPoint(x: 348, y: 475)))
+
+        #expect(answer[0].frame == UIFrame(x: 332, y: 324, width: 288, height: 48))
+    }
 }
