@@ -1,4 +1,5 @@
 import ArgumentParser
+import Darwin
 import Foundation
 import OffsiderCore
 import Testing
@@ -9,6 +10,19 @@ import Testing
 private final class HoldClock {
     var now: Duration = .zero
     func advance(_ milliseconds: Int) { now += .milliseconds(milliseconds) }
+}
+
+/// A device whose screenshot never returns once the finger is down.
+@MainActor
+final class HangingShotBackend: FakeDeviceBackend {
+    convenience init(session: RecordingInputSession) {
+        self.init(trees: [FakeUI.tree([])], session: session)
+    }
+
+    override func screenshotPNG(for id: DeviceID) async throws -> Data {
+        try await Task.sleep(for: .seconds(3600))
+        throw CancellationError()
+    }
 }
 
 @Suite("Screenshots during a held gesture")
@@ -186,6 +200,78 @@ struct HoldScreenshotTests {
         }
         #expect(session.calls == [.perform(Self.press)])
         #expect(shoots == 0)
+    }
+
+    // MARK: - Devices that cannot hold
+
+    @Test("--screenshot-at on a physical iPhone or iPad is refused before anything is sent or made, naming what works", arguments: ["swipe", "drag"])
+    func physicalIPhoneRefused(command: String) async throws {
+        let folder = NSTemporaryDirectory() + "offsider-hold-\(UUID().uuidString)/"
+        let shots = try HoldScreenshotOptions.parse(["--screenshot-at", "100", "--output", folder])
+        let udid = "00008110-000000000000001E"
+
+        let error = await #expect(throws: CLIError.self) { try await shots.prepare(command: command, device: udid) }
+
+        #expect(error?.reason == .notSupported)
+        #expect(error?.userFacingDescription.contains("--screenshot-at") == true)
+        #expect(error?.userFacingDescription.contains("iOS simulator") == true)
+        #expect(!FileManager.default.fileExists(atPath: folder))
+        #expect(HoldScreenshotOptions.physicalDeviceRefusal(device: "00000000-0000-0000-0000-000000000001") == nil)
+        #expect(HoldScreenshotOptions.physicalDeviceRefusal(device: "R58M123ABC") == nil)
+    }
+
+    @Test("a backend that gets ready for a hold is told before the press")
+    func holdIsPrepared() async throws {
+        final class Preparing: FakeDeviceBackend, HoldPreparing {
+            var callsWhenPrepared: Int?
+            func prepareHold(for id: DeviceID) async throws { callsWhenPrepared = session.calls.count }
+        }
+        let backend = Preparing(trees: [FakeUI.tree([])], screenshots: [try ScreenshotMaskTests.whitePNG()], screen: ScreenshotMaskTests.screen)
+        let path = ScreenshotMaskTests.temporaryPath()
+        defer { try? FileManager.default.removeItem(atPath: path) }
+        let swipe = try Swipe.parse(Self.start + ["--screenshot-at", "0", "--output", path, "--device", "fake-device"])
+
+        try await swipe.holdShots.perform(press: Self.press, lift: Self.lift, holdEnd: 0, on: DeviceRouter.Route(backend: backend, device: DeviceID(rawValue: "fake-device", platform: .ios)), details: InputDetails())
+
+        #expect(backend.callsWhenPrepared == 0)
+    }
+
+    // MARK: - Ending early
+
+    /// A hold on a device whose screenshot never returns, until `number` arrives.
+    static func holdUntil(_ number: Int32) async throws {
+        let session = RecordingInputSession()
+        session.onPerform = { event in
+            if event == lift { print("lifted") }
+            fflush(stdout)
+        }
+        let swipe = try Swipe.parse(start + ["--screenshot-at", "0", "--device", "fake-device"])
+        // A dead process fails the expectation, where a hung one would stop the whole run.
+        DispatchQueue.global().asyncAfter(deadline: .now() + 20) { Darwin.exit(99) }
+        DispatchQueue.global().asyncAfter(deadline: .now() + 0.1) { kill(getpid(), number) }
+        try await swipe.holdShots.perform(
+            press: press, lift: lift, holdEnd: 0,
+            on: DeviceRouter.Route(backend: HangingShotBackend(session: session), device: DeviceID(rawValue: "fake-device", platform: .ios)),
+            details: InputDetails(), watchdog: DeviceWatchdog(grace: 600, readBound: 600) { _ in }
+        )
+    }
+
+    @Test("SIGTERM during a hold sends the lift, then ends the process as the signal would")
+    func sigtermLifts() async {
+        let result = await #expect(processExitsWith: .exitCode(143), observing: [\.standardOutputContent]) { @MainActor in
+            try await HoldScreenshotTests.holdUntil(SIGTERM)
+        }
+        let output = String(decoding: result?.standardOutputContent ?? [], as: UTF8.self)
+        #expect(output.contains("lifted"))
+    }
+
+    @Test("SIGINT during a hold sends the lift, then ends the process as the signal would")
+    func sigintLifts() async {
+        let result = await #expect(processExitsWith: .exitCode(130), observing: [\.standardOutputContent]) { @MainActor in
+            try await HoldScreenshotTests.holdUntil(SIGINT)
+        }
+        let output = String(decoding: result?.standardOutputContent ?? [], as: UTF8.self)
+        #expect(output.contains("lifted"))
     }
 
     // MARK: - Capture

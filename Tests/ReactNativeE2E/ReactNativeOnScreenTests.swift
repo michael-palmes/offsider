@@ -61,11 +61,14 @@ struct ReactNativeOnScreenTests {
     func rowHalfUnderTabBarTapped(platform: RNPlatform) async throws {
         let app = RNApp(platform)
         try await app.open("tab-bar-test")
+        let rows = (1...14).map { "tab-bar-test-home-row-\($0)" }
+        let row = try await app.rowCentred(under: "tab-bar-test-tab-bar", rows: rows, list: "tab-bar-test-list-home")
 
-        let result = try await app.run("tap --id tab-bar-test-home-row-12")
+        let result = try await app.run("tap --id \(row)")
 
         #expect(result.stderr.contains("tapping the part that shows"), "\(result.stderr)")
-        _ = try await app.waitForLabel(of: "tab-bar-test-pressed") { $0 == "Tab Bar Pressed: Home Row 12" }
+        let number = row.split(separator: "-").last ?? ""
+        _ = try await app.waitForLabel(of: "tab-bar-test-pressed") { $0 == "Tab Bar Pressed: Home Row \(number)" }
     }
 
     @Test("a key of the app's keypad over its amount field is tapped without a cover warning", arguments: RNPlatform.enabled)

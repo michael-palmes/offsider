@@ -140,7 +140,7 @@ struct AndroidAppLifecycleTests {
             """)
         }
         let launch = try await backend.launchApp(Self.package, restart: false, on: Self.device)
-        #expect(launch == AppLaunch(app: Self.package, start: .cold, restarted: false, milliseconds: 412))
+        #expect(launch == AppLaunch(app: Self.package, start: .cold, restarted: false, milliseconds: 412, waitMilliseconds: 420, launchState: "COLD"))
         let script = try #require(Self.shellCommands(server).last)
         #expect(script.contains("am start -W -f 0x10200000 -a android.intent.action.MAIN -c android.intent.category.LAUNCHER -n \"$c\""))
         #expect(script.contains("case \"$c\" in \"$p\"/*)"))

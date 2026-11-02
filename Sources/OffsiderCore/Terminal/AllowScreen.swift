@@ -3,7 +3,7 @@ import Foundation
 /// What `devices add` shows, drawn with `TerminalUI`: a banner, one short question per step that collapses to a
 /// receipt line, a bold summary before Touch ID, and a closing block that names the full ID only in its commands.
 public enum AllowScreen {
-    public static let title = "Allow agents to control which phone or tablet"
+    public static let title = "Allow agents to control a phone or tablet"
     public static let deviceQuestion = "Which phone or tablet?"
     public static let teamQuestion = "Which team?"
     public static let watching = "Watching for it. Q stops."
@@ -114,11 +114,11 @@ public enum AllowScreen {
 
     /// The closing block for one device: the only place the full ID shows, since the commands need it.
     /// `ready` means Offsider proved it can drive the device, so nothing is left to run.
-    public static func allowed(name: String, key: String, until: String, apps: [String], metroPorts: [Int] = [], testDevice: Bool = false, ready: Bool = false, width: Int, style: TerminalStyle) -> [String] {
+    public static func allowed(name: String, key: String, until: String, apps: [String], metroPorts: [Int] = [], testDevice: Bool = false, notes: [String] = [], ready: Bool = false, width: Int, style: TerminalStyle) -> [String] {
         let key = PromptScreen.visible(key)
         let metro = metroPorts.isEmpty ? "" : ", \(Self.metro(metroPorts))"
         let what = "\(name) \(until), \(Self.apps(apps, testDevice: testDevice))\(metro)."
         let withdraw = ("Withdraw", "offsider devices remove --device \(key)")
-        return TerminalUI.closing(ready ? "Ready: \(what)" : "Allowed \(what)", commands: ready ? [withdraw] : [withdraw, ("Next", "offsider doctor --device \(key)")], width: width, style: style)
+        return TerminalUI.closing(ready ? "Ready: \(what)" : "Allowed \(what)", notes: notes, commands: ready ? [withdraw] : [withdraw, ("Next", "offsider doctor --device \(key)")], width: width, style: style)
     }
 }

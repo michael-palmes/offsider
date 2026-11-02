@@ -144,6 +144,33 @@ struct AndroidMotionEventTests {
         #expect(rig.startShells == 0)
     }
 
+    @Test("a coming hold starts the helper on a route without gRPC, so a press that never rests by itself still reports the resting finger")
+    func holdStartsHelper() async throws {
+        let rig = try AndroidKeyCombinationTests.rig(apiLevel: "34")
+        try await rig.backend.prepareHold(for: Self.device)
+        try await Self.perform([.touch(direction: .down, x: 100, y: 500)], on: rig)
+        await rig.backend.close()
+
+        #expect(rig.startShells == 1)
+        #expect(rig.device.injected.first == "touch down 100 500")
+        #expect(AndroidHelperInputTests.inputScripts(rig).isEmpty)
+    }
+
+    @Test("a coming hold on an unavailable helper warns once, and OFFSIDER_ANDROID_INPUT=input stays in force with no warning")
+    func holdWithoutHelper() async throws {
+        let fallback = try AndroidKeyCombinationTests.rig(apiLevel: "34", environment: ["OFFSIDER_ANDROID_TREE": "uiautomator"])
+        try await fallback.backend.prepareHold(for: Self.device)
+        await fallback.backend.close()
+        #expect(fallback.log.warnings.filter { $0.contains("held touch goes through `input motionevent`") }.count == 1)
+        #expect(fallback.startShells == 0)
+
+        let forced = try AndroidKeyCombinationTests.rig(apiLevel: "34", environment: ["OFFSIDER_ANDROID_INPUT": "input"])
+        try await forced.backend.prepareHold(for: Self.device)
+        await forced.backend.close()
+        #expect(!forced.log.warnings.contains { $0.contains("held touch goes through `input motionevent`") })
+        #expect(forced.startShells == 0)
+    }
+
     @Test("from API 29, a setting Offsider cannot read stops a drag that holds still with that setting's error, as it stops any other command, and sends nothing")
     func recentHeldDragStopsOnBadSetting() async throws {
         let rig = try AndroidKeyCombinationTests.rig(apiLevel: "34", environment: ["OFFSIDER_ANDROID_TREE": "bogus"])

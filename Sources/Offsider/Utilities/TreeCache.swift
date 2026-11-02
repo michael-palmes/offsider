@@ -6,18 +6,18 @@ import OffsiderCore
 struct TreeCacheEnvironment: Sendable {
     static let environmentKey = "OFFSIDER_TREE_CACHE"
 
-    /// The `trees/` directory, or nil when the cache is off or the directory cannot be made private.
+    /// The `trees/` directory, or nil when it cannot be made private; password field records live here even with the cache off.
     var directory: @Sendable () -> String?
+    /// False under `OFFSIDER_TREE_CACHE=off`: no tree or input time is kept or read.
+    var cacheOn: Bool
     var now: @Sendable @MainActor () -> Date
     var sleep: @Sendable @MainActor (Duration) async throws -> Void
 
     @TaskLocal static var current = TreeCacheEnvironment.live
 
     static let live = TreeCacheEnvironment(
-        directory: {
-            guard isEnabled(ProcessInfo.processInfo.environment) else { return nil }
-            return try? OffsiderPrivateDirectory.ensureSubdirectory(OffsiderPrivateDirectory.treesDirectoryName)
-        },
+        directory: { try? OffsiderPrivateDirectory.ensureSubdirectory(OffsiderPrivateDirectory.treesDirectoryName) },
+        cacheOn: isEnabled(ProcessInfo.processInfo.environment),
         now: { Date() },
         sleep: { try await Task.sleep(for: $0) }
     )
@@ -32,7 +32,7 @@ struct TreeCacheEnvironment: Sendable {
 enum TreeCache {
     /// The device's usable record, or nil; an expired or foreign-boot record is deleted, and so is every other device's expired file.
     static func load(for device: DeviceID, backend: any DeviceBackend, environment: TreeCacheEnvironment = .current) async -> TreeCacheRecord? {
-        guard let directory = environment.directory() else { return nil }
+        guard environment.cacheOn, let directory = environment.directory() else { return nil }
         return await Timings.measure("tree-cache") {
             let marker = await (backend as? any BootMarking)?.bootMarker(for: device)
             let record = read(device, in: directory, bootMarker: marker, now: environment.now())
@@ -41,7 +41,7 @@ enum TreeCache {
         }
     }
 
-    /// The device's password fields from earlier reads in this boot, which a plain text field at the same id or frame reveals; nil with none or no cache.
+    /// The device's password fields from earlier reads in this boot, which a plain text field at the same id or frame reveals; nil with none. The cache being off does not stop this.
     static func revealedSecrets(for device: DeviceID, backend: any DeviceBackend, environment: TreeCacheEnvironment = .current) async -> RevealedSecrets? {
         guard let directory = environment.directory(),
               FileManager.default.fileExists(atPath: (directory as NSString).appendingPathComponent(SecureFieldRecord.fileName(platform: device.platform, device: device.rawValue))) else { return nil }
@@ -90,7 +90,7 @@ enum TreeCache {
         return record
     }
 
-    /// Writes one record per device the command read or sent input to; never throws, since losing the cache costs one read.
+    /// Writes one record per device the command read or sent input to, with the cache off only what a tree shows of password fields; never throws, since losing the cache costs one read.
     static func commit(
         command: String,
         effect: CommandEffect,
@@ -108,17 +108,18 @@ enum TreeCache {
             }
         }
         var written = Set<String>()
-        for activity in activities {
+        for activity in activities where environment.cacheOn || activity.tree != nil {
             let device = activity.device
             let marking = backends.first { $0.platform == device.platform } as? any BootMarking
             await Timings.measure("tree-cache") {
                 let marker = await marking?.bootMarker(for: device)
                 let now = environment.now()
-                let previous = read(device, in: directory, bootMarker: marker, now: now)
                 var activity = activity
                 if let tree = activity.tree {
                     activity.tree = maskedForCache(tree, filled: activity.filled, device: device, directory: directory, bootMarker: marker, now: now, written: &written)
                 }
+                guard environment.cacheOn else { return }
+                let previous = read(device, in: directory, bootMarker: marker, now: now)
                 guard let record = TreeCacheRecord.committing(
                     activity, previous: previous, command: command,
                     inputAtEnd: effect == .input && !sentNothing, bootMarker: marker, now: now

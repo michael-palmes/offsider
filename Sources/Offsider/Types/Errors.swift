@@ -12,6 +12,18 @@ extension UserFacingError {
     }
 }
 
+/// A simulator's accessibility service did not answer, twice; just after a boot that clears by itself, so anything that polls counts it as not yet met.
+struct AccessibilityStartupFailure: LocalizedError, UserFacingError, TransientFailure, OffsiderFailure {
+    let simulatorUDID: String
+
+    var isTransient: Bool { true }
+    var reason: FailureReason { .treeReadFailed }
+    var hint: String? { "offsider doctor --device \(simulatorUDID)" }
+    var userFacingDescription: String { "The simulator's accessibility service did not answer, twice, so its screen could not be read. Run this again; if it keeps failing, shut the simulator down and boot it." }
+    var failureMessage: String { userFacingDescription }
+    var errorDescription: String? { userFacingDescription }
+}
+
 struct CLIError: LocalizedError, UserFacingError, OffsiderFailure {
     let userFacingDescription: String
     let reason: FailureReason

@@ -196,7 +196,7 @@ Android (--android):
   OFFSIDER_ANDROID_E2E_AVD  The only AVD the suites may drive: Offsider_E2E (default), Offsider_E2E_Fold or Offsider_E2E_API28 (Android 9)
   OFFSIDER_ANDROID_LANDSCAPE_E2E=1  Also run the landscape suite on Settings
   OFFSIDER_ANDROID_BOOT_E2E=1       Also stop and cold-boot the E2E AVD
-  OFFSIDER_ANDROID_DEBUG_APK        The Debug APK for --rn-debug (default: built by scripts/rn-playground.sh build-android --debug)
+  OFFSIDER_ANDROID_DEBUG_APK        The Debug APK for --rn-debug and the app preference suite (default: built by scripts/rn-playground.sh build-android --debug)
 
 Foldables (--foldable, --android-fold):
   OFFSIDER_FOLDABLE_SIMULATOR_NAME  The iPhone Duo simulator for --foldable (default: Offsider Duo); SIMULATOR_UDID overrides it
@@ -336,6 +336,7 @@ ANDROID_SUITES=(
     "AndroidVerifyTests"
     "AndroidDeviceStateE2ETests"
     "AndroidNotificationsE2ETests"
+    "AndroidAppManagementE2ETests"
     "AndroidFallbackTests"
     "AndroidJWTTests"
     "AndroidBootTests"
@@ -353,6 +354,7 @@ RN_SUITES=(
     "ReactNativeChoiceTests"
     "ReactNativeGestureTests"
     "ReactNativeEvidenceTests"
+    "ReactNativeMaskRuleTests"
     "ReactNativeLiveTests"
     "ReactNativeStackCoverTests"
     "ReactNativeStickyFooterTests"
@@ -860,6 +862,11 @@ run_android_tests() {
 
     resolve_android_apk
     export OFFSIDER_ANDROID_APK
+    # AndroidAppManagementE2ETests plants a secret in a debuggable build, so a value leak cannot pass by skipping.
+    if [[ -z "$TEST_FILTER" || "$TEST_FILTER" == "AndroidAppManagementE2ETests" ]]; then
+        resolve_rn_artefact OFFSIDER_ANDROID_DEBUG_APK android --debug
+        export OFFSIDER_ANDROID_DEBUG_APK
+    fi
     export OFFSIDER_RN_DEBUG_E2E=0
     log "Environment: OFFSIDER_ANDROID_DEVICE=$OFFSIDER_ANDROID_DEVICE, OFFSIDER_ANDROID_E2E_AVD=$ANDROID_E2E_AVD, OFFSIDER_ANDROID_APK=$OFFSIDER_ANDROID_APK"
 

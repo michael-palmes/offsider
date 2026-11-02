@@ -441,6 +441,69 @@ struct WaitLoopTests {
         #expect(outcome.movingPart == nil)
     }
 
+    /// Bars listed by height, as iOS lists a React Native chart: each place in the tree takes another bar's label and frame on each tick.
+    private static func barsByHeight(_ tick: Int) -> UITree {
+        let bars = (0..<4).map { bar -> (label: String, frame: UIFrame) in
+            let height = Double(40 + ((bar + tick) % 4) * 40)
+            return ("Bar \(bar)", FakeUI.frame(Double(20 + bar * 60), 400 - height, 40, height))
+        }.sorted { $0.frame.y < $1.frame.y }
+        var chart = FakeUI.node(.other, id: "chart", frame: FakeUI.frame(20, 200, 300, 200))
+        chart.children = bars.map { FakeUI.node(.other, label: $0.label, frame: $0.frame) }
+        return FakeUI.tree(width: 402, height: 874, [chart, Self.save])
+    }
+
+    @Test("bars that swap places in the tree as they move keep --ignore-values from settling, and the timeout names the flag")
+    func barsListedByHeightNeverSettle() async throws {
+        let script = Script()
+        script.trees = (0..<40).map { .success(Self.barsByHeight($0)) }
+
+        let outcome = try await WaitLoop.run(.settled(by: .tree, quiet: 0.5, ignoreValues: true), timeout: 2, interval: 0.25, sources: script.sources)
+
+        #expect(!outcome.met)
+        #expect(!outcome.onlyTextMoved)
+        #expect(outcome.movingPart == .id("chart"))
+
+        let leftOut = Script()
+        leftOut.trees = script.trees
+        let settled = try await WaitLoop.run(.settled(by: .tree, quiet: 0.5, ignoreValues: true, leaveOut: SettleLeaveOut(ids: ["chart"])), timeout: 2, interval: 0.25, sources: leftOut.sources)
+        #expect(settled.met)
+    }
+
+    @Test("a leave-out as big as the root or that names it refuses at once, since a pass would watch nothing", arguments: [
+        (SettleLeaveOut(regions: [PointRegion(x: 0, y: 0, width: 402, height: 874)]), "--ignore-region"),
+        (SettleLeaveOut(regions: [PointRegion(x: 0, y: 0, width: 1000, height: 1000)]), "--ignore-region"),
+        (SettleLeaveOut(ids: ["root"]), "--ignore-id"),
+    ])
+    func leaveOutOfTheRootRefuses(leaveOut: SettleLeaveOut, flag: String) async throws {
+        var tree = Self.chartScreen(0)
+        tree.roots[0].id = "root"
+        let script = Script()
+        script.trees = [.success(tree)]
+
+        await #expect(throws: WaitLeftNothingError(flag: flag)) {
+            _ = try await WaitLoop.run(.settled(by: .tree, quiet: 0.5, leaveOut: leaveOut), timeout: 5, interval: 0.25, sources: script.sources)
+        }
+        #expect(script.treeReads == 1)
+    }
+
+    @Test("a leave-out holding everything under the root keeps reading, ends naming the flag, and passes once more arrives", arguments: [
+        SettleLeaveOut(ids: ["all"]),
+        SettleLeaveOut(regions: [PointRegion(x: 0, y: 0, width: 400, height: 800)]),
+    ])
+    func leaveOutOfEverythingUnderTheRoot(leaveOut: SettleLeaveOut) async throws {
+        let splash = FakeUI.tree(width: 402, height: 874, [FakeUI.node(.other, id: "all", frame: FakeUI.frame(0, 0, 300, 300))])
+        let never = Script()
+        never.trees = [.success(splash)]
+        let outcome = try await WaitLoop.run(.settled(by: .tree, quiet: 0.5, leaveOut: leaveOut), timeout: 1, interval: 0.25, sources: never.sources)
+        #expect(!outcome.met)
+        #expect(outcome.reason == "\(leaveOut.ids.isEmpty ? "--ignore-region" : "--ignore-id") leaves nothing to watch on this screen")
+
+        let later = Script()
+        later.trees = [.success(splash), .success(splash), .success(FakeUI.tree(width: 402, height: 874, [FakeUI.node(.button, id: "below", frame: FakeUI.frame(0, 810, 400, 44))]))]
+        let settled = try await WaitLoop.run(.settled(by: .tree, quiet: 0.5, leaveOut: leaveOut), timeout: 5, interval: 0.25, sources: later.sources)
+        #expect(settled.met)
+    }
+
     @Test("the effect of an input inside a left-out group does not open the settle gate")
     func leftOutChangeIsNoEffect() async throws {
         let gate = try #require(SettleGate(sinceInput: 0.1, before: Self.chartScreen(0)))

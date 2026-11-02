@@ -23,6 +23,8 @@ public protocol ExpoDevClientOpening: DeviceBackend {
 public protocol MetroReverseSetting: DeviceBackend {
     /// Maps the phone's `tcp:<port>` to the Mac's same port and records it for `session stop`; refuses anything but a USB phone.
     func addMetroReverse(port: Int, on id: DeviceID) async throws
+    /// The ports Offsider recorded on this phone for its current connection, which `session stop` removes.
+    func recordedMetroPorts(on id: DeviceID) async -> [Int]
 }
 
 public struct ExpoDevClientError: Error, CustomStringConvertible, LocalizedError, Equatable, Sendable {
@@ -303,7 +305,7 @@ public enum ExpoDevClient {
 
     /// `rn open --json`'s one line.
     public static func openReportJSONLine(
-        bundleID: String, url: String, host: String, port: Int, sends: Int, launcherSeen: Bool, waitID: String?, elapsedMs: Int, bundleMs: Int, reverseSet: Bool
+        bundleID: String, url: String, host: String, port: Int, sends: Int, launcherSeen: Bool, waitID: String?, elapsedMs: Int, bundleMs: Int, reverseRecorded: Bool, reverseSet: Bool
     ) -> String {
         OrderedJSON.object([
             ("version", .integer(1)),
@@ -317,6 +319,7 @@ public enum ExpoDevClient {
             ("waitId", .optional(waitID, OrderedJSON.string)),
             ("elapsedMs", .integer(elapsedMs)),
             ("bundleMs", .integer(bundleMs)),
+            ("reverseRecorded", .bool(reverseRecorded)),
             ("reverseSet", .bool(reverseSet)),
         ]).rendered(compact: true)
     }

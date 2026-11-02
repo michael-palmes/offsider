@@ -21,6 +21,8 @@ struct HelperRequest: Equatable, Sendable {
     }
 
     static let ping = HelperRequest(op: "ping", fields: [:])
+    /// Cancels every finger and key held; a no-op when none is.
+    static let release = HelperRequest(op: "release", fields: [:])
     static let display = HelperRequest(op: "display", fields: [:])
     static let quit = HelperRequest(op: "quit", fields: [:])
 

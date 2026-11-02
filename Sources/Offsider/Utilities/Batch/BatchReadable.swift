@@ -66,8 +66,7 @@ extension Wait: BatchReadable {
     var awaitsInputDrawn: Bool { selector.query != nil }
 
     func runInBatch(context: BatchContext, logger: OffsiderLogger) async throws -> BatchReadResult {
-        let readsTree = selector.query != nil || (settled && settleBy != .screen)
-        let outcome = try await context.watchdog.guarding(bound: watchdogBound, device: context.device.rawValue) {
+        let outcome = try await context.watchdog.guarding(bound: watchdogBound, of: context.device) {
             try await evaluate(on: context.route, logger: logger, tree: context.pollingTreeSource())
         }
         if !readsTree {
@@ -80,7 +79,7 @@ extension Wait: BatchReadable {
 
 extension Assert: BatchReadable {
     func runInBatch(context: BatchContext, logger: OffsiderLogger) async throws -> BatchReadResult {
-        let outcome = try await context.watchdog.guarding(bound: 0, device: context.device.rawValue) {
+        let outcome = try await context.watchdog.guarding(bound: 0, of: context.device) {
             try await evaluate(on: context.route, logger: logger, tree: context.pollingTreeSource())
         }
         return try await .redacted(outcome, on: context.route, success: successLine(outcome), failure: failureLine, checked: selector)
@@ -92,6 +91,11 @@ extension DescribeUI: BatchReadable {
         if diff {
             throw ValidationError("Batch describe-ui steps do not take --diff. Run describe-ui --diff after the batch.")
         }
+        return try await PhoneRead.$overSystemWindow.withValue(true) { try await read(context: context) }
+    }
+
+    @MainActor
+    private func read(context: BatchContext) async throws -> BatchReadResult {
         try await Self.requireActive(displayOption, on: context.route, deviceName: context.device.rawValue)
         var tree: UITree
         if let point = try parsedPoint() {
@@ -113,11 +117,13 @@ extension DescribeUI: BatchReadable {
 extension Screenshot: BatchReadable {
     func runInBatch(context: BatchContext, logger: OffsiderLogger) async throws -> BatchReadResult {
         let masks = masksWithRunDefaults(try maskPlan(batchDefault: context.maskSecure))
-        let report = try await take(try request(), on: context.route, masks: masks) {
-            guard let reader = context.backend as? any MaskTreeReading else {
-                return try await context.backend.readingWithGaps(on: context.device) { try await context.accessibilityTree() }
+        let report = try await PhoneRead.$overSystemWindow.withValue(true) {
+            try await take(try request(), on: context.route, masks: masks) {
+                guard let reader = context.backend as? any MaskTreeReading else {
+                    return try await context.backend.readingWithGaps(on: context.device) { try await context.accessibilityTree() }
+                }
+                return try await reader.maskTree(for: context.device)
             }
-            return try await reader.maskTree(for: context.device)
         }
         guard let comparison = report.comparison else {
             return BatchReadResult(detail: .screenshot(report), output: report.path.map { $0 + "\n" })

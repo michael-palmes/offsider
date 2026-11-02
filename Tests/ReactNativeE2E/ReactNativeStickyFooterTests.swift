@@ -7,9 +7,7 @@ struct ReactNativeStickyFooterTests {
     static let untouched = "Sticky Footer Pressed: None"
 
     static func frame(of id: String, in tree: [String: Any]) -> (x: Double, y: Double, width: Double, height: Double)? {
-        guard let frame = DescribeUITree.node(id: id, in: tree)?["frame"] as? [String: Double],
-              let x = frame["x"], let y = frame["y"], let width = frame["width"], let height = frame["height"] else { return nil }
-        return (x, y, width, height)
+        DescribeUITree.frame(of: id, in: tree)
     }
 
     static let rowIDs = (1...30).map { "sticky-footer-test-row-\($0)" }
@@ -65,12 +63,7 @@ struct ReactNativeStickyFooterTests {
         try await app.open(Self.route)
         try await app.run("tap --id sticky-footer-test-toggle-floating")
         _ = try await app.waitForNode { $0["label"] as? String == "Pin Footer" }
-        let tree = try await app.tree()
-        let footer = try #require(Self.frame(of: "sticky-footer-test-footer", in: tree))
-        let centre = (x: footer.x + footer.width / 2, y: footer.y + footer.height / 2)
-        let row = try #require(Self.rowIDs.first { id in
-            Self.frame(of: id, in: tree).map { centre.y >= $0.y && centre.y < $0.y + $0.height } ?? false
-        }, "no row lies under the floating footer")
+        let row = try await app.rowCentred(under: "sticky-footer-test-footer", rows: Self.rowIDs, list: "sticky-footer-test-scroll-view")
 
         let result = try await app.offsider("tap --id \(row) --fail-if-covered")
 

@@ -560,10 +560,10 @@ struct Verifier {
 }
 
 extension Verifier.Dependencies {
-    static func live(backend: any DeviceBackend, device: DeviceID) -> Self {
+    static func live(backend: any DeviceBackend, device: DeviceID, watchdog: DeviceWatchdog = DeviceWatchdog()) -> Self {
         var dependencies = Self(
-            tree: { try await backend.accessibilityTree(for: device) },
-            screenshot: { try await backend.screenshotPNG(for: device) },
+            tree: { try await watchdog.guardingInputRead(of: device) { try await backend.accessibilityTree(for: device) } },
+            screenshot: { try await watchdog.guardingInputRead(of: device) { try await backend.screenshotPNG(for: device) } },
             sleep: { duration in try await Task.sleep(for: duration) },
             now: { ProcessInfo.processInfo.systemUptime },
             bands: { await backend.volatileScreenBands(for: device) },

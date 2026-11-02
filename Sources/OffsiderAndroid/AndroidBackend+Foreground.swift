@@ -34,6 +34,99 @@ extension AndroidBackend {
         }
         guard let package else { throw AndroidError.foregroundUnknown(serial) }
         try requireDrivable(package, on: serial)
+        if AndroidForegroundCheck.beforeInput {
+            systemWindowChecks[serial] = nil
+            try await requireInputFocus(serial)
+        }
+    }
+
+    /// An activity stays resumed beneath a system window or the notification shade, so input also asks which window would take it.
+    private func requireInputFocus(_ serial: String) async throws {
+        let focus = try await host.timing.measure(.foregroundRecheck) { try await windowFocus(serial) }
+        guard let focus, let owner = focus.owner, try await !isKeyboard(focus, on: serial) else { return }
+        try requireDrivableWindow(owner, title: focus.title, on: serial)
+    }
+
+    /// `dumpsys window`'s focus; nil when no window has it.
+    func windowFocus(_ serial: String) async throws -> AndroidWindowFocus? {
+        let result = try await requireClient().shell(AndroidWindowFocus.readScript, on: serial, timeout: .seconds(5), label: "dumpsys window")
+        return AndroidWindowFocus.parse(result.stdoutText)
+    }
+
+    /// An app sets its own window's title, so the keyboard is also the input method Android has chosen; only a window with that title pays this read.
+    private func isKeyboard(_ focus: AndroidWindowFocus, on serial: String) async throws -> Bool {
+        guard focus.isInputMethod else { return false }
+        let chosen = try await requireClient().shell(AndroidWindowFocus.keyboardScript, on: serial, timeout: .seconds(5), label: "default_input_method")
+        return chosen.stdoutText.trimmingCharacters(in: .whitespacesAndNewlines).split(separator: "/").first.map(String.init) == focus.owner
+    }
+
+    /// One window's owner must be drivable; a system_server window is named as what it is.
+    private func requireDrivableWindow(_ package: String, title: String?, on serial: String) throws {
+        do {
+            try requireDrivable(package, on: serial)
+        } catch let error as AndroidError where package == AndroidWindowFocus.systemOwner {
+            throw error.kind == .appNotAllowed ? error : AndroidError.systemWindowCovers(serial, title: title)
+        }
+    }
+
+    /// Managed policy holds for a system window as for an app: a denied `android`, or a managed list without it, keeps it unread.
+    private func requireSystemWindowPermitted(on serial: String) throws {
+        let owner = AndroidWindowFocus.systemOwner
+        if let refusal = SystemAppDenyList.refusal(owner, platform: .android) {
+            throw AndroidError.otherAppRefused(serial, refusal: refusal)
+        }
+        if let ceiling = appScopes[serial]?.managedCeiling, !ceiling.contains(owner) {
+            throw AndroidError.otherAppNotPermitted(serial, package: owner, byManagedPolicy: true)
+        }
+    }
+
+    /// The window `describe-ui` or `screenshot` goes ahead under: android owns the focused window, and each focused activity and other active window is one this phone may drive.
+    private func readableSystemWindow(_ focus: AndroidWindowFocus?, alongside others: [String], title: String?, on serial: String) throws -> UITreeContext.Window {
+        guard let focus, focus.owner == AndroidWindowFocus.systemOwner, !focus.focusedApps.isEmpty else {
+            throw AndroidError.systemWindowCovers(serial, title: title)
+        }
+        for package in focus.focusedApps + others {
+            try requireDrivable(package, on: serial)
+        }
+        return UITreeContext.Window(title: AndroidWindowFocus.shown(focus.title), kind: .system, package: AndroidWindowFocus.systemOwner, readOnly: true)
+    }
+
+    /// A test device reads whatever is in front, so it needs no read of who has focus.
+    private func readsAnyWindow(_ serial: String) -> Bool {
+        guard DeviceID(rawValue: serial, platform: .android).isPhysicalAndroidDevice else { return true }
+        return appScopes[serial].map { $0.wholeDevice && $0.target == nil } ?? false
+    }
+
+    /// The tree read's window check, which a read that only looks may pass under a system window; the window it went ahead under, if any.
+    func requireReadableWindows(_ tree: UITree, on serial: String) async throws -> UITreeContext.Window? {
+        guard !readsAnyWindow(serial) else { return nil }
+        let packages = Self.activeWindowPackages(tree)
+        var window: UITreeContext.Window?
+        if PhoneRead.overSystemWindow, packages.contains(AndroidWindowFocus.systemOwner) {
+            let title = tree.windows?.first { $0.active && $0.package == AndroidWindowFocus.systemOwner }?.title
+            try requireSystemWindowPermitted(on: serial)
+            window = try readableSystemWindow(try await windowFocus(serial), alongside: packages.filter { $0 != AndroidWindowFocus.systemOwner }, title: title, on: serial)
+        } else {
+            try requireDrivableWindows(tree, on: serial)
+        }
+        systemWindowChecks[serial] = (ContinuousClock.now, window)
+        return window
+    }
+
+    /// A capture that read no tree still asks who has focus, at most once a second, so it refuses and names as a masked one does.
+    func requireReadableFocus(_ serial: String) async throws {
+        guard PhoneRead.overSystemWindow, !readsAnyWindow(serial) else { return }
+        if let checked = systemWindowChecks[serial], ContinuousClock.now - checked.at < Self.foregroundCheckLifetime { return }
+        var window: UITreeContext.Window?
+        if let focus = try await windowFocus(serial), let owner = focus.owner, try await !isKeyboard(focus, on: serial) {
+            if owner == AndroidWindowFocus.systemOwner {
+                try requireSystemWindowPermitted(on: serial)
+                window = try readableSystemWindow(focus, alongside: [], title: focus.title, on: serial)
+            } else {
+                try requireDrivable(owner, on: serial)
+            }
+        }
+        systemWindowChecks[serial] = (ContinuousClock.now, window)
     }
 
     /// What no app in front can change first (an app this phone may not drive named, or none named), then the deny-list and the allowance's scope for one package on a phone.
@@ -101,12 +194,13 @@ extension AndroidBackend {
     func requireDrivableWindows(_ tree: UITree, on serial: String) throws {
         guard DeviceID(rawValue: serial, platform: .android).isPhysicalAndroidDevice else { return }
         for package in Self.activeWindowPackages(tree) {
-            try requireDrivable(package, on: serial)
+            let title = tree.windows?.first { $0.active && $0.package == package }?.title
+            try requireDrivableWindow(package, title: title, on: serial)
         }
     }
 
     /// The packages of the windows that hold focus, keyboards aside; the `application` roots' packages when the source listed no windows.
-    static func activeWindowPackages(_ tree: UITree) -> [String] {
+    nonisolated static func activeWindowPackages(_ tree: UITree) -> [String] {
         if let windows = tree.windows, !windows.isEmpty {
             let active = windows.filter { ($0.active || $0.focused) && $0.kind != "inputMethod" }.compactMap(\.package)
             if !active.isEmpty { return Array(Set(active)).sorted() }
@@ -126,6 +220,12 @@ extension AndroidBackend {
         scope.target = package
         appScopes[serial] = scope
         return true
+    }
+}
+
+extension AndroidBackend: SystemWindowReporting {
+    public func systemWindow(for id: DeviceID) -> UITreeContext.Window? {
+        systemWindowChecks[id.rawValue]?.window
     }
 }
 

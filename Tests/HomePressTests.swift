@@ -209,6 +209,29 @@ struct SimulatorHomePressTests {
         }
     }
 
+    private static let size = UIScreenInfo(width: 400, height: 800)
+
+    private static func screen(_ label: String, pid: Int) -> UITree {
+        FakeUI.tree(width: 400, height: 800, [FakeUI.node(.button, label: label, frame: FakeUI.frame(0, 0, 100, 100), pid: pid)])
+    }
+
+    private static func isSpringBoardProcess(_ pid: Int) -> String? {
+        pid == springBoardPID ? "/Library/Runtime/CoreServices/SpringBoard.app/SpringBoard" : "/Library/Runtime/Apps/Example.app/Example"
+    }
+
+    /// Through the whole command, for what it does before it presses.
+    private static func execute(on backend: FakeDeviceBackend, arguments: [String] = ["--verify", "--json"]) async throws -> Int32? {
+        do {
+            try await DispatchTracker.$current.withValue(DispatchTracker()) {
+                try await Button.parse(["home"] + arguments + ["--device", simulator.rawValue])
+                    .execute(on: DeviceRouter.Route(backend: backend, device: simulator), progress: VerifyProgress(), logger: OffsiderLogger(), processPath: isSpringBoardProcess)
+            }
+            return nil
+        } catch let code as ExitCode {
+            return code.rawValue
+        }
+    }
+
     private static func press(_ answers: [Int?], arguments: [String] = ["--verify", "--json"]) async throws -> (out: [String], err: [String], exit: Int32?, keys: Int, seconds: TimeInterval) {
         let backend = Prober(trees: [])
         backend.answers = answers
@@ -219,7 +242,7 @@ struct SimulatorHomePressTests {
         do {
             try await Button.pressSimulatorHome(
                 on: backend, device: simulator, centre: UIPoint(x: 200, y: 400), verification: try VerificationOptions.parse(arguments),
-                sleep: { _ in clock += 0.6 }, now: { clock }, processPath: { $0 == springBoardPID ? "/Library/Runtime/CoreServices/SpringBoard.app/SpringBoard" : "/Library/Runtime/Apps/Example.app/Example" },
+                sleep: { _ in clock += 0.6 }, now: { clock }, processPath: isSpringBoardProcess,
                 writeOutput: { out.append($0) }, writeError: { err.append($0) }
             )
         } catch let code as ExitCode {
@@ -239,11 +262,96 @@ struct SimulatorHomePressTests {
         #expect(json.contains("activity"))
     }
 
-    @Test("SpringBoard answering before the press still presses, since it also hosts alerts over an app")
-    func alertOverApp() async throws {
-        let result = try await Self.press([Self.springBoardPID])
-        #expect(result.exit == nil)
-        #expect(result.keys == 1)
+    @Test("on the home screen SpringBoard's answer is enough, with one press and no tree compared")
+    func alreadyHome() async throws {
+        let backend = Prober(trees: [Self.screen("Home", pid: Self.springBoardPID)], screen: Self.size)
+        backend.answers = [Self.springBoardPID]
+
+        let exit = try await Self.execute(on: backend)
+
+        #expect(exit == nil)
+        #expect(backend.session.calls.count == 1)
+        #expect(backend.treeReads == 1, "only the read that told the home screen from an alert")
+    }
+
+    @Test("an app in front pays for one point read and no tree")
+    func appInFrontReadsNoTree() async throws {
+        let backend = Prober(trees: [], screen: Self.size)
+        backend.answers = [Self.appPID, Self.springBoardPID]
+
+        let exit = try await Self.execute(on: backend)
+
+        #expect(exit == nil)
+        #expect(backend.treeReads == 0)
+    }
+
+    @Test("an alert over an app cannot pass on SpringBoard's answer: only a change on screen proves the press", arguments: [true, false])
+    func alertOverApp(pressWorks: Bool) async throws {
+        let app = Self.screen("App", pid: Self.appPID)
+        let backend = Prober(trees: pressWorks ? [app, FakeUI.tree(width: 400, height: 800, app.roots[0].children + [FakeUI.node(.button, label: "Home", frame: FakeUI.frame(0, 300, 100, 100), pid: Self.springBoardPID)])] : [app], screen: Self.size, advanceTreeOnInput: true)
+        backend.answers = [Self.springBoardPID]
+
+        let exit = try await Self.execute(on: backend, arguments: ["--verify", "--retries", "0", "--verify-timeout", "0.5"])
+
+        #expect(backend.session.calls.count == 1)
+        #expect(exit == (pressWorks ? nil : OffsiderExitCode.unverified.rawValue))
+    }
+
+    @Test("an alert over an app, where SpringBoard's tree stands in for the app's, needs a change on screen too; a labelled dock on the home screen does not", arguments: [true, false])
+    func alertInSpringBoardsOwnTree(alertUp: Bool) async throws {
+        let icon = FakeUI.node(.button, label: "Maps", frame: FakeUI.frame(10, 700, 60, 60), pid: Self.springBoardPID)
+        var dock = FakeUI.node(.other, label: "Dock", frame: FakeUI.frame(0, 690, 400, 100), pid: Self.springBoardPID)
+        dock.children = [icon]
+        var alert = FakeUI.node(.other, label: "Allow this?", frame: FakeUI.frame(40, 250, 320, 300), pid: Self.springBoardPID)
+        alert.children = [FakeUI.node(.button, label: "Allow", frame: FakeUI.frame(50, 480, 300, 48), pid: Self.springBoardPID)]
+        let backend = Prober(trees: [FakeUI.tree(width: 400, height: 800, alertUp ? [dock, alert] : [dock])], screen: Self.size)
+        backend.answers = [Self.springBoardPID]
+
+        let exit = try await Self.execute(on: backend, arguments: ["--verify", "--retries", "0", "--verify-timeout", "0.5"])
+
+        #expect(exit == (alertUp ? OffsiderExitCode.unverified.rawValue : nil), "nothing on screen changed, so only the home screen may pass")
+    }
+
+    @Test("over an alert, SpringBoard's clock ticking is not the press's effect")
+    func alertClockIsNoEffect() async throws {
+        func screen(_ clock: String) -> UITree {
+            var alert = FakeUI.node(.other, label: "Allow this?", frame: FakeUI.frame(40, 250, 320, 300), pid: Self.springBoardPID)
+            alert.children = [FakeUI.node(.button, label: "Allow", frame: FakeUI.frame(50, 480, 300, 48), pid: Self.springBoardPID)]
+            return FakeUI.tree(width: 400, height: 800, [FakeUI.node(.text, label: clock, frame: FakeUI.frame(10, 10, 60, 20), pid: Self.springBoardPID), alert])
+        }
+        let backend = Prober(trees: [screen("10:44"), screen("10:45")], screen: Self.size, advanceTreeOnInput: true)
+        backend.answers = [Self.springBoardPID]
+
+        let exit = try await Self.execute(on: backend, arguments: ["--verify", "--retries", "0", "--verify-timeout", "0.5"])
+
+        #expect(exit == OffsiderExitCode.unverified.rawValue)
+    }
+
+    @Test("a point read that never answers ends as hung, after the press or before it")
+    func hungProbeEndsAsHung() async throws {
+        final class Fired: @unchecked Sendable {
+            private let lock = NSLock()
+            private var fired = false
+            func record() { lock.withLock { fired = true } }
+            var happened: Bool { lock.withLock { fired } }
+        }
+        final class Wedged: FakeDeviceBackend, PresentationProbing {
+            func probe(at point: UIPoint, on id: DeviceID) async throws -> UINode? {
+                try await Task.sleep(for: .seconds(3600))
+                return nil
+            }
+        }
+        let fired = Fired()
+        let backend = Wedged(trees: [], screen: Self.size)
+        let watchdog = DeviceWatchdog(grace: 0.01, readBound: 0) { _ in fired.record() }
+        let task = Task { @MainActor in
+            try await Button.parse(["home", "--verify", "--device", Self.simulator.rawValue])
+                .execute(on: DeviceRouter.Route(backend: backend, device: Self.simulator), progress: VerifyProgress(), logger: OffsiderLogger(), watchdog: watchdog)
+        }
+        defer { task.cancel() }
+        let deadline = ContinuousClock.now + .seconds(10)
+        while !fired.happened, ContinuousClock.now < deadline { try await Task.sleep(for: .milliseconds(10)) }
+        #expect(fired.happened)
     }
 
     @Test("an app that never leaves exits 5 after the press and its one retry, each within its window however slow the reads")

@@ -212,11 +212,7 @@ struct AccessibilityFetcher {
             do {
                 return try await operation()
             } catch where isStartupFailure(error, frontmost: frontmost) {
-                throw CLIError(
-                    errorDescription: "The simulator's accessibility service did not answer, twice, so its screen could not be read. Run this again; if it keeps failing, shut the simulator down and boot it.",
-                    reason: .commandFailed,
-                    hint: "offsider doctor --device \(simulatorUDID)"
-                )
+                throw AccessibilityStartupFailure(simulatorUDID: simulatorUDID)
             }
         }
     }

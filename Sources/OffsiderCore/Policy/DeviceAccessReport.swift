@@ -3,7 +3,7 @@ import Foundation
 /// `devices status` text and JSON, version 1.
 public enum DeviceAccessReport {
     /// `ready` and `needs` come from `add`: whether Offsider proved it can drive the device, and what stopped it.
-    public static func changeJSON(action: String, platform: DevicePlatform, key: String, allowance: DeviceAllowance?, stopped: [String] = [], ready: Bool? = nil, needs: String? = nil) -> String {
+    public static func changeJSON(action: String, platform: DevicePlatform, key: String, allowance: DeviceAllowance?, stopped: [String] = [], notRemoved: [String] = [], retry: String? = nil, ready: Bool? = nil, needs: String? = nil) -> String {
         let setup: [(String, OrderedJSON)] = (ready.map { [("ready", OrderedJSON.bool($0))] } ?? []) + (needs.map { [("needs", OrderedJSON.string($0))] } ?? [])
         return OrderedJSON.object([
             ("version", .integer(1)),
@@ -23,6 +23,8 @@ public enum DeviceAccessReport {
                 return .object(fields)
             }),
             ("stopped", .array(stopped.map { .string($0) })),
+            ("notRemoved", .array(notRemoved.map { .string($0) })),
+            ("retry", .optional(retry) { .string($0) }),
         ] + setup).rendered(compact: true)
     }
 

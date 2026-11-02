@@ -453,4 +453,53 @@ struct TreeCacheTests {
         }
         #expect(found == [true, true, false])
     }
+
+    @Test("with the cache off, password fields are still remembered in a private file holding no values, and no tree is kept")
+    func secureRecordWithCacheOff() async throws {
+        let fixture = try TreeCacheFixture()
+        fixture.cacheOn = false
+        let sentinel = "fixture-secret-4821"
+        let frame = FakeUI.frame(16, 270, 361, 44)
+        let secure = FakeUI.tree([FakeUI.node(.secureTextField, id: "password", label: "Password", value: "••", frame: frame)])
+        let shown = FakeUI.node(.textField, id: "password", label: "Password", value: sentinel, frame: frame)
+        let backend = FakeDeviceBackend(trees: [secure])
+
+        for tree in [secure, FakeUI.tree([shown])] {
+            let record = try await commit(fixture, command: "describe-ui", effect: .read) { ledger in
+                ledger.recordTreeRead(tree, on: Self.device, startedAt: fixture.now)
+            }
+            #expect(record == nil)
+        }
+
+        let name = SecureFieldRecord.fileName(platform: Self.device.platform, device: Self.device.rawValue)
+        #expect(try FileManager.default.contentsOfDirectory(atPath: fixture.directory) == [name])
+        let path = (fixture.directory as NSString).appendingPathComponent(name)
+        #expect(Self.mode(path) == 0o600)
+        #expect(!String(decoding: try #require(FileManager.default.contents(atPath: path)), as: UTF8.self).contains(sentinel))
+
+        let secrets = try await fixture.run { await TreeCache.revealedSecrets(for: Self.device, backend: backend) }
+        #expect(try #require(secrets).matches(shown))
+    }
+
+    @Test("with the cache off, no earlier tree or input is read, an input leaves no file, and an old tree file is still swept")
+    func cacheOffKeepsNoTree() async throws {
+        let fixture = try TreeCacheFixture()
+        try fixture.write(fixture.settledRecord(Self.screen()))
+        let backend = FakeDeviceBackend(trees: [Self.screen()])
+        #expect(try await fixture.run { await TreeCache.load(for: Self.device, backend: backend) } != nil)
+
+        fixture.cacheOn = false
+        #expect(try await fixture.run { await TreeCache.load(for: Self.device, backend: backend) } == nil)
+
+        try FileManager.default.setAttributes([.modificationDate: Date().addingTimeInterval(-TreeCacheRecord.lifetime - 1)], ofItemAtPath: fixture.path(for: Self.device))
+        _ = try await commit(fixture, command: "describe-ui", effect: .read) { ledger in
+            ledger.recordTreeRead(Self.screen(), on: Self.device, startedAt: fixture.now)
+        }
+        #expect(!FileManager.default.fileExists(atPath: fixture.path(for: Self.device)))
+
+        _ = try await commit(fixture, command: "tap", effect: .input) { ledger in
+            ledger.recordInput(on: Self.device)
+        }
+        #expect(try FileManager.default.contentsOfDirectory(atPath: fixture.directory).isEmpty)
+    }
 }

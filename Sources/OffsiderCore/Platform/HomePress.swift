@@ -115,7 +115,7 @@ public enum SimulatorHomePress {
         case unreadable(presses: Int)
     }
 
-    /// Presses, then reads until SpringBoard answers; a second press only after a whole `window` with no sign of it. SpringBoard hosts alerts over an app as well as the home screen, so an answer before the press proves nothing. `isHome` is nil for a read that failed.
+    /// Presses, then reads until SpringBoard answers; a second press only after a whole `window` with no sign of it. SpringBoard hosts alerts over an app too, so the caller checks for one before it comes here. `isHome` is nil for a read that failed.
     public static func run(
         isHome: () async -> Bool?,
         press: () async throws -> Void,

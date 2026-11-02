@@ -14,7 +14,8 @@ struct DescribeUI: AsyncParsableCommand {
         a screen-sized view listed off screen that the centre lands in (staleFrame); on Android, context.hidden counts \
         branches the helper left out as not visible to the user, and context.hiddenBranches names up to five of them \
         ({id, label, className, frame}, on-screen and larger first). Both add what the app draws but hides from \
-        accessibility, counted in context.filled; --diff leaves those out.
+        accessibility, counted in context.filled; --diff leaves those out. On an allowed phone it still reads while the allowed app \
+        holds focus beneath a system window owned by android, naming it in context.window (readOnly); input stays refused there.
         """
     )
 
@@ -75,6 +76,7 @@ struct DescribeUI: AsyncParsableCommand {
         let console = Console.current
         let described = try await console.progress("Reading the screen") {
             try await watchdog.guardingSetup(device: deviceOption.id) { try await route.backend.prepare() }
+            if !rawSource { try await watchdog.guardingTreeStart(on: route) }
             return try await read(on: route, watchdog: watchdog)
         }
         console.data(described)
@@ -86,7 +88,9 @@ struct DescribeUI: AsyncParsableCommand {
         try await watchdog.guardingRead(of: route.device, extra: DeviceClaims.current.longestWait) {
             try await Self.requireActive(displayOption, on: route, deviceName: deviceOption.id)
             if rawSource { return try Self.rawSourceText(try await Self.rawCapture(on: route)) + "\n" }
-            return try await AccessibilityFetcher.$warnsWhenEmpty.withValue(true) { try await describe(on: route) }
+            return try await PhoneRead.$overSystemWindow.withValue(true) {
+                try await AccessibilityFetcher.$warnsWhenEmpty.withValue(true) { try await describe(on: route) }
+            }
         }
     }
 

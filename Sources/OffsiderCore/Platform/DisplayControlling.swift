@@ -158,6 +158,8 @@ public protocol DisplayCapturing: DeviceBackend {
 public protocol PostureStateNaming: PostureControlling {
     /// The state the latest `posture(of:)` read committed; nil when the device names none.
     func postureStateName(of id: DeviceID) async -> String?
+    /// Whether the state the latest `posture(of:)` read is an override that stays until a reset; nil when that was not read.
+    func postureIsOverridden(on id: DeviceID) async -> Bool?
 }
 
 /// Optional capability: starting the read `screenInfo` needs before it is needed, so it runs alongside a capture or a tree read.

@@ -51,7 +51,7 @@ struct PromptScreenTests {
             """)
         #expect(TerminalUI.receipt("Device", "iPad", style: Self.ascii) == "[OK] Device    iPad")
         #expect(AllowScreen.header(width: 30, style: Self.ascii) == [
-            String(repeating: "=", count: 30), "  Allow agents to control which phone or tablet", String(repeating: "=", count: 30), "",
+            String(repeating: "=", count: 30), "  Allow agents to control a phone or tablet", String(repeating: "=", count: 30), "",
         ])
         #expect(TerminalUI.warning(AllowScreen.noDevice, width: 72, style: Self.ascii) == ["[!] " + AllowScreen.noDevice])
     }
@@ -59,7 +59,7 @@ struct PromptScreenTests {
     @Test("the banner is the whole intro: double rules as wide as the prose, the emoji and the title")
     func banner() {
         #expect(AllowScreen.header(width: 50, style: Self.unicode) == [
-            String(repeating: "═", count: 50), "  🔐  Allow agents to control which phone or tablet", String(repeating: "═", count: 50), "",
+            String(repeating: "═", count: 50), "  🔐  Allow agents to control a phone or tablet", String(repeating: "═", count: 50), "",
         ])
         let coloured = TerminalUI.banner("Save the unlock code for Test Pixel", mark: .lock, width: 20, style: TerminalStyle(colours: true))
         #expect(coloured[0] == "\u{1B}[36m" + String(repeating: "═", count: 20) + "\u{1B}[0m")
