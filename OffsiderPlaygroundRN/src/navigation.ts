@@ -177,6 +177,12 @@ export const routeInfo = {
     menuTitle: 'Mask Sheet Test',
     subtitle: 'A short sheet over values that stay drawn',
   },
+  'mask-rule-test': {
+    section: 'Real-world RN',
+    title: 'Mask Rule',
+    menuTitle: 'Mask Rule Test',
+    subtitle: 'A password a toggle reveals and text nested in a masked row',
+  },
   'stack-test': {
     section: 'Real-world RN',
     title: 'Mounted Stack',

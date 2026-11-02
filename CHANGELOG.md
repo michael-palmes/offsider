@@ -61,6 +61,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - `notifications`: multi-line text no longer stops at a line ending in `)` and no longer takes in an app's own extras; a mistyped package is `app_not_installed`, not an empty list; on Android 8 to 10 a line at the margin ending in `:` in any app's text no longer drops later records, and the archive after the list stays off the cable; `--wait` runs its whole `--timeout` with a last read at the end, so `--new --timeout 1` can succeed.
 - A stuck capture or writer can no longer make a recording unstoppable: a stop or `--duration` during a hung capture saves the frames so far, and a stop that still cannot finish ends the process within seconds with the staging folder removed. A failed writer ends the recording instead of waiting for ever.
 - `stream-video`: a stop before the first frame ends it at once with exit 1 and nothing streamed, and a stalled reader can no longer hold up a stop.
+- With `OFFSIDER_TREE_CACHE=off`, a password a show-password toggle revealed stays hidden in trees and screenshots and still stops `record-video`. Offsider keeps its private `.secure.json`, which holds where password fields are and no values. The variable still stops the tree files, so `describe-ui --diff`, the tap guard and batch read steps see no earlier tree.
 
 ## [0.15.0] - 2026-11-01
 

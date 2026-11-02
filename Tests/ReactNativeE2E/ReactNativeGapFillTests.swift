@@ -46,7 +46,6 @@ struct ReactNativeGapFillTests {
         try await app.run("type abc --into-id gap-tabs-search-field")
         let typed = try await app.run("describe-ui --summary").stdout
         #expect(typed.contains("value=\"abc\""), "\(typed)")
-        if platform == .android { _ = try await app.offsider("button back") }
 
         let path = NSTemporaryDirectory() + "offsider-gap-\(UUID().uuidString).png"
         defer { try? FileManager.default.removeItem(atPath: path) }

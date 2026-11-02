@@ -13,12 +13,12 @@ struct FrozenDisplayTests {
     }
 
     /// The notices `screenshot` gives for each tree in turn, all over the same picture unless `images` says otherwise.
-    static func warnings(trees: [UITree], images: [Data]? = nil, device: DeviceID = simulator) async throws -> String {
+    static func warnings(trees: [UITree], images: [Data]? = nil, device: DeviceID = simulator, cacheOn: Bool = true) async throws -> String {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("frozen-\(UUID().uuidString)").path
         try FileManager.default.createDirectory(atPath: directory, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
         defer { try? FileManager.default.removeItem(atPath: directory) }
         let same = try ScreenImage.encode(TestImages.make(width: 30, height: 60), as: .png)
-        let environment = TreeCacheEnvironment(directory: { directory }, now: { Date() }, sleep: { _ in })
+        let environment = TreeCacheEnvironment(directory: { directory }, cacheOn: cacheOn, now: { Date() }, sleep: { _ in })
         let capture = ConsoleCapture()
         await TreeCacheEnvironment.$current.withValue(environment) {
             await Console.$current.withValue(capture.console(out: .agent, err: .agent)) {
@@ -28,6 +28,7 @@ struct FrozenDisplayTests {
                 }
             }
         }
+        if !cacheOn { #expect(try FileManager.default.contentsOfDirectory(atPath: directory).isEmpty) }
         return capture.err
     }
 
@@ -52,6 +53,11 @@ struct FrozenDisplayTests {
     func onlySimulators() async throws {
         let emulator = DeviceID(rawValue: "emulator-5554", platform: .android)
         #expect(try await Self.warnings(trees: [Self.tree("Log in"), Self.tree("Home")], device: emulator).isEmpty)
+    }
+
+    @Test("with the tree cache off no digest is kept, so nothing warns")
+    func cacheOff() async throws {
+        #expect(try await Self.warnings(trees: [Self.tree("Log in"), Self.tree("Home")], cacheOn: false).isEmpty)
     }
 
     @Test("the record holds digests only, so no label reaches the disk, and a value change alone is no tree change")
