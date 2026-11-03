@@ -7,12 +7,13 @@ struct Turnstile: AsyncParsableCommand {
         commandName: "turnstile",
         abstract: "Read the state of a Cloudflare Turnstile widget. It never taps the widget.",
         discussion: """
-        Prints one state: checkbox, verifying, passed, challenge, absent or unknown, and exits 0 (6 when several \
+        Prints one state: checkbox, verifying, passed, challenge, failed, absent or unknown, and exits 0 (6 when several \
         checkboxes are on screen). It finds a cf-chl-widget container, or a checkbox labelled Verify you are \
         human. On iOS the web view leaves the checkbox out of the tree, so the command reads points in the \
         short web view. --id limits the search to one element, such as the app's wrapper around the widget. \
-        unknown means an element named for Turnstile is on screen with no widget in it: the widget failed to \
-        run, or runs invisibly.
+        failed means the widget says Verification failed; one set to retry tries again by itself. unknown means an \
+        element named for Turnstile is on screen with no widget Offsider can read: a box nobody has ticked, one that \
+        failed to run, or one that runs invisibly.
 
         Offsider never ticks Turnstile. A checkbox or a challenge is for a person: ask them, and --wait carries \
         on the moment it passes, so nobody has to reply. It only reads, and exits 5 if the time runs out first. \
@@ -151,6 +152,12 @@ struct Turnstile: AsyncParsableCommand {
         case .verifying:
             what = "Cloudflare Turnstile was still checking \(after)."
             ask = PersonAsk.finishTurnstile
+        case .failed:
+            what = "Cloudflare Turnstile still shows Verification failed \(after). Reopen the screen, and check the app's log for a Turnstile error."
+            ask = PersonAsk.finishTurnstile
+        case .unknown:
+            what = "A Turnstile web view is still up with no widget Offsider can read \(after): a box nobody has ticked, or one that failed to run. Check the app's log for a Turnstile error, and doctor for an old WebView."
+            ask = PersonAsk.tickTurnstile
         default:
             what = "The Cloudflare Turnstile checkbox is still on screen \(after), so nobody has ticked it."
             ask = PersonAsk.tickTurnstile
@@ -177,7 +184,7 @@ struct Turnstile: AsyncParsableCommand {
     @MainActor
     private static func read(_ tree: UITree, on route: DeviceRouter.Route, scopeID: String?) async -> (phase: TurnstilePhase, source: TurnstileStatus.Source) {
         let phase = TurnstileWidget.phase(in: tree.roots, viewport: tree.viewport, scopeID: scopeID)
-        if phase == .absent || phase == .checking || phase == .noWidget {
+        if phase == .absent || phase == .checking || phase == .noWidget || phase == .failed {
             let shell = await shellPhase(in: tree, on: route, scopeID: scopeID)
             if shell != .absent { return (shell, .webViewPoints) }
         }

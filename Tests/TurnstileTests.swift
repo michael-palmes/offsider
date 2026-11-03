@@ -152,12 +152,98 @@ struct TurnstileTests {
         #expect(TurnstileStatus(phase: .noWidget, source: .tree)?.jsonLine() == #"{"version":1,"state":"unknown","source":"tree","frame":null}"#)
     }
 
-    @Test("login past a web view with no widget says so, in its text and JSON")
-    func loginReportsUnknown() {
-        let report = LoginReport(app: "com.example.app", key: "default", turnstile: .unknown, submitLabel: "Sign in")
-        #expect(report.textLine().hasSuffix(TurnstileStatus.unknownNote))
-        #expect(report.jsonLine().contains(#""turnstile":"unknown""#))
-        #expect(!LoginReport(app: "com.example.app", key: "default", turnstile: .absent, submitLabel: "Sign in").textLine().contains("Turnstile"))
+    /// Cloudflare's container as Android lists it after a failed run: its words and the Stuck? link, with no checkbox.
+    private func failedWidget(_ words: String) -> UINode {
+        FakeUI.node(.group, id: "cf-chl-widget-a1", frame: FakeUI.frame(24, 369, 365, 66), children: [
+            FakeUI.node(.group, label: "Checking your Browser…", frame: FakeUI.frame(24, 369, 365, 66), children: [
+                FakeUI.node(.text, label: words, frame: FakeUI.frame(68, 386, 120, 17)),
+                FakeUI.node(.button, label: "Troubleshoot", frame: FakeUI.frame(68, 404, 92, 13)),
+                FakeUI.node(.button, label: "Cloudflare, opens in a new tab", frame: FakeUI.frame(306, 381, 74, 31)),
+            ]),
+        ])
+    }
+
+    @Test("a widget that says Verification failed reads failed, not verifying, and its note says what to do", arguments: ["Verification failed", "Verification expired"])
+    func failedIsNotVerifying(words: String) {
+        let viewport = UIFrame(x: 0, y: 0, width: 411, height: 923)
+        #expect(TurnstileWidget.phase(in: [failedWidget(words)], viewport: viewport) == .failed)
+        let status = TurnstileStatus(phase: .failed, source: .tree)
+        #expect(status?.state == .failed)
+        #expect(status?.state.awaitsPerson == true)
+        #expect(status?.textLine().contains("tries again by itself") == true)
+        #expect(status?.jsonLine() == #"{"version":1,"state":"failed","source":"tree","frame":null}"#)
+    }
+
+    /// The widget as a physical iPhone's XCUITest tree gives it: no Cloudflare id, the box a switch, and the logo a link, inside a wrapper named for Turnstile.
+    private func iPhoneWidget(_ content: [UINode]) -> UINode {
+        FakeUI.node(.other, id: "signin-turnstile", frame: FakeUI.frame(16, 390, 398, 80), children: [
+            FakeUI.node(.other, label: "Widget containing a Cloudflare security challenge", frame: FakeUI.frame(24, 398, 382, 66), children: content + [
+                FakeUI.node(.link, label: "Cloudflare, opens in a new tab", frame: FakeUI.frame(320, 410, 74, 28)),
+            ]),
+        ])
+    }
+
+    @Test("on a physical iPhone the box is a switch: unticked reads checkbox, Verifying and Success read as themselves, and nothing else is a box")
+    func iPhoneTreeReads() {
+        let viewport = UIFrame(x: 0, y: 0, width: 430, height: 932)
+        let box = FakeUI.frame(34, 418, 170, 26)
+        let unticked = iPhoneWidget([FakeUI.node(.switch, label: "Verify you are human", value: "0", frame: box)])
+        #expect(TurnstileWidget.phase(in: [unticked], viewport: viewport) == .ready(TurnstileTarget(frame: box)))
+        let verifying = iPhoneWidget([FakeUI.node(.text, label: "Verifying...", frame: box)])
+        #expect(TurnstileWidget.phase(in: [verifying], viewport: viewport) == .checking)
+        let success = iPhoneWidget([FakeUI.node(.text, label: "Success!", frame: box)])
+        #expect(TurnstileWidget.phase(in: [success], viewport: viewport) == .passed)
+        let failed = iPhoneWidget([FakeUI.node(.text, label: "Verification failed", frame: box)])
+        #expect(TurnstileWidget.phase(in: [failed], viewport: viewport) == .failed)
+        let settings = FakeUI.node(.switch, label: "Remember me", value: "0", frame: box)
+        #expect(TurnstileWidget.phase(in: [settings], viewport: viewport) == .absent)
+    }
+
+    @Test("Verifying with a Stuck? link is still verifying, and a checkbox or Success beside failed words wins")
+    func failedWordsOnlyCountAlone() {
+        let viewport = UIFrame(x: 0, y: 0, width: 411, height: 923)
+        #expect(TurnstileWidget.phase(in: [failedWidget("Verifying...")], viewport: viewport) == .checking)
+        var withBox = failedWidget("Verification failed")
+        withBox.children.append(FakeUI.node(.checkbox, label: "Verify you are human", frame: FakeUI.frame(32, 389, 164, 25)))
+        #expect(TurnstileWidget.phase(in: [withBox], viewport: viewport) == .ready(TurnstileTarget(frame: FakeUI.frame(32, 389, 164, 25))))
+        var withSuccess = failedWidget("Verification failed")
+        withSuccess.children.append(FakeUI.node(.text, label: "Success!", frame: FakeUI.frame(68, 386, 60, 17)))
+        #expect(TurnstileWidget.phase(in: [withSuccess], viewport: viewport) == .passed)
+    }
+
+    @Test("an iOS point read of Verification failed reads failed, over the logo beside it")
+    func failedAtAPoint() {
+        let shell = FakeUI.frame(16, 375, 370, 80)
+        #expect(TurnstileWidget.reading(in: [FakeUI.node(.text, label: "Verification failed", frame: shell)]) == .failed)
+        #expect(TurnstileWidget.phase(shell: shell, status: .failed, logo: .logo) == .failed)
+    }
+
+    @Test("a group the app names for Turnstile counts as the web view once its tree empties, so a point read can still find the box")
+    func emptiedWebViewIsAShell() {
+        let viewport = UIFrame(x: 0, y: 0, width: 402, height: 874)
+        let frame = FakeUI.frame(16, 380, 370, 80)
+        let named = FakeUI.node(.group, id: "signin-turnstile", frame: frame, children: [
+            FakeUI.node(.slider, label: "Vertical scroll bar, 1 page", frame: FakeUI.frame(380, 380, 3, 80)),
+        ])
+        #expect(TurnstileWidget.iosShells(in: [named], viewport: viewport) == [frame])
+        let bare = FakeUI.node(.group, id: "signin-turnstile", frame: frame)
+        #expect(TurnstileWidget.iosShells(in: [bare], viewport: viewport) == [frame])
+        let form = FakeUI.node(.group, id: "signin-turnstile", frame: frame, children: [FakeUI.node(.textField, label: "Email", frame: frame)])
+        #expect(TurnstileWidget.iosShells(in: [form], viewport: viewport).isEmpty)
+        let android = FakeUI.node(.group, id: "signin-turnstile", frame: frame, platform: .android)
+        #expect(TurnstileWidget.iosShells(in: [android], viewport: viewport).isEmpty)
+        #expect(TurnstileWidget.iosShells(in: [FakeUI.node(.group, id: "promo-card", frame: frame)], viewport: viewport).isEmpty)
+        let runner = FakeUI.node(.other, id: "signin-turnstile", frame: frame)
+        #expect(TurnstileWidget.iosShells(in: [runner], viewport: viewport) == [frame])
+    }
+
+    @Test("an app's padded wrapper around the web view is one widget, not two")
+    func wrapperAndWebViewAreOneShell() {
+        let viewport = UIFrame(x: 0, y: 0, width: 402, height: 874)
+        let inner = FakeUI.frame(20, 384, 362, 80)
+        let scroll = FakeUI.node(.scrollView, frame: inner, children: [FakeUI.node(.slider, frame: FakeUI.frame(370, 384, 3, 80))])
+        let wrapper = FakeUI.node(.group, id: "signin-turnstile", frame: FakeUI.frame(16, 380, 370, 88), children: [scroll])
+        #expect(TurnstileWidget.iosShells(in: [wrapper], viewport: viewport) == [inner])
     }
 
     @Test("a hidden or off-screen web view, or a screen that never names Turnstile, stays absent")
@@ -336,15 +422,36 @@ struct TurnstileTests {
         #expect(result.clock.now == 4)
     }
 
-    @Test("--wait on a screen with no widget ends, but a reload mid-tick does not", arguments: [TurnstileStatus.State.absent, .unknown])
+    @Test("--wait on a screen with no widget ends, but a reload mid-tick does not")
     @MainActor
-    func waitNeedsTheWidgetGoneTwice(gone: TurnstileStatus.State) async throws {
-        let settled = try await waiting([.checkbox, gone, gone])
-        #expect(settled.status.state == gone)
+    func waitNeedsTheWidgetGoneTwice() async throws {
+        let settled = try await waiting([.checkbox, .absent, .absent])
+        #expect(settled.status.state == .absent)
         #expect(settled.reads == 3)
 
-        let reloaded = try await waiting([.checkbox, gone, .checkbox, .passed])
+        let reloaded = try await waiting([.checkbox, .absent, .checkbox, .passed])
         #expect(reloaded.status.state == .passed)
+    }
+
+    @Test("--wait keeps waiting through unknown and failed until passed", arguments: [TurnstileStatus.State.unknown, .failed])
+    @MainActor
+    func waitReadsThroughOpenStates(state: TurnstileStatus.State) async throws {
+        let result = try await waiting([state, state, state, .checkbox, .passed])
+        #expect(result.status.state == .passed)
+        #expect(result.reads == 5)
+    }
+
+    @Test("--wait still on unknown or failed at its deadline hands back the open step, with an honest message and a tick ask", arguments: [TurnstileStatus.State.unknown, .failed])
+    @MainActor
+    func waitTimesOutOnOpenStates(state: TurnstileStatus.State) async throws {
+        let result = try await waiting([state], seconds: 3)
+        #expect(result.status.state == state)
+        #expect(result.status.state.awaitsPerson)
+        let error = Turnstile.stepStillOpen(state, seconds: 3, app: nil)
+        #expect(error.reason == .conditionNotMet)
+        #expect(error.userFacingDescription.contains("check the app's log") || error.userFacingDescription.contains("Check the app's log"))
+        #expect(!error.userFacingDescription.contains("still on screen"))
+        #expect(error.ask != nil)
     }
 
     @Test("--wait hands back the open step at the deadline, and reads no further")

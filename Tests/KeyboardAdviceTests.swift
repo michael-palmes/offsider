@@ -31,6 +31,41 @@ struct KeyboardAdviceTests {
         #expect(!KeyboardDismiss.covers(field.center, in: tree))
     }
 
+    /// A floating toolbar as the plain read gives it, and as a read of every view does: its invisible views spanning most of the screen.
+    private func toolbar(everyView: Bool) -> UINode {
+        let button = FakeUI.node(.button, label: "More keyboard options", frame: FakeUI.frame(12, 456, 48, 48), platform: .android)
+        let keys = everyView ? [button, FakeUI.node(.group, frame: FakeUI.frame(0, 290, 411, 500), platform: .android)] : [button]
+        return FakeUI.node(.keyboard, label: "Gboard", frame: everyView ? FakeUI.frame(0, 54, 411, 869) : FakeUI.frame(12, 456, 48, 48), platform: .android, children: keys)
+    }
+
+    @Test("filling the tree's gaps keeps the plain read's keyboard, framed by its keys, so a field beside the toolbar stays clear")
+    func gapFillKeepsTheFittedKeyboard() throws {
+        let field = FakeUI.node(.secureTextField, id: "password-field", label: "Password", frame: FakeUI.frame(16, 306, 379, 44), platform: .android, drawingOrder: 1)
+        let hidden = FakeUI.node(.text, label: "Shown under a sheet", frame: FakeUI.frame(16, 600, 200, 30), platform: .android, drawingOrder: 2)
+        let plain = UITree(platform: .android, device: "emulator-5554", roots: [
+            FakeUI.node(.application, frame: FakeUI.frame(0, 0, 411, 923), platform: .android, children: [field]), toolbar(everyView: false),
+        ])
+        let everyView = UITree(platform: .android, device: "emulator-5554", roots: [
+            FakeUI.node(.application, frame: FakeUI.frame(0, 0, 411, 923), platform: .android, children: [field, hidden]), toolbar(everyView: true),
+        ])
+
+        let filled = TreeGapFill.filling(plain, from: everyView)
+
+        #expect(filled.filledFromGaps == 1)
+        let keyboard = try Self.keyboard(in: filled)
+        #expect(keyboard.frame == FakeUI.frame(12, 456, 48, 48))
+        #expect(keyboard.children.map(\.label) == ["More keyboard options"])
+        #expect(!KeyboardDismiss.covers(field.frame!.center, in: filled))
+    }
+
+    @Test("a screen-spanning Android keyboard window with no keys listed covers nothing, and shows no keys")
+    func emptyWindowCoversNothing() {
+        let keyboard = FakeUI.node(.keyboard, label: "Gboard", frame: FakeUI.frame(0, 54, 411, 869), platform: .android)
+        let tree = UITree(platform: .android, device: "emulator-5554", roots: [FakeUI.node(.application, frame: FakeUI.frame(0, 0, 411, 923), platform: .android), keyboard])
+        #expect(!KeyboardDismiss.covers(UIPoint(x: 200, y: 330), in: tree))
+        #expect(!KeyboardDismiss.showsKeys(in: tree))
+    }
+
     @Test("a docked keyboard keeps a frame around its keys at the bottom of the screen")
     func dockedFrame() throws {
         let tree = try Self.golden("text-input@keyboard")

@@ -69,6 +69,8 @@ public struct RunnerClient: Sendable {
 
     public let udid: String
     public let token: String
+    /// An agent may answer a test device's prompts itself, so a refusal gives it the commands rather than a request for a person.
+    public var testDevice = false
     let transport: any RunnerTransport
 
     public init(udid: String, token: String, transport: any RunnerTransport) {
@@ -95,13 +97,8 @@ public struct RunnerClient: Sendable {
         } catch {
             return .unreachable
         }
-        do {
-            return .answered(try parsePing(try Self.unwrap(response, path: "/ping", udid: udid)))
-        } catch let error as IOSDeviceError where error.kind == .systemPromptInFront {
-            return .busy
-        } catch {
-            return .unreachable
-        }
+        guard let ping = try? parsePing(try Self.unwrap(response, path: "/ping", udid: udid)) else { return .unreachable }
+        return .answered(ping)
     }
 
     func parsePing(_ payload: Any?) throws -> RunnerPing {
@@ -186,13 +183,15 @@ public struct RunnerClient: Sendable {
             response = try await Task.detached {
                 try transport.exchange(method: method, path: path, token: token, body: payload, timeout: timeout)
             }.value
+        } catch UsbmuxError.timedOut where testDevice {
+            throw IOSDeviceError.runnerTimedOutOnTestDevice(udid)
         } catch let error as UsbmuxError {
             throw transport.error(for: error, udid: udid)
         }
-        return try Self.unwrap(response, path: path, udid: udid)
+        return try Self.unwrap(response, path: path, udid: udid, testDevice: testDevice)
     }
 
-    static func unwrap(_ response: UsbmuxHTTPResponse, path: String, udid: String) throws -> Any? {
+    static func unwrap(_ response: UsbmuxHTTPResponse, path: String, udid: String, testDevice: Bool = false) throws -> Any? {
         if response.status == 401 {
             throw IOSDeviceError(.runnerUnavailable, "The runner on \(udid) refused Offsider's session token, so nothing was sent. Run `offsider runner stop --device \(udid)` and retry.")
         }
@@ -209,9 +208,9 @@ public struct RunnerClient: Sendable {
         case "secure_field":
             throw IOSDeviceError(.secureFieldRefused, "The focused field on \(udid) is a secure field, and Offsider does not replace its text. Clear it in the app, or type without --replace.")
         case "system_prompt":
-            throw IOSDeviceError.systemPromptInFront(message, udid: udid)
+            throw IOSDeviceError.systemPromptInFront(message, udid: udid, testDevice: testDevice)
         case "queued_too_long":
-            throw IOSDeviceError(.runnerUnavailable, "The runner on \(udid) was busy for too long, so no input was sent. Retry; if it persists, run `offsider doctor --device \(udid)`.")
+            throw IOSDeviceError(.runnerUnavailable, "The runner on \(udid) was busy for too long, so nothing was read or sent. Retry; if it persists, run `offsider doctor --device \(udid)`.")
         case "screen_locked":
             throw IOSDeviceError.screenLocked(udid)
         case "app_not_in_front":
