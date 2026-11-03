@@ -196,7 +196,7 @@ Android (--android):
   OFFSIDER_ANDROID_E2E_AVD  The only AVD the suites may drive: Offsider_E2E (default), Offsider_E2E_Fold or Offsider_E2E_API28 (Android 9)
   OFFSIDER_ANDROID_LANDSCAPE_E2E=1  Also run the landscape suite on Settings
   OFFSIDER_ANDROID_BOOT_E2E=1       Also stop and cold-boot the E2E AVD
-  OFFSIDER_ANDROID_DEBUG_APK        The Debug APK for --rn-debug (default: built by scripts/rn-playground.sh build-android --debug)
+  OFFSIDER_ANDROID_DEBUG_APK        The Debug APK for --rn-debug and the app preference suite (default: built by scripts/rn-playground.sh build-android --debug)
 
 Foldables (--foldable, --android-fold):
   OFFSIDER_FOLDABLE_SIMULATOR_NAME  The iPhone Duo simulator for --foldable (default: Offsider Duo); SIMULATOR_UDID overrides it
@@ -232,7 +232,7 @@ Examples:
   $0 --simulator SwipeTests   # Build everything and run only the swipe tests
   $0 -t SwipeTests            # Skip building, run only the swipe tests
   $0 --android                # Boot Offsider_E2E if needed and run the Android suites
-  $0 --rn-ios --rn-debug      # Debug build with Metro on 8742, run ReactNativeDebugSmokeTests
+  $0 --rn-ios --rn-debug      # Debug build with Metro on 8742, run the debug smoke and login suites
   $0 --android ReactNativeRowsTests   # One React Native suite on the Android emulator
   OFFSIDER_IOS_DEVICE=<udid> OFFSIDER_IOS_TEAM_ID=<team> $0 --ios-device   # Name the device and the team
 EOF
@@ -336,6 +336,7 @@ ANDROID_SUITES=(
     "AndroidVerifyTests"
     "AndroidDeviceStateE2ETests"
     "AndroidNotificationsE2ETests"
+    "AndroidAppManagementE2ETests"
     "AndroidFallbackTests"
     "AndroidJWTTests"
     "AndroidBootTests"
@@ -356,6 +357,7 @@ RN_SUITES=(
     "ReactNativeMaskRuleTests"
     "ReactNativeLiveTests"
     "ReactNativeStackCoverTests"
+    "ReactNativePageOverTests"
     "ReactNativeStickyFooterTests"
     "ReactNativeAppCommandTests"
     "ReactNativeOnScreenTests"
@@ -367,6 +369,7 @@ RN_SUITES=(
 )
 RN_DEBUG_SUITES=(
     "ReactNativeDebugSmokeTests"
+    "ReactNativeDebugLoginTests"
 )
 
 cleanup_test_runner() {
@@ -499,7 +502,7 @@ if [[ "$RN_DEBUG" == true ]]; then
         die "--rn-debug needs --rn-ios or --android."
     fi
     if [[ -n "$TEST_FILTER" ]]; then
-        die "--rn-debug runs only ReactNativeDebugSmokeTests and takes no test filter."
+        die "--rn-debug runs only its debug suites and takes no test filter."
     fi
 fi
 
@@ -861,6 +864,11 @@ run_android_tests() {
 
     resolve_android_apk
     export OFFSIDER_ANDROID_APK
+    # AndroidAppManagementE2ETests plants a secret in a debuggable build, so a value leak cannot pass by skipping.
+    if [[ -z "$TEST_FILTER" || "$TEST_FILTER" == "AndroidAppManagementE2ETests" ]]; then
+        resolve_rn_artefact OFFSIDER_ANDROID_DEBUG_APK android --debug
+        export OFFSIDER_ANDROID_DEBUG_APK
+    fi
     export OFFSIDER_RN_DEBUG_E2E=0
     log "Environment: OFFSIDER_ANDROID_DEVICE=$OFFSIDER_ANDROID_DEVICE, OFFSIDER_ANDROID_E2E_AVD=$ANDROID_E2E_AVD, OFFSIDER_ANDROID_APK=$OFFSIDER_ANDROID_APK"
 

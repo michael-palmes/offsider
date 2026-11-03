@@ -51,7 +51,7 @@ final class EvidenceRecorder {
     }
 
     /// The commands that take a capture, each looking for a run only when it does; video only reads its masks, to refuse them.
-    static let recordingCommands = ["screenshot", "logs", "batch", "record-video", "stream-video", "swipe", "drag"]
+    static let recordingCommands = ["screenshot", "logs", "batch", "record-video", "stream-video", "swipe", "drag", "app prefs"]
 
     static func records(_ command: String) -> Bool {
         recordingCommands.contains(command) || command.hasPrefix("run ")

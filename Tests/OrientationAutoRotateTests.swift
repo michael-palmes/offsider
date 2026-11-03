@@ -21,6 +21,8 @@ final class OrientationAutoRotateTests {
         var ignoredAccelerometerPuts = 0
         /// The app in front locks portrait, so a turn writes the settings but the screen stays put.
         var appLocksPortrait = false
+        /// The app in front locks landscape, so a turn to portrait writes the settings but the screen stays put.
+        var appLocksLandscape = false
         private(set) var screen: DeviceOrientation
         private(set) var turns = 0
         private(set) var writes: [Int] = []
@@ -57,6 +59,9 @@ final class OrientationAutoRotateTests {
                     self.accelerometer = 0
                     self.userRotation = target.androidRotation
                     if self.appLocksPortrait, target != .portrait {
+                        throw CLIError(errorDescription: "The phone did not turn", reason: .stateNotReached)
+                    }
+                    if self.appLocksLandscape, target == .portrait {
                         throw CLIError(errorDescription: "The phone did not turn", reason: .stateNotReached)
                     }
                     self.screen = target
@@ -98,6 +103,63 @@ final class OrientationAutoRotateTests {
         #expect(report.restored)
         #expect(report.now?.userRotation == 0)
         #expect(store.read(Self.serial) == nil)
+    }
+
+    @Test("a portrait the app in front refuses still puts auto-rotate back and forgets the record, then fails", arguments: [true, false])
+    func refusedPortraitRestores(hadRecord: Bool) async throws {
+        let phone = Phone(accelerometer: 1, userRotation: 0, screen: hadRecord ? .portrait : .landscapeLeft)
+        if hadRecord { _ = try await phone.turn(to: .landscapeLeft, in: store) }
+        #expect(phone.accelerometer == (hadRecord ? 0 : 1))
+        phone.appLocksLandscape = true
+
+        let error = await #expect(throws: CLIError.self) { try await phone.turn(to: .portrait, in: store) }
+
+        #expect(error?.reason == .stateNotReached)
+        #expect(phone.accelerometer == 1, "auto-rotate is back on, not left off by the command meant to restore it")
+        #expect(store.read(Self.serial) == nil)
+    }
+
+    @Test("Android's portrait timeout names the next step, never itself as the way to restore auto-rotate")
+    func portraitTimeoutMessage() {
+        let message = OrientationCommand.timeoutMessage(target: .portrait, timeout: 5, platform: .android, device: "P", physical: true)
+        #expect(message.contains("Bring an app that allows portrait to the front"))
+        #expect(!message.contains("puts auto-rotate back"))
+        let landscape = OrientationCommand.timeoutMessage(target: .landscapeLeft, timeout: 5, platform: .android, device: "P", physical: true)
+        #expect(landscape.contains("`offsider orientation portrait --device P` puts auto-rotate back"))
+    }
+
+    /// A screen the sensor turns once auto-rotate is on.
+    @MainActor
+    private final class SensorTurner: FakeDeviceBackend, OrientationControlling {
+        var reads: [DeviceOrientation] = []
+        func orientation(of id: DeviceID) async throws -> DeviceOrientation? { reads.isEmpty ? .portrait : reads.removeFirst() }
+        func requestOrientation(_ orientation: DeviceOrientation, on id: DeviceID) async throws {}
+    }
+
+    private func settled(_ reads: [DeviceOrientation], on device: DeviceID, rotation: RotationReport) async -> DeviceOrientation {
+        let turner = SensorTurner(platform: .android, trees: [])
+        turner.reads = reads
+        var clock: TimeInterval = 0
+        return await OrientationCommand.settled(.portrait, rotation: rotation, on: device, turner: turner, sleep: { clock += $0 / .seconds(1) }, now: { clock })
+    }
+
+    private static let autoRotateOn = RotationReport(before: nil, now: AutoRotateState(accelerometerRotation: 1, userRotation: 0, bootID: nil), restored: true)
+    private static let usbPhone = DeviceID(rawValue: "R58M123ABC", platform: .android)
+
+    @Test("a phone the sensor turns away after auto-rotate comes back on reports what it shows, with a warning")
+    func sensorTurnsAway() async {
+        let shown = await settled([.portrait, .landscapeLeft], on: Self.usbPhone, rotation: Self.autoRotateOn)
+        #expect(shown == .landscapeLeft)
+        #expect(OrientationCommand.sensorNotice(shown: shown, target: .portrait).count == 1)
+    }
+
+    @Test("a phone that stays put, an emulator, and auto-rotate left off all report the target with no warning")
+    func sensorStaysPut() async {
+        #expect(await settled([], on: Self.usbPhone, rotation: Self.autoRotateOn) == .portrait)
+        #expect(await settled([.landscapeLeft], on: DeviceID(rawValue: "emulator-5554", platform: .android), rotation: Self.autoRotateOn) == .portrait)
+        let off = RotationReport(before: nil, now: AutoRotateState(accelerometerRotation: 0, userRotation: 0, bootID: nil), restored: true)
+        #expect(await settled([.landscapeLeft], on: Self.usbPhone, rotation: off) == .portrait)
+        #expect(OrientationCommand.sensorNotice(shown: .portrait, target: .portrait).isEmpty)
     }
 
     @Test("auto-rotate that reads back unchanged after one put is put again")

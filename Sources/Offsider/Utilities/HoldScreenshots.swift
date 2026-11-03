@@ -55,8 +55,18 @@ struct HoldScreenshotOptions: ParsableArguments {
         return FileManager.default.fileExists(atPath: (path as NSString).expandingTildeInPath, isDirectory: &isDirectory) && isDirectory.boolValue
     }
 
-    /// Before anything is sent: a person confirms unmasked password fields for an agent, and a folder ending in `/` is made.
-    func prepare(command: String) async throws {
+    /// A physical iPhone or iPad takes a press and its lift only in one command, so a capture between them can never work.
+    static func physicalDeviceRefusal(device: String) -> CLIError? {
+        guard case .iosDevice = DeviceIDClassifier.classify(device.trimmingCharacters(in: .whitespacesAndNewlines)) else { return nil }
+        return CLIError(
+            errorDescription: "--screenshot-at needs a finger held down between requests, which a physical iPhone or iPad cannot do. Use an iOS simulator, or `--hold-end <ms>` and a `screenshot` after the lift.",
+            reason: .notSupported
+        )
+    }
+
+    /// Before anything is sent: refuses a device that cannot hold, a person confirms unmasked password fields for an agent, and a folder ending in `/` is made.
+    func prepare(command: String, device: String) async throws {
+        if let refusal = Self.physicalDeviceRefusal(device: device) { throw refusal }
         if !Screenshot.masksSecure(flag: nil) { try await UnmaskedConsent.confirm(command: command) }
         if let output, output.hasSuffix("/") {
             try FileManager.default.createDirectory(atPath: (output as NSString).expandingTildeInPath, withIntermediateDirectories: true)
@@ -64,8 +74,9 @@ struct HoldScreenshotOptions: ParsableArguments {
     }
 
     /// Sends `press`, takes each screenshot while the finger rests at its end, then sends `lift`; each screenshot and the hold go into `details`.
+    /// A signal or a read that never returns ends the process with the lift sent first, where the session still answers.
     @MainActor
-    func perform(press: InputEvent, lift: InputEvent, holdEnd: Int, on route: DeviceRouter.Route, details: InputDetails) async throws {
+    func perform(press: InputEvent, lift: InputEvent, holdEnd: Int, on route: DeviceRouter.Route, details: InputDetails, watchdog: DeviceWatchdog = DeviceWatchdog()) async throws {
         let shots = try ordered.indices.map { index in
             try Screenshot.parse(["--device", route.device.rawValue] + (outputPath(for: index).map { ["--output", $0] } ?? []))
         }
@@ -75,15 +86,29 @@ struct HoldScreenshotOptions: ParsableArguments {
         if (standing.map(masks.union) ?? masks).needsTree, let reader = route.backend as? any MaskTreeReading {
             try await reader.prepareMaskTree(for: route.device)
         }
+        try await (route.backend as? any HoldPreparing)?.prepareHold(for: route.device)
         let session = try await route.backend.openTrackedSession(for: route.device)
         let capture = HoldCapture(offsets: ordered, holdEnd: holdEnd)
-        do {
-            details.holdMs = try await capture.perform(press: press, lift: lift, on: session) { index in
+        let abandon = HoldAbandon(session: session, lift: lift)
+        watchdog.beforeFiring { abandon.liftWaiting(seconds: HoldAbandon.watchdogWait) }
+        let work = Task { @MainActor in
+            try await capture.perform(press: press, lift: lift, on: session) { index in
                 try await Console.current.progress("Capturing the screen") {
-                    try await shots[index].take(try shots[index].request(), on: route, masks: masks)
+                    try await watchdog.guardingRead(of: route.device, extra: DeviceClaims.current.longestWait) {
+                        try await shots[index].take(try shots[index].request(), on: route, masks: masks)
+                    }
                 }
             } taken: { details.screenshots.append($0) }
+        }
+        let interrupt = InterruptedExit {
+            work.cancel()
+            await abandon.lift()
+        }
+        defer { interrupt.invalidate() }
+        do {
+            details.holdMs = try await work.value
         } catch {
+            await interrupt.holdIfFired()
             await session.close()
             throw error
         }
@@ -101,6 +126,37 @@ struct HoldScreenshotOptions: ParsableArguments {
 
     private static func seconds(_ milliseconds: Int) -> String {
         (Double(milliseconds) / 1000).formatted(.number.precision(.fractionLength(0...1))) + " s"
+    }
+}
+
+/// The lift for a command ending with the finger down, sent once from a fresh task, as a cancelled one may fail the call.
+@MainActor
+final class HoldAbandon {
+    /// How long a hung device gets to take the lift before the watchdog ends the process; a warm helper's broker lifts after that.
+    nonisolated static let watchdogWait: TimeInterval = 2
+    private let session: any InputSession
+    private let event: InputEvent
+    private var sent = false
+
+    init(session: any InputSession, lift: InputEvent) {
+        self.session = session
+        event = lift
+    }
+
+    func lift() async {
+        guard !sent else { return }
+        sent = true
+        try? await session.perform(event)
+    }
+
+    /// For the watchdog's queue, which must not end the process before the lift has had its chance.
+    nonisolated func liftWaiting(seconds: TimeInterval) {
+        let done = DispatchSemaphore(value: 0)
+        Task { @MainActor in
+            await self.lift()
+            done.signal()
+        }
+        _ = done.wait(timeout: .now() + seconds)
     }
 }
 

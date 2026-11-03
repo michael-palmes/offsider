@@ -24,8 +24,10 @@ final class FakeRunnerTransport: RunnerTransport, @unchecked Sendable {
     var foregroundApp: String?
     /// The title `/foreground` reports for a system alert over the app.
     var foregroundPrompt: String?
-    /// The title every route answers with while a stuck app holds the runner's main thread.
-    var stuckPrompt: String?
+    /// The title a route that names an app is refused with, as a system prompt is over it; a read with no app still answers.
+    var promptOverApp: String?
+    /// The route that times out, as one behind a stuck read does.
+    var timesOut: String?
     /// What `/screen` reports; `/lock` darkens and locks, `/home` lights a dark screen, then clears the lock screen unless a passcode holds it.
     var screenOn = true
     var screenLocked = false
@@ -47,7 +49,10 @@ final class FakeRunnerTransport: RunnerTransport, @unchecked Sendable {
         if pingTimesOut, path == "/ping" { throw UsbmuxError.timedOut }
         let object = body.flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: AnyHashable] } ?? [:]
         lock.withLock { recorded.append(RunnerCall(method: method, path: path, token: token, body: object)) }
-        if let stuckPrompt { return Self.response(409, ["ok": false, "error": ["code": "system_prompt", "message": stuckPrompt]]) }
+        if timesOut == path { throw UsbmuxError.timedOut }
+        if let promptOverApp, object["app"] != nil, path != "/foreground" {
+            return Self.response(409, ["ok": false, "error": ["code": "system_prompt", "message": promptOverApp]])
+        }
         if let failure, failure.path == path {
             return Self.response(failure.status, ["ok": false, "error": ["code": failure.code, "message": "scripted"]])
         }

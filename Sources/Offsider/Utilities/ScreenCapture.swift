@@ -138,7 +138,9 @@ enum ScreenCapture {
     nonisolated static func unproven(_ tree: UITree) -> String? {
         if tree.sourceTruncated { return "truncated" }
         guard tree.platform == .android else { return nil }
-        guard tree.windows != nil else { return "no-windows" }
+        guard let windows = tree.windows else { return "no-windows" }
+        // Android lists no window beneath a touch-modal system window, so the app's password fields can show with no tree to find them.
+        if tree.systemWindow != nil, !windows.contains(where: { $0.kind == "application" }) { return "modal" }
         let context = UITreeContext(tree: tree)
         guard let window = context.window, window.kind == .modal, !window.empty, context.logBox?.inspector != true else { return nil }
         return "modal"

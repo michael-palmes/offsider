@@ -1,0 +1,6 @@
+  mCurrentFocus=Window{a1b2c3 u0 Keep this for later?}
+  mFocusedApp=ActivityRecord{55 u0 com.mpalmes.offsider.playground.rn/.MainActivity t12}
+  Window #0 Window{d4e5f6 u0 StatusBar}:
+    mOwnerUid=10180 showForAllUsers=true package=com.android.systemui appop=NONE
+  Window #1 Window{a1b2c3 u0 Keep this for later?}:
+    mOwnerUid=1000 showForAllUsers=true package=android appop=NONE

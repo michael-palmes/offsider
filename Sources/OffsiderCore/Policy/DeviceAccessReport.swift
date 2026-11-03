@@ -2,7 +2,7 @@ import Foundation
 
 /// `devices status` text and JSON, version 1.
 public enum DeviceAccessReport {
-    public static func changeJSON(action: String, platform: DevicePlatform, key: String, allowance: DeviceAllowance?, stopped: [String] = []) -> String {
+    public static func changeJSON(action: String, platform: DevicePlatform, key: String, allowance: DeviceAllowance?, stopped: [String] = [], notRemoved: [String] = [], retry: String? = nil) -> String {
         OrderedJSON.object([
             ("version", .integer(1)),
             ("action", .string(action)),
@@ -21,6 +21,8 @@ public enum DeviceAccessReport {
                 return .object(fields)
             }),
             ("stopped", .array(stopped.map { .string($0) })),
+            ("notRemoved", .array(notRemoved.map { .string($0) })),
+            ("retry", .optional(retry) { .string($0) }),
         ]).rendered(compact: true)
     }
 

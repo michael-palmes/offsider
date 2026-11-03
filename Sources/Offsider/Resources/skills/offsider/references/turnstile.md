@@ -4,7 +4,7 @@ A Turnstile checkbox or challenge is for a person. Offsider never taps it, and n
 
 ## Read the state
 
-`offsider turnstile --device <DEVICE_ID>` reads the widget once and sends nothing. It prints `checkbox`, `verifying`, `passed`, `challenge`, `absent` or `unknown` and exits 0, or 6 when several checkboxes are on screen (pass `--id` for the app's wrapper). `--json` prints `{version, state, source, frame}`; `source` is `web-view-points` when iOS left the widget out of the tree and the state came from points in the web view.
+`offsider turnstile --device <DEVICE_ID>` reads the widget once and sends nothing. It prints `checkbox`, `verifying`, `passed`, `challenge`, `failed`, `absent` or `unknown` and exits 0, or 6 when several checkboxes are on screen (pass `--id` for the app's wrapper). `--json` prints `{version, state, source, frame}`; `source` is `web-view-points` when iOS left the widget out of the tree and the state came from points in the web view.
 
 ## Ask the user
 
@@ -18,7 +18,8 @@ A Turnstile checkbox or challenge is for a person. Offsider never taps it, and n
 
 ## Other states
 
-- `unknown`: an element named for Turnstile is on screen with no widget in it, so the widget failed to run or runs invisibly. Do not read it as absent: check `offsider logs --rn --grep turnstile` and `doctor`'s `android-device.webview`. `login` goes on past it and reports `turnstile: unknown`, and `--wait` stops on it.
+- `unknown`: an element named for Turnstile is on screen with no widget Offsider can read: a box nobody has ticked, one that failed to run, or one that runs invisibly. Never read it as absent. Screenshot the widget: a box showing is a person's step, as for `checkbox`; with none, check `offsider logs --rn --grep turnstile` and `doctor`'s `android-device.webview`. `login` types nothing on it and asks for the tick, and `--wait` keeps waiting through it.
+- `failed`: the widget says Verification failed. One set to retry tries again by itself within about 10 s, so `--wait` and `login` keep reading; still there at the end, reopen the screen and check the app's log.
 - `verifying`: wait, then read again, or use `--wait`. Before submit, `login` reads it again until `--timeout`, sending nothing, then asks to finish it.
 - On a phone, another app in front or the lock screen counts as not yet done for `--wait`, and nothing is read from it. Still there when the time runs out, it exits with that failure (`app_not_allowed` or `device_locked`). An app the phone never allows stops the wait at once. Several checkboxes keep it waiting too, and exit 6 if still there.
 
@@ -26,4 +27,4 @@ Offsider never mints, reads or submits a token and never calls Cloudflare.
 
 ## Unattended tests
 
-A test that must pass without a person uses a build whose sitekey and server secret are Cloudflare's test pair, which always passes (sitekey `1x00000000000000000000AA`, or `1x00000000000000000000BB` invisible; `3x00000000000000000000FF` forces a challenge). The project's `OFFSIDER.md` names that build; without one, ask the user.
+A test that must pass without a person uses a build whose sitekey and server secret are Cloudflare's test pair, which always passes visibly (sitekey `1x00000000000000000000AA`; `3x00000000000000000000FF` forces a challenge). The invisible pair (`1x00000000000000000000BB`) reads `unknown`, so `login` stops on it. The project's `OFFSIDER.md` names that build; without one, ask the user.

@@ -1,0 +1,2 @@
+    host=HostId{user:0, app:10174, hostId:1024, pkg:com.example.launcher}
+    provider=ProviderId{user:0, app:10213, cmp:ComponentInfo{com.mpalmes.offsider.playground.rn/com.mpalmes.offsider.playground.rn.StatusWidget}}

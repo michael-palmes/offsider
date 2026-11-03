@@ -77,7 +77,7 @@ struct LoginCommand: AsyncParsableCommand {
         let report: LoginReport
         do {
             report = try await console.progress(Self.signingInLabel) {
-                try await watchdog.guarding(setupThen: timeout * 2 + 30, device: deviceOption.id) { ready in
+                try await watchdog.guarding(setupThen: timeout * 2 + 30, of: route.device) { ready in
                     try await Self.perform(
                         on: route, profile: profile, key: key, where: filter, timeout: timeout, logger: logger, tracker: .live(),
                         onPrepared: ready,
@@ -216,7 +216,8 @@ struct LoginCommand: AsyncParsableCommand {
                 return try? await tester.hitTest(at: point, on: route.device, appPIDs: [])
             },
             noteDevice: { await route.noteNameForAsk() },
-            turnstileWatch: Turnstile.waitCommand(app: route.allowance == nil ? nil : app)
+            turnstileWatch: Turnstile.waitCommand(app: route.allowance == nil ? nil : app),
+            device: route.device.rawValue
         )
         let deviceID = route.device.rawValue
         var report: LoginReport

@@ -63,12 +63,21 @@ public struct SystemPrompt: Equatable, Sendable {
 
     /// An alert in a tree another process shows in the app's place, such as SpringBoard's permission request: the topmost titled box smaller than the screen that holds buttons.
     public static func alert(in tree: UITree) -> (title: String, buttons: [String])? {
+        alertBox(in: tree).map { $0.alert }
+    }
+
+    /// True when that box covers `point`, as an alert covers the screen's middle and a labelled dock does not.
+    public static func alert(in tree: UITree, covers point: UIPoint) -> Bool {
+        alertBox(in: tree)?.frame.contains(point) == true
+    }
+
+    private static func alertBox(in tree: UITree) -> (alert: (title: String, buttons: [String]), frame: UIFrame)? {
         guard tree.platform == .ios, let viewport = tree.viewport else { return nil }
-        return tree.roots.flatMap { $0.flattened() }.reversed().lazy.compactMap { node -> (title: String, buttons: [String])? in
+        return tree.roots.flatMap { $0.flattened() }.reversed().lazy.compactMap { node -> (alert: (title: String, buttons: [String]), frame: UIFrame)? in
             guard node.role != .application, node.role != .button, let title = node.normalizedLabel, let frame = node.frame,
                   frame.width < viewport.width - 1 || frame.height < viewport.height - 1 else { return nil }
             let buttons = node.flattened().filter { $0.role == .button }.compactMap(\.normalizedLabel)
-            return buttons.isEmpty ? nil : (title, buttons)
+            return buttons.isEmpty ? nil : ((title, buttons), frame)
         }.first
     }
 

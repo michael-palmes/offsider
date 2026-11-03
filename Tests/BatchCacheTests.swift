@@ -36,6 +36,19 @@ struct BatchCacheTests {
         #expect(backend.session.calls == [.perform(.tapAt(x: 195, y: 122)), .perform(.tapAt(x: 195, y: 322))])
     }
 
+    @Test("a tree read under a system window is never served from the cache, so a later step cannot read it unchecked")
+    func systemWindowNotCached() async throws {
+        var covered = FakeUI.tree([Self.button("A", y: 100)])
+        covered.systemWindow = UITreeContext.Window(title: "Sheet", kind: .system, package: "android", readOnly: true)
+        let backend = FakeDeviceBackend(trees: [covered])
+        try await Self.run(["describe-ui", "describe-ui"], on: backend)
+        #expect(backend.treeReads == 2)
+
+        let plain = FakeDeviceBackend(trees: [FakeUI.tree([Self.button("A", y: 100)])])
+        try await Self.run(["describe-ui", "describe-ui"], on: plain)
+        #expect(plain.treeReads == 1)
+    }
+
     @Test("perStep reads the tree once per selector step")
     func perStepReadsOncePerStep() async throws {
         let backend = FakeDeviceBackend(trees: [FakeUI.tree([Self.button("A", y: 100)])], advanceTreeOnInput: true)

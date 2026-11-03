@@ -99,11 +99,15 @@ struct PostureCommand: AsyncParsableCommand {
         DevicePersonView.emit(result.text(json: json), json: json, person: person, notices: Self.notices(result, set: target != nil, on: route.device), console: console)
     }
 
-    /// After folding an allowed phone, how a person takes the override off; it outlives the command.
+    /// Reads that disagree; and after folding an allowed phone, how a person takes the override off; it outlives the command, unless this posture was the hinge's own and left none.
     static func notices(_ result: Result, set: Bool, on device: DeviceID) -> [Notice] {
-        guard set, device.isPhysicalAndroidDevice, result.state != nil, result.previous != result.current else { return [] }
+        var notices: [Notice] = []
+        if let reads = result.reads, reads.disagree {
+            notices.append(.warning("\(reads.sentence) Read again with `offsider posture --device \(device.rawValue)` before relying on either."))
+        }
+        guard set, device.isPhysicalAndroidDevice, result.overrideLeft == true, result.previous != result.current else { return notices }
         let undo = "offsider posture reset --device \(device.rawValue)"
-        return [DevicePersonView.lasting("The fold stays until reset", undo: undo, label: "Reset", agent: "Note: the posture stays \(result.current.rawValue) on \(device.rawValue) until `\(undo)` or a reboot; `session stop` also resets it.")]
+        return notices + [DevicePersonView.lasting("The fold stays until reset", undo: undo, label: "Reset", agent: "Note: the posture stays \(result.current.rawValue) on \(device.rawValue) until `\(undo)` or a reboot; `session stop` also resets it.")]
     }
 
     /// Drops an Android device-state override, then reads the posture the hinge gives.
@@ -135,10 +139,13 @@ struct PostureCommand: AsyncParsableCommand {
         let screen: UIScreenInfo?
         let platform: DevicePlatform
         let state: String?
+        /// Whether the device reads an override that stays until a reset.
+        var overrideLeft: Bool? = nil
+        var reads: PostureReads?
 
         func text(json: Bool) -> String {
             json
-                ? DisplayReport.postureJSON(current, previous: previous, screen: screen, platform: platform, state: state)
+                ? DisplayReport.postureJSON(current, previous: previous, screen: screen, platform: platform, state: state, reads: reads)
                 : DisplayReport.postureLine(current, screen: screen, platform: platform, state: state)
         }
     }
@@ -198,7 +205,8 @@ struct PostureCommand: AsyncParsableCommand {
                 now: now
             )
             guard outcome == .reached else {
-                throw CLIError(errorDescription: timeoutMessage(target: target, timeout: timeout, platform: device.platform, device: deviceName), reason: .stateNotReached)
+                let reads = await (folder as? any PostureReading)?.postureReads(of: device, fresh: true)
+                throw CLIError(errorDescription: timeoutMessage(target: target, timeout: timeout, platform: device.platform, device: deviceName, reads: reads), reason: .stateNotReached)
             }
             current = target
             // The device state commits before the panel swap, so read the screen afresh until it follows it.
@@ -211,8 +219,10 @@ struct PostureCommand: AsyncParsableCommand {
             }
         }
         let screen = try? await backend.screenInfo(for: device)
-        let state = await (folder as? any PostureStateNaming)?.postureStateName(of: device)
-        return Result(current: current, previous: target == nil && angle == nil ? nil : previous, screen: screen, platform: device.platform, state: state)
+        let named = folder as? any PostureStateNaming
+        let state = await named?.postureStateName(of: device)
+        let reads = await (folder as? any PostureReading)?.postureReads(of: device, fresh: false)
+        return Result(current: current, previous: target == nil && angle == nil ? nil : previous, screen: screen, platform: device.platform, state: state, overrideLeft: await named?.postureIsOverridden(on: device), reads: reads)
     }
 
     /// Waits for the hinge to read `angle`, then for the posture to settle: which panel shows depends on the way the hinge moved, not only where it stops. A hinge already there with its panel showing is not moved.
@@ -251,7 +261,8 @@ struct PostureCommand: AsyncParsableCommand {
             guard try await readAngle() != nil else {
                 throw CLIError(errorDescription: "The hinge moved, but Offsider could not read its angle to confirm \(angle) degrees. \(check)", reason: .postureFailed)
             }
-            throw CLIError(errorDescription: "The hinge did not reach \(angle) degrees within \(DeviceSettingsReport.number(timeout)) s. \(check)", reason: .postureFailed)
+            let reads = await (folder as? any PostureReading)?.postureReads(of: device, fresh: true)
+            throw CLIError(errorDescription: "The hinge did not reach \(angle) degrees within \(DeviceSettingsReport.number(timeout)) s. \(reads.map { $0.sentence + " " } ?? "")\(check)", reason: .postureFailed)
         }
         var current = try await folder.posture(of: device) ?? previous
         let settleDeadline = now() + min(timeout, 5)
@@ -272,8 +283,9 @@ struct PostureCommand: AsyncParsableCommand {
         return before.display?.id != after.display?.id || before.width != after.width || before.height != after.height
     }
 
-    static func timeoutMessage(target: Posture, timeout: TimeInterval, platform: DevicePlatform, device: String) -> String {
+    static func timeoutMessage(target: Posture, timeout: TimeInterval, platform: DevicePlatform, device: String, reads: PostureReads? = nil) -> String {
         let noun = platform == .ios ? "simulator" : DeviceID(rawValue: device, platform: .android).isPhysicalAndroidDevice ? "phone" : "emulator"
-        return "The \(noun) did not report \(target.rawValue) within \(DeviceSettingsReport.number(timeout)) s. Check with `offsider posture --device \(device)`."
+        let readings = reads.map { $0.sentence.isEmpty ? "" : $0.sentence + " " } ?? ""
+        return "The \(noun) did not report \(target.rawValue) within \(DeviceSettingsReport.number(timeout)) s. \(readings)Check with `offsider posture --device \(device)`."
     }
 }

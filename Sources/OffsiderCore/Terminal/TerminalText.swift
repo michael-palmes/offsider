@@ -101,6 +101,23 @@ extension TerminalText {
         return output
     }
 
+    /// `text` without colour (SGR) sequences, as a log's message keeps them in an accessibility label.
+    public static func withoutColour(_ text: String) -> String {
+        guard text.unicodeScalars.contains("\u{1B}") else { return text }
+        var output = String.UnicodeScalarView()
+        let scalars = text.unicodeScalars
+        var index = scalars.startIndex
+        while index < scalars.endIndex {
+            if scalars[index] == "\u{1B}", let end = sgrEnd(scalars, from: index) {
+                index = end
+                continue
+            }
+            output.append(scalars[index])
+            scalars.formIndex(after: &index)
+        }
+        return String(output)
+    }
+
     /// Several lines, each made safe with `line` and uncapped; a continuation line that does not already start with
     /// a space or tab gets `indent`, so text inside a message can never start a line of its own.
     public static func block(_ text: String, indent: String = "  ") -> String {

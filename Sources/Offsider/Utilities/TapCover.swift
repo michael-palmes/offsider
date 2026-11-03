@@ -95,6 +95,16 @@ struct TapCover {
             return CoverJudge.surelyReaches(target: bareTarget, matched: bareMatched, point: point, roots: roots, viewport: viewport, stack: stack, hit: hit)
         }
 
+        /// A guess that another scroll view's content lies over a target the hit-test found counts only if that content shows: a read at its own point that finds something else puts it beneath what is drawn there. A footer outside any scroll view stays guessed, as a hit-test can answer through one.
+        @MainActor
+        func isHiddenAtItsOwnPoint(_ cover: UINode, hitTester: any PointHitTesting, device: DeviceID) async -> Bool {
+            guard let path = UITree.indexPath(to: cover, in: roots),
+                  UITree.nodes(along: path, in: roots).dropLast().contains(where: { [.scrollView, .list].contains($0.role) }),
+                  let centre = cover.frame?.center, viewport.contains(centre),
+                  let hit = try? await hitTester.hitTest(at: centre, on: device, appPIDs: appPIDs) else { return false }
+            return CoverJudge.judge(target: cover, matched: cover, point: centre, candidates: [], roots: roots, viewport: viewport, stack: stack, hit: hit) != nil
+        }
+
         /// What the tap would reach instead, given the simulator's `hit` if one was read; nil when it reaches the target, or nothing contests it and no hit was read.
         func verdict(hit: UINode?) -> CoverVerdict? {
             guard isContested || hit != nil else { return nil }
@@ -116,11 +126,12 @@ struct TapCover {
         if judging.keyboard != nil {
             throw Tap.keyboardCoverError(selector: selector, at: resolution.point, device: device, appArgument: CommandScope.current.appArgument(device: device.rawValue))
         }
-        guard judging.isContested else {
+        // Nothing listed overlaps the point, though a view the tree leaves unnamed may lie over it: asked to be sure, the simulator's hit-test settles that.
+        guard judging.isContested || failIfCovered else {
             return resolution
         }
         let hitTester = tree.platform == .android ? nil : backend as? any PointHitTesting
-        guard let verdict = await Self.verdict(judging, in: tree, hitTester: hitTester, device: device) else {
+        guard let verdict = try await Self.verdict(judging, in: tree, hitTester: hitTester, device: device, sure: failIfCovered) else {
             return resolution
         }
         if verdict.evidence == .otherProcess, let hitTester, let pid = verdict.cover.iosPID {
@@ -141,22 +152,57 @@ struct TapCover {
             ))
             return moved
         }
-        try act(on: verdict, selector: selector, at: judging.point, viewport: judging.viewport, device: device)
+        guard failIfCovered, verdict.isEmptyViewDoubt else {
+            try act(on: verdict, selector: selector, at: judging.point, viewport: judging.viewport, device: device)
+            return resolution
+        }
+        guard await Self.showsOnScreen(judging.target, viewport: judging.viewport, backend: backend, device: device) else {
+            try act(on: verdict, selector: selector, at: judging.point, viewport: judging.viewport, device: device, unread: true)
+            return resolution
+        }
+        notices.say(.note(
+            "\(selector) shows on screen under an empty \(verdict.cover.role.rawValue)",
+            agent: "\(selector) has only an empty \(Self.describe(verdict)) over it by Android's drawing order, and a screenshot shows its text, so that view is no cover."
+        ))
         return resolution
+    }
+
+    /// The tree cannot tell a screen's own empty wrapper from a veil, so its text in a screenshot decides, as a person would check it.
+    @MainActor
+    private static func showsOnScreen(_ target: UINode, viewport: UIFrame, backend: any DeviceBackend, device: DeviceID) async -> Bool {
+        guard let label = target.normalizedLabel, let frame = target.frame, let png = try? await backend.screenshotPNG(for: device) else { return false }
+        let read = await Timings.measure("cover-text") { await ScreenTextReader.lines(in: png, region: frame, viewport: viewport) }
+        return ShownText.shows(label: label, in: read)
     }
 
     /// The front reading's verdict when the shared judgement already read this point on this tree, else the judge's own, with a hit-test on a simulator.
     @MainActor
-    static func verdict(_ judging: Judging, in tree: UITree, hitTester: (any PointHitTesting)?, device: DeviceID) async -> CoverVerdict? {
+    static func verdict(_ judging: Judging, in tree: UITree, hitTester: (any PointHitTesting)?, device: DeviceID, sure: Bool = false) async throws -> CoverVerdict? {
+        let verdict: CoverVerdict?
         if let front = tree.front, judging.target.isSameElement(as: judging.matched),
-           let index = ScreenStack.index(of: judging.matched, in: tree.roots), let judged = front.judged[index], judged.point == judging.point, !judged.unsure {
-            return judged.verdict
+           let index = ScreenStack.index(of: judging.matched, in: tree.roots), let judged = front.judged[index], judged.point == judging.point, !judged.unsure,
+           !sure || judged.ownHit != nil || hitTester == nil {
+            verdict = judged.verdict
+        } else {
+            var hit: UINode?
+            if let hitTester {
+                hit = try? await hitTester.hitTest(at: judging.point, on: device, appPIDs: judging.appPIDs)
+            }
+            verdict = judging.verdict(hit: hit)
+            if sure, hitTester != nil, hit == nil, verdict == nil {
+                let point = VerifyOutput.pointDescription(x: judging.point.x, y: judging.point.y)
+                throw CLIError(
+                    errorDescription: "Could not read what lies at \(point), so --fail-if-covered cannot say a tap would reach the target. Nothing was sent. Run it again.",
+                    reason: .targetCovered,
+                    hint: CommandScope.current.describeHint(device: device.rawValue)
+                )
+            }
         }
-        var hit: UINode?
-        if let hitTester {
-            hit = try? await hitTester.hitTest(at: judging.point, on: device, appPIDs: judging.appPIDs)
+        guard let verdict, verdict.hitFoundTarget, let hitTester,
+              await judging.isHiddenAtItsOwnPoint(verdict.cover, hitTester: hitTester, device: device) else {
+            return verdict
         }
-        return judging.verdict(hit: hit)
+        return nil
     }
 
     /// At most this many parts beside a cover are read.
@@ -207,7 +253,7 @@ struct TapCover {
 
     /// Refuses a confident cover, or a guessed one with `--fail-if-covered`, and warns of the rest.
     @MainActor
-    private func act(on verdict: CoverVerdict, selector: String, at point: UIPoint, viewport: UIFrame, device: DeviceID) throws {
+    private func act(on verdict: CoverVerdict, selector: String, at point: UIPoint, viewport: UIFrame, device: DeviceID, unread: Bool = false) throws {
         let pointText = VerifyOutput.pointDescription(x: point.x, y: point.y)
         let cover = Self.describe(verdict)
         let tapping = dryRun ? "would tap" : "tapping"
@@ -234,7 +280,8 @@ struct TapCover {
                 coveredBy: CoverReport(verdict)
             )
         }
-        let message = "\(selector) at \(pointText) may be covered by \(cover); the tap may land on it."
+        let unseen = unread ? " Its text does not show in a screenshot." : ""
+        let message = "\(selector) at \(pointText) may be covered by \(cover); the tap may land on it.\(unseen)"
         if failIfCovered {
             throw CLIError(errorDescription: "\(message) Nothing was sent.", reason: .targetCovered, hint: CommandScope.current.describeHint(device: device.rawValue), coveredBy: CoverReport(verdict))
         }

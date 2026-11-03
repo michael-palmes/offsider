@@ -68,7 +68,7 @@ struct OnScreenRuleTests {
             let summary = try await Self.describe(["--summary"], on: backend, device: device)
             #expect(!summary.contains("Menu Inbox"), "\(summary)")
             #expect(summary.contains(#"button "Filter Chip" id=filter-chip"#))
-            #expect(summary.hasSuffix("# covered: 1 element under others: id=menu-inbox\n"), "\(summary)")
+            #expect(summary.hasSuffix("# covered: 2 elements under others: id=drawer, id=menu-inbox\n"), "\(summary)")
         }
     }
 
@@ -343,6 +343,222 @@ struct OnScreenRuleTests {
     static func describe(_ arguments: [String], on backend: FakeDeviceBackend, device: DeviceID) async throws -> String {
         defer { DeviceActivityLedger.current.reset() }
         return try await DescribeUI.parse(arguments + ["--device", device.rawValue]).describe(on: DeviceRouter.Route(backend: backend, device: device))
+    }
+
+    // MARK: Groups
+
+    /// A gallery group with a strip inside it, under a full page Android lists with no container, so no page is found; a gap in the page's rows leaves the group's own point under nothing labelled.
+    static func groupUnderRows(showingTitle: Bool = false) -> UITree {
+        func android(_ role: UIRole, id: String? = nil, label: String? = nil, _ frame: UIFrame, order: Int, children: [UINode] = []) -> UINode {
+            FakeUI.node(role, id: id, label: label, frame: frame, platform: .android, drawingOrder: order, children: children)
+        }
+        let panel = android(.group, id: "panel", FakeUI.frame(0, 60, 400, 400), order: 1, children: [
+            android(.text, id: "panel-title", label: "Panel Title", FakeUI.frame(16, 70, 368, 30), order: 1),
+            android(.text, id: "panel-body", label: "Panel Body", FakeUI.frame(16, 170, 368, 30), order: 2),
+        ])
+        let gallery = android(.group, id: "gallery", FakeUI.frame(0, 60, 400, 540), order: 1, children: [panel])
+        let rows = [60, 110, 160, 210, 510].filter { !showingTitle || $0 != 60 }.map { y in
+            android(.button, id: "row-\(y)", label: "Row \(y)", FakeUI.frame(0, Double(y), 400, 50), order: y)
+        }
+        let list = android(.scrollView, FakeUI.frame(0, 60, 400, 500), order: 2, children: rows)
+        return FakeUI.tree(platform: .android, width: 400, height: 800, [gallery, list])
+    }
+
+    /// The same screens as Android often lists them, flat: the group, then what lies inside it, then the page's list; only the group's last line shows below the list.
+    static func flatGroupUnderList(list: UINode? = nil) -> UITree {
+        func android(_ role: UIRole, id: String? = nil, label: String? = nil, _ frame: UIFrame, order: Int, children: [UINode] = []) -> UINode {
+            FakeUI.node(role, id: id, label: label, frame: frame, platform: .android, drawingOrder: order, children: children)
+        }
+        let cover = list ?? android(.scrollView, id: "page-list", FakeUI.frame(0, 40, 400, 500), order: 5, children: [
+            android(.button, id: "row-1", label: "Row One", FakeUI.frame(0, 40, 400, 50), order: 1),
+        ])
+        return FakeUI.tree(platform: .android, width: 400, height: 800, [
+            android(.group, id: "gallery", FakeUI.frame(0, 60, 400, 600), order: 1),
+            android(.group, id: "panel", FakeUI.frame(0, 60, 400, 500), order: 2),
+            android(.text, id: "panel-title", label: "Panel Title", FakeUI.frame(16, 70, 368, 30), order: 3),
+            android(.text, id: "position", label: "Panel 1 of 3", FakeUI.frame(16, 620, 368, 30), order: 4),
+            cover,
+        ])
+    }
+
+    @Test("a group Android lists flat, under a page's list that reaches past it, is out of reach though one line of it shows")
+    func flatGroupUnderPageList() async throws {
+        #expect(await Self.placement(of: "gallery", in: Self.flatGroupUnderList()) != .front)
+        #expect(await Self.placement(of: "position", in: Self.flatGroupUnderList()) == .front)
+    }
+
+    @Test("an empty view over that group proves nothing, so it stays in front")
+    func flatGroupUnderEmptyView() async throws {
+        let empty = FakeUI.node(.group, frame: FakeUI.frame(0, 40, 400, 700), platform: .android, drawingOrder: 5)
+        #expect(await Self.placement(of: "gallery", in: Self.flatGroupUnderList(list: empty)) == .front)
+    }
+
+    @Test("a list inside the group's own frame is its own, so the group stays in front")
+    func flatGroupWithOwnList() async throws {
+        let own = FakeUI.node(.scrollView, frame: FakeUI.frame(0, 100, 400, 500), platform: .android, drawingOrder: 5, children: [
+            FakeUI.node(.button, label: "Own Row", frame: FakeUI.frame(0, 100, 400, 50), platform: .android, drawingOrder: 1),
+        ])
+        #expect(await Self.placement(of: "gallery", in: Self.flatGroupUnderList(list: own)) == .front)
+    }
+
+    @Test("a button under a list drawn over it stays a guess, not a sure cover, as a group's rule is only for groups")
+    func buttonUnderListStaysGuess() throws {
+        let tree = FakeUI.tree(platform: .android, width: 400, height: 800, [
+            FakeUI.node(.button, id: "act", label: "Act", frame: FakeUI.frame(16, 300, 368, 44), platform: .android, drawingOrder: 1),
+            FakeUI.node(.scrollView, frame: FakeUI.frame(0, 40, 400, 500), platform: .android, drawingOrder: 2, children: [
+                FakeUI.node(.button, label: "Row One", frame: FakeUI.frame(0, 40, 400, 50), platform: .android, drawingOrder: 1),
+            ]),
+        ])
+        let verdict = try #require(try TapCoverTests.judge(tree, target: "act", hit: nil))
+        #expect(!verdict.isConfident)
+    }
+
+    static func placement(of id: String, in tree: UITree) async -> Verifier.Placement {
+        let judged = await Verifier.judged(tree, id: id, backend: FakeDeviceBackend(trees: [tree]), device: android)
+        return Verifier.placement(of: id, in: judged)
+    }
+
+    @Test("a group whose every element is under another page is out of reach, though its own point finds nothing labelled")
+    func groupFollowsWhatItHolds() async throws {
+        #expect(await Self.placement(of: "gallery", in: Self.groupUnderRows()) != .front)
+    }
+
+    @Test("a group with one element showing stays in front")
+    func groupWithElementShowing() async throws {
+        #expect(await Self.placement(of: "gallery", in: Self.groupUnderRows(showingTitle: true)) == .front)
+    }
+
+    @Test("a group holding nothing labelled is judged by its own point alone")
+    func emptyGroupKeepsItsOwnJudgement() async throws {
+        let empty = FakeUI.node(.group, id: "empty", frame: FakeUI.frame(0, 60, 400, 500), platform: .android, drawingOrder: 1, children: [
+            FakeUI.node(.group, frame: FakeUI.frame(0, 60, 400, 400), platform: .android, drawingOrder: 1),
+        ])
+        #expect(await Self.placement(of: "empty", in: FakeUI.tree(platform: .android, width: 400, height: 800, [empty])) == .front)
+    }
+
+    @Test("a tap on a group under another screen's list refuses, as it counts as covered")
+    func tapOnCoveredGroup() throws {
+        let verdict = try #require(try TapCoverTests.judge(Self.flatGroupUnderList(), target: "gallery", hit: nil))
+        #expect(verdict.cover.id == "page-list" && verdict.isConfident && verdict.evidence == .drawingOrder)
+    }
+
+    // MARK: A list over a longer list
+
+    static func listsOverLists() -> (tree: UITree, card: UINode, row: UINode) {
+        let pid = 42
+        let row = FakeUI.node(.button, id: "row-3", label: "Row Three", frame: FakeUI.frame(12, 250, 378, 48), pid: pid)
+        let scroll = { (frame: UIFrame, children: [UINode]) in FakeUI.node(.scrollView, frame: frame, pid: pid, children: children) }
+        let front = FakeUI.node(.group, id: "front-list", frame: FakeUI.frame(0, 100, 402, 670), pid: pid, children: [scroll(FakeUI.frame(0, 100, 402, 670), [row])])
+        let card = FakeUI.node(.other, label: "Saved Card", frame: FakeUI.frame(12, 230, 378, 68), pid: pid)
+        let lower = FakeUI.node(.group, id: "lower-list", frame: FakeUI.frame(0, 100, 402, 774), pid: pid, children: [scroll(FakeUI.frame(0, 100, 402, 774), [card])])
+        return (FakeUI.tree([front, lower]), card, row)
+    }
+
+    @Test("a page's row over a longer list beneath taps with --fail-if-covered, when a read at the card there finds the row too")
+    func cardBeneathIsNoGuess() async throws {
+        let (tree, _, row) = Self.listsOverLists()
+        let backend = HitTestingFakeBackend(trees: [tree, tree])
+        backend.hits = { _ in row }
+
+        try await Self.tap(["--id", "row-3", "--fail-if-covered"], on: backend)
+
+        #expect(backend.session.calls.count == 1)
+    }
+
+    @Test("a card that shows at its own point stays a guessed cover, so --fail-if-covered refuses and names it")
+    func cardThatShowsStaysGuessed() async throws {
+        let (tree, card, row) = Self.listsOverLists()
+        let cardCentre = try #require(card.frame?.center)
+        let backend = HitTestingFakeBackend(trees: [tree, tree])
+        backend.hits = { point in point == cardCentre ? card : row }
+
+        let error = await #expect(throws: CLIError.self) { try await Self.tap(["--id", "row-3", "--fail-if-covered"], on: backend) }
+
+        #expect(error?.reason == .targetCovered)
+        #expect(error?.errorDescription?.contains("Saved Card") == true)
+        #expect(backend.session.calls.isEmpty)
+    }
+
+    @Test("a simulator's hit at a group's point on another list's row puts the group beneath it, though the row lies inside its frame")
+    func groupUnderOtherList() async throws {
+        var (tree, _, row) = Self.listsOverLists()
+        // A line of the group shows below the row, so only the point at its middle can tell.
+        let shown = FakeUI.node(.text, id: "lower-end", label: "Lower End", frame: FakeUI.frame(0, 820, 402, 40), pid: 42)
+        tree.roots[0].children[1].children[0].children.append(shown)
+        let backend = HitTestingFakeBackend(trees: [tree])
+        backend.hits = { point in point.y > 800 ? shown : row }
+        let judged = await Verifier.judged(tree, id: "lower-list", backend: backend, device: Self.ios)
+        #expect(Verifier.placement(of: "lower-list", in: judged) != .front)
+        #expect(Verifier.placement(of: "lower-end", in: judged) == .front)
+    }
+
+    @Test("a simulator's hit at a group's point on its own list's row leaves it in front")
+    func groupOverItsOwnList() async throws {
+        let (tree, card, _) = Self.listsOverLists()
+        let backend = HitTestingFakeBackend(trees: [tree])
+        backend.hits = { _ in card }
+        let judged = await Verifier.judged(tree, id: "lower-list", backend: backend, device: Self.ios)
+        #expect(Verifier.placement(of: "lower-list", in: judged) == .front)
+    }
+
+    /// A simulator's button with nothing listed over it, where a view the tree leaves unnamed answers the hit-test.
+    static func unnamedScrimSimulator() -> HitTestingFakeBackend {
+        let tree = FakeUI.tree([FakeUI.node(.button, id: "send", label: "Send", frame: FakeUI.frame(16, 788, 370, 44), pid: 42)])
+        let backend = HitTestingFakeBackend(trees: [tree, tree])
+        backend.hits = { _ in FakeUI.node(.group, frame: FakeUI.frame(0, 0, 402, 874), pid: 42) }
+        return backend
+    }
+
+    @Test("--fail-if-covered reads the point though nothing listed overlaps it, so an unnamed veil refuses and nothing is sent")
+    func failIfCoveredReadsThePoint() async throws {
+        let backend = Self.unnamedScrimSimulator()
+        let error = await #expect(throws: CLIError.self) { try await Self.tap(["--id", "send", "--fail-if-covered"], on: backend) }
+        #expect(error?.reason == .targetCovered)
+        #expect(backend.hitTests > 0)
+        #expect(backend.session.calls.isEmpty)
+    }
+
+    @Test("--fail-if-covered refuses when the point cannot be read, and nothing is sent")
+    func failIfCoveredRefusesAnUnreadPoint() async throws {
+        let backend = Self.unnamedScrimSimulator()
+        backend.hits = { _ in nil }
+        let error = await #expect(throws: CLIError.self) { try await Self.tap(["--id", "send", "--fail-if-covered"], on: backend) }
+        #expect(error?.reason == .targetCovered)
+        #expect(backend.session.calls.isEmpty)
+    }
+
+    /// A simulator's group of `count` labelled rows, with a page's rows answering every hit-test.
+    static func groupOfRows(_ count: Int) -> HitTestingFakeBackend {
+        let rows = (0..<count).map { FakeUI.node(.text, id: "held-\($0)", label: "Held \($0)", frame: FakeUI.frame(0, Double(100 + $0 % 30 * 20), 402, 20), pid: 42) }
+        let tree = FakeUI.tree([FakeUI.node(.group, id: "held", frame: FakeUI.frame(0, 100, 402, 700), pid: 42, children: rows)])
+        let backend = HitTestingFakeBackend(trees: [tree])
+        backend.hits = { _ in FakeUI.node(.button, id: "over", label: "Over", frame: FakeUI.frame(0, 100, 402, 700), pid: 42) }
+        return backend
+    }
+
+    @Test("wait on a group reads no point for what it holds on a simulator, so it stays as fast as it was")
+    func waitOnGroupReadsNoPoints() async throws {
+        let backend = Self.groupOfRows(10)
+        let route = DeviceRouter.Route(backend: backend, device: Self.ios)
+        _ = try await Wait.parse(["--id", "held", "--timeout", "0", "--device", Self.ios.rawValue]).evaluate(on: route, logger: OffsiderLogger(), clock: ScriptedClock().poll)
+        #expect(backend.hitTests == 0)
+    }
+
+    @Test("--verify-id's read of a group stays within the limit of reads, and one too big to finish reads only its own point", arguments: [10, 300])
+    func verifyGroupStaysWithinLimit(count: Int) async throws {
+        let backend = Self.groupOfRows(count)
+        let tree = try await backend.accessibilityTree(for: Self.ios)
+        _ = await Verifier.judged(tree, id: "held", backend: backend, device: Self.ios)
+        #expect(backend.hitTests <= FrontJudge.hitLimit)
+        if count > FrontJudge.hitLimit { #expect(backend.hitTests == 1) } else { #expect(backend.hitTests > 1) }
+    }
+
+    @Test("a plain tap reads no point where nothing listed overlaps it, so it stays as fast as it was")
+    func plainTapReadsNoPoint() async throws {
+        let backend = Self.unnamedScrimSimulator()
+        try await Self.tap(["--id", "send"], on: backend)
+        #expect(backend.hitTests == 0)
+        #expect(backend.session.calls.count == 1)
     }
 
     /// Runs `tap` on an iOS fake as an agent and returns what it wrote to stderr.

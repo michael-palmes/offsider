@@ -172,6 +172,17 @@ struct AndroidHelperInputTests {
         #expect(Self.inputScripts(rig) == ["input tap 5 6"])
     }
 
+    @Test("a touch the helper refuses because one was left down names the command that lets go")
+    func leftDownNamesFix() async throws {
+        let device = FakeHelperDevice()
+        device.answer = { _, op, _ in op == "inject" ? .error(code: "bad-request", message: "step 0: pointer 0 is already down") : nil }
+        let rig = try HelperRig(device, environment: ["OFFSIDER_ANDROID_INPUT": "helper"])
+        let session = try await rig.backend.openInputSession(for: HelperRig.device)
+        let error = await #expect(throws: AndroidError.self) { try await session.perform(.touch(direction: .down, x: 10, y: 20)) }
+        await rig.backend.close()
+        #expect(error?.message.contains("`offsider session stop --device \(HelperRig.device.rawValue)`") == true)
+    }
+
     @Test("detached touches stay on `input motionevent` even when the helper is forced")
     func detachedTouch() async throws {
         let rig = try HelperRig(environment: Self.forced)

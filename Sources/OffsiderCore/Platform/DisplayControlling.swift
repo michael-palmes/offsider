@@ -146,6 +146,51 @@ public protocol HingeControlling: PostureControlling {
     func requestHingeAngle(_ degrees: Int, on id: DeviceID) async throws
 }
 
+/// What a foldable's hinge and the panel showing each say; they can differ while a move lands.
+public struct PostureReads: Equatable, Sendable {
+    public let hinge: Posture?
+    public let angle: Double?
+    public let display: Posture?
+
+    public init(hinge: Posture?, angle: Double?, display: Posture?) {
+        self.hinge = hinge
+        self.angle = angle
+        self.display = display
+    }
+
+    /// Margins, not `Posture(hingeAngle:)`: a hinge settled near a threshold agrees with either side of it.
+    public var disagree: Bool {
+        if let hinge, let display, hinge != .unknown, display != .unknown, (hinge == .closed) != (display == .closed) { return true }
+        guard let hinge, let angle else { return false }
+        switch hinge {
+        case .closed: return angle >= 30
+        case .halfOpened: return angle < 15 || angle >= 176
+        case .open: return angle < 150
+        case .unknown: return false
+        }
+    }
+
+    /// `The hinge reads open at 120 degrees, and the display reads open.`
+    public var sentence: String {
+        let angleText = angle.map { " at \(OrderedJSON.formatNumber($0)) degrees" } ?? ""
+        let hingeText = hinge.map { "The hinge reads \($0.rawValue)\(angleText)" } ?? angle.map { "The hinge reads \(OrderedJSON.formatNumber($0)) degrees" }
+        let displayText = display.map { "the display reads \($0.rawValue)" }
+        switch (hingeText, displayText) {
+        case let (hinge?, display?): return "\(hinge), and \(display)."
+        case let (hinge?, nil): return "\(hinge)."
+        case let (nil, display?): return "The hinge gave no reading, and \(display)."
+        case (nil, nil): return ""
+        }
+    }
+}
+
+/// Optional capability: the hinge and display reads behind a posture.
+@MainActor
+public protocol PostureReading: PostureControlling {
+    /// With `fresh` it reads the hinge even with the cover showing, which takes about a second; otherwise it reports what the command already read.
+    func postureReads(of id: DeviceID, fresh: Bool) async -> PostureReads?
+}
+
 /// Optional capability: capturing a chosen display.
 @MainActor
 public protocol DisplayCapturing: DeviceBackend {
@@ -158,6 +203,8 @@ public protocol DisplayCapturing: DeviceBackend {
 public protocol PostureStateNaming: PostureControlling {
     /// The state the latest `posture(of:)` read committed; nil when the device names none.
     func postureStateName(of id: DeviceID) async -> String?
+    /// Whether the state the latest `posture(of:)` read is an override that stays until a reset; nil when that was not read.
+    func postureIsOverridden(on id: DeviceID) async -> Bool?
 }
 
 /// Optional capability: starting the read `screenInfo` needs before it is needed, so it runs alongside a capture or a tree read.

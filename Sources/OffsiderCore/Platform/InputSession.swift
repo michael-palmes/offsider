@@ -13,6 +13,12 @@ public protocol InputSession: AnyObject {
     func close() async
 }
 
+/// Optional capability: getting ready for a finger held still across several requests, before the press goes.
+@MainActor
+public protocol HoldPreparing: DeviceBackend {
+    func prepareHold(for id: DeviceID) async throws
+}
+
 extension InputSession {
     /// Down, hold, up. After a failure that follows the down, only a best-effort up is sent, never a second down.
     public func performPhysicalTap(at point: (x: Double, y: Double), preDelay: Double?, postDelay: Double?) async throws {

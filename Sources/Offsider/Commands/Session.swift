@@ -16,7 +16,10 @@ struct SessionCommand: AsyncParsableCommand {
         A simulator keeps its input session warm, which stops by itself after 60 idle seconds \
         (OFFSIDER_SIMULATOR_SESSION_IDLE; OFFSIDER_SIMULATOR_SESSION=off opens one per command). \
         A USB Android phone keeps each adb reverse rn open set for Metro until stop removes it; stop leaves every other reverse alone. \
-        stop also resets a USB foldable phone's posture override that `posture` set, while it is still the one set.
+        stop also resets a USB foldable phone's posture override that `posture` set, while it is still the one set, \
+        and turns off airplane mode only where `offsider airplane on` turned it on; without --device, only on \
+        phones still allowed. status lists what is recorded for these, sending the phone nothing, so a row can be out of date. \
+        What stop leaves is named with the command that clears it, and a removal that fails exits non-zero.
         """,
         subcommands: [SessionStatus.self, SessionStop.self]
     )
@@ -25,7 +28,7 @@ struct SessionCommand: AsyncParsableCommand {
 struct SessionStatus: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "status",
-        abstract: "List each device's runner and session broker, without starting either."
+        abstract: "List each device's runner and session broker, and what is recorded on a phone, without starting either."
     )
 
     @Option(name: .customLong("device"), help: ArgumentHelp("Only this device's sessions.", valueName: "id"))
@@ -46,7 +49,8 @@ struct SessionStatus: AsyncParsableCommand {
             }
             let helpers = await AndroidWarmHelpers.statuses(for: device)
             let inputs = await SimulatorInputSessions.statuses(device: device).map(\.status)
-            return DeviceSessionRow.rows(runners: runners, brokers: brokers, helpers: helpers, inputs: inputs)
+            let recorded = AndroidBackend.recordedPhoneState(host: .cli(), serial: device?.trimmingCharacters(in: .whitespaces))
+            return DeviceSessionRow.rows(runners: runners, brokers: brokers, helpers: helpers, inputs: inputs, recorded: recorded)
         }
         if json {
             console.data(DeviceSessionRow.json(rows))
@@ -83,9 +87,54 @@ struct SessionStop: AsyncParsableCommand {
         return .warning(pids.isEmpty ? "A recording on \(key.id) is still running, and Offsider could not find its pid." : "The recording on \(key.id) is still running. Stop it with `kill -INT \(list)`.")
     }
 
+    /// Everything `session stop` stops, on one device or all; `left` names what stayed, and `recordingKept` says a recording on it would not stop.
+    @MainActor
+    static func stopSessions(device: String?) async -> (stopped: [DeviceSessionRow.Stopped], left: [DeviceSessionRow.Left], recordingKept: Notice?) {
+        let brokers = DeviceSessions.records(device: device)
+        let manager = DeviceSessions.manager()
+        // Work on a test device is over, so its screen sleeps here too rather than staying lit until someone remembers.
+        for udid in Set(brokers.map(\.udid) + RunnerSessions.records(device: device).map(\.udid)) {
+            await DeviceSessionServe.sleepTestDevice(udid: udid, key: udid.uppercased(), store: DeviceSessions.store, gate: DevicePolicyGate.current)
+        }
+        for record in brokers {
+            await manager.stop(record)
+        }
+        let runners = RunnerSessions.records(device: device)
+        let runnerManager = RunnerSessionManager(
+            store: RunnerSessions.store,
+            builder: UnusedRunnerBuilder(),
+            environment: ProcessInfo.processInfo.environment,
+            developerDirectory: nil,
+            log: { _, _ in }
+        )
+        for record in runners {
+            await runnerManager.stop(record)
+            RunnerSessions.removeLog(udid: record.udid)
+        }
+        if let device, case .iosDevice(let udid) = DeviceIDClassifier.classify(device.trimmingCharacters(in: .whitespacesAndNewlines)) {
+            RunnerSessions.removeLog(udid: udid)
+        }
+        let serial = await AndroidWarmHelpers.serial(for: device).serial
+        let helpers = await AndroidBackend.stopWarmHelpers(host: .cli(), serial: serial)
+        let reverses = await AndroidBackend.removeMetroReverses(host: .cli(), serial: serial)
+        let postures = await AndroidBackend.resetRecordedPostures(host: .cli(), serial: serial, permits: mayReset(named: serial != nil, gate: DevicePolicyGate.current))
+        let airplanes = await AndroidBackend.resetRecordedAirplaneModes(host: .cli(), serial: serial, permits: { phone in
+            !DeviceID(rawValue: phone, platform: .android).isPhysicalAndroidDevice || mayReset(named: serial != nil, gate: DevicePolicyGate.current)(phone)
+        })
+        let inputs = await SimulatorInputSessions.stop(device: device)
+        var recording: (key: DeviceLockKey, ended: Bool, pids: [Int32])?
+        if let device { recording = await stopRecording(device: device, serial: serial) }
+        let stopped = DeviceSessionRow.stopped(
+            runners: runners.map(\.udid), brokers: brokers.map(\.udid), helpers: helpers, inputs: inputs, reverses: reverses.removed, postures: postures.reset, airplanes: airplanes.reset,
+            recordings: recording.flatMap { $0.ended ? [$0.key.id] : nil } ?? []
+        )
+        let left = DeviceSessionRow.left(reverses: reverses.failed, postures: postures, airplanes: airplanes)
+        return (stopped, left, recording.flatMap { $0.ended ? nil : recordingKept($0.key, pids: $0.pids) })
+    }
+
     static let configuration = CommandConfiguration(
         commandName: "stop",
-        abstract: "Stop the runner, session broker, warm helper or input session on one device, and remove the adb reverses rn open set, or on every device when --device is left out. With --device it also stops and saves a recording on that device."
+        abstract: "Stop the runner, session broker, warm helper or input session on one device, remove the adb reverses rn open set and turn off the airplane mode Offsider turned on, or on every device when --device is left out. With --device it also stops and saves a recording on that device."
     )
 
     @Option(name: .customLong("device"), help: ArgumentHelp("The device whose sessions to stop.", valueName: "id"))
@@ -101,64 +150,38 @@ struct SessionStop: AsyncParsableCommand {
         if clean, device == nil { throw ValidationError(RunnerSessions.cleanNeedsDevice) }
     }
 
+    /// Unnamed, only phones still allowed; a named one, or `devices remove`, undoes Offsider's own override regardless.
+    static func mayReset(named: Bool, gate: DevicePolicyGate) -> (String) -> Bool {
+        { phone in
+            if named { return true }
+            if case .allowed = gate.decision(platform: .android, key: phone) { return true }
+            return false
+        }
+    }
+
     @MainActor
     func run() async throws {
         let cleanUDID = try clean ? RunnerSessions.cleanableUDID(device ?? "", command: "session stop --clean") : nil
         let console = Console.current
-        let (stopped, cleaned, recordingRunning) = await console.progress("Stopping sessions") {
-            let brokers = DeviceSessions.records(device: device)
-            let manager = DeviceSessions.manager()
-            // Work on a test device is over, so its screen sleeps here too rather than staying lit until someone remembers.
-            for udid in Set(brokers.map(\.udid) + RunnerSessions.records(device: device).map(\.udid)) {
-                await DeviceSessionServe.sleepTestDevice(udid: udid, key: udid.uppercased(), store: DeviceSessions.store, gate: DevicePolicyGate.current)
-            }
-            for record in brokers {
-                await manager.stop(record)
-            }
-            let runners = RunnerSessions.records(device: device)
-            let runnerManager = RunnerSessionManager(
-                store: RunnerSessions.store,
-                builder: UnusedRunnerBuilder(),
-                environment: ProcessInfo.processInfo.environment,
-                developerDirectory: nil,
-                log: { _, _ in }
-            )
-            for record in runners {
-                await runnerManager.stop(record)
-                RunnerSessions.removeLog(udid: record.udid)
-            }
-            if let device, case .iosDevice(let udid) = DeviceIDClassifier.classify(device.trimmingCharacters(in: .whitespacesAndNewlines)) {
-                RunnerSessions.removeLog(udid: udid)
-            }
-            let serial = await AndroidWarmHelpers.serial(for: device).serial
-            let helpers = await AndroidBackend.stopWarmHelpers(host: .cli(), serial: serial)
-            let reverses = await AndroidBackend.removeMetroReverses(host: .cli(), serial: serial)
-            // Unnamed, only phones still allowed; a named one, or `devices remove`, undoes Offsider's own override regardless.
-            let postures = await AndroidBackend.resetRecordedPostures(host: .cli(), serial: serial, permits: { phone in
-                serial != nil || { if case .allowed = DevicePolicyGate.current.decision(platform: .android, key: phone) { return true } else { return false } }()
-            })
-            let inputs = await SimulatorInputSessions.stop(device: device)
-            var recording: (key: DeviceLockKey, ended: Bool, pids: [Int32])?
-            if let device { recording = await Self.stopRecording(device: device, serial: serial) }
-            let stopped = DeviceSessionRow.stopped(
-                runners: runners.map(\.udid), brokers: brokers.map(\.udid), helpers: helpers, inputs: inputs, reverses: reverses, postures: postures,
-                recordings: recording.flatMap { $0.ended ? [$0.key.id] : nil } ?? []
-            )
-            if let recording, !recording.ended { console.notice(Self.recordingKept(recording.key, pids: recording.pids)) }
+        let (stopped, left, cleaned, recordingRunning) = await console.progress("Stopping sessions") {
+            let (stopped, left, recordingKept) = await Self.stopSessions(device: device)
+            if let recordingKept { console.notice(recordingKept) }
             var cleaned: RunnerCleanupReport?
             if let cleanUDID {
                 console.relabel("Uninstalling the runner")
                 cleaned = await RunnerSessions.clean(udid: cleanUDID)
             }
-            return (stopped, cleaned, recording?.ended == false)
+            return (stopped, left, cleaned, recordingKept != nil)
         }
+        let failed = left.filter { $0.why == .failed }
         if json {
-            console.data(DeviceSessionRow.stoppedJSON(stopped, clean: cleaned.map(RunnerSessions.cleanFields), recordingRunning: recordingRunning) + "\n")
+            console.data(DeviceSessionRow.stoppedJSON(stopped, clean: cleaned.map(RunnerSessions.cleanFields), left: left, recordingRunning: recordingRunning) + "\n")
+            if !failed.isEmpty { throw ExitCode(FailureReason.deviceControlFailed.exitCode.rawValue) }
             return
         }
-        var text = DeviceSessionRow.stoppedText(stopped, device: device)
-        var person = DevicePersonView.stopped(stopped, device: device)
-        var notices: [Notice] = []
+        var text = stopped.isEmpty && !left.isEmpty ? "" : DeviceSessionRow.stoppedText(stopped, device: device)
+        var person = stopped.isEmpty && !left.isEmpty ? [] : DevicePersonView.stopped(stopped, device: device)
+        var notices: [Notice] = left.filter { $0.why != .failed }.map(\.notice)
         if let cleaned {
             text += RunnerSessions.cleanText(cleaned)
             let view = DevicePersonView.cleaned(cleaned)
@@ -166,6 +189,9 @@ struct SessionStop: AsyncParsableCommand {
             notices = view.notices.map(\.forPersonOnly)
         }
         console.show(Page([.person(person), .agent(text)], notices: notices))
+        if let first = failed.first {
+            throw CLIError(errorDescription: failed.map(\.sentence).joined(separator: " "), reason: .deviceControlFailed, hint: first.retry)
+        }
     }
 }
 
@@ -258,16 +284,26 @@ struct DeviceSessionRow: Equatable {
     let broker: DeviceSessionStatus?
     var helper: WarmHelperStatus? = nil
     var input: HIDBrokerStatus? = nil
+    /// What Offsider recorded on this phone, which `session stop` takes off; not checked on the phone.
+    var recorded: RecordedPhoneState? = nil
 
     static func rows(
-        runners: [RunnerSessionRow], brokers: [DeviceSessionStatus], helpers: [WarmHelperStatus] = [], inputs: [HIDBrokerStatus] = []
+        runners: [RunnerSessionRow], brokers: [DeviceSessionStatus], helpers: [WarmHelperStatus] = [], inputs: [HIDBrokerStatus] = [], recorded: [RecordedPhoneState] = []
     ) -> [DeviceSessionRow] {
         let devices = Set(runners.map(\.record.udid) + brokers.map(\.record.udid)).sorted()
         let ios = devices.map { udid in
             DeviceSessionRow(device: udid, runner: runners.first { $0.record.udid == udid }, broker: brokers.first { $0.record.udid == udid })
         }
         let simulators = inputs.sorted { $0.udid < $1.udid }.map { DeviceSessionRow(device: $0.udid, runner: nil, broker: nil, input: $0) }
-        return ios + simulators + helpers.sorted { $0.serial < $1.serial }.map { DeviceSessionRow(device: $0.serial, runner: nil, broker: nil, helper: $0) }
+        var rows = ios + simulators + helpers.sorted { $0.serial < $1.serial }.map { DeviceSessionRow(device: $0.serial, runner: nil, broker: nil, helper: $0) }
+        for state in recorded.sorted(by: { $0.serial < $1.serial }) {
+            if let index = rows.firstIndex(where: { $0.device == state.serial }) {
+                rows[index].recorded = state
+            } else {
+                rows.append(DeviceSessionRow(device: state.serial, runner: nil, broker: nil, recorded: state))
+            }
+        }
+        return rows
     }
 
     static func text(_ rows: [DeviceSessionRow]) -> String {
@@ -278,23 +314,24 @@ struct DeviceSessionRow: Equatable {
             if let input = row.input {
                 let started = formatter.string(from: Date(timeIntervalSince1970: input.startedAt))
                 lines.append("  input  \(input.state ?? "ready")  pid \(input.pid)  started \(started)  idle \(input.idleFor) s of \(input.idleSeconds) s")
-                return lines.joined(separator: "\n") + "\n"
-            }
-            if let helper = row.helper {
+            } else if let helper = row.helper {
                 let pid = helper.helperPid.map { "  device pid \($0)" } ?? ""
                 lines.append("  helper  \(helper.state)  pid \(helper.brokerPid)\(pid)  started \(formatter.string(from: helper.startedAt))  idle \(helper.idleFor) s of \(helper.idleSeconds) s")
-                return lines.joined(separator: "\n") + "\n"
+            } else if row.runner != nil || row.broker != nil {
+                if let runner = row.runner {
+                    let state = !runner.alive ? "stopped" : runner.record.state == .starting ? "starting" : "running"
+                    lines.append("  runner  \(state)  pid \(runner.record.pid)  started \(formatter.string(from: runner.record.startedAt))  last used \(formatter.string(from: runner.record.lastUsed))")
+                } else {
+                    lines.append("  runner  not running")
+                }
+                if let broker = row.broker {
+                    lines.append("  broker  \(brokerState(broker))  pid \(broker.record.pid)  started \(formatter.string(from: broker.record.startedAt))  stream \(streamText(broker.reply?.stream))")
+                } else {
+                    lines.append("  broker  not running")
+                }
             }
-            if let runner = row.runner {
-                let state = !runner.alive ? "stopped" : runner.record.state == .starting ? "starting" : "running"
-                lines.append("  runner  \(state)  pid \(runner.record.pid)  started \(formatter.string(from: runner.record.startedAt))  last used \(formatter.string(from: runner.record.lastUsed))")
-            } else {
-                lines.append("  runner  not running")
-            }
-            if let broker = row.broker {
-                lines.append("  broker  \(brokerState(broker))  pid \(broker.record.pid)  started \(formatter.string(from: broker.record.startedAt))  stream \(streamText(broker.reply?.stream))")
-            } else {
-                lines.append("  broker  not running")
+            for part in row.recorded?.parts ?? [] {
+                lines.append("  \(part)  recorded, may be gone")
             }
             return lines.joined(separator: "\n") + "\n"
         }.joined()
@@ -324,6 +361,7 @@ struct DeviceSessionRow: Equatable {
                 "broker": row.broker.map { brokerFields($0, formatter) as Any } ?? NSNull(),
                 "helper": row.helper.map { helperFields($0, formatter) as Any } ?? NSNull(),
                 "input": row.input.map { inputFields($0, formatter) as Any } ?? NSNull(),
+                "recorded": row.recorded.map { ["reverses": $0.reverses, "posture": $0.posture, "airplane": $0.airplane] as Any } ?? NSNull(),
             ]
         }
         let data = (try? JSONSerialization.data(withJSONObject: ["sessions": sessions], options: [.sortedKeys])) ?? Data("{}".utf8)
@@ -385,13 +423,15 @@ struct DeviceSessionRow: Equatable {
         var reverses: [Int] = []
         /// A posture override Offsider set on a phone, now reset.
         var posture = false
+        /// Airplane mode Offsider turned on, now off.
+        var airplane = false
         /// A recording that has stopped and saved.
         var recording = false
 
-        /// `runner`, `session broker`, `warm helper`, `input session`, `adb reverse tcp:8081`, `posture override` and `recording`, those that stopped.
+        /// `runner`, `session broker`, `warm helper`, `input session`, `adb reverse tcp:8081`, `posture override`, `airplane mode` and `recording`, those that stopped.
         var parts: [String] {
             [runner ? "runner" : nil, broker ? "session broker" : nil, helper ? "warm helper" : nil, input ? "input session" : nil].compactMap { $0 }
-                + reverses.map { "adb reverse tcp:\($0)" } + (posture ? ["posture override"] : []) + (recording ? ["recording"] : [])
+                + reverses.map(MetroReverse.label) + (posture ? ["posture override"] : []) + (airplane ? ["airplane mode"] : []) + (recording ? ["recording"] : [])
         }
     }
 
@@ -402,24 +442,86 @@ struct DeviceSessionRow: Equatable {
     }
 
     static func stopped(
-        runners: [String], brokers: [String], helpers: [String] = [], inputs: [String] = [], reverses: [MetroReverseRemoval] = [], postures: [String] = [], recordings: [String] = []
+        runners: [String], brokers: [String], helpers: [String] = [], inputs: [String] = [], reverses: [MetroReverseRemoval] = [], postures: [String] = [], airplanes: [String] = [], recordings: [String] = []
     ) -> [Stopped] {
-        Set(runners + brokers + helpers + inputs + reverses.map(\.serial) + postures + recordings).sorted().map { device in
+        Set(runners + brokers + helpers + inputs + reverses.map(\.serial) + postures + airplanes + recordings).sorted().map { device in
             Stopped(
                 device: device, runner: runners.contains(device), broker: brokers.contains(device), helper: helpers.contains(device), input: inputs.contains(device),
-                reverses: reverses.filter { $0.serial == device }.flatMap(\.ports), posture: postures.contains(device), recording: recordings.contains(device)
+                reverses: reverses.filter { $0.serial == device }.flatMap(\.ports), posture: postures.contains(device), airplane: airplanes.contains(device), recording: recordings.contains(device)
             )
         }
     }
 
-    static func stoppedJSON(_ stopped: [Stopped], clean: [String: Any]? = nil, recordingRunning: Bool = false) -> String {
-        let entries: [[String: Any]] = stopped.map {
-            ["device": $0.device, "runner": $0.runner, "broker": $0.broker, "helper": $0.helper, "input": $0.input, "reverses": $0.reverses, "posture": $0.posture, "recording": $0.recording]
+    /// State `session stop` left on a phone, with the command that clears it.
+    struct Left: Equatable {
+        enum Why: String, Equatable {
+            /// The phone is connected, and adb failed or refused.
+            case failed
+            case notConnected
+            case notAllowed
         }
-        var object: [String: Any] = ["stopped": entries]
+
+        let device: String
+        var reverses: [Int] = []
+        var posture = false
+        var airplane = false
+        let why: Why
+
+        var parts: [String] {
+            reverses.map(MetroReverse.label) + (posture ? ["posture override"] : []) + (airplane ? ["airplane mode"] : [])
+        }
+
+        var retry: String { "offsider session stop --device \(device)" }
+
+        var sentence: String {
+            let what = parts.joined(separator: " and ")
+            switch why {
+            case .failed: return "Offsider could not remove the \(what) on \(device). Run `\(retry)` to try again."
+            case .notConnected: return "The \(what) on \(device) stays until it is connected and you run `\(retry)`."
+            case .notAllowed: return "The \(what) on \(device) stays, as it is no longer allowed. `\(retry)` removes it."
+            }
+        }
+
+        var notice: Notice {
+            let what = parts.joined(separator: " and ")
+            let person: String
+            switch why {
+            case .failed: person = "Did not remove \(what) on \(device)"
+            case .notConnected: person = "\(what.prefix(1).uppercased() + what.dropFirst()) stays on \(device): not connected"
+            case .notAllowed: person = "\(what.prefix(1).uppercased() + what.dropFirst()) stays on \(device): no longer allowed"
+            }
+            return .warning(person, agent: sentence, try: retry, label: "Remove")
+        }
+    }
+
+    static func left(reverses: [MetroReverseRemoval], postures: RecordResetOutcome, airplanes: RecordResetOutcome = RecordResetOutcome()) -> [Left] {
+        let failing = Set(reverses.map(\.serial) + postures.failed + airplanes.failed).sorted().map { serial in
+            Left(device: serial, reverses: reverses.filter { $0.serial == serial }.flatMap(\.ports), posture: postures.failed.contains(serial), airplane: airplanes.failed.contains(serial), why: .failed)
+        }
+        func staying(_ posture: [String], _ airplane: [String], _ why: Left.Why) -> [Left] {
+            Set(posture + airplane).sorted().map { Left(device: $0, posture: posture.contains($0), airplane: airplane.contains($0), why: why) }
+        }
+        return failing + staying(postures.notConnected, airplanes.notConnected, .notConnected) + staying(postures.skipped, airplanes.skipped, .notAllowed)
+    }
+
+    static func stoppedJSON(_ stopped: [Stopped], clean: [String: Any]? = nil, left: [Left] = [], recordingRunning: Bool = false) -> String {
+        let entries: [[String: Any]] = stopped.map {
+            ["device": $0.device, "runner": $0.runner, "broker": $0.broker, "helper": $0.helper, "input": $0.input, "reverses": $0.reverses, "posture": $0.posture, "airplane": $0.airplane, "recording": $0.recording]
+        }
+        let notRemoved: [[String: Any]] = left.map {
+            ["device": $0.device, "reverses": $0.reverses, "posture": $0.posture, "airplane": $0.airplane, "why": $0.why.rawValue, "retry": $0.retry]
+        }
+        var object: [String: Any] = ["stopped": entries, "notRemoved": notRemoved]
         if let clean { object["clean"] = clean }
         if recordingRunning { object["recordingRunning"] = true }
         let data = (try? JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])) ?? Data("{}".utf8)
         return String(decoding: data, as: UTF8.self)
+    }
+}
+
+extension RecordedPhoneState {
+    /// `adb reverse tcp:8081`, `posture override` and `airplane mode`, as `session status` lists them.
+    var parts: [String] {
+        reverses.map(MetroReverse.label) + (posture ? ["posture override"] : []) + (airplane ? ["airplane mode"] : [])
     }
 }

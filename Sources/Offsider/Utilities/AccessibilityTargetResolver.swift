@@ -631,10 +631,10 @@ struct AccessibilityTargetResolver {
         let path = UITree.indexPath(to: target, in: roots)
         let same = matched.isSameElement(as: target)
         let matchedPath = same ? path : UITree.indexPath(to: matched, in: roots)
-        let lineage = [path, matchedPath].compactMap { $0 }.flatMap { Self.nodes(along: $0, in: roots) }
+        let lineage = [path, matchedPath].compactMap { $0 }.flatMap { UITree.nodes(along: $0, in: roots) }
         let related = lineage + target.flattened() + (same ? [] : matched.flattened())
         // Keys sit over the app, its own keypad's as much as the system's, so only another key can cover one.
-        let targetIsKey = path.map { Self.nodes(along: $0, in: roots).contains { $0.role == .keyboard } } ?? isUnderKeyboard(target, in: roots)
+        let targetIsKey = path.map { UITree.nodes(along: $0, in: roots).contains { $0.role == .keyboard } } ?? isUnderKeyboard(target, in: roots)
         let android = target.isAndroid
         let targetRoot = (path ?? matchedPath)?.first ?? 0
         // A simulator lists an app's windows, children of it that fill the screen, bottom first, so one listed before the target's is drawn beneath it.
@@ -683,16 +683,6 @@ struct AccessibilityTargetResolver {
             visit(root, parent: nil, root: index, window: nil, band: nil, underKeyboard: false)
         }
         return found
-    }
-
-    /// The nodes from a root down to the one `path` leads to, both included.
-    static func nodes(along path: [Int], in roots: [UINode]) -> [UINode] {
-        guard let first = path.first, first < roots.count else { return [] }
-        var chain = [roots[first]]
-        for index in path.dropFirst() where index < chain[chain.count - 1].children.count {
-            chain.append(chain[chain.count - 1].children[index])
-        }
-        return chain
     }
 
     /// The roots a cover check judges: on Android the keyboard's window bounds decide, and its root view spans the screen, so it leaves the judging.

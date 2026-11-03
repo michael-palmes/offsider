@@ -23,6 +23,26 @@ enum HelperBrokerWire {
         }
     }
 
+    /// The fingers and keys a command has down after `payload`'s inject, given those before it; one the helper in fact let go of costs only a release that does nothing.
+    static func held(after payload: Data, given before: Set<String>) -> Set<String> {
+        guard let object = try? JSONSerialization.jsonObject(with: payload) as? [String: Any], let steps = object["steps"] as? [[String: Any]] else { return before }
+        var held = before
+        for step in steps {
+            let name: String
+            switch step["kind"] as? String {
+            case "touch": name = "touch \(step["pointer"] as? Int ?? 0)"
+            case "key": name = "key \(step["code"] as? Int ?? -1)"
+            default: continue
+            }
+            switch step["phase"] as? String {
+            case "down": held.insert(name)
+            case "up": held.remove(name)
+            default: break
+            }
+        }
+        return held
+    }
+
     /// What `hello` adds to the helper's own `helper`, `protocol` and `ops`.
     struct Hello: Decodable, Equatable, Sendable {
         let brokerProtocol: Int
