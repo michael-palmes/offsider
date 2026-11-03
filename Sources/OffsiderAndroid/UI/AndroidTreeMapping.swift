@@ -23,7 +23,7 @@ enum AndroidTreeMapping {
         let role = rootRole ?? self.role(for: raw)
         let pixels = pixelFrame(raw["bounds"])
         let secure = role == .secureTextField || raw.flag("password")
-        var nodeLabel = rootRole == nil ? label(for: raw) : rootLabel.flatMap(nonEmpty)
+        var nodeLabel = (rootRole == nil ? label(for: raw) : rootLabel.flatMap(nonEmpty)).map(TerminalText.withoutColour)
         let reactNativeMixed = rootRole == nil && role == .checkbox && nodeLabel?.hasSuffix(mixedSuffix) == true
         if reactNativeMixed, let full = nodeLabel {
             nodeLabel = nonEmpty(String(full.dropLast(mixedSuffix.count)))

@@ -216,7 +216,8 @@ struct LoginCommand: AsyncParsableCommand {
                 return try? await tester.hitTest(at: point, on: route.device, appPIDs: [])
             },
             noteDevice: { await route.noteNameForAsk() },
-            turnstileWatch: Turnstile.waitCommand(app: route.allowance == nil ? nil : app)
+            turnstileWatch: Turnstile.waitCommand(app: route.allowance == nil ? nil : app),
+            device: route.device.rawValue
         )
         let deviceID = route.device.rawValue
         var report: LoginReport
