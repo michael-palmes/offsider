@@ -240,6 +240,51 @@ struct IOSReactNativeRoleMappingTests {
         #expect(try node("Button", value: nil, traits: NSNull()).state.selected == nil)
     }
 
+    private func field(_ type: String, value: String?, placeholder: String?) throws -> UINode {
+        var element: [String: Any] = ["type": type]
+        element["AXValue"] = value
+        element["placeholder"] = placeholder
+        return IOSAccessibilityMapping.node(from: element)
+    }
+
+    @Test("an empty iPhone field reads as empty, its placeholder kept as the hint, even a password field", arguments: ["TextField", "SecureTextField", "SearchField", "TextView"])
+    func placeholderIsNoValue(type: String) throws {
+        let empty = try field(type, value: "Email", placeholder: "Email")
+        #expect(empty.value == nil)
+        guard case .ios(let native) = empty.native else { Issue.record("not an iOS node"); return }
+        #expect(native.hint == "Email")
+        #expect(try field(type, value: "typed", placeholder: "Email").value == (type == "SecureTextField" ? "•••••" : "typed"))
+    }
+
+    @Test("a value matching some other text, or with no placeholder sent, is kept")
+    func valueWithoutPlaceholder() throws {
+        #expect(try field("TextField", value: "Email", placeholder: nil).value == "Email")
+        #expect(try field("StaticText", value: "Email", placeholder: "Email").value == "Email")
+    }
+
+    @Test("a text field holding only a mask's dots is a password field, masked; mixed text is not", arguments: [
+        ("••••", true), ("●●", true), ("•a", false), ("abc", false), ("• •", false),
+    ])
+    func maskDotsAreSecure(value: String, secure: Bool) throws {
+        let node = try field("TextField", value: value, placeholder: "Password")
+        #expect(node.isSecure == secure)
+        #expect(node.value == (secure ? String(repeating: "•", count: value.count) : value))
+    }
+
+    @Test("an empty field with no label or id keeps its placeholder as its name in the summary")
+    func placeholderNamesSummaryLine() throws {
+        let tree = UITree(platform: .ios, device: "IOS-UDID", roots: try IOSAccessibilityMapping.roots(fromJSON: Data("""
+        [{"type": "Application", "AXLabel": "App", "frame": {"x": 0, "y": 0, "width": 400, "height": 800}, "children": [
+          {"type": "TextField", "AXValue": "Email", "placeholder": "Email", "frame": {"x": 0, "y": 100, "width": 300, "height": 40}},
+          {"type": "TextField", "AXLabel": "Name", "AXValue": "Your name", "placeholder": "Your name", "frame": {"x": 0, "y": 200, "width": 300, "height": 40}}]}]
+        """.utf8)))
+        let summary = String(decoding: UITreeRenderer.render(tree, .summary), as: UTF8.self)
+        #expect(summary.contains(#"textField hint="Email""#))
+        #expect(summary.contains(#"textField "Name""#))
+        #expect(!summary.contains("value="))
+        #expect(!summary.contains(#"hint="Your name""#))
+    }
+
     @Test("a native switch still reads its own 1 or 0")
     func nativeSwitch() throws {
         let toggle = try node("Switch", value: "1")

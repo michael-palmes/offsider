@@ -13,6 +13,18 @@ extension IOSDeviceError {
             instead: "Retry once `offsider doctor --device \(device.rawValue)` passes. It needs Xcode 27 and a logged-in desktop on this Mac."
         )
     }
+
+    /// The runner's XCTest names typed text in its logs, so a password field takes text only as key presses through the device session; never holds the text.
+    static func secureFieldRunnerRefusal(_ text: String, replace: Bool, udid: String) -> IOSDeviceError {
+        let field = "The field with focus on \(udid) is a password field"
+        if replace {
+            return IOSDeviceError(.secureFieldRefused, "\(field), and Offsider does not replace its text. Nothing was typed. Clear it in the app, or type without --replace.")
+        }
+        guard TextToHIDEvents.validateText(text) else {
+            return IOSDeviceError(.secureFieldRefused, "\(field), which Offsider types into only with US keyboard keys, and this text has a character they cannot type. Nothing was typed. Use a test password with plain letters, digits and symbols.")
+        }
+        return IOSDeviceError(.secureFieldRefused, "\(field), which Offsider types into only through the device session, so nothing was typed. Retry once `offsider doctor --device \(udid)` passes. It needs Xcode 27 and a logged-in desktop on this Mac.")
+    }
 }
 
 public struct IOSDeviceError: LocalizedError, CustomStringConvertible, Equatable, Sendable {

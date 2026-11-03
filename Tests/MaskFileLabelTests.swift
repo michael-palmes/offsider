@@ -86,6 +86,19 @@ struct MaskFileLabelTests {
         #expect(attributes.hint == "[redacted]" && attributes.stateDescription == "[redacted]")
     }
 
+    @Test("on an iPhone a matched field's placeholder is hidden too")
+    func iosPlaceholder() throws {
+        var node = FakeUI.node(.textField, label: "Referral code. rc-5521. Tap to copy")
+        node.native = .ios(IOSNativeAttributes(type: "TextField", hint: "Copies rc-5521"))
+        let shown = UITree(platform: .ios, device: "D", roots: [node]).redacted(Self.mask).roots[0]
+
+        guard case .ios(let attributes) = shown.native else {
+            Issue.record("expected iOS attributes")
+            return
+        }
+        #expect(attributes.hint == "[redacted]")
+    }
+
     @Test("on iOS a matched element's custom actions and role description are hidden, and on an unmatched one their secrets are redacted")
     func iosNativeText() throws {
         func node(label: String, action: String, role: String) -> UINode {

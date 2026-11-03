@@ -9,6 +9,12 @@ public enum SecureText {
         guard let value, !value.isEmpty else { return nil }
         return String(repeating: bullet, count: value.count)
     }
+
+    /// A value made only of a mask's dots, as XCTest reports a React Native password field it calls a text field.
+    public static func isMaskDots(_ value: String?) -> Bool {
+        guard let value, !value.isEmpty else { return false }
+        return value.unicodeScalars.allSatisfy { $0 == "\u{2022}" || $0 == "\u{25CF}" }
+    }
 }
 
 /// Whether a secure field may hold input focus: exact on Android, a proxy on iOS (keyboard plus secure field).
@@ -20,6 +26,12 @@ public enum SecureFocus: Equatable, Sendable {
 
 extension UINode {
     public var isSecure: Bool { role == .secureTextField }
+
+    /// An iPhone text field's placeholder, its only name when it has no label or id.
+    public var placeholderName: String? {
+        guard role.isTextInput, label?.isEmpty != false, id?.isEmpty != false, case .ios(let native) = native else { return nil }
+        return native.hint.flatMap { $0.isEmpty ? nil : $0 }
+    }
 }
 
 extension UITree {
