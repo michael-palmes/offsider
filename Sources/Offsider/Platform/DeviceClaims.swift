@@ -100,6 +100,10 @@ extension AppearanceCommand: DeviceOptionCommand {}
 extension AppLaunchCommand: DeviceOptionCommand {}
 extension AppOpenCommand: DeviceOptionCommand {}
 extension AppStopCommand: DeviceOptionCommand {}
+extension AppInstallCommand: DeviceOptionCommand {}
+extension AppUninstallCommand: DeviceOptionCommand {}
+extension AppBroadcastCommand: DeviceOptionCommand {}
+extension AirplaneCommand: DeviceOptionCommand {}
 extension Assert: DeviceOptionCommand {}
 extension Batch: DeviceOptionCommand {}
 extension BiometricCommand: DeviceOptionCommand {}

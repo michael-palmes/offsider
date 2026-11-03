@@ -112,6 +112,26 @@ public struct ScreenshotReport: Equatable, Sendable {
     public var maskUnmatched: [String]
     /// `modal` when the tree could not show what is drawn behind a modal window, so masks may have missed it.
     public var maskUnproven: String?
+    /// The system window over the allowed app that this capture shows; input stays refused beneath it.
+    public var systemWindow: UITreeContext.Window?
+    /// The widget a `--widget` capture holds to.
+    public var widget: Widget?
+
+    /// One widget of the named app, cropped out of the home screen.
+    public struct Widget: Equatable, Sendable {
+        public let app: String
+        public let label: String?
+        /// Its place in reading order, from 1, among the app's widgets on the screen.
+        public let nth: Int
+        public let count: Int
+
+        public init(app: String, label: String?, nth: Int, count: Int) {
+            self.app = app
+            self.label = label
+            self.nth = nth
+            self.count = count
+        }
+    }
 
     public init(
         path: String?,
@@ -159,8 +179,11 @@ public struct ScreenshotReport: Equatable, Sendable {
     }
 
     public func jsonLine() -> String {
-        OrderedJSON.object(jsonMembers).rendered(compact: true)
+        UntrustedPaths.marked(.object(jsonMembers), Self.untrustedPaths).rendered(compact: true)
     }
+
+    /// The device's own words in a system window's title and a widget's label.
+    static let untrustedPaths = ["systemWindow.title", "widget.label"]
 
     var jsonMembers: [(String, OrderedJSON)] {
         var members: [(String, OrderedJSON)] = [
@@ -182,6 +205,21 @@ public struct ScreenshotReport: Equatable, Sendable {
                 ])
             }),
         ]
+        if let systemWindow {
+            members.append(("systemWindow", .object([
+                ("title", .optional(systemWindow.title, OrderedJSON.string)),
+                ("package", .optional(systemWindow.package, OrderedJSON.string)),
+                ("readOnly", .bool(systemWindow.readOnly)),
+            ])))
+        }
+        if let widget {
+            members.append(("widget", .object([
+                ("app", .string(widget.app)),
+                ("label", .optional(widget.label, OrderedJSON.string)),
+                ("nth", .integer(widget.nth)),
+                ("count", .integer(widget.count)),
+            ])))
+        }
         if let maskedBy, let masked {
             members.append(("masked", .integer(masked)))
             let kinds = MaskKind.allCases.compactMap { kind in maskedBy[kind].map { (kind.rawValue, OrderedJSON.integer($0)) } }

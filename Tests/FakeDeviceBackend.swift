@@ -79,6 +79,8 @@ class FakeDeviceBackend: DeviceBackend {
     /// Thrown by `metroHost` until a reverse is set for the port, as a phone without one does.
     var metroHostError: ExpoDevClientError?
     private(set) var reversesSet: [Int] = []
+    /// Ports recorded by an earlier run.
+    var reversesRecorded: [Int] = []
     private(set) var openedURLs: [String] = []
     /// `rn open`'s stops and links in order, as `stop <app>` and `open <url>`.
     private(set) var devClientCalls: [String] = []
@@ -444,6 +446,7 @@ extension FakeDeviceBackend: ExpoDevClientOpening {
 
 extension FakeDeviceBackend: MetroReverseSetting {
     func addMetroReverse(port: Int, on id: DeviceID) async throws { reversesSet.append(port) }
+    func recordedMetroPorts(on id: DeviceID) async -> [Int] { reversesRecorded + reversesSet }
 }
 
 extension FakeDeviceBackend: AppLivenessReading {

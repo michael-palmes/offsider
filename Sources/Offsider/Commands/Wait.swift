@@ -18,7 +18,7 @@ struct Wait: AsyncParsableCommand {
         to 2 s for the pixels to hold still, so the next capture shows the new screen; --settle-by tree skips that. Exits 0 when the \
         condition is met and 5 when --timeout passes first, naming the nearest element when a selector found nothing, or the flag \
         that leaves out what kept moving for --settled; --settled exits 1 when the accessibility tree was never readable, where \
-        --settle-by screen still works. A selector exits 1 (logbox_inspector_open) once React Native's LogBox inspector has hidden \
+        --settle-by screen still works, and 64 at once when --ignore-region or --ignore-id leaves out the whole screen. A selector exits 1 (logbox_inspector_open) once React Native's LogBox inspector has hidden \
         the app on Android for 1.5 s, since nothing in the app can match until it closes. On a phone, another app in front counts \
         as not yet met and nothing is read from it; if it is still in front at --timeout, the wait exits 1 (app_not_allowed).
         """
@@ -111,6 +111,9 @@ struct Wait: AsyncParsableCommand {
         }
         if families > 1 {
             throw ValidationError("Choose only one of a selector, --settled, --region or --seconds.")
+        }
+        if any && selector.query == nil {
+            throw ValidationError("--any needs --id, --label, --label-contains or --value.")
         }
         if gone && selector.query == nil {
             throw ValidationError("--gone needs --id, --label, --label-contains or --value.")
@@ -206,7 +209,8 @@ struct Wait: AsyncParsableCommand {
         let locking = readsTree && DeviceIDClassifier.classify(deviceOption.id).platform == .android
         let route = try await DeviceRouter.routeForInput(deviceOption.id, logger: logger, watchdog: watchdog, locking: locking)
         let outcome = try await Console.current.progress("Waiting for \(target)") {
-            try await watchdog.guarding(setupThen: watchdogBound, device: deviceOption.id) { ready in
+            if readsTree { try await watchdog.guardingTreeStart(on: route) }
+            return try await watchdog.guarding(setupThen: watchdogBound, of: route.device) { ready in
                 try await evaluate(on: route, logger: logger, probesOnMiss: true, notesOtherApp: true, onPrepared: ready)
             }
         }
@@ -224,7 +228,7 @@ struct Wait: AsyncParsableCommand {
     }
 
     var readsTree: Bool {
-        selector.query != nil || (settled && (settleBy ?? .tree) == .tree)
+        selector.query != nil || (settled && settleBy != .screen)
     }
 
     /// The longest this wait may legitimately take before the watchdog's grace.
@@ -478,6 +482,9 @@ struct Wait: AsyncParsableCommand {
         func painted(_ capture: CapturedScreen) throws -> CapturedScreen {
             let regions = leaveOut.regions + swept.keys.sorted().compactMap { swept[$0] }
             guard !regions.isEmpty else { return capture }
+            if let screen = capture.screen, leaveOut.regions.contains(where: { $0.x <= 0 && $0.y <= 0 && $0.x + $0.width >= screen.width && $0.y + $0.height >= screen.height }) {
+                throw WaitLeftNothingError(flag: "--ignore-region")
+            }
             do {
                 return try ScreenCapture.masking(capture, plan: MaskPlan(regions: regions), tree: nil).capture
             } catch is MaskUnproven {

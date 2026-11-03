@@ -46,6 +46,8 @@ public final class AndroidBackend: DeviceBackend, AccessibilityActionPerforming,
     var warnedAboutTruncation: Set<String> = []
     /// Each phone's front package from its latest deny-list check, reused for a second.
     var foregroundChecks: [String: (at: ContinuousClock.Instant, package: String?)] = [:]
+    /// Each phone's latest read of the windows in front, and the system window it may have gone ahead under.
+    var systemWindowChecks: [String: (at: ContinuousClock.Instant, window: UITreeContext.Window?)] = [:]
     /// Per phone serial, the apps its allowance and managed policy permit; a serial with no entry may run any app the deny-list allows.
     public var appScopes: [String: AndroidAppScope] = [:]
 
@@ -184,7 +186,7 @@ public final class AndroidBackend: DeviceBackend, AccessibilityActionPerforming,
     }
 
     /// The tree without the phone deny-list check, for the lock screen `wake --unlock` reads.
-    func readTree(_ id: DeviceID, point: UIPoint?, checkingWindows: Bool = false, everyView: Bool = false) async throws -> UITree {
+    func readTree(_ id: DeviceID, point: UIPoint?, checkingWindows: Bool = false, everyView: Bool = false, recording: Bool = true) async throws -> UITree {
         let serial = id.rawValue
         let startedAt = Date()
         let roots: [UINode]
@@ -205,13 +207,15 @@ public final class AndroidBackend: DeviceBackend, AccessibilityActionPerforming,
         tree.hiddenBranches = hidden
         tree.namedHiddenBranches = namedHidden
         if checkingWindows {
-            try requireDrivableWindows(tree, on: serial)
+            tree.systemWindow = try await requireReadableWindows(tree, on: serial)
         }
         guard let point else {
-            if !everyView { DeviceActivityLedger.current.recordTreeRead(tree, on: id, startedAt: startedAt) }
+            if !everyView, recording { DeviceActivityLedger.current.recordTreeRead(tree, on: id, startedAt: startedAt) }
             return tree
         }
-        return UITree(platform: .android, device: serial, roots: tree.deepestNode(at: point).map { [$0] } ?? [])
+        var found = UITree(platform: .android, device: serial, roots: tree.deepestNode(at: point).map { [$0] } ?? [])
+        found.systemWindow = tree.systemWindow
+        return found
     }
 
     private func uiautomatorRoots(_ serial: String, compressed: Bool = true) async throws -> [UINode] {
@@ -353,6 +357,12 @@ public final class AndroidBackend: DeviceBackend, AccessibilityActionPerforming,
         return nil
     }
 
+    /// A hold's press alone may never rest, so `touchHelper` cannot tell it is coming; without gRPC, only the helper reports the resting finger.
+    public func prepareHold(for id: DeviceID) async throws {
+        guard case .adb = try await transport(for: id.rawValue) else { return }
+        _ = try await gestureHelper(id.rawValue)
+    }
+
     /// The helper for steps `input` on this API level lacks, started if needed; a refusal when the policy or the tree source rules it out.
     private func gapHelper(_ serial: String, for gap: AdbInputGap, apiLevel level: Int) async throws -> HelperInputDriver {
         log(.debug, "`input` on \(serial) (API \(level)) has no \(gap == .motionEvent ? "motionevent" : "keycombination"), so these steps need the helper")
@@ -449,7 +459,7 @@ public final class AndroidBackend: DeviceBackend, AccessibilityActionPerforming,
     public func sendDetachedTouch(_ steps: [DetachedTouchStep], to id: DeviceID) async throws {
         try await prepare()
         if steps.contains(where: { if case .down = $0 { return true } else { return false } }) {
-            try await requireDrivableForeground(id.rawValue)
+            try await AndroidForegroundCheck.$beforeInput.withValue(true) { try await requireDrivableForeground(id.rawValue) }
         }
         let inputSteps: [AndroidInputStep] = steps.map { step in
             switch step {
@@ -526,12 +536,13 @@ public final class AndroidBackend: DeviceBackend, AccessibilityActionPerforming,
     public func screenshotPNG(for id: DeviceID) async throws -> Data {
         try await prepare()
         try await requireDrivableForeground(id.rawValue)
+        try await requireReadableFocus(id.rawValue)
         return try await host.timing.measure(.capture) {
             try await capturePNG(id.rawValue)
         }
     }
 
-    private func capturePNG(_ serial: String) async throws -> Data {
+    func capturePNG(_ serial: String) async throws -> Data {
         let policy = try AndroidCapturePolicy.policy(host: host)
         guard case .grpc(let emulator) = try await transport(for: serial) else {
             return try await shellCapture(serial, policy: policy)
@@ -821,6 +832,7 @@ public final class AndroidBackend: DeviceBackend, AccessibilityActionPerforming,
         announcedFallbacks = []
         warnedAboutTruncation = []
         foregroundChecks = [:]
+        systemWindowChecks = [:]
         transports = [:]
         geometries = [:]
         activeUniqueIds = [:]
@@ -852,3 +864,5 @@ public final class AndroidBackend: DeviceBackend, AccessibilityActionPerforming,
         (value * 100).rounded() / 100
     }
 }
+
+extension AndroidBackend: HoldPreparing {}

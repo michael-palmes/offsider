@@ -53,7 +53,9 @@ final class HelperInputDriver {
                 roundTrip = max(0, Int((uptime() - started) / .milliseconds(1)) - reply.totalMs)
             } catch let error as HelperErrorBody {
                 releasedInput = error.code == "inject-refused" || error.code == "inject-failed"
-                throw AndroidError.inputFailed(serial: serial, detail: "the UiAutomation helper reported \(error.code): \(error.message)")
+                let stuck = error.message.contains("is already down") || error.message.contains("while a finger is down")
+                let fix = stuck ? ". An earlier command left it down: `offsider session stop --device \(serial)` lets go" : ""
+                throw AndroidError.inputFailed(serial: serial, detail: "the UiAutomation helper reported \(error.code): \(error.message)\(fix)")
             } catch let error as HelperProtocolError {
                 throw AndroidError.inputFailed(serial: serial, detail: "the UiAutomation helper failed (\(error.detail))")
             } catch HelperStartFailure.busy {

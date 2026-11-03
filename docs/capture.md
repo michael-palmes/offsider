@@ -2,13 +2,25 @@
 
 ## Screenshots and video
 
-`screenshot` saves a PNG or JPEG of the active display (`--output`, `--format`, `--quality`). `--display <id>` captures a foldable's display by name, once it is active: the password mask reads the tree, which describes the active display alone, so an inactive one is withheld with `mask_unproven` (fold or unfold first with `offsider posture`), `--scale points` makes one pixel one point, `--region x,y,w,h` crops in points, and `--json` prints the image's size, scale, `orientation`, `rotation`, `display` and `posture`, and on an iPhone or iPad `capture`: `stream` or `devicectl`.
+`screenshot` saves a PNG or JPEG of the active display (`--output`, `--format`, `--quality`). `--display <id>` captures a foldable's display by name, once it is active: the password mask reads the tree, which describes the active display alone, so an inactive one is withheld with `mask_unproven` (fold or unfold first with `offsider posture`), `--scale points` makes one pixel one point, `--region x,y,w,h` crops in points, and `--json` prints the image's size, scale, `orientation`, `rotation`, `display` and `posture`, and on an iPhone or iPad `capture`: `stream` or `devicectl`, on each `batch` step too.
 
 Without `--output`, a screenshot goes to the current folder as `Simulator Screenshot - <name> - <time>.png`, `Emulator Screenshot - …` from an emulator, or `Screenshot - …` from a physical iPhone, iPad or Android phone; `record-video` names its file `offsider-video-<time>.mp4` on every device. Captures are written mode 0600. A generated file name never replaces a file: a taken name gets ` 2`, ` 3` and so on, and the device name in it loses separators, control and bidi characters. `--output` naming an existing file replaces it whole only when it is a regular image or video file (png, jpg, jpeg, heic, tiff, mp4, mov, m4v) that you own; a link, a directory or another file is refused, and nothing is deleted first.
 
 `--compare <baseline>` (`--threshold`, `--expect changed|unchanged`) exits 0 when the capture changed, or with `--expect unchanged` when it did not, and 5 otherwise. It adds `expected`, `met`, `changedPixels`, `comparedPixels` and `changedBounds` to `--json`, and with `--diff-output <png>` writes the capture faded to white with changed pixels in magenta.
 
+On an allowed Android phone, `screenshot` and `describe-ui` keep working while the allowed app holds focus beneath a system window owned by `android`, such as a save prompt. `screenshot --json` names it in `systemWindow` (`title`, `package`, `readOnly`) and on stderr, and `describe-ui` in `context.window` with `readOnly: true`. Input stays refused there. See [the phone's rules](android.md#physical-android-phones).
+
 A person at a terminal sees a spinner while it captures, then ✅ `Screenshot saved` with the path (your home folder as `~`), the size and how many fields were masked; with `--compare`, the verdict (Changed from, Matches, Differs from or No change from the baseline), the tile counts and the diff's path. An agent or a pipe reads the path, or the compare's summary line, as before.
+
+### Home screen widgets
+
+On Android, `screenshot --widget --app <package>` captures that app's own widget and nothing else of the home screen. It works on an emulator and on an allowed phone, where the app must be one the phone allows; the launcher is never captured. With one app pinned, `--app` is optional. Several of the app's widgets on the screen need `--widget-nth <n>`, counted from 1 top to bottom and then left to right; a person at a terminal gets a menu.
+
+- The crop is the widget's own view, its bounds read from the device, a point inside each side, with the masks painted first. A widget with rounded corners can show a little wallpaper at them.
+- Offsider writes nothing unless the home screen is in front, `dumpsys appwidget` says this launcher holds a widget of the app, every view inside the widget belongs to the app, and no other widget or window overlaps it. It reads the screen again after the capture and drops the image if anything moved.
+- `--json` adds `widget` (`app`, `label`, `nth`, `count`). `--widget` needs the UiAutomation helper, and cannot be used with `--region` or `--display`. Failures exit with `widget_not_shown`, naming what to do.
+- Adding a widget stays a person's job, since it drives the launcher. A widget on another page needs a person to swipe to it.
+- iOS has no such capture, and no supported call reloads a simulator widget's timeline: only the app can, or a reinstall.
 
 ### Masks
 

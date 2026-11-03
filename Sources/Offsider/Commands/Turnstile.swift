@@ -65,7 +65,8 @@ struct Turnstile: AsyncParsableCommand {
         await appOption.apply(to: route)
         let console = Console.current
         let report = try await console.progress(waitSeconds == nil ? "Reading Turnstile" : "Waiting for Turnstile") {
-            try await watchdog.guarding(setupThen: waitSeconds ?? 0, device: deviceOption.id) { ready in
+            try await watchdog.guardingTreeStart(on: route)
+            return try await watchdog.guarding(setupThen: waitSeconds ?? 0, of: route.device) { ready in
                 try await readStatus(on: route, onPrepared: ready)
             }
         }

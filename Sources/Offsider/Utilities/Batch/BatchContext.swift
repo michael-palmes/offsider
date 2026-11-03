@@ -78,7 +78,8 @@ final class BatchContext {
                 return cachedTree
             }
             let tree = try await backend.accessibilityTree(for: device)
-            cachedTree = tree
+            // Only describe-ui and screenshot may read under a system window, so no later step gets this tree from the cache.
+            cachedTree = tree.systemWindow == nil ? tree : nil
             lastTree = tree
             return tree
         }

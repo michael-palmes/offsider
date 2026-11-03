@@ -2,7 +2,7 @@ import Foundation
 import OffsiderCore
 
 /// The device-state override Offsider set on a USB phone, kept until `posture reset`, `session stop` or `devices remove` takes it off.
-struct AndroidPostureRecord: Equatable, Sendable {
+struct AndroidPostureRecord: AndroidSerialRecord, Equatable, Sendable {
     static let maximumBytes = 1_024
     static let directoryName = "postures"
     static let bootIDScript = "cat /proc/sys/kernel/random/boot_id"
@@ -11,7 +11,6 @@ struct AndroidPostureRecord: Equatable, Sendable {
     /// The phone's kernel boot id: an override ends with a reboot, so a record from an earlier boot is stale.
     let bootID: String
     let identifier: Int
-    let name: String
 
     /// Named as the display cache names a phone, so a serial never reaches a file name.
     static func fileName(serial: String) -> String {
@@ -24,49 +23,81 @@ struct AndroidPostureRecord: Equatable, Sendable {
     }
 
     func encoded() -> Data {
-        let object: [String: Any] = ["serial": serial, "bootID": bootID, "identifier": identifier, "name": name]
+        let object: [String: Any] = ["serial": serial, "bootID": bootID, "identifier": identifier]
         return (try? JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])) ?? Data()
     }
 
-    init(serial: String, bootID: String, identifier: Int, name: String) {
+    init(serial: String, bootID: String, identifier: Int) {
         self.serial = serial
         self.bootID = bootID
         self.identifier = identifier
-        self.name = name
     }
 
     init?(data: Data) {
         guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let serial = object["serial"] as? String, let bootID = object["bootID"] as? String, Self.isBootID(bootID),
-              let identifier = (object["identifier"] as? NSNumber)?.intValue, let name = object["name"] as? String else { return nil }
-        self.init(serial: serial, bootID: bootID, identifier: identifier, name: name)
+              let identifier = (object["identifier"] as? NSNumber)?.intValue else { return nil }
+        self.init(serial: serial, bootID: bootID, identifier: identifier)
     }
 }
 
-struct AndroidPostureRecordStore {
+/// A record of what Offsider changed on one device, kept in one private file named by a hash of its serial.
+protocol AndroidSerialRecord {
+    static var maximumBytes: Int { get }
+    var serial: String { get }
+    func encoded() -> Data
+    init?(data: Data)
+}
+
+typealias AndroidPostureRecordStore = AndroidSerialRecordStore<AndroidPostureRecord>
+
+struct AndroidSerialRecordStore<Record: AndroidSerialRecord> {
+    /// A record this old for a device not seen since is dropped rather than named on every stop.
+    static var forgottenAfter: TimeInterval { 30 * 86_400 }
+
     let directory: String
 
-    /// The record for `serial`, or nil; an unreadable or foreign one is removed.
-    func load(serial: String) -> AndroidPostureRecord? {
+    /// Whether the record's file was last written over `forgottenAfter` before `now`.
+    func isForgotten(serial: String, now: Date = Date()) -> Bool {
+        let path = (directory as NSString).appendingPathComponent(AndroidPostureRecord.fileName(serial: serial))
+        guard let written = (try? FileManager.default.attributesOfItem(atPath: path))?[.modificationDate] as? Date else { return false }
+        return now.timeIntervalSince(written) > Self.forgottenAfter
+    }
+
+    /// Of `serials`, those whose record stays to be named; one not in `connected` and past `forgottenAfter` is dropped.
+    func keptNaming(_ serials: [String], connected: [String]) -> [String] {
+        serials.filter { serial in
+            guard !connected.contains(serial), isForgotten(serial: serial) else { return true }
+            remove(serial: serial)
+            return false
+        }
+    }
+
+    /// The record for `serial`, or nil; a corrupt or foreign one is removed, and one that cannot be read safely is left and reads as none.
+    func load(serial: String) -> Record? {
         let name = AndroidPostureRecord.fileName(serial: serial)
-        guard let data = try? OffsiderPrivateDirectory.readOwnedFile(named: name, in: directory, maxBytes: AndroidPostureRecord.maximumBytes) else { return nil }
-        guard let record = AndroidPostureRecord(data: data), record.serial == serial else {
+        guard let data = try? OffsiderPrivateDirectory.readOwnedFile(named: name, in: directory, maxBytes: Record.maximumBytes) else { return nil }
+        guard let record = Record(data: data), record.serial == serial else {
             OffsiderPrivateDirectory.removeFile(named: name, in: directory)
             return nil
         }
         return record
     }
 
-    func all() -> [AndroidPostureRecord] {
+    /// Every record, under the same rules as `load`.
+    func all() -> [Record] {
         let names = (try? FileManager.default.contentsOfDirectory(atPath: directory)) ?? []
-        return names.filter { $0.hasSuffix(".json") }.compactMap { name in
-            (try? OffsiderPrivateDirectory.readOwnedFile(named: name, in: directory, maxBytes: AndroidPostureRecord.maximumBytes))
-                .flatMap { $0 }.flatMap(AndroidPostureRecord.init(data:))
-                .flatMap { AndroidPostureRecord.fileName(serial: $0.serial) == name ? $0 : nil }
+        return names.filter { $0.hasSuffix(".json") }.sorted().compactMap { name in
+            guard let data = try? OffsiderPrivateDirectory.readOwnedFile(named: name, in: directory, maxBytes: Record.maximumBytes) else { return nil }
+            guard let record = Record(data: data), AndroidPostureRecord.fileName(serial: record.serial) == name else {
+                OffsiderPrivateDirectory.removeFile(named: name, in: directory)
+                return nil
+            }
+            return record
         }
     }
 
-    func save(_ record: AndroidPostureRecord) throws {
+    func save(_ record: Record) throws {
         try OffsiderPrivateDirectory.writeAtomically(record.encoded(), named: AndroidPostureRecord.fileName(serial: record.serial), in: directory)
     }
 

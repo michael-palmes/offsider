@@ -24,6 +24,8 @@ public struct CoverVerdict: Equatable, Sendable {
     public var isConfident: Bool
     /// The page or covered screen the cover is on.
     public var screen: String?
+    /// The hit-test found the target, and only another scroll view's or a footer's place in the tree raises the doubt.
+    public var hitFoundTarget = false
 
     public init(cover: UINode, evidence: CoverEvidence, isConfident: Bool, screen: String? = nil) {
         self.cover = cover
@@ -87,7 +89,9 @@ public enum CoverJudge {
         if let hit {
             let judgement = context.judge(hit: hit)
             if case .clear = judgement, let outside = context.candidateOutsideScrollView() {
-                return context.verdict(outside, .treeOrder, confident: false)
+                var verdict = context.verdict(outside, .treeOrder, confident: false)
+                verdict.hitFoundTarget = true
+                return verdict
             }
             switch judgement {
             case .clear: return nil
@@ -128,48 +132,66 @@ public enum CoverJudge {
         return true
     }
 
-    /// The hit chain when Android's drawing order or window layers order every set of siblings it passes; nil otherwise.
-    static func drawnChain(at point: UIPoint, in roots: [UINode]) -> [UINode]? {
+    /// The hit path, with `skipping` taken as gone, when Android's drawing order or window layers order every set of siblings it passes; nil otherwise.
+    static func drawnPath(at point: UIPoint, in roots: [UINode], skipping: Set<[Int]>) -> [Int]? {
         if roots.count > 1, roots.contains(where: { $0.windowLayer == nil }) {
             return nil
         }
-        let chain = UITree.hitChain(in: roots, at: point)
-        guard !chain.isEmpty else { return nil }
+        let path = UITree.hitPath(in: roots, at: point, skipping: skipping)
+        guard !path.isEmpty else { return nil }
+        let chain = UITree.nodes(along: path, in: roots)
         for (parent, _) in zip(chain, chain.dropFirst()) where parent.children.count > 1 {
             guard UITree.drawingOrders(of: parent.children) != nil else { return nil }
         }
-        return chain
+        return path
     }
 
-    /// The drawn chain's top, looking beneath full-screen views with nothing to touch at the point (an Expo dev client's tools button), as Android passes the touch on.
+    /// The drawn chain's top, looking beneath views with nothing to touch at the point (an Expo dev client's tools button, a screen's own empty wrappers), as Android passes the touch on.
     static func drawnTop(at point: UIPoint, in roots: [UINode], holding targets: [UINode], viewport: UIFrame, stack: ScreenStack) -> UINode? {
-        let targetsPage = targets.lazy.compactMap { ScreenStack.index(of: $0, in: roots) }.compactMap(stack.page(holding:)).first
-        var remaining = roots
+        let targetsPage = stack.pages.isEmpty ? nil : targets.flatMap { ScreenStack.indexes(of: $0, in: roots) }.compactMap(stack.page(holding:)).last
+        var skipping = Set<[Int]>()
         for _ in 0..<8 {
-            guard let chain = drawnChain(at: point, in: remaining), let top = chain.last else { return nil }
+            guard let path = drawnPath(at: point, in: roots, skipping: skipping) else { return nil }
+            let chain = UITree.nodes(along: path, in: roots)
+            guard let top = chain.last else { return nil }
             let holdsTarget = targets.contains { target in top.flattened().contains { $0.isSameElement(as: target) } }
             // In Compose a node that takes no taps hands the touch to what lies beneath it, as a row's text does to the button beside it.
             if chain.count > 1, !holdsTarget, !top.isActionable, isComposeNode(in: chain) {
-                remaining = remaining.map { $0.removing(top) }
+                skipping.insert(path)
                 continue
             }
-            guard chain.count > 1, !isPlausibleOccluder(top), passesTouch(top, in: chain, roots: roots, stack: stack, targetsPage: targetsPage),
-                  let frame = top.frame, spans(frame, viewport), !holdsTarget else {
+            let index = UITree.preorderIndex(of: path, in: roots)
+            guard chain.count > 1, !isPlausibleOccluder(top), !holdsTarget, let frame = top.frame,
+                  spans(frame, viewport) ? passesTouch(top, at: index, in: chain, stack: stack, targetsPage: targetsPage) : isOwnEmptySlot(top, in: chain, roots: roots, holding: targets, viewport: viewport, stack: stack) else {
                 return top
             }
-            remaining = remaining.map { $0.removing(top) }
+            skipping.insert(path)
         }
         return nil
     }
 
-    /// A native host off every page passes the touch on; a React Native view only on the target's own page, never the page itself.
-    private static func passesTouch(_ node: UINode, in chain: [UINode], roots: [UINode], stack: ScreenStack, targetsPage: ScreenStack.Page?) -> Bool {
-        let index = ScreenStack.index(of: node, in: roots)
+    /// A native host off every page passes the touch on; a React Native view only on the target's own page, holding nothing to show or press anywhere, never the page itself.
+    private static func passesTouch(_ node: UINode, at index: Int, in chain: [UINode], stack: ScreenStack, targetsPage: ScreenStack.Page?) -> Bool {
         let react = isReactView(node, in: chain)
-        if let index, let page = targetsPage, index != page.index, page.content.contains(index) {
-            return react
+        if let page = targetsPage, index != page.index, page.content.contains(index) {
+            return react && !holdsContent(node)
         }
-        return !react && !(index.map { index in stack.pages.contains { $0.content.contains(index) } } ?? false)
+        return !react && !stack.pages.contains { $0.content.contains(index) }
+    }
+
+    /// An empty React Native view inside a part of the screen smaller than the screen that also holds the target, such as a header's slot beside its button; on a screen a page covers it says nothing.
+    private static func isOwnEmptySlot(_ node: UINode, in chain: [UINode], roots: [UINode], holding targets: [UINode], viewport: UIFrame, stack: ScreenStack) -> Bool {
+        guard isReactView(node, in: chain), !holdsContent(node) else { return false }
+        return chain.dropLast().contains { ancestor in
+            guard !containerRoles.contains(ancestor.role), let frame = ancestor.frame, !spans(frame, viewport) else { return false }
+            return targets.contains { target in
+                !stack.isBeneath(target, in: roots) && ancestor.flattened().contains { $0.isSameElement(as: target) }
+            }
+        }
+    }
+
+    private static func holdsContent(_ node: UINode) -> Bool {
+        node.children.contains { $0.flattened().contains(where: \.isTelling) }
     }
 
     /// A node of a Jetpack Compose host, which takes touches only where a modifier handles them.
@@ -289,9 +311,15 @@ public enum CoverJudge {
             return atPoint.min { $0.area < $1.area } ?? flat[page.index]
         }
 
-        /// The hit as an element of the tree, found again when it moved by up to a point between reads.
+        /// The hit as an element of the tree, found again when it moved by up to a point between reads; Android's drawn top carries what it holds, which tells it from a wrapper that looks the same.
         private func placed(_ hit: UINode) -> UINode? {
-            flat.first { $0.isSameElement(as: hit) } ?? flat.first { $0.isLoosely(hit) }
+            (hit.isAndroidNode ? flat.first { $0 == hit } : nil) ?? flat.first { $0.isSameElement(as: hit) } ?? flat.first { $0.isLoosely(hit) } ?? namedInTree(hit)
+        }
+
+        /// A simulator's point read can give an element another role than its tree read, so its id and frame find it.
+        private func namedInTree(_ hit: UINode) -> UINode? {
+            guard let id = hit.normalizedID, let frame = hit.frame else { return nil }
+            return flat.first { $0.normalizedID == id && $0.frame?.isWithinTolerance(of: frame) == true }
         }
 
         /// The target read again after its label ticked: the same role and id, or with no id the same role within a point; never an element the tree names apart.
@@ -348,6 +376,12 @@ public enum CoverJudge {
             }
         }
 
+        /// A screen-sized group of the app's own a simulator answered with, once its hit-test has retried: it may be a veil over the target, so it is a guess, not proof the point is clear. The application itself says nothing, and a prompt's host has its own check.
+        private func isUnexplainedScreenSizedAnswer(_ hit: UINode) -> Bool {
+            !hit.isAndroidNode && !otherProcessCovers && !SystemPrompt.isForeign(hit, in: roots)
+                && ![.application, .window].contains(hit.role) && hit.frame.map { CoverJudge.spans($0, viewport) } == true
+        }
+
         /// The application or window root, or a node spanning the viewport around the target: a hit on it says nothing about the point.
         private func isScreenRoot(_ hit: UINode, placed: UINode?) -> Bool {
             let rootRoles: Set<UIRole> = [.application, .window]
@@ -378,7 +412,7 @@ public enum CoverJudge {
             // An unlabelled container holds what lies inside its frame, which an iOS simulator lists beside it rather than within; Android nests it.
             if !target.isActionable, target.normalizedLabel == nil, pageOverTarget == nil, !(placed?.isAndroidNode ?? false), let mine = target.frame, let theirs = (placed ?? hit).frame,
                mine.encloses(theirs, tolerance: TransitionGuard.frameTolerance) {
-                return .clear
+                return otherScrollContent(hit, placed: placed).map { .cover($0, confident: true) } ?? .clear
             }
             if isIndicator(hit, placed: placed) {
                 return .undecided
@@ -387,7 +421,7 @@ public enum CoverJudge {
                 if let page = pageOverTarget {
                     return .cover(cover(on: page), confident: true)
                 }
-                return controlOverPoint().map { .guess($0) } ?? .clear
+                return controlOverPoint().map { .guess($0) } ?? (isUnexplainedScreenSizedAnswer(hit) ? .guess(hit) : .clear)
             }
             if let label = hit.normalizedLabel, let frame = hit.frame {
                 // An ancestor of the target holds it, so it never covers it, whatever label it merges.
@@ -427,9 +461,33 @@ public enum CoverJudge {
                 return .cover(cover(on: page), confident: true)
             }
             if let placed, ![target, matched].contains(where: { isAncestor(placed, of: $0) }) {
-                return .cover(placed, confident: false)
+                return .cover(placed, confident: isOtherScreenOverGroup(placed))
             }
-            return .undecided
+            return isUnexplainedScreenSizedAnswer(hit) ? .guess(hit) : .undecided
+        }
+
+        /// For a group holding its own scroll view, what the hit names in another scroll view: not its content, though it lies inside its frame.
+        private func otherScrollContent(_ hit: UINode, placed: UINode?) -> UINode? {
+            guard target.flattened().contains(where: { [.scrollView, .list].contains($0.role) }) else { return nil }
+            let frame = hit.frame
+            let named = placed ?? hit.normalizedLabel.flatMap { label in
+                flat.first { node in
+                    node.normalizedLabel?.contains(label) == true && frame.map { node.frame?.encloses($0, tolerance: TransitionGuard.frameTolerance) == true } == true
+                }
+            }
+            guard let named, !own.contains(where: { $0.isSameElement(as: named) }), let path = UITree.indexPath(to: named, in: roots) else { return nil }
+            return UITree.nodes(along: path, in: roots).dropLast().contains { [.scrollView, .list].contains($0.role) } ? named : nil
+        }
+
+        /// An unlabelled group is judged by what shows there: Android draws a scrolling list or a page over it, reaching past it and so not its own, with the group's content beneath.
+        private func isOtherScreenOverGroup(_ node: UINode) -> Bool {
+            guard node.isAndroidNode, !target.isActionable, target.normalizedLabel == nil, let mine = target.frame, let theirs = node.frame,
+                  !mine.encloses(theirs, tolerance: TransitionGuard.frameTolerance) else { return false }
+            if [.scrollView, .list].contains(node.role), node.children.contains(where: { $0.flattened().contains(where: \.isTelling) }) {
+                return true
+            }
+            guard let index = ScreenStack.index(of: node, in: roots), let page = stack.pages.last(where: { $0.content.contains(index) }) else { return false }
+            return ScreenStack.index(of: target, in: roots).map { !page.content.contains($0) } ?? false
         }
 
         /// The nearest scroll view or list holding the target or the matched element.
@@ -547,13 +605,6 @@ extension UINode {
     var androidClassName: String? {
         guard case .android(let attributes) = native else { return nil }
         return attributes.className
-    }
-
-    /// A copy without `node` and what it holds.
-    func removing(_ node: UINode) -> UINode {
-        var copy = self
-        copy.children = children.filter { !$0.isSameElement(as: node) }.map { $0.removing(node) }
-        return copy
     }
 
     var area: Double {

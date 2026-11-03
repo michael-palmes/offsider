@@ -35,6 +35,7 @@ struct AccessibilityPoller {
         coverCheck: CoverCheck? = nil,
         coverSettle: TimeInterval = 0,
         readsHiddenCovers: Bool = false,
+        watchdog: DeviceWatchdog = DeviceWatchdog(),
         logger: OffsiderLogger
     ) async throws -> Polled<TapResolution> {
         try await pollForResolution(
@@ -50,10 +51,12 @@ struct AccessibilityPoller {
             coverSettle: coverSettle,
             logger: logger
         ) {
-            await judged(
-                try await backend.accessibilityTree(for: device), query: query, elementType: elementType, allowOffscreen: allowOffscreen,
-                readsHiddenCovers: readsHiddenCovers, pick: pick, backend: backend, device: device
-            )
+            try await watchdog.guardingInputRead(of: device) {
+                await judged(
+                    try await backend.accessibilityTree(for: device), query: query, elementType: elementType, allowOffscreen: allowOffscreen,
+                    readsHiddenCovers: readsHiddenCovers, pick: pick, backend: backend, device: device
+                )
+            }
         }
     }
 
@@ -109,8 +112,11 @@ struct AccessibilityPoller {
                 roots: tree.roots, query: query, elementType: elementType, allowOffscreen: allowOffscreen, explainFailures: explain, logger: logger
             )
         }
+        let watchdog = DeviceWatchdog()
         let fetch: () async throws -> UITree = {
-            await fillingGaps(try await backend.accessibilityTree(for: device), for: [query], elementType: elementType, allowOffscreen: allowOffscreen, on: backend, device: device)
+            try await watchdog.guardingInputRead(of: device) {
+                await fillingGaps(try await backend.accessibilityTree(for: device), for: [query], elementType: elementType, allowOffscreen: allowOffscreen, on: backend, device: device)
+            }
         }
         let polled = try await poll(
             waitTimeout: waitTimeout,

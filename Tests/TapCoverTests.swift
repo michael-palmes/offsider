@@ -311,6 +311,63 @@ struct TapCoverTests {
         #expect(verdict.evidence == .drawingOrder && verdict.isConfident)
     }
 
+    @Test("a page's Back whose wrapper the hit-test finds, on a simulator list ordered by position, is not named as under the button of the screen beneath")
+    func wrapperHitNamesNoLowerButton() throws {
+        let pid = 42
+        let back = FakeUI.node(.button, id: "back", label: "Back", frame: FakeUI.frame(8, 110, 72, 44), pid: pid)
+        let wrapper = FakeUI.node(.other, frame: FakeUI.frame(0, 100, 402, 60), pid: pid)
+        let front = FakeUI.node(.group, id: "front-list", frame: FakeUI.frame(0, 100, 402, 670), pid: pid, children: [
+            wrapper, back, FakeUI.node(.text, label: "Rows", frame: FakeUI.frame(0, 700, 402, 40), pid: pid),
+        ])
+        let lower = FakeUI.node(.group, id: "lower-list", frame: FakeUI.frame(0, 100, 402, 774), pid: pid, children: [
+            FakeUI.node(.button, id: "lower-drawer", label: "Open Drawer", frame: FakeUI.frame(6, 104, 58, 58), pid: pid),
+            FakeUI.node(.text, label: "Feed", frame: FakeUI.frame(0, 700, 402, 40), pid: pid),
+        ])
+
+        let verdict = try Self.judge(FakeUI.tree([front, lower]), target: "back", hit: wrapper, candidates: [])
+
+        #expect(verdict?.isConfident != true)
+    }
+
+    /// A simulator screen with its button and a scrim over it, as it lists them: the scrim first, by position.
+    static func scrimOverButton() -> UITree {
+        let pid = 42
+        return FakeUI.tree([
+            FakeUI.node(.group, id: "root", frame: FakeUI.frame(0, 0, 402, 874), pid: pid, children: [
+                FakeUI.node(.button, id: "scrim", frame: FakeUI.frame(0, 0, 402, 874), pid: pid),
+                FakeUI.node(.text, label: "Title", frame: FakeUI.frame(16, 100, 370, 20), pid: pid),
+                FakeUI.node(.button, id: "send", label: "Send", frame: FakeUI.frame(16, 788, 370, 44), pid: pid),
+            ]),
+        ])
+    }
+
+    @Test("a simulator's hit on a scrim under another role is that scrim, a confident cover")
+    func scrimAnswerIsConfidentCover() throws {
+        let tree = Self.scrimOverButton()
+        let hit = FakeUI.node(.other, id: "scrim", frame: FakeUI.frame(0, 0, 402, 874), pid: 42)
+        let verdict = try #require(try Self.judge(tree, target: "send", hit: hit, candidates: []))
+        #expect(verdict.cover.id == "scrim" && verdict.isConfident && verdict.evidence == .hitTest)
+    }
+
+    @Test("a simulator's hit on an unnamed screen-sized group may be a veil, so it is a guess that names it")
+    func veilAnswerIsGuess() throws {
+        let hit = FakeUI.node(.group, frame: FakeUI.frame(0, 0, 402, 874), pid: 42)
+        let tree = FakeUI.tree([
+            FakeUI.node(.group, frame: FakeUI.frame(0, 0, 402, 874), pid: 42, children: [
+                FakeUI.node(.button, id: "send", label: "Send", frame: FakeUI.frame(16, 788, 370, 44), pid: 42),
+            ]),
+        ])
+        let verdict = try #require(try Self.judge(tree, target: "send", hit: hit, candidates: []))
+        #expect(verdict.cover.frame == hit.frame && !verdict.isConfident)
+    }
+
+    @Test("a simulator's hit on the application itself says nothing, so the point stays clear")
+    func applicationAnswerSaysNothing() throws {
+        let tree = Self.scrimOverButton()
+        let verdict = try Self.judge(tree, target: "Title", hit: tree.roots[0], candidates: [])
+        #expect(verdict == nil)
+    }
+
     @Test("a coveredBy report names role, id, label, frame, screen, evidence and process, and its JSON keeps that order")
     func coverReportJSON() {
         let verdict = CoverVerdict(cover: FakeUI.node(.button, id: "buy", label: "Buy", frame: FakeUI.frame(1, 2, 3, 4)), evidence: .drawingOrder, isConfident: true, screen: "product-page")

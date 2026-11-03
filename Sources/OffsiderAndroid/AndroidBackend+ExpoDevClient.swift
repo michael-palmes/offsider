@@ -60,9 +60,16 @@ extension AndroidBackend: ExpoDevClientOpening {
     /// Reads `adb reverse` only; `addMetroReverse` is the one place Offsider sets one.
     public func metroHost(port: Int, on id: DeviceID) async throws -> String {
         try await prepare()
-        let listing = (try? await requireClient().deviceQuery("reverse:list-forward", on: id.rawValue)) ?? ""
         let isEmulator: Bool
         if case .androidSerial = DeviceIDClassifier.classify(id.rawValue) { isEmulator = true } else { isEmulator = false }
+        let listing: String
+        do {
+            listing = try await requireClient().deviceQuery("reverse:list-forward", on: id.rawValue)
+        } catch {
+            // An emulator has 10.0.2.2 either way; on a phone a failed read says nothing about whether a reverse is there.
+            guard isEmulator else { throw error }
+            listing = ""
+        }
         guard let host = ExpoDevClient.androidMetroHost(reverseList: listing, port: port, isEmulator: isEmulator) else {
             if let other = MetroReverse.mappings(listing).first(where: { $0.phone == "tcp:\(port)" }) {
                 throw ExpoDevClientError(

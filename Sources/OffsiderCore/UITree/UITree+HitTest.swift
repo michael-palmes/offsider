@@ -13,29 +13,66 @@ extension UITree {
 
     /// `hitChain(at:)` over `roots`, taking roots and siblings top first and skipping nodes Android hides from the user.
     public static func hitChain(in roots: [UINode], at point: UIPoint) -> [UINode] {
-        for root in topFirstRoots(roots) {
-            if let chain = hitChain(from: root, at: point, parentHidden: true) {
-                return chain
+        nodes(along: hitPath(in: roots, at: point), in: roots)
+    }
+
+    /// `hitChain(in:at:)` as child indexes, the first picking the root; empty outside every root. A node at a path in `skipping` counts as gone, with all it holds.
+    static func hitPath(in roots: [UINode], at point: UIPoint, skipping: Set<[Int]> = []) -> [Int] {
+        var path: [Int] = []
+        for index in topFirstRootIndexes(roots) {
+            path.append(index)
+            if hitPath(from: roots[index], at: point, parentHidden: true, skipping: skipping, path: &path) {
+                return path
             }
+            path.removeLast()
         }
         return []
     }
 
+    /// The nodes from a root down to the one `path` leads to, both included.
+    public static func nodes(along path: [Int], in roots: [UINode]) -> [UINode] {
+        guard let first = path.first else { return [] }
+        var chain = [roots[first]]
+        for index in path.dropFirst() {
+            chain.append(chain[chain.count - 1].children[index])
+        }
+        return chain
+    }
+
+    /// The pre-order index, as `flattened()` lists them, of the node `path` leads to.
+    static func preorderIndex(of path: [Int], in roots: [UINode]) -> Int {
+        func count(_ node: UINode) -> Int {
+            node.children.reduce(1) { $0 + count($1) }
+        }
+        guard let first = path.first else { return 0 }
+        var index = roots[..<first].reduce(0) { $0 + count($1) }
+        var node = roots[first]
+        for child in path.dropFirst() {
+            index += node.children[..<child].reduce(1) { $0 + count($1) }
+            node = node.children[child]
+        }
+        return index
+    }
+
     /// Siblings top first: by Android drawing order when every sibling has one, else the last listed first.
     public static func topFirst(_ siblings: [UINode]) -> [UINode] {
+        topFirstIndexes(siblings).map { siblings[$0] }
+    }
+
+    private static func topFirstIndexes(_ siblings: [UINode]) -> [Int] {
         guard siblings.count > 1, let orders = drawingOrders(of: siblings) else {
-            return siblings.reversed()
+            return Array(siblings.indices.reversed())
         }
-        return siblings.indices.sorted { orders[$0] != orders[$1] ? orders[$0] > orders[$1] : $0 > $1 }.map { siblings[$0] }
+        return siblings.indices.sorted { orders[$0] != orders[$1] ? orders[$0] > orders[$1] : $0 > $1 }
     }
 
     /// Roots top first: by window layer when every root has one, else the last listed first.
-    static func topFirstRoots(_ roots: [UINode]) -> [UINode] {
+    private static func topFirstRootIndexes(_ roots: [UINode]) -> [Int] {
         let layers = roots.compactMap(\.windowLayer)
         guard roots.count > 1, layers.count == roots.count else {
-            return roots.reversed()
+            return Array(roots.indices.reversed())
         }
-        return roots.indices.sorted { layers[$0] != layers[$1] ? layers[$0] > layers[$1] : $0 > $1 }.map { roots[$0] }
+        return roots.indices.sorted { layers[$0] != layers[$1] ? layers[$0] > layers[$1] : $0 > $1 }
     }
 
     /// Each sibling's Android drawing order, or nil when any lacks one.
@@ -95,20 +132,25 @@ extension UITree {
     }
 
     /// A node Android hides from the user takes no touch, unless its parent or window is hidden too, as a whole app is behind a floating keyboard.
-    private static func hitChain(from node: UINode, at point: UIPoint, parentHidden: Bool) -> [UINode]? {
+    private static func hitPath(from node: UINode, at point: UIPoint, parentHidden: Bool, skipping: Set<[Int]>, path: inout [Int]) -> Bool {
+        if !skipping.isEmpty, skipping.contains(path) {
+            return false
+        }
         let hidden = node.visibleToUser == false
         if hidden, !parentHidden {
-            return nil
+            return false
         }
-        for child in topFirst(node.children) {
-            if let chain = hitChain(from: child, at: point, parentHidden: hidden) {
-                return [node] + chain
+        for index in topFirstIndexes(node.children) {
+            path.append(index)
+            if hitPath(from: node.children[index], at: point, parentHidden: hidden, skipping: skipping, path: &path) {
+                return true
             }
+            path.removeLast()
         }
         guard let frame = node.frame, frame.contains(point) else {
-            return nil
+            return false
         }
-        return [node]
+        return true
     }
 }
 

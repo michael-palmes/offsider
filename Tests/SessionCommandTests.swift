@@ -1,6 +1,7 @@
 import Foundation
 @testable import Offsider
 @testable import OffsiderAndroid
+import OffsiderCore
 import OffsiderIOSDevice
 import Testing
 
@@ -62,6 +63,84 @@ struct SessionCommandTests {
         #expect(stopped.count == 2)
         #expect(stopped[0]["device"] as? String == "A" && stopped[0]["runner"] as? Bool == true && stopped[0]["broker"] as? Bool == true)
         #expect(stopped[1]["device"] as? String == "B" && stopped[1]["runner"] as? Bool == false)
+    }
+
+    @Test("a failed removal is named with the command that retries it, in text and JSON, and stops the line that says nothing ran")
+    func failedRemovalNamed() throws {
+        let outcome = RecordResetOutcome(failed: ["S2"], notConnected: ["S3"], skipped: ["S4"])
+        let left = DeviceSessionRow.left(reverses: [MetroReverseRemoval(serial: "S1", ports: [8081])], postures: outcome)
+        #expect(left.map(\.device) == ["S1", "S2", "S3", "S4"])
+        #expect(left.map(\.why) == [.failed, .failed, .notConnected, .notAllowed])
+        #expect(left[0].sentence == "Offsider could not remove the adb reverse tcp:8081 on S1. Run `offsider session stop --device S1` to try again.")
+        #expect(left[1].parts == ["posture override"])
+        #expect(left[2].sentence.contains("`offsider session stop --device S3`"))
+        #expect(left[3].sentence.contains("no longer allowed") && left[3].sentence.contains("`offsider session stop --device S4`"))
+
+        let object = try #require(try JSONSerialization.jsonObject(with: Data(DeviceSessionRow.stoppedJSON([], left: left).utf8)) as? [String: Any])
+        #expect((object["stopped"] as? [Any])?.isEmpty == true)
+        let rows = try #require(object["notRemoved"] as? [[String: Any]])
+        #expect(rows[0]["device"] as? String == "S1" && rows[0]["reverses"] as? [Int] == [8081] && rows[0]["why"] as? String == "failed")
+        #expect(rows[0]["retry"] as? String == "offsider session stop --device S1")
+        #expect(rows[3]["posture"] as? Bool == true && rows[3]["why"] as? String == "notAllowed")
+    }
+
+    @Test("an airplane mode left is named beside a posture override on the same device, and in JSON")
+    func airplaneLeftNamed() throws {
+        let left = DeviceSessionRow.left(
+            reverses: [], postures: RecordResetOutcome(notConnected: ["S1"]), airplanes: RecordResetOutcome(failed: ["S2"], notConnected: ["S1", "S3"], skipped: ["S4"])
+        )
+        #expect(left.map(\.device) == ["S2", "S1", "S3", "S4"])
+        #expect(left.map(\.why) == [.failed, .notConnected, .notConnected, .notAllowed])
+        #expect(left[1].parts == ["posture override", "airplane mode"])
+        #expect(left[0].sentence == "Offsider could not remove the airplane mode on S2. Run `offsider session stop --device S2` to try again.")
+        let object = try #require(try JSONSerialization.jsonObject(with: Data(DeviceSessionRow.stoppedJSON([], left: left).utf8)) as? [String: Any])
+        let rows = try #require(object["notRemoved"] as? [[String: Any]])
+        #expect(rows[0]["airplane"] as? Bool == true && rows[0]["posture"] as? Bool == false)
+    }
+
+    @Test("a stop that only left something says that alone: no claim that nothing ran, for an agent or a person")
+    func onlyLeftSaysSo() {
+        let left = DeviceSessionRow.Left(device: "S3", posture: true, why: .notConnected)
+        let agent = ConsoleCapture()
+        AgentOutputTests.agentConsole(agent).show(Page([.person([]), .agent("")], notices: [left.notice]))
+        #expect(agent.out.isEmpty)
+        #expect(agent.err.contains("`offsider session stop --device S3`"))
+        let person = ConsoleCapture()
+        person.console(out: .person(), err: .person()).show(Page([.person([]), .agent("")], notices: [left.notice]))
+        let shown = person.out + person.err
+        #expect(shown.contains("Posture override stays on S3: not connected"))
+        #expect(shown.contains("offsider session stop --device S3"))
+        #expect(!shown.contains("Nothing to stop"))
+    }
+
+    @Test("a bare stop resets only phones still allowed, so a lapsed phone is sent nothing; a named one goes regardless")
+    func lapsedPhoneOnlyByName() {
+        let lapsed = DeviceAllowance(platform: .android, key: "R58M123ABC", name: "Test Pixel", added: Date(timeIntervalSince1970: 1_000), expires: Date(timeIntervalSince1970: 2_000), apps: [])
+        let gate = DevicePolicyGate.fixed(PhysicalDevicePolicy(managed: .none, list: DeviceAllowList(entries: [lapsed])), now: Date(timeIntervalSince1970: 3_000))
+        #expect(!SessionStop.mayReset(named: false, gate: gate)("R58M123ABC"))
+        #expect(SessionStop.mayReset(named: true, gate: gate)("R58M123ABC"))
+        let live = DevicePolicyGate.fixed(PhysicalDevicePolicy(managed: .none, list: DeviceAllowList(entries: [lapsed])), now: Date(timeIntervalSince1970: 1_500))
+        #expect(SessionStop.mayReset(named: false, gate: live)("R58M123ABC"))
+    }
+
+    @Test("status lists what is recorded on a phone, labelled as recorded, beside its helper or on a row of its own")
+    func recordedRows() throws {
+        let rows = DeviceSessionRow.rows(
+            runners: [], brokers: [], helpers: [Self.helper("emulator-5554")],
+            recorded: [RecordedPhoneState(serial: "emulator-5554", reverses: [], posture: true, airplane: true), RecordedPhoneState(serial: "R58M123ABC", reverses: [8081], posture: false)]
+        )
+        #expect(rows.map(\.device) == ["emulator-5554", "R58M123ABC"])
+        let text = DeviceSessionRow.text(rows)
+        #expect(text.contains("adb reverse tcp:8081  recorded, may be gone"))
+        #expect(text.contains("posture override  recorded, may be gone"))
+        #expect(text.contains("airplane mode  recorded, may be gone"))
+        #expect(!text.contains("not running"), "a phone with only records has no runner row to speak of")
+        let object = try #require(try JSONSerialization.jsonObject(with: Data(DeviceSessionRow.json(rows).utf8)) as? [String: Any])
+        let sessions = try #require(object["sessions"] as? [[String: Any]])
+        let recorded = try #require(sessions[1]["recorded"] as? [String: Any])
+        #expect(recorded["reverses"] as? [Int] == [8081] && recorded["posture"] as? Bool == false)
+        #expect((sessions[0]["recorded"] as? [String: Any])?["posture"] as? Bool == true)
+        #expect(DeviceSessionRow.json(DeviceSessionRow.rows(runners: [Self.runner("A")], brokers: [])).contains(#""recorded":null"#))
     }
 
     static func helper(_ serial: String) -> WarmHelperStatus {
