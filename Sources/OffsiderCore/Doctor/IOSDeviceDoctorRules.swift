@@ -20,7 +20,7 @@ public enum IOSDeviceDoctorRules {
 
     /// Whether `--fix` should mount the developer disk image; never over Wi-Fi.
     public static func isDDIFixable(_ facts: IOSDeviceDoctorFacts) -> Bool {
-        guard let row = facts.row, row.isConnected, row.isWired, row.pairingState == "paired", row.developerModeStatus == "enabled" else { return false }
+        guard let row = facts.row, row.isConnected, row.isWired, row.pairingState == "paired", row.developerModeStatus == "enabled", facts.lock != .locked else { return false }
         return row.ddiServicesAvailable == false
     }
 
@@ -61,8 +61,8 @@ public enum IOSDeviceDoctorRules {
         let modeVerdict = developerMode(row.developerModeStatus)
         checks.append(DoctorCheckResult(id: .iosDeviceDeveloperMode, verdict: modeVerdict))
         if modeVerdict.status == .pass {
-            let ddiVerdict = ddi(row, udid: facts.udid)
-            checks.append(DoctorCheckResult(id: .iosDeviceDDI, verdict: ddiVerdict, fixable: ddiVerdict.status == .warn && row.isWired))
+            let ddiVerdict = ddi(row, udid: facts.udid, locked: facts.lock == .locked)
+            checks.append(DoctorCheckResult(id: .iosDeviceDDI, verdict: ddiVerdict, fixable: ddiVerdict.status == .warn && row.isWired && facts.lock != .locked))
             checks.append(DoctorCheckResult(id: .iosDeviceTunnel, verdict: tunnel(row.tunnelState)))
         } else {
             checks += [.iosDeviceDDI, .iosDeviceTunnel].map { DoctorCheckResult.skipped($0, "requires \(DoctorCheckID.iosDeviceDeveloperMode.rawValue)") }
@@ -146,10 +146,12 @@ public enum IOSDeviceDoctorRules {
             : (.fail, "Off", "Turn it on in Settings > Privacy & Security > Developer Mode, then restart the device.")
     }
 
-    public static func ddi(_ row: IOSDeviceDoctorRow, udid: String) -> Verdict {
+    public static func ddi(_ row: IOSDeviceDoctorRow, udid: String, locked: Bool = false) -> Verdict {
         switch row.ddiServicesAvailable {
         case true?:
             return (.pass, "Developer services available", nil)
+        case false? where locked:
+            return (.warn, "Cannot mount while the device is locked", "Unlock it, then retry.")
         case false? where !row.isWired:
             return (.warn, "Developer services are not available", cableHint)
         case false? where row.deviceSupportFinalized:
@@ -177,6 +179,8 @@ public enum IOSDeviceDoctorRules {
         switch fact {
         case nil:
             return (.skip, "the device did not answer", nil)
+        case .locked?:
+            return (.warn, "Locked", "Unlock it before driving it; Offsider never types an iPhone passcode.")
         case .unreadable(let message)?:
             return (.skip, "could not read it: \(message)", nil)
         case .read(let passcodeRequired, let backlightOn)?:

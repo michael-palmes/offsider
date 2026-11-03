@@ -29,6 +29,11 @@ extension IOSDeviceBackend {
         set { state.targetApp = newValue }
     }
 
+    /// Proves the runner answers on the device, starting it when needed; throws what stands in the way.
+    public func checkRunner(_ id: DeviceID) async throws {
+        _ = try await runner(for: id).ping()
+    }
+
     /// One connection per device per command, started or reused through the session file.
     func runner(for id: DeviceID) async throws -> RunnerClient {
         let udid = id.rawValue

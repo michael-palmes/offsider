@@ -16,21 +16,48 @@ struct AgentPermissionRulesTests {
         return block.compactMapValues { $0 as? [String] }
     }
 
-    @Test("the person-only commands are denied and the sign-in, permission and raw device commands ask")
+    @Test("nothing is denied, and the commands that change a login, a permission or reach a device directly ask")
     func ruleSets() {
-        let deny = AgentPermissionRules.patterns(.deny)
         let ask = AgentPermissionRules.patterns(.ask)
-        for pattern in ["Bash(offsider credential join*)", "Bash(offsider unlock-code*)", "Bash(offsider wake --unlock*)", "Bash(offsider devices add*)",
-                        "Bash(offsider describe-ui --raw-source*)", "Bash(offsider runner build --register-device*)"] {
-            #expect(deny.contains(pattern))
-        }
-        for pattern in ["Bash(offsider credential add*)", "Bash(offsider login*)", "Bash(offsider permission*)", "Bash(offsider type --file*)",
+        #expect(AgentPermissionRules.patterns(.deny).isEmpty)
+        for pattern in ["Bash(offsider credential add*)", "Bash(offsider permission*)", "Bash(offsider type --file*)", "Bash(offsider unlock-code remove*)",
                         "Bash(offsider screenshot --no-mask-secure*)", "Bash(offsider batch --no-mask-secure*)", "Bash(adb *)", "Bash(devicectl *)", "Bash(xcrun devicectl *)"] {
             #expect(ask.contains(pattern))
         }
-        #expect(deny == deny.sorted())
         #expect(ask == ask.sorted())
         #expect(AgentPermissionRules.rules.allSatisfy { !$0.reason.isEmpty && !$0.reason.contains("\"") && !$0.reason.contains("\u{2014}") })
+    }
+
+    @Test("an agent can read the help of every person-only command, and login needs no prompt", arguments: [
+        "offsider devices add --help", "offsider credential join --help", "offsider unlock-code --help", "offsider unlock-code set --help",
+        "offsider runner build --register-device --help", "offsider wake --unlock --help", "offsider describe-ui --raw-source --help",
+        "offsider login dev --device 00000000-0000-0000-0000-000000000001",
+    ])
+    func helpStaysReadable(command: String) {
+        #expect(!matches(command, AgentPermissionRules.rules.map(\.claudePattern)))
+        #expect(!AgentPermissionRules.codexRules.contains { command.split(separator: " ").map(String.init).starts(with: $0.codex) })
+    }
+
+    @Test("init takes out every rule it used to deny, and the old login ask, once; a person's own lists keep theirs")
+    func olderRulesComeOut() throws {
+        let denied = AgentPermissionRules.replacedRules.filter { $0.decision == .deny }.map(\.claudePattern)
+        #expect(denied.count == 6)
+        let older = Data(#"{"permissions": {"deny": \#(json(denied + ["Bash(rm -rf*)"])), "ask": ["Bash(offsider login*)"]}}"#.utf8)
+        let merge = try AgentPermissionRules.merge(.claudeCode, existing: older)
+        let rules = try permissions(merge.content)
+        #expect(rules["deny"] == ["Bash(rm -rf*)"])
+        #expect(rules["ask"]?.contains("Bash(offsider login*)") == false)
+        #expect(merge.replaced == 7)
+        #expect(try AgentPermissionRules.merge(.claudeCode, existing: merge.content) == AgentPermissionRules.Merge(content: nil, added: 0))
+
+        let allowed = try AgentPermissionRules.merge(.claudeCode, existing: Data(#"{"permissions": {"allow": ["Bash(offsider login*)"]}}"#.utf8))
+        #expect(try permissions(allowed.content)["allow"] == ["Bash(offsider login*)"])
+
+        let codex = AgentPermissionRules.codexHeader + AgentPermissionRules.replacedRules.dropFirst().map { $0.codexRule + "\n" }.joined()
+        let cleaned = try AgentPermissionRules.merge(.codex, existing: Data(codex.utf8))
+        let text = String(decoding: try #require(cleaned.content), as: UTF8.self)
+        #expect(cleaned.replaced == 7)
+        #expect(!text.contains("forbidden") && !text.contains(#""offsider", "login""#))
     }
 
     /// The `Bash(...)` patterns in `lists` that match `command` as Claude Code's prefix rules do.
@@ -38,15 +65,15 @@ struct AgentPermissionRulesTests {
         patterns.contains { pattern in AgentPermissionRules.commandPrefix(pattern).map { command.hasPrefix($0) } ?? false }
     }
 
-    @Test("every credential action that writes asks or is denied for both agents, and the read-only status runs freely")
+    @Test("every credential action that writes asks for both agents; status reads and join refuses by itself")
     func credentialWritesAsk() {
-        let guarded = AgentPermissionRules.patterns(.ask) + AgentPermissionRules.patterns(.deny)
+        let guarded = AgentPermissionRules.patterns(.ask)
         let actions = ["add"] + CredentialCommand.Action.allCases.map(\.rawValue)
         for action in actions {
             let command = "offsider credential \(action) --app com.example.app"
             let codex = AgentPermissionRules.codexRules.contains { ["offsider", "credential", action, "--app"].starts(with: $0.codex) }
-            #expect(matches(command, guarded) == (action != "status"), "\(command)")
-            #expect(codex == (action != "status"), "Codex: \(command)")
+            #expect(matches(command, guarded) == !["status", "join"].contains(action), "\(command)")
+            #expect(codex == !["status", "join"].contains(action), "Codex: \(command)")
         }
     }
 
@@ -71,7 +98,6 @@ struct AgentPermissionRulesTests {
             let rules = try permissions(moved.content)
             #expect(rules[list]?.first == broad, "the person's own list keeps it")
             #expect(rules["ask"]?.contains { narrow.contains($0) } == false, "\(list) stands for the narrow rules")
-            #expect(rules["deny"]?.contains("Bash(offsider credential join*)") == (list == "allow"), "a broad deny already denies join")
         }
 
         let both = try AgentPermissionRules.merge(.claudeCode, existing: Data(#"{"permissions": {"allow": ["Bash(offsider credential*)"], "ask": ["Bash(offsider credential*)"]}}"#.utf8))
@@ -86,20 +112,19 @@ struct AgentPermissionRulesTests {
             rule.claude.hasPrefix("offsider credential ") && rule.decision == .ask ? "Bash(\(rule.claude.dropLast()):*)" : rule.claudePattern
         }
         let all = AgentPermissionRules.rules.map(\.claudePattern)
-        let ask = theirs.filter { !AgentPermissionRules.patterns(.deny).contains($0) }
-        let narrowed = Data(#"{"permissions": {"deny": \#(json(AgentPermissionRules.patterns(.deny))), "ask": \#(json(ask))}}"#.utf8)
-        #expect(ask != AgentPermissionRules.patterns(.ask), "the credential rules are spelt the person's way")
+        let narrowed = Data(#"{"permissions": {"ask": \#(json(theirs))}}"#.utf8)
+        #expect(theirs != AgentPermissionRules.patterns(.ask), "the credential rules are spelt the person's way")
         #expect(try AgentPermissionRules.merge(.claudeCode, existing: narrowed) == AgentPermissionRules.Merge(content: nil, added: 0))
 
-        let broadAllow = try AgentPermissionRules.merge(.claudeCode, existing: Data(#"{"permissions": {"allow": ["Bash(offsider*)"], "ask": ["Bash(offsider unlock-code:*)"]}}"#.utf8))
-        #expect(broadAllow.added == all.count, "an allow never stands in for a rule, and an ask never for a deny")
+        let broadAllow = try AgentPermissionRules.merge(.claudeCode, existing: Data(#"{"permissions": {"allow": ["Bash(offsider*)"]}}"#.utf8))
+        #expect(broadAllow.added == all.count, "an allow never stands in for a rule")
         let deniedAll = Data(#"{"permissions": {"deny": ["Bash(offsider *)"]}}"#.utf8)
         #expect(try AgentPermissionRules.merge(.claudeCode, existing: deniedAll).added == all.filter { !$0.hasPrefix("Bash(offsider ") }.count)
     }
 
     @Test("a person's exact Codex line decides its rule, whichever way they changed it, and init adds no prompt over it", arguments: [
         (#"pattern=["offsider", "credential", "add"], decision="allow""#, #"pattern=["offsider", "credential", "add"], decision="prompt""#),
-        (#"pattern=["offsider", "devices", "add"], decision="prompt""#, #"pattern=["offsider", "devices", "add"], decision="forbidden""#),
+        (#"pattern=["offsider", "permission"], decision="forbidden""#, #"pattern=["offsider", "permission"], decision="prompt""#),
     ])
     func codexExactEditDecides(line: String, added: String) throws {
         let edited = AgentPermissionRules.codexHeader + "prefix_rule(\(line), justification=\"mine\")\n"
@@ -160,7 +185,6 @@ struct AgentPermissionRulesTests {
             let keptText = String(decoding: try #require(kept.content), as: UTF8.self)
             #expect(keptText.hasPrefix(moved))
             #expect(!keptText.contains(#""credential", "add"]"#), "decision \(decision)")
-            #expect(keptText.contains(#""credential", "join"], decision="forbidden""#) == (decision == "allow"), "a broad forbidden already forbids join")
         }
 
         let both = older + #"prefix_rule(pattern=["offsider", "credential"], decision="allow")"# + "\n"
@@ -197,8 +221,7 @@ struct AgentPermissionRulesTests {
 
         let rules = try permissions(merge.content)
         #expect(rules["allow"] == ["Bash(git status)", "Bash(adb *)"])
-        #expect(rules["deny"]?.first == "Bash(rm -rf*)")
-        #expect(rules["deny"]?.contains("Bash(offsider devices add*)") == true)
+        #expect(rules["deny"] == ["Bash(rm -rf*)"])
         #expect(rules["ask"]?.contains("Bash(adb *)") == false)
 
         let text = String(decoding: try #require(merge.content), as: UTF8.self)
@@ -219,7 +242,7 @@ struct AgentPermissionRulesTests {
             let merge = try AgentPermissionRules.merge(.claudeCode, existing: existing)
             #expect(merge.added == AgentPermissionRules.rules.count)
             let rules = try permissions(merge.content)
-            #expect(rules["deny"] == AgentPermissionRules.patterns(.deny))
+            #expect(rules["deny"] == nil)
             #expect(rules["ask"] == AgentPermissionRules.patterns(.ask))
         }
     }
@@ -246,17 +269,17 @@ struct AgentPermissionRulesTests {
         #expect((root["big"] as? NSNumber)?.int64Value == 12_345_678_901_234)
     }
 
-    @Test("Codex gets prefix rules with forbidden and prompt decisions, appended once")
+    @Test("Codex gets prefix rules that prompt, appended once")
     func codexRules() throws {
         let merge = try AgentPermissionRules.merge(.codex, existing: nil)
         let text = String(decoding: try #require(merge.content), as: UTF8.self)
         #expect(merge.added == AgentPermissionRules.codexRules.count)
-        #expect(text.contains(#"prefix_rule(pattern=["offsider", "devices", "add"], decision="forbidden", justification="#))
-        #expect(text.contains(#"prefix_rule(pattern=["offsider", "login"], decision="prompt", justification="#))
+        #expect(text.contains(#"prefix_rule(pattern=["offsider", "credential", "add"], decision="prompt", justification="#))
+        #expect(!text.contains("forbidden"))
         #expect(!text.contains("untrusted"))
         #expect(try AgentPermissionRules.merge(.codex, existing: merge.content).added == 0)
 
-        let edited = text.replacingOccurrences(of: "Signs in with a saved test password.", with: "My own words.")
+        let edited = text.replacingOccurrences(of: "Saves a test password.", with: "My own words.")
             .replacingOccurrences(of: #"prefix_rule(pattern=["adb"], decision="prompt""#, with: "# removed")
         let topUp = try AgentPermissionRules.merge(.codex, existing: Data(edited.utf8))
         #expect(topUp.added == 1, "a reworded justification still counts; the removed adb rule comes back")

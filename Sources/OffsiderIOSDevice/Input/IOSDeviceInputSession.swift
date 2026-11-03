@@ -116,7 +116,10 @@ final class IOSDeviceInputSession: TextInputSession {
     /// US keyboard text through broker keys when it sends them; anything else through the runner.
     func typeText(_ text: String) async throws {
         try await preflight()
-        if TextToHIDEvents.validateText(text), (try? await touchLowering())?.brokerTouches == true {
+        let keys: Bool
+        if TextToHIDEvents.validateText(text) { keys = (try? await touchLowering())?.brokerTouches == true } else { keys = false }
+        if InputSecrecy.keysOnly, !keys { throw IOSDeviceError.keysOnlyRefusal(text, device: device) }
+        if keys {
             let requests = try Self.keyRequests(typing: text)
             for (index, steps) in requests.enumerated() {
                 do {
@@ -150,8 +153,19 @@ final class IOSDeviceInputSession: TextInputSession {
 
     func replaceText(_ text: String) async throws {
         try await preflight()
+        if InputSecrecy.keysOnly {
+            guard (try? await touchLowering())?.brokerTouches == true else { throw IOSDeviceError.keysOnlyRefusal(text, device: device) }
+            try await session().keys(Self.selectAllAndDelete)
+            try await typeText(text)
+            return
+        }
         try await requireRunnerText("Replacing a field's text").replaceText(text, on: device)
     }
+
+    /// Command-A then Delete, as a hardware keyboard would, on the focused field.
+    static let selectAllAndDelete: [DeviceSessionStep] = [
+        .key(227, down: true), .key(4, down: true), .key(4, down: false), .key(227, down: false), .key(42, down: true), .key(42, down: false),
+    ]
 
     func close() async {
         await runnerSession?.close()

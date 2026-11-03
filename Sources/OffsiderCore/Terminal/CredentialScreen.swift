@@ -17,12 +17,12 @@ public enum CredentialScreen {
     public static let appsQuestion = "Which apps?"
     public static let typeApps = "Type app IDs"
     public static let lookingForApps = "Looking for your apps"
-    public static let phonesQuestion = "Sign in on phones too?"
+    public static let phonesQuestion = "Use on real phones?"
     public static let virtualOnly = "Simulators and emulators only"
-    public static let phonesToo = "Allowed Android phones too"
-    public static let phonesDetail = "Touch ID at each sign-in"
+    public static let phonesToo = "Added phones and tablets too"
+    public static let phonesDetail = "Touch ID at each sign-in; test devices need none"
     public static let virtualReceipt = "simulators and emulators"
-    public static let phonesReceipt = "also allowed Android phones"
+    public static let phonesReceipt = "also added phones and tablets"
 
     /// Every `credential add` question, so the answers line up across the whole block.
     public static let promptLabels = [appsLabel, nameLabel, usernameLabel, passwordLabel, againLabel, aboutLabel, tagsLabel]

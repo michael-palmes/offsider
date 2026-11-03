@@ -54,9 +54,10 @@ struct Wake: AsyncParsableCommand {
             guard let backend = route.backend as? any AwakeControlling else {
                 throw CLIError(errorDescription: "wake is not available for \(booted.id.rawValue).", reason: .notSupported)
             }
+            let whole = route.allowance.map { DevicePolicyGate.current.policy().drivesWhole($0) } ?? !route.device.isPhysicalAndroidDevice
             return try await Self.result(
                 unlock: unlock, json: json, booted: booted,
-                backend: backend, store: KeychainUnlockCodeStore(), ledger: UnlockAttemptLedger()
+                backend: backend, store: KeychainUnlockCodeStore(), ledger: UnlockAttemptLedger(), confirm: Self.unlockConsent(whole: whole)
             )
         }
         DevicePersonView.emit(result.text, json: json, person: result.person, console: console)
@@ -99,6 +100,12 @@ struct Wake: AsyncParsableCommand {
         try await result(unlock: unlock, json: json, booted: booted, backend: backend, store: store, ledger: ledger, recordingLive: recordingLive).text
     }
 
+    /// Nothing to ask on an emulator or test device; a phone someone may use needs Touch ID or the password before its code is read.
+    static func unlockConsent(whole: Bool) -> @Sendable (String) async throws -> Void {
+        guard !whole else { return { _ in } }
+        return { name in try await PersonPresence.confirm(reason: "type the saved unlock code on \(PromptScreen.label(name))") }
+    }
+
     /// The agent's text or JSON, and what a person sees.
     @MainActor
     static func result(
@@ -108,6 +115,7 @@ struct Wake: AsyncParsableCommand {
         backend: any AwakeControlling,
         store: any UnlockCodeStoring,
         ledger: UnlockAttemptLedger,
+        confirm: (String) async throws -> Void = { _ in },
         recordingLive: (DeviceLockKey) -> Bool = { RecordingMarker.isLive($0) }
     ) async throws -> (text: String, person: [Block]) {
         let device = booted.id
@@ -132,7 +140,7 @@ struct Wake: AsyncParsableCommand {
                 )
             }
             let attempt = try await enterSavedCode(
-                current, on: device, name: name, key: unlockKey, backend: backend, store: store, ledger: ledger, recordingLive: recordingLive
+                current, on: device, name: name, key: unlockKey, backend: backend, store: store, ledger: ledger, confirm: confirm, recordingLive: recordingLive
             )
             current = attempt.reading
             if attempt.typed { sent.append("code") }
@@ -155,6 +163,7 @@ struct Wake: AsyncParsableCommand {
         backend: any AwakeControlling,
         store: any UnlockCodeStoring,
         ledger: UnlockAttemptLedger,
+        confirm: (String) async throws -> Void = { _ in },
         recordingLive: (DeviceLockKey) -> Bool = { RecordingMarker.isLive($0) }
     ) async throws -> UnlockAttempt {
         func locked(_ message: String, hint: String? = nil, ask: String? = nil) -> CLIError {
@@ -171,9 +180,10 @@ struct Wake: AsyncParsableCommand {
         if let last = ledger.lastAttempt(key) {
             throw locked(last.message(name: name, device: key), hint: save, ask: last.ask(device: key))
         }
-        guard let code = try store.code(for: key) else {
-            throw locked("No unlock code is saved for \(name). Unlock it on the device, or save one with `\(save)`.", hint: save)
-        }
+        let missing = locked("No unlock code is saved for \(name). Unlock it on the device, or save one with `\(save)`.", hint: save)
+        guard try store.hasCode(for: key) else { throw missing }
+        try await confirm(name)
+        guard let code = try store.code(for: key) else { throw missing }
         if reading.credential == "pin", !code.isPIN {
             throw locked("\(name) asks for a PIN, but its saved code is not 4 to 16 digits, so Offsider typed nothing. Save its PIN with `\(save)`.", hint: save)
         }

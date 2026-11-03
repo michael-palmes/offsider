@@ -161,8 +161,8 @@ A command or option change also updates `docs/commands.md` (and the `docs/` page
 
 ## Physical iPhone caveats
 
-- Drive an iPhone or iPad only when the user names its UDID; never pick one from `devices`. Reading its `devicectl` row is fine.
-- Every physical device must first be on the allow-list: the user runs `offsider devices add` in their own terminal, chooses the device, a team and `com.mpalmes.offsider.playground` from its menus, then Touch ID or their password. Tell them which device and app to choose by name, never an id to paste. Agents never run `devices add`, never edit `~/.config/offsider/allowed-devices.json` and never add a bypass; `test-runner.sh` checks the list and says what to choose.
+- Drive an iPhone or iPad only when the user names it, in words, or it is an added test device (`devices status` says so); never pick another from `devices`. Reading its `devicectl` row is fine.
+- Every physical device must first be on the allow-list: the user runs one command in their own terminal, then Touch ID or their password. Read `offsider devices add --plan --json` and give them its complete command: it registers the device, starts its runner and proves it. For this repo's device suites, the playground pin is `--app com.mpalmes.offsider.playground`. Agents never run `devices add`, never edit `~/.config/offsider/allowed-devices.json` and never add a bypass; `test-runner.sh` checks the list and says what to choose.
 - Offsider never pairs a device or taps Trust on it, and refuses Wi-Fi connections (`device_not_wired`); keep it that way, USB only through usbmuxd. Only on a test device, which a person chose in `devices add`, may an agent tap a system prompt; never suggest one for a phone in personal use, and never treat a device as one without `devices status` saying so.
 - The runner source lives under `Sources/Offsider/Resources/runner`; after changing `project.yml`, regenerate the committed project with `scripts/build.sh runner` and check it with `scripts/build.sh runner --check`.
 - Never type, store or ask for an iPhone passcode; a locked device fails with `device_locked`.

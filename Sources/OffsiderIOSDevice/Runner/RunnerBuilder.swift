@@ -294,7 +294,7 @@ public struct XcodeRunnerBuilder: RunnerBuilding {
                     return RunnerBuild(key: key, xctestrun: xctestrun, directory: directory)
                 }
                 if case .device(let udid) = destination { try await approvePrefix(signing.prefix, udid: udid) }
-                return try await runBuild(key: key, directory: directory, destination: destination, signing: signing, deviceName: deviceName)
+                return try await runBuild(key: key, directory: directory, destination: destination, signing: signing)
             }
         } catch let error as IOSDeviceError {
             throw error
@@ -364,7 +364,7 @@ public struct XcodeRunnerBuilder: RunnerBuilding {
         return arguments
     }
 
-    func runBuild(key: String, directory: URL, destination: RunnerDestination, signing: Signing, deviceName: String) async throws -> RunnerBuild {
+    func runBuild(key: String, directory: URL, destination: RunnerDestination, signing: Signing) async throws -> RunnerBuild {
         let project = directory.appendingPathComponent("source", isDirectory: true)
         try? FileManager.default.removeItem(at: project)
         try FileManager.default.copyItem(at: source, to: project)
@@ -372,7 +372,7 @@ public struct XcodeRunnerBuilder: RunnerBuilding {
         if let expectedSource { try Self.verifyCopiedSource(project, expected: expectedSource) }
         let log = directory.appendingPathComponent("build.log")
         let team = signing.team.map { " with team \($0)" } ?? ""
-        notice("Building the Offsider runner for \(deviceName)\(team) as \(signing.prefix).runner (first time, about a minute)")
+        notice("Building the Offsider runner\(team) as \(signing.prefix).runner (first time, about a minute)")
         var childEnvironment = ChildEnvironment.make(.xcodebuild, from: environment)
         childEnvironment["DEVELOPER_DIR"] = xcode.developerDirectory
         let result: ProcessCaptureResult

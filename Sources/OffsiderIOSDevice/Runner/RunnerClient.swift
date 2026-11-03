@@ -133,6 +133,7 @@ public struct RunnerClient: Sendable {
     }
 
     public func type(_ text: String, replace: Bool, app: String?) async throws {
+        if InputSecrecy.keysOnly { throw IOSDeviceError.keysOnlyRefusal(text, device: DeviceID(rawValue: udid, platform: .ios)) }
         var body: [String: Any] = ["text": text, "replace": replace]
         body["app"] = app
         _ = try await call("POST", "/type", body)

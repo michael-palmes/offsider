@@ -1,6 +1,6 @@
 import Foundation
 
-/// The app in front: an iOS bundle id read from the simulator process, or the Android package on the tree.
+/// The app in front: an iOS bundle id from the iPhone runner or the simulator process, or the Android package on the tree.
 public enum ForegroundApp {
     public enum Failure: Equatable, Error, Sendable {
         case notInFront
@@ -42,7 +42,9 @@ public enum ForegroundApp {
     private static func bundleIdentifier(in tree: UITree, pathForPID: (Int) -> String?) throws -> String {
         let nodes = tree.roots.flatMap { $0.flattened() }
         let app = nodes.first { $0.role == .application } ?? tree.roots.first
-        guard let app, case .ios(let native) = app.native, let pid = native.pid else { throw Failure.notInFront }
+        guard let app, case .ios(let native) = app.native else { throw Failure.notInFront }
+        if let bundleID = native.bundleID { return bundleID }
+        guard let pid = native.pid else { throw Failure.notInFront }
         guard let path = pathForPID(pid) else { throw Failure.unreadableExecutable(pid) }
         guard let identifier = bundleIdentifier(atExecutable: path) else { throw Failure.missingBundleIdentifier }
         return identifier

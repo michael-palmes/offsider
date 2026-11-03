@@ -74,7 +74,7 @@ struct IOSDeviceSettingsTests {
     func setsAppearance(appearance: Appearance) async throws {
         let (backend, devicectl) = Self.backend()
         try await backend.setAppearance(appearance, on: Self.device)
-        #expect(devicectl.calls == [["device", "settings", "appearance", "--device", Self.udid, "--mode", appearance.rawValue, "--timeout", "20", "-q"]])
+        #expect(devicectl.calls == [["device", "settings", "appearance", "--device", Self.udid, "--mode", appearance.rawValue, "--timeout", "20", "--json-output", "-", "-q"]])
     }
 
     @Test("a standard text size is sent alone; an accessibility size also turns Larger Accessibility Sizes on")
@@ -83,8 +83,8 @@ struct IOSDeviceSettingsTests {
         try await backend.setContentSize(.extraLarge, on: Self.device)
         try await backend.setContentSize(.accessibilityLarge, on: Self.device)
         #expect(devicectl.calls == [
-            ["device", "settings", "appearance", "--device", Self.udid, "--text-size", "extra-large", "--timeout", "20", "-q"],
-            ["device", "settings", "appearance", "--device", Self.udid, "--text-size", "accessibility-large", "--larger-accessibility-sizes", "on", "--timeout", "20", "-q"],
+            ["device", "settings", "appearance", "--device", Self.udid, "--text-size", "extra-large", "--timeout", "20", "--json-output", "-", "-q"],
+            ["device", "settings", "appearance", "--device", Self.udid, "--text-size", "accessibility-large", "--larger-accessibility-sizes", "on", "--timeout", "20", "--json-output", "-", "-q"],
         ])
     }
 
@@ -118,6 +118,6 @@ struct IOSDeviceSettingsTests {
         _ = try await backend.orientation(of: Self.device)
 
         let read = ["device", "info", "displays", "--device", Self.udid, "--timeout", "20", "--json-output", "-", "-q"]
-        #expect(devicectl.calls == [read, ["device", "orientation", "set", "--device", Self.udid, "portraitUpsideDown", "--timeout", "20", "-q"], read])
+        #expect(devicectl.calls == [read, ["device", "orientation", "set", "--device", Self.udid, "portraitUpsideDown", "--timeout", "20", "--json-output", "-", "-q"], read])
     }
 }

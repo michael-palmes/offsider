@@ -10,8 +10,7 @@ struct ArgumentHintsTests {
     private let udidHint = "--udid was renamed to --device in 0.3.0. Run offsider devices to find device IDs."
     private let listHint = "list-simulators was renamed to list-devices in 0.3.0."
 
-    @Test("wake --unlock and type --file must come straight after the command, so the permission rules see them", arguments: [
-        (["wake", "--device", "emulator-5554", "--unlock"], "--unlock"),
+    @Test("type --file must come straight after the command, so the permission rules see it", arguments: [
         (["type", "--device", "emulator-5554", "--file", "notes.txt"], "--file"),
         (["type", "--allow-path", "--file=notes.txt"], "--file"),
     ])
@@ -23,6 +22,7 @@ struct ArgumentHintsTests {
 
     @Test("the same flags first, or as text after --, pass through", arguments: [
         ["wake", "--unlock", "--device", "emulator-5554"],
+        ["wake", "--device", "emulator-5554", "--unlock"],
         ["type", "--file", "notes.txt", "--device", "emulator-5554"],
         ["type", "--device", "emulator-5554", "--", "--file"],
         ["wake", "--device", "emulator-5554"],

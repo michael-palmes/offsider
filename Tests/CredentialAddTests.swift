@@ -208,8 +208,8 @@ struct CredentialAddTests {
         #expect(try store.keys(app: iosApp) == [LoginCredential.defaultAccountKey, "qa"])
     }
 
-    @Test("phones apply to the Android app and an unknown one, never to an app the picker knows is iOS")
-    func phonesSkipIOS() throws {
+    @Test("the phone choice goes on every app, iOS too, since login now signs in on an added iPhone")
+    func phonesReachIOS() throws {
         let store = MemoryLoginCredentialStore()
         let typed = LoginTarget(id: "com.example.typed", platform: nil)
         _ = try CredentialCommand.performMany(
@@ -217,11 +217,10 @@ struct CredentialAddTests {
             readCredential: { SharedAnswers().answer }
         )
         let key = LoginCredential.defaultAccountKey
-        #expect(try store.loadStored(app: iosApp, key: key)?.devices == .virtual)
-        #expect(try store.loadStored(app: iosApp, key: key)?.confirm == false)
-        #expect(try store.loadStored(app: androidApp, key: key)?.devices == .any)
-        #expect(try store.loadStored(app: androidApp, key: key)?.confirm == true)
-        #expect(try store.loadStored(app: typed.id, key: key)?.devices == .any)
+        for app in [iosApp, androidApp, typed.id] {
+            #expect(try store.loadStored(app: app, key: key)?.devices == .any)
+            #expect(try store.loadStored(app: app, key: key)?.confirm == true)
+        }
     }
 
     @Test("an Android app linked to the iOS one takes the phone choice through the one save they share")

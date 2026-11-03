@@ -133,7 +133,6 @@ struct CredentialCommand: AsyncParsableCommand {
             return
         }
         let deviceID = device.resolved?.id
-        if parsed == .signedOut { try Self.refuseSignedOutOnPhone(deviceID ?? "") }
         let settings = settingsEdit
         if !settings.loosening.isEmpty {
             try PersonPresence.requireTerminal(instead: "Ask the user to run `offsider credential \(parsed == .set ? "add" : parsed.rawValue)` with these flags in their own terminal.")
@@ -282,11 +281,11 @@ struct CredentialCommand: AsyncParsableCommand {
         return try await readForeground(deviceID)
     }
 
-    /// The foreground app, unless `--app` named one. A physical iPhone is refused before the prompt.
+    /// The foreground app, unless `--app` named one. A physical iPhone needs `--app`.
     func resolveApp() async throws -> String {
         if let app, let id = Self.appID(app) { return id }
         let deviceID = device.resolved?.id ?? ""
-        try CLIError.refuseOnPhone(deviceID, command: "credential", alternative: "Pass --app with the bundle id, such as com.example.app. login fills a form on a simulator or an Android device.")
+        try CLIError.refuseOnPhone(deviceID, command: "credential", alternative: "Pass --app with the bundle id, such as com.example.app.")
         return try await readForeground(deviceID)
     }
 
@@ -452,7 +451,6 @@ struct CredentialCommand: AsyncParsableCommand {
             return render(report)
         case .signedOut:
             guard let tracker, let deviceID else { throw CLIError(errorDescription: DeviceDefault.missingMessage, reason: .usage) }
-            try refuseSignedOutOnPhone(deviceID)
             let signedOut = try tracker.signOut(app: canonical, deviceID: deviceID)
             let report = CredentialReport(
                 action: "signed-out", app: app, key: signedOut.cleared?.key, saved: false, also: shared,
@@ -462,11 +460,6 @@ struct CredentialCommand: AsyncParsableCommand {
         case .join:
             throw CLIError(errorDescription: "join is not a saved login.", reason: .usage)
         }
-    }
-
-    /// login never runs on a physical iPhone or iPad, so nothing is recorded there to clear.
-    static func refuseSignedOutOnPhone(_ deviceID: String) throws {
-        try CLIError.refuseOnPhone(deviceID, command: "credential signed-out", alternative: "login does not run there, so Offsider records no sign-in on it.")
     }
 
     /// Person-only: the caller has checked for a terminal. `confirmLink` shows both ids and returns true for Link,
