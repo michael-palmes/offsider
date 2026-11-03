@@ -147,6 +147,8 @@ A `--verify --json` report also carries `ignored` (`{node, reason}` entries left
 | `emulator_timed_out` | 1 | The emulator did not answer a gRPC call in time | Retry when it responds |
 | `emulator_launch_failed` | 1 | The emulator could not start or exited during start-up | Read the log the message names |
 | `boot_timed_out` | 1 | The emulator did not finish booting in time | Run `offsider boot` again to keep waiting |
+| `shutdown_failed` | 1 | The simulator or emulator refused the stop | Follow the fix the message names, then retry |
+| `shutdown_timed_out` | 1 | The simulator or emulator was still running at the limit | Retry with a longer `--timeout`, or use the command the message names |
 | `hid_broker_failed` | 1 | The HID broker that sends iOS input, or an iPhone or iPad's session broker, failed | `offsider doctor --device <ID>`; on a device, `offsider session stop --device <UDID>` restarts the broker |
 | `private_directory_unsafe` | 1 | The HID broker directory is not private to this user | `offsider doctor --device <ID> --fix` |
 | `timed_out` | 1 | A helper process did not finish in time | Retry |

@@ -23,6 +23,23 @@ After it has booted, `boot` reads the screen, lock screen, the user's unlock sta
 
 A name close to an AVD's exits 7 `avd_not_found` naming the closest, with `Try: offsider boot <closest>`. A UDID, or a name no AVD has, boots the iOS simulator it names through Xcode's frameworks, waits until it is usable and prints the UDID; `--json` prints `{"version":1,"ok":true,"platform":"ios","name":"<name>","udid":"<UDID>","alreadyRunning":false,"exitCode":0}`. `--memory`, `--no-snapshot-load` and `--emulator-arg` exit 64 for a simulator, and a name several simulators share exits 7 `device_ambiguous`: pass the UDID.
 
+## Stopping an emulator
+
+`shutdown <name>` is the pair to `boot`: it takes an AVD name, an emulator's serial, or a simulator's name or UDID, so a hands-off run needs no raw adb or `simctl` to clean up. The name always goes on the command: `OFFSIDER_DEVICE` is never read.
+
+- It refuses a phone, iPhone or iPad, and a name that also fits a phone or a simulator (exit 7 `device_not_allowed`, exit 7 `device_ambiguous`). A mistyped name stops nothing (exit 7 `device_not_found`).
+- It refuses a device another session leases (exit 8 `device_leased`) or a command holds (exit 8 `device_busy`, `--wait-lock` waits), naming the holder; `--label` or `OFFSIDER_LEASE` says a lease is yours.
+- It then stops the device's sessions, as `session stop` does, and stops and saves a recording on it. A recording that will not stop keeps the device running.
+- It waits up to `--timeout` (default 120 s) until the device has gone. Past that it exits 1 `shutdown_timed_out` with the fix in one line. A device already off exits 0 with `alreadyOff`.
+
+An emulator stops through `adb emu kill`, which connects to the serial's console port on loopback and signs in with `~/.emulator_console_auth_token`. adb sends that token to whatever holds the port, so Offsider first matches the port to a live emulator's discovery file, and checks that the file and the device name one AVD, as serials change. Without that match it sends nothing and exits 7. A serial is reported as the AVD it serves now.
+
+```json
+{"version":1,"ok":true,"platform":"android","name":"Offsider_E2E","id":"emulator-5554","alreadyOff":false,"sessions":["warm helper"],"notRemoved":[],"exitCode":0}
+```
+
+`id` is null for an AVD that was already off.
+
 ## Screen reads and the helper
 
 - Every screen read (`describe-ui`, selectors, `--wait-timeout`, `--verify`, `gesture` presets, `slider` and `type --replace`) goes through a small helper that Offsider pushes to `/data/local/tmp/offsider-helper-<hash>.dex` when that copy is missing (through a private folder, then checked against its SHA-256 on every start), and runs with `app_process` as the shell user. On an emulator it stays warm between commands: the first command starts it, and later ones skip its start, Android's wait for a quiet screen and, on an emulator with one display, the shell read of its displays, so a `tap --id` takes about 0.1 s and a `describe-ui` about 0.06 s instead of about 0.3 s each (medians on an Apple silicon Mac with an API 36 emulator); the first command, which starts the broker, takes about 0.03 s longer than before. A warm command can act within a few milliseconds of the one before, and a screen that has only just appeared after a launch or a navigation may drop a tap, so use `tap --verify` or `wait --settled` there. A broker (`offsider` started detached, one per emulator) keeps it and stops 60 s after the last command (`OFFSIDER_ANDROID_SESSION_IDLE`, at most 3600); a command asking for another idle time replaces it unless another command is using it. `offsider session status` lists it and `offsider session stop --device <serial>` stops it at once. `OFFSIDER_ANDROID_SESSION=off` starts the helper for each command instead; `on` keeps it warm on an allowed USB phone too, which otherwise starts one per command. `batch` reuses one helper for every step in either case.

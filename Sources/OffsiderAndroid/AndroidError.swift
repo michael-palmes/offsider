@@ -66,6 +66,11 @@ public struct AndroidError: LocalizedError, CustomStringConvertible, Equatable, 
         case screenshotFailed
         case videoOutputFailed
         case noAVDNamed
+        case shutdownPhone
+        case emulatorUnconfirmed
+        case emulatorStillStarting
+        case emulatorStopRefused
+        case emulatorStopTimedOut
         case emulatorMissing
         case emulatorLaunchFailed
         case emulatorExited
@@ -199,6 +204,30 @@ public struct AndroidError: LocalizedError, CustomStringConvertible, Equatable, 
 
     static func bootPhone(_ serial: String) -> AndroidError {
         AndroidError(.unsupportedDevice, "boot starts emulators, and \(serial) is a connected phone. Run `offsider devices` to see AVD names.")
+    }
+
+    static func shutdownPhone(_ serial: String) -> AndroidError {
+        AndroidError(.shutdownPhone, "shutdown stops simulators and emulators, and \(serial) is a connected phone. Nothing was sent to it.")
+    }
+
+    static func emulatorUnconfirmed(_ serial: String) -> AndroidError {
+        AndroidError(.emulatorUnconfirmed, "Offsider could not confirm which emulator is on \(serial), so it stopped nothing. Close that emulator's window instead.")
+    }
+
+    static func emulatorNamesDiffer(_ serial: String, file: String, device: String) -> AndroidError {
+        AndroidError(.emulatorUnconfirmed, "\(serial) reads as \(device), but its discovery file says \(file), so Offsider stopped nothing. Check with `offsider devices`, then name the AVD.")
+    }
+
+    static func emulatorStillStarting(_ name: String, pid: Int32) -> AndroidError {
+        AndroidError(.emulatorStillStarting, "\(name) is still starting (pid \(pid)). Wait with `offsider boot \(name)`, then run this again.")
+    }
+
+    static func emulatorStopRefused(_ name: String, detail: String) -> AndroidError {
+        AndroidError(.emulatorStopRefused, "\(name) did not take the stop (\(detail)). adb signs in with ~/.emulator_console_auth_token, so check that file is yours, then run this again.")
+    }
+
+    static func emulatorStopTimedOut(_ name: String, pid: Int32, seconds: Int64) -> AndroidError {
+        AndroidError(.emulatorStopTimedOut, "\(name) was still running after \(seconds) s. Run this again with a longer --timeout, or stop it with `kill \(pid)`.")
     }
 
     static func ambiguousDeviceName(_ name: String, emulatorSerial: String) -> AndroidError {
@@ -844,6 +873,10 @@ extension AndroidError: OffsiderFailure {
         case .emulatorMissing: return .emulatorMissing
         case .emulatorLaunchFailed, .emulatorExited: return .emulatorLaunchFailed
         case .bootTimeout: return .bootTimedOut
+        case .shutdownPhone, .emulatorUnconfirmed: return .deviceNotAllowed
+        case .emulatorStillStarting: return .deviceNotReady
+        case .emulatorStopRefused: return .shutdownFailed
+        case .emulatorStopTimedOut: return .shutdownTimedOut
         }
     }
 

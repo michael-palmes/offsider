@@ -37,6 +37,8 @@ struct ConnectedPhone: Equatable, Sendable {
 struct AndroidDeviceDirectory {
     static let propertiesScript = "getprop ro.boot.qemu.avd_name; getprop ro.kernel.qemu.avd_name; getprop sys.boot_completed; getprop ro.build.version.release; getprop ro.build.version.sdk"
 
+    static let avdNameScript = "getprop ro.boot.qemu.avd_name; getprop ro.kernel.qemu.avd_name"
+
     let client: AdbClient
     let host: AndroidHost
 

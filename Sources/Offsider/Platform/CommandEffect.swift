@@ -15,6 +15,7 @@ enum CommandEffect: String, Sendable {
         "devices": .none,
         "list-devices": .none,
         "boot": .input,
+        "shutdown": .input,
         "doctor": .none,
         "init": .none,
         "guide": .none,

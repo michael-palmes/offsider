@@ -41,9 +41,9 @@ public enum SimulatorBootTarget {
     }
 
     /// The usage error for a name several simulators share, listing each UDID to pass instead.
-    public static func ambiguity(_ target: String, _ simulators: [SimulatorBootCandidate]) -> String {
+    public static func ambiguity(_ target: String, _ simulators: [SimulatorBootCandidate], command: String = "boot") -> String {
         let rows = simulators.map { "  \($0.udid)  \($0.osVersion ?? "-")  \($0.state)" }
-        return "\(simulators.count) simulators are named \(target). Boot one by its UDID:\n" + rows.joined(separator: "\n")
+        return "\(simulators.count) simulators are named \(target). \(command == "boot" ? "Boot" : "Stop") one by its UDID:\n" + rows.joined(separator: "\n")
     }
 }
 
@@ -71,6 +71,64 @@ public struct SimulatorBootReport: Equatable, Sendable {
             ("alreadyRunning", .bool(alreadyRunning)),
             ("exitCode", .integer(0)),
         ]).rendered(compact: true)
+    }
+}
+
+/// What `shutdown` does for a simulator in each state: one going down already is waited for, not told again.
+public enum SimulatorShutdownStep: Equatable, Sendable {
+    case alreadyOff
+    case shutdown
+    case waitForShutdown
+
+    public static func step(for state: String) -> SimulatorShutdownStep {
+        switch state.lowercased() {
+        case "shutdown": return .alreadyOff
+        case "shutting down", "shuttingdown": return .waitForShutdown
+        default: return .shutdown
+        }
+    }
+}
+
+/// `shutdown --json`: what stopped, and which of its sessions stopped first.
+public struct ShutdownReport: Equatable, Sendable {
+    public static let schemaVersion = 1
+
+    public let platform: DevicePlatform
+    public let name: String
+    /// The serial or UDID; nil for an AVD that was already off, which has no serial.
+    public let id: String?
+    public let alreadyOff: Bool
+    public let sessions: [String]
+    /// What its session stop could not undo, each with the command that does.
+    public let notRemoved: [String]
+
+    public init(platform: DevicePlatform, name: String, id: String?, alreadyOff: Bool, sessions: [String] = [], notRemoved: [String] = []) {
+        self.platform = platform
+        self.name = name
+        self.id = id
+        self.alreadyOff = alreadyOff
+        self.sessions = sessions
+        self.notRemoved = notRemoved
+    }
+
+    public func jsonLine() -> String {
+        OrderedJSON.object([
+            ("version", .integer(Self.schemaVersion)),
+            ("ok", .bool(true)),
+            ("platform", .string(platform.rawValue)),
+            ("name", .string(name)),
+            ("id", .optional(id) { .string($0) }),
+            ("alreadyOff", .bool(alreadyOff)),
+            ("sessions", .array(sessions.map { .string($0) })),
+            ("notRemoved", .array(notRemoved.map { .string($0) })),
+            ("exitCode", .integer(0)),
+        ]).rendered(compact: true)
+    }
+
+    /// `Stopped Offsider_E2E (emulator-5554).`, or that it was already off.
+    public var line: String {
+        let shown = id.map { "\(name) (\($0))" } ?? name
+        return alreadyOff ? "\(shown) was already off.\n" : "Stopped \(shown).\n"
     }
 }
 

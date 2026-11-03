@@ -33,9 +33,15 @@ enum DevicePicker {
         arguments.first == Boot._commandName && OffsiderCommand.message(for: error).contains("Missing expected argument '<avd>'")
     }
 
+    /// Whether `shutdown` was given no name.
+    static func missingShutdownName(_ error: any Error, arguments: [String]) -> Bool {
+        arguments.first == Shutdown._commandName && OffsiderCommand.message(for: error).contains("Missing expected argument '<name>'")
+    }
+
     enum Need: Equatable {
         case device
         case boot
+        case shutdown
     }
 
     /// What a picker would supply, or nil when the line fails for another reason a pick would not mend.
@@ -49,17 +55,20 @@ enum DevicePicker {
         if missingBootName(error, arguments: arguments) {
             return (try? OffsiderCommand.parseAsRoot([arguments[0], "Offsider_Picker"] + arguments.dropFirst())) == nil ? nil : .boot
         }
+        if missingShutdownName(error, arguments: arguments) {
+            return (try? OffsiderCommand.parseAsRoot([arguments[0], "Offsider_Picker"] + arguments.dropFirst())) == nil ? nil : .shutdown
+        }
         return nil
     }
 
     /// Runs `pick`; when no key comes in time, writes one dim line and throws the parse error the picker stood in for, so the exit stays 64.
     @MainActor
-    static func orUnanswered(_ error: any Error, boot: Bool = false, _ pick: @MainActor () async throws -> DeviceSummary) async throws -> DeviceSummary {
+    static func orUnanswered(_ error: any Error, boot: Bool = false, shutdown: Bool = false, _ pick: @MainActor () async throws -> DeviceSummary) async throws -> DeviceSummary {
         do {
             return try await pick()
         } catch let timeout as PromptTimedOut {
             let console = Console.current
-            console.data(console.err.canvas.style.dim(DevicePickerScreen.unanswered(within: timeout.waited, boot: boot)) + "\n", to: .err)
+            console.data(console.err.canvas.style.dim(DevicePickerScreen.unanswered(within: timeout.waited, boot: boot, shutdown: shutdown)) + "\n", to: .err)
             throw error
         }
     }
@@ -81,6 +90,17 @@ enum DevicePicker {
         try await pick(
             DevicePickerScreen.deviceQuestion, descriptor: descriptor, idle: idle, empty: DevicePickerScreen.noneRunning,
             next: ("Boot", DevicePickerScreen.bootCommand), offered: { DevicePickerScreen.runningDevices(try await list()) }, row: DevicePickerScreen.deviceRow
+        )
+    }
+
+    /// Asks which running simulator or emulator to stop; a phone is never offered.
+    @MainActor
+    static func pickToStop(
+        descriptor: Int32? = nil, idle: TimeInterval = TerminalPrompt.defaultIdle, list: @MainActor () async throws -> [DeviceSummary] = virtualDevices
+    ) async throws -> DeviceSummary {
+        try await pick(
+            DevicePickerScreen.shutdownQuestion, descriptor: descriptor, idle: idle, empty: DevicePickerScreen.noneRunning,
+            next: nil, offered: { DevicePickerScreen.runningDevices(try await list()) }, row: DevicePickerScreen.deviceRow
         )
     }
 

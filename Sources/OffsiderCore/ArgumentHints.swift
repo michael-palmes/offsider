@@ -53,6 +53,9 @@ public enum ArgumentHints {
             "--json": "describe-ui prints JSON by default and has no --json; --format chooses json, ndjson or text.",
         ],
         "turnstile": Dictionary(uniqueKeysWithValues: ["--timeout", "--poll-interval", "--jitter", "--seed"].map { ($0, turnstileReadOnly) }),
+        "shutdown": [
+            "--device": "shutdown takes the name as its argument, not --device, such as offsider shutdown <name>.",
+        ],
         "login": [
             "--turnstile": "login no longer takes --turnstile: it never taps Turnstile, and stops with turnstile_required when a widget is on screen so a person can complete it.",
         ],
