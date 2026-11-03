@@ -48,7 +48,7 @@ struct AndroidSystemBarCoverTests {
         #expect(error?.coveredBy?.evidence == .systemBar)
         #expect(error?.coveredBy?.label == "Navigation bar")
         #expect(error?.userFacingDescription.contains("so the tap would land on the bar. Nothing was sent. Scroll it clear of the bar") == true)
-        #expect(error?.hint == "offsider swipe --start-x 101 --start-y 572 --end-x 101 --end-y 354 --duration 0.5 --hold-end 300 --device emulator-5554")
+        #expect(error?.hint == "offsider swipe --start-x 101 --start-y 717 --end-x 101 --end-y 209 --duration 0.5 --hold-end 300 --device emulator-5554")
         #expect(backend.session.calls.isEmpty)
     }
 
@@ -66,11 +66,11 @@ struct AndroidSystemBarCoverTests {
         #expect(backend.session.calls == [.perform(.tapAt(x: 201, y: 850))])
     }
 
-    @Test("--allow-covered taps the bar's point anyway")
-    func allowCoveredTaps() async throws {
-        let backend = try await Self.tap(["--id", "row-2", "--allow-covered"], on: Self.screen(rowTop: 830))
+    @Test("--allow-covered taps the target's own point under the bar anyway, even with part of it showing", arguments: [830.0, 806.0])
+    func allowCoveredTaps(rowTop: Double) async throws {
+        let backend = try await Self.tap(["--id", "row-2", "--allow-covered"], on: Self.screen(rowTop: rowTop))
 
-        #expect(backend.session.calls == [.perform(.tapAt(x: 201, y: 850))])
+        #expect(backend.session.calls == [.perform(.tapAt(x: 201, y: rowTop + 20))])
     }
 
     @Test("wait and assert agree with tap: a row under the bar is not on screen, and one showing beside it is")

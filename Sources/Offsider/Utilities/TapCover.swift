@@ -69,7 +69,9 @@ struct TapCover {
             var movedBeside: UINode?
             var systemBar: UINode?
             if let bar = KnownOverlays.systemBar(at: UIPoint(x: asked.point.x, y: asked.point.y), in: tree), let barFrame = bar.frame {
-                let clear = TapCover.clearParts(of: asked, beside: barFrame, in: tree).first { part in
+                var named = asked
+                named.target = asked.target ?? asked.matched
+                let clear = TapCover.clearParts(of: named, beside: barFrame, in: tree).first { part in
                     KnownOverlays.systemBar(at: UIPoint(x: part.point.x, y: part.point.y), in: tree) == nil
                 }
                 if movingBesideBars, let clear {
@@ -195,7 +197,7 @@ struct TapCover {
 
     @MainActor
     private func checkCover(_ asked: TapResolution, selector: String, tree: UITree, backend: any DeviceBackend, device: DeviceID) async throws -> TapResolution {
-        guard let judging = Judging(asked, in: tree, movingBesideBars: movesToVisiblePart) else {
+        guard let judging = Judging(asked, in: tree, movingBesideBars: movesToVisiblePart && !allowCovered) else {
             return asked
         }
         let resolution = judging.aimed
@@ -395,10 +397,8 @@ struct TapCover {
         let top = below ? shown.y : max(shown.y, barFrame.y + barFrame.height)
         let bottom = below ? min(shown.y + shown.height, barFrame.y) : shown.y + shown.height
         guard bottom - top >= 40 else { return nil }
-        let x = VerifyOutput.number((shown.x + shown.width / 4).rounded())
-        let low = VerifyOutput.number((top + (bottom - top) * 0.65).rounded()), high = VerifyOutput.number((top + (bottom - top) * 0.35).rounded())
-        let (from, to) = below ? (low, high) : (high, low)
-        return "offsider swipe --start-x \(x) --start-y \(from) --end-x \(x) --end-y \(to) --duration 0.5 --hold-end 300\(CommandScope.current.appArgument(device: device.rawValue)) --device \(device.rawValue)"
+        let swipe = DevMenuDriver.scrollSwipe(up: below, in: UIFrame(x: shown.x, y: top, width: shown.width, height: bottom - top))
+        return "offsider swipe --start-x \(swipe.x) --start-y \(swipe.from) --end-x \(swipe.x) --end-y \(swipe.to) --duration 0.5 --hold-end 300\(CommandScope.current.appArgument(device: device.rawValue)) --device \(device.rawValue)"
     }
 
     /// The drag that moves the dev menu button at `button`'s frame into the other half of the screen.
