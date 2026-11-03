@@ -49,6 +49,8 @@ enum SignInHit {
         var children: [Classified]
         /// Containers holding nothing but a dev client's Tools button, whose window passes every other touch through.
         var devMenuHost = false
+        /// A container with no name, holding only containers with none.
+        var bare = false
     }
 
     private static func classify(_ node: UINode, devMenuIcons icons: [UINode]) -> Classified {
@@ -67,9 +69,9 @@ enum SignInHit {
             kind = .app
         }
         let isIcon = { (child: Classified) in icons.contains { $0.isSameElement(as: child.node) } }
-        let host = isStructural(node.role) && children.contains { isIcon($0) || $0.devMenuHost }
-            && children.allSatisfy { isIcon($0) || $0.devMenuHost || $0.kind == .passthrough }
-        return Classified(node: node, kind: kind, children: children, devMenuHost: host)
+        let unnamed = isStructural(node.role) && node.normalizedLabel == nil && node.normalizedID == nil
+        let host = unnamed && children.contains { isIcon($0) || $0.devMenuHost } && children.allSatisfy { isIcon($0) || $0.devMenuHost || $0.bare }
+        return Classified(node: node, kind: kind, children: children, devMenuHost: host, bare: unnamed && children.allSatisfy(\.bare))
     }
 
     /// Controls iOS draws below the keys, such as a disabled Dictate button, belong to the keyboard when none sits above its top.

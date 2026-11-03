@@ -101,6 +101,23 @@ struct LoginFormTests {
         #expect(LoginForm.unsettled(in: tree).isEmpty)
     }
 
+    @Test("a gear window that holds anything else, or has a name, is no Tools window: with no hit-test the form stays refused", arguments: ["text", "named", "labelled backdrop"])
+    func gearWindowWithContentRefuses(variant: String) throws {
+        let gear = FakeUI.node(.image, id: "gearshape.fill", label: "gearshape.fill", frame: FakeUI.frame(330, 150, 26, 26))
+        let window: UINode
+        switch variant {
+        case "text":
+            window = FakeUI.node(.group, frame: FakeUI.frame(0, 0, 402, 874), children: [gear, FakeUI.node(.text, label: "Loading settings", frame: FakeUI.frame(16, 400, 370, 30))])
+        case "named":
+            window = FakeUI.node(.group, id: "settings-loading", frame: FakeUI.frame(0, 0, 402, 874), children: [gear])
+        default:
+            window = FakeUI.node(.group, frame: FakeUI.frame(0, 0, 402, 874), children: [gear, FakeUI.node(.group, label: "Dismiss", frame: FakeUI.frame(0, 0, 402, 874))])
+        }
+        var tree = SignInFixture.tree()
+        tree.roots[0].children.append(window)
+        #expect(throws: LoginFormError.self) { try LoginForm.detect(in: tree) }
+    }
+
     @Test("an empty full-screen window around an app's own small icon leaves each control's point for a hit-test")
     func iconOverlayLeavesPointsUnsettled() throws {
         let tree = SignInFixture.tree(iconOverlay: true)
