@@ -15,6 +15,27 @@ enum SignInHit {
         return []
     }
 
+    /// What the tree alone says of a control's point.
+    enum Reading: Equatable {
+        case front
+        /// Something that is not a container holds the point; nil when nothing does.
+        case covered(UINode?)
+        /// A container holds the point through its own frame alone: a window that passes touches on and a modal backdrop look the same, so a hit-test decides.
+        case unsettled(UINode)
+    }
+
+    static func reading(of node: UINode, in tree: UITree, at point: UIPoint) -> Reading {
+        let found = chain(in: tree, at: point)
+        if found.contains(where: { $0.isSameElement(as: node) }) { return .front }
+        guard let top = found.last else { return .covered(nil) }
+        return isStructural(top.role) ? .unsettled(top) : .covered(top)
+    }
+
+    /// The first thing a container holds that is not a container, to name it by.
+    static func held(by container: UINode) -> UINode? {
+        container.flattened().dropFirst().first { !isStructural($0.role) }
+    }
+
     private enum Kind {
         case chrome
         case app

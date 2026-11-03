@@ -94,7 +94,7 @@ public enum IOSAccessibilityMapping {
         return UINode(
             role: role,
             id: id,
-            label: text(dictionary["AXLabel"]),
+            label: text(dictionary["AXLabel"]).map(TerminalText.withoutColour),
             value: value,
             frame: frame(dictionary["frame"]),
             enabled: dictionary["enabled"] as? Bool,

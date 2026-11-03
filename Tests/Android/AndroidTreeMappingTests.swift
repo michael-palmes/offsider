@@ -20,6 +20,12 @@ struct AndroidTreeMappingTests {
         try #require(roots.flatMap { $0.flattened() }.first { $0.id == id })
     }
 
+    @Test("a label keeps a log's words and loses its colour codes")
+    func colourCodesLeaveLabels() {
+        let raw = RawAndroidNode(attributes: ["class": "android.view.ViewGroup", "content-desc": "3, \u{1B}[31m[SIGNIN]\u{1B}[0m widget expired", "bounds": "[27,2200][1053,2320]"], children: [])
+        #expect(AndroidTreeMapping.node(from: raw, scale: Self.scale).label == "3, [SIGNIN] widget expired")
+    }
+
     @Test("the root is the application, with the whole window as its frame")
     func rootIsApplication() throws {
         let roots = try Self.tree("")

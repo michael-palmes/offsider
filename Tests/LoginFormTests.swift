@@ -91,6 +91,76 @@ struct LoginFormTests {
         #expect(error?.message.contains("covered") == true)
         #expect(error?.message.contains("Nothing was typed.") == true)
     }
+
+    @Test("an empty full-screen window around a small button leaves each control's point for a hit-test")
+    func toolsButtonLeavesPointsUnsettled() throws {
+        let tree = SignInFixture.tree(toolsButton: true)
+        let found = try #require(LoginForm.unsettled(in: tree).map(\.id))
+        #expect(found.contains("email-field"))
+        #expect(found.contains("password-field"))
+        #expect(found.contains("login-button"))
+        #expect(!LoginForm.credentialsAreVisible(in: tree))
+        #expect(LoginForm.credentialsAreVisible(in: tree, reachable: LoginForm.unsettled(in: tree)))
+    }
+
+    @Test("a control the tree shows under a labelled element is not unsettled, and credentials under it are not visible")
+    func labelledCoverStaysCovered() {
+        let tree = SignInFixture.tree(coverPassword: true)
+        #expect(!LoginForm.unsettled(in: tree).contains { $0.id == "password-field" })
+        #expect(!LoginForm.credentialsAreVisible(in: tree))
+    }
+
+    @Test("a hit on the button's own label is the button; another label, a control or a hit outside its frame is not")
+    func ownLabelHit() throws {
+        let tree = SignInFixture.tree()
+        let submit = try #require(tree.roots[0].children.first { $0.id == "login-button" })
+        #expect(LoginForm.isHit(FakeUI.node(.text, label: "Log in", frame: FakeUI.frame(180, 744, 42, 18)), on: submit))
+        #expect(LoginForm.isHit(FakeUI.node(.text, label: "LOG IN", frame: FakeUI.frame(180, 744, 42, 18)), on: submit))
+        #expect(!LoginForm.isHit(FakeUI.node(.text, label: "Cancel", frame: FakeUI.frame(180, 744, 42, 18)), on: submit))
+        #expect(!LoginForm.isHit(FakeUI.node(.text, frame: FakeUI.frame(180, 744, 42, 18)), on: submit))
+        #expect(!LoginForm.isHit(FakeUI.node(.button, label: "Cancel", frame: FakeUI.frame(180, 744, 42, 18)), on: submit))
+        #expect(!LoginForm.isHit(FakeUI.node(.button, label: "Log in", frame: FakeUI.frame(16, 500, 370, 44)), on: submit))
+        #expect(!LoginForm.isHit(FakeUI.node(.text, label: "Log in", frame: FakeUI.frame(16, 500, 370, 44)), on: submit))
+    }
+
+    @Test("a label drawn by another process in the button's frame is not the button")
+    func ownLabelFromAnotherProcess() throws {
+        let submit = FakeUI.node(.button, id: "login-button", label: "Log in", frame: FakeUI.frame(16, 732, 370, 44), pid: 100)
+        #expect(LoginForm.isHit(FakeUI.node(.text, label: "Log in", frame: FakeUI.frame(180, 744, 42, 18), pid: 100), on: submit))
+        #expect(!LoginForm.isHit(FakeUI.node(.text, label: "Log in", frame: FakeUI.frame(180, 744, 42, 18), pid: 200), on: submit))
+    }
+
+    @Test("anything inside a LogBox toast is no candidate, nor is a toast whose label keeps colour codes")
+    func logBoxIsNoCandidate() throws {
+        var tree = SignInFixture.tree()
+        tree.roots[0].children.append(FakeUI.node(.button, label: "3, \u{1B}[31m[SIGNIN]\u{1B}[0m widget expired", frame: FakeUI.frame(10, 800, 382, 48), children: [
+            FakeUI.node(.textField, id: "log-email", label: "Email", frame: FakeUI.frame(20, 804, 100, 40)),
+        ]))
+        let found = try LoginForm.detect(in: tree)
+        #expect(found.submit.id == "login-button")
+        #expect(found.identity.id == "email-field")
+    }
+
+    @Test("a Log in button shaped like a toast but outside its place stays a candidate")
+    func toastShapeNeedsItsPlace() throws {
+        var tree = SignInFixture.tree(omitSubmit: true)
+        tree.roots[0].children.append(FakeUI.node(.button, id: "login-button", label: "2, Log in", frame: FakeUI.frame(16, 500, 370, 44)))
+        #expect(try LoginForm.detect(in: tree).submit.id == "login-button")
+    }
+
+    @Test("the reason names the cover: an empty window with what it holds, and the hit-test's answer")
+    func namesTheCover() throws {
+        let tree = SignInFixture.tree(toolsButton: true)
+        let submit = try #require(tree.roots[0].children.first { $0.id == "login-button" })
+        let answer = FakeUI.node(.text, label: "Cancel", frame: FakeUI.frame(180, 744, 42, 18))
+        let report = LoginForm.coverReport(of: submit, in: tree, hit: answer)
+        #expect(report?.role == "text")
+        #expect(report?.label == "Cancel")
+        let line = try #require(LoginForm.coverNote(of: submit, in: tree, hit: answer))
+        #expect(line.contains("group (0, 0) 402x874"), "\(line)")
+        #expect(line.contains("gearshape.fill"), "\(line)")
+        #expect(line.contains("Cancel"), "\(line)")
+    }
 }
 
 @Suite("Keyboard dismiss")
@@ -370,6 +440,22 @@ struct LoginProfileTests {
 
 /// A sign-in screen with a welcome layer underneath the form. Later siblings win the hit test.
 enum SignInFixture {
+    /// Expo's floating button in its own full-screen window: nested empty groups around one small image, listed last, passing every other touch through.
+    static func toolsButtonWindow() -> UINode {
+        var node = FakeUI.node(.image, id: "gearshape.fill", label: "gearshape.fill", frame: FakeUI.frame(330, 150, 26, 26))
+        for _ in 0..<5 {
+            node = FakeUI.node(.group, frame: FakeUI.frame(0, 0, 402, 874), children: [node])
+        }
+        return node
+    }
+
+    /// An unlabelled full-screen backdrop around a labelled sheet that lies over the password field.
+    static func modalSheet() -> UINode {
+        FakeUI.node(.group, frame: FakeUI.frame(0, 0, 402, 874), children: [
+            FakeUI.node(.text, label: "Choose a region", frame: FakeUI.frame(16, 300, 370, 80)),
+        ])
+    }
+
     static func tree(
         emailValue: String? = nil,
         passwordValue: String? = nil,
@@ -385,7 +471,8 @@ enum SignInFixture {
         omitSubmit: Bool = false,
         submitLabel: String = "Log in",
         identityLabel: String = "Email",
-        pid: Int? = nil
+        pid: Int? = nil,
+        toolsButton: Bool = false
     ) -> UITree {
         var children: [UINode] = [
             FakeUI.node(.button, id: "sign-in-button", label: "Sign in", frame: FakeUI.frame(16, 790, 370, 44)),
@@ -437,6 +524,9 @@ enum SignInFixture {
             let keys = FakeUI.node(.keyboard, id: "UIKeyboardLayoutStar Preview", frame: FakeUI.frame(0, 918, 402, 226))
             let holder = FakeUI.node(.group, frame: FakeUI.frame(0, 874, 402, 270), children: [assistant, keys])
             children.append(FakeUI.node(.group, frame: FakeUI.frame(0, 0, 402, 874), children: [holder]))
+        }
+        if toolsButton {
+            children.append(toolsButtonWindow())
         }
         guard pid != nil else { return FakeUI.tree(children) }
         // The app runs as pid 100; a password field in another process stands for WebKit's web content.

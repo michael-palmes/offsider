@@ -666,11 +666,441 @@ struct LoginFlowTests {
         #expect(script.taps.allSatisfy { $0.y < 700 })
     }
 
-    @Test("a form the tree shows in front makes no hit-test")
+    /// A form under Expo's Tools button window, as a simulator answers it: the fields themselves, and the button's own label.
+    private func underToolsButton(_ script: LoginScript) {
+        script.trees = script.trees.map { tree in
+            var tree = tree
+            tree.roots[0].children.append(SignInFixture.toolsButtonWindow())
+            return tree
+        }
+        let controls = SignInFixture.tree().roots[0].flattened()
+        script.hit = { point in
+            if FakeUI.frame(16, 732, 370, 44).contains(point) {
+                return FakeUI.node(.text, label: "Log in", frame: FakeUI.frame(180, 744, 42, 18))
+            }
+            return controls.last { $0.role != .application && $0.frame?.contains(point) == true }
+        }
+    }
+
+    @Test("with Expo's Tools button window on, the form is filled and submit tapped, with the hit-tests bounded")
+    func toolsButtonSignsIn() async throws {
+        let script = script(buttonEnabled: true)
+        underToolsButton(script)
+
+        let report = try await run(script)
+
+        #expect(script.typed == [username, password])
+        #expect(script.taps.count == 1)
+        #expect(script.taps.first == UIPoint(x: 201, y: 754))
+        #expect(report.submitLabel == "Log in")
+        #expect(script.hitTests <= 12)
+    }
+
+    @Test("with the Tools button on, a keyboard hiding submit is still dismissed before typing, as the credentials count as visible")
+    func toolsButtonRevealsSubmit() async throws {
+        let bullets = String(repeating: String(SecureText.bullet), count: password.count)
+        let hidden = SignInFixture.tree(lowKeyboard: true, omitSubmit: true, toolsButton: true)
+        let script = LoginScript(trees: [
+            hidden,
+            SignInFixture.tree(toolsButton: true),
+            SignInFixture.tree(emailValue: username, toolsButton: true),
+            SignInFixture.tree(emailValue: username, passwordValue: bullets, submitEnabled: true, toolsButton: true),
+        ])
+        script.advanceOnTap = true
+        let controls = SignInFixture.tree().roots[0].flattened()
+        script.hit = { point in
+            if FakeUI.frame(16, 732, 370, 44).contains(point) {
+                return FakeUI.node(.text, label: "Log in", frame: FakeUI.frame(180, 744, 42, 18))
+            }
+            return controls.last { $0.role != .application && $0.frame?.contains(point) == true }
+        }
+
+        _ = try await run(script)
+
+        #expect(script.typed == [username, password])
+        #expect(script.tapsBeforeType.first == 1)
+        let first = try #require(script.taps.first)
+        #expect(!controls.contains { $0.isActionable && $0.frame?.contains(first) == true }, "\(first)")
+    }
+
+    @Test("Turnstile's web content over the form leaves the form reachable, the button's own label included, and a prefilled email is replaced")
+    func webContentOverPrefilledForm() async throws {
+        let bullets = String(repeating: String(SecureText.bullet), count: password.count)
+        let script = LoginScript(trees: [
+            underWidget(SignInFixture.tree(emailValue: "earlier@example.com")),
+            underWidget(SignInFixture.tree(emailValue: username)),
+            underWidget(SignInFixture.tree(emailValue: username, passwordValue: bullets, submitEnabled: true)),
+        ])
+        let controls = SignInFixture.tree().roots[0].flattened()
+        script.hit = { point in
+            if FakeUI.frame(16, 732, 370, 44).contains(point) {
+                return FakeUI.node(.text, label: "Log in", frame: FakeUI.frame(180, 744, 42, 18))
+            }
+            return controls.last { $0.role != .application && $0.frame?.contains(point) == true }
+        }
+
+        let report = try await run(script)
+
+        #expect(script.typed == [username, password])
+        #expect(script.taps.count == 1)
+        #expect(report.submitted)
+    }
+
+    @Test("many sign-in buttons on a screen beneath do not use up the hit-tests before the form's own controls")
+    func hitTestsReachTheForm() async throws {
+        let beneath = (0..<8).map { index in
+            FakeUI.node(.button, id: "beneath-\(index)", label: "Continue", frame: FakeUI.frame(16, 480 + Double(index) * 20, 370, 18))
+        }
+        let script = script(buttonEnabled: true)
+        underToolsButton(script)
+        script.trees = script.trees.map { tree in
+            var tree = tree
+            tree.roots[0].children.insert(contentsOf: beneath, at: 0)
+            return tree
+        }
+        let hit = script.hit
+        script.hit = { point in
+            if (480..<640).contains(point.y) { return FakeUI.node(.text, label: "Welcome", frame: FakeUI.frame(16, 480, 370, 160)) }
+            return hit(point)
+        }
+
+        _ = try await run(script)
+
+        #expect(script.typed == [username, password])
+        #expect(script.hitTests <= 12)
+    }
+
+    @Test("a real backdrop around a sheet over the password field is refused, with the sheet named, and nothing typed")
+    func modalBackdropRefused() async throws {
+        let script = script(buttonEnabled: true)
+        script.trees = script.trees.map { tree in
+            var tree = tree
+            tree.roots[0].children.append(SignInFixture.modalSheet())
+            return tree
+        }
+        let sheet = FakeUI.node(.text, label: "Choose a region", frame: FakeUI.frame(16, 300, 370, 80))
+        let backdrop = FakeUI.node(.group, frame: FakeUI.frame(0, 0, 402, 874))
+        script.hit = { point in sheet.frame?.contains(point) == true ? sheet : backdrop }
+
+        let error = try #require(await #expect(throws: CLIError.self) { try await self.run(script) })
+
+        #expect(error.reason == .selectorNotFound)
+        #expect(script.typed.isEmpty)
+        #expect(error.userFacingDescription.contains("Choose a region"), "\(error.userFacingDescription)")
+        #expect(error.coveredBy?.role == "group")
+    }
+
+    @Test("a pinned field under a backdrop is refused with coveredBy filled")
+    func pinnedCoverNamesTheCover() async throws {
+        let script = script(buttonEnabled: true)
+        script.trees = script.trees.map { tree in
+            var tree = tree
+            tree.roots[0].children.append(SignInFixture.modalSheet())
+            return tree
+        }
+        let sheet = FakeUI.node(.text, label: "Choose a region", frame: FakeUI.frame(16, 300, 370, 80))
+        let controls = SignInFixture.tree().roots[0].flattened()
+        script.hit = { point in
+            if sheet.frame?.contains(point) == true { return sheet }
+            return controls.last { $0.role != .application && $0.frame?.contains(point) == true }
+        }
+        let profile = LoginProfile(bundleID: "com.example.app", password: LoginField(id: "password-field"))
+
+        let error = try #require(await #expect(throws: CLIError.self) { try await self.run(script, profile: profile) })
+
+        #expect(error.userFacingDescription.contains("is covered by"))
+        #expect(error.userFacingDescription.contains("Choose a region"), "\(error.userFacingDescription)")
+        #expect(error.coveredBy?.label == "Choose a region")
+        #expect(script.typed.isEmpty)
+    }
+
+    /// React Native's toast as the tree gives it, its count and message in one label.
+    private func toast(y: Double, platform: DevicePlatform = .ios) -> UINode {
+        FakeUI.node(.button, label: "3, [SIGNIN] widget expired", frame: FakeUI.frame(10, y, 382, 48), platform: platform)
+    }
+
+    @Test("a LogBox toast whose message holds a submit word is not a second submit button")
+    func logBoxToastIsNotSubmit() async throws {
+        let script = script(buttonEnabled: true)
+        script.trees = script.trees.map { tree in
+            var tree = tree
+            tree.roots[0].children.append(toast(y: 800))
+            return tree
+        }
+        let report = try await run(script)
+        #expect(script.typed == [username, password])
+        #expect(script.taps == [UIPoint(x: 201, y: 754)])
+        #expect(report.submitted)
+    }
+
+    /// An edge-to-edge Android form whose toast's list takes touches a status bar above its own frame, over a submit button drawn clear of the frame.
+    private func androidFormUnderToast(email: String? = nil, password value: String? = nil, enabled: Bool = false) -> UITree {
+        var field = FakeUI.node(.secureTextField, id: "password-field", label: "Password", value: value, frame: FakeUI.frame(16, 306, 379, 44), platform: .android, drawingOrder: 3)
+        field.native = .android(AndroidNativeAttributes(package: "com.example.app", drawingOrder: 3))
+        var tree = FakeUI.tree(platform: .android, height: 923, [
+            FakeUI.node(.text, label: "Sign in", frame: FakeUI.frame(16, 10, 200, 30), platform: .android, drawingOrder: 1),
+            FakeUI.node(.textField, id: "email-field", label: "Email", value: email, frame: FakeUI.frame(16, 217, 379, 44), platform: .android, drawingOrder: 2),
+            field,
+            FakeUI.node(.button, id: "login-button", label: "Log in", frame: FakeUI.frame(16, 780, 379, 44), enabled: enabled, platform: .android, drawingOrder: 4),
+            toast(y: 840, platform: .android),
+        ])
+        tree.windows = [
+            UIWindowInfo(id: 1, kind: "application", layer: 1, title: "Playground", active: true, focused: true, package: "com.example.app", bounds: FakeUI.frame(0, 0, 411, 923)),
+            UIWindowInfo(id: 2, kind: "system", layer: 2, title: "StatusBar", active: false, focused: false, package: "com.android.systemui", bounds: FakeUI.frame(0, 0, 411, 54)),
+        ]
+        return tree
+    }
+
+    @Test("a toast whose touch area takes submit's point stops before typing, naming the fix, and nothing is tapped")
+    func logBoxTakesSubmitsPoint() async throws {
+        let script = LoginScript(trees: [androidFormUnderToast()])
+
+        let error = try #require(await #expect(throws: CLIError.self) { try await self.run(script) })
+
+        #expect(error.reason == .targetCovered)
+        #expect(error.userFacingDescription.contains("Nothing was typed."))
+        #expect(error.hint == "offsider rn logbox dismiss --device <DEVICE_ID>")
+        #expect(error.coveredBy?.evidence == .logBoxTouchArea)
+        #expect(script.typed.isEmpty)
+        #expect(script.taps.isEmpty)
+    }
+
+    @Test("a toast that appears while typing stops before submit: no tap, submitted false")
+    func logBoxAppearsWhileTyping() async throws {
+        let bullets = String(repeating: String(SecureText.bullet), count: password.count)
+        func clear(_ tree: UITree) -> UITree {
+            var tree = tree
+            tree.roots[0].children.removeAll { $0.label == "3, [SIGNIN] widget expired" }
+            return tree
+        }
+        let script = LoginScript(trees: [
+            clear(androidFormUnderToast()),
+            clear(androidFormUnderToast(email: username)),
+            androidFormUnderToast(email: username, password: bullets, enabled: true),
+        ])
+
+        let stopped = try #require(await #expect(throws: LoginFailure.self) { try await self.run(script) })
+
+        #expect(stopped.reason == .targetCovered)
+        #expect(!stopped.report.submitted)
+        #expect(script.taps.isEmpty)
+        #expect(stopped.hint == "offsider rn logbox dismiss --device <DEVICE_ID>")
+    }
+
+    @Test("a submit tap that opens LogBox's inspector reports submitted false, never ok")
+    func tapOpensLogBoxInspector() async throws {
+        let bullets = String(repeating: String(SecureText.bullet), count: password.count)
+        func withToast(_ tree: UITree) -> UITree {
+            var tree = tree
+            tree.roots[0].children.append(toast(y: 800))
+            return tree
+        }
+        var inspector = withToast(SignInFixture.tree(emailValue: username, passwordValue: bullets, submitEnabled: true))
+        inspector.roots[0].children.append(FakeUI.node(.text, label: "Log 1 of 3", frame: FakeUI.frame(100, 60, 200, 24)))
+        let script = LoginScript(trees: [
+            withToast(SignInFixture.tree()),
+            withToast(SignInFixture.tree(emailValue: username)),
+            withToast(SignInFixture.tree(emailValue: username, passwordValue: bullets, submitEnabled: true)),
+            inspector,
+        ])
+        script.advanceOnTap = true
+
+        let stopped = try #require(await #expect(throws: LoginFailure.self) { try await self.run(script) })
+
+        #expect(!stopped.report.submitted)
+        #expect(stopped.report.exitCode != .success || stopped.report.jsonLine().contains("\"submitted\":false"))
+        #expect(stopped.failureMessage.contains("never reached the form"))
+        #expect(stopped.hint == "offsider rn logbox dismiss --device <DEVICE_ID>")
+        #expect(script.taps.count == 1)
+    }
+
+    @Test("a submit tap that opens the dev menu reports submitted false, and names the command that closes it")
+    func tapOpensDevMenu() async throws {
+        let bullets = String(repeating: String(SecureText.bullet), count: password.count)
+        func withGear(_ tree: UITree) -> UITree {
+            var tree = tree
+            tree.roots[0].children.append(SignInFixture.toolsButtonWindow())
+            return tree
+        }
+        var menu = withGear(SignInFixture.tree(emailValue: username, passwordValue: bullets, submitEnabled: true))
+        menu.roots[0].children += [
+            FakeUI.node(.button, label: "Reload", frame: FakeUI.frame(20, 400, 170, 54)),
+            FakeUI.node(.button, label: "Go home", frame: FakeUI.frame(210, 400, 170, 54)),
+            FakeUI.node(.button, label: "Toggle performance monitor", frame: FakeUI.frame(20, 470, 360, 44)),
+        ]
+        let script = LoginScript(trees: [
+            withGear(SignInFixture.tree()),
+            withGear(SignInFixture.tree(emailValue: username)),
+            withGear(SignInFixture.tree(emailValue: username, passwordValue: bullets, submitEnabled: true)),
+            menu,
+        ])
+        script.advanceOnTap = true
+        let controls = SignInFixture.tree().roots[0].flattened()
+        script.hit = { point in controls.last { $0.role != .application && $0.frame?.contains(point) == true } }
+
+        let stopped = try #require(await #expect(throws: LoginFailure.self) { try await self.run(script) })
+
+        #expect(!stopped.report.submitted)
+        #expect(stopped.failureMessage.contains("opened the dev menu"))
+        #expect(stopped.hint == "offsider rn devmenu close --device <DEVICE_ID>")
+    }
+
+    @Test("an inspector that opens after a tap with no toast up is the app's own error, and the tap stands")
+    func inspectorWithNoToastIsNotAStrayTap() async throws {
+        let bullets = String(repeating: String(SecureText.bullet), count: password.count)
+        var inspector = SignInFixture.tree(emailValue: username, passwordValue: bullets, submitEnabled: true)
+        inspector.roots[0].children.append(FakeUI.node(.text, label: "Log 1 of 1", frame: FakeUI.frame(100, 60, 200, 24)))
+        let script = LoginScript(trees: [
+            SignInFixture.tree(),
+            SignInFixture.tree(emailValue: username),
+            SignInFixture.tree(emailValue: username, passwordValue: bullets, submitEnabled: true),
+            inspector,
+        ])
+        script.advanceOnTap = true
+
+        let report = try await run(script)
+
+        #expect(report.submitted)
+    }
+
+    @Test("the Tools button over submit's centre moves the tap to a part a hit-test finds, and a label read there still counts")
+    func toolsButtonOverSubmit() async throws {
+        let gear = FakeUI.node(.image, id: "gearshape.fill", label: "gearshape.fill", frame: FakeUI.frame(188, 741, 26, 26))
+        let window = FakeUI.node(.group, frame: FakeUI.frame(0, 0, 402, 874), children: [gear])
+        let script = script(buttonEnabled: true)
+        script.trees = script.trees.map { tree in
+            var tree = tree
+            tree.roots[0].children.append(window)
+            return tree
+        }
+        let controls = SignInFixture.tree().roots[0].flattened()
+        script.hit = { point in
+            if FakeUI.frame(16, 732, 370, 44).contains(point) {
+                return FakeUI.node(.text, label: "Log in", frame: FakeUI.frame(180, 744, 42, 18))
+            }
+            return controls.last { $0.role != .application && $0.frame?.contains(point) == true }
+        }
+
+        let report = try await run(script)
+
+        #expect(report.submitted)
+        let tap = try #require(script.taps.last)
+        #expect(!KnownOverlays.devMenuButton(at: try #require(gear.frame), takes: tap), "\(tap)")
+        #expect(FakeUI.frame(16, 732, 370, 44).contains(tap))
+    }
+
+    @Test("Gboard's floating toolbar is no keys: login makes no dismiss tap, and submit is tapped")
+    func floatingToolbarNeedsNoDismiss() async throws {
+        let bullets = String(repeating: String(SecureText.bullet), count: password.count)
+        func form(email: String? = nil, password value: String? = nil, enabled: Bool = false) -> UITree {
+            var field = FakeUI.node(.secureTextField, id: "password-field", label: "Password", value: value, frame: FakeUI.frame(16, 306, 379, 44), platform: .android, drawingOrder: 2)
+            field.native = .android(AndroidNativeAttributes(package: "com.example.app", drawingOrder: 2))
+            var tree = FakeUI.tree(platform: .android, height: 923, [
+                FakeUI.node(.textField, id: "email-field", label: "Email", value: email, frame: FakeUI.frame(16, 217, 379, 44), platform: .android, drawingOrder: 1),
+                field,
+                FakeUI.node(.button, id: "login-button", label: "Log in", frame: FakeUI.frame(16, 362, 379, 44), enabled: enabled, platform: .android, drawingOrder: 3),
+            ])
+            tree.roots.append(FakeUI.node(.keyboard, label: "Gboard", frame: FakeUI.frame(12, 456, 48, 48), platform: .android, children: [
+                FakeUI.node(.button, label: "More keyboard options", frame: FakeUI.frame(12, 456, 48, 48), platform: .android),
+            ]))
+            return tree
+        }
+        let script = LoginScript(trees: [form(), form(email: username), form(email: username, password: bullets, enabled: true)])
+
+        let report = try await run(script)
+
+        #expect(script.typed == [username, password])
+        #expect(script.taps.count == 1)
+        #expect(script.hides == 0)
+        #expect(report.submitted)
+    }
+
+    @Test("a web view with no widget that stays that way types nothing and asks for the tick, naming what else it may be")
+    func unknownBeforeTyping() async throws {
+        let script = script(buttonEnabled: true)
+        script.phases = [.noWidget]
+        let error = try #require(await #expect(throws: CLIError.self) { try await self.run(script) })
+        #expect(error.reason == .turnstileRequired)
+        #expect(error.ask == PersonAsk.tickTurnstile)
+        #expect(error.userFacingDescription.contains("Nothing was typed."))
+        #expect(error.userFacingDescription.contains("If no box shows"))
+        #expect(script.typed.isEmpty)
+        #expect(script.taps.isEmpty)
+        #expect(script.time >= LoginFlow.widgetLoad)
+        let payload = ErrorReporter.payload(for: error, deviceName: "iPhone 17")
+        #expect(payload.ask == "Can you tick the Turnstile checkbox on iPhone 17?")
+    }
+
+    @Test("a web view whose widget loads a moment later is read again, not refused")
+    func unknownWhileLoading() async throws {
+        let script = script(buttonEnabled: true)
+        script.phases = [.noWidget, .noWidget, .passed]
+        let report = try await run(script)
+        #expect(script.typed == [username, password])
+        #expect(report.turnstile == .passed)
+    }
+
+    @Test("a web view with no widget after typing does not tap submit")
+    func unknownAfterTyping() async throws {
+        let script = script(buttonEnabled: true)
+        script.phases = [.absent, .noWidget]
+        let stopped = try #require(await #expect(throws: LoginFailure.self) { try await self.run(script) })
+        #expect(stopped.reason == .turnstileRequired)
+        #expect(stopped.failureMessage.contains("The submit button was not tapped."))
+        #expect(!stopped.report.submitted)
+        #expect(script.taps.isEmpty)
+    }
+
+    @Test("a web view with no widget after the submit tap is no refusal: the tap stands")
+    func unknownAfterSubmit() async throws {
+        let script = script(buttonEnabled: true)
+        script.phases = [.absent, .absent, .noWidget]
+        let report = try await run(script)
+        #expect(report.submitted)
+        #expect(script.taps.count == 1)
+    }
+
+    @Test("a failed widget retries by itself, so login reads again and goes on when it passes")
+    func failedThenPassed() async throws {
+        let script = script(buttonEnabled: true)
+        script.phases = [.failed, .failed, .checking, .passed]
+        let report = try await run(script)
+        #expect(report.turnstile == .passed)
+        #expect(script.taps.count == 1)
+    }
+
+    @Test("a widget still failed at the timeout stops before submit, saying so")
+    func failedAtTheTimeout() async throws {
+        let script = script(buttonEnabled: true)
+        script.phases = [.failed]
+        let stopped = try #require(await #expect(throws: LoginFailure.self) { try await self.run(script, timeout: 2) })
+        #expect(stopped.reason == .turnstileRequired)
+        #expect(stopped.failureMessage.contains("still showed Verification failed after 2 s"))
+        #expect(script.taps.isEmpty)
+    }
+
+    @Test("a reached field's twin on a screen beneath, with the same id, does not make the field ambiguous")
+    func twinBeneathIsNotReached() async throws {
+        let script = script(buttonEnabled: true)
+        underToolsButton(script)
+        script.trees = script.trees.map { tree in
+            var tree = tree
+            tree.roots[0].children.insert(FakeUI.node(.textField, id: "email-field", label: "Email", frame: FakeUI.frame(17, 600, 367, 45)), at: 0)
+            return tree
+        }
+        let hit = script.hit
+        script.hit = { point in point.y > 590 && point.y < 650 ? FakeUI.node(.textField, id: "email-field", label: "Email", frame: FakeUI.frame(17, 212, 367, 45)) : hit(point) }
+
+        _ = try await run(script)
+
+        #expect(script.typed == [username, password])
+    }
+
+    @Test("a form the tree shows in front makes no hit-test for its fields, and at most one where the submit tap goes")
     func frontFormNoHitTest() async throws {
         let script = script(buttonEnabled: true)
         _ = try await run(script)
-        #expect(script.hitTests == 0)
+        #expect(script.hitTests <= 1)
     }
 
     private var square: TurnstileTarget {

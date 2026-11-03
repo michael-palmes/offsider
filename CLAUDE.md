@@ -57,7 +57,7 @@ Offsider began as a fork of AXe (`cameroncooke/axe`) v1.8.0 and is developed ind
 | `./test-runner.sh --android-phone` or `make e2e-android-phone` | Build Offsider and run the `AndroidPhone*Tests` suites on one USB phone: the one active allowance, only when it pins `com.mpalmes.offsider.playground.rn` or is a test device, or `OFFSIDER_ANDROID_PHONE=<serial>` (only when the user names it and has allowed it with `offsider devices add`) |
 | `./test-runner.sh --ios-device` or `make e2e-ios-device` | Build Offsider and run the `IOSDevice*E2ETests` suites on one wired iPhone or iPad, with the device and team from its allowance, picked only when it pins `com.mpalmes.offsider.playground` or is a test device (`OFFSIDER_IOS_DEVICE=<udid>` and `OFFSIDER_IOS_TEAM_ID=<team>` override them; only when the user names it and has allowed it with the playground pinned); input, tree and runner suites skip while its screen is off |
 | `./test-runner.sh --rn-ios` or `make e2e-rn-ios` | Build Offsider and the RN playground, run the React Native suites on a simulator (needs pnpm) |
-| `./test-runner.sh --rn-ios --rn-debug` or `--android --rn-debug` | Build the RN debug app, start Metro on 8742 and run the debug smoke suite (`make e2e-rn-debug-ios`, `make e2e-rn-debug-android`) |
+| `./test-runner.sh --rn-ios --rn-debug` or `--android --rn-debug` | Build the RN debug app, start Metro on 8742 and run the debug smoke and login suites (`make e2e-rn-debug-ios`, `make e2e-rn-debug-android`) |
 | `scripts/generate-emulator-grpc.sh [--check]` or `make grpc-generate` | Regenerate the emulator gRPC client from the vendored proto; `--check` compares with the checked-in code |
 | `scripts/rn-playground.sh build-ios` or `build-android` | Build the RN playground Release app or arm64 APK; `--debug` builds the debug app, `--if-changed` skips an up-to-date build (`help` lists install, launch and paths) |
 | `scripts/rn-playground.sh metro start\|stop\|status` | Run Metro for the RN debug app on loopback port 8742 |
@@ -81,8 +81,8 @@ Agents building in parallel use `swift build --scratch-path <dir>` and `swift te
 | `OFFSIDER_DEV_SIGNING_IDENTITY` | Off until a person sets it in git-ignored `.env` (a worktree reads the main checkout's); agents never do. The Apple Development identity (name or hash, never Developer ID) that `make build` or `./scripts/build.sh dev-sign [--scratch-path <dir>]` signs the debug `offsider` with, so a login a signed build saved reads with no Keychain prompt after any rebuild; older logins need `credential remove`, then `credential add`, once, which drops their notes, tags, `--confirm` and joins. Anything signed with it reads those logins too, including a build an agent edited; brokers still admit only the exact build. Plain `swift build` goes back to ad hoc after a source change |
 | `OFFSIDER_RN_E2E=1` | Enables the React Native suites on iOS (`test-runner.sh --rn-ios` sets it) |
 | `OFFSIDER_RN_IOS_APP` | The React Native playground's Release `.app` the iOS suites install |
-| `OFFSIDER_RN_DEBUG_E2E=1` | Enables the RN debug smoke suite (`--rn-debug` sets it; needs Metro on 8742) |
-| `OFFSIDER_RN_IOS_DEBUG_APP`, `OFFSIDER_ANDROID_DEBUG_APK` | The RN playground's debug builds for the debug smoke suite |
+| `OFFSIDER_RN_DEBUG_E2E=1` | Enables the RN debug smoke and login suites (`--rn-debug` sets it; needs Metro on 8742) |
+| `OFFSIDER_RN_IOS_DEBUG_APP`, `OFFSIDER_ANDROID_DEBUG_APK` | The RN playground's debug builds for the debug suites |
 | `OFFSIDER_ANDROID_E2E=1` | Enables the Android E2E suites in `swift test` (`test-runner.sh --android` sets it) |
 | `OFFSIDER_ANDROID_DEVICE` | The E2E emulator's serial or AVD name (default `OFFSIDER_ANDROID_E2E_AVD`, which `--android` boots if needed) |
 | `OFFSIDER_ANDROID_APK` | The React Native playground's release APK the Android suites install |

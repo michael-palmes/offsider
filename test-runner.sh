@@ -232,7 +232,7 @@ Examples:
   $0 --simulator SwipeTests   # Build everything and run only the swipe tests
   $0 -t SwipeTests            # Skip building, run only the swipe tests
   $0 --android                # Boot Offsider_E2E if needed and run the Android suites
-  $0 --rn-ios --rn-debug      # Debug build with Metro on 8742, run ReactNativeDebugSmokeTests
+  $0 --rn-ios --rn-debug      # Debug build with Metro on 8742, run the debug smoke and login suites
   $0 --android ReactNativeRowsTests   # One React Native suite on the Android emulator
   OFFSIDER_IOS_DEVICE=<udid> OFFSIDER_IOS_TEAM_ID=<team> $0 --ios-device   # Name the device and the team
 EOF
@@ -367,6 +367,7 @@ RN_SUITES=(
 )
 RN_DEBUG_SUITES=(
     "ReactNativeDebugSmokeTests"
+    "ReactNativeDebugLoginTests"
 )
 
 cleanup_test_runner() {
@@ -499,7 +500,7 @@ if [[ "$RN_DEBUG" == true ]]; then
         die "--rn-debug needs --rn-ios or --android."
     fi
     if [[ -n "$TEST_FILTER" ]]; then
-        die "--rn-debug runs only ReactNativeDebugSmokeTests and takes no test filter."
+        die "--rn-debug runs only its debug suites and takes no test filter."
     fi
 fi
 

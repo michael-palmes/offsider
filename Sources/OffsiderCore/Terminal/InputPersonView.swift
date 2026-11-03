@@ -79,6 +79,7 @@ public enum InputPersonView {
         case .checkbox: person.append(.prose("Tick it on the device; Offsider never does. Run this again once you have."))
         case .challenge: person.append(.prose("Solve the challenge on the device; Offsider never does. Run this again once you have."))
         case .unknown: person.append(.prose(TurnstileStatus.unknownNote))
+        case .failed: person.append(.prose(TurnstileStatus.failedNote))
         case .verifying, .passed, .absent: break
         }
         return Page([.person(person), .agent(line + "\n")])
@@ -134,7 +135,6 @@ public enum InputPersonView {
         var details = ["\(TerminalText.field(report.app, profile: .person)): \(button)"]
         if !report.filter.isEmpty { details.append("Chosen by --where \(report.filter.map(\.rawValue).joined(separator: " "))") }
         details.append("Server answer not checked")
-        if report.turnstile == .unknown { details.append(TurnstileStatus.unknownNote) }
         return receipt(headline, details: details, agent: report.textLine() + "\n")
     }
 }

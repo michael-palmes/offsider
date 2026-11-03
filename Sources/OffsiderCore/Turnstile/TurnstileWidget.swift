@@ -22,6 +22,8 @@ public enum TurnstilePhase: Equatable, Sendable {
     case ambiguous(Int)
     /// An element named for Turnstile is on screen with no widget in it: the widget failed to run, or runs invisibly, which a tree cannot tell apart.
     case noWidget
+    /// The widget says it failed. One set to retry tries again by itself.
+    case failed
 }
 
 /// Finds a Turnstile widget in an accessibility tree and reads its state.
@@ -56,10 +58,11 @@ public enum TurnstileWidget {
         if ready.count > 1 { return .ambiguous(ready.count) }
         if let target = ready.first { return .ready(target) }
         if phases.contains(.visualChallenge) { return .visualChallenge }
+        if phases.contains(.failed) { return .failed }
         return .checking
     }
 
-    /// A short, wide web view whose only words are scroll bars. iOS leaves the widget's contents out of the tree.
+    /// A short, wide web view whose only words are scroll bars or the widget's own, as a scroll view or a group the app names for Turnstile. iOS leaves the widget's contents out of the tree.
     public static func iosShells(in roots: [UINode], viewport: UIFrame? = nil, scopeID: String? = nil) -> [UIFrame] {
         let nodes = scoped(roots, id: scopeID).flatMap { $0.flattened() }.filter { onScreen($0, viewport: viewport) }
         var frames: [UIFrame] = []
@@ -67,7 +70,8 @@ public enum TurnstileWidget {
             guard let frame = node.frame, !frames.contains(where: { samePlace($0, frame) }) else { continue }
             frames.append(frame)
         }
-        return frames
+        // An app's wrapper around the web view is the same widget, so only the innermost shell is read.
+        return frames.filter { outer in !frames.contains { $0 != outer && outer.encloses($0, tolerance: 1) } }
     }
 
     /// Where to read the widget once `iosShells` has found the web view: the status words, then the logo.
@@ -105,6 +109,7 @@ public enum TurnstileWidget {
     public static func phase(shell: UIFrame, status: TurnstileReading, logo: TurnstileReading) -> TurnstilePhase {
         let readings = [status, logo]
         if readings.contains(.passed) { return .passed }
+        if readings.contains(.failed) { return .failed }
         if readings.contains(.checking) { return .checking }
         if readings.contains(.prompt) || readings.contains(.logo) { return .ready(iosTarget(shell)) }
         return .absent
@@ -133,7 +138,7 @@ public enum TurnstileWidget {
 
     private static func assess(_ widget: UINode, viewport: UIFrame?) -> TurnstilePhase {
         let nodes = widget.flattened().filter { onScreen($0, viewport: viewport) }
-        let checkbox = nodes.first { $0.role == .checkbox && $0.frame != nil }
+        let checkbox = nodes.first { isBox($0) && $0.frame != nil }
         let success = nodes.contains { isSuccess($0) }
         let challenge = nodes.contains { isVisualChallenge($0) }
         let tall = widget.id?.hasPrefix(widgetIDPrefix) == true && (widget.frame?.height ?? 0) > visualChallengeHeight
@@ -144,7 +149,7 @@ public enum TurnstileWidget {
         if let checkbox, let frame = checkbox.frame {
             return .ready(TurnstileTarget(frame: frame))
         }
-        return .checking
+        return nodes.contains(where: isFailed) ? .failed : .checking
     }
 
     /// An app's own web view or wrapper for the widget, on screen.
@@ -158,16 +163,22 @@ public enum TurnstileWidget {
     /// With no checkbox, the Cloudflare logo marks the widget, so its Success or checking words count.
     private static func fallbackCheckbox(in roots: [UINode], viewport: UIFrame?) -> TurnstilePhase {
         let nodes = roots.flatMap { $0.flattened() }.filter { onScreen($0, viewport: viewport) }
-        let boxes = nodes.filter { $0.role == .checkbox && $0.frame != nil && isPrompt($0) }
+        let boxes = nodes.filter { isBox($0) && $0.frame != nil && isPrompt($0) }
         let logo = nodes.first { isLogo($0) }?.frame
         if logo != nil, nodes.contains(where: { isSuccess($0) }) { return .passed }
         if boxes.count > 1 { return .ambiguous(boxes.count) }
         guard let box = boxes.first, let frame = box.frame else {
             guard logo != nil else { return .absent }
+            if nodes.contains(where: isFailed) { return .failed }
             if nodes.contains(where: { isChecking($0) }) { return .checking }
             return .absent
         }
         return .ready(TurnstileTarget(frame: frame))
+    }
+
+    /// The tick box: a checkbox, or the switch a physical iPhone's XCUITest tree calls it, with Turnstile's prompt as its label.
+    private static func isBox(_ node: UINode) -> Bool {
+        node.role == .checkbox || (node.role == .switch && isPrompt(node))
     }
 
     private static func onScreen(_ node: UINode, viewport: UIFrame?) -> Bool {
@@ -177,10 +188,12 @@ public enum TurnstileWidget {
     }
 
     private static func isIOSShell(_ node: UINode) -> Bool {
-        guard node.role == .scrollView, let frame = node.frame else { return false }
+        let named = (node.role == .group || node.role == .other) && !node.isAndroidNode && node.id?.range(of: "turnstile", options: .caseInsensitive) != nil
+        guard node.role == .scrollView || named, let frame = node.frame else { return false }
         guard (60...110).contains(frame.height), frame.width >= 240, frame.width > frame.height * 3 else { return false }
         let descendants = node.flattened().dropFirst()
-        guard descendants.contains(where: { $0.role == .slider }) else { return false }
+        // A web view's tree can empty over time, leaving a named group with nothing in it but the box on screen.
+        guard named || descendants.contains(where: { $0.role == .slider }) else { return false }
         return descendants.allSatisfy { candidate in
             candidate.role == .slider || texts(of: candidate).allSatisfy(isTurnstileCopy)
         }
@@ -189,7 +202,8 @@ public enum TurnstileWidget {
     private static func isTurnstileCopy(_ text: String) -> Bool {
         let plain = plain(text)
         if plain.isEmpty { return true }
-        return isSuccessText(plain) || isPromptText(plain) || isCheckingText(plain) || plain.contains("cloudflare")
+        return isSuccessText(plain) || isPromptText(plain) || isCheckingText(plain) || isFailedText(plain) || plain.contains("cloudflare")
+            || ["stuck?", "troubleshoot"].contains(plain)
     }
 
     private static func samePlace(_ lhs: UIFrame, _ rhs: UIFrame) -> Bool {
@@ -204,6 +218,7 @@ public enum TurnstileWidget {
     private static func reading(of node: UINode) -> TurnstileReading {
         if isSuccess(node) { return .passed }
         if node.role == .checkbox || isPrompt(node) { return .prompt }
+        if isFailed(node) { return .failed }
         if isChecking(node) { return .checking }
         if isLogo(node) { return .logo }
         return .unrelated
@@ -218,8 +233,9 @@ public enum TurnstileWidget {
         case .unrelated: 0
         case .logo: 1
         case .checking: 2
-        case .prompt: 3
-        case .passed: 4
+        case .failed: 3
+        case .prompt: 4
+        case .passed: 5
         }
     }
 
@@ -249,6 +265,15 @@ public enum TurnstileWidget {
         return trimmed == "verifying" || trimmed.hasPrefix("checking")
     }
 
+    private static func isFailed(_ node: UINode) -> Bool {
+        texts(of: node).contains { isFailedText(plain($0)) }
+    }
+
+    /// Cloudflare's own words once a run has failed or its token has lapsed; a label such as "Stuck?" shows while it still checks.
+    private static func isFailedText(_ text: String) -> Bool {
+        text.hasPrefix("verification failed") || text.hasPrefix("verification expired")
+    }
+
     private static func isVisualChallenge(_ node: UINode) -> Bool {
         texts(of: node).contains { text in
             let plain = plain(text)
@@ -275,6 +300,7 @@ public enum TurnstileWidget {
 /// A point read inside an iOS Turnstile web view.
 public enum TurnstileReading: Equatable, Sendable {
     case passed
+    case failed
     case checking
     case prompt
     case logo
@@ -291,12 +317,14 @@ public struct TurnstileStatus: Equatable, Sendable {
         case absent
         /// A Turnstile web view with no widget: do not read it as absent.
         case unknown
+        /// The widget says verification failed.
+        case failed
 
-        /// A person's step is still open: there is something to tick or solve, or a tick being checked.
+        /// The step is still open: something to tick or solve, a tick being checked, a widget that may retry, or a box the tree no longer shows.
         public var awaitsPerson: Bool {
             switch self {
-            case .checkbox, .challenge, .verifying: return true
-            case .passed, .absent, .unknown: return false
+            case .checkbox, .challenge, .verifying, .failed, .unknown: return true
+            case .passed, .absent: return false
             }
         }
     }
@@ -326,16 +354,22 @@ public struct TurnstileStatus: Equatable, Sendable {
         case .passed: self.init(state: .passed, source: source)
         case .visualChallenge: self.init(state: .challenge, source: source)
         case .noWidget: self.init(state: .unknown, source: source)
+        case .failed: self.init(state: .failed, source: source)
         case .ambiguous: return nil
         }
     }
 
     /// What `unknown` means and where to look next.
-    public static let unknownNote = "A Turnstile web view is up with no widget: it failed to run, or runs invisibly. Check the app's log for a Turnstile error, and doctor for an old WebView."
+    public static let unknownNote = "A Turnstile web view is up with no widget Offsider can read: a box nobody has ticked, one that failed to run, or one that runs invisibly. Look at the screen; if nothing shows, check the app's log for a Turnstile error, and doctor for an old WebView."
+    /// What `failed` means and where to look next.
+    public static let failedNote = "Cloudflare shows Verification failed. A widget set to retry tries again by itself, so wait; if it stays, reopen the screen and check the app's log for a Turnstile error."
 
     /// `Turnstile: checkbox at (32, 388.95) 163.81x25.14`, or the state alone.
     public func textLine() -> String {
-        guard let frame else { return "Turnstile: \(state.rawValue)" + (state == .unknown ? ". \(Self.unknownNote)" : "") }
+        guard let frame else {
+            let note = state == .unknown ? ". \(Self.unknownNote)" : state == .failed ? ". \(Self.failedNote)" : ""
+            return "Turnstile: \(state.rawValue)\(note)"
+        }
         return "Turnstile: \(state.rawValue) at (\(Self.format(frame.x)), \(Self.format(frame.y))) \(Self.format(frame.width))x\(Self.format(frame.height))"
     }
 

@@ -119,6 +119,15 @@ public enum CoverJudge {
         return node
     }
 
+    /// True when Android's drawing order, looking beneath views that pass the touch on, puts `target` on top at `point`; false when something else is there or the order cannot tell.
+    static func drawnClear(of target: UINode, at point: UIPoint, in tree: UITree) -> Bool {
+        guard target.isAndroidNode, let viewport = tree.viewport else { return false }
+        let roots = tree.roots.filter { $0.role != .keyboard }
+        let context = Context(target: target, matched: target, point: point, candidates: [], roots: roots, viewport: viewport, stack: ScreenStack.build(roots: roots, viewport: viewport))
+        guard case .clear? = context.drawnJudgement() else { return false }
+        return true
+    }
+
     /// The hit chain when Android's drawing order or window layers order every set of siblings it passes; nil otherwise.
     static func drawnChain(at point: UIPoint, in roots: [UINode]) -> [UINode]? {
         if roots.count > 1, roots.contains(where: { $0.windowLayer == nil }) {
