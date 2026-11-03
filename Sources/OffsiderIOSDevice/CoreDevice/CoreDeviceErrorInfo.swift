@@ -21,9 +21,9 @@ public struct CoreDeviceErrorInfo: Equatable, Sendable {
         [self] + underlying.flatMap(\.chain)
     }
 
-    /// RemotePairingError 1016, `unlockRequired`, anywhere in the chain.
+    /// RemotePairingError 1016, `unlockRequired`, or CoreDeviceError 10003, anywhere in the chain.
     public var isLocked: Bool {
-        chain.contains { $0.domain.contains("RemotePairing") && $0.code == 1016 }
+        chain.contains { ($0.domain.contains("RemotePairing") && $0.code == 1016) || (isCoreDevice($0) && $0.code == 10003) }
     }
 
     /// The Xcode 26 disk image has no HID daemon, so CoreDevice refuses the feature outright.
@@ -32,7 +32,26 @@ public struct CoreDeviceErrorInfo: Equatable, Sendable {
     }
 
     public var isTunnelDown: Bool {
-        chain.contains { $0.domain == "com.apple.dt.CoreDeviceError" && $0.code == 4000 }
+        chain.contains { isCoreDevice($0) && $0.code == 4000 }
+    }
+
+    /// CoreDevice names no code of its own for this in what Offsider has seen, so its words decide.
+    public var isDeveloperModeOff: Bool {
+        chain.contains { $0.description?.localizedCaseInsensitiveContains("Developer Mode is turned off") == true }
+    }
+
+    /// CoreDeviceError 12040: the wrapper around whatever stopped the mount.
+    public var isDiskImageMountFailure: Bool {
+        chain.contains { isCoreDevice($0) && $0.code == 12040 }
+    }
+
+    /// The deepest description in the chain: what went wrong, under what was being tried.
+    public var rootCause: String {
+        chain.reversed().compactMap(\.description).first ?? "\(domain) \(code)"
+    }
+
+    private func isCoreDevice(_ error: CoreDeviceErrorInfo) -> Bool {
+        error.domain == "com.apple.dt.CoreDeviceError"
     }
 
     /// The first description in the chain, else the domain and code.

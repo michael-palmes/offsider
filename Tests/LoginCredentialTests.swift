@@ -693,8 +693,7 @@ struct LoginCredentialTests {
         let cleared = try signOut("emulator-5554", app: "com.example.android")
         #expect(cleared.contains(#""name":"default","cleared":true"#))
 
-        let phone = #expect(throws: CLIError.self) { try signOut("00008130-0000000000000ABC") }
-        #expect(phone?.reason == .notSupported)
+        #expect(try signOut("00008130-0000000000000ABC").contains(#""cleared":false"#), "login runs on an iPhone now, so its record clears too")
     }
 
     @Test("signed-out needs a device, and takes no name, --where or context flags")

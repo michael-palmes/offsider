@@ -77,7 +77,7 @@ public final class IOSDeviceDirectory {
         }
         guard result.status == 0 else {
             let detail = result.stderr.split(separator: "\n").first.map { String($0).trimmingCharacters(in: .whitespaces) } ?? "exit \(result.status)"
-            throw IOSDeviceError.devicectlFailed(label, udid: udid, detail: detail)
+            throw IOSDeviceError.devicectlFailed(label, udid: udid, detail: detail, cause: CoreDeviceErrorInfo(devicectlOutput: result.stdout))
         }
         return result.stdout
     }

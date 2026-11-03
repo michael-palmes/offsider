@@ -44,6 +44,12 @@ struct DeviceAccessContext: Sendable {
     var hasRunner: @Sendable (String) -> Bool = { _ in false }
     /// Whether `remove` may ask a question: a person, with standard input and output both a terminal.
     var interactive: @Sendable () -> Bool = { false }
+    /// Registers an allowed iPhone or iPad with its team, builds its runner and starts it; true once proved. Android has nothing to prove here.
+    var prepare: @Sendable @MainActor (DeviceSummary) async throws -> Bool = { _ in false }
+    /// Where the end of `add` saves a login; nil skips the question.
+    var credentials: (any LoginCredentialStoring)? = nil
+    /// How long a prompt waits for a key.
+    var promptIdle: TimeInterval = DeviceAccessAllow.promptIdle
 
     static let live = DeviceAccessContext(
         store: { DevicePolicySources.store() },
@@ -76,8 +82,27 @@ struct DeviceAccessContext: Sendable {
         profile: { (try? LoginProfiles.load(project: nil, warn: { _ in })) ?? nil },
         cleanRunner: { udid in await RunnerSessions.clean(udid: udid) },
         hasRunner: { RunnerSessions.hasRecord(udid: $0) },
-        interactive: { DevicePicker.prompts(terminals: isatty(STDIN_FILENO) != 0 && isatty(STDOUT_FILENO) != 0) }
+        interactive: { DevicePicker.prompts(terminals: isatty(STDIN_FILENO) != 0 && isatty(STDOUT_FILENO) != 0) },
+        prepare: { row in try await DeviceAccessContext.livePrepare(row) },
+        credentials: KeychainLoginCredentialStore()
     )
+
+    /// The allowance was written after this process read its policy, so the route reads the list again.
+    @MainActor
+    static func livePrepare(_ row: DeviceSummary) async throws -> Bool {
+        guard row.platform == .ios else { return false }
+        let policy = DevicePolicyGate.read(store: DevicePolicySources.store(), seal: KeychainDeviceAllowListSeal(), managed: LiveManagedPreferences())
+        let udid = StableDeviceKey.of(row) ?? row.id
+        return try await DevicePolicyGate.$current.withValue(.fixed(policy)) {
+            let route = try await DeviceRouter.route(udid, logger: OffsiderLogger())
+            guard let backend = route.backend as? IOSDeviceBackend else { return false }
+            _ = try await XcodeRunnerBuilder.$confirmNewPrefix.withValue(RunnerBuildCommand.confirmPrefix(udid: udid)) {
+                try await backend.buildRunner(for: route.device, registerDevice: route.allowance?.team != nil)
+            }
+            try await backend.checkRunner(route.device)
+            return true
+        }
+    }
 
     func policy() -> PhysicalDevicePolicy {
         DevicePolicyGate.read(store: store(), seal: seal, managed: managed)
@@ -95,7 +120,8 @@ struct DeviceAccessContext: Sendable {
 enum DeviceAccess {}
 
 extension DeviceAccess {
-    static let defaultExpiry = "12h"
+    /// What a one-app allowance lasts when no one chose; any app on a phone in use is recommended less, a test device stays until removed.
+    static let oneAppExpiry = "7d"
     static let longestExpiry: TimeInterval = 30 * 86_400
 
     /// `<n>m`, `<n>h`, `<n>d` (at most 30 days) or `never`; nil for never.
@@ -191,7 +217,7 @@ struct DeviceAccessAllow: AsyncParsableCommand {
     @Option(name: .customLong("app"), help: ArgumentHelp("An app Offsider may drive on it (repeatable); without it, choose from the apps installed on the device.", valueName: "id"))
     var apps: [String] = []
 
-    @Option(name: .customLong("expires"), help: ArgumentHelp("How long the allowance lasts: <n>m, <n>h, <n>d (at most 30d) or never; without it, choose (12h recommended).", valueName: "time"))
+    @Option(name: .customLong("expires"), help: ArgumentHelp("How long the allowance lasts: <n>m, <n>h, <n>d (at most 30d) or never; without it, a one-app choice recommends 7d, any app 12h, and a test device stays until removed.", valueName: "time"))
     var expires: String?
 
     @Option(name: .customLong("team"), help: ArgumentHelp("For an iPhone or iPad: the Apple development team ID that signs Offsider's runner app on it; without it, choose from your Keychain's teams. OFFSIDER_IOS_TEAM_ID wins over it.", valueName: "id"))
@@ -200,8 +226,11 @@ struct DeviceAccessAllow: AsyncParsableCommand {
     @Option(name: .customLong("metro-port"), help: ArgumentHelp("For an Android phone: a port of Metro on this Mac that rn open may map to it with adb reverse (repeatable), or none; without it, choose. Every app on the phone can reach Metro while the reverse is set.", valueName: "port|none"))
     var metroPortArguments: [String] = []
 
-    @Flag(name: .customLong("test-device"), help: "Let agents drive the whole device: every app, system alerts and Settings. Only for a device kept for testing, with nothing personal on it.")
+    @Flag(name: .customLong("test-device"), help: "Let agents drive the whole device: every app, system alerts and Settings, until removed. Only for a device kept for testing, with nothing personal on it.")
     var testDevice = false
+
+    @Flag(name: .customLong("plan"), help: "Print each connected phone with the complete command that adds it. Changes nothing, reaches no phone and needs no terminal, so an agent can read it.")
+    var plan = false
 
     /// `--metro-port` as ports, empty for `none`; nil when it was not given, so the step asks.
     var metroPorts: [Int]? {
@@ -216,6 +245,9 @@ struct DeviceAccessAllow: AsyncParsableCommand {
 
     func validate() throws {
         try listFilters.refuse(in: Self.self)
+        if plan, device != nil || !apps.isEmpty || expires != nil || team != nil || !metroPortArguments.isEmpty || testDevice {
+            throw ValidationError("--plan changes nothing, so it takes only --json.")
+        }
         if let expires { _ = try DeviceAccess.expiry(expires) }
         if let team, !DeviceAllowance.isTeamID(team) {
             throw ValidationError("--team takes a 10-character Apple team ID such as ABCDE12345; '\(team)' is not one.")
@@ -260,6 +292,10 @@ struct DeviceAccessAllow: AsyncParsableCommand {
     @MainActor
     func run() async throws {
         let console = Console.current
+        if plan {
+            console.data(try await planOutput(context: DeviceAccessContext.current) + "\n")
+            return
+        }
         let output: String
         do {
             output = try await perform(context: DeviceAccessContext.current)
@@ -269,6 +305,18 @@ struct DeviceAccessAllow: AsyncParsableCommand {
         }
         // A person read the receipt on the terminal already; stdout gets it only when someone else reads it.
         if json || console.out.profile != .person { console.data(output + "\n") }
+    }
+
+    /// The commands that would add what is plugged in; lists rows and teams only.
+    @MainActor
+    func planOutput(context: DeviceAccessContext) async throws -> String {
+        let rows = try await Console.current.progress("Looking for devices") { try await context.physicalDevices().rows }
+        let profile = context.profile()
+        let built = DeviceAddPlan.make(
+            rows: rows, policy: context.policy(), teams: context.signingTeams().map { DeviceAddPlan.Team(id: $0.id, name: $0.name, free: $0.free) }, now: context.now(),
+            app: { $0 == .ios ? profile?.bundleID : profile?.package }
+        )
+        return json ? built.json() : built.text()
     }
 
     /// `Test iPhone stays allowed`, or `Test iPhone and Test Pixel stay allowed`.
@@ -286,7 +334,7 @@ struct DeviceAccessAllow: AsyncParsableCommand {
 
     @MainActor
     func perform(context: DeviceAccessContext) async throws -> String {
-        let instead = "Ask the user to run `offsider devices add` in their own terminal."
+        let instead = "`offsider devices add --plan` prints the command to give the user, to run in their own terminal."
         try PersonPresence.requireTerminal(instead: instead)
         let store = try context.requireStore()
         let policy = context.policy()
@@ -295,10 +343,10 @@ struct DeviceAccessAllow: AsyncParsableCommand {
         var savedNames: [String] = []
         var stopped: (any Error)?
         try await TerminalPrompt.runAsync(
-            cancelled: AllowScreen.cancelled, instead: instead, descriptor: context.promptDescriptor, idle: Self.promptIdle, keeps: true
+            cancelled: AllowScreen.cancelled, instead: instead, descriptor: context.promptDescriptor, idle: context.promptIdle, keeps: true
         ) { prompt in
             prompt.lines(AllowScreen.header(width: prompt.width, style: prompt.style))
-            var (row, connected) = try await pickDevice(on: prompt, context: context, policy: policy, named: named)
+            var (row, connected, askedDevice) = try await pickDevice(on: prompt, context: context, policy: policy, named: named)
             var allowedNow: Set<String> = []
             /// Where this device's lines begin, so a stop erases them and keeps every earlier receipt.
             var deviceStart = prompt.mark
@@ -307,7 +355,8 @@ struct DeviceAccessAllow: AsyncParsableCommand {
                 let entry: DeviceAllowance?
                 let droppedTampered: Bool
                 do {
-                    choice = try await complete(row, on: prompt, context: context, policy: policy, later: !savedNames.isEmpty)
+                    row = try await waitUntilReady(row, on: prompt, context: context)
+                    choice = try await complete(row, on: prompt, context: context, policy: policy, later: !savedNames.isEmpty, askedDevice: askedDevice)
                     (entry, droppedTampered) = try record(choice, store: store, context: context)
                 } catch where !savedNames.isEmpty {
                     // Whatever stops a later device leaves the ones already saved, and says so.
@@ -330,14 +379,16 @@ struct DeviceAccessAllow: AsyncParsableCommand {
                 let stuckPorts = withdrawn.failed.flatMap(\.ports).map(MetroReverse.label)
                 let retry = "offsider session stop --device \(choice.key)"
                 let notes = removedPorts.map { "Removed \($0)" } + stuckPorts.map { "Could not remove \($0): run `\(retry)`" }
-                prompt.lines(AllowScreen.allowed(name: name, key: choice.key, until: until, apps: choice.apps, metroPorts: choice.metroPorts, testDevice: choice.testDevice, notes: notes, width: prompt.width, style: prompt.style))
+                let setup = await finish(choice, on: prompt, context: context)
+                await offerLogin(choice, on: prompt, context: context, policy: policy)
+                prompt.lines(AllowScreen.allowed(name: name, key: choice.key, until: until, apps: choice.apps, metroPorts: choice.metroPorts, testDevice: choice.testDevice, notes: notes, ready: setup.ready, width: prompt.width, style: prompt.style))
                 prompt.settle()
                 reports.append(json
                     ? DeviceAccessReport.changeJSON(
                         action: "allow", platform: choice.row.platform, key: choice.key, allowance: entry, stopped: removedPorts,
-                        notRemoved: stuckPorts, retry: stuckPorts.isEmpty ? nil : retry
+                        notRemoved: stuckPorts, retry: stuckPorts.isEmpty ? nil : retry, ready: setup.ready, needs: setup.needs
                     )
-                    : AllowScreen.allowed(name: name, key: choice.key, until: until, apps: choice.apps, metroPorts: choice.metroPorts, testDevice: choice.testDevice, notes: notes, width: .max, style: .detect(isTerminal: false)).joined(separator: "\n"))
+                    : (AllowScreen.allowed(name: name, key: choice.key, until: until, apps: choice.apps, metroPorts: choice.metroPorts, testDevice: choice.testDevice, notes: notes, ready: setup.ready, width: .max, style: .detect(isTerminal: false)) + (setup.needs.map { [$0] } ?? [])).joined(separator: "\n"))
                 allowedNow.insert(choice.key)
                 savedNames.append(name)
                 guard named == nil, !json else { return }
@@ -362,6 +413,7 @@ struct DeviceAccessAllow: AsyncParsableCommand {
                 deviceStart = start
                 row = remaining[index]
                 connected = remaining
+                askedDevice = true
                 prompt.lines(["", TerminalUI.receipt("Device", AllowScreen.name(row), style: prompt.style)])
             }
         }
@@ -402,16 +454,144 @@ struct DeviceAccessAllow: AsyncParsableCommand {
     ]
     static let recommendedExpiry = 1
 
-    /// A test device stays connected, so "Until removed" comes first and chosen; every other choice keeps its order.
-    static func expiryRows(testDevice: Bool) -> (options: [(mark: TerminalStyle.Mark, label: String, value: String?)], recommended: Int) {
-        guard testDevice else { return (expiryOptions, recommendedExpiry) }
-        return (expiryOptions.filter { $0.value == "never" } + expiryOptions.filter { $0.value != "never" }, 0)
+    /// One app recommends 7 days; any app on a phone stays at 12 hours.
+    static func expiryRecommended(apps: [String]) -> Int {
+        let oneApp = !apps.isEmpty && apps != [DeviceAllowance.wholeDevicePin]
+        return oneApp ? expiryOptions.firstIndex { $0.value == DeviceAccess.oneAppExpiry } ?? recommendedExpiry : recommendedExpiry
+    }
+
+    /// How long a phone may ask for a person's hands before `add` stops waiting.
+    static let setupWait: TimeInterval = 600
+
+    /// Asks for the one step the phone waits on, watches its listing until it clears and asks for the next; reads rows only.
+    @MainActor
+    private func waitUntilReady(_ row: DeviceSummary, on prompt: TerminalPrompt, context: DeviceAccessContext) async throws -> DeviceSummary {
+        guard Self.watchedAsk(row) != nil else { return row }
+        let key = StableDeviceKey.of(row)
+        let start = prompt.mark
+        var current = row
+        var shown: String?
+        let deadline = context.now().addingTimeInterval(Self.setupWait)
+        while let ask = Self.watchedAsk(current) {
+            if ask != shown {
+                prompt.rewind(to: start)
+                prompt.lines(TerminalUI.warning(ask, width: prompt.width, style: prompt.style) + [prompt.style.dim(AllowScreen.watching)])
+                shown = ask
+            }
+            if prompt.quitPressed(within: Self.setupPoll) { throw PromptCancelled() }
+            guard context.now() < deadline else {
+                throw CLIError.personRequired("\(ask) Offsider stopped waiting, and nothing was saved. Run the command again once that is done.")
+            }
+            let rows = (try? await context.physicalDevices().rows) ?? []
+            current = rows.first { StableDeviceKey.of($0) == key } ?? current
+        }
+        prompt.rewind(to: start)
+        return current
+    }
+
+    /// The step to watch the listing for. An iPhone listed with Developer Mode off may only be locked, so its app read or `finish` judges that.
+    static func watchedAsk(_ row: DeviceSummary) -> String? {
+        row.platform == .ios && row.state == IOSDeviceReadiness.developerModeOff.stateText ? nil : DeviceSetupAsk.ask(row)
+    }
+
+    /// Seconds between looks at a phone a person is setting up.
+    static let setupPoll: TimeInterval = 2
+    /// How often `finish` tries again while a person's step is outstanding.
+    static let finishPoll: TimeInterval = 5
+
+    /// What only a person can clear on the phone; anything else stops `finish`.
+    static func personCanClear(_ error: any Error) -> Bool {
+        guard let failure = error as? IOSDeviceError else { return false }
+        return [.locked, .certificateNotTrusted, .uiAutomationOff, .developerModeOff, .untrusted, .preparing].contains(failure.kind)
+    }
+
+    /// The step a person's hands clear, asked by the phone's name, so the screen never shows its ID; nil when no person can clear it.
+    static func setupAsk(_ error: any Error, row: DeviceSummary) -> String? {
+        (error as? any OffsiderFailure)?.ask.map { PersonAsk.filled($0, name: AllowScreen.name(row), id: nil) }
+    }
+
+    /// Registers, builds and starts what the device needs, retrying while a person clears a step; the allowance stays whatever happens here.
+    @MainActor
+    private func finish(_ choice: Choice, on prompt: TerminalPrompt, context: DeviceAccessContext) async -> (ready: Bool, needs: String?) {
+        let start = prompt.mark
+        var shown: String?
+        let deadline = context.now().addingTimeInterval(Self.setupWait)
+        while true {
+            do {
+                let label = "Getting \(AllowScreen.name(choice.row)) ready"
+                let ready = try await TerminalSpinner.run(label, terminal: prompt.terminalDescriptor) { try await context.prepare(choice.row) }
+                prompt.rewind(to: start)
+                return (ready, nil)
+            } catch {
+                let needs = Self.reason(error) + "."
+                let ask = Self.setupAsk(error, row: choice.row) ?? needs
+                guard Self.personCanClear(error), context.now() < deadline else {
+                    prompt.rewind(to: start)
+                    prompt.lines(TerminalUI.warning(ask, width: prompt.width, style: prompt.style))
+                    return (false, needs)
+                }
+                if ask != shown {
+                    prompt.rewind(to: start)
+                    prompt.lines(TerminalUI.warning(ask, width: prompt.width, style: prompt.style) + [prompt.style.dim(AllowScreen.watching)])
+                    shown = ask
+                }
+                if prompt.quitPressed(within: Self.finishPoll) {
+                    prompt.rewind(to: start)
+                    prompt.lines(TerminalUI.warning(ask, width: prompt.width, style: prompt.style))
+                    return (false, needs)
+                }
+            }
+        }
+    }
+
+    /// Skip is chosen; a cancel or failure here never costs the device it just allowed.
+    @MainActor
+    private func offerLogin(_ choice: Choice, on prompt: TerminalPrompt, context: DeviceAccessContext, policy: PhysicalDevicePolicy) async {
+        guard !json, let store = context.credentials else { return }
+        let start = prompt.mark
+        do {
+            let rows = [MenuRow(.cancel, [AllowScreen.skipLogin], recommended: true), MenuRow(.lock, [AllowScreen.addLogin, AllowScreen.addLoginDetail])]
+            let wanted = try prompt.choose(AllowScreen.loginQuestion, rows: rows, selected: 0, keepsChoice: false) == 1
+            prompt.rewind(to: start)
+            guard wanted else { return }
+            let app = try await loginApp(choice, on: prompt, context: context, policy: policy)
+            prompt.rewind(to: start)
+            prompt.lines([TerminalUI.receipt("Login", PromptScreen.label(app), style: prompt.style)])
+            let questions = TerminalCredentialQuestions(prompt: prompt)
+            _ = try CredentialCommand.perform(
+                .set, app: app, key: nil, settings: choice.testDevice ? LoginSettingsEdit() : LoginSettingsEdit(devices: .any), personConfirmed: true,
+                json: false, store: store, questions: questions, readCredential: questions.credential
+            )
+            prompt.rewind(to: start)
+            prompt.lines([TerminalUI.receipt("Login", "saved for \(PromptScreen.label(app))", style: prompt.style)])
+        } catch where error is PromptCancelled || error is PromptTimedOut {
+            prompt.rewind(to: start)
+        } catch {
+            prompt.rewind(to: start)
+            prompt.lines(TerminalUI.warning("No login saved: \(Self.reason(error)). `offsider credential add` saves one later.", width: prompt.width, style: prompt.style))
+        }
+    }
+
+    /// The pinned app when there is just one; else its apps, the project's first, or typing.
+    @MainActor
+    private func loginApp(_ choice: Choice, on prompt: TerminalPrompt, context: DeviceAccessContext, policy: PhysicalDevicePolicy) async throws -> String {
+        if choice.apps.count == 1, choice.apps != [DeviceAllowance.wholeDevicePin] { return choice.apps[0] }
+        let listed = (try? await TerminalSpinner.run("Reading its apps", terminal: prompt.terminalDescriptor) { try await context.installedApps(choice.row) }) ?? []
+        let menu = Self.appMenu(listed, platform: choice.row.platform, policy: policy, profile: context.profile(), front: nil)
+        let offered = menu.choices.filter { if case .app = $0 { return true } else { return $0 == .type } }
+        var rows = AppMenu(choices: offered, recommended: menu.recommended).rows()
+        if rows.isEmpty { rows = [MenuRow(.type, [AllowScreen.typeApp])] }
+        let index = try prompt.choose(AllowScreen.appQuestion, rows: rows, selected: 0, keepsChoice: false)
+        if index < offered.count, case .app(let app) = offered[index] { return app.id }
+        let typed = try typeApp(on: prompt, platform: choice.row.platform, policy: policy, label: "  App ID: ")
+        guard let id = typed.value.first else { throw PromptCancelled() }
+        return id
     }
 
     /// The steps after the device is known: team, app, Metro, how long, the summary and Touch ID.
     @MainActor
     /// `later` marks a device after the first: there `--team` applies only to an iPhone or iPad and `--metro-port` only to a phone, and each is skipped for the other.
-    private func complete(_ row: DeviceSummary, on prompt: TerminalPrompt, context: DeviceAccessContext, policy: PhysicalDevicePolicy, later: Bool = false) async throws -> Choice {
+    private func complete(_ row: DeviceSummary, on prompt: TerminalPrompt, context: DeviceAccessContext, policy: PhysicalDevicePolicy, later: Bool = false, askedDevice: Bool = true) async throws -> Choice {
         let key = StableDeviceKey.of(row) ?? row.id
         let team = row.platform == .ios || !later ? self.team : nil
         if team != nil, row.platform != .ios {
@@ -435,7 +615,14 @@ struct DeviceAccessAllow: AsyncParsableCommand {
         if testDevice, let off = policy.managed.testDeviceRefusal {
             throw CLIError(errorDescription: "\(off), so \(key) cannot be a test device. Nothing was saved.", reason: .appNotAllowed)
         }
-        let steps = stepNames(platform: row.platform)
+        var teams: [SigningTeam] = []
+        if row.platform == .ios, team == nil {
+            teams = try await TerminalSpinner.run("Reading your signing teams", terminal: prompt.terminalDescriptor) { context.signingTeams() }
+        }
+        // One team has nothing to choose, unless it would replace the one this device already has.
+        let onlyTeam = teams.count == 1 && (current?.team == nil || current?.team == teams[0].id) ? teams[0] : nil
+        let offersTest = policy.managed.testDeviceRefusal == nil
+        var steps = stepNames(platform: row.platform, askDevice: askedDevice, askTeam: onlyTeam == nil, askUse: offersTest)
         /// Runs the step with its `2/4` marker, then leaves one receipt line in place of everything it drew.
         func step<T>(_ name: String, _ body: (String?) async throws -> (value: T, shown: String)) async throws -> (value: T, shown: String) {
             let start = prompt.mark
@@ -445,29 +632,46 @@ struct DeviceAccessAllow: AsyncParsableCommand {
             prompt.lines([TerminalUI.receipt(name, shown, style: prompt.style)])
             return (value, shown)
         }
+        var chosenWhole = testDevice
+        if apps.isEmpty, !testDevice, offersTest {
+            chosenWhole = try await step("Use") { try pickUse(on: prompt, current: current, step: $0) }.value
+            if chosenWhole { steps.removeAll { ["App", "Metro", "How long"].contains($0) } }
+        }
         var chosenTeam = team
         var shownTeam = team.map { "team \($0)" }
-        if row.platform == .ios, team == nil {
-            let picked = try await step("Team") { try await pickTeam(on: prompt, context: context, current: current?.team, step: $0) }
+        if let onlyTeam {
+            chosenTeam = onlyTeam.id
+            shownTeam = Self.teamShown(onlyTeam, among: teams)
+            prompt.lines([TerminalUI.receipt("Team", Self.teamShown(onlyTeam, among: teams), style: prompt.style)])
+        } else if row.platform == .ios, team == nil {
+            let picked = try await step("Team") { try await pickTeam(on: prompt, teams: teams, current: current?.team, step: $0) }
             chosenTeam = picked.value
             shownTeam = picked.value == nil ? nil : picked.shown
         }
         var chosenApps = apps
-        var chosenWhole = testDevice
-        if apps.isEmpty, !testDevice {
-            (chosenApps, chosenWhole) = try await step("App") { try await pickApp(on: prompt, row: row, context: context, policy: policy, current: current, step: $0) }.value
+        if apps.isEmpty, !chosenWhole {
+            chosenApps = try await step("App") { try await pickApp(on: prompt, row: row, context: context, policy: policy, current: current, step: $0) }.value
         }
-        var chosenPorts = metroPorts ?? []
-        if row.platform == .android, metroPorts == nil {
+        // A use decided by flag or the test device row needs no more questions: the rest take their defaults.
+        let settled = chosenWhole || !apps.isEmpty
+        var chosenPorts = metroPorts ?? (settled ? current?.metroPorts ?? [] : [])
+        if row.platform == .android, metroPorts == nil, !settled {
             chosenPorts = try await step("Metro") { try pickMetroPorts(on: prompt, current: current?.metroPorts ?? [], step: $0) }.value
         }
         let lifetime: TimeInterval?
         var keptExpiry: Date?
         if let expires {
             lifetime = try DeviceAccess.expiry(expires)
+        } else if settled {
+            if let current, current.testDevice == chosenWhole {
+                lifetime = current.expires?.timeIntervalSince(context.now())
+                keptExpiry = current.expires
+            } else {
+                lifetime = chosenWhole ? nil : try DeviceAccess.expiry(DeviceAccess.oneAppExpiry)
+            }
         } else {
             let kept = current.map { entry in (entry.expires?.timeIntervalSince(context.now()), AllowScreen.until(entry.expires, now: context.now(), timeZone: context.timeZone)) }
-            let picked = try await step("How long") { try pickExpiry(on: prompt, current: kept, step: $0, testDevice: chosenWhole) }
+            let picked = try await step("How long") { try pickExpiry(on: prompt, current: kept, step: $0, apps: chosenApps) }
             lifetime = picked.value
             if picked.shown == kept?.1 { keptExpiry = current?.expires }
         }
@@ -476,20 +680,23 @@ struct DeviceAccessAllow: AsyncParsableCommand {
         prompt.lines([""] + AllowScreen.summary(row, apps: chosenApps, lifetime: lifetime, team: shownTeam, metroPorts: chosenPorts, testDevice: chosenWhole, width: prompt.width, style: prompt.style))
         prompt.lines([prompt.style.dim(AllowScreen.confirm)])
         let reach = chosenPorts.isEmpty ? "" : " and let its apps reach \(AllowScreen.metro(chosenPorts))"
-        let whole = chosenWhole ? " as a \(AllowScreen.wholeDevice)" : ""
-        try await PersonPresence.confirm(reason: "allow Offsider to drive \(name) (\(PromptScreen.visible(key)))\(whole)\(reach)")
+        let whole = chosenWhole ? " as a \(AllowScreen.wholeDevice) with nothing personal on it" : ""
+        let register = row.platform == .ios && chosenTeam != nil ? " and register it with your Apple team" : ""
+        try await PersonPresence.confirm(reason: "allow Offsider to drive \(name) (\(PromptScreen.visible(key)))\(whole)\(reach)\(register)")
         prompt.rewind(to: start)
         return Choice(row: row, key: key, team: chosenTeam, apps: chosenApps, lifetime: lifetime, metroPorts: chosenPorts, keptExpiry: keptExpiry, testDevice: chosenWhole)
     }
 
-    /// The steps this run shows, in order; a flag given on the command line skips its step.
-    func stepNames(platform: DevicePlatform) -> [String] {
+    /// The steps this run shows, in order; a flag given on the command line skips its step, and a use settled by flag skips the rest.
+    func stepNames(platform: DevicePlatform, askDevice: Bool = true, askTeam: Bool = true, askUse: Bool = true) -> [String] {
+        let settled = testDevice || !apps.isEmpty
         var names: [String] = []
-        if device == nil { names.append("Device") }
-        if platform == .ios, team == nil { names.append("Team") }
-        if apps.isEmpty, !testDevice { names.append("App") }
-        if platform == .android, metroPortArguments.isEmpty { names.append("Metro") }
-        if expires == nil { names.append("How long") }
+        if device == nil, askDevice { names.append("Device") }
+        if !settled, askUse { names.append("Use") }
+        if platform == .ios, team == nil, askTeam { names.append("Team") }
+        if !settled { names.append("App") }
+        if platform == .android, metroPortArguments.isEmpty, !settled { names.append("Metro") }
+        if expires == nil, !settled { names.append("How long") }
         return names
     }
 
@@ -497,7 +704,8 @@ struct DeviceAccessAllow: AsyncParsableCommand {
     @MainActor
     private func pickDevice(
         on prompt: TerminalPrompt, context: DeviceAccessContext, policy: PhysicalDevicePolicy, named: (platform: DevicePlatform, key: String)?
-    ) async throws -> (DeviceSummary, [DeviceSummary]) {
+    ) async throws -> (DeviceSummary, [DeviceSummary], asked: Bool) {
+        var teams: [SigningTeam]?
         func scan() async throws -> (rows: [DeviceSummary], warnings: [String]) {
             try await TerminalSpinner.run("Looking for devices", terminal: prompt.terminalDescriptor) { try await context.physicalDevices() }
         }
@@ -509,7 +717,7 @@ struct DeviceAccessAllow: AsyncParsableCommand {
                     reason: .deviceNotFound, hint: "offsider devices --physical"
                 )
             }
-            return (match, [])
+            return (match, [], false)
         }
         while true {
             let start = prompt.mark
@@ -524,8 +732,15 @@ struct DeviceAccessAllow: AsyncParsableCommand {
             let allowed = zip(usb, allowances).compactMap { row, entry in entry.map { (row, $0) } }
             let wireless = rows.filter { $0.connection == "network" }
             // The count is the longest run any connected device could take; the pick renumbers from step 2.
-            let total = Set(wired.map(\.platform)).map { stepNames(platform: $0).count }.max() ?? 1
+            if teams == nil, team == nil, wired.contains(where: { $0.platform == .ios }) { teams = context.signingTeams() }
+            let oneTeam = teams?.count == 1
+            let total = Set(wired.map(\.platform)).map { stepNames(platform: $0, askTeam: !oneTeam).count }.max() ?? 1
             let allAllowed = wired.isEmpty && !allowed.isEmpty
+            if wired.count == 1, allowed.isEmpty, wireless.isEmpty {
+                prompt.rewind(to: start)
+                prompt.lines([TerminalUI.receipt("Device", AllowScreen.name(wired[0]), style: prompt.style)])
+                return (wired[0], wired, false)
+            }
             let menu = wired.map { AllowScreen.deviceRow($0, key: StableDeviceKey.of($0) ?? $0.id, style: prompt.style) }
                 + allowed.map { AllowScreen.allowedRow($0.0, detail: AccessStatusScreen.detail($0.1, now: now, timeZone: context.timeZone, team: false, style: prompt.style), style: prompt.style) }
                 + wireless.map { AllowScreen.deviceRow($0, key: StableDeviceKey.of($0) ?? $0.id, style: prompt.style) }
@@ -540,7 +755,7 @@ struct DeviceAccessAllow: AsyncParsableCommand {
                 prompt.rewind(to: start)
                 let chosen = index < wired.count ? wired[index] : allowed[index - wired.count].0
                 prompt.lines([TerminalUI.receipt("Device", AllowScreen.name(chosen), style: prompt.style)])
-                return (chosen, index < wired.count ? wired : [])
+                return (chosen, index < wired.count ? wired : [], true)
             } catch is PromptRefresh {
                 prompt.rewind(to: start)
             }
@@ -548,8 +763,7 @@ struct DeviceAccessAllow: AsyncParsableCommand {
     }
 
     @MainActor
-    private func pickTeam(on prompt: TerminalPrompt, context: DeviceAccessContext, current: String?, step: String?) async throws -> (value: String?, shown: String) {
-        let teams = try await TerminalSpinner.run("Reading your signing teams", terminal: prompt.terminalDescriptor) { context.signingTeams() }
+    private func pickTeam(on prompt: TerminalPrompt, teams: [SigningTeam], current: String?, step: String?) async throws -> (value: String?, shown: String) {
         let problem = "A team ID is 10 letters and digits, such as ABCDE12345."
         guard !teams.isEmpty else {
             prompt.lines(TerminalUI.warning(AllowScreen.noTeam, width: prompt.width, style: prompt.style))
@@ -584,19 +798,29 @@ struct DeviceAccessAllow: AsyncParsableCommand {
         }
     }
 
-    /// The apps chosen, and whether the person chose a test device, after answering that nothing personal is on it.
+    /// One app, or a test device once the person says nothing personal is on it; what the device has now starts chosen, and a device already a test device is not asked again.
     @MainActor
-    private func pickApp(on prompt: TerminalPrompt, row: DeviceSummary, context: DeviceAccessContext, policy: PhysicalDevicePolicy, current: DeviceAllowance?, step: String?) async throws -> (value: (apps: [String], testDevice: Bool), shown: String) {
-        func apps(_ picked: (value: [String], shown: String)) -> (value: (apps: [String], testDevice: Bool), shown: String) {
-            ((picked.value, false), picked.shown)
+    private func pickUse(on prompt: TerminalPrompt, current: DeviceAllowance?, step: String?) throws -> (value: Bool, shown: String) {
+        let rows = [MenuRow(.app, [AllowScreen.useOneApp, AllowScreen.useOneAppDetail], recommended: true), MenuRow(.testDevice, [AllowScreen.testDeviceRow, AllowScreen.testDeviceRowDetail])]
+        let isTest = current?.testDevice == true
+        let index = try prompt.choose(AllowScreen.useQuestion, step: step, rows: rows, selected: isTest ? 1 : 0, keepsChoice: false)
+        guard index == 1 else { return (false, AllowScreen.useOneApp) }
+        if !isTest {
+            let answer = try prompt.choose(AllowScreen.personalQuestion, rows: Self.personalRows, selected: 0, keepsChoice: false)
+            guard answer == Self.personalNoIndex else { throw PromptCancelled() }
         }
-        // What can stay as it is: never whole-device access managed policy has since turned off, nor an app it no longer permits.
+        return (true, AllowScreen.wholeDevice)
+    }
+
+    /// The apps chosen. A test device is settled earlier, so what can stay here is a pin or any app.
+    @MainActor
+    private func pickApp(on prompt: TerminalPrompt, row: DeviceSummary, context: DeviceAccessContext, policy: PhysicalDevicePolicy, current: DeviceAllowance?, step: String?) async throws -> (value: [String], shown: String) {
         let kept = current.flatMap { entry -> DeviceAllowance? in
-            if entry.testDevice, policy.managed.testDeviceRefusal != nil { return nil }
+            if entry.testDevice { return nil }
             return entry.pinnedApps.contains { Self.appProblem($0, platform: row.platform, policy: policy) != nil } ? nil : entry
         }
-        func keep(_ entry: DeviceAllowance) -> (value: (apps: [String], testDevice: Bool), shown: String) {
-            ((entry.apps, entry.testDevice), AllowScreen.apps(entry.apps, testDevice: entry.testDevice))
+        func keep(_ entry: DeviceAllowance) -> (value: [String], shown: String) {
+            (entry.apps, AllowScreen.apps(entry.apps))
         }
         let listed: [InstalledApp]
         let front: String?
@@ -605,27 +829,38 @@ struct DeviceAccessAllow: AsyncParsableCommand {
                 (try await context.installedApps(row), await context.frontApp(row))
             }
         } catch {
-            prompt.lines(TerminalUI.warning("Could not read its apps (\(Self.reason(error))). Unlock it, or type an app ID.", width: prompt.width, style: prompt.style))
+            prompt.lines(TerminalUI.warning(Self.appsProblem(error, row: row), width: prompt.width, style: prompt.style))
             let lead = step.map { "\($0) " } ?? "  "
             if let kept {
                 let answer = try typeApp(on: prompt, platform: row.platform, policy: policy, label: lead + "App ID (Return to keep \(keep(kept).shown)): ")
-                return answer.value.isEmpty ? keep(kept) : apps(answer)
+                return answer.value.isEmpty ? keep(kept) : answer
             }
-            return apps(try typeApp(on: prompt, platform: row.platform, policy: policy, label: lead + "App ID (Return for any app): "))
+            return try typeApp(on: prompt, platform: row.platform, policy: policy, label: lead + "App ID (Return for any app): ")
         }
         let menu = Self.appMenu(listed, platform: row.platform, policy: policy, profile: context.profile(), front: front)
         let rows = (kept.map { [AllowScreen.keepRow(keep($0).shown)] } ?? []) + menu.rows()
         let index = try prompt.choose(AllowScreen.appQuestion, step: step, rows: rows, selected: kept == nil ? menu.selected : 0, keepsChoice: false) - (kept == nil ? 0 : 1)
         if index < 0, let kept { return keep(kept) }
         switch menu.choices[index] {
-        case .app(let app): return apps(([app.id], PromptScreen.label(app.name ?? app.id)))
-        case .any: return apps(([], AllowScreen.apps([])))
-        case .wholeDevice: return apps(([DeviceAllowance.wholeDevicePin], Self.wholeDeviceLabel.lowercased()))
-        case .testDevice:
-            let answer = try prompt.choose(AllowScreen.personalQuestion, rows: Self.personalRows, selected: 0, keepsChoice: false)
-            guard answer == Self.personalNoIndex else { throw PromptCancelled() }
-            return (([], true), AllowScreen.wholeDevice)
-        case .type: return apps(try typeApp(on: prompt, platform: row.platform, policy: policy, label: "  App ID: "))
+        case .app(let app): return ([app.id], PromptScreen.label(app.name ?? app.id))
+        case .any: return ([], AllowScreen.apps([]))
+        case .wholeDevice: return ([DeviceAllowance.wholeDevicePin], Self.wholeDeviceLabel.lowercased())
+        case .type: return try typeApp(on: prompt, platform: row.platform, policy: policy, label: "  App ID: ")
+        }
+    }
+
+    /// Why the app menu is missing, in the person's words: never a raw `devicectl` error, or a `doctor` that refuses a device not yet allowed.
+    static func appsProblem(_ error: any Error, row: DeviceSummary) -> String {
+        if row.platform == .ios, row.state == IOSDeviceReadiness.developerModeOff.stateText { return AllowScreen.appsDeveloperModeOff }
+        switch (error as? any OffsiderFailure)?.reason {
+        case .deviceLocked?: return AllowScreen.appsLocked
+        case .developerModeOff?: return AllowScreen.appsDeveloperModeOff
+        default: break
+        }
+        switch (error as? IOSDeviceError)?.kind {
+        case .diskImageFailed?: return AllowScreen.appsDiskImageFailed
+        case .devicectlFailed?: return AllowScreen.appsUnread
+        default: return "Could not read its apps (\(reason(error))). Type an app ID."
         }
     }
 
@@ -643,7 +878,6 @@ struct DeviceAccessAllow: AsyncParsableCommand {
             case app(InstalledApp)
             case any
             case wholeDevice
-            case testDevice
             case type
         }
 
@@ -661,7 +895,6 @@ struct DeviceAccessAllow: AsyncParsableCommand {
                 case .app(let app): return MenuRow(.app, (app.name.map { [PromptScreen.label($0)] } ?? []) + [PromptScreen.label(app.id)], recommended: index == recommended)
                 case .any: return MenuRow(.anyApp, [AllowScreen.anyApp, DeviceAccessAllow.anyAppWarning])
                 case .wholeDevice: return MenuRow(.anyApp, [DeviceAccessAllow.wholeDeviceLabel, DeviceAccessAllow.wholeDeviceWarning])
-                case .testDevice: return MenuRow(.testDevice, [AllowScreen.testDeviceRow, AllowScreen.testDeviceRowDetail])
                 case .type: return MenuRow(.type, [AllowScreen.typeApp])
                 }
             }
@@ -679,7 +912,6 @@ struct DeviceAccessAllow: AsyncParsableCommand {
         choices.append(.any)
         if platform == .android { choices.append(.wholeDevice) }
         choices.append(.type)
-        if policy.managed.testDeviceRefusal == nil { choices.append(.testDevice) }
         return AppMenu(choices: choices, recommended: first.isEmpty ? nil : 0)
     }
 
@@ -727,8 +959,9 @@ struct DeviceAccessAllow: AsyncParsableCommand {
     }
 
     @MainActor
-    private func pickExpiry(on prompt: TerminalPrompt, current: (lifetime: TimeInterval?, shown: String)?, step: String?, testDevice: Bool = false) throws -> (value: TimeInterval?, shown: String) {
-        let (options, recommended) = Self.expiryRows(testDevice: testDevice)
+    private func pickExpiry(on prompt: TerminalPrompt, current: (lifetime: TimeInterval?, shown: String)?, step: String?, apps: [String]) throws -> (value: TimeInterval?, shown: String) {
+        let options = Self.expiryOptions
+        let recommended = Self.expiryRecommended(apps: apps)
         let rows = options.enumerated().map { MenuRow($1.mark, [$1.label], recommended: $0 == recommended) }
         let kept = current.map { [AllowScreen.keepRow($0.shown)] } ?? []
         let index = try prompt.choose(AllowScreen.expiryQuestion, step: step, rows: kept + rows, selected: kept.isEmpty ? recommended : 0, keepsChoice: false) - kept.count

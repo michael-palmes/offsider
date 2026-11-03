@@ -8,7 +8,7 @@ enum IOSDeviceScreenshot {
     static let maximumBytes = 64 * 1024 * 1024
 
     static func arguments(udid: String, destination: String) -> [String] {
-        ["device", "capture", "screenshot", "--device", udid, "--destination", destination, "--timeout", "15", "-q"]
+        ["device", "capture", "screenshot", "--device", udid, "--destination", destination, "--timeout", "15", "--json-output", "-", "-q"]
     }
 
     @MainActor

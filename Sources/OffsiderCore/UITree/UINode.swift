@@ -59,6 +59,8 @@ public struct IOSNativeAttributes: Equatable, Sendable {
     public var contentRequired: Bool?
     public var pid: Int?
     public var axFrame: String?
+    /// The root's bundle id, which only the iPhone runner reports.
+    public var bundleID: String?
 
     public init(
         type: String? = nil,
@@ -70,7 +72,8 @@ public struct IOSNativeAttributes: Equatable, Sendable {
         customActions: [String] = [],
         contentRequired: Bool? = nil,
         pid: Int? = nil,
-        axFrame: String? = nil
+        axFrame: String? = nil,
+        bundleID: String? = nil
     ) {
         self.type = type
         self.role = role
@@ -82,6 +85,7 @@ public struct IOSNativeAttributes: Equatable, Sendable {
         self.contentRequired = contentRequired
         self.pid = pid
         self.axFrame = axFrame
+        self.bundleID = bundleID
     }
 }
 

@@ -27,8 +27,7 @@ struct DevicePolicyRoutingTests {
         let error = await #expect(throws: CLIError.self) { _ = try await Self.route(Self.phone, gate: Self.gate([]), scope: scope) }
         #expect(error?.reason == .deviceNotAllowed)
         #expect(error?.exitCode == .deviceUnavailable)
-        #expect(error?.userFacingDescription.contains("Ask the user to run `offsider devices add` in their own terminal and choose \(Self.phone)") == true)
-        #expect(error?.userFacingDescription.contains("--device") == false)
+        #expect(error?.userFacingDescription.contains("Ask the user to run `offsider devices add --device \(Self.phone)` in their own terminal") == true)
         #expect(scope.adopted.isEmpty)
         #expect(scope.routes.isEmpty)
     }
@@ -266,7 +265,7 @@ struct DoctorDevicePolicyTests {
         let report = Doctor.policyReport(policy, target: (.ios, PolicyFixtures.phone), source: .option)
         #expect(report.checks.map(\.id) == [.devicePolicy])
         #expect(report.checks[0].status == .fail)
-        #expect(report.checks[0].hint == "Ask the user to run `offsider devices add` in their own terminal and choose \(PolicyFixtures.phone).")
+        #expect(report.checks[0].hint == "Ask the user to run `offsider devices add --device \(PolicyFixtures.phone)` in their own terminal.")
         #expect(report.exitCode == .doctorFailures)
         let object = try #require(try JSONSerialization.jsonObject(with: report.jsonData()) as? [String: Any])
         let json = try #require(object["policy"] as? [String: Any])
@@ -323,7 +322,7 @@ struct StopCleanPolicyTests {
         }
         #expect(error?.reason == .deviceNotAllowed)
         #expect(error?.exitCode.rawValue == 7)
-        #expect(error?.hint == "offsider devices add")
+        #expect(error?.hint?.hasPrefix("offsider devices add --device ") == true)
     }
 
     @Test("--clean works for a device allowed once, expired or removed, whose runner this Mac built; never past managed policy or for a device it never served")

@@ -158,6 +158,8 @@ public struct IOSDeviceDoctorProbe {
             let lock = try await directory.run(Self.info("lockState", udid: udid), label: "device info lockState", udid: udid, timeout: IOSDeviceDirectory.infoTimeout)
             let displays = try await directory.run(Self.info("displays", udid: udid), label: "device info displays", udid: udid, timeout: IOSDeviceDirectory.infoTimeout)
             return .read(passcodeRequired: DevicectlLockInfo.passcodeRequired(Data(lock.utf8)), backlightOn: DevicectlLockInfo.backlightOn(Data(displays.utf8)))
+        } catch let error as IOSDeviceError where error.kind == .locked {
+            return .locked
         } catch {
             return .unreadable(Self.message(error))
         }

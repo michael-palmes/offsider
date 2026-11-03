@@ -42,7 +42,7 @@ struct ErrorHintTests {
     @Test("an agent is asked to fetch the user; a person at a terminal gets the command, never with --device")
     func allowWording() {
         let agent = CLIError.deviceNotAllowed(name: "Test Phone", key: "SERIAL123", refusal: .notAllowed, audience: .agent)
-        #expect(agent.userFacingDescription.contains("Ask the user to run `offsider devices add` in their own terminal and choose Test Phone (SERIAL123); an agent cannot allow a device."))
+        #expect(agent.userFacingDescription.contains("Ask the user to run `offsider devices add --device SERIAL123` in their own terminal; an agent cannot allow a device."))
         let person = CLIError.deviceNotAllowed(name: "Test Phone", key: "SERIAL123", refusal: .notAllowed, audience: .person)
         #expect(person.userFacingDescription.hasSuffix("so nothing was sent to it."))
         #expect(!person.userFacingDescription.contains("Ask the user"))

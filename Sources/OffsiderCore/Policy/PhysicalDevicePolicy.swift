@@ -130,7 +130,7 @@ public struct PhysicalDevicePolicy: Equatable, Sendable {
                 return "Managed policy on this Mac does not list \(app), and the allow-list cannot override it. Nothing was read or sent."
             }
             return "\(app) is not among the apps allowed on \(allowance.name) (\(allowance.key)). Nothing was read or sent."
-                + audience.personStep("offsider devices add", agentTail: ", choose \(allowance.name) (\(allowance.key)) and pin \(app)")
+                + audience.personStep("offsider devices add --device \(allowance.key) --app \(app)")
         }
         return nil
     }

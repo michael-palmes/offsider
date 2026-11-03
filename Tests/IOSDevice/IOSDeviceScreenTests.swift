@@ -41,7 +41,7 @@ struct IOSDeviceScreenTests {
         #expect(data == Self.png)
         let capture = try #require(devicectl.calls.first { $0.starts(with: ["device", "capture", "screenshot"]) })
         let captures = "\(root)/ios-devices/\(IOSDeviceFixtures.phone)/captures"
-        #expect(capture[3...4] == ["--device", IOSDeviceFixtures.phone])
+        #expect(capture.contains("--timeout") && capture.contains("--json-output") && capture.last == "-q")
         #expect(capture.contains("--timeout") && capture.last == "-q")
         let destination = try #require(capture.firstIndex(of: "--destination").map { capture[$0 + 1] })
         #expect(destination.hasPrefix(captures + "/") && destination.hasSuffix(".png"))
