@@ -131,7 +131,7 @@ final class CallCounter: @unchecked Sendable {
     func tick() -> Int { lock.withLock { defer { calls += 1 }; return calls } }
 }
 
-@Suite("devices add, remove and status", .serialized)
+@Suite("devices add, remove and status", .serialized, .timeLimit(.minutes(1)))
 @MainActor
 struct DeviceAccessCommandTests {
     static let row = DeviceSummary(

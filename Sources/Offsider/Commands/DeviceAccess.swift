@@ -505,6 +505,11 @@ struct DeviceAccessAllow: AsyncParsableCommand {
         return [.locked, .certificateNotTrusted, .uiAutomationOff, .developerModeOff, .untrusted, .preparing].contains(failure.kind)
     }
 
+    /// The step a person's hands clear, asked by the phone's name, so the screen never shows its ID; nil when no person can clear it.
+    static func setupAsk(_ error: any Error, row: DeviceSummary) -> String? {
+        (error as? any OffsiderFailure)?.ask.map { PersonAsk.filled($0, name: AllowScreen.name(row), id: nil) }
+    }
+
     /// Registers, builds and starts what the device needs, retrying while a person clears a step; the allowance stays whatever happens here.
     @MainActor
     private func finish(_ choice: Choice, on prompt: TerminalPrompt, context: DeviceAccessContext) async -> (ready: Bool, needs: String?) {
@@ -519,19 +524,20 @@ struct DeviceAccessAllow: AsyncParsableCommand {
                 return (ready, nil)
             } catch {
                 let needs = Self.reason(error) + "."
+                let ask = Self.setupAsk(error, row: choice.row) ?? needs
                 guard Self.personCanClear(error), context.now() < deadline else {
                     prompt.rewind(to: start)
-                    prompt.lines(TerminalUI.warning(needs, width: prompt.width, style: prompt.style))
+                    prompt.lines(TerminalUI.warning(ask, width: prompt.width, style: prompt.style))
                     return (false, needs)
                 }
-                if needs != shown {
+                if ask != shown {
                     prompt.rewind(to: start)
-                    prompt.lines(TerminalUI.warning(needs, width: prompt.width, style: prompt.style) + [prompt.style.dim(AllowScreen.watching)])
-                    shown = needs
+                    prompt.lines(TerminalUI.warning(ask, width: prompt.width, style: prompt.style) + [prompt.style.dim(AllowScreen.watching)])
+                    shown = ask
                 }
                 if prompt.quitPressed(within: Self.finishPoll) {
                     prompt.rewind(to: start)
-                    prompt.lines(TerminalUI.warning(needs, width: prompt.width, style: prompt.style))
+                    prompt.lines(TerminalUI.warning(ask, width: prompt.width, style: prompt.style))
                     return (false, needs)
                 }
             }

@@ -90,7 +90,7 @@ struct DeviceAddPlanTests {
     }
 }
 
-@Suite("devices add asks only what it cannot work out", .serialized)
+@Suite("devices add asks only what it cannot work out", .serialized, .timeLimit(.minutes(1)))
 @MainActor
 struct EasyAddTests {
     static let team = SigningTeam(id: "ABCDE12345", name: "Example Team")
@@ -196,6 +196,21 @@ struct EasyAddTests {
         #expect(attempts.count == 2)
         #expect(transcript.contains("VPN & Device Management"))
         #expect(output.contains("Ready: Test iPhone"))
+    }
+
+    @Test("a locked phone is asked for by its name while add waits, never by its ID")
+    func waitAsksByName() async throws {
+        let home = try makePolicyHome()
+        defer { try? FileManager.default.removeItem(atPath: home) }
+        let attempts = CallCounter()
+        let (_, transcript) = try await DeviceAccessCommandTests.allow(["--test-device"], answers: [], context: {
+            Self.context(home: home, terminal: $0) { _ in
+                if attempts.tick() == 0 { throw IOSDeviceError(.locked, "\(PolicyFixtures.phone) is locked, so Xcode could not reach it. Unlock it, then retry.") }
+                return true
+            }
+        })
+        #expect(transcript.contains("Can you unlock Test iPhone?"))
+        #expect(!transcript.contains("is locked, so Xcode"))
     }
 
     @Test("a failure no one can clear on the phone keeps the allowance, says what stopped it, and never claims it is ready")
