@@ -55,6 +55,8 @@ public enum FailureReason: String, CaseIterable, Sendable {
     case emulatorTimedOut = "emulator_timed_out"
     case emulatorLaunchFailed = "emulator_launch_failed"
     case bootTimedOut = "boot_timed_out"
+    case shutdownFailed = "shutdown_failed"
+    case shutdownTimedOut = "shutdown_timed_out"
     case hidBrokerFailed = "hid_broker_failed"
     case privateDirectoryUnsafe = "private_directory_unsafe"
     case timedOut = "timed_out"

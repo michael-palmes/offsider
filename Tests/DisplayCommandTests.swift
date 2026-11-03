@@ -121,6 +121,55 @@ struct DisplayCommandTests {
         #expect(clock.now >= 1)
     }
 
+    @Test("a timeout names the hinge read, its angle and the display read, read afresh")
+    func timeoutNamesBothReads() async {
+        let backend = Self.folded()
+        backend.postureReadings = PostureReads(hinge: .open, angle: 120, display: .closed)
+        await #expect {
+            try await posture(.open, timeout: 1, on: backend)
+        } throws: { "\($0)" == "The simulator did not report open within 1 s. The hinge reads open at 120 degrees, and the display reads closed. Check with `offsider posture --device SIM`." }
+        #expect(backend.readsFresh == [true])
+    }
+
+    @Test("a hinge that misses its angle names the reads too")
+    func hingeTimeoutNamesBothReads() async {
+        let backend = Self.folded(screen: Self.innerScreen)
+        backend.hingeAngles = [180]
+        backend.postureReadings = PostureReads(hinge: .open, angle: 180, display: .open)
+        await #expect {
+            try await posture(nil, angle: 90, timeout: 1, on: backend)
+        } throws: { "\($0)".contains("did not reach 90 degrees within 1 s. The hinge reads open at 180 degrees, and the display reads open.") }
+    }
+
+    @Test("reads that disagree are in --json with the angle, and a plain read spends no extra hinge read")
+    func jsonNamesDisagreement() async throws {
+        let backend = Self.folded()
+        backend.postureReadings = PostureReads(hinge: .open, angle: 120, display: .closed)
+        let line = try await posture(nil, json: true, on: backend)
+        #expect(line.hasSuffix(#""disagreement":{"hinge":"open","angle":120,"display":"closed"}}"#))
+        #expect(backend.readsFresh == [false])
+    }
+
+    @Test("reads that agree add nothing to --json")
+    func jsonOmitsAgreement() async throws {
+        let backend = Self.folded()
+        backend.postureReadings = PostureReads(hinge: .closed, angle: 0, display: .closed)
+        #expect(try await posture(nil, json: true, on: backend) == #"{"posture":"closed","state":null,"previous":null,"display":"cover","screen":{"width":466,"height":678}}"#)
+    }
+
+    @Test("a person and an agent are warned when the reads disagree", arguments: [
+        (PostureReads(hinge: .open, angle: 120, display: .open), true),
+        (PostureReads(hinge: .halfOpened, angle: 120, display: .closed), true),
+        (PostureReads(hinge: .closed, angle: 0, display: .closed), false),
+        (PostureReads(hinge: .halfOpened, angle: 170, display: .open), false),
+        (PostureReads(hinge: nil, angle: nil, display: .closed), false),
+    ])
+    func noticeFollowsDisagreement(reads: PostureReads, warns: Bool) {
+        let result = PostureCommand.Result(current: .open, previous: nil, screen: nil, platform: .ios, state: nil, reads: reads)
+        let notices = PostureCommand.notices(result, set: false, on: Self.device)
+        #expect(notices.isEmpty != warns)
+    }
+
     @Test("--angle moves the hinge, waits for the reading, then reports the posture once it settles")
     func angle() async throws {
         let backend = Self.folded(screen: Self.innerScreen)

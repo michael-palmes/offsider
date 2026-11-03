@@ -307,7 +307,7 @@ struct OrientationCommand: AsyncParsableCommand {
         case .ios:
             let app = target.isLandscape ? "supports portrait only" : "does not support \(target.rawValue)"
             let back = turnedBack.map { ", so Offsider turned it back to \($0.rawValue)" } ?? ""
-            return "The simulator did not turn to \(target.rawValue) within \(seconds) s\(back). This iOS runtime may ignore the orientation event Offsider sends, or the frontmost app \(app). Check with `offsider orientation --device \(device)`."
+            return "The simulator did not turn to \(target.rawValue) within \(seconds) s\(back). The frontmost app \(app), this iOS runtime ignored the turn, or the app stopped following turns. Check with `offsider orientation --device \(device)`. If an app that allows it still will not turn, run `offsider button home --device \(device)`, then `offsider orientation portrait --device \(device)`, and launch the app again."
         case .android:
             let noun = physical ? "The phone \(device)" : "The emulator"
             if target == .portrait {

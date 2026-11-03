@@ -17,7 +17,7 @@ struct OffsiderCommand: AsyncParsableCommand {
         version: VERSION,
         subcommands: [HIDBrokerCommand.self, DeviceSessionCommand.self, AndroidSessionCommand.self, ListDevicesAlias.self],
         groupedSubcommands: [
-            CommandGroup(name: "Start", subcommands: [ListDevices.self, Doctor.self, Init.self, Guide.self, Boot.self]),
+            CommandGroup(name: "Start", subcommands: [ListDevices.self, Doctor.self, Init.self, Guide.self, Boot.self, Shutdown.self]),
             CommandGroup(name: "Read", subcommands: [
                 DescribeUI.self, Screenshot.self, Logs.self, NotificationsCommand.self, Wait.self, Assert.self, Displays.self, RecordVideo.self, StreamVideo.self,
             ]),
@@ -106,6 +106,10 @@ struct OffsiderCommand: AsyncParsableCommand {
                 let command = try parseAsRoot(nil)
                 Console.current.data(DevicePickerScreen.using(row, style: Console.current.err.canvas.style) + "\n", to: .err)
                 return command
+            }
+            if need == .shutdown {
+                let row = try await DevicePicker.orUnanswered(error, shutdown: true) { try await DevicePicker.pickToStop() }
+                return try parseAsRoot([arguments[0], DevicePickerScreen.bootName(row)] + arguments.dropFirst())
             }
             let row = try await DevicePicker.orUnanswered(error, boot: true) { try await DevicePicker.pickBootable() }
             return try parseAsRoot([arguments[0], DevicePickerScreen.bootName(row)] + arguments.dropFirst())
