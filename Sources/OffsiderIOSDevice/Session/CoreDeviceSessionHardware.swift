@@ -16,6 +16,8 @@ public final class CoreDeviceSessionHardware: DeviceSessionHardware {
     static let panelInterval: Duration = .seconds(2)
     /// Touches and `ping`'s geometry use a display read that started at most this long ago, so a turn of the screen is seen.
     static let panelMaxAge: Duration = .seconds(1)
+    /// The longest a frame waits for the display's size, well inside the client's frame timeout.
+    static let frameSizeWait: Double = 5
     static let activeWindow: Duration = .seconds(60)
     static let touchscreenFallback: UInt64 = 257
     static let keyboardFallback: UInt64 = 512
@@ -49,10 +51,13 @@ public final class CoreDeviceSessionHardware: DeviceSessionHardware {
     private var surfaces: (touchscreen: UInt64, keyboard: UInt64) = (touchscreenFallback, keyboardFallback)
     private var panel: IOSDevicePanel?
     private var geometry: IOSDeviceGeometry?
+    /// The last display read for sizing frames, kept through a turn, which leaves the panel's size alone.
+    private var frameScreen: IOSDeviceGeometry?
     private var panelReadAt = ContinuousClock.now
     private var panelRefresh: Task<Void, Never>?
     private var panelRefreshID = 0
     private var panelError: Error?
+    private var panelTriedAt = ContinuousClock.now
     /// Bumped when the display changes, so a read that started before it is discarded.
     private var panelGeneration = 0
     private var refreshGeneration = 0
@@ -87,7 +92,8 @@ public final class CoreDeviceSessionHardware: DeviceSessionHardware {
 
     public var streamStatus: DeviceSessionStreamStatus {
         if let stream {
-            return DeviceSessionStreamStatus(state: .live, width: stream.width, height: stream.height, framesReceived: stream.framesReceived)
+            let size = frameScreen?.screenSize(inFrameWidth: stream.width, height: stream.height) ?? (width: stream.width, height: stream.height)
+            return DeviceSessionStreamStatus(state: .live, width: size.width, height: size.height, framesReceived: stream.framesReceived)
         }
         if closed { return DeviceSessionStreamStatus(state: .closed) }
         if let failure { return DeviceSessionStreamStatus(state: .failed, detail: failure.message) }
@@ -96,6 +102,7 @@ public final class CoreDeviceSessionHardware: DeviceSessionHardware {
 
     /// Touch input first, since it is quickest to need, then the button socket, then the stream.
     public func start() async {
+        refreshPanel()
         let input = Task {
             _ = try? await self.hidService()
             _ = try? await self.buttonLink()
@@ -192,8 +199,16 @@ public final class CoreDeviceSessionHardware: DeviceSessionHardware {
         guard let stream else {
             throw failure ?? IOSDeviceError.streamFailed(udid, udid: udid, detail: "the stream did not open")
         }
+        if frameScreen == nil, panelError == nil || ContinuousClock.now - panelTriedAt >= Self.panelInterval {
+            let read = refreshPanel()
+            _ = await replyOrTimeout(within: Self.frameSizeWait, timedOut: ()) { done in Task { await read.value; done(()) } }
+        }
+        // A padded frame scales masks wrongly, so without the display's size the client captures with devicectl instead.
+        guard let frameScreen else {
+            throw IOSDeviceError.streamFailed(target?.name ?? udid, udid: udid, detail: "its display size could not be read")
+        }
         do {
-            return try await stream.latestFrame(format)
+            return try await stream.latestFrame(format, screen: frameScreen)
         } catch {
             dropStream(stream, error)
             throw error
@@ -347,6 +362,7 @@ public final class CoreDeviceSessionHardware: DeviceSessionHardware {
     private func refreshPanel() -> Task<Void, Never> {
         if let panelRefresh, refreshGeneration == panelGeneration { return panelRefresh }
         panelRefreshID += 1
+        panelTriedAt = .now
         let id = panelRefreshID
         refreshGeneration = panelGeneration
         let task = Task {
@@ -371,9 +387,11 @@ public final class CoreDeviceSessionHardware: DeviceSessionHardware {
         guard let read = IOSDevicePanel.parse(displaysJSON: Data(output.utf8)) else {
             throw IOSDeviceError.devicectlFailed("device info displays", udid: udid, detail: "it reported no display size")
         }
+        let displays = try? IOSDeviceGeometry.parse(Data(output.utf8))
+        if let displays { frameScreen = displays }
         guard generation == panelGeneration else { return }
         panel = read
-        geometry = try? IOSDeviceGeometry.parse(Data(output.utf8))
+        geometry = displays
         panelReadAt = started
     }
 

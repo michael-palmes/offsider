@@ -1,6 +1,7 @@
 import CoreVideo
 import Foundation
 import ImageIO
+import OffsiderCore
 @testable import OffsiderIOSDevice
 import Testing
 
@@ -216,8 +217,8 @@ struct IOSDeviceStreamFrameTests {
     @Test("a padded stream frame comes out at the clean aperture's size, the screen's own, in every format")
     func croppedToCleanAperture() throws {
         let buffer = try Self.padded(width: 48, height: 96, clean: (43, 87))
-        let png = try #require(IOSDeviceScreenStream.encode(buffer, as: .png))
-        let bgra = try #require(IOSDeviceScreenStream.encode(buffer, as: .bgra))
+        let png = try #require(IOSDeviceScreenStream.encode(buffer, as: .png, screen: nil))
+        let bgra = try #require(IOSDeviceScreenStream.encode(buffer, as: .bgra, screen: nil))
 
         #expect((png.width, png.height) == (43, 87))
         #expect(try Self.size(of: png.data) == (43, 87))
@@ -225,10 +226,151 @@ struct IOSDeviceStreamFrameTests {
         #expect(bgra.data.count == 43 * 87 * 4)
     }
 
-    @Test("a frame without a clean aperture keeps its whole size")
+    @Test("a frame with no clean aperture and no display read keeps its whole size")
     func uncroppedWithoutAperture() throws {
-        let png = try #require(IOSDeviceScreenStream.encode(try Self.padded(width: 48, height: 96, clean: nil), as: .png))
+        let png = try #require(IOSDeviceScreenStream.encode(try Self.padded(width: 48, height: 96, clean: nil), as: .png, screen: nil))
         #expect(try Self.size(of: png.data) == (48, 96))
+    }
+
+    static let phone = IOSDeviceGeometry(pixelWidth: 1290, pixelHeight: 2796, pointScale: 3, rotationDegrees: 0, points: IOSDevicePoints(width: 430, height: 932))
+
+    /// A decoder's frame with no clean aperture: the screen white from the top left, black padding on the right and at the bottom, red in the screen's top-left pixel and blue in its bottom-right.
+    static func decoded(width: Int, height: Int, screen: (width: Int, height: Int)) throws -> CVPixelBuffer {
+        var made: CVPixelBuffer?
+        #expect(CVPixelBufferCreate(nil, width, height, kCVPixelFormatType_32BGRA, nil, &made) == kCVReturnSuccess)
+        let buffer = try #require(made)
+        CVPixelBufferLockBaseAddress(buffer, [])
+        defer { CVPixelBufferUnlockBaseAddress(buffer, []) }
+        let rowBytes = CVPixelBufferGetBytesPerRow(buffer)
+        let base = try #require(CVPixelBufferGetBaseAddress(buffer)).assumingMemoryBound(to: UInt8.self)
+        memset(base, 0, rowBytes * height)
+        for y in 0..<height {
+            for x in 0..<width where x < screen.width && y < screen.height {
+                (base + y * rowBytes + x * 4).initialize(repeating: 0xFF, count: 4)
+            }
+        }
+        (base).update(from: [0, 0, 0xFF, 0xFF], count: 4)
+        (base + (screen.height - 1) * rowBytes + (screen.width - 1) * 4).update(from: [0xFF, 0, 0, 0xFF], count: 4)
+        return buffer
+    }
+
+    /// Red, green, blue at each corner, in sRGB: top left, top right, bottom left, bottom right.
+    static func corners(of image: CGImage) throws -> [[UInt8]] {
+        let width = image.width
+        let height = image.height
+        var pixels = [UInt8](repeating: 0, count: width * height * 4)
+        let space = try #require(CGColorSpace(name: CGColorSpace.sRGB))
+        let drawn = pixels.withUnsafeMutableBytes { bytes -> Bool in
+            guard let context = CGContext(
+                data: bytes.baseAddress, width: width, height: height, bitsPerComponent: 8, bytesPerRow: width * 4, space: space,
+                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+            ) else { return false }
+            context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
+            return true
+        }
+        #expect(drawn)
+        return [(0, 0), (width - 1, 0), (0, height - 1), (width - 1, height - 1)].map { x, y in
+            Array(pixels[(y * width + x) * 4..<(y * width + x) * 4 + 3])
+        }
+    }
+
+    static func image(_ data: Data) throws -> CGImage {
+        let source = try #require(CGImageSourceCreateWithData(data as CFData, nil))
+        return try #require(CGImageSourceCreateImageAtIndex(source, 0, nil))
+    }
+
+    static let red: [UInt8] = [0xFF, 0, 0]
+    static let white: [UInt8] = [0xFF, 0xFF, 0xFF]
+    static let blue: [UInt8] = [0, 0, 0xFF]
+
+    @Test("a padded frame with no clean aperture comes out as the panel, with no black strip")
+    func croppedToPanelPNG() throws {
+        let buffer = try Self.decoded(width: 1296, height: 2816, screen: (1290, 2796))
+        let frame = try #require(IOSDeviceScreenStream.encode(buffer, as: .png, screen: Self.phone))
+
+        #expect((frame.width, frame.height) == (1290, 2796))
+        let image = try Self.image(frame.data)
+        #expect((image.width, image.height) == (1290, 2796))
+        #expect(try Self.corners(of: image) == [Self.red, Self.white, Self.white, Self.blue])
+    }
+
+    @Test("a padded frame is cropped in BGRA too, row by row")
+    func croppedToPanelBGRA() throws {
+        let buffer = try Self.decoded(width: 1296, height: 2816, screen: (1290, 2796))
+        let frame = try #require(IOSDeviceScreenStream.encode(buffer, as: .bgra, screen: Self.phone))
+
+        #expect((frame.width, frame.height) == (1290, 2796))
+        #expect(frame.data.count == 1290 * 2796 * 4)
+        func pixel(_ x: Int, _ y: Int) -> [UInt8] {
+            let start = (y * 1290 + x) * 4
+            return [frame.data[start + 2], frame.data[start + 1], frame.data[start]]
+        }
+        #expect(pixel(0, 0) == Self.red)
+        #expect(pixel(1289, 0) == Self.white)
+        #expect(pixel(0, 2795) == Self.white)
+        #expect(pixel(1289, 2795) == Self.blue)
+    }
+
+    @Test("a padded frame is cropped in JPEG too")
+    func croppedToPanelJPEG() throws {
+        let buffer = try Self.decoded(width: 1296, height: 2816, screen: (1290, 2796))
+        let frame = try #require(IOSDeviceScreenStream.encode(buffer, as: .jpeg, screen: Self.phone))
+
+        #expect((frame.width, frame.height) == (1290, 2796))
+        let image = try Self.image(frame.data)
+        #expect((image.width, image.height) == (1290, 2796))
+        let edges = try Self.corners(of: image)
+        #expect(edges[1].allSatisfy { $0 > 0xF0 } && edges[2].allSatisfy { $0 > 0xF0 })
+    }
+
+    @Test("a frame arriving sideways is cropped along its own axes")
+    func croppedSideways() throws {
+        let buffer = try Self.decoded(width: 2816, height: 1296, screen: (2796, 1290))
+        let frame = try #require(IOSDeviceScreenStream.encode(buffer, as: .png, screen: Self.phone))
+
+        #expect((frame.width, frame.height) == (2796, 1290))
+        #expect(try Self.corners(of: Self.image(frame.data)) == [Self.red, Self.white, Self.white, Self.blue])
+    }
+
+    @Test("a clean aperture and a panel together crop to the panel inside the aperture")
+    func apertureThenPanel() throws {
+        let buffer = try Self.padded(width: 1296, height: 2816, clean: (1292, 2800))
+        let frame = try #require(IOSDeviceScreenStream.encode(buffer, as: .png, screen: Self.phone))
+        #expect((frame.width, frame.height) == (1290, 2796))
+    }
+
+    @Test("a cropped frame maps points at the device's own scale, so a mask lands where the tree says")
+    func croppedFrameScale() throws {
+        let buffer = try Self.decoded(width: 1296, height: 2816, screen: (1290, 2796))
+        let frame = try #require(IOSDeviceScreenStream.encode(buffer, as: .png, screen: Self.phone))
+        #expect(ScreenGeometry.pixelsPerPoint(imageWidth: frame.width, imageHeight: frame.height, screenWidth: 430, screenHeight: 932) == 3)
+    }
+
+    @Test("the screen inside a frame", arguments: [
+        // The negotiated size and the decoded one.
+        (1296, 2800, 1290, 2796), (1296, 2816, 1290, 2796), (2816, 1296, 2796, 1290),
+        // Exactly the panel, smaller than it, and too far past it to be padding: the screen is the whole frame.
+        (1290, 2796, 1290, 2796), (645, 1398, 645, 1398), (1296, 3000, 1296, 3000),
+    ])
+    func screenInsideFrame(frame: (Int, Int, Int, Int)) {
+        let size = Self.phone.screenSize(inFrameWidth: frame.0, height: frame.1)
+        #expect((size.width, size.height) == (frame.2, frame.3))
+    }
+
+    @Test("a display size too large for an Int leaves the frame whole rather than crashing the broker")
+    func absurdDisplaySize() {
+        let absurd = IOSDeviceGeometry(pixelWidth: 1e300, pixelHeight: 1e300, pointScale: 3, rotationDegrees: 0)
+        let size = absurd.screenSize(inFrameWidth: 1296, height: 2816)
+        #expect((size.width, size.height) == (1296, 2816))
+    }
+
+    @Test("Display Zoom: a frame sized for the UI's points fits them when the panel's pixels do not")
+    func displayZoom() {
+        let zoomed = IOSDeviceGeometry(pixelWidth: 1290, pixelHeight: 2796, pointScale: 3, rotationDegrees: 0, points: IOSDevicePoints(width: 393, height: 852))
+        let small = zoomed.screenSize(inFrameWidth: 1184, height: 2560)
+        #expect((small.width, small.height) == (1179, 2556))
+        let full = zoomed.screenSize(inFrameWidth: 1296, height: 2816)
+        #expect((full.width, full.height) == (1290, 2796))
     }
 
     @Test("an asleep display is told apart from no display at all, which only a desktop session cures")

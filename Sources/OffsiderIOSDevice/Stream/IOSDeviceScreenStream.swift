@@ -145,7 +145,7 @@ public final class IOSDeviceScreenStream {
     }
 
     /// The newest decoded frame once the stream has settled, or by `timeout` the newest there is.
-    public func latestFrame(_ format: IOSDeviceScreenFrame.Format = .jpeg, timeout: Duration = .seconds(5)) async throws -> IOSDeviceScreenFrame {
+    public func latestFrame(_ format: IOSDeviceScreenFrame.Format = .jpeg, screen: IOSDeviceGeometry?, timeout: Duration = .seconds(5)) async throws -> IOSDeviceScreenFrame {
         try await timing.measure("stream-frame") {
             let deadline = ContinuousClock.now + timeout
             while true {
@@ -153,7 +153,7 @@ public final class IOSDeviceScreenStream {
                 let pixels = frames.latest.flatMap(CMSampleBufferGetImageBuffer)
                 switch FrameWait.next(hasFrame: pixels != nil, settled: frames.settled, pastDeadline: ContinuousClock.now >= deadline) {
                 case .serve:
-                    guard let pixels, let frame = Self.encode(pixels, as: format) else {
+                    guard let pixels, let frame = Self.encode(pixels, as: format, screen: screen) else {
                         throw IOSDeviceError.streamFailed(target.name, udid: target.udid, detail: "a frame could not be encoded")
                     }
                     return frame
@@ -354,13 +354,16 @@ public final class IOSDeviceScreenStream {
         return CGImageDestinationFinalize(destination) ? output as Data : nil
     }
 
-    /// Cropped to the buffer's clean aperture: the decoder pads frames out to whole blocks, and the screen itself is what devicectl captures.
-    static func encode(_ pixels: CVPixelBuffer, as format: IOSDeviceScreenFrame.Format) -> IOSDeviceScreenFrame? {
-        let image = CIImage(cvImageBuffer: pixels, options: [.applyCleanAperture: true])
-        let width = Int(image.extent.width.rounded(.down))
-        let height = Int(image.extent.height.rounded(.down))
-        guard width > 0, height > 0 else { return nil }
-        let bounds = CGRect(x: image.extent.minX, y: image.extent.minY, width: CGFloat(width), height: CGFloat(height))
+    /// Cropped to the buffer's clean aperture, then to `screen`: the decoder pads frames right and down to whole blocks, often with no aperture, and the screen itself is what devicectl captures.
+    static func encode(_ pixels: CVPixelBuffer, as format: IOSDeviceScreenFrame.Format, screen: IOSDeviceGeometry?) -> IOSDeviceScreenFrame? {
+        let decoded = CIImage(cvImageBuffer: pixels, options: [.applyCleanAperture: true])
+        let decodedWidth = Int(decoded.extent.width.rounded(.down))
+        let decodedHeight = Int(decoded.extent.height.rounded(.down))
+        guard decodedWidth > 0, decodedHeight > 0 else { return nil }
+        let (width, height) = screen?.screenSize(inFrameWidth: decodedWidth, height: decodedHeight) ?? (decodedWidth, decodedHeight)
+        // Core Image's origin is the bottom left, so the screen's top row is the frame's highest.
+        let bounds = CGRect(x: decoded.extent.minX, y: decoded.extent.maxY - CGFloat(height), width: CGFloat(width), height: CGFloat(height))
+        let image = decoded.cropped(to: bounds)
         guard let space = CGColorSpace(name: CGColorSpace.sRGB) else { return nil }
         let data: Data?
         switch format {
