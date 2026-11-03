@@ -146,6 +146,50 @@ struct ScreenStackTests {
         #expect(stack.beneath.map(\.under) == ["host"])
     }
 
+    /// A simulator's list, by position and the smaller first at the same corner, with `front`'s scrolling list above a longer one of the screen drawn beneath.
+    static func simulatorLists(frontHeight: Double = 670) -> UITree {
+        let pid = 42
+        func row(_ id: String, _ label: String, _ y: Double) -> UINode {
+            FakeUI.node(.button, id: id, label: label, frame: FakeUI.frame(0, y, 402, 44), pid: pid)
+        }
+        let front = FakeUI.node(.group, id: "front-list", frame: FakeUI.frame(0, 100, 402, frontHeight), pid: pid, children: [
+            row("front-1", "Front One", 110), row("front-2", "Front Two", 700),
+        ])
+        let lower = FakeUI.node(.group, id: "lower-list", frame: FakeUI.frame(0, 100, 402, 774), pid: pid, children: [
+            row("lower-1", "Lower One", 160), row("lower-2", "Lower Two", 760),
+        ])
+        return FakeUI.tree([front, lower])
+    }
+
+    @Test("on a simulator a longer list listed after a shorter one is not over it, as position alone put it there")
+    func simulatorListsByPosition() throws {
+        let tree = Self.simulatorLists()
+        let stack = Self.stack(tree)
+        #expect(stack.pages.isEmpty && stack.beneath.isEmpty)
+        #expect(!stack.isBeneath(try Self.node("front-1", in: tree), in: tree.roots))
+    }
+
+    @Test("on a simulator two of one size stay in the order they were added, so the later still covers the earlier")
+    func simulatorSameSize() throws {
+        let tree = Self.simulatorLists(frontHeight: 774)
+        let stack = Self.stack(tree)
+        #expect(stack.beneath.map(\.under) == ["lower-list"])
+        #expect(stack.isBeneath(try Self.node("front-1", in: tree), in: tree.roots))
+    }
+
+    @Test("a physical iPhone's list, which has no hit-test to fall back on, keeps its order")
+    func iPhoneKeepsOrder() {
+        func strip(_ node: UINode) -> UINode {
+            var copy = node
+            copy.native = .ios(IOSNativeAttributes())
+            copy.children = node.children.map(strip)
+            return copy
+        }
+        var tree = Self.simulatorLists()
+        tree.roots = tree.roots.map(strip)
+        #expect(Self.stack(tree).beneath.map(\.under) == ["lower-list"])
+    }
+
     @Test("a tree without a screen has no stack")
     func noViewport() {
         #expect(ScreenStack.build(roots: Self.nestedScreens().roots, viewport: nil) == .empty)

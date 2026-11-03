@@ -32,6 +32,8 @@ import { RowsTestScreen } from './RowsTestScreen';
 import { SearchableTestScreen } from './SearchableTestScreen';
 import { SheetTestScreen } from './SheetTestScreen';
 import { SliderValueTestScreen } from './SliderValueTestScreen';
+import { OwnCoverTestScreen } from './OwnCoverTestScreen';
+import { PageOverTestScreen } from './PageOverTestScreen';
 import { StackTestScreen } from './StackTestScreen';
 import { StickyFooterTestScreen } from './StickyFooterTestScreen';
 import { SwipeTestScreen } from './SwipeTestScreen';
@@ -76,6 +78,8 @@ export const screens: Record<RouteId, ComponentType> = {
   'mask-rule-test': MaskRuleTestScreen,
   'gap-tabs-test': GapTabsTestScreen,
   'stack-test': StackTestScreen,
+  'page-over-test': PageOverTestScreen,
+  'own-cover-test': OwnCoverTestScreen,
   'overlay-test': OverlayTestScreen,
   'rows-test': RowsTestScreen,
   'environment-test': EnvironmentTestScreen,
