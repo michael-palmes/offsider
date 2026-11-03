@@ -41,6 +41,8 @@ public struct IOSDeviceError: LocalizedError, CustomStringConvertible, Equatable
         case otherAppInFront
         /// A system alert or sheet is over the app.
         case systemPromptInFront
+        /// The same on a test device, where an agent may answer it, so no person is asked.
+        case systemPromptOnTestDevice
         /// A physical iPhone or iPad needs a pinned app and none was named.
         case appRequired
         /// The device's allowance lapsed while a session broker ran (expired, removed or its seal broken).
@@ -171,12 +173,21 @@ extension IOSDeviceError {
         }
     }
 
-    /// A system alert or sheet the app may be waiting on, which stalls every read of it. `title` comes from the device, so it is cleaned and capped.
-    static func systemPromptInFront(_ title: String, udid: String) -> IOSDeviceError {
-        let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
+    /// A system alert or sheet the app may be waiting on, which stalls every read of it. `title` comes from the device and can hold an app's name, so it is cleaned and capped, and loses backticks, which mark the hint.
+    static func systemPromptInFront(_ title: String, udid: String, testDevice: Bool = false) -> IOSDeviceError {
+        let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines).replacingOccurrences(of: "`", with: "'")
         let prompt = trimmed.isEmpty ? "A system prompt" : "The system prompt \(TerminalText.quoted(SelectorText.truncated(trimmed, limit: 120)))"
+        let stopped = "\(prompt) is in front on \(udid), so Offsider did not read or touch the app."
+        if testDevice {
+            return IOSDeviceError(.systemPromptOnTestDevice, "\(stopped) Read it with `offsider describe-ui --summary --device \(udid)`, then answer it with `offsider tap --label <button> --device \(udid)`.")
+        }
         let answer = ErrorAudience.current == .person ? "Answer it on the device" : "Ask the user to answer it on the device"
-        return IOSDeviceError(.systemPromptInFront, "\(prompt) is in front on \(udid), so Offsider did not read or touch the app. \(answer), then retry.")
+        return IOSDeviceError(.systemPromptInFront, "\(stopped) \(answer), then retry.")
+    }
+
+    /// A prompt that rose just after a read began holds that read; the next one gets through as it ends, within seconds, and is not held.
+    static func runnerTimedOutOnTestDevice(_ udid: String) -> IOSDeviceError {
+        IOSDeviceError(.runnerUnavailable, "The runner on \(udid) did not answer in time, so nothing was read or sent. A system prompt may be holding the app: `offsider describe-ui --summary --device \(udid)` reads what is in front.")
     }
 
     static func runnerNotListening(_ udid: String) -> IOSDeviceError {
@@ -207,7 +218,7 @@ extension IOSDeviceError: OffsiderFailure {
         case .locked: return .deviceLocked
         case .stateNotReached: return .stateNotReached
         case .uiAutomationOff: return .uiAutomationOff
-        case .systemPromptInFront: return .systemPromptInFront
+        case .systemPromptInFront, .systemPromptOnTestDevice: return .systemPromptInFront
         case .certificateNotTrusted: return .certificateNotTrusted
         case .xcodeTooOld: return .xcodeTooOld
         case .notSupported: return .notSupported
@@ -229,6 +240,8 @@ extension IOSDeviceError: OffsiderFailure {
     }
 
     public var failureMessage: String { message }
+
+    public var ask: String? { kind == .systemPromptOnTestDevice ? nil : reason.personAsk }
 
     /// The message's first backticked Offsider or xcode-select command.
     public var hint: String? {
