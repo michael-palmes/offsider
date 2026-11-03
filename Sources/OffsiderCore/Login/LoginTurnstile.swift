@@ -4,8 +4,6 @@ import Foundation
 public enum LoginTurnstileStep: String, Equatable, Sendable {
     case absent
     case passed
-    /// A Turnstile web view with no widget, which `login` goes past: an invisible widget that passes looks the same.
-    case unknown
 }
 
 /// How far `login` got with one field: `filled` once it typed there and read the field back.
@@ -60,8 +58,7 @@ public struct LoginReport: Equatable, Sendable {
     public func textLine() -> String {
         let button = submitLabel.map { "tapped \($0)" } ?? "tapped the submit button"
         let chosen = filter.isEmpty ? "" : " (chosen by --where \(filter.map(\.rawValue).joined(separator: " ")))"
-        let line = "\(app) as \(LoginCredential.displayKey(key))\(chosen): filled the email or username field, filled the password field, \(button). The submit button was tapped. This does not mean the server accepted the login."
-        return turnstile == .unknown ? line + " " + TurnstileStatus.unknownNote : line
+        return "\(app) as \(LoginCredential.displayKey(key))\(chosen): filled the email or username field, filled the password field, \(button). The submit button was tapped. This does not mean the server accepted the login."
     }
 
     /// Version 1: keys are only ever added.

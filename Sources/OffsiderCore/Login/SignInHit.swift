@@ -8,11 +8,33 @@ enum SignInHit {
     }
 
     static func chain(in tree: UITree, at point: UIPoint) -> [UINode] {
-        let roots = tree.roots.map(classify)
+        let icons = tree.viewport.map { KnownOverlays.devMenuButtons(in: tree.roots, viewport: $0) } ?? []
+        let roots = tree.roots.map { classify($0, devMenuIcons: icons) }
         for root in roots.reversed() {
             if let found = chain(from: root, at: point) { return found }
         }
         return []
+    }
+
+    /// What the tree alone says of a control's point.
+    enum Reading: Equatable {
+        case front
+        /// Something that is not a container holds the point; nil when nothing does.
+        case covered(UINode?)
+        /// A container holds the point through its own frame alone: a window that passes touches on and a modal backdrop look the same, so a hit-test decides.
+        case unsettled(UINode)
+    }
+
+    static func reading(of node: UINode, in tree: UITree, at point: UIPoint) -> Reading {
+        let found = chain(in: tree, at: point)
+        if found.contains(where: { $0.isSameElement(as: node) }) { return .front }
+        guard let top = found.last else { return .covered(nil) }
+        return isStructural(top.role) ? .unsettled(top) : .covered(top)
+    }
+
+    /// The first thing a container holds that is not a container, to name it by.
+    static func held(by container: UINode) -> UINode? {
+        container.flattened().dropFirst().first { !isStructural($0.role) }
     }
 
     private enum Kind {
@@ -25,13 +47,17 @@ enum SignInHit {
         var node: UINode
         var kind: Kind
         var children: [Classified]
+        /// Containers holding nothing but a dev client's Tools button, whose window passes every other touch through.
+        var devMenuHost = false
+        /// A container with no name, holding only containers with none.
+        var bare = false
     }
 
-    private static func classify(_ node: UINode) -> Classified {
+    private static func classify(_ node: UINode, devMenuIcons icons: [UINode]) -> Classified {
         if isChrome(node) {
             return Classified(node: node, kind: .chrome, children: [])
         }
-        let children = node.children.map(classify)
+        let children = node.children.map { classify($0, devMenuIcons: icons) }
         let kind: Kind
         if children.contains(where: { $0.kind == .app }) {
             kind = isKeyboardDock(children) ? .chrome : .app
@@ -42,7 +68,10 @@ enum SignInHit {
         } else {
             kind = .app
         }
-        return Classified(node: node, kind: kind, children: children)
+        let isIcon = { (child: Classified) in icons.contains { $0.isSameElement(as: child.node) } }
+        let unnamed = isStructural(node.role) && node.normalizedLabel == nil && node.normalizedID == nil
+        let host = unnamed && children.contains { isIcon($0) || $0.devMenuHost } && children.allSatisfy { isIcon($0) || $0.devMenuHost || $0.bare }
+        return Classified(node: node, kind: kind, children: children, devMenuHost: host, bare: unnamed && children.allSatisfy(\.bare))
     }
 
     /// Controls iOS draws below the keys, such as a disabled Dictate button, belong to the keyboard when none sits above its top.
@@ -88,7 +117,7 @@ enum SignInHit {
                 return [item.node] + nested
             }
         }
-        guard let frame = item.node.frame, frame.contains(point) else { return nil }
+        guard !item.devMenuHost, let frame = item.node.frame, frame.contains(point) else { return nil }
         return [item.node]
     }
 }
