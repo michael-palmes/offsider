@@ -451,7 +451,7 @@ struct WaitAnyTests {
         #expect(met.matched == expected.matched)
         #expect(WaitReport(met).jsonLine() == WaitReport(expected).jsonLine())
         #expect(any.successLine(met) == plain.successLine(expected))
-        let (_, gone) = try await Self.evaluate(["--any", "--id", "done", "--gone", "--stable-for", "0"], trees: [Self.screen(["done"]), Self.screen([])])
+        let (_, gone) = try await Self.evaluate(["--any", "--id", "done", "--gone", "--stable-for", "0"], trees: [Self.screen(["done"]), Self.screen(["other"])])
         #expect(gone.met)
     }
 

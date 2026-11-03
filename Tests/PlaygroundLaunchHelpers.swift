@@ -134,6 +134,7 @@ extension TestHelpers {
         case "switch-test": return .identifier("switch-test-screen")
         case "tab-view-test": return .identifier("tab-view-test-screen")
         case "motion-test": return .identifier("motion-toggle")
+        case "crash-test": return .identifier("crash-now")
         case "slider-value-test": return .identifier("slider-value-slider")
         case "searchable-test": return .identifier("searchable-test-query")
         case "toolbar-picker-test":

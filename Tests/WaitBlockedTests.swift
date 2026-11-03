@@ -22,7 +22,7 @@ struct WaitBlockedTests {
 
         var sources: WaitSources {
             WaitSources(
-                tree: { FakeUI.tree() },
+                tree: { FakeUI.tree([FakeUI.node(.text, label: "Title", frame: FakeUI.frame(0, 0, 100, 20))]) },
                 fingerprint: { throw CLIError(errorDescription: "no screen") },
                 sleep: { [self] duration in now += Double(duration.components.seconds) + Double(duration.components.attoseconds) / 1e18 },
                 now: { [self] in now }

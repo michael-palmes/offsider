@@ -11,6 +11,10 @@ public struct WaitSources {
     public var probe: (@MainActor (UITree) async -> PresentationFinding?)?
     /// Called once, the first time another app in front holds a wait up.
     public var onOtherApp: (@MainActor () -> Void)?
+    /// Asks, at a selector wait's timeout and before a `--gone` passes, whether the app it began on stopped; nil never asks.
+    public var appExit: AppExitCheck?
+    /// The app before the wait, as the tree cache saw it, read only when the check runs; nil takes the wait's first read.
+    public var appBefore: (@MainActor () async -> ShownApp?)?
 
     public init(
         tree: @escaping @MainActor () async throws -> UITree,
@@ -70,6 +74,11 @@ extension ElementProbe {
     static func foundNothing(_ reason: String) -> Bool {
         reason == notFound || reason.hasPrefix(notFound + ";")
     }
+
+    /// Why a `--gone` read proves nothing: a tree with no element under its roots, as after a crash or on a blank screen.
+    public static let readEmpty = "the screen read empty"
+    /// A read the source or the limits cut short, so an element missing from it may simply not have been reached.
+    public static let readCut = "the read was cut"
 }
 
 extension WaitCondition {
@@ -142,6 +151,8 @@ public struct WaitOutcome: Equatable, Sendable {
     public var movedPastFlags = false
     /// For `--gone`: what hides the element, when the app still holds it, such as `under button "Buy" (16, 790) 370x44`.
     public var goneBecause: String?
+    /// For `--settled`: it passed on a tree of fewer than `WaitLoop.sparseNodes` elements, as a splash screen holds.
+    public var sparse = false
 
     public init(met: Bool, elapsed: TimeInterval, reason: String, match: UINode? = nil, matched: WaitMatch? = nil) {
         self.met = met
@@ -231,9 +242,16 @@ public struct WaitUnreadableError: LocalizedError, CustomStringConvertible, Equa
     public var errorDescription: String? { message }
     public var description: String { message }
 
+    /// A command to run next, such as `offsider doctor --device <id>`.
+    public var hint: String?
+
     static let settledTree = WaitUnreadableError(
         message: "--settled could not read the accessibility tree: every read was empty or unreadable, so it cannot tell when the screen settles. Use --settle-by screen to compare screenshots instead."
     )
+
+    static func goneEmpty(device: String) -> WaitUnreadableError {
+        WaitUnreadableError(message: "Could not confirm gone: the screen read empty.", hint: "offsider doctor --device \(device)")
+    }
 }
 
 /// A `--settled` wait whose flags leave nothing on the screen to watch, so a pass would prove nothing.
@@ -281,8 +299,10 @@ public enum WaitLoop {
                 succeededOnce = true
                 otherApp = nil
                 if step.met {
+                    if gone { try await checkApp(state, latest: state.lastTree, sources: sources) }
                     var outcome = WaitOutcome(met: true, elapsed: sources.now() - start, reason: step.reason, match: step.match, matched: step.matched)
                     outcome.goneBecause = state.goneBecause
+                    outcome.sparse = state.sparse
                     return outcome
                 }
                 lastReason = step.reason
@@ -313,6 +333,10 @@ public enum WaitLoop {
             try await sources.sleep(.milliseconds(Int((min(interval, remaining) * 1000).rounded())))
         }
 
+        if condition.looksForElements {
+            // Another app in front was never read, so it says nothing about the app.
+            try await checkApp(state, latest: otherApp == nil ? state.lastTree : nil, sources: sources)
+        }
         if let otherApp {
             throw otherApp
         }
@@ -324,6 +348,9 @@ public enum WaitLoop {
         }
         if state.treeReads >= 2, !state.readableTree {
             throw WaitUnreadableError.settledTree
+        }
+        if gone, state.goneReads > 0, !state.goneReadable, let tree = state.lastTree {
+            throw WaitUnreadableError.goneEmpty(device: tree.device)
         }
         let elapsed = sources.now() - start
         if condition.looksForElements, let probe = sources.probe, let tree = state.lastTree, let finding = await probe(tree) {
@@ -343,6 +370,9 @@ public enum WaitLoop {
         }
         return outcome
     }
+
+    /// A settled tree with fewer elements than this may still be loading.
+    nonisolated public static let sparseNodes = 5
 
     /// "1.2 s" style: whole seconds without a fraction, others to one decimal.
     nonisolated public static func seconds(_ value: TimeInterval) -> String {
@@ -393,6 +423,20 @@ public enum WaitLoop {
         /// The last tree an element condition read, and whether a selector found nothing on it.
         var lastTree: UITree?
         var missed = false
+        /// `--gone` reads, and whether any held an element under its roots.
+        var goneReads = 0
+        var goneReadable = false
+        /// `--settled`: the latest tree held fewer than `sparseNodes` elements.
+        var sparse = false
+        /// The app the wait began on, from the tree cache or the first read.
+        var firstApp: ShownApp?
+        var appNoted = false
+
+        @MainActor mutating func noteApp(_ tree: UITree, sources: WaitSources) {
+            guard !appNoted, sources.appBefore == nil, let check = sources.appExit else { return }
+            appNoted = true
+            firstApp = check.app(in: tree)
+        }
 
         /// Another app was in front, so what the earlier reads saw no longer counts; a `--changed` wait keeps its first capture.
         mutating func forgetReads(keepingBaseline: Bool, now: TimeInterval) {
@@ -415,10 +459,22 @@ public enum WaitLoop {
             let step: Step
             let tree = try await sources.tree()
             state.lastTree = tree
+            state.noteApp(tree, sources: sources)
             state.missed = false
+            if gone {
+                state.goneReads += 1
+                guard tree.roots.contains(where: { !$0.children.isEmpty }) else {
+                    state.goneBecause = nil
+                    return dwell(Step(met: false, reason: ElementProbe.readEmpty), stableFor: stableFor, gone: gone, state: &state, sources: sources)
+                }
+                state.goneReadable = true
+            }
             switch probe(tree) {
             case .present(let node):
                 step = gone ? Step(met: false, reason: "still on screen") : Step(met: true, reason: "on screen", match: node)
+            case .absent where gone && (tree.sourceTruncated || tree.truncated != nil):
+                step = Step(met: false, reason: ElementProbe.readCut)
+                state.goneBecause = nil
             case .absent(let reason):
                 step = Step(met: gone, reason: reason)
                 state.missed = ElementProbe.foundNothing(reason)
@@ -431,6 +487,7 @@ public enum WaitLoop {
         case .anyElement(let selectors, let stableFor, _):
             let tree = try await sources.tree()
             state.lastTree = tree
+            state.noteApp(tree, sources: sources)
             state.missed = false
             var reasons: [String] = []
             var blocks: [LogBoxBlock] = []
@@ -471,6 +528,7 @@ public enum WaitLoop {
                 let snapshot = whole.leavingOut(leaveOut.regions)
                 state.treeReads += 1
                 state.readableTree = state.readableTree || whole.isKnown
+                state.sparse = whole.isKnown && holdsFewer(than: sparseNodes, tree)
                 let coverage = whole.isKnown ? detector.coverage(snapshot) : (roots: true, elements: true)
                 if !coverage.roots { throw WaitLeftNothingError(flag: leaveOut.flagName) }
                 if !coverage.elements {
@@ -559,6 +617,23 @@ public enum WaitLoop {
         case .duration:
             return Step(met: true, reason: "waited")
         }
+    }
+
+    /// Whether `tree` holds fewer than `limit` elements, walking no further once it knows.
+    nonisolated static func holdsFewer(than limit: Int, _ tree: UITree) -> Bool {
+        var left = limit
+        func walk(_ node: UINode) -> Bool {
+            left -= 1
+            return left > 0 && node.children.allSatisfy(walk)
+        }
+        return tree.roots.allSatisfy(walk)
+    }
+
+    /// Throws when the app the wait began on stopped; see `AppExitCheck`.
+    private static func checkApp(_ state: State, latest: UITree?, sources: WaitSources) async throws {
+        guard let check = sources.appExit else { return }
+        let first = if let before = sources.appBefore { await before() } else { state.firstApp }
+        try await check.check(first, latest: latest)
     }
 
     /// One frame for the draw hold; nil when it cannot be read, since pixels never fail a tree wait. Another app in front still counts as that.

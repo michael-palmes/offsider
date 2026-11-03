@@ -122,10 +122,8 @@ struct VerifyTests {
         )
         let json = try report(result.stdout)
 
-        withKnownIssue("A small repaint elsewhere, such as the glass back button, counts as a screenshot change", isIntermittent: true) {
-            #expect(result.exitCode == 5)
-            #expect(json["change"] as? String == "none")
-        }
+        #expect(result.exitCode == 5)
+        #expect(json["change"] as? String == "none")
         try await TestHelpers.runOffsiderCommand("tap --id motion-show-toggles", simulatorUDID: defaultSimulatorUDID)
         let uiState = try await TestHelpers.getUIState()
         #expect(UIStateParser.findElementContainingLabel(in: uiState, containing: "Toggles:")?.label == "Toggles: 1")
@@ -180,5 +178,45 @@ struct VerifyTests {
         #expect(result.stderr.contains("a second tap would undo the first"))
         let state = try await TestHelpers.waitForLabel(containing: "Slow Commit Alerts:", timeout: 8) { $0.hasPrefix("Slow Commit Alerts: On") }
         #expect(state == "Slow Commit Alerts: On, presses 1")
+    }
+}
+
+@Suite("A pass after the app died", .serialized, .enabled(if: isE2EEnabled))
+struct AppExitE2ETests {
+    private func report(_ stdout: String) throws -> [String: Any] {
+        try #require(try JSONSerialization.jsonObject(with: Data(stdout.utf8)) as? [String: Any])
+    }
+
+    private func reason(_ stdout: String) throws -> String? {
+        (try report(stdout)["error"] as? [String: Any])?["reason"] as? String
+    }
+
+    @Test("a tap that crashes the app to the home screen is not verified: it exits 1 app_crashed or app_stopped, sent once")
+    func crashingTapNotVerified() async throws {
+        try await TestHelpers.launchPlaygroundApp(to: "crash-test")
+
+        let result = try await TestHelpers.runOffsiderCommandSeparated("tap --id crash-now --verify --json", simulatorUDID: defaultSimulatorUDID)
+        let json = try report(result.stdout)
+
+        #expect(result.exitCode == 1)
+        #expect(["app_crashed", "app_stopped"].contains(try reason(result.stdout)))
+        #expect(json["dispatched"] as? String == "yes")
+        #expect(json["attempts"] as? Int == 1)
+    }
+
+    @Test("wait --id and wait --gone that see the app quit mid-wait exit 1 app_stopped, not a timeout or a pass", arguments: ["--id never-on-screen --timeout 8", "--id quit-now --gone --timeout 8"])
+    func waitSeesTheAppQuit(condition: String) async throws {
+        try await TestHelpers.launchPlaygroundApp(to: "crash-test")
+
+        async let waited = TestHelpers.runOffsiderCommandSeparated("wait \(condition) --json", simulatorUDID: defaultSimulatorUDID)
+        try await Task.sleep(for: .seconds(2))
+        try await TestHelpers.runOffsiderCommand("tap --id quit-now", simulatorUDID: defaultSimulatorUDID)
+        let result = try await waited
+
+        let error = try #require(try report(result.stdout)["error"] as? [String: Any])
+
+        #expect(result.exitCode == 1)
+        #expect(["app_crashed", "app_stopped"].contains(error["reason"] as? String))
+        #expect((error["hint"] as? String)?.hasPrefix("offsider app launch --restart --app com.mpalmes.offsider.playground --device ") == true)
     }
 }
