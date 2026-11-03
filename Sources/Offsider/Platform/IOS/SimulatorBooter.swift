@@ -9,7 +9,7 @@ struct SimulatorBooter {
     let logger: OffsiderLogger
 
     /// The iOS simulator `target` names, or nil when none does; several with one name is a usage error.
-    func find(_ target: String) async throws -> FBSimulator? {
+    func find(_ target: String, command: String = "boot") async throws -> FBSimulator? {
         try await IOSBackend(logger: logger).prepare()
         let simulators = try await getSimulatorSet(logger: logger).allSimulators
         let candidates = simulators.map {
@@ -19,7 +19,7 @@ struct SimulatorBooter {
         case .none: return nil
         case .one(let candidate): return simulators.first { $0.udid == candidate.udid }
         case .several(let several):
-            throw CLIError(errorDescription: SimulatorBootTarget.ambiguity(target, several), reason: .deviceAmbiguous, hint: "offsider boot \(several[0].udid)")
+            throw CLIError(errorDescription: SimulatorBootTarget.ambiguity(target, several, command: command), reason: .deviceAmbiguous, hint: "offsider \(command) \(several[0].udid)")
         }
     }
 
@@ -42,6 +42,34 @@ struct SimulatorBooter {
             throw CLIError(
                 errorDescription: "\(simulator.name) (\(simulator.udid)) did not finish booting within \(timeout.components.seconds) s. It carries on booting; run `offsider boot \(simulator.udid)` again to keep waiting.",
                 reason: .bootTimedOut
+            )
+        }
+        return false
+    }
+}
+
+extension SimulatorBooter {
+    /// Returns whether it was already off; a stop that outlasts `timeout` names the fix, and the simulator must read as off for this to return.
+    func shutdown(_ simulator: FBSimulator, timeout: Duration) async throws -> Bool {
+        let step = SimulatorShutdownStep.step(for: FBiOSTargetStateStringFromState(simulator.state).rawValue)
+        if step == .alreadyOff { return true }
+        let target = SimulatorBox(simulator)
+        let name = "\(simulator.name) (\(simulator.udid))"
+        let finished: Bool
+        do {
+            if step == .waitForShutdown {
+                finished = try await DetachedWait.finishes(within: timeout) { try await target.simulator.resolveState(.shutdown) }
+            } else {
+                let future = FutureBox(FBSimulatorShutdownStrategy.shutdown(simulator))
+                finished = try await DetachedWait.finishes(within: timeout) { _ = try await bridgeFBFuture(future.future) }
+            }
+        } catch {
+            throw CLIError(errorDescription: "\(name) did not stop (\(error.localizedDescription)). Try `xcrun simctl shutdown \(simulator.udid)`.", reason: .shutdownFailed, hint: "xcrun simctl shutdown \(simulator.udid)")
+        }
+        guard finished, SimulatorShutdownStep.step(for: FBiOSTargetStateStringFromState(simulator.state).rawValue) == .alreadyOff else {
+            throw CLIError(
+                errorDescription: "\(name) was still running after \(timeout.components.seconds) s. Run this again with a longer --timeout, or try `xcrun simctl shutdown \(simulator.udid)`.",
+                reason: .shutdownTimedOut, hint: "xcrun simctl shutdown \(simulator.udid)"
             )
         }
         return false

@@ -48,7 +48,7 @@ struct Wait: AsyncParsableCommand {
     @Option(name: .customLong("ignore-id"), parsing: .upToNextOption, help: ArgumentHelp("With --settled, this element and everything under it do not count, so a live chart or carousel cannot keep the screen unsettled. Repeatable.", valueName: "id"))
     var ignoreIDs: [String] = []
 
-    @Option(name: .customLong("ignore-region"), parsing: .upToNextOption, help: ArgumentHelp("With --settled, this rectangle's pixels and the elements at least half inside it and no bigger than it, with everything under them, do not count; points as describe-ui prints them. Repeatable.", valueName: "x,y,w,h"))
+    @Option(name: .customLong("ignore-region"), parsing: .upToNextOption, help: ArgumentHelp("With --settled, this rectangle's pixels and the elements at least half inside it and no bigger than it, with everything under them, do not count; points as describe-ui prints them, off the screen too (--ignore-region=-600,0,300,40). Repeatable.", valueName: "x,y,w,h"))
     var ignoreRegions: [String] = []
 
     @Option(name: .customLong("stable-for"), help: ArgumentHelp("With a selector, how long the element must stay on screen (or, with --gone, stay gone) before the wait is met, from 0 to 60000 ms. Default 500 for --gone when --timeout is at least 0.5 s, else 0.", valueName: "ms"))
@@ -195,7 +195,7 @@ struct Wait: AsyncParsableCommand {
 
     /// `--ignore-id` and `--ignore-region` as the loop takes them.
     func leaveOut() throws -> SettleLeaveOut {
-        SettleLeaveOut(ids: Set(ignoreIDs), regions: try ignoreRegions.map { try PointRegion.parse($0, option: "--ignore-region") })
+        SettleLeaveOut(ids: Set(ignoreIDs), regions: try ignoreRegions.map { try PointRegion.parse($0, option: "--ignore-region", offScreen: true) })
     }
 
     func run() async throws {
@@ -361,11 +361,20 @@ struct Wait: AsyncParsableCommand {
             if let nearest = shown.nearMiss { details.append("Nearest  \(nearest.summary)") }
             if settled, !ignoreValues, shown.onlyTextMoved { details.append("Only text kept changing; --ignore-values lets it settle") }
             if let moving = shown.movingPart { details.append("Part of it keeps moving; \(moving.flag) leaves it out") }
+            if let stuck = Self.noFlagHint(shown) { details.append(stuck) }
             return .failed("Timed out after \(WaitLoop.seconds(timeout)) waiting for \(target)", details: details)
         }
         let parts = successParts(shown)
         let timing = [parts.after, parts.selectors].compactMap { $0 }.joined(separator: " · ")
         return .done(parts.headline, aside: timing.isEmpty ? nil : timing, details: note.map { [$0] } ?? [])
+    }
+
+    /// What to do about movement no flag can leave out; the pixels settle only when the mover does not show.
+    static func noFlagHint(_ outcome: WaitOutcome) -> String? {
+        guard outcome.movedPastFlags else { return nil }
+        return outcome.movingUnseen
+            ? "No flag leaves it out and keeps the page; it does not show, so --settle-by screen can pass"
+            : "No flag leaves it out and keeps anything to wait for"
     }
 
     /// `✗ Timed out after 10 s waiting for --id 'save' (last: off screen at (20, 10700) 350x44).`
@@ -375,6 +384,8 @@ struct Wait: AsyncParsableCommand {
             hint = " Only text kept changing, as a live price or clock does; add --ignore-values to let it settle."
         } else if let moving = outcome.movingPart {
             hint = " Part of the screen keeps moving; add \(moving.flag) to leave it out."
+        } else if let stuck = Self.noFlagHint(outcome) {
+            hint = " \(stuck)."
         } else {
             hint = ""
         }
@@ -518,6 +529,8 @@ struct Wait: AsyncParsableCommand {
         shown.onlyTextMoved = outcome.onlyTextMoved
         shown.goneBecause = outcome.goneBecause.map { LogRedactor.redactValue($0).text }
         shown.movingPart = outcome.movingPart.flatMap { LogRedactor.redactValue($0.flag).text == $0.flag ? $0 : nil }
+        shown.movingUnseen = outcome.movingUnseen
+        shown.movedPastFlags = outcome.movedPastFlags
         shown.nearMiss = outcome.nearMiss.map { WaitNearMiss(summary: mask.redactedText($0.summary), candidates: $0.candidates) }
         return shown
     }

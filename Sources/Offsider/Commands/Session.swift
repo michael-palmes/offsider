@@ -87,6 +87,51 @@ struct SessionStop: AsyncParsableCommand {
         return .warning(pids.isEmpty ? "A recording on \(key.id) is still running, and Offsider could not find its pid." : "The recording on \(key.id) is still running. Stop it with `kill -INT \(list)`.")
     }
 
+    /// Everything `session stop` stops, on one device or all; `left` names what stayed, and `recordingKept` says a recording on it would not stop.
+    @MainActor
+    static func stopSessions(device: String?) async -> (stopped: [DeviceSessionRow.Stopped], left: [DeviceSessionRow.Left], recordingKept: Notice?) {
+        let brokers = DeviceSessions.records(device: device)
+        let manager = DeviceSessions.manager()
+        // Work on a test device is over, so its screen sleeps here too rather than staying lit until someone remembers.
+        for udid in Set(brokers.map(\.udid) + RunnerSessions.records(device: device).map(\.udid)) {
+            await DeviceSessionServe.sleepTestDevice(udid: udid, key: udid.uppercased(), store: DeviceSessions.store, gate: DevicePolicyGate.current)
+        }
+        for record in brokers {
+            await manager.stop(record)
+        }
+        let runners = RunnerSessions.records(device: device)
+        let runnerManager = RunnerSessionManager(
+            store: RunnerSessions.store,
+            builder: UnusedRunnerBuilder(),
+            environment: ProcessInfo.processInfo.environment,
+            developerDirectory: nil,
+            log: { _, _ in }
+        )
+        for record in runners {
+            await runnerManager.stop(record)
+            RunnerSessions.removeLog(udid: record.udid)
+        }
+        if let device, case .iosDevice(let udid) = DeviceIDClassifier.classify(device.trimmingCharacters(in: .whitespacesAndNewlines)) {
+            RunnerSessions.removeLog(udid: udid)
+        }
+        let serial = await AndroidWarmHelpers.serial(for: device).serial
+        let helpers = await AndroidBackend.stopWarmHelpers(host: .cli(), serial: serial)
+        let reverses = await AndroidBackend.removeMetroReverses(host: .cli(), serial: serial)
+        let postures = await AndroidBackend.resetRecordedPostures(host: .cli(), serial: serial, permits: mayReset(named: serial != nil, gate: DevicePolicyGate.current))
+        let airplanes = await AndroidBackend.resetRecordedAirplaneModes(host: .cli(), serial: serial, permits: { phone in
+            !DeviceID(rawValue: phone, platform: .android).isPhysicalAndroidDevice || mayReset(named: serial != nil, gate: DevicePolicyGate.current)(phone)
+        })
+        let inputs = await SimulatorInputSessions.stop(device: device)
+        var recording: (key: DeviceLockKey, ended: Bool, pids: [Int32])?
+        if let device { recording = await stopRecording(device: device, serial: serial) }
+        let stopped = DeviceSessionRow.stopped(
+            runners: runners.map(\.udid), brokers: brokers.map(\.udid), helpers: helpers, inputs: inputs, reverses: reverses.removed, postures: postures.reset, airplanes: airplanes.reset,
+            recordings: recording.flatMap { $0.ended ? [$0.key.id] : nil } ?? []
+        )
+        let left = DeviceSessionRow.left(reverses: reverses.failed, postures: postures, airplanes: airplanes)
+        return (stopped, left, recording.flatMap { $0.ended ? nil : recordingKept($0.key, pids: $0.pids) })
+    }
+
     static let configuration = CommandConfiguration(
         commandName: "stop",
         abstract: "Stop the runner, session broker, warm helper or input session on one device, remove the adb reverses rn open set and turn off the airplane mode Offsider turned on, or on every device when --device is left out. With --device it also stops and saves a recording on that device."
@@ -119,52 +164,14 @@ struct SessionStop: AsyncParsableCommand {
         let cleanUDID = try clean ? RunnerSessions.cleanableUDID(device ?? "", command: "session stop --clean") : nil
         let console = Console.current
         let (stopped, left, cleaned, recordingRunning) = await console.progress("Stopping sessions") {
-            let brokers = DeviceSessions.records(device: device)
-            let manager = DeviceSessions.manager()
-            // Work on a test device is over, so its screen sleeps here too rather than staying lit until someone remembers.
-            for udid in Set(brokers.map(\.udid) + RunnerSessions.records(device: device).map(\.udid)) {
-                await DeviceSessionServe.sleepTestDevice(udid: udid, key: udid.uppercased(), store: DeviceSessions.store, gate: DevicePolicyGate.current)
-            }
-            for record in brokers {
-                await manager.stop(record)
-            }
-            let runners = RunnerSessions.records(device: device)
-            let runnerManager = RunnerSessionManager(
-                store: RunnerSessions.store,
-                builder: UnusedRunnerBuilder(),
-                environment: ProcessInfo.processInfo.environment,
-                developerDirectory: nil,
-                log: { _, _ in }
-            )
-            for record in runners {
-                await runnerManager.stop(record)
-                RunnerSessions.removeLog(udid: record.udid)
-            }
-            if let device, case .iosDevice(let udid) = DeviceIDClassifier.classify(device.trimmingCharacters(in: .whitespacesAndNewlines)) {
-                RunnerSessions.removeLog(udid: udid)
-            }
-            let serial = await AndroidWarmHelpers.serial(for: device).serial
-            let helpers = await AndroidBackend.stopWarmHelpers(host: .cli(), serial: serial)
-            let reverses = await AndroidBackend.removeMetroReverses(host: .cli(), serial: serial)
-            let postures = await AndroidBackend.resetRecordedPostures(host: .cli(), serial: serial, permits: Self.mayReset(named: serial != nil, gate: DevicePolicyGate.current))
-            let airplanes = await AndroidBackend.resetRecordedAirplaneModes(host: .cli(), serial: serial, permits: { phone in
-                !DeviceID(rawValue: phone, platform: .android).isPhysicalAndroidDevice || Self.mayReset(named: serial != nil, gate: DevicePolicyGate.current)(phone)
-            })
-            let inputs = await SimulatorInputSessions.stop(device: device)
-            var recording: (key: DeviceLockKey, ended: Bool, pids: [Int32])?
-            if let device { recording = await Self.stopRecording(device: device, serial: serial) }
-            let stopped = DeviceSessionRow.stopped(
-                runners: runners.map(\.udid), brokers: brokers.map(\.udid), helpers: helpers, inputs: inputs, reverses: reverses.removed, postures: postures.reset, airplanes: airplanes.reset,
-                recordings: recording.flatMap { $0.ended ? [$0.key.id] : nil } ?? []
-            )
-            let left = DeviceSessionRow.left(reverses: reverses.failed, postures: postures, airplanes: airplanes)
-            if let recording, !recording.ended { console.notice(Self.recordingKept(recording.key, pids: recording.pids)) }
+            let (stopped, left, recordingKept) = await Self.stopSessions(device: device)
+            if let recordingKept { console.notice(recordingKept) }
             var cleaned: RunnerCleanupReport?
             if let cleanUDID {
                 console.relabel("Uninstalling the runner")
                 cleaned = await RunnerSessions.clean(udid: cleanUDID)
             }
-            return (stopped, left, cleaned, recording?.ended == false)
+            return (stopped, left, cleaned, recordingKept != nil)
         }
         let failed = left.filter { $0.why == .failed }
         if json {

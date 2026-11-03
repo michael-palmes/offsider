@@ -90,6 +90,8 @@ enum StartFixtures {
             ("boot", StartPersonView.booted(name: "Pixel_9", id: "emulator-5554", alreadyRunning: false, notices: [
                 BootReport.memoryNotice(avd: "Pixel_9", reading: reading), BootReport.screenNotice(avd: "Pixel_9", serial: "emulator-5554", reading: reading),
             ].compactMap { $0 })),
+            ("shutdown", StartPersonView.shutDown(ShutdownReport(platform: .android, name: "Offsider_E2E", id: "emulator-5554", alreadyOff: false, sessions: ["warm helper"]))),
+            ("shutdown already off", StartPersonView.shutDown(ShutdownReport(platform: .android, name: "Offsider_E2E", id: nil, alreadyOff: true))),
             ("run start", StartPersonView.runStarted(path: "/Users/me/runs/pr-123", state: state, start: .started, home: "/Users/me")),
             ("run start again", StartPersonView.runStarted(path: "/Users/me/runs/pr-123", state: state, start: .active(added: false), home: "/Users/me")),
             ("run stop", StartPersonView.runStopped(timeline, summary: true, now: now, timeZone: utc, home: "/Users/me")),

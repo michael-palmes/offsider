@@ -84,14 +84,23 @@ public enum DisplayReport {
         ]).rendered(compact: true)
     }
 
-    public static func postureJSON(_ posture: Posture, previous: Posture?, screen: UIScreenInfo?, platform: DevicePlatform, state: String? = nil) -> String {
-        OrderedJSON.object([
+    /// `disagreement` appears only when `reads` disagree, with the hinge's posture and angle and the display's posture.
+    public static func postureJSON(_ posture: Posture, previous: Posture?, screen: UIScreenInfo?, platform: DevicePlatform, state: String? = nil, reads: PostureReads? = nil) -> String {
+        var fields: [(String, OrderedJSON)] = [
             ("posture", .string(posture.rawValue)),
             ("state", .optional(state, OrderedJSON.string)),
             ("previous", .optional(previous?.rawValue, OrderedJSON.string)),
             ("display", .optional(screen?.resolvedDisplay(on: platform).id, OrderedJSON.string)),
             ("screen", .optional(screen) { .object([("width", .number($0.width)), ("height", .number($0.height))]) }),
-        ]).rendered(compact: true)
+        ]
+        if let reads, reads.disagree {
+            fields.append(("disagreement", .object([
+                ("hinge", .optional(reads.hinge?.rawValue, OrderedJSON.string)),
+                ("angle", .optional(reads.angle, OrderedJSON.number)),
+                ("display", .optional(reads.display?.rawValue, OrderedJSON.string)),
+            ])))
+        }
+        return OrderedJSON.object(fields).rendered(compact: true)
     }
 
     /// Names that are a posture's own, AOSP's and One UI's, which need no note.

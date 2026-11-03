@@ -199,8 +199,8 @@ struct DeviceSettingsTests {
     }
 
     @Test("an iOS orientation timeout names the target, the wait and the device", arguments: [
-        (DeviceOrientation.landscapeRight, "The simulator did not turn to landscape-right within 5 s. This iOS runtime may ignore the orientation event Offsider sends, or the frontmost app supports portrait only. Check with `offsider orientation --device D`."),
-        (.portraitUpsideDown, "The simulator did not turn to portrait-upside-down within 5 s. This iOS runtime may ignore the orientation event Offsider sends, or the frontmost app does not support portrait-upside-down. Check with `offsider orientation --device D`."),
+        (DeviceOrientation.landscapeRight, "The simulator did not turn to landscape-right within 5 s. The frontmost app supports portrait only, this iOS runtime ignored the turn, or the app stopped following turns. Check with `offsider orientation --device D`. If an app that allows it still will not turn, run `offsider button home --device D`, then `offsider orientation portrait --device D`, and launch the app again."),
+        (.portraitUpsideDown, "The simulator did not turn to portrait-upside-down within 5 s. The frontmost app does not support portrait-upside-down, this iOS runtime ignored the turn, or the app stopped following turns. Check with `offsider orientation --device D`. If an app that allows it still will not turn, run `offsider button home --device D`, then `offsider orientation portrait --device D`, and launch the app again."),
     ])
     func timeoutMessage(target: DeviceOrientation, message: String) {
         #expect(OrientationCommand.timeoutMessage(target: target, timeout: 5, platform: .ios, device: "D") == message)
