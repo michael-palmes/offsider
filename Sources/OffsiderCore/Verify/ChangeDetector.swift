@@ -1,20 +1,44 @@
 import Foundation
 
-/// The part of the screen that kept moving, as the flag a `--settled` wait takes to leave it out.
-public enum MovingPart: Equatable, Sendable {
+/// The part of the screen that kept moving, as the flags a `--settled` wait takes to leave it out.
+public indirect enum MovingPart: Equatable, Sendable {
     case id(String)
     case region(PointRegion)
+    /// Movers no one flag holds, each with its own.
+    case parts([MovingPart])
 
-    /// A flag leaving out this share of the screen or more would leave nothing worth waiting for.
+    /// A flag leaving out this share of the screen or more would leave nothing worth waiting for, unless the rest shows at least what remains of the screen.
     static let mostOfScreen = 0.8
 
-    /// `--ignore-id chart` or `--ignore-region 0,210,390,280`.
+    /// At most this many flags, as a screen moving in more places than this is not settling.
+    static let mostFlags = 4
+
+    /// `--ignore-id panel`, `--ignore-region 0,210,390,280`; an off-screen origin takes `=`, as the parser reads a bare leading dash as an option.
     public var flag: String {
         switch self {
         case .id(let id):
             return "--ignore-id \(id)"
         case .region(let region):
-            return "--ignore-region \(Int(region.x)),\(Int(region.y)),\(Int(region.width)),\(Int(region.height))"
+            let text = "\(Int(region.x)),\(Int(region.y)),\(Int(region.width)),\(Int(region.height))"
+            return text.hasPrefix("-") ? "--ignore-region=\(text)" : "--ignore-region \(text)"
+        case .parts(let parts):
+            return parts.map(\.flag).joined(separator: " ")
+        }
+    }
+
+    var ids: [String] {
+        switch self {
+        case .id(let id): [id]
+        case .region: []
+        case .parts(let parts): parts.flatMap(\.ids)
+        }
+    }
+
+    var regions: [PointRegion] {
+        switch self {
+        case .id: []
+        case .region(let region): [region]
+        case .parts(let parts): parts.flatMap(\.regions)
         }
     }
 
@@ -24,7 +48,7 @@ public enum MovingPart: Equatable, Sendable {
             && id.unicodeScalars.allSatisfy { $0.isASCII && (CharacterSet.alphanumerics.contains($0) || "._:/-".unicodeScalars.contains($0)) }
     }
 
-    /// The whole points around `frames`, inside `screen` when it is known; nil when nothing is left on it.
+    /// The whole points around `frames`; with `screen`, only what is on it, and nil when nothing is.
     static func bounds(of frames: [AccessibilitySnapshot.Frame], within screen: AccessibilitySnapshot.Frame?) -> AccessibilitySnapshot.Frame? {
         var left = Double.infinity, top = Double.infinity, right = -Double.infinity, bottom = -Double.infinity
         for frame in frames where frame.width > 0 && frame.height > 0 {
@@ -33,9 +57,9 @@ public enum MovingPart: Equatable, Sendable {
             right = max(right, frame.x + frame.width)
             bottom = max(bottom, frame.y + frame.height)
         }
-        left = max(left, screen?.x ?? 0, 0)
-        top = max(top, screen?.y ?? 0, 0)
         if let screen {
+            left = max(left, screen.x, 0)
+            top = max(top, screen.y, 0)
             right = min(right, screen.x + screen.width)
             bottom = min(bottom, screen.y + screen.height)
         }
@@ -43,6 +67,40 @@ public enum MovingPart: Equatable, Sendable {
         let (x, y) = (left.rounded(.down), top.rounded(.down))
         return AccessibilitySnapshot.Frame(x: x, y: y, width: (right - x).rounded(.up), height: (bottom - y).rounded(.up))
     }
+}
+
+/// What kept moving across a `--settled` wait: where each element has been, and the latest reads to prove a flag against.
+public struct MoveLog: Sendable {
+    static let keptPairs = 4
+
+    public private(set) var count = 0
+    var pairs: [(before: AccessibilitySnapshot, after: AccessibilitySnapshot)] = []
+    var changed = Set<String>()
+    /// Where each changed element with a frame has been.
+    var swept: [String: AccessibilitySnapshot.Frame] = [:]
+
+    public init() {}
+
+    mutating func note(_ before: AccessibilitySnapshot, _ after: AccessibilitySnapshot, changed: [(key: String, frames: [AccessibilitySnapshot.Frame])]) {
+        count += 1
+        pairs.append((before, after))
+        if pairs.count > Self.keptPairs { pairs.removeFirst() }
+        for (key, frames) in changed {
+            self.changed.insert(key)
+            let earlier = swept[key].map { [$0] } ?? []
+            if let bounds = MovingPart.bounds(of: earlier + frames, within: nil) { swept[key] = bounds }
+        }
+    }
+}
+
+/// How a timed-out `--settled` wait names what kept moving.
+public struct MovingReport: Equatable, Sendable {
+    /// The flags that leave it out, proven on the wait's own reads; nil when none does and leaves something to wait for.
+    public let part: MovingPart?
+    /// `panel (20, 200) 300x280`, `Group (900, 0) 40x40, off screen`.
+    public let named: String
+    /// Every mover is off screen or beneath the page, so the pixels do not show it.
+    public let unseen: Bool
 }
 
 /// Compares two accessibility snapshots. Each node is keyed by its path of `type#identifier[n]`
@@ -255,29 +313,156 @@ public struct ChangeDetector: Sendable {
 
     static let livePlaceholder = "(live)"
 
-    /// What changed between the reads, as one flag to leave it out: the nearest element holding every change that has an id a command line can carry, else a rectangle around the changes; nil when that would be most of the screen.
-    public func movingPart(_ before: AccessibilitySnapshot, _ after: AccessibilitySnapshot) -> MovingPart? {
-        let old = entries(before)
+    /// Adds a pair of reads that differ to `log`.
+    public func note(_ before: AccessibilitySnapshot, _ after: AccessibilitySnapshot, in log: inout MoveLog) {
+        let old = Dictionary(entries(before).map { ($0.key, $0) }, uniquingKeysWith: { first, _ in first })
         let new = entries(after)
-        let oldByKey = Dictionary(old.map { ($0.key, $0) }, uniquingKeysWith: { first, _ in first })
-        let newByKey = Dictionary(new.map { ($0.key, $0) }, uniquingKeysWith: { first, _ in first })
-        let changed = new.filter { entry in
-            oldByKey[entry.key].map { describeDifference(from: $0, to: entry, live: false) != nil } ?? true
-        } + old.filter { newByKey[$0.key] == nil }
-        guard !changed.isEmpty else { return nil }
+        let newKeys = Set(new.map(\.key))
+        let changed = new.filter { entry in old[entry.key].map { describeDifference(from: $0, to: entry, live: false) != nil } ?? true }.map { entry in
+            (key: entry.key, frames: [entry.node.frame, old[entry.key]?.node.frame].compactMap { $0 })
+        } + old.values.filter { !newKeys.contains($0.key) }.map { (key: $0.key, frames: [$0.node.frame].compactMap { $0 }) }
+        log.note(before, after, changed: changed)
+    }
 
-        let screen = after.roots.compactMap(\.frame).max { $0.width * $0.height < $1.width * $1.height }
-        let isMostOfScreen = { (frame: AccessibilitySnapshot.Frame) -> Bool in
-            screen.map { frame.width * frame.height >= $0.width * $0.height * MovingPart.mostOfScreen } ?? false
+    /// What changed between the reads, as the flags that leave it out; nil when none would.
+    public func movingPart(_ before: AccessibilitySnapshot, _ after: AccessibilitySnapshot) -> MovingPart? {
+        var log = MoveLog()
+        note(before, after, in: &log)
+        return moving(log)?.part
+    }
+
+    /// What `log` saw moving, named for a person, with the flags that leave it out when any do: the nearest element holding every change that has an id a command line can carry, else a rectangle around the changes, else one flag per mover. Each is proven on the reads themselves, so what a timeout prints lets the next wait pass.
+    public func moving(_ log: MoveLog) -> MovingReport? {
+        guard let last = log.pairs.last, !log.changed.isEmpty else { return nil }
+        let new = entries(last.after)
+        let newByKey = Dictionary(new.map { ($0.key, $0) }, uniquingKeysWith: { first, _ in first })
+        let keys = log.changed.sorted()
+        let movers = keys.filter { key in !Self.ancestors(of: key).dropFirst().contains(where: log.changed.contains) }
+        // A mover gone from the latest read is named from the reads that held it.
+        var known = newByKey
+        for pair in log.pairs.reversed() where movers.prefix(3).contains(where: { known[$0] == nil }) {
+            for snapshot in [pair.after, pair.before] {
+                for entry in entries(snapshot) where known[entry.key] == nil { known[entry.key] = entry }
+            }
         }
-        for key in Self.sharedAncestors(of: changed.map(\.key)) {
-            guard let holder = newByKey[key] else { continue }
-            if let frame = holder.node.frame, isMostOfScreen(frame) { break }
-            if let id = holder.identifier, MovingPart.fitsCommandLine(id), !Self.isMasked(holder.node) { return .id(id) }
+        let screen = last.after.roots.compactMap(\.frame).max { $0.width * $0.height < $1.width * $1.height }
+        let covers = coverers(of: Set(movers), in: last.after, screen: screen)
+
+        let usableID = { (key: String) -> String? in
+            guard let holder = newByKey[key], let id = holder.identifier, MovingPart.fitsCommandLine(id), !Self.isMasked(holder.node) else { return nil }
+            return id
         }
-        let sweep = changed.flatMap { [$0.node.frame, oldByKey[$0.key]?.node.frame] }.compactMap { $0 }
-        guard let bounds = MovingPart.bounds(of: sweep, within: screen), !isMostOfScreen(bounds) else { return nil }
-        return .region(PointRegion(x: bounds.x, y: bounds.y, width: bounds.width, height: bounds.height))
+        let rectangles = { (frames: [AccessibilitySnapshot.Frame]) -> [MovingPart] in
+            let around = [MovingPart.bounds(of: frames, within: screen), MovingPart.bounds(of: frames, within: nil)].compactMap { $0 }
+            return around.map { MovingPart.region(PointRegion(x: $0.x, y: $0.y, width: $0.width, height: $0.height)) }
+        }
+        var candidates = Self.sharedAncestors(of: keys).compactMap(usableID).map(MovingPart.id)
+        let sweep = keys.compactMap { log.swept[$0] }
+        let shownArea = MovingPart.bounds(of: sweep, within: screen).map { $0.width * $0.height } ?? 0
+        let around = shownArea < (screen.map { $0.width * $0.height * MovingPart.mostOfScreen } ?? .infinity) ? rectangles(sweep) : []
+        // A rectangle over something still would stop the wait watching it, so one flag per mover comes first.
+        let stillInside = new.filter { entry in
+            !Self.ancestors(of: entry.key).contains(where: log.changed.contains)
+        }
+        let sparing = around.filter { part in
+            !stillInside.contains { entry in entry.node.frame.map { frame in part.regions.contains(where: frame.isHalfInside) } ?? false }
+        }
+        candidates += sparing
+        if movers.count > 1, movers.count <= MovingPart.mostFlags {
+            for clipped in [true, false] {
+                let flags = movers.compactMap { key -> MovingPart? in
+                    // An id holding another mover is the page around them, which the proof below would refuse.
+                    let own = Self.ancestors(of: key).prefix { holder in !movers.contains { $0 != key && $0.hasPrefix(holder + "/") } }
+                    if let id = own.compactMap(usableID).first { return .id(id) }
+                    guard let frame = log.swept[key] else { return nil }
+                    return clipped ? rectangles([frame]).first : rectangles([frame]).last
+                }
+                if flags.count == movers.count { candidates.append(.parts(flags)) }
+            }
+        }
+        candidates += around
+        let part = candidates.first { leavesOut($0, in: log, screen: screen) }
+
+        let shown = movers.prefix(3).map { key in Self.described(known[key], at: log.swept[key], latest: newByKey[key]?.node.frame, cover: covers[key], screen: screen) }
+        let more = movers.count > shown.count ? ", and \(movers.count - shown.count) more" : ""
+        let unseen = movers.allSatisfy { key in
+            guard let frame = newByKey[key]?.node.frame ?? log.swept[key] else { return false }
+            return covers[key] != nil || !Self.isOnScreen(frame, screen)
+        }
+        return MovingReport(part: part, named: shown.joined(separator: "; ") + more, unseen: unseen)
+    }
+
+    /// True when `part` stills every read kept, and what it takes away leaves something to wait for.
+    private func leavesOut(_ part: MovingPart, in log: MoveLog, screen: AccessibilitySnapshot.Frame?) -> Bool {
+        var wider = options
+        wider.ignoredIdentifiers.formUnion(part.ids.compactMap(Self.normalisedIdentifier))
+        let detector = ChangeDetector(options: wider)
+        let regions = part.regions
+        for pair in log.pairs where detector.compare(pair.before.leavingOut(regions), pair.after.leavingOut(regions)) != .unchanged {
+            return false
+        }
+        guard let screen, let last = log.pairs.last else { return true }
+        let area = { (frames: [AccessibilitySnapshot.Frame]) -> Double in
+            MovingPart.bounds(of: frames, within: screen).map { $0.width * $0.height } ?? 0
+        }
+        let whole = screen.width * screen.height
+        let gone = entries(last.after).filter { entry in part.ids.contains { Self.normalisedIdentifier($0) == entry.identifier } }.compactMap(\.node.frame)
+        let cut = max(area(gone), regions.map { area([AccessibilitySnapshot.Frame(x: $0.x, y: $0.y, width: $0.width, height: $0.height)]) }.max() ?? 0)
+        guard cut >= whole * MovingPart.mostOfScreen else { return true }
+        let kept = last.after.leavingOut(regions).roots.flatMap { root in detector.entries(AccessibilitySnapshot(roots: root.children)) }.compactMap(\.node.frame)
+        return kept.contains { area([$0]) >= whole * (1 - MovingPart.mostOfScreen) }
+    }
+
+    /// `key` and the keys above it, nearest first.
+    private static func ancestors(of key: String) -> [String] {
+        var keys = [key]
+        var rest = key
+        while let cut = rest.range(of: "]/", options: .backwards) {
+            rest = String(rest[..<cut.lowerBound]) + "]"
+            keys.append(rest)
+        }
+        return keys
+    }
+
+    /// For each of `keys` on the screen, the first later sibling, of it or anything above it, whose children sit over all of what shows of it.
+    private func coverers(of keys: Set<String>, in snapshot: AccessibilitySnapshot, screen: AccessibilitySnapshot.Frame?) -> [String: AccessibilitySnapshot.Node] {
+        var found: [String: AccessibilitySnapshot.Node] = [:]
+        func walk(_ nodes: [AccessibilitySnapshot.Node], parentKey: String, parentLiveKey: String, above: [AccessibilitySnapshot.Node]) {
+            let siblings = liveSiblings(nodes, parentKey: parentLiveKey)
+            var ordinals: [String: Int] = [:]
+            for (index, sibling) in siblings.enumerated() {
+                let component = "\(sibling.node.type)#\(sibling.identifier ?? "")"
+                let ordinal = ordinals[component, default: 0]
+                ordinals[component] = ordinal + 1
+                let key = "\(parentKey)/\(component)[\(ordinal)]"
+                let over = siblings[(index + 1)...].map(\.node) + above
+                if keys.contains(key), let frame = sibling.node.frame, let shown = MovingPart.bounds(of: [frame], within: screen) {
+                    found[key] = over.first { node in
+                        guard !node.children.isEmpty, let cover = node.frame else { return false }
+                        return cover.x <= shown.x && cover.y <= shown.y && cover.x + cover.width >= shown.x + shown.width && cover.y + cover.height >= shown.y + shown.height
+                    }
+                }
+                walk(sibling.node.children, parentKey: key, parentLiveKey: sibling.key, above: over)
+            }
+        }
+        walk(snapshot.roots, parentKey: "", parentLiveKey: "", above: [])
+        return found
+    }
+
+    private static func isOnScreen(_ frame: AccessibilitySnapshot.Frame, _ screen: AccessibilitySnapshot.Frame?) -> Bool {
+        guard let screen else { return true }
+        return MovingPart.bounds(of: [frame], within: screen) != nil
+    }
+
+    /// `panel (20, 200) 300x280`, with where it is when that is not plainly on the screen.
+    private static func described(_ entry: Entry?, at swept: AccessibilitySnapshot.Frame?, latest: AccessibilitySnapshot.Frame?, cover: AccessibilitySnapshot.Node?, screen: AccessibilitySnapshot.Frame?) -> String {
+        let name = entry?.name ?? "An element"
+        guard let frame = latest ?? swept else { return name }
+        let whole = { (value: Double) in Int(value.rounded()) }
+        let place = "\(name) (\(whole(frame.x)), \(whole(frame.y))) \(whole(frame.width))x\(whole(frame.height))"
+        if !isOnScreen(frame, screen) { return "\(place), off screen" }
+        if let cover { return "\(place), beneath \(displayName(cover, identifier: normalisedIdentifier(cover.identifier)))" }
+        return place
     }
 
     /// The keys every one of `keys` sits at or under, deepest first.

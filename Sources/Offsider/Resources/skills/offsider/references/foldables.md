@@ -11,3 +11,4 @@ offsider displays --device <DEVICE_ID>
 offsider posture open --device <DEVICE_ID>
 offsider screenshot --display cover --output cover.png --device <DEVICE_ID>
 ```
+- `posture` warns when the hinge and the display disagree, as they can while a move lands: read again before relying on either. `--json` then adds `disagreement` with both reads and the angle.

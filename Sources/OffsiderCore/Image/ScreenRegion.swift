@@ -31,15 +31,15 @@ public struct PointRegion: Equatable, Sendable, CustomStringConvertible {
         return PointRegion(x: left, y: top, width: max(x + width, other.x + other.width) - left, height: max(y + height, other.y + other.height) - top)
     }
 
-    /// Parses "x,y,width,height": a non-negative origin and a positive size; `option` names the flag in errors.
-    public static func parse(_ text: String, option: String = "--region") throws -> PointRegion {
+    /// Parses "x,y,width,height": a non-negative origin, unless `offScreen` allows otherwise, and a positive size; `option` names the flag in errors.
+    public static func parse(_ text: String, option: String = "--region", offScreen: Bool = false) throws -> PointRegion {
         let parts = text.split(separator: ",", omittingEmptySubsequences: false)
             .map { $0.trimmingCharacters(in: .whitespaces) }
         let values = parts.compactMap(Double.init)
         guard parts.count == 4, values.count == 4, values.allSatisfy(\.isFinite) else {
             throw ScreenRegionError("\(option) takes x,y,width,height in points, for example 0,100,402,300; got \"\(text)\".")
         }
-        guard values[0] >= 0, values[1] >= 0 else {
+        guard offScreen || (values[0] >= 0 && values[1] >= 0) else {
             throw ScreenRegionError("\(option) \(text) starts at a negative coordinate; x and y must be 0 or more.")
         }
         guard values[2] > 0, values[3] > 0 else {

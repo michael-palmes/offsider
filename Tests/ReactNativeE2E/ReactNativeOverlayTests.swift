@@ -75,8 +75,8 @@ struct ReactNativeOverlayTests {
         _ = try await app.waitForLabel(of: "overlay-test-tab") { $0 == "Overlay Tab: Search" }
     }
 
-    @Test("known limit: a scrim hidden from accessibility swallows a selector tap without a warning", arguments: RNPlatform.enabled)
-    func silentScrimIsNotDetected(platform: RNPlatform) async throws {
+    @Test("a scrim hidden from accessibility: --fail-if-covered refuses on a simulator, whose hit-test finds it; on Android, known limit, the tree holds nothing and it swallows the tap", arguments: RNPlatform.enabled)
+    func silentScrim(platform: RNPlatform) async throws {
         let app = RNApp(platform)
         try await app.open("overlay-test")
         // The hidden scrim leaves the tree unchanged, so only its readout shows that it has mounted.
@@ -85,11 +85,20 @@ struct ReactNativeOverlayTests {
             "wait --label 'Scrim: Shown'",
             "tap --id overlay-test-tab-search --fail-if-covered",
         ]
-        let result = try await app.run("batch " + steps.map { "--step \(AndroidE2E.quote($0))" }.joined(separator: " "))
+        let result = try await app.offsider("batch " + steps.map { "--step \(AndroidE2E.quote($0))" }.joined(separator: " "))
 
-        #expect(!result.stderr.contains("may be covered"), "\(result.stderr)")
-        _ = try await app.waitForLabel(of: "overlay-test-swallowed") { $0 == "Swallowed Taps: 1" }
-        #expect(try await app.label(of: "overlay-test-tab") == "Overlay Tab: Home")
+        switch platform {
+        case .ios:
+            #expect(result.exitCode == 1, "\(result.stderr)")
+            #expect(result.stderr.contains("covered"), "\(result.stderr)")
+            try await Task.sleep(for: .seconds(1))
+            #expect(try await app.label(of: "overlay-test-swallowed") == "Swallowed Taps: 0")
+        case .android:
+            #expect(result.exitCode == 0, "\(result.stderr)")
+            #expect(!result.stderr.contains("may be covered"), "\(result.stderr)")
+            _ = try await app.waitForLabel(of: "overlay-test-swallowed") { $0 == "Swallowed Taps: 1" }
+            #expect(try await app.label(of: "overlay-test-tab") == "Overlay Tab: Home")
+        }
     }
 
     @Test("wait --gone does not count a node that flickers out for 300 ms as gone", arguments: RNPlatform.enabled)

@@ -138,6 +138,7 @@ extension Type: DeviceOptionCommand {}
 extension Wait: LockingCommand {
     var waitLock: Double? { deviceOption.waitLock }
 }
+extension Shutdown: LockingCommand {}
 extension Wake: DeviceOptionCommand {}
 extension RecordVideo: DeviceOptionCommand {}
 extension StreamVideo: DeviceOptionCommand {}

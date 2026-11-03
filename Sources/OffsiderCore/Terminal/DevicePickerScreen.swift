@@ -5,6 +5,7 @@ import Foundation
 public enum DevicePickerScreen {
     public static let deviceQuestion = "Which device?"
     public static let bootQuestion = "Which one to boot?"
+    public static let shutdownQuestion = "Which one to stop?"
     public static let noneRunning = "No simulator or emulator running."
     public static let noneToBoot = "No simulator or AVD found."
     public static let running = "running"
@@ -12,8 +13,9 @@ public enum DevicePickerScreen {
     public static let bootCommand = "offsider boot"
 
     /// The dim line after a picker no one answered, above the original parse error.
-    public static func unanswered(within waited: String, boot: Bool = false) -> String {
-        boot ? "Nothing chosen to boot within \(waited); pass its name, such as offsider boot <avd>." : "No device chosen within \(waited); pass --device <id>."
+    public static func unanswered(within waited: String, boot: Bool = false, shutdown: Bool = false) -> String {
+        if shutdown { return "Nothing chosen to stop within \(waited); pass its name, such as offsider shutdown <name>." }
+        return boot ? "Nothing chosen to boot within \(waited); pass its name, such as offsider boot <avd>." : "No device chosen within \(waited); pass --device <id>."
     }
 
     /// Booted simulators and running emulators only.

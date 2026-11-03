@@ -42,6 +42,9 @@ class FakeDeviceBackend: DeviceBackend {
     /// Hinge readings in order; the last repeats.
     var hingeAngles: [Double] = []
     private(set) var requestedAngles: [Int] = []
+    /// What `postureReads` serves, and whether each read asked for a fresh hinge reading.
+    var postureReadings: PostureReads?
+    private(set) var readsFresh: [Bool] = []
     private(set) var capturedDisplays: [String?] = []
     /// Device-state calls in order, as `name argument`.
     private(set) var stateCalls: [String] = []
@@ -198,7 +201,12 @@ class FakeDeviceBackend: DeviceBackend {
     func volatileScreenBands(for id: DeviceID) async -> ScreenBands { bands }
 }
 
-extension FakeDeviceBackend: DisplayControlling, PostureControlling, HingeControlling, DisplayCapturing {
+extension FakeDeviceBackend: DisplayControlling, PostureControlling, HingeControlling, PostureReading, DisplayCapturing {
+    func postureReads(of id: DeviceID, fresh: Bool) async -> PostureReads? {
+        readsFresh.append(fresh)
+        return postureReadings
+    }
+
     func hingeAngle(of id: DeviceID) async throws -> Double? {
         guard !hingeAngles.isEmpty else { return nil }
         return hingeAngles.count > 1 ? hingeAngles.removeFirst() : hingeAngles[0]
