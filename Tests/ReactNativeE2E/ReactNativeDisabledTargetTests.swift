@@ -14,9 +14,9 @@ struct ReactNativeDisabledTargetTests {
         #expect(refused.exitCode == 1, "\(refused.stderr)")
         #expect(refused.stdout.contains(#""reason":"target_disabled""#), "\(refused.stdout)")
         try await app.run("tap --id batch-enable-target --allow-disabled")
-        try await app.run("assert --id batch-current-state --has-value 'Enable target disabled'")
+        try await app.run("assert --label 'Current State: Enable target disabled'")
 
         try await app.run("tap --id batch-enable-target --wait-timeout 10")
-        try await app.run("wait --id batch-current-state --has-value 'Enable target tapped' --timeout 5")
+        try await app.run("wait --label 'Current State: Enable target tapped' --timeout 5")
     }
 }
