@@ -92,9 +92,18 @@ struct LoginFormTests {
         #expect(error?.message.contains("Nothing was typed.") == true)
     }
 
-    @Test("an empty full-screen window around a small button leaves each control's point for a hit-test")
-    func toolsButtonLeavesPointsUnsettled() throws {
+    @Test("a dev client's Tools window passes every touch but its button's, so the form is in front with no hit-test, as on an iPhone, which has none")
+    func toolsWindowPassesTouches() throws {
         let tree = SignInFixture.tree(toolsButton: true)
+        let found = try LoginForm.detect(in: tree)
+        #expect(found.identity.id == "email-field")
+        #expect(found.submit.id == "login-button")
+        #expect(LoginForm.unsettled(in: tree).isEmpty)
+    }
+
+    @Test("an empty full-screen window around an app's own small icon leaves each control's point for a hit-test")
+    func iconOverlayLeavesPointsUnsettled() throws {
+        let tree = SignInFixture.tree(iconOverlay: true)
         let found = try #require(LoginForm.unsettled(in: tree).map(\.id))
         #expect(found.contains("email-field"))
         #expect(found.contains("password-field"))
@@ -150,7 +159,7 @@ struct LoginFormTests {
 
     @Test("the reason names the cover: an empty window with what it holds, and the hit-test's answer")
     func namesTheCover() throws {
-        let tree = SignInFixture.tree(toolsButton: true)
+        let tree = SignInFixture.tree(iconOverlay: true)
         let submit = try #require(tree.roots[0].children.first { $0.id == "login-button" })
         let answer = FakeUI.node(.text, label: "Cancel", frame: FakeUI.frame(180, 744, 42, 18))
         let report = LoginForm.coverReport(of: submit, in: tree, hit: answer)
@@ -158,7 +167,7 @@ struct LoginFormTests {
         #expect(report?.label == "Cancel")
         let line = try #require(LoginForm.coverNote(of: submit, in: tree, hit: answer))
         #expect(line.contains("group (0, 0) 402x874"), "\(line)")
-        #expect(line.contains("gearshape.fill"), "\(line)")
+        #expect(line.contains("Chat"), "\(line)")
         #expect(line.contains("Cancel"), "\(line)")
     }
 }
@@ -449,6 +458,15 @@ enum SignInFixture {
         return node
     }
 
+    /// The same shape around an app's own small icon, which the tree cannot tell from a backdrop: a hit-test decides.
+    static func iconOverlayWindow() -> UINode {
+        var node = FakeUI.node(.image, id: "chat-bubble", label: "Chat", frame: FakeUI.frame(330, 150, 26, 26))
+        for _ in 0..<5 {
+            node = FakeUI.node(.group, frame: FakeUI.frame(0, 0, 402, 874), children: [node])
+        }
+        return node
+    }
+
     /// An unlabelled full-screen backdrop around a labelled sheet that lies over the password field.
     static func modalSheet() -> UINode {
         FakeUI.node(.group, frame: FakeUI.frame(0, 0, 402, 874), children: [
@@ -472,7 +490,8 @@ enum SignInFixture {
         submitLabel: String = "Log in",
         identityLabel: String = "Email",
         pid: Int? = nil,
-        toolsButton: Bool = false
+        toolsButton: Bool = false,
+        iconOverlay: Bool = false
     ) -> UITree {
         var children: [UINode] = [
             FakeUI.node(.button, id: "sign-in-button", label: "Sign in", frame: FakeUI.frame(16, 790, 370, 44)),
@@ -527,6 +546,9 @@ enum SignInFixture {
         }
         if toolsButton {
             children.append(toolsButtonWindow())
+        }
+        if iconOverlay {
+            children.append(iconOverlayWindow())
         }
         guard pid != nil else { return FakeUI.tree(children) }
         // The app runs as pid 100; a password field in another process stands for WebKit's web content.

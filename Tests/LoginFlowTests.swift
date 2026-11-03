@@ -666,11 +666,11 @@ struct LoginFlowTests {
         #expect(script.taps.allSatisfy { $0.y < 700 })
     }
 
-    /// A form under Expo's Tools button window, as a simulator answers it: the fields themselves, and the button's own label.
-    private func underToolsButton(_ script: LoginScript) {
+    /// A form under a full-screen window around a small icon, as a simulator answers it: the fields themselves, and the button's own label.
+    private func underWindow(_ script: LoginScript, _ window: UINode = SignInFixture.toolsButtonWindow()) {
         script.trees = script.trees.map { tree in
             var tree = tree
-            tree.roots[0].children.append(SignInFixture.toolsButtonWindow())
+            tree.roots[0].children.append(window)
             return tree
         }
         let controls = SignInFixture.tree().roots[0].flattened()
@@ -685,7 +685,7 @@ struct LoginFlowTests {
     @Test("with Expo's Tools button window on, the form is filled and submit tapped, with the hit-tests bounded")
     func toolsButtonSignsIn() async throws {
         let script = script(buttonEnabled: true)
-        underToolsButton(script)
+        underWindow(script)
 
         let report = try await run(script)
 
@@ -693,7 +693,19 @@ struct LoginFlowTests {
         #expect(script.taps.count == 1)
         #expect(script.taps.first == UIPoint(x: 201, y: 754))
         #expect(report.submitLabel == "Log in")
-        #expect(script.hitTests <= 12)
+        #expect(script.hitTests <= 1)
+    }
+
+    @Test("under a window the tree cannot settle, hit-tests at each control's own point reach the form, its submit by its label")
+    func iconOverlaySignsIn() async throws {
+        let script = script(buttonEnabled: true)
+        underWindow(script, SignInFixture.iconOverlayWindow())
+
+        let report = try await run(script)
+
+        #expect(script.typed == [username, password])
+        #expect(report.submitLabel == "Log in")
+        #expect(script.hitTests > 0 && script.hitTests <= 12)
     }
 
     @Test("with the Tools button on, a keyboard hiding submit is still dismissed before typing, as the credentials count as visible")
@@ -752,7 +764,7 @@ struct LoginFlowTests {
             FakeUI.node(.button, id: "beneath-\(index)", label: "Continue", frame: FakeUI.frame(16, 480 + Double(index) * 20, 370, 18))
         }
         let script = script(buttonEnabled: true)
-        underToolsButton(script)
+        underWindow(script, SignInFixture.iconOverlayWindow())
         script.trees = script.trees.map { tree in
             var tree = tree
             tree.roots[0].children.insert(contentsOf: beneath, at: 0)
@@ -1082,7 +1094,7 @@ struct LoginFlowTests {
     @Test("a reached field's twin on a screen beneath, with the same id, does not make the field ambiguous")
     func twinBeneathIsNotReached() async throws {
         let script = script(buttonEnabled: true)
-        underToolsButton(script)
+        underWindow(script, SignInFixture.iconOverlayWindow())
         script.trees = script.trees.map { tree in
             var tree = tree
             tree.roots[0].children.insert(FakeUI.node(.textField, id: "email-field", label: "Email", frame: FakeUI.frame(17, 600, 367, 45)), at: 0)
