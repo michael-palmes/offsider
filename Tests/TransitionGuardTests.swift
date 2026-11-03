@@ -51,6 +51,26 @@ struct TransitionGuardTests {
         #expect(TransitionGuard.decide(target: Self.apply(y: 600), record: nil, now: Self.now) == .recheck(after: .milliseconds(150)))
     }
 
+    static func record(applyY: Double, inputAge: TimeInterval, keyboard: Bool) -> TreeCacheRecord {
+        var roots = screen(applyY: applyY).roots
+        if keyboard {
+            roots.append(FakeUI.node(.keyboard, frame: FakeUI.frame(0, 560, 393, 292)))
+        }
+        return TreeCacheRecord(
+            platform: .ios, device: device.rawValue, command: "tap", writtenAt: now - 0.05, lastInputAt: now - inputAge, treeRole: .preAction,
+            appFrame: UITree.applicationFrame(in: roots), roots: roots
+        )
+    }
+
+    @Test("a keyboard that came or went since the cached read voids the same frame; the same keyboard either way keeps it", arguments: [
+        (false, true, false), (true, false, false), (true, true, true), (false, false, true),
+    ])
+    func keyboardChangeRechecks(cached: Bool, fresh: Bool, actsNow: Bool) {
+        let decision = TransitionGuard.decide(target: Self.apply(y: 600), record: Self.record(applyY: 600, inputAge: 0.1, keyboard: cached), now: Self.now, keyboardShowing: fresh)
+
+        #expect(decision == (actsNow ? .actNow(.sameFrame) : .recheck(after: .milliseconds(400))))
+    }
+
     // MARK: Tap
 
     private static func tap(_ arguments: [String], on backend: FakeDeviceBackend, fixture: TreeCacheFixture) async throws {
@@ -156,15 +176,63 @@ struct TransitionGuardTests {
         #expect(backend.session.calls == [.perform(.tapAt(x: 195, y: 672))])
     }
 
-    @Test("a target gone from the re-read is tapped where it was first found")
-    func goneTappedWhereFound() async throws {
+    @Test("a target gone from the settled read and the one after is not found, with candidates, and nothing is sent where it was")
+    func goneRefuses() async throws {
         let fixture = try TreeCacheFixture()
-        let backend = FakeDeviceBackend(trees: [Self.screen(applyY: 650), FakeUI.tree([])])
+        let replaced = FakeUI.tree([FakeUI.node(.button, id: "apply-all", label: "Apply all", frame: FakeUI.frame(20, 650, 350, 44))])
+        let backend = FakeDeviceBackend(trees: [Self.screen(applyY: 650), FakeUI.tree([]), replaced])
+        let tracker = DispatchTracker()
+
+        let error = await #expect(throws: ElementResolutionError.self) {
+            try await DispatchTracker.$current.withValue(tracker) {
+                try await Self.tap(["--id", "apply"], on: backend, fixture: fixture)
+            }
+        }
+
+        #expect(error?.exitCode == .selectorNotFound)
+        #expect(error?.candidates.map(\.id) == ["apply-all"])
+        #expect(backend.treeReads == 3)
+        #expect(fixture.sleeps == [.milliseconds(150), .milliseconds(150)])
+        #expect(tracker.state == .no)
+        #expect(backend.session.calls.isEmpty)
+    }
+
+    @Test("a target back in the read after a miss is tapped where it now is")
+    func goneThenBack() async throws {
+        let fixture = try TreeCacheFixture()
+        let backend = FakeDeviceBackend(trees: [Self.screen(applyY: 650), FakeUI.tree([]), Self.screen(applyY: 600)])
 
         try await Self.tap(["--id", "apply"], on: backend, fixture: fixture)
 
-        #expect(backend.treeReads == 2)
-        #expect(backend.session.calls == [.perform(.tapAt(x: 195, y: 672))])
+        #expect(fixture.sleeps == [.milliseconds(150), .milliseconds(150)])
+        #expect(backend.session.calls == [.perform(.tapAt(x: 195, y: 622))])
+    }
+
+    @Test("under --wait-timeout a target gone after settling is looked for again, and tapped when it comes back")
+    func goneKeepsWaiting() async throws {
+        let fixture = try TreeCacheFixture()
+        let backend = FakeDeviceBackend(trees: [Self.screen(applyY: 650), FakeUI.tree([]), FakeUI.tree([]), Self.screen(applyY: 600), Self.screen(applyY: 600)])
+
+        try await Self.tap(["--id", "apply", "--wait-timeout", "5", "--poll-interval", "0.01"], on: backend, fixture: fixture)
+
+        #expect(backend.treeReads == 5)
+        #expect(backend.session.calls == [.perform(.tapAt(x: 195, y: 622))])
+    }
+
+    @Test("a tap straight after the keyboard opened reads again, so a target the keyboard is about to move is tapped where it goes")
+    func keyboardOpenedRechecks() async throws {
+        let fixture = try TreeCacheFixture()
+        try fixture.write(Self.record(applyY: 300, inputAge: 0.1, keyboard: false))
+        var withKeyboard = Self.screen(applyY: 300)
+        withKeyboard.roots.append(FakeUI.node(.keyboard, frame: FakeUI.frame(0, 560, 393, 292)))
+        var moved = Self.screen(applyY: 200)
+        moved.roots.append(FakeUI.node(.keyboard, frame: FakeUI.frame(0, 560, 393, 292)))
+        let backend = FakeDeviceBackend(trees: [withKeyboard, moved])
+
+        try await Self.tap(["--id", "apply"], on: backend, fixture: fixture)
+
+        #expect(fixture.sleeps == [.milliseconds(400)])
+        #expect(backend.session.calls == [.perform(.tapAt(x: 195, y: 222))])
     }
 
     @Test("re-resolution picks the copy nearest where the target was first found")
@@ -180,25 +248,33 @@ struct TransitionGuardTests {
 
     // MARK: Slider and batch
 
-    @Test("a slider found mid-transition is resolved at its settled frame")
+    @Test("a slider found mid-transition is dragged at its settled frame")
     func sliderSettles() async throws {
         let fixture = try TreeCacheFixture()
-        func slider(_ y: Double) -> UITree {
-            FakeUI.tree([FakeUI.node(.slider, id: "volume", value: "50%", frame: FakeUI.frame(20, y, 360, 20))])
+        func slider(_ y: Double, percent: Int) -> UITree {
+            FakeUI.tree([FakeUI.node(.slider, id: "volume", value: "\(percent)%", frame: FakeUI.frame(20, y, 360, 20))])
         }
-        let backend = FakeDeviceBackend(trees: [slider(700), slider(600)])
-        let record = TreeCacheRecord(platform: .ios, device: Self.device.rawValue, command: "tap", writtenAt: fixture.now, lastInputAt: fixture.now - 0.2)
+        try fixture.write(TreeCacheRecord(platform: .ios, device: Self.device.rawValue, command: "tap", writtenAt: fixture.now, lastInputAt: fixture.now - 0.2))
+        let backend = FakeDeviceBackend(trees: [slider(700, percent: 50), slider(600, percent: 50), slider(600, percent: 80)])
 
-        let polled = try await fixture.run {
-            try await AccessibilityPoller.resolveElementWithPolling(
-                query: .id("volume"), on: backend, device: Self.device, waitTimeout: 0, pollInterval: 0.25,
-                settle: .guarded(record: record), logger: OffsiderLogger()
-            )
+        _ = try await fixture.run {
+            try await Slider.parse(["--id", "volume", "--value", "80", "--device", Self.device.rawValue])
+                .setSlider(on: SliderTarget(backend: backend, device: Self.device), logger: OffsiderLogger())
         }
 
-        #expect(polled.value.element.frame?.y == 600)
-        #expect(backend.treeReads == 2)
         #expect(fixture.sleeps == [.milliseconds(300)])
+        #expect(Self.dragStarts(backend).map(\.y) == [610])
+    }
+
+    /// Where each drag the backend was sent first touched down.
+    static func dragStarts(_ backend: FakeDeviceBackend) -> [UIPoint] {
+        backend.session.calls.compactMap { call in
+            guard case .perform(.composite(let events)) = call else { return nil }
+            for case .touch(direction: .down, let x, let y) in events {
+                return UIPoint(x: x, y: y)
+            }
+            return nil
+        }
     }
 
     @Test("a tap step after an input step uses the in-memory pre-action tree, not the disk")

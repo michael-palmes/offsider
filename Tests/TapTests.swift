@@ -20,6 +20,22 @@ struct TapTests {
         #expect(tapLocationElement?.label == "Tap Location: (200, 400)", "Tap location should be (200, 400)")
     }
 
+    @Test("A selector tap on a control still disabled is refused with nothing sent, --allow-disabled proves it does nothing, and --wait-timeout taps it once enabled")
+    func disabledControl() async throws {
+        try await TestHelpers.launchPlaygroundApp(to: "batch-test")
+        try await TestHelpers.runOffsiderCommand("tap --id batch-disable-trigger", simulatorUDID: defaultSimulatorUDID)
+
+        let refused = try await TestHelpers.runOffsiderCommandAllowFailure("tap --id batch-enable-target --json", simulatorUDID: defaultSimulatorUDID)
+        #expect(refused.exitCode == 1, "\(refused.output)")
+        #expect(refused.output.contains(#""reason":"target_disabled""#), "\(refused.output)")
+        try await TestHelpers.runOffsiderCommand("tap --id batch-enable-target --allow-disabled", simulatorUDID: defaultSimulatorUDID)
+        let ignored = try await TestHelpers.getUIState()
+        #expect(UIStateParser.findElement(in: ignored, withIdentifier: "batch-current-state")?.value == "Enable target disabled")
+
+        try await TestHelpers.runOffsiderCommand("tap --id batch-enable-target --wait-timeout 10", simulatorUDID: defaultSimulatorUDID)
+        try await TestHelpers.runOffsiderCommand("wait --id batch-current-state --has-value 'Enable target tapped' --timeout 5", simulatorUDID: defaultSimulatorUDID)
+    }
+
     @Test("Landscape coordinate tap hits shifted target", .enabled(if: isLandscapeE2EEnabled))
     func landscapeCoordinateTapHitsShiftedTarget() async throws {
         try await TestHelpers.launchPlaygroundApp(to: "landscape-coordinate-test")

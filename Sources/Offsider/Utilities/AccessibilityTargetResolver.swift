@@ -57,6 +57,14 @@ indirect enum AccessibilityQuery {
         return ([primary] + refinements).map(\.selectorDescription).joined(separator: " ")
     }
 
+    /// The selector as flags a shell takes back: `--id save --label 'Save all'`.
+    var shellArguments: String {
+        guard case .all(let primary, let refinements) = self else {
+            return "\(kind) \(VerifyOutput.shellWord(rawValue))"
+        }
+        return ([primary] + refinements).map(\.shellArguments).joined(separator: " ")
+    }
+
     /// The trimmed field this query reads from `node`.
     func field(of node: UINode) -> String? {
         switch self {
@@ -766,6 +774,12 @@ struct AccessibilityTargetResolver {
     /// Anything in a keyboard, else what `CoverJudge` takes for a plausible occluder; a labelled group can be a banner on Android.
     private static func isPlausibleOccluder(_ node: UINode, underKeyboard: Bool) -> Bool {
         underKeyboard || CoverJudge.isPlausibleOccluder(node)
+    }
+
+    /// The control a touch on `target` reaches when it says it is disabled: the target itself when it is a control, else the nearest control around it; nil when that control is enabled, does not say, or there is none.
+    static func disabledControl(reachedBy target: UINode, in roots: [UINode]) -> UINode? {
+        let control = target.isActionable ? target : ancestors(of: target, in: roots).last(where: \.isActionable)
+        return control?.enabled == false ? control : nil
     }
 
     static func ancestorsOf(_ element: UINode, in roots: [UINode]) -> [UINode] {

@@ -29,6 +29,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - `init --print-rules` lists `allowOnce`: rule lines a person can add once for the commands above, so an agent needs no raw adb and no prompt per call.
 - `screenshot --widget --app <package>` captures only that app's own home screen widget on Android, cropped to the bounds the device reports and masked like any capture; `--widget-nth <n>` picks one of several, and `--json` adds `widget`. The launcher itself is never captured: nothing is written unless the widget is the app's, nothing overlaps it, and the screen held still. New error `widget_not_shown`.
 - On an allowed Android phone, `screenshot` and `describe-ui` read while the allowed app holds focus beneath a system window owned by `android`, and name it: `systemWindow` in `screenshot --json`, `context.window` with `readOnly` in `describe-ui`. Everything else stays refused there.
+- `tap --allow-disabled` taps a control that says it is disabled, with a warning, to prove it does nothing.
+- `slider --allow-covered` drags a slider a sheet or another element covers, with a warning.
 
 ### Changed
 
@@ -41,6 +43,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - `session stop --device <id>` also stops and saves a recording on that device, and says so only once it has ended. `doctor --device` warns `device.recording` while one runs, and the refusal `login`, `wake --unlock` and `type --stdin` give names its pid, with `kill -INT <pid>` as the `hint`.
 - `app open` on an iPhone or iPad says `Sent the link to`, as iOS reports only that it delivered the link. `--json` adds `linkHandled`: `true` once Android or a simulator showed the app took the link, `null` on an iPhone or iPad.
 - `record-video` and `stream-video` end when a simulator or emulator gives no frame for 30 s (exit 1, `device_unresponsive`); a recording saves its frames first.
+- A selector tap whose target has gone once the screen settles exits 2 (`selector_not_found`, with candidates) with nothing sent. It used to tap where the target had been, so whatever now sat there, such as a control on the next page, took the tap. A target back within 150 ms is tapped where it now is, and `--wait-timeout` keeps looking. This covers `tap`, `tap --verify-id`, `type --into-id`, `slider` and batch `tap` steps.
+- A selector `tap`, batch `tap` step or `type --into-id` refuses a control that says it is disabled, or text inside one, with `target_disabled` (exit 1) and nothing sent, where it used to tap and exit 0 while the app ignored it. The hint is the `wait --enabled` to run first, and `--wait-timeout` waits for it. A control that does not say is tapped, and coordinate taps and `slider` are unchanged.
+- `slider` checks for a cover or the keyboard where its drag would start, as `tap` does, and refuses with `target_covered` or `target_under_keyboard` and nothing sent, rather than dragging whatever lies over the slider.
+- A selector tap within 500 ms of the keyboard opening or closing reads the screen again before it taps, as the layout follows the keyboard a moment later, even when the target has not moved yet.
+- On Android with three-button navigation, a selector tap whose point falls under the navigation or status bar taps the part of the target showing beside it, or, with less than 8 dp showing, refuses with `target_covered` (`evidence` `systemBar`) and the `swipe` that scrolls it clear. It used to tap the bar, which could press Home and exit 0. `wait`, `assert` and `describe-ui --on-screen` agree. Gesture navigation is unchanged, as its touches reach the app.
+- On Android a window the app draws over its own without taking focus, such as a dropdown or a text selection toolbar, is now in the tree as a `window` root, so selectors find its rows and a tap on a control beneath it refuses with `target_covered`. Other apps' windows stay out.
 
 ### Fixed
 
