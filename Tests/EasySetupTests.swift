@@ -171,6 +171,17 @@ struct EasyAddTests {
         #expect(try DeviceAccessCommandTests.entries(home).count == 1)
     }
 
+    @Test("an iPhone listed with Developer Mode off is not watched, as that row may only mean locked, so add carries on to prove it")
+    func developerModeRowNotWatched() async throws {
+        let home = try makePolicyHome()
+        defer { try? FileManager.default.removeItem(atPath: home) }
+        let (output, transcript) = try await DeviceAccessCommandTests.allow(["--test-device"], answers: [], context: {
+            Self.context(home: home, terminal: $0, row: DeviceAccessCommandTests.developerModeOffRow)
+        })
+        #expect(!transcript.contains("Can you turn on Developer Mode"))
+        #expect(output.contains("Ready: Test iPhone"))
+    }
+
     @Test("a step only a person can clear is retried until it clears, and the failure never reaches the screen as an error")
     func retriesWhatAPersonClears() async throws {
         let home = try makePolicyHome()

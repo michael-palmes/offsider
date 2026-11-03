@@ -158,6 +158,7 @@ struct IOSDeviceDoctorTests {
         (.read(passcodeRequired: true, backlightOn: true), .pass, "Screen on"),
         (.read(passcodeRequired: true, backlightOn: nil), .skip, "did not report"),
         (.unreadable("timed out"), .skip, "timed out"),
+        (.locked, .warn, "Locked"),
     ])
     func lockState(fact: IOSDeviceDoctorFacts.LockFact, status: CheckStatus, detail: String) {
         let verdict = IOSDeviceDoctorRules.lockState(fact)

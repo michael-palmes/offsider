@@ -22,6 +22,8 @@ public struct IOSDeviceError: LocalizedError, CustomStringConvertible, Equatable
         /// The developer directory is not inside an Apple-signed Xcode.
         case xcodeUntrusted
         case devicectlFailed
+        /// Xcode could not mount its developer disk image, for a reason other than the lock or Developer Mode.
+        case diskImageFailed
         case notListed
         case unavailable
         case notWired
@@ -87,7 +89,20 @@ public struct IOSDeviceError: LocalizedError, CustomStringConvertible, Equatable
         IOSDeviceError(.xcodeMissing, XcodeSuggestion.current.adding(to: "No usable Xcode is selected: \(detail)."), hint: XcodeSuggestion.current.select)
     }
 
-    static func devicectlFailed(_ command: String, udid: String?, detail: String) -> IOSDeviceError {
+    /// `cause` is devicectl's own error: what it names beats its first line, which only says what it was trying.
+    static func devicectlFailed(_ command: String, udid: String?, detail: String, cause: CoreDeviceErrorInfo? = nil) -> IOSDeviceError {
+        if let udid, let cause {
+            if cause.isLocked {
+                return IOSDeviceError(.locked, "\(udid) is locked, so Xcode could not reach it. Unlock it, then retry; Offsider never types a passcode.")
+            }
+            if cause.isDeveloperModeOff { return developerModeOff(udid) }
+            if cause.isDiskImageMountFailure {
+                return IOSDeviceError(
+                    .diskImageFailed,
+                    "Xcode could not mount its developer disk image on \(udid): \(TerminalText.line(cause.rootCause, cap: 200)). Keep it connected and unlocked, then retry; if it fails again, update Xcode."
+                )
+            }
+        }
         let reason = detail.isEmpty ? "" : ": \(detail)"
         let next = udid.map { "Run `offsider doctor --device \($0)` to check the device." } ?? "Run `offsider doctor` to check Xcode."
         return IOSDeviceError(.devicectlFailed, "`devicectl \(command)` failed\(reason). \(next)")
@@ -208,7 +223,7 @@ extension IOSDeviceError: OffsiderFailure {
         case .notYetSupported: return .notSupported
         case .xcodeMissing: return .xcodeMissing
         case .xcodeUntrusted: return .xcodeUnusable
-        case .devicectlFailed: return .commandFailed
+        case .devicectlFailed, .diskImageFailed: return .commandFailed
         case .notListed, .unavailable: return .deviceNotFound
         case .notWired: return .deviceNotWired
         case .untrusted: return .deviceUntrusted

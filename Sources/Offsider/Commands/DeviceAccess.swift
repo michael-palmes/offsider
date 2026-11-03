@@ -466,13 +466,13 @@ struct DeviceAccessAllow: AsyncParsableCommand {
     /// Asks for the one step the phone waits on, watches its listing until it clears and asks for the next; reads rows only.
     @MainActor
     private func waitUntilReady(_ row: DeviceSummary, on prompt: TerminalPrompt, context: DeviceAccessContext) async throws -> DeviceSummary {
-        guard DeviceSetupAsk.ask(row) != nil else { return row }
+        guard Self.watchedAsk(row) != nil else { return row }
         let key = StableDeviceKey.of(row)
         let start = prompt.mark
         var current = row
         var shown: String?
         let deadline = context.now().addingTimeInterval(Self.setupWait)
-        while let ask = DeviceSetupAsk.ask(current) {
+        while let ask = Self.watchedAsk(current) {
             if ask != shown {
                 prompt.rewind(to: start)
                 prompt.lines(TerminalUI.warning(ask, width: prompt.width, style: prompt.style) + [prompt.style.dim(AllowScreen.watching)])
@@ -487,6 +487,11 @@ struct DeviceAccessAllow: AsyncParsableCommand {
         }
         prompt.rewind(to: start)
         return current
+    }
+
+    /// The step to watch the listing for. An iPhone listed with Developer Mode off may only be locked, so its app read or `finish` judges that.
+    static func watchedAsk(_ row: DeviceSummary) -> String? {
+        row.platform == .ios && row.state == IOSDeviceReadiness.developerModeOff.stateText ? nil : DeviceSetupAsk.ask(row)
     }
 
     /// Seconds between looks at a phone a person is setting up.
@@ -818,7 +823,7 @@ struct DeviceAccessAllow: AsyncParsableCommand {
                 (try await context.installedApps(row), await context.frontApp(row))
             }
         } catch {
-            prompt.lines(TerminalUI.warning("Could not read its apps (\(Self.reason(error))). Unlock it, or type an app ID.", width: prompt.width, style: prompt.style))
+            prompt.lines(TerminalUI.warning(Self.appsProblem(error, row: row), width: prompt.width, style: prompt.style))
             let lead = step.map { "\($0) " } ?? "  "
             if let kept {
                 let answer = try typeApp(on: prompt, platform: row.platform, policy: policy, label: lead + "App ID (Return to keep \(keep(kept).shown)): ")
@@ -835,6 +840,21 @@ struct DeviceAccessAllow: AsyncParsableCommand {
         case .any: return ([], AllowScreen.apps([]))
         case .wholeDevice: return ([DeviceAllowance.wholeDevicePin], Self.wholeDeviceLabel.lowercased())
         case .type: return try typeApp(on: prompt, platform: row.platform, policy: policy, label: "  App ID: ")
+        }
+    }
+
+    /// Why the app menu is missing, in the person's words: never a raw `devicectl` error, or a `doctor` that refuses a device not yet allowed.
+    static func appsProblem(_ error: any Error, row: DeviceSummary) -> String {
+        if row.platform == .ios, row.state == IOSDeviceReadiness.developerModeOff.stateText { return AllowScreen.appsDeveloperModeOff }
+        switch (error as? any OffsiderFailure)?.reason {
+        case .deviceLocked?: return AllowScreen.appsLocked
+        case .developerModeOff?: return AllowScreen.appsDeveloperModeOff
+        default: break
+        }
+        switch (error as? IOSDeviceError)?.kind {
+        case .diskImageFailed?: return AllowScreen.appsDiskImageFailed
+        case .devicectlFailed?: return AllowScreen.appsUnread
+        default: return "Could not read its apps (\(reason(error))). Type an app ID."
         }
     }
 

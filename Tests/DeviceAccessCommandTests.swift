@@ -602,6 +602,58 @@ struct DeviceAccessCommandTests {
         #expect(transcript.contains("Could not read its apps (The phone is locked)."))
     }
 
+    static func oneLine(_ transcript: String) -> String {
+        transcript.split(whereSeparator: \.isWhitespace).joined(separator: " ")
+    }
+
+    @Test("a failed app read on an iPhone names its fix in one line, with no raw error, id or doctor hint", arguments: [
+        (IOSDeviceError(.locked, "\(PolicyFixtures.phone) is locked."), AllowScreen.appsLocked),
+        (IOSDeviceError(.developerModeOff, "Developer Mode is off on \(PolicyFixtures.phone)."), AllowScreen.appsDeveloperModeOff),
+        (IOSDeviceError(.diskImageFailed, "Xcode could not mount its disk image on \(PolicyFixtures.phone)."), AllowScreen.appsDiskImageFailed),
+        (IOSDeviceError(.devicectlFailed, "`devicectl device info apps` failed: ERROR: nope. Run `offsider doctor --device \(PolicyFixtures.phone)` to check the device."), AllowScreen.appsUnread),
+    ])
+    func appReadFailureWording(error: IOSDeviceError, shown: String) async throws {
+        let home = try makePolicyHome()
+        defer { try? FileManager.default.removeItem(atPath: home) }
+        let (_, transcript) = try await Self.allow([], answers: ["1", "\r", "com.example.app\r", "\r"], context: { terminal in
+            Self.context(home: home, seal: MemorySeal(), terminal: terminal, apps: { _ in throw error })
+        })
+        let text = Self.oneLine(transcript)
+        // The receipt names `doctor` once the device is allowed, when it works; only the steps before that must not.
+        let upToPrompt = try #require(text.range(of: "App ID (Return").map { String(text[..<$0.lowerBound]) })
+        #expect(upToPrompt.contains(shown))
+        for leak in ["devicectl", "doctor", "ERROR", PolicyFixtures.phone] {
+            #expect(!upToPrompt.contains(leak))
+        }
+        #expect(try Self.entries(home).map(\.apps) == [["com.example.app"]])
+    }
+
+    static let developerModeOffRow = DeviceSummary(
+        id: PolicyFixtures.phone, platform: .ios, state: IOSDeviceReadiness.developerModeOff.stateText, name: "Test iPhone", osVersion: "iOS 27.2", deviceType: "iPhone 17 Pro", kind: .physical, connection: "usb"
+    )
+
+    @Test("when a read fails on an iPhone listed with Developer Mode off, that is the fix named, even if it is also locked")
+    func developerModeOffNamedOnFailure() async throws {
+        let home = try makePolicyHome()
+        defer { try? FileManager.default.removeItem(atPath: home) }
+        let (_, transcript) = try await Self.allow([], answers: ["1", "\r", "com.example.app\r", "\r"], context: { terminal in
+            Self.context(home: home, seal: MemorySeal(), terminal: terminal, devices: { [Self.developerModeOffRow] }, apps: { _ in throw IOSDeviceError(.locked, "Locked.") })
+        })
+        #expect(Self.oneLine(transcript).contains(AllowScreen.appsDeveloperModeOff))
+        #expect(try Self.entries(home).map(\.apps) == [["com.example.app"]])
+    }
+
+    @Test("an iPhone listed with Developer Mode off still gets its app menu when the read works, as that row can be stale")
+    func developerModeOffRowStillReads() async throws {
+        let home = try makePolicyHome()
+        defer { try? FileManager.default.removeItem(atPath: home) }
+        let (_, transcript) = try await Self.allow([], answers: ["1", "\r", "\r", "\r"], context: { terminal in
+            Self.context(home: home, seal: MemorySeal(), terminal: terminal, devices: { [Self.developerModeOffRow] }, apps: { _ in [InstalledApp(id: "com.example.app", name: "Example")] })
+        })
+        #expect(!Self.oneLine(transcript).contains(AllowScreen.appsDeveloperModeOff))
+        #expect(try Self.entries(home).map(\.apps) == [["com.example.app"]])
+    }
+
     @Test("choosing 8081 at the Metro step saves it, shows it before Touch ID and names it in the confirmation")
     func metroPortChosen() async throws {
         let home = try makePolicyHome()
