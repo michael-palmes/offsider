@@ -25,6 +25,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Fixed
 
+- On an iPhone or iPad, stream screenshots and video frames are the panel's own size, as `devicectl` shots are, with no black strips on the right and at the bottom: the decoder pads its frames and sets no clean aperture, so 0.15.0's crop changed nothing. Masks and `--verify` bands now land where the tree says, `doctor` and `session status` give the stream that size, and a stream that cannot read the display's size hands the shot to `devicectl`.
 - `tap` refuses a target under the 50 pt circle of Expo's floating dev menu button, though the tree gives only its 26 pt icon (`evidence` `devMenuTouchArea`, with the `drag` that moves it clear as the hint), and `--verify` no longer passes when the dev menu opens over the app (exit 5, `note` `devmenu_opened`).
 - `--verify` no longer passes on text ticking on a screen beneath the front page, so a tap on a disabled button stays unverified.
 - `tap --verify` runs the keyboard and cover checks again on its last read before it sends, so a target that has gone, or come under a cover, is refused with nothing sent instead of tapped where it was.

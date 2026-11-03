@@ -70,6 +70,20 @@ public struct IOSDeviceGeometry: Codable, Equatable, Sendable {
         )
     }
 
+    /// The most a video decoder pads a side, one HEVC coding tree unit; a frame further past the panel is not this screen padded.
+    static let maxFramePadding = 64
+
+    /// The screen's size inside a decoded frame, along the frame's own axes: the panel, else the UI's points at its scale, else the whole frame.
+    public func screenSize(inFrameWidth width: Int, height: Int) -> (width: Int, height: Int) {
+        let uiPixels = points.map { (min($0.width, $0.height) * pointScale, max($0.width, $0.height) * pointScale) }
+        for (short, long) in [(pixelWidth, pixelHeight), uiPixels].compactMap({ $0 }) {
+            guard let shortSide = Int(exactly: short.rounded()), let longSide = Int(exactly: long.rounded()) else { continue }
+            let screen = width > height ? (width: longSide, height: shortSide) : (width: shortSide, height: longSide)
+            if (0...Self.maxFramePadding).contains(width - screen.width), (0...Self.maxFramePadding).contains(height - screen.height) { return screen }
+        }
+        return (width, height)
+    }
+
     private static func pair(_ value: Any?) -> (Double, Double)? {
         guard let array = value as? [Any], array.count == 2,
               let first = (array[0] as? NSNumber)?.doubleValue, let second = (array[1] as? NSNumber)?.doubleValue else {
