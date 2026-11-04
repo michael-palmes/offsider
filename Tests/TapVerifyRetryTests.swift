@@ -37,9 +37,30 @@ struct TapVerifyRetryTests {
         #expect(try await Self.taps(.switch, ["--retries", "1"]) == 2)
     }
 
-    @Test("a button keeps the default retry")
-    func buttonRetries() async throws {
-        #expect(try await Self.taps(.button) == 2)
+    @Test("a button, link or menu item gets one press by default, since a second could submit twice", arguments: [UIRole.button, .link, .menuItem])
+    func pressOnce(role: UIRole) async throws {
+        #expect(try await Self.taps(role) == 1)
+    }
+
+    @Test("--retries 1 on a button still presses again, and a tab or cell keeps the default retry")
+    func retriesThatStay() async throws {
+        #expect(try await Self.taps(.button, ["--retries", "1"]) == 2)
+        #expect(try await Self.taps(.tab) == 2)
+        #expect(try await Self.taps(.cell) == 2)
+    }
+
+    @Test("a button pressed once says why it was not pressed again, and how to allow it")
+    func pressedOnceLine() throws {
+        let request = VerifyRequest(
+            command: "tap", subject: "Tap on id=save", target: "id=save",
+            backend: FakeDeviceBackend(trees: []), device: Self.device,
+            options: try VerificationOptions.parse(["--verify"]), styles: [.simulator],
+            targetNode: FakeUI.node(.button, id: "save", label: "Save")
+        )
+        let line = VerifyOutput.unverifiedLine(Verifier.Outcome(verified: false, attempts: 1, change: .none, style: .simulator, summary: nil), for: request)
+        #expect(line.contains("after 1 attempt (one tap event). It was not tapped again: a second press could submit twice."))
+        #expect(line.contains("--retries 1 allows one more press"))
+        #expect(!line.contains("simulator"))
     }
 
     @Test("the failure line for a switch says why it did not tap again and how to wait for the new state")
@@ -74,19 +95,19 @@ struct TapVerifyRetryTests {
         #expect(line.contains(expected))
     }
 
-    @Test("a button's failure line keeps the describe-ui advice and says nothing about undoing")
+    @Test("a button retried with --retries keeps the describe-ui advice and says nothing about undoing or pressing once")
     func buttonLineUnchanged() throws {
         let request = VerifyRequest(
             command: "tap", subject: "Tap on id=save", target: "id=save",
             backend: FakeDeviceBackend(trees: []), device: Self.device,
-            options: try VerificationOptions.parse(["--verify"]), styles: [.simulator, .physical],
+            options: try VerificationOptions.parse(["--verify", "--retries", "1"]), styles: [.simulator, .physical],
             targetNode: FakeUI.node(.button, id: "save", label: "Save")
         )
 
         let line = VerifyOutput.unverifiedLine(Verifier.Outcome(verified: false, attempts: 2, change: .none, style: .physical, summary: nil), for: request)
 
-        #expect(line.contains("Check the target with describe-ui"))
-        #expect(!line.contains("undo"))
+        #expect(line.contains("(one tap event, then touch down and up). Check the target with describe-ui"))
+        #expect(!line.contains("undo") && !line.contains("not tapped again"))
     }
 }
 
@@ -152,7 +173,7 @@ struct TapVerifyHoldTests {
             taps == 0 ? Self.menu(menuX: reads == 0 ? -20 : 0) : Self.menu(menuX: -100 - Double(reads))
         }
 
-        let (_, stderr, error) = await Self.tap(["--label", "Planner", "--verify", "--verify-timeout", "0.5"], on: backend)
+        let (_, stderr, error) = await Self.tap(["--label", "Planner", "--verify", "--verify-timeout", "0.5", "--retries", "1"], on: backend)
 
         #expect(backend.session.calls.count == 1)
         #expect(error as? ExitCode == ExitCode(5))

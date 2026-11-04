@@ -167,7 +167,7 @@ struct BenchScriptTests {
         let fake = root.appendingPathComponent("offsider")
         let body = """
         #!/bin/sh
-        echo "✓ Tap on id=tap-test-area verified: accessibility tree changed, attempt 1 of 2, simulator style (settle 0.$$ s, tap 0.1 s, verify 1.$$ s)"
+        echo "✓ Tap on id=tap-test-area verified: accessibility tree changed, attempt 1 of 2, sent as one tap event (settle 0.$$ s, tap 0.1 s, verify 1.$$ s)"
         echo '{"verified":true,"elapsedMs":'$$',"phasesMs":{"settle":'$$',"verify":1}}'
         """
         try Data(body.utf8).write(to: fake)

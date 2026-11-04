@@ -204,16 +204,14 @@ struct AndroidPhoneInputTests {
         }
     }
 
-    @Test("non-ASCII text is refused on a phone and points to type --replace", arguments: AndroidE2E.inputModes)
-    func nonASCIIRefused(mode: String) async throws {
+    @Test("non-ASCII text reaches the focused field on a phone, typed whole through set-text", arguments: AndroidE2E.inputModes)
+    func nonASCII(mode: String) async throws {
         try await AndroidE2E.onAwakePhone {
             try await AndroidE2E.open("text-input", waitingFor: "text-input-field")
             try await AndroidE2E.focusField(mode: mode)
-            let result = try await AndroidE2E.offsider("type \(AndroidE2E.quote("h\u{E9}llo"))", environment: AndroidE2E.inputMode(mode))
-            #expect(result.exitCode == 1, "stderr: \(result.stderr)")
-            #expect(result.stderr.contains("is a physical device"))
-            #expect(result.stderr.contains("type --replace"))
-            #expect(try await AndroidE2E.label(of: "character-count") == nil, "the refused text reached the field")
+            try await AndroidE2E.run("type \(AndroidE2E.quote("h\u{E9}llo"))", environment: AndroidE2E.inputMode(mode))
+            _ = try await AndroidE2E.waitForFieldValue("h\u{E9}llo")
+            #expect(try await AndroidE2E.label(of: "character-count") == "Characters: 5")
         }
     }
 
@@ -244,7 +242,7 @@ struct AndroidPhoneScreenshotTests {
         }
     }
 
-    @Test("--mask-secure paints the password field black and leaves it visible without the flag")
+    @Test("a plain screenshot and --mask-secure both paint the password field black, and the plain one says it masked it")
     func maskSecure() async throws {
         try await AndroidE2E.onAwakePhone {
             try await AndroidE2E.open("batch-login-flow", waitingFor: "batch-login-continue")
@@ -253,7 +251,9 @@ struct AndroidPhoneScreenshotTests {
             let centre = try #require(DescribeUITree.centre(of: field))
             let screen = try #require(DescribeUITree.screenSize(in: try await AndroidE2E.tree()))
 
-            let plain = try await AndroidE2E.screenshot("plain.png")
+            // Unmasking needs a person, so the plain shot's own report proves the black is the mask's.
+            let plain = AndroidE2E.temporaryFile("plain.png")
+            let report = try await AndroidE2E.run("screenshot --json --output \(AndroidE2E.quote(plain.path))")
             let masked = try await AndroidE2E.screenshot("masked.png", flags: "--mask-secure")
             defer {
                 try? FileManager.default.removeItem(at: plain)
@@ -264,7 +264,9 @@ struct AndroidPhoneScreenshotTests {
             let x = Int(Double(centre.x) * scale), y = Int(Double(centre.y) * scale)
 
             #expect(try AndroidE2E.pixel(at: masked, x: x, y: y) == [0, 0, 0])
-            #expect(try AndroidE2E.pixel(at: plain, x: x, y: y) != [0, 0, 0], "the field is black without --mask-secure, so the mask proves nothing")
+            #expect(try AndroidE2E.pixel(at: plain, x: x, y: y) == [0, 0, 0], "a plain shot left the password field unmasked")
+            let json = try #require(try JSONSerialization.jsonObject(with: Data(report.stdout.utf8)) as? [String: Any])
+            #expect(((json["maskedBy"] as? [String: Any])?["secure"] as? Int ?? 0) >= 1, "\(report.stdout)")
         }
     }
 

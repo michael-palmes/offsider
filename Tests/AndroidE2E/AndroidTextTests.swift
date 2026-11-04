@@ -102,13 +102,13 @@ struct AndroidTypeTests {
         #expect(submitted, "Return did not submit the single-line field (it kept focus or the keyboard stayed): \(field)")
     }
 
-    @Test("--replace with nothing focused fails and names the missing focus")
+    @Test("--replace with nothing focused is refused before anything is sent, as no_focused_field")
     func replaceWithoutFocus() async throws {
         try await AndroidE2E.open("tap-test", waitingFor: "tap-test-area")
-        let result = try await AndroidE2E.offsider("type --replace 'x'")
+        let result = try await AndroidE2E.offsider("type --replace 'x' --json")
         #expect(result.exitCode == 1)
-        #expect(result.stderr.contains("type --replace needs a focused text field"))
-        #expect(result.stderr.contains("nothing has input focus"))
+        #expect(result.stdout.contains(#""reason":"no_focused_field""#), "\(result.stdout)")
+        #expect(result.stderr.contains("No text field has focus, so Offsider typed nothing"))
     }
 }
 

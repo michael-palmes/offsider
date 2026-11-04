@@ -44,7 +44,7 @@ public struct CoverVerdict: Equatable, Sendable {
     /// Where the cover takes touches.
     public var touchFrame: UIFrame? {
         guard evidence == .devMenuTouchArea else { return cover.frame }
-        return cover.frame.map(KnownOverlays.devMenuButtonTouchFrame(of:))
+        return KnownOverlays.devMenuButtonTouchFrame(of: cover)
     }
 }
 
@@ -557,7 +557,7 @@ public enum CoverJudge {
         /// Expo's floating dev menu button when its circle takes the point: never the target's own icon, one inside the target, one beneath a page or one Android draws below it.
         func devMenuButtonCover() -> UINode? {
             ground.devMenuButtons.first { button in
-                guard let frame = button.frame, KnownOverlays.devMenuButton(at: frame, takes: point), !isOwn(button), !stack.isBeneath(button, in: ground.tree) else { return false }
+                guard let frame = button.frame, KnownOverlays.devMenuButton(button, takes: point), !isOwn(button), !stack.isBeneath(button, in: ground.tree) else { return false }
                 if let order = UITree.zOrder(of: button, over: target, in: ground.tree), order.byDrawingOrder, !order.isAbove { return false }
                 return !holdsDevMenuIcon(frame)
             }
@@ -566,7 +566,7 @@ public enum CoverJudge {
         /// The target wraps the icon, as a control no bigger than the button does, or a container holds it: a row wider than the button can lie under it.
         private func holdsDevMenuIcon(_ icon: UIFrame) -> Bool {
             guard let mine = target.frame, mine.encloses(icon, tolerance: TransitionGuard.frameTolerance) else { return false }
-            let wrapper = 2 * KnownOverlays.devMenuButtonRadius + 10
+            let wrapper = KnownOverlays.devMenuButtonSize + 10
             return (mine.width <= wrapper && mine.height <= wrapper) || (!target.isActionable && target.normalizedLabel == nil)
         }
 

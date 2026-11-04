@@ -711,6 +711,114 @@
                 "testTag": null
               },
               "children": []
+            },
+            {
+              "role": "button",
+              "id": "overlay-test-render-error",
+              "label": "Render Error",
+              "value": null,
+              "frame": {
+                "x": 0,
+                "y": 695.62,
+                "width": 109.33,
+                "height": 43.81
+              },
+              "enabled": true,
+              "state": {
+                "checked": null,
+                "selected": false,
+                "focused": false
+              },
+              "native": {
+                "className": "android.widget.Button",
+                "resourceId": "overlay-test-render-error",
+                "package": "com.mpalmes.offsider.playground.rn",
+                "pixelFrame": {
+                  "x": 0,
+                  "y": 1826,
+                  "width": 287,
+                  "height": 115
+                },
+                "text": null,
+                "contentDescription": "Render Error",
+                "hint": null,
+                "stateDescription": null,
+                "roleDescription": null,
+                "testTag": null
+              },
+              "children": []
+            },
+            {
+              "role": "button",
+              "id": "overlay-test-toggle-edge-row",
+              "label": "Show Edge Row",
+              "value": null,
+              "frame": {
+                "x": 121.52,
+                "y": 695.62,
+                "width": 154.67,
+                "height": 43.81
+              },
+              "enabled": true,
+              "state": {
+                "checked": null,
+                "selected": false,
+                "focused": false
+              },
+              "native": {
+                "className": "android.widget.Button",
+                "resourceId": "overlay-test-toggle-edge-row",
+                "package": "com.mpalmes.offsider.playground.rn",
+                "pixelFrame": {
+                  "x": 319,
+                  "y": 1826,
+                  "width": 406,
+                  "height": 115
+                },
+                "text": null,
+                "contentDescription": "Show Edge Row",
+                "hint": null,
+                "stateDescription": null,
+                "roleDescription": null,
+                "testTag": null
+              },
+              "children": []
+            },
+            {
+              "role": "button",
+              "id": "overlay-test-empty-logbox",
+              "label": "Empty LogBox",
+              "value": null,
+              "frame": {
+                "x": 288,
+                "y": 695.62,
+                "width": 123.43,
+                "height": 43.81
+              },
+              "enabled": true,
+              "state": {
+                "checked": null,
+                "selected": false,
+                "focused": false
+              },
+              "native": {
+                "className": "android.widget.Button",
+                "resourceId": "overlay-test-empty-logbox",
+                "package": "com.mpalmes.offsider.playground.rn",
+                "pixelFrame": {
+                  "x": 756,
+                  "y": 1826,
+                  "width": 324,
+                  "height": 115
+                },
+                "text": null,
+                "contentDescription": "Empty LogBox",
+                "hint": null,
+                "stateDescription": null,
+                "roleDescription": null,
+                "testTag": null
+              },
+              "children": []
             }
           ]
         },

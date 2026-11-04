@@ -18,6 +18,12 @@ public protocol ExpoDevClientOpening: DeviceBackend {
     func stopApp(_ appID: String, on id: DeviceID) async throws
 }
 
+/// Optional capability: whether an app's preferences still leave Expo's dev menu intro to open; nil when they cannot be read.
+@MainActor
+public protocol ExpoDevMenuIntroReading: DeviceBackend {
+    func devMenuIntroPending(_ appID: String, on id: DeviceID) async -> Bool?
+}
+
 /// Optional capability: the `adb reverse` a USB phone needs to reach Metro, set only after the caller checked the person allowed the port.
 @MainActor
 public protocol MetroReverseSetting: DeviceBackend {
@@ -98,6 +104,11 @@ public enum ExpoDevClient {
 
     public static func iosPreferencesDomain(dataContainer: String, bundleID: String) -> String {
         URL(fileURLWithPath: dataContainer).appendingPathComponent("Library/Preferences/\(bundleID)").path
+    }
+
+    /// The intro opens until `EXDevMenuIsOnboardingFinished` is 1, as `rn prepare` writes it.
+    public static func iosIntroPending(_ defaultsOutput: String) -> Bool {
+        !defaultsOutput.contains("\(iosOnboardingKey) = 1;")
     }
 
     /// `defaults read` prints `EXDevMenuIsOnboardingFinished = 1;` and `EXDevMenuShowsAtLaunch = 0;` once both are written.

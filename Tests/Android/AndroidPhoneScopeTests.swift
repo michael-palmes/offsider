@@ -127,8 +127,49 @@ struct AndroidPhoneScopeTests {
 
         #expect(error?.reason == .appNotAllowed && error?.isOtherAppInFront == true)
         #expect(error?.message.hasPrefix("A permission dialog is in front on \(Self.phone.rawValue)") == true)
-        #expect(error?.message.contains("offsider permission grant <service> --app \(Self.playground) --device \(Self.phone.rawValue)") == true)
+        #expect(error?.message.contains("<") == false)
+        #expect(error?.message.contains("Run `offsider permission show --app \(Self.playground) --device \(Self.phone.rawValue)` to see what \(Self.playground) lacks") == true)
         #expect(error?.hint == "offsider permission show --app \(Self.playground) --device \(Self.phone.rawValue)")
+    }
+
+    /// The playground requesting the camera and notifications, notifications granted.
+    static let cameraAsked = """
+    29
+    Packages:
+      Package [\(playground)] (82b83b):
+        requested permissions:
+          android.permission.CAMERA
+          android.permission.POST_NOTIFICATIONS
+        User 0: ceDataInode=344923 installed=true hidden=false suspended=false stopped=false notLaunched=false enabled=0
+          runtime permissions:
+            android.permission.POST_NOTIFICATIONS: granted=true, flags=[ USER_SET]
+            android.permission.CAMERA: granted=false, flags=[ USER_SENSITIVE_WHEN_GRANTED]
+    """
+
+    @Test("the permission dialog names the one service the app requests and lacks, as a complete command, from the app's own permissions")
+    func permissionDialogNamesService() async throws {
+        let server = AndroidDeviceStateTests.server(dumpsys: Self.cameraAsked, devicesList: "R58M123ABC device usb:1-1 model:Pixel_9 transport_id:2\n") { command in
+            guard command == AndroidForeground.readScript else { return FakeAdbServer.shell() }
+            return FakeAdbServer.shell(stdout: "top=  topResumedActivity=ActivityRecord{1a2b u0 com.google.android.permissioncontroller/.Grant t12}\nhome=com.example.launcher/.Home\n")
+        }
+        let backend = try AndroidBackendTests.backend(server)
+        backend.appScopes[Self.phone.rawValue] = AndroidAppScope(permitted: [Self.playground], managedCeiling: nil)
+
+        let error = await #expect(throws: AndroidError.self) { try await backend.requireDrivableForeground(Self.phone.rawValue) }
+
+        let grant = "offsider permission grant camera --app \(Self.playground) --device \(Self.phone.rawValue)"
+        #expect(error?.message.contains("\(Self.playground) lacks camera: run `\(grant)`, then open the app again.") == true, "\(error?.message ?? "")")
+        #expect(error?.hint == grant)
+    }
+
+    @Test("an app outside a phone's pins is refused with the one command that pins it beside the apps already pinned")
+    func pinRefusalNamesCommand() async throws {
+        let (backend, _) = try AndroidBackendHelperTests.phoneBackend(top: "com.example.other/.Main")
+        backend.appScopes[Self.phone.rawValue] = AndroidAppScope(permitted: [Self.playground], managedCeiling: nil)
+        let error = await #expect(throws: AndroidError.self) { try await backend.requireDrivableForeground(Self.phone.rawValue) }
+        let pin = "offsider devices add --device \(Self.phone.rawValue) --app \(Self.playground) --app com.example.other"
+        #expect(error?.message.contains("ask the user to run `\(pin)` in their own terminal") == true, "\(error?.message ?? "")")
+        #expect(error?.hint == pin)
     }
 
     @Test("a test device reads and drives whatever is in front, unless a command named an app, which then holds it to that app")

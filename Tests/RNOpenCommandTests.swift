@@ -655,6 +655,41 @@ struct RNOpenCommandTests {
         #expect(seconds < 5)
     }
 
+    /// A simulator whose app's preferences say whether the dev menu intro is still to open.
+    final class IntroBackend: FakeDeviceBackend, ExpoDevMenuIntroReading {
+        var pending: Bool?
+        private(set) var reads = 0
+
+        func devMenuIntroPending(_ appID: String, on id: DeviceID) async -> Bool? {
+            reads += 1
+            return pending
+        }
+    }
+
+    static let intro = FakeUI.tree([
+        FakeUI.node(.text, label: "This is the developer menu. It gives you access to useful tools in your development builds.", frame: FakeUI.frame(40, 700, 330, 34)),
+        FakeUI.node(.button, label: "Continue", frame: FakeUI.frame(40, 790, 330, 48)),
+    ])
+
+    @Test("on a fresh install the intro that opens a moment after the bundle settles is caught, not reported as loaded", arguments: [[String](), ["--wait-id", "menu-title"]])
+    func lateIntroCaught(arguments: [String]) async throws {
+        let backend = IntroBackend(trees: [Self.bundling] + Array(repeating: Self.app, count: 6) + [Self.intro])
+        backend.pending = true
+        let (result, _) = try await Self.run(arguments + ["--timeout", "600"], on: backend)
+        guard case .failure(let error) = result else { Issue.record("reported loaded before the intro opened"); return }
+        #expect(error.hint == "offsider rn prepare --bundle-id com.example.app --device \(Self.device.rawValue)")
+    }
+
+    @Test("a prepared app, or one whose preferences cannot be read, is loaded once the screen is still, with one preferences read", arguments: [false, nil] as [Bool?])
+    func preparedLoads(pending: Bool?) async throws {
+        let backend = IntroBackend(trees: [Self.bundling] + Array(repeating: Self.app, count: 6) + [Self.intro])
+        backend.pending = pending
+        let (result, seconds) = try await Self.run(["--timeout", "600"], on: backend)
+        #expect((try? result.get()) != nil)
+        #expect(seconds < 3)
+        #expect(backend.reads == 1)
+    }
+
     @Test("--port and --timeout are checked", arguments: [["--port", "0"], ["--timeout", "5"], ["--scheme", "not a scheme"]])
     func validation(extra: [String]) {
         #expect(throws: (any Error).self) { try RNOpen.parse(["--port", "8742", "--bundle-id", "com.example.app"] + extra + ["--device", Self.device.rawValue]) }

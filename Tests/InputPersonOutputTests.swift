@@ -155,7 +155,7 @@ struct InputPersonOutputTests {
         #expect(person.out == """
             ✅  Tap on id=save verified
                 Changed: value of text id=count "0" to "1"
-                Attempt 2 of 2, physical style
+                Attempt 2 of 2, sent as touch down and up
                 Settle 0.4 s, tap 0.1 s, verify 1.2 s
 
             """)
@@ -186,7 +186,7 @@ struct InputPersonOutputTests {
         }
         #expect(person.err == """
             ❌  Tap on id=save changed nothing
-                Sent 2 times (simulator, then physical style)
+                Sent 2 times (one tap event, then touch down and up)
                 Try  offsider describe-ui --summary --device fake-device
                 Or   offsider doctor --device fake-device
 
@@ -223,8 +223,8 @@ struct InputPersonOutputTests {
         let failed = Verifier.Attempt(number: 1, style: .simulator)
         let next = Verifier.Attempt(number: 2, style: .physical)
         let note = { Console.current.line(VerifyOutput.retryLine(failed: failed, next: next), person: .warning(VerifyOutput.personRetry(failed: failed, next: next))) }
-        #expect(await Self.run(person: false) { note() }.err == "! No observable change after attempt 1 (simulator style); retrying with physical style\n")
-        #expect(await Self.run(person: true) { note() }.err == "⚠️  Nothing changed after attempt 1; trying physical style\n")
+        #expect(await Self.run(person: false) { note() }.err == "! No observable change after attempt 1 (one tap event); retrying with touch down and up\n")
+        #expect(await Self.run(person: true) { note() }.err == "⚠️  Nothing changed after attempt 1; trying touch down and up\n")
     }
 
     // MARK: Button home

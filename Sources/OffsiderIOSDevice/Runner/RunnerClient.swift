@@ -138,10 +138,15 @@ public struct RunnerClient: Sendable {
         var body: [String: Any] = ["text": text, "replace": replace]
         body["app"] = app
         do {
-            _ = try await call("POST", "/type", body)
+            _ = try await call("POST", "/type", body, timeout: Self.typeTimeout(text, replace: replace), onTimeout: .runnerStillTyping(udid, replace: replace))
         } catch let error as IOSDeviceError where error.kind == .secureFieldRefused {
             throw IOSDeviceError.secureFieldRunnerRefusal(text, replace: replace, udid: udid)
         }
+    }
+
+    /// XCTest types a few characters a second, and clearing a field for `replace` takes up to three passes of its own.
+    static func typeTimeout(_ text: String, replace: Bool) -> TimeInterval {
+        min(60, timeout + Double(text.count) / 5 + (replace ? 10 : 0))
     }
 
     public func swipe(fromX: Double, fromY: Double, toX: Double, toY: Double, duration: Double, app: String?) async throws {
@@ -177,8 +182,8 @@ public struct RunnerClient: Sendable {
         _ = try await call("POST", "/stop", [:], timeout: timeout)
     }
 
-    /// The envelope's `data`, or the runner's error as an `IOSDeviceError`.
-    func call(_ method: String, _ path: String, _ body: [String: Any]?, timeout: TimeInterval = RunnerClient.timeout) async throws -> Any? {
+    /// The envelope's `data`, or the runner's error as an `IOSDeviceError`; `onTimeout` names what a request the runner took but did not finish may have done.
+    func call(_ method: String, _ path: String, _ body: [String: Any]?, timeout: TimeInterval = RunnerClient.timeout, onTimeout: IOSDeviceError? = nil) async throws -> Any? {
         let payload = try body.map { try JSONSerialization.data(withJSONObject: $0) }
         let transport = transport
         let token = token
@@ -188,8 +193,8 @@ public struct RunnerClient: Sendable {
             response = try await Task.detached {
                 try transport.exchange(method: method, path: path, token: token, body: payload, timeout: timeout)
             }.value
-        } catch UsbmuxError.timedOut where testDevice {
-            throw IOSDeviceError.runnerTimedOutOnTestDevice(udid)
+        } catch UsbmuxError.timedOut {
+            throw onTimeout ?? (testDevice ? IOSDeviceError.runnerTimedOutOnTestDevice(udid) : transport.error(for: .timedOut, udid: udid))
         } catch let error as UsbmuxError {
             throw transport.error(for: error, udid: udid)
         }

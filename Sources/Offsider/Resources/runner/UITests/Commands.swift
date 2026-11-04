@@ -181,18 +181,24 @@ final class RunnerCommands {
         return value.unicodeScalars.allSatisfy { $0 == "\u{2022}" || $0 == "\u{25CF}" }
     }
 
-    /// Taps the field's right edge (the end of its text, or its clear button) and deletes the whole value, retrying while text is left.
+    /// Taps the field's right edge (the end of its text, or its clear button) and deletes the whole value, again while text is left.
+    /// Two passes in a row that change nothing leave no text to delete: the value is the app's own, such as "empty" or a mask's `(___) ___-____`.
     private func clear(_ field: XCUIElement) -> Bool {
         let placeholder = field.placeholderValue ?? ""
+        var current = SnapshotEncoder.text(field.value) ?? ""
+        var unchanged = false
         for attempt in 0..<3 {
-            let current = SnapshotEncoder.text(field.value) ?? ""
             if current.isEmpty || (attempt > 0 && current == placeholder) { return true }
             // A placeholder value may be real text: delete it without a tap, which in an empty search field lands on dictation.
             if current != placeholder { field.coordinate(withNormalizedOffset: CGVector(dx: 0.99, dy: 0.5)).tap() }
             field.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: current.count))
+            let left = SnapshotEncoder.text(field.value) ?? ""
+            // One pass a field ignored, before its cursor or keyboard was ready, must not leave its text to be typed after.
+            if left == current, unchanged { return true }
+            unchanged = left == current
+            current = left
         }
-        let left = SnapshotEncoder.text(field.value) ?? ""
-        return left.isEmpty || left == placeholder
+        return current.isEmpty || current == placeholder
     }
 
     private func swipe(_ body: [String: Any]) -> RunnerResponse {

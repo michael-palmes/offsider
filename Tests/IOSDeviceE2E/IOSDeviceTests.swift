@@ -288,7 +288,21 @@ struct IOSDeviceTreeE2ETests {
         #expect(missing.exitCode == 5, "wait for a missing element exited \(missing.exitCode): \(missing.stderr)")
     }
 
-    /// The text-input screen's field reports "empty" as its value, which the runner cannot tell from text, so this uses the search field.
+    /// The text-input field's value reads "empty" while it holds no text, so the runner's clear sees a value that deleting cannot change.
+    @Test("type --replace sets a field whose value is not its text, whether it is blank or holds text")
+    func replaceAppValue() async throws {
+        _ = try IOSDeviceE2E.team()
+        try await IOSDeviceE2E.requireAwake()
+        try await IOSDeviceE2E.open("text-input", waitingForLabel: "Text Input Playground")
+        try await IOSDeviceE2E.run("tap --id text-input-field \(Self.app)")
+        _ = try await IOSDeviceE2E.waitForNode { $0["id"] as? String == "text-input-field" && $0["value"] as? String == "empty" }
+        try await IOSDeviceE2E.run("type --replace hello \(Self.app)")
+        _ = try await IOSDeviceE2E.waitForNode { $0["id"] as? String == "text-input-field" && $0["value"] as? String == "hello" }
+        try await IOSDeviceE2E.run("type --replace bye \(Self.app)")
+        _ = try await IOSDeviceE2E.waitForNode { $0["id"] as? String == "text-input-field" && $0["value"] as? String == "bye" }
+        try await IOSDeviceE2E.run("assert --id character-count --has-value 3 \(Self.app)")
+    }
+
     @Test("Unicode type --replace sets the field through the runner, and assert --has-value sees it")
     func replaceAndAssert() async throws {
         _ = try IOSDeviceE2E.team()

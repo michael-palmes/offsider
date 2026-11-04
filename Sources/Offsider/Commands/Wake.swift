@@ -131,12 +131,12 @@ struct Wake: AsyncParsableCommand {
         let unlockKey = Self.unlockKey(booted)
         if current.lockScreen == .secure {
             guard unlock else {
-                let pattern = current.credential == "pattern"
+                // With a code saved, the step is `wake --unlock`; without one, saving it, which only a person can do.
+                let step = ScreenStateHint.fix(serial: serial, reading: current, codeKey: unlockKey, store: store, ledger: ledger)
                 throw CLIError(
-                    errorDescription: "The screen of \(name) is on, but its \(current.credentialName) lock screen is showing. "
-                        + (pattern ? LockReport.patternHint : "Unlock it on the device, or save its code with `offsider unlock-code set` and run `offsider wake --unlock --device \(serial)`."),
+                    errorDescription: "The screen of \(name) is on, but its \(current.credentialName) lock screen is showing. \(step.text)",
                     reason: .deviceLocked,
-                    hint: pattern ? nil : "offsider wake --unlock --device \(serial)"
+                    hint: step.hint
                 )
             }
             let attempt = try await enterSavedCode(

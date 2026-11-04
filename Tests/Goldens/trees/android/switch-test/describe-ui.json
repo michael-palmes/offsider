@@ -316,6 +316,78 @@
             "testTag": null
           },
           "children": []
+        },
+        {
+          "role": "switch",
+          "id": "slow-commit-switch",
+          "label": "Slow Commit Alerts",
+          "value": "0",
+          "frame": {
+            "x": 348.95,
+            "y": 335.24,
+            "width": 46.48,
+            "height": 27.05
+          },
+          "enabled": true,
+          "state": {
+            "checked": false,
+            "selected": false,
+            "focused": false
+          },
+          "native": {
+            "className": "android.widget.Switch",
+            "resourceId": "slow-commit-switch",
+            "package": "com.mpalmes.offsider.playground.rn",
+            "pixelFrame": {
+              "x": 916,
+              "y": 880,
+              "width": 122,
+              "height": 71
+            },
+            "text": null,
+            "contentDescription": "Slow Commit Alerts",
+            "hint": null,
+            "stateDescription": "OFF",
+            "roleDescription": null,
+            "testTag": null
+          },
+          "children": []
+        },
+        {
+          "role": "text",
+          "id": "slow-commit-state",
+          "label": "Slow Commit Alerts: Off, presses 0",
+          "value": null,
+          "frame": {
+            "x": 16,
+            "y": 370.29,
+            "width": 379.43,
+            "height": 23.24
+          },
+          "enabled": true,
+          "state": {
+            "checked": null,
+            "selected": false,
+            "focused": false
+          },
+          "native": {
+            "className": "android.widget.TextView",
+            "resourceId": "slow-commit-state",
+            "package": "com.mpalmes.offsider.playground.rn",
+            "pixelFrame": {
+              "x": 42,
+              "y": 972,
+              "width": 996,
+              "height": 61
+            },
+            "text": null,
+            "contentDescription": "Slow Commit Alerts: Off, presses 0",
+            "hint": null,
+            "stateDescription": null,
+            "roleDescription": null,
+            "testTag": null
+          },
+          "children": []
         }
       ]
     }
