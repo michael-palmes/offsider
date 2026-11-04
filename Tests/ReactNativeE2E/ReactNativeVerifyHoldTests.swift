@@ -9,7 +9,8 @@ struct ReactNativeVerifyHoldTests {
         let app = RNApp(platform)
         try await app.open("drawer-test")
 
-        let result = try await app.offsider("tap --id drawer-test-slow-push --verify")
+        // A button is pressed once by default; the retry this hold stands in for needs --retries.
+        let result = try await app.offsider("tap --id drawer-test-slow-push --verify --retries 1")
 
         #expect(result.exitCode == 0, "\(result.stderr)")
         #expect(result.stderr.contains("watching instead of tapping again"), "\(result.stderr)")
