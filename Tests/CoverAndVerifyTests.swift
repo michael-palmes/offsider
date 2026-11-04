@@ -115,8 +115,35 @@ struct CoverAndVerifyTests {
             Issue.record("no tap sent: \(backend.session.calls)")
             return
         }
-        #expect(x < 308 || x > 358)
+        // The iOS button takes touches out to about 40 pt from its icon's centre at x 333.
+        #expect(x < 291 || x > 375, "\(x)")
         #expect(stderr.contains("tapping the part that shows"), "\(stderr)")
+    }
+
+    @Test("on iOS a target about 30 pt from the gear's centre is under its touch area, so the tap moves past 40 pt; on Android that point is clear", arguments: [DevicePlatform.ios, .android])
+    func gearRadiusByPlatform(platform: DevicePlatform) async throws {
+        let android = platform == .android
+        // The icon's centre is (333, 613); the switch's centre is 30 pt to its right.
+        let icon = android
+            ? FakeUI.node(.image, label: "Tools", frame: FakeUI.frame(320, 600, 26, 26), platform: .android)
+            : FakeUI.node(.image, id: "gearshape.fill", label: "Gear Shape, Filled", frame: FakeUI.frame(320, 600, 26, 26))
+        let toggle = FakeUI.node(.switch, id: "alerts", label: "Alerts", value: "0", frame: FakeUI.frame(343, 598, 40, 30), platform: platform)
+        let tree = android
+            ? FakeUI.tree(platform: .android, [FakeUI.node(.group, frame: FakeUI.frame(0, 0, 402, 874), platform: .android, children: [toggle]), FakeUI.node(.group, frame: FakeUI.frame(300, 580, 66, 66), platform: .android, children: [icon])])
+            : FakeUI.tree([FakeUI.node(.group, frame: FakeUI.frame(0, 0, 402, 874), children: [icon]), toggle])
+        let point = UIPoint(x: 363, y: 613)
+        #expect(KnownOverlays.devMenuButton(icon, takes: point) == !android)
+        if !android {
+            let backend = HitTestingFakeBackend(trees: [tree])
+            backend.hits = { _ in toggle }
+            let (_, stderr) = try await Self.tap(["--id", "alerts", "--tap-style", "simulator"], on: backend)
+            guard case .perform(.tapAt(let x, _))? = backend.session.calls.first else {
+                Issue.record("no tap sent: \(backend.session.calls)")
+                return
+            }
+            #expect(x > 375, "\(x)")
+            #expect(stderr.contains("tapping the part that shows"), "\(stderr)")
+        }
     }
 
     @Test("a control's own gear icon, inside its frame, covers nothing")

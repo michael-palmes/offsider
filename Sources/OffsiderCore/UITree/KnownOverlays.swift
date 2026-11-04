@@ -45,8 +45,13 @@ public enum KnownOverlays {
         return underBar ? bottom - app.y : 0
     }
 
-    /// How far from its icon's centre Expo's floating dev menu button takes touches: the tree gives only the 26 pt icon of a 50 pt circle.
-    static let devMenuButtonRadius = 25.0
+    /// Expo's floating dev menu button is a 50 pt circle, though the tree gives only its 26 pt icon.
+    static let devMenuButtonSize = 50.0
+
+    /// How far from its icon's centre the button takes touches: about 24 pt on Android, inside its circle, and about 40 pt on iOS, well past it.
+    static func devMenuTouchRadius(of button: UINode) -> Double {
+        button.isAndroidNode ? 25 : 42
+    }
     /// The id iOS gives the button's icon, an SF Symbol's name.
     static let devMenuButtonSymbol = "gearshape.fill"
 
@@ -66,7 +71,7 @@ public enum KnownOverlays {
     }
 
     private static func isDevMenuIcon(_ node: UINode, ancestors: [UINode], viewport: UIFrame) -> Bool {
-        guard let frame = node.frame, frame.width <= devMenuButtonRadius * 2, frame.height <= devMenuButtonRadius * 2,
+        guard let frame = node.frame, frame.width <= devMenuButtonSize, frame.height <= devMenuButtonSize,
               !ancestors.contains(where: \.isActionable) else { return false }
         if node.isAndroidNode {
             return node.role == .image && node.normalizedID == nil && node.normalizedLabel == "Tools"
@@ -76,17 +81,18 @@ public enum KnownOverlays {
         return CoverJudge.spans(parent, viewport)
     }
 
-    /// True when a touch at `point` lands on the button whose icon is at `frame`.
-    public static func devMenuButton(at frame: UIFrame, takes point: UIPoint) -> Bool {
-        let centre = frame.center
-        let across = point.x - centre.x, down = point.y - centre.y
-        return across * across + down * down <= devMenuButtonRadius * devMenuButtonRadius
+    /// True when a touch at `point` lands on `button`, the icon `devMenuButtons` found.
+    public static func devMenuButton(_ button: UINode, takes point: UIPoint) -> Bool {
+        guard let centre = button.frame?.center else { return false }
+        let across = point.x - centre.x, down = point.y - centre.y, radius = devMenuTouchRadius(of: button)
+        return across * across + down * down <= radius * radius
     }
 
-    /// The square around the circle the button at `frame` takes touches on.
-    public static func devMenuButtonTouchFrame(of frame: UIFrame) -> UIFrame {
-        let centre = frame.center
-        return UIFrame(x: centre.x - devMenuButtonRadius, y: centre.y - devMenuButtonRadius, width: devMenuButtonRadius * 2, height: devMenuButtonRadius * 2)
+    /// The square around the circle `button` takes touches on.
+    public static func devMenuButtonTouchFrame(of button: UINode) -> UIFrame? {
+        guard let centre = button.frame?.center else { return nil }
+        let radius = devMenuTouchRadius(of: button)
+        return UIFrame(x: centre.x - radius, y: centre.y - radius, width: radius * 2, height: radius * 2)
     }
 
     /// A screen-spanning modal with nothing labelled, named or actionable, as React Native's LogBox can leave on Android.

@@ -64,7 +64,7 @@ struct TapCover {
             // Empty containers never cover, but the empty host of another process's prompt is worth a hit-test.
             promptHost = !android && SystemPrompt.hasHost(over: target, in: tree)
             let takenByDevMenu = KnownOverlays.devMenuButtons(in: roots, viewport: viewport).contains { button in
-                button.frame.map { KnownOverlays.devMenuButton(at: $0, takes: point) } == true
+                KnownOverlays.devMenuButton(button, takes: point)
             }
             isContested = android || !candidates.isEmpty || beneath || promptHost || takenByDevMenu
             self.target = target
