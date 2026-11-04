@@ -54,7 +54,7 @@ public struct FrontReading: Equatable, Sendable {
             return "past the edge of its scroll view"
         }
         guard let verdict = covered[index] else { return nil }
-        var parts = ["under", verdict.cover.role.rawValue]
+        var parts = verdict.evidence == .systemBar ? ["under"] : ["under", verdict.cover.role.rawValue]
         if let name = verdict.cover.normalizedLabel.map({ OutputMasks.current.mask.shownLabel($0, id: verdict.cover.normalizedID) }) ?? verdict.cover.normalizedID {
             parts.append(UITreeRenderer.quoted(SelectorText.truncated(name, limit: 40)))
         }

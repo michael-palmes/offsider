@@ -41,10 +41,10 @@ struct FrontVerdictGoldenTests {
         #expect(Set(names) == Set(Self.cases.map { "\($0.name).txt" }))
     }
 
-    @Test("the larger screens reach each verdict the judge gives: a keyboard cover, a LogBox touch area, a page over a screen, a part past its scroll view and a bar")
+    @Test("the larger screens reach each verdict the judge gives: a keyboard cover, a LogBox touch area, a page over a screen, a part past its scroll view, a bar and a system bar")
     func fixturesCoverEveryVerdict() throws {
         let rendered = FrontFixtures.all.map { Self.render($0.tree()) }.joined()
-        for verdict in ["covered by keyboard", "logBoxTouchArea, sure", "beneath \"", "clipped below", "drawingOrder, sure", "treeOrder, guess", "hitTest, sure"] {
+        for verdict in ["covered by keyboard", "logBoxTouchArea, sure", "beneath \"", "clipped below", "drawingOrder, sure", "treeOrder, guess", "hitTest, sure", "systemBar, sure"] {
             #expect(rendered.contains(verdict), "no fixture gives \(verdict)")
         }
     }
@@ -266,14 +266,16 @@ enum FrontFixtures {
         return tree
     }
 
-    /// An edge-to-edge app drawn under the status bar, whose LogBox list takes touches higher by the bar's height.
+    /// An edge-to-edge app drawn under the status bar, whose LogBox list takes touches higher by the bar's height, with one button partly and one text wholly under the bar.
     @Sendable static func androidLogBoxInset() -> UITree {
         let header = android(.header, "android.widget.TextView", label: "Rows", frame(16, 10, 200, 30), order: 1)
         let rows = (0..<16).map { row in
             android(.button, "android.view.ViewGroup", id: "rows-test-row-\(row)", label: "Row \(row)", frame(0, 60 + Double(row) * 54, androidWidth, 50), order: row + 2)
         }
         let toast = android(.button, "android.view.ViewGroup", label: "!, Request failed", frame(10, 850, androidWidth - 20, 56), order: 40)
-        var tree = UITree(platform: .android, device: "<android-device>", roots: [androidApp([header] + rows + [toast])])
+        let partlyUnderBar = android(.button, "android.view.ViewGroup", id: "rows-test-status", label: "Status", frame(300, 0, 100, 44), order: 41)
+        let underBar = android(.text, "android.widget.TextView", id: "rows-test-clock", label: "Clock", frame(230, 2, 60, 20), order: 42)
+        var tree = UITree(platform: .android, device: "<android-device>", roots: [androidApp([header] + rows + [toast, partlyUnderBar, underBar])])
         tree.windows = androidWindows(statusBar: true)
         return tree
     }

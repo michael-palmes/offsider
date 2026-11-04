@@ -4,21 +4,38 @@ import { StyleSheet } from 'react-native';
 import { colours, Readout, Screen, Target } from '../fixtures';
 
 const delayedTargetMs = 3000;
+const disabledMs = 5000;
 
 export function BatchTestScreen() {
   const [state, setState] = useState('Initial');
   const [showStateTarget, setShowStateTarget] = useState(false);
   const [showDelayedTarget, setShowDelayedTarget] = useState(false);
+  const [enableTargetDisabled, setEnableTargetDisabled] = useState(false);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const disableTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(
     () => () => {
-      if (timer.current) {
-        clearTimeout(timer.current);
+      for (const pending of [timer, disableTimer]) {
+        if (pending.current) {
+          clearTimeout(pending.current);
+        }
       }
     },
     [],
   );
+
+  const disableForAWhile = () => {
+    setState('Enable target disabled');
+    setEnableTargetDisabled(true);
+    if (disableTimer.current) {
+      clearTimeout(disableTimer.current);
+    }
+    disableTimer.current = setTimeout(() => {
+      disableTimer.current = null;
+      setEnableTargetDisabled(false);
+    }, disabledMs);
+  };
 
   const triggerDelayed = () => {
     setState('Waiting for delayed target');
@@ -64,6 +81,15 @@ export function BatchTestScreen() {
           textStyle={styles.secondaryText}
         />
       )}
+      <Target id="batch-disable-trigger" label="Disable For 5 s" onPress={disableForAWhile} />
+      <Target
+        id="batch-enable-target"
+        label="Enable Target"
+        disabled={enableTargetDisabled}
+        onPress={() => setState('Enable target tapped')}
+        style={styles.secondary}
+        textStyle={styles.secondaryText}
+      />
     </Screen>
   );
 }

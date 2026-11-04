@@ -97,7 +97,7 @@ extension Tap: BatchConvertible {
                 allowOffscreen: allowOffscreen,
                 settle: context.settlePolicy(stepOptedOut: noSettle),
                 pick: matchPicker(query: query, backend: context.backend, device: context.device),
-                coverCheck: coverCheck(selector: query.selectorDescription, backend: context.backend, device: context.device),
+                coverCheck: coverCheck(query: query, backend: context.backend, device: context.device),
                 coverSettle: context.coverSettle(stepOptedOut: noSettle),
                 logger: logger
             )

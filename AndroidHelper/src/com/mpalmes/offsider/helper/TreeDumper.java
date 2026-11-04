@@ -5,6 +5,7 @@ import android.graphics.Rect;
 import android.graphics.Region;
 import android.os.Build;
 import android.os.Bundle;
+import android.text.TextUtils;
 import android.view.accessibility.AccessibilityNodeInfo;
 import android.view.accessibility.AccessibilityWindowInfo;
 import java.util.List;
@@ -49,7 +50,7 @@ final class TreeDumper {
         this.table = table;
     }
 
-    /** Writes "windows"; with app scope only the app window and input methods carry a root. */
+    /** Writes "windows"; with app scope only the app window, the app's own popups over it and input methods carry a root. */
     void dump(Connection connection) {
         UiAutomation automation = connection.automation();
         json.name("windows").beginArray();
@@ -77,9 +78,10 @@ final class TreeDumper {
                 keyboardShown = keyboardShown || window.getType() == AccessibilityWindowInfo.TYPE_INPUT_METHOD;
             }
             for (AccessibilityWindowInfo window : list) {
-                boolean tree = !options.appWindowsOnly || window == app
+                AccessibilityNodeInfo popup = options.appWindowsOnly ? popupRoot(window) : null;
+                boolean tree = !options.appWindowsOnly || window == app || popup != null
                         || window.getType() == AccessibilityWindowInfo.TYPE_INPUT_METHOD;
-                window(window, tree);
+                window(window, tree, popup);
             }
         }
         json.endArray();
@@ -102,6 +104,16 @@ final class TreeDumper {
         return id;
     }
 
+    /** The root of an application window over the app's own from the same package, such as a dropdown that does not take focus; null otherwise. */
+    private AccessibilityNodeInfo popupRoot(AccessibilityWindowInfo window) {
+        if (app == null || appRoot == null || window == app || window.getType() != AccessibilityWindowInfo.TYPE_APPLICATION
+                || window.getLayer() <= app.getLayer()) {
+            return null;
+        }
+        AccessibilityNodeInfo root = window.getRoot();
+        return root != null && TextUtils.equals(root.getPackageName(), appRoot.getPackageName()) ? root : null;
+    }
+
     /** The app window and its root, each read once. */
     private void findApp(UiAutomation automation, List<AccessibilityWindowInfo> list) {
         app = list == null || list.isEmpty() ? null : appWindow(automation, list);
@@ -114,7 +126,7 @@ final class TreeDumper {
         List<AccessibilityWindowInfo> list = automation.getWindows();
         if (list != null) {
             for (AccessibilityWindowInfo window : list) {
-                window(window, false);
+                window(window, false, null);
             }
         }
         json.endArray();
@@ -148,7 +160,7 @@ final class TreeDumper {
         return null;
     }
 
-    private void window(AccessibilityWindowInfo window, boolean tree) {
+    private void window(AccessibilityWindowInfo window, boolean tree, AccessibilityNodeInfo knownRoot) {
         windows++;
         json.beginObject();
         json.field("id", window.getId());
@@ -165,7 +177,7 @@ final class TreeDumper {
         json.flag("pictureInPicture", window.isInPictureInPictureMode());
         if (tree) {
             trees++;
-            AccessibilityNodeInfo root = window == app ? appRoot : window.getRoot();
+            AccessibilityNodeInfo root = window == app ? appRoot : knownRoot != null ? knownRoot : window.getRoot();
             json.name("root");
             if (root == null) {
                 json.nullValue();

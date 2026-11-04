@@ -95,7 +95,15 @@ enum HelperTreeMapping {
         }
     }
 
-    /// The app window as `application`, then each keyboard as `keyboard`, both titled; bars are left out.
+    /// The app's own windows drawn over its main one, lowest first: a dropdown or a text selection toolbar that does not take focus.
+    static func popups(over app: HelperWindow, in dump: HelperDump) -> [HelperWindow] {
+        guard let package = app.root?.package else { return [] }
+        return dump.windows
+            .filter { $0.id != app.id && $0.type == "application" && $0.layer > app.layer && $0.root != nil && $0.root?.package == package }
+            .sorted { $0.layer < $1.layer }
+    }
+
+    /// The app window as `application`, its popups as `window`, then each keyboard as `keyboard`, all titled; bars and other apps' windows are left out.
     static func roots(from dump: HelperDump, scale: Double, pid: Int32) -> (roots: [UINode], index: HelperTreeIndex) {
         guard let app = appWindow(in: dump), let appRoot = app.root else {
             return ([], HelperTreeIndex(pid: pid, generation: dump.generation, entries: []))
@@ -103,6 +111,18 @@ enum HelperTreeMapping {
         var trees: [(HelperNode, UINode)] = [
             (appRoot, AndroidTreeMapping.node(from: rawNode(appRoot), scale: scale, rootRole: .application, rootLabel: app.title, windowLayer: app.layer)),
         ]
+        for popup in popups(over: app, in: dump) {
+            guard let root = popup.root else { continue }
+            var mapped = AndroidTreeMapping.node(from: rawNode(root), scale: scale, rootRole: .window, rootLabel: popup.title, windowLayer: popup.layer)
+            // A popup's root view reports its shadow padding too, where the window takes no touches.
+            if popup.bounds.count == 4, scale > 0, let shown = mapped.frame?.intersection(AndroidTreeMapping.dp(UIFrame(
+                x: Double(popup.bounds[0]), y: Double(popup.bounds[1]),
+                width: Double(popup.bounds[2] - popup.bounds[0]), height: Double(popup.bounds[3] - popup.bounds[1])
+            ), scale: scale)) {
+                mapped.frame = shown
+            }
+            trees.append((root, mapped))
+        }
         for keyboard in dump.windows where keyboard.type == "inputMethod" {
             guard let root = keyboard.root else { continue }
             let mapped = AndroidTreeMapping.node(from: rawNode(root), scale: scale, rootRole: .keyboard, rootLabel: keyboard.title, windowLayer: keyboard.layer)
