@@ -11,10 +11,13 @@ public struct LoginFormError: Equatable, Error, Sendable, CustomStringConvertibl
 
     public var kind: Kind
     public var message: String
+    /// What holds the control's point, when a control was there and could not be reached.
+    public var coveredBy: CoverReport?
 
-    public init(kind: Kind, message: String) {
+    public init(kind: Kind, message: String, coveredBy: CoverReport? = nil) {
         self.kind = kind
         self.message = message
+        self.coveredBy = coveredBy
     }
 
     public var description: String { message }
@@ -64,8 +67,13 @@ public enum LoginForm {
     /// Pinned profile fields win. Anything omitted is detected. A covered control is refused.
     /// With `origin`, the package and process checks run as well as the structural web-view checks.
     /// `reachable` holds controls a hit-test at their own point found, which count as in front whatever the tree's order says.
-    public static func detect(in tree: UITree, profile: LoginProfile? = nil, origin: Origin? = nil, reachable: [UINode] = []) throws -> Found {
-        let front = { (node: UINode) in isFrontmost(node, in: tree) || reachable.contains { sameIdentity($0, node) && $0.role == node.role } }
+    /// `answers` holds what each hit-test found, to name the cover in a refusal.
+    public static func detect(in tree: UITree, profile: LoginProfile? = nil, origin: Origin? = nil, reachable: [UINode] = [], answers: [HitAnswer] = []) throws -> Found {
+        let front = { (node: UINode) in isFrontmost(node, in: tree) || reachable.contains { isReached($0, node) } }
+        let cover = { (node: UINode) in
+            let hit = answers.first { sameIdentity($0.node, node) && $0.node.role == node.role }?.hit
+            return (report: coverReport(of: node, in: tree, hit: hit), note: coverNote(of: node, in: tree, hit: hit))
+        }
         let identity = try resolve(
             profile?.identity,
             roles: [.textField, .searchField],
@@ -73,6 +81,7 @@ public enum LoginForm {
             named: isIdentityName,
             in: tree,
             front: front,
+            cover: cover,
             what: "email or username field",
             missing: "No email or username field is in front.",
             noneKind: .noForm
@@ -84,6 +93,7 @@ public enum LoginForm {
             named: { _ in true },
             in: tree,
             front: front,
+            cover: cover,
             what: "password field",
             missing: "No password field is in front."
         )
@@ -95,6 +105,7 @@ public enum LoginForm {
             below: password.frame,
             in: tree,
             front: front,
+            cover: cover,
             what: "submit button",
             missing: "No Log in, Sign in, Continue or Next button is in front below the password field."
         )
@@ -163,32 +174,130 @@ public enum LoginForm {
         return native.pid
     }
 
-    /// Sign-in controls the tree places behind another node, such as a web widget's content listed last over the form, for a hit-test each.
-    public static func hiddenCandidates(in tree: UITree, profile: LoginProfile? = nil, limit: Int = 6) -> [UINode] {
-        let pinned = [profile?.identity, profile?.password, profile?.submit].compactMap { $0 }
-        let viewport = tree.viewport
-        let found = visibleControls(in: tree).filter { node in
-            guard let frame = node.frame, frame.width > 0, frame.height > 0, viewport.map(frame.isVisible(in:)) != false else { return false }
-            guard node.id?.isEmpty == false || node.label?.isEmpty == false, !isFrontmost(node, in: tree) else { return false }
-            if pinned.contains(where: { field in (field.id != nil || field.label != nil) && (field.id == nil || node.id == field.id) && (field.label == nil || node.label == field.label) }) { return true }
-            switch node.role {
-            case .textField, .searchField: return isIdentityName(node)
-            case .secureTextField: return true
-            case .button: return isSubmitName(node)
-            default: return false
-            }
+    /// What a hit-test found at a control's own point; nil where nothing answered.
+    public struct HitAnswer: Equatable, Sendable {
+        public var node: UINode
+        public var hit: UINode?
+
+        public init(node: UINode, hit: UINode?) {
+            self.node = node
+            self.hit = hit
         }
-        return Array(found.prefix(limit))
     }
 
-    /// A hit-test's answer is `node`, or something it holds such as a button's own label.
+    /// Sign-in controls whose point only a container holds, for a hit-test as a normal step: nearest the front first, at most `perKind` of each kind.
+    public static func unsettled(in tree: UITree, profile: LoginProfile? = nil, perKind: Int = 2) -> [UINode] {
+        candidates(in: tree, profile: profile, perKind: perKind) { reading in
+            if case .unsettled = reading { return true }
+            return false
+        }
+    }
+
+    /// Sign-in controls the tree places behind another node, such as a web widget's content listed last over the form, for a hit-test each once the form cannot be read without one.
+    public static func hiddenCandidates(in tree: UITree, profile: LoginProfile? = nil, perKind: Int = 2) -> [UINode] {
+        candidates(in: tree, profile: profile, perKind: perKind) { $0 != .front }
+    }
+
+    private enum ControlKind {
+        case identity
+        case password
+        case submit
+    }
+
+    private static func candidates(in tree: UITree, profile: LoginProfile?, perKind: Int, where keeps: (SignInHit.Reading) -> Bool) -> [UINode] {
+        let viewport = tree.viewport
+        var taken: [ControlKind: Int] = [:]
+        var found: [UINode] = []
+        // The form is listed after any screen beneath it, so a screen of look-alikes cannot use up the reads.
+        for node in visibleControls(in: tree).reversed() {
+            guard let kind = kind(of: node, profile: profile), taken[kind, default: 0] < perKind,
+                  let frame = node.frame, frame.width > 0, frame.height > 0, viewport.map(frame.isVisible(in:)) != false,
+                  node.id?.isEmpty == false || node.label?.isEmpty == false,
+                  !isFrontmost(node, in: tree), keeps(SignInHit.reading(of: node, in: tree, at: frame.center)) else { continue }
+            taken[kind, default: 0] += 1
+            found.append(node)
+        }
+        return found
+    }
+
+    private static func kind(of node: UINode, profile: LoginProfile?) -> ControlKind? {
+        func pins(_ field: LoginField?) -> Bool {
+            guard let field, field.id != nil || field.label != nil else { return false }
+            return (field.id == nil || node.id == field.id) && (field.label == nil || node.label == field.label)
+        }
+        if pins(profile?.identity) { return .identity }
+        if pins(profile?.password) { return .password }
+        if pins(profile?.submit) { return .submit }
+        switch node.role {
+        case .textField, .searchField: return isIdentityName(node) ? .identity : nil
+        case .secureTextField: return .password
+        case .button: return isSubmitName(node) ? .submit : nil
+        default: return nil
+        }
+    }
+
+    /// A hit-test's answer is `node`, something it holds such as a button's own label, or text or an image drawn inside it that repeats part of its label.
     public static func isHit(_ hit: UINode, on node: UINode) -> Bool {
         guard let frame = node.frame, let hitFrame = hit.frame, frame.encloses(hitFrame, tolerance: 1) else { return false }
-        return node.flattened().contains { $0.role == hit.role && sameIdentity($0, hit) }
+        if node.flattened().contains(where: { $0.role == hit.role && sameIdentity($0, hit) }) { return true }
+        return isOwnLabel(hit, of: node)
     }
 
-    /// The email and password fields are on screen. The submit button may still be under the keyboard.
-    public static func credentialsAreVisible(in tree: UITree, profile: LoginProfile? = nil) -> Bool {
+    /// A control's text comes back from a point read as a child the tree folds into it. Never a control, nor another process's view.
+    private static func isOwnLabel(_ hit: UINode, of node: UINode) -> Bool {
+        guard !hit.role.isActionable, hit.normalizedID == nil, let label = folded(hit.label), let mine = folded(node.label), mine.contains(label) else { return false }
+        if let pid = iosPID(hit), let own = iosPID(node), pid != own { return false }
+        return true
+    }
+
+    private static func folded(_ text: String?) -> String? {
+        guard let text else { return nil }
+        let words = text.lowercased().split(whereSeparator: \.isWhitespace).joined(separator: " ")
+        return words.isEmpty ? nil : words
+    }
+
+    /// What holds `node`'s point: the hit-test's answer, else what the tree shows there. Nil when the tree shows nothing.
+    public static func coverReport(of node: UINode, in tree: UITree, hit: UINode?) -> CoverReport? {
+        let shown = treeCover(of: node, in: tree)
+        guard let cover = hit ?? shown else { return nil }
+        return CoverReport(CoverVerdict(cover: cover, evidence: hit == nil ? .treeOrder : .hitTest, isConfident: hit != nil))
+    }
+
+    /// One sentence: what the tree shows over `node`, and what a hit-test found there.
+    public static func coverNote(of node: UINode, in tree: UITree, hit: UINode?) -> String? {
+        var parts: [String] = []
+        if let shown = treeCover(of: node, in: tree) {
+            let holding = SignInHit.held(by: shown).map { " holding \(described($0))" } ?? ""
+            parts.append("Over it: \(described(shown))\(holding)")
+        }
+        if let hit { parts.append("a hit-test there found \(described(hit))") }
+        return parts.isEmpty ? nil : parts.joined(separator: "; ") + "."
+    }
+
+    private static func treeCover(of node: UINode, in tree: UITree) -> UINode? {
+        guard let frame = node.frame else { return nil }
+        switch SignInHit.reading(of: node, in: tree, at: frame.center) {
+        case .front: return nil
+        case .covered(let top): return top
+        case .unsettled(let top): return top
+        }
+    }
+
+    /// `group (0, 0) 402x874` or `text "Cancel" (180, 744) 42x18`, with a label shown as the output masks allow.
+    private static func described(_ node: UINode) -> String {
+        var parts = [node.role.rawValue]
+        if let label = node.normalizedLabel {
+            parts.append(TerminalText.quoted(SelectorText.truncated(OutputMasks.current.mask.shownLabel(label, id: node.normalizedID))))
+        } else if let id = node.normalizedID {
+            parts.append(TerminalText.quoted(SelectorText.truncated(id)))
+        }
+        if let frame = node.frame { parts.append(frame.summary) }
+        return parts.joined(separator: " ")
+    }
+
+    /// The email and password fields are on screen, by the tree or by the hit-tests in `reachable`. The submit button may still be under the keyboard.
+    public static func credentialsAreVisible(in tree: UITree, profile: LoginProfile? = nil, reachable: [UINode] = []) -> Bool {
+        let front = { (node: UINode) in isFrontmost(node, in: tree) || reachable.contains { isReached($0, node) } }
         do {
             _ = try resolve(
                 profile?.identity,
@@ -196,6 +305,7 @@ public enum LoginForm {
                 allowDisabled: false,
                 named: isIdentityName,
                 in: tree,
+                front: front,
                 what: "email or username field",
                 missing: "No email or username field is in front."
             )
@@ -205,6 +315,7 @@ public enum LoginForm {
                 allowDisabled: false,
                 named: { _ in true },
                 in: tree,
+                front: front,
                 what: "password field",
                 missing: "No password field is in front."
             )
@@ -214,18 +325,26 @@ public enum LoginForm {
         }
     }
 
-    /// The same control later in the flow, matched by id when it has one, else by label.
+    /// The same control later in the flow, matched by id when it has one, else by label; of several, the one nearest where it was.
     public static func match(_ sample: UINode, in tree: UITree) -> UINode? {
-        visibleControls(in: tree).first { node in
-            node.role == sample.role && sameIdentity(node, sample)
+        let found = visibleControls(in: tree).filter { $0.role == sample.role && sameIdentity($0, sample) }
+        guard found.count > 1, let centre = sample.frame?.center else { return found.first }
+        func distance(_ node: UINode) -> Double {
+            guard let other = node.frame?.center else { return .infinity }
+            return abs(other.x - centre.x) + abs(other.y - centre.y)
         }
+        return found.min { distance($0) < distance($1) }
     }
 
-    /// True when a point read at the centre lands on `node` or on something inside it.
+    /// True when a point read at the centre lands on `node` or on something inside it. Android's drawing order settles an empty container's point, as no hit-test runs there.
     public static func isFrontmost(_ node: UINode, in tree: UITree) -> Bool {
         guard let frame = node.frame, frame.width > 0, frame.height > 0 else { return false }
         if let viewport = tree.viewport, !frame.isVisible(in: viewport) { return false }
-        return SignInHit.chain(in: tree, at: frame.center).contains { $0.isSameElement(as: node) }
+        switch SignInHit.reading(of: node, in: tree, at: frame.center) {
+        case .front: return true
+        case .covered: return false
+        case .unsettled: return node.isAndroidNode && CoverJudge.drawnClear(of: node, at: frame.center, in: tree)
+        }
     }
 
     private static func resolve(
@@ -235,24 +354,27 @@ public enum LoginForm {
         named: (UINode) -> Bool,
         below limit: UIFrame? = nil,
         in tree: UITree,
-        front: ((UINode) -> Bool)? = nil,
+        front: (UINode) -> Bool,
+        cover: (UINode) -> (report: CoverReport?, note: String?) = { _ in (nil, nil) },
         what: String,
         missing: String,
         noneKind: LoginFormError.Kind = .missing
     ) throws -> UINode {
-        let front = front ?? { isFrontmost($0, in: tree) }
         if let pinned {
-            return try pinnedField(pinned, roles: roles, allowDisabled: allowDisabled, in: tree, front: front, what: what)
+            return try pinnedField(pinned, roles: roles, allowDisabled: allowDisabled, in: tree, front: front, cover: cover, what: what)
         }
-        let matches = visibleControls(in: tree).filter { node in
+        let named = visibleControls(in: tree).filter { node in
             guard roles.contains(node.role), named(node) else { return false }
             if !allowDisabled, node.enabled == false { return false }
             if let limit, let frame = node.frame, frame.center.y <= limit.y + limit.height { return false }
-            return front(node)
+            return true
         }
+        let matches = named.filter(front)
         guard let only = matches.first, matches.count == 1 else {
             if matches.isEmpty {
-                throw LoginFormError(kind: noneKind, message: "\(missing) Nothing was typed.")
+                let blocked = named.last.map(cover)
+                let note = blocked?.note.map { " \($0)" } ?? ""
+                throw LoginFormError(kind: noneKind, message: "\(missing) Nothing was typed.\(note)", coveredBy: blocked?.report)
             }
             let listed = matches.map(name).joined(separator: ", ")
             throw LoginFormError(kind: .ambiguous, message: "\(matches.count) \(what)s are in front (\(listed)). Nothing was typed.")
@@ -260,7 +382,10 @@ public enum LoginForm {
         return only
     }
 
-    private static func pinnedField(_ field: LoginField, roles: Set<UIRole>, allowDisabled: Bool, in tree: UITree, front: (UINode) -> Bool, what: String) throws -> UINode {
+    private static func pinnedField(
+        _ field: LoginField, roles: Set<UIRole>, allowDisabled: Bool, in tree: UITree, front: (UINode) -> Bool,
+        cover: (UINode) -> (report: CoverReport?, note: String?), what: String
+    ) throws -> UINode {
         let matches = visibleControls(in: tree).filter { node in
             if let id = field.id, node.id != id { return false }
             if let label = field.label, node.label != label { return false }
@@ -277,7 +402,9 @@ public enum LoginForm {
         }
         guard let only = front.first, front.count == 1 else {
             if front.isEmpty {
-                throw LoginFormError(kind: .missing, message: "\(field.described) is covered by another control. Nothing was typed.")
+                let blocked = matches.last { roles.contains($0.role) }.map(cover)
+                let note = blocked?.note.map { " \($0)" } ?? ""
+                throw LoginFormError(kind: .missing, message: "\(field.described) is covered by another control. Nothing was typed.\(note)", coveredBy: blocked?.report)
             }
             throw LoginFormError(kind: .ambiguous, message: "\(front.count) controls match \(field.described). Nothing was typed.")
         }
@@ -293,14 +420,16 @@ public enum LoginForm {
         return nil
     }
 
-    /// Controls outside the software keyboard, so a Next key is not the submit button.
+    /// Controls outside the software keyboard and React Native's LogBox, so a Next key or a logged `[SIGNIN] widget expired` is not the submit button.
     static func visibleControls(in tree: UITree) -> [UINode] {
         var output: [UINode] = []
+        let viewport = tree.viewport
         func walk(_ node: UINode, insideKeyboard: Bool) {
             if node.role == .keyboard || insideKeyboard {
                 for child in node.children { walk(child, insideKeyboard: true) }
                 return
             }
+            if let viewport, KnownOverlays.logBoxToast(node, viewport: viewport) != nil { return }
             output.append(node)
             for child in node.children { walk(child, insideKeyboard: false) }
         }
@@ -341,6 +470,12 @@ public enum LoginForm {
             output.append(character)
         }
         return output
+    }
+
+    /// A control a hit-test reached, read again: the same role and name in the same place, so a twin on a screen beneath does not count.
+    private static func isReached(_ reached: UINode, _ node: UINode) -> Bool {
+        guard reached.role == node.role, sameIdentity(reached, node), let theirs = reached.frame, let mine = node.frame else { return false }
+        return theirs.isWithinTolerance(of: mine)
     }
 
     private static func sameIdentity(_ node: UINode, _ sample: UINode) -> Bool {

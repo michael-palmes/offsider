@@ -6,7 +6,7 @@ import Testing
 
 @Suite("Device Option Tests")
 struct DeviceOptionTests {
-    private static let commandsWithoutDevice: Set<String> = ["boot", "devices", "guide", "init", "run"]
+    private static let commandsWithoutDevice: Set<String> = ["boot", "devices", "guide", "init", "run", "shutdown"]
 
     @Test("every device command takes --device and none takes --udid")
     func deviceCommandsTakeDevice() async throws {
@@ -197,6 +197,8 @@ struct DeviceOptionTests {
         #expect(need(["credential", "set", "--app", "com.example.app"]) == nil)
         #expect(need(["boot"]) == .boot)
         #expect(need(["boot", "--timeout", "1"]) == nil)
+        #expect(need(["shutdown"]) == .shutdown)
+        #expect(need(["shutdown", "--timeout", "1"]) == nil)
         #expect(need(["tap", "-x", "1", "-y", "1", "--device", "ABCDEF00-0000-4000-8000-00000000ABCD", "--bogus"]) == nil)
     }
 

@@ -56,7 +56,7 @@ struct ScrollIndicatorTests {
         #expect(try TapCoverTests.judge(tree, target: "tab-two", hit: moved) == nil)
     }
 
-    @Test("tap --fail-if-covered on a tab under a scroll indicator goes ahead without a hit-test")
+    @Test("tap --fail-if-covered on a tab under a scroll indicator reads the point once and goes ahead")
     func failIfCoveredTapsTab() async throws {
         let tree = Self.tabsUnderScrollView()
         let backend = HitTestingFakeBackend(trees: [tree])
@@ -64,7 +64,7 @@ struct ScrollIndicatorTests {
 
         try await TapCover(failIfCovered: true).check(resolution, selector: "--label 'Tab Two'", tree: tree, backend: backend, device: Self.device)
 
-        #expect(backend.hitTests == 0)
+        #expect(backend.hitTests == 1)
     }
 
     enum Lookalike: String, CaseIterable, CustomTestStringConvertible {

@@ -369,7 +369,7 @@ enum E2EDeviceAllowance {
         "run `offsider devices add` in their own terminal, choose \(device)" + (app.map { ", pin \($0)" } ?? "") + " and allow at least 2 hours"
     }
 
-    /// Nil when `devices status --device <device> --json` exited 0 with an entry lasting past 30 minutes from `now` (and pinning `app`); otherwise the refusal, quoting the command a person runs.
+    /// Nil when `devices status --device <device> --json` exited 0 with an entry lasting past 30 minutes from `now` (and pinning `app`, or a test device); otherwise the refusal, quoting the command a person runs.
     static func verdict(device: String, exitCode: Int32, json: String, now: Date, app: String? = nil) -> String? {
         let ask = "Ask the user to \(allowSteps(device: device, app: app)), then run the suites again."
         guard exitCode == 0 else { return "Refusing \(device): it is not on the Offsider allow-list (devices status exited \(exitCode)). \(ask)" }
@@ -385,7 +385,7 @@ enum E2EDeviceAllowance {
         } else if !(entry["expires"] is NSNull) {
             return "Refusing \(device): devices status printed no expiry. \(ask)"
         }
-        if let app, !((entry["apps"] as? [String]) ?? []).contains(app) {
+        if let app, entry["testDevice"] as? Bool != true, !((entry["apps"] as? [String]) ?? []).contains(app) {
             return "Refusing \(device): its allowance does not pin \(app). \(ask)"
         }
         return nil

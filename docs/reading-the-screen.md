@@ -25,7 +25,7 @@ A person and an agent read the same output; a person also sees a spinner while i
       "frame": { "x": 16, "y": 62, "width": 44, "height": 44 },
       "enabled": true,
       "state": { "checked": null, "selected": null, "focused": null },
-      "native": { "type": "Button", "role": "AXButton", "subrole": null, "roleDescription": "back button", "title": null, "help": null, "customActions": [], "contentRequired": false, "pid": 4242, "axFrame": "{{16, 62}, {44, 44}}" },
+      "native": { "type": "Button", "role": "AXButton", "subrole": null, "roleDescription": "back button", "title": null, "help": null, "hint": null, "customActions": [], "contentRequired": false, "pid": 4242, "axFrame": "{{16, 62}, {44, 44}}" },
       "children": []
     }
   ]
@@ -69,11 +69,11 @@ Labels and values that look like a one-time code after a keyword, a card number,
 | `roots` | The frontmost app's `application` element | The active window as `application`, labelled with its title (such as `Settings`), then the keyboard as `keyboard`, labelled with its title, while it is shown. The status and navigation bars are left out |
 | `id` | `AXUniqueId` (`accessibilityIdentifier`, or `testID` in React Native), else `AXIdentifier` | `resource-id` (`testID` in React Native), else a Jetpack Compose `testTag` |
 | `label` | `AXLabel` | `content-desc`, else the text of a non-editable node; a clickable node with neither takes its children's text |
-| `value` | `AXValue`, as a string | A text field's text; `1` or `0` for switches, checkboxes and radio buttons, and `2` for a partly checked checkbox; a slider's or progress bar's position in its range as a percentage with up to two decimals, such as `25%` or `39.95%` |
+| `value` | `AXValue`, as a string; on a physical iPhone or iPad, `null` for a text field whose value is its placeholder, as XCTest reports an empty field, so a field holding exactly its placeholder text reads as empty too | A text field's text; `1` or `0` for switches, checkboxes and radio buttons, and `2` for a partly checked checkbox; a slider's or progress bar's position in its range as a percentage with up to two decimals, such as `25%` or `39.95%` |
 | `frame`, `enabled` | The same keys | `bounds` over density / 160, `enabled` |
 | `state.checked` | `switch` and `checkbox` only: `AXValue` `1` or `0` | `checked` for checkable nodes; `null` when partly checked |
 | `state.selected`, `state.focused` | `selected` is `true` with the Selected trait and `false` without it, or `null` when the traits could not be read; `focused` is `true` on the field with keyboard focus on an iOS simulator, a physical iPhone or iPad, and on the element with input focus on Android | `selected`, `focused` |
-| `native` | `type`, `role`, `subrole`, `roleDescription`, `title`, `help`, `customActions`, `contentRequired`, `pid`, `axFrame` | `className`, `resourceId`, `package`, `pixelFrame`, `text`, `contentDescription`, `hint`, `stateDescription` (the spoken state, such as `25%`), `roleDescription`, `testTag` |
+| `native` | `type`, `role`, `subrole`, `roleDescription`, `title`, `help`, `hint` (a field's placeholder, on a physical iPhone or iPad), `customActions`, `contentRequired`, `pid`, `axFrame` | `className`, `resourceId`, `package`, `pixelFrame`, `text`, `contentDescription`, `hint`, `stateDescription` (the spoken state, such as `25%`), `roleDescription`, `testTag` |
 
 </details>
 
@@ -94,7 +94,9 @@ application "Playground" (0,0 402x874)
 # off-screen: 34 elements folded into runs; check one with assert --label-contains <text> --allow-offscreen
 ```
 
-On a foldable the header line ends with the display and posture, such as `inner open`.
+A text field with no label or id shows its placeholder as `hint="Email"` on a physical iPhone or iPad, so it keeps a name once it reads empty.
+
+On a foldable the header line ends with the display and posture, such as `inner open`. When the screen is turned on its panel, SpringBoard's alerts and home screen are given in the screen's points, as an app's are.
 
 `--summary` is short for `--flat --on-screen --labelled --format text --max-bytes 16384`. `--flat` lists nodes without nesting under `nodes`, each with `index`, `parent` and `depth`; `--on-screen` keeps nodes that are on screen as selectors judge it (see [What counts as on screen](#what-counts-as-on-screen)), in every format; `--labelled` keeps nodes with a label, id or value; `--actionable` keeps controls; `--fields` picks keys; `--format json|ndjson|text` picks the format, where `ndjson` prints a screen line and then one node per line; `--compact` prints JSON on one line. Without these flags the output is unchanged.
 
@@ -102,7 +104,7 @@ Text output (`--summary` and `--format text`) saves bytes in four ways; JSON and
 
 - A child whose label its parent already shows, whole or as one of its comma-separated parts (React Native merges `Inbox` and `3 unread` into `Inbox, 3 unread`), loses the label, and its line goes when nothing else is left (no id, value, control role or checked or selected state). A text's value equal to its label is left out. One closing `# folded N repeated labels` line counts them.
 - With `--on-screen`, nodes wholly past an edge that would otherwise show are summarised where they start, per side and counting rows rather than their texts: `[off-screen below] 34 items: id=rows-item-9 to id=rows-end`, also `above`, `left` and `right`. When the items hold elements that would be listed, the count says so: `[off-screen below] 1 item (+12 inside): id=sheet-host`. Scroll that way to bring them on screen. A run's items are not listed, so a grep for one misses it: a closing `# off-screen: 34 elements folded into runs` line, which the byte budget never cuts, counts them, and `assert --label-contains <text> --allow-offscreen` checks one.
-- With `--on-screen`, a screen a full-screen page is drawn over (an earlier page kept mounted under a pushed one, by Android's drawing order or iOS tree order) is left out, and a closing line counts it, which the byte budget never cuts: `# beneath: "Products" (42 elements) under "Kettle"`. Elements a touch would not reach, such as the rows of a side menu kept mounted under the page while closed, are left out the same way and named in one closing line: `# covered: 3 elements under others: id=menu-inbox, id=menu-archive, id=menu-help`. Both stay in JSON and plain `--format text` without `--on-screen`.
+- With `--on-screen`, a screen a full-screen page is drawn over (an earlier page kept mounted under a pushed one, by Android's drawing order; on an iOS simulator only when the two are one size, as it lists views by position, and on a physical iPhone by tree order) is left out, and a closing line counts it, which the byte budget never cuts: `# beneath: "Products" (42 elements) under "Kettle"`. Elements a touch would not reach, such as the rows of a side menu kept mounted under the page while closed, are left out the same way and named in one closing line: `# covered: 3 elements under others: id=menu-inbox, id=menu-archive, id=menu-help`. Both stay in JSON and plain `--format text` without `--on-screen`.
 - Nested lines stop indenting at 10 levels.
 
 `--max-bytes <n>` cuts text output at whole lines (UTF-8 bytes, newline included) so it fits `n` bytes, always keeping the header and the first node, and ends with `# truncated: 87 more nodes past the 16384-byte budget; pass --max-bytes 0 for all, or narrow with --actionable`. `--summary` defaults to 16384 bytes, `--max-bytes 0` lifts the limit, plain `--format text` has none unless asked, and with JSON or ndjson `--max-bytes` is a usage error (exit 64), as is a value from 1 to 511. When the Android device stops listing nodes at its own limit, text output ends with `# the device stopped listing nodes at its limit; this tree is incomplete`.
@@ -116,6 +118,8 @@ One rule decides what is on screen for `describe-ui --on-screen` (and `--summary
 - On a physical iPhone or iPad there is no hit-test yet, so only pages drawn over a screen count; tree order alone never hides an element.
 
 Only a sure answer hides an element: a hit-test or the drawing order finding another element there, a page drawn over its screen, or the keyboard over it (so `wait --id` for a button the keyboard hides waits until the keyboard goes). A guess from tree order still counts it as on screen (and makes `tap` warn). `--allow-offscreen` on `wait`, `assert` and `tap` asks only whether the app holds the element, wherever it is drawn.
+
+An unlabelled group is drawn on with what it holds, so it counts by what shows rather than by its own point: it is out of reach when every labelled element and control it holds is, on Android under a scrolling list or page drawn over it that reaches past it, and on an iOS simulator when its point finds another scroll view's content. An empty view over it proves nothing, so it stays on screen. A simulator's flat list says nothing of what a group holds, so a group there with no children keeps its own point's answer.
 
 `wait` and `assert` report a match a touch would not reach as `under button "Filter Chip" (16, 180) 160x44, so a tap would not reach it`, or `beneath "Kettle"` for a page drawn over its screen.
 

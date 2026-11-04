@@ -24,6 +24,8 @@ enum LoginFlow {
         var noteDevice: () async -> Void = {}
         /// The command that watches for a person to finish the widget.
         var turnstileWatch: String = Turnstile.waitCommand()
+        /// The device's id, for a refusal's command.
+        var device = "<DEVICE_ID>"
     }
 
     /// How long after the submit tap Turnstile is read once more.
@@ -56,24 +58,29 @@ enum LoginFlow {
             )
         }
         var tree = try await services.readTree()
-        tree = try await revealSubmit(in: tree, profile: profile, services: services)
+        var hits: HitTests
+        (tree, hits) = try await revealSubmit(in: tree, profile: profile, services: services)
         let origin = LoginForm.Origin(foreground: app, bundleForPID: services.bundleForPID)
-        var reachable: [UINode] = []
         let form: LoginForm.Found
         do {
-            form = try detect(in: tree, profile: profile, origin: origin, afterTyping: false, lastSignIn: lastSignIn)
-        } catch {
-            reachable = await reachableByHitTest(in: tree, profile: profile, services: services)
-            guard !reachable.isEmpty else { throw error }
-            form = try detect(in: tree, profile: profile, origin: origin, afterTyping: false, reachable: reachable, lastSignIn: lastSignIn)
+            await hits.read(LoginForm.unsettled(in: tree, profile: profile), services: services)
+            do {
+                form = try detect(in: tree, profile: profile, origin: origin, afterTyping: false, hits: hits, device: services.device)
+            } catch {
+                await hits.read(LoginForm.hiddenCandidates(in: tree, profile: profile), services: services)
+                form = try detect(in: tree, profile: profile, origin: origin, afterTyping: false, hits: hits, device: services.device, lastSignIn: lastSignIn)
+            }
         }
+        let reachable = hits.reachable
+        try refuseLogBoxOverSubmit(form.submit, in: tree, services: services)
         try refuseWebForm(form, app: app, key: key, profile: profile, webLogin: webLogin)
         try requireName(form.identity, what: "email or username")
         try requireName(form.password, what: "password")
-        try await requireNoWidget(try await services.readTurnstile(tree), stage: .beforeTyping, services: services)
+        try await requireNoWidget(try await readingPastLoad(tree, services: services), stage: .beforeTyping, services: services)
         var identityProgress = LoginFieldProgress.notFilled
         var passwordProgress = LoginFieldProgress.notFilled
         var report: LoginReport
+        let tapped: UITree
         do {
             try await type(credential.username, into: form.identity, services: services)
             tree = try await readUntil({ LoginForm.match(form.identity, in: $0)?.value == credential.username }, services: services)
@@ -116,16 +123,26 @@ enum LoginFlow {
                 tree = try await readUntil({ (try? LoginForm.detect(in: $0, profile: profile, reachable: reachable)) != nil }, services: services)
             }
             // A widget can open over the form after typing, so what a hit-test reached before is checked again.
-            let reachableNow = (try? LoginForm.detect(in: tree, profile: profile)) == nil ? await reachableByHitTest(in: tree, profile: profile, services: services) : []
-            let filled = try detect(in: tree, profile: profile, afterTyping: true, reachable: reachableNow)
+            var hitsNow = HitTests()
+            await hitsNow.read(LoginForm.unsettled(in: tree, profile: profile), services: services)
+            if (try? LoginForm.detect(in: tree, profile: profile, reachable: hitsNow.reachable)) == nil {
+                await hitsNow.read(LoginForm.hiddenCandidates(in: tree, profile: profile), services: services)
+            }
+            let filled = try detect(in: tree, profile: profile, afterTyping: true, hits: hitsNow)
             let step = try await settleTurnstile(in: tree, timeout: timeout, services: services)
-            report = try await waitUntilEnabled(filled.submit, app: app, key: key, turnstile: step, timeout: timeout, services: services)
+            (report, tapped) = try await waitUntilEnabled(filled.submit, app: app, key: key, turnstile: step, timeout: timeout, services: services)
         } catch {
             throw LoginFailure(report: .stopped(app: app, key: key, identity: identityProgress, password: passwordProgress), underlying: error)
         }
         // One read after the tap; a read that fails cannot show a widget, and the submit already happened.
         try await services.clock.sleep(afterSubmitRead)
-        let after: TurnstilePhase? = try? await services.readTurnstile(try await services.readTree())
+        let screenAfter = try? await services.readTree()
+        if let screenAfter, let stray = strayTap(before: tapped, after: screenAfter, services: services) {
+            var stopped = report
+            stopped.submitted = false
+            throw LoginFailure(report: stopped, underlying: stray)
+        }
+        let after: TurnstilePhase? = if let screenAfter { try? await services.readTurnstile(screenAfter) } else { nil }
         if let after {
             do {
                 try await requireNoWidget(after, stage: .afterSubmit, services: services)
@@ -138,6 +155,88 @@ enum LoginFlow {
         return report
     }
 
+    /// The tap reached LogBox's toast or the dev menu's button, not the form: what it opened shows only after it, with that overlay there before it.
+    private static func strayTap(before: UITree, after: UITree, services: Services) -> CLIError? {
+        if LiveText.logBoxOpened(before: before, after: after), !KnownOverlays.logBoxToasts(in: before.roots, viewport: before.viewport).isEmpty {
+            return CLIError(
+                errorDescription: "The submit tap opened React Native's LogBox inspector, so it never reached the form. Clear LogBox, then run login again.",
+                reason: .targetCovered,
+                hint: logBoxDismiss(services)
+            )
+        }
+        if DevMenu.read(before) == nil, DevMenu.read(after) != nil, let viewport = before.viewport, !KnownOverlays.devMenuButtons(in: before.roots, viewport: viewport).isEmpty {
+            return CLIError(
+                errorDescription: "The submit tap opened the dev menu, so it never reached the form. Close the menu, then run login again.",
+                reason: .targetCovered,
+                hint: "offsider rn devmenu close --device \(services.device)"
+            )
+        }
+        return nil
+    }
+
+    private static func logBoxDismiss(_ services: Services) -> String {
+        "offsider rn logbox dismiss --device \(services.device)"
+    }
+
+    /// A LogBox toast whose touch area takes submit's point stops the login before anything is typed, as the tap could never reach the form. With keys up the layout can still move, so the submit tap's own check decides.
+    private static func refuseLogBoxOverSubmit(_ submit: UINode, in tree: UITree, services: Services) throws {
+        guard !keyboardOnScreen(keyboards(in: tree), in: tree) else { return }
+        guard let verdict = judging(submit, in: tree)?.judging.verdict(hit: nil), verdict.evidence == .logBoxTouchArea, verdict.isConfident else { return }
+        throw CLIError(
+            errorDescription: "A LogBox toast takes touches over the submit button, so its tap would open LogBox instead. Nothing was typed. Clear LogBox, then run login again.",
+            reason: .targetCovered,
+            hint: logBoxDismiss(services),
+            coveredBy: CoverReport(verdict)
+        )
+    }
+
+    /// What a tap on submit would be, and the cover check `tap` makes on it.
+    private static func judging(_ submit: UINode, in tree: UITree) -> (resolution: TapResolution, judging: TapCover.Judging)? {
+        guard let viewport = tree.viewport,
+              let resolution = AccessibilityTargetResolver.resolution(of: submit, roots: tree.roots, viewport: viewport, stack: ScreenStack.build(roots: tree.roots, viewport: viewport)),
+              let judging = TapCover.Judging(resolution, in: tree) else { return nil }
+        return (resolution, judging)
+    }
+
+    /// The point the submit tap goes to, judged as `tap` judges a target: its own, or a part a cover leaves showing where a hit-test finds it. A sure cover refuses, so a tap that cannot reach the form is never reported as made.
+    private static func submitPoint(_ submit: UINode, frame: UIFrame, in tree: UITree, services: Services) async throws -> UIPoint {
+        guard let viewport = tree.viewport, let (resolution, judging) = judging(submit, in: tree) else { return frame.center }
+        if judging.keyboard != nil { throw keyboardError() }
+        guard judging.isContested else { return judging.point }
+        let hit = tree.platform == .android ? nil : await services.hitTest(judging.point)
+        guard let verdict = judging.verdict(hit: hit), verdict.isConfident else { return judging.point }
+        if verdict.leavesPartShowing, tree.platform == .ios, let coverFrame = verdict.touchFrame {
+            for moved in TapCover.clearParts(of: resolution, beside: coverFrame, in: tree).prefix(TapCover.partTries) {
+                guard let part = TapCover.Judging(moved, in: tree, beneath: false), part.keyboard == nil,
+                      let answer = await services.hitTest(part.point), LoginForm.isHit(answer, on: submit) else { continue }
+                return part.point
+            }
+        }
+        throw submitCovered(verdict, viewport: viewport, platform: tree.platform, services: services)
+    }
+
+    private static func submitCovered(_ verdict: CoverVerdict, viewport: UIFrame, platform: DevicePlatform, services: Services) -> CLIError {
+        let cover = TapCover.describe(verdict)
+        let device = DeviceID(rawValue: services.device, platform: platform)
+        switch verdict.evidence {
+        case .logBoxTouchArea:
+            return CLIError(
+                errorDescription: "A LogBox toast takes touches over the submit button, so the submit button was not tapped. Clear LogBox, then run login again.",
+                reason: .targetCovered, hint: logBoxDismiss(services), coveredBy: CoverReport(verdict)
+            )
+        case .devMenuTouchArea:
+            return CLIError(
+                errorDescription: "The dev menu button is over the submit button, so the submit button was not tapped. Drag it clear, then run login again.",
+                reason: .targetCovered, hint: TapCover.dragClear(verdict.cover, viewport: viewport, device: device), coveredBy: CoverReport(verdict)
+            )
+        default:
+            return CLIError(
+                errorDescription: "The submit button is under \(cover) (\(TapCover.evidence(verdict.evidence))), so it was not tapped.",
+                reason: .targetCovered, hint: CommandScope.current.describeHint(device: services.device), coveredBy: CoverReport(verdict)
+            )
+        }
+    }
+
     /// Where the login was when it read Turnstile, for the refusal's message.
     enum TurnstileStage {
         case beforeTyping
@@ -145,12 +244,28 @@ enum LoginFlow {
         case afterSubmit
     }
 
-    /// A checkbox, a challenge or several checkboxes are for a person; absent, passed, checking and a web view with no widget are not.
+    /// How long a web view with no widget is read again: one still loading reads the same for a moment.
+    static let widgetLoad: TimeInterval = 2
+
+    /// Turnstile's phase, reading again for at most `widgetLoad` while a web view holds no widget yet.
+    private static func readingPastLoad(_ tree: UITree, services: Services) async throws -> TurnstilePhase {
+        var phase = try await services.readTurnstile(tree)
+        let deadline = services.clock.now() + widgetLoad
+        while phase == .noWidget, services.clock.now() < deadline {
+            try await services.clock.sleep(.milliseconds(250))
+            phase = try await services.readTurnstile(try await services.readTree())
+        }
+        return phase
+    }
+
+    /// A checkbox, a challenge, several checkboxes or a box the tree no longer shows are for a person; absent, passed, checking and a failed run that may retry are not. Past submit, a web view with no widget says nothing new.
     private static func requireNoWidget(_ phase: TurnstilePhase, stage: TurnstileStage, services: Services) async throws {
         switch phase {
-        case .absent, .passed, .checking, .noWidget:
+        case .absent, .passed, .checking, .failed:
             return
-        case .ready, .visualChallenge, .ambiguous:
+        case .noWidget where stage == .afterSubmit:
+            return
+        case .ready, .visualChallenge, .ambiguous, .noWidget:
             await services.noteDevice()
             throw turnstileRequired(phase, stage: stage, watch: services.turnstileWatch)
         }
@@ -159,22 +274,20 @@ enum LoginFlow {
     /// After typing: absent or passed goes on; checking is read again until `timeout`; anything else hands back.
     private static func settleTurnstile(in tree: UITree, timeout: TimeInterval, services: Services) async throws -> LoginTurnstileStep {
         let deadline = services.clock.now() + timeout
-        var phase = try await services.readTurnstile(tree)
+        var phase = try await readingPastLoad(tree, services: services)
         while true {
             switch phase {
             case .absent:
                 return .absent
             case .passed:
                 return .passed
-            case .noWidget:
-                return .unknown
-            case .ready, .visualChallenge, .ambiguous:
+            case .ready, .visualChallenge, .ambiguous, .noWidget:
                 await services.noteDevice()
                 throw turnstileRequired(phase, stage: .beforeSubmit, watch: services.turnstileWatch)
-            case .checking:
+            case .checking, .failed:
                 if services.clock.now() >= deadline {
                     await services.noteDevice()
-                    throw turnstileStillChecking(after: timeout, watch: services.turnstileWatch)
+                    throw phase == .failed ? turnstileFailed(after: timeout, watch: services.turnstileWatch) : turnstileStillChecking(after: timeout, watch: services.turnstileWatch)
                 }
                 try await services.clock.sleep(.milliseconds(250))
                 phase = try await services.readTurnstile(try await services.readTree())
@@ -192,6 +305,15 @@ enum LoginFlow {
         )
     }
 
+    static func turnstileFailed(after timeout: TimeInterval, watch: String, audience: ErrorAudience = .current) -> CLIError {
+        CLIError(
+            errorDescription: "Cloudflare Turnstile still showed Verification failed after \(seconds(timeout)), so the submit button was not tapped. A widget set to retry tries again by itself: run login again once it passes. If it stays, reopen the screen and check the app's log.",
+            reason: .turnstileRequired,
+            hint: audience == .person ? nil : watch,
+            ask: PersonAsk.finishTurnstile
+        )
+    }
+
     /// An agent gets the ask and the command that watches for the tick; a person at the terminal is the one to tick it.
     static func turnstileRequired(_ phase: TurnstilePhase, stage: TurnstileStage, watch: String = Turnstile.waitCommand(), audience: ErrorAudience = .current) -> CLIError {
         let what: String
@@ -202,6 +324,8 @@ enum LoginFlow {
             (what, step, ask) = ("A Cloudflare Turnstile challenge is on screen", "Solve it", PersonAsk.solveTurnstile)
         case .ambiguous(let count):
             (what, step, ask) = ("\(count) Cloudflare Turnstile checkboxes are on screen", "Tick them", PersonAsk.tickTurnstiles)
+        case .noWidget:
+            (what, step, ask) = ("A Turnstile web view is up with no widget Offsider can read", "Tick the box if one shows", PersonAsk.tickTurnstile)
         default:
             (what, step, ask) = ("A Cloudflare Turnstile checkbox is on screen", "Tick it", PersonAsk.tickTurnstile)
         }
@@ -213,7 +337,8 @@ enum LoginFlow {
         } else {
             let outcome = stage == .beforeTyping ? "Nothing was typed." : "The submit button was not tapped."
             let next = person ? "\(step) on the device, then run login again." : "Offsider never ticks Turnstile. Run login once more after it passes."
-            message = "\(what). \(outcome) \(next)"
+            let noBox = phase == .noWidget ? " If no box shows, it failed to run or runs invisibly: check the app's log for a Turnstile error, and doctor for an old WebView." : ""
+            message = "\(what). \(outcome) \(next)\(noBox)"
         }
         return CLIError(errorDescription: message, reason: .turnstileRequired, hint: person ? nil : watch, ask: ask)
     }
@@ -242,38 +367,50 @@ enum LoginFlow {
 
     /// Only `noForm` reads `lastSignIn`, to name who Offsider last signed in here.
     private static func detect(
-        in tree: UITree, profile: LoginProfile?, origin: LoginForm.Origin? = nil, afterTyping: Bool, reachable: [UINode] = [],
+        in tree: UITree, profile: LoginProfile?, origin: LoginForm.Origin? = nil, afterTyping: Bool, hits: HitTests = HitTests(), device: String = "<DEVICE_ID>",
         lastSignIn: () -> LastSignIn? = { nil }
     ) throws -> LoginForm.Found {
         do {
-            return try LoginForm.detect(in: tree, profile: profile, origin: origin, reachable: reachable)
+            return try LoginForm.detect(in: tree, profile: profile, origin: origin, reachable: hits.reachable, answers: hits.answers)
         } catch let error as LoginFormError {
             let reason: FailureReason = error.kind == .ambiguous ? .selectorAmbiguous : .selectorNotFound
             if afterTyping {
                 throw CLIError(
                     errorDescription: "The form changed after typing. The submit button was not tapped.",
-                    reason: reason
+                    reason: reason,
+                    coveredBy: error.coveredBy
                 )
             }
+            if let block = LogBoxBlock.hiding(tree, inspector: KnownOverlays.logBoxInspector(in: tree.roots, viewport: tree.viewport), subject: "the form") {
+                let blocked = WaitBlockedError(block: block, gone: false)
+                throw CLIError(errorDescription: "\(blocked.message) Nothing was typed.", reason: reason, hint: "offsider rn logbox dismiss --device \(device)")
+            }
             guard error.kind == .noForm, let last = lastSignIn() else {
-                throw CLIError(errorDescription: error.message, reason: reason)
+                throw CLIError(errorDescription: error.message, reason: reason, coveredBy: error.coveredBy)
             }
             throw CLIError(
                 errorDescription: "\(error.message) \(switchNote(last))",
                 reason: reason,
-                hint: "offsider credential signed-out --device \(last.deviceID)"
+                hint: "offsider credential signed-out --device \(last.deviceID)",
+                coveredBy: error.coveredBy
             )
         }
     }
 
-    /// A hit-test at each hidden control's own point, as `tap --fail-if-covered` makes, says what a touch there reaches.
-    private static func reachableByHitTest(in tree: UITree, profile: LoginProfile?, services: Services) async -> [UINode] {
+    /// A hit-test at a control's own point, as `tap --fail-if-covered` makes, says what a touch there reaches. Each control is read once.
+    struct HitTests {
+        var answers: [LoginForm.HitAnswer] = []
         var reachable: [UINode] = []
-        for node in LoginForm.hiddenCandidates(in: tree, profile: profile) {
-            guard let frame = node.frame, let hit = await services.hitTest(frame.center), LoginForm.isHit(hit, on: node) else { continue }
-            reachable.append(node)
+
+        @MainActor
+        mutating func read(_ nodes: [UINode], services: Services) async {
+            for node in nodes where !answers.contains(where: { $0.node == node }) {
+                guard let frame = node.frame else { continue }
+                let hit = await services.hitTest(frame.center)
+                answers.append(LoginForm.HitAnswer(node: node, hit: hit))
+                if let hit, LoginForm.isHit(hit, on: node) { reachable.append(node) }
+            }
         }
-        return reachable
     }
 
     /// Names who Offsider last signed in here, and how to switch users.
@@ -304,13 +441,17 @@ enum LoginFlow {
         return value.allSatisfy { $0 == SecureText.bullet }
     }
 
-    /// The keys can be the only nodes below the password, so the submit button is missing until the keyboard goes.
-    private static func revealSubmit(in tree: UITree, profile: LoginProfile?, services: Services) async throws -> UITree {
-        if (try? LoginForm.detect(in: tree, profile: profile)) != nil { return tree }
-        guard LoginForm.credentialsAreVisible(in: tree, profile: profile), keyboardOnScreen(keyboards(in: tree), in: tree) else {
-            return tree
+    /// The keys can be the only nodes below the password, so the submit button is missing until the keyboard goes. A hit-test settles fields only a container holds, as a backdrop must not count as clear; its answers come back while the tree is unchanged.
+    private static func revealSubmit(in tree: UITree, profile: LoginProfile?, services: Services) async throws -> (UITree, HitTests) {
+        var hits = HitTests()
+        if (try? LoginForm.detect(in: tree, profile: profile)) != nil { return (tree, hits) }
+        guard keyboardOnScreen(keyboards(in: tree), in: tree) else { return (tree, hits) }
+        if !LoginForm.credentialsAreVisible(in: tree, profile: profile) {
+            await hits.read(LoginForm.unsettled(in: tree, profile: profile), services: services)
         }
-        return try await hideKeys(in: tree, services: services)
+        guard LoginForm.credentialsAreVisible(in: tree, profile: profile, reachable: hits.reachable) else { return (tree, hits) }
+        if (try? LoginForm.detect(in: tree, profile: profile, reachable: hits.reachable)) != nil { return (tree, hits) }
+        return (try await hideKeys(in: tree, services: services), HitTests())
     }
 
     /// On an iOS tree that names no focused text field, only a keyboard coming up shows the password tap landed; one already up would prove nothing, and the password would go to the field that still has focus.
@@ -367,8 +508,8 @@ enum LoginFlow {
         let keyboards = keyboards(in: tree)
         guard !keyboards.isEmpty else { return tree }
         let submitNow = LoginForm.match(submit, in: tree) ?? submit
-        // A keyboard whose frame is below the screen is the input assistant's layout, not keys over the form.
-        if !keyboardOnScreen(keyboards, in: tree), !covered(tree, submit: submitNow, shell: shell) {
+        // A keyboard whose frame is below the screen is the input assistant's layout, and a hardware keyboard's toolbar is no keys; neither is over the form.
+        if !keyboardOnScreen(keyboards, in: tree) || !KeyboardDismiss.showsKeys(in: tree), !covered(tree, submit: submitNow, shell: shell) {
             return tree
         }
         var current = tree
@@ -426,7 +567,7 @@ enum LoginFlow {
         turnstile: LoginTurnstileStep,
         timeout: TimeInterval,
         services: Services
-    ) async throws -> LoginReport {
+    ) async throws -> (report: LoginReport, tapped: UITree) {
         let deadline = services.clock.now() + timeout
         var missingUntil: TimeInterval?
         while true {
@@ -447,10 +588,10 @@ enum LoginFlow {
             missingUntil = nil
             if submit.enabled != false {
                 try requireForeground(app, in: tree, services: services, stopped: "the submit button was not tapped")
-                try await services.tap(frame.center, tree)
+                try await services.tap(try await submitPoint(submit, frame: frame, in: tree, services: services), tree)
                 let label = submit.label?.trimmingCharacters(in: .whitespacesAndNewlines)
                 let shown = (label?.isEmpty == false) ? label : nil
-                return LoginReport(app: app, key: key, turnstile: turnstile, submitLabel: shown)
+                return (LoginReport(app: app, key: key, turnstile: turnstile, submitLabel: shown), tree)
             }
             if services.clock.now() >= deadline {
                 throw CLIError(

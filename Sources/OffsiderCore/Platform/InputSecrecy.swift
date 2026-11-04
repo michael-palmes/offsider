@@ -3,6 +3,8 @@ import Foundation
 /// Marks text that must never reach a process argument on the device, such as a password `login` types.
 public enum InputSecrecy {
     @TaskLocal public static var isSecret = false
+    /// Text goes only as key presses through the iPhone session, since XCUITest's `typeText` can reach `runner.log`.
+    @TaskLocal public static var keysOnly = false
     /// Text given as a command argument: when the focused field cannot be read, it is typed as a password would be.
     @TaskLocal public static var fromArgument = false
     /// The focused-field verdict the command read just before typing; nil lets the input session read the screen itself.

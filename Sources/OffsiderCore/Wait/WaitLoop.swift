@@ -136,6 +136,10 @@ public struct WaitOutcome: Equatable, Sendable {
     public var nearMiss: WaitNearMiss?
     /// For `--settled`: the part of the screen that kept moving, which `--ignore-id` or `--ignore-region` leaves out.
     public var movingPart: MovingPart?
+    /// For `--settled`: all of what kept moving is off screen or beneath the page, so the pixels do not show it.
+    public var movingUnseen = false
+    /// For `--settled`: something kept moving and no flag leaves it out with anything left to wait for.
+    public var movedPastFlags = false
     /// For `--gone`: what hides the element, when the app still holds it, such as `under button "Buy" (16, 790) 370x44`.
     public var goneBecause: String?
 
@@ -209,6 +213,11 @@ public struct SettleLeaveOut: Equatable, Sendable {
 
     public static let none = SettleLeaveOut()
 
+    /// The flag to name when these leave nothing to watch.
+    var flagName: String {
+        ids.isEmpty ? "--ignore-region" : regions.isEmpty ? "--ignore-id" : "--ignore-id and --ignore-region"
+    }
+
     /// As the detector's keys write them, with a UUID in an id reduced to `<uuid>`.
     var detectorIDs: Set<String> {
         Set(ids.compactMap(ChangeDetector.normalisedIdentifier))
@@ -225,6 +234,19 @@ public struct WaitUnreadableError: LocalizedError, CustomStringConvertible, Equa
     static let settledTree = WaitUnreadableError(
         message: "--settled could not read the accessibility tree: every read was empty or unreadable, so it cannot tell when the screen settles. Use --settle-by screen to compare screenshots instead."
     )
+}
+
+/// A `--settled` wait whose flags leave nothing on the screen to watch, so a pass would prove nothing.
+public struct WaitLeftNothingError: LocalizedError, CustomStringConvertible, Equatable, Sendable {
+    public let flag: String
+
+    public init(flag: String) {
+        self.flag = flag
+    }
+
+    public var message: String { "\(flag) leaves nothing to watch. Use a smaller one." }
+    public var errorDescription: String? { message }
+    public var description: String { message }
 }
 
 @MainActor
@@ -307,11 +329,15 @@ public enum WaitLoop {
         if condition.looksForElements, let probe = sources.probe, let tree = state.lastTree, let finding = await probe(tree) {
             lastReason = finding.explaining(lastReason)
         }
-        var outcome = WaitOutcome(met: false, elapsed: elapsed, reason: lastReason)
-        outcome.onlyTextMoved = state.treeChanges > 0 && !state.structureMoved
-        if case .settled(_, _, let ignoreValues, _, let leaveOut, _) = condition, state.moves >= 2, let move = state.lastMove {
-            outcome.movingPart = ChangeDetector(options: .init(ignoredIdentifiers: leaveOut.detectorIDs, ignoreText: ignoreValues)).movingPart(move.before, move.after)
+        var moving: MovingReport?
+        if case .settled(_, _, let ignoreValues, _, let leaveOut, _) = condition, state.moves.count >= 2 {
+            moving = ChangeDetector(options: .init(ignoredIdentifiers: leaveOut.detectorIDs, ignoreText: ignoreValues)).moving(state.moves)
         }
+        var outcome = WaitOutcome(met: false, elapsed: elapsed, reason: moving.map { "\(lastReason); moving: \($0.named)" } ?? lastReason)
+        outcome.onlyTextMoved = state.treeChanges > 0 && !state.structureMoved
+        outcome.movingPart = moving?.part
+        outcome.movingUnseen = moving?.unseen == true
+        outcome.movedPastFlags = moving != nil && moving?.part == nil
         if state.missed, let tree = state.lastTree {
             outcome.nearMiss = condition.explain?(tree)
         }
@@ -358,9 +384,8 @@ public enum WaitLoop {
         var treeChangedAt: TimeInterval?
         var inputChangedTree = false
         var deadline: TimeInterval = 0
-        /// How many reads saw an element move, and the last two reads that did.
-        var moves = 0
-        var lastMove: (before: AccessibilitySnapshot, after: AccessibilitySnapshot)?
+        /// What reads saw move.
+        var moves = MoveLog()
         var notedOtherApp = false
         /// When the LogBox inspector began to hide the app, and the reads since.
         var blockedSince: TimeInterval?
@@ -446,7 +471,12 @@ public enum WaitLoop {
                 let snapshot = whole.leavingOut(leaveOut.regions)
                 state.treeReads += 1
                 state.readableTree = state.readableTree || whole.isKnown
-                if let previous = state.snapshot {
+                let coverage = whole.isKnown ? detector.coverage(snapshot) : (roots: true, elements: true)
+                if !coverage.roots { throw WaitLeftNothingError(flag: leaveOut.flagName) }
+                if !coverage.elements {
+                    // A splash screen can hold only what is left out for a moment, so this reads again until the timeout.
+                    change = "\(leaveOut.flagName) leaves nothing to watch on this screen"
+                } else if let previous = state.snapshot {
                     switch detector.compare(previous, snapshot) {
                     case .unchanged: break
                     case .unknown: change = "accessibility tree not readable"
@@ -456,8 +486,7 @@ public enum WaitLoop {
                         state.treeChangedAt = sources.now()
                         if ChangeDetector(options: .init(ignoredIdentifiers: leaveOut.detectorIDs, ignoreText: true)).compare(previous, snapshot) != .unchanged {
                             state.structureMoved = true
-                            state.moves += 1
-                            state.lastMove = (previous, snapshot)
+                            detector.note(previous, snapshot, in: &state.moves)
                         }
                     }
                 }

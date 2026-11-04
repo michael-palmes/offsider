@@ -1,7 +1,7 @@
 import Foundation
 
-/// The permission rules `offsider init` adds to the agents installed on this Mac, so a misled agent cannot run
-/// the person-only commands and must ask before the ones that sign in, change permissions or reach a device directly.
+/// The permission rules `offsider init` adds to the agents installed on this Mac, so a misled agent must ask before the
+/// commands that change a saved login or a permission, reveal a secret or reach a device directly. Person-only commands refuse by themselves, so `--help` stays readable.
 public enum AgentPermissionRules {
     public enum Decision: String, Sendable, CaseIterable {
         case deny
@@ -33,18 +33,6 @@ public enum AgentPermissionRules {
 
     /// Sorted by pattern within each decision. Claude Code checks deny, then ask, then allow; the first match wins.
     public static let rules: [Rule] = [
-        Rule(claude: "offsider credential join*", codex: ["offsider", "credential", "join"], decision: .deny,
-             reason: "Links saved test passwords between apps; a person runs it."),
-        Rule(claude: "offsider describe-ui --raw-source*", codex: ["offsider", "describe-ui", "--raw-source"], decision: .deny,
-             reason: "Dumps the unfiltered tree, secure fields included."),
-        Rule(claude: "offsider devices add*", codex: ["offsider", "devices", "add"], decision: .deny,
-             reason: "Allows physical devices; a person runs it."),
-        Rule(claude: "offsider runner build --register-device*", codex: ["offsider", "runner", "build", "--register-device"], decision: .deny,
-             reason: "Registers a device with a signing team; a person runs it."),
-        Rule(claude: "offsider unlock-code*", codex: ["offsider", "unlock-code"], decision: .deny,
-             reason: "Saves the device unlock code; a person runs it."),
-        Rule(claude: "offsider wake --unlock*", codex: ["offsider", "wake", "--unlock"], decision: .deny,
-             reason: "Types the saved unlock code into a device."),
         Rule(claude: "*/adb *", codex: [], decision: .ask,
              reason: "Raw adb reaches any attached phone without Offsider's checks."),
         Rule(claude: "*/devicectl *", codex: [], decision: .ask,
@@ -69,8 +57,6 @@ public enum AgentPermissionRules {
              reason: "Saves a test password."),
         Rule(claude: "offsider credential signed-out*", codex: ["offsider", "credential", "signed-out"], decision: .ask,
              reason: "Clears the record of who is signed in."),
-        Rule(claude: "offsider login*", codex: ["offsider", "login"], decision: .ask,
-             reason: "Signs in with a saved test password."),
         Rule(claude: "offsider logs --no-redact*", codex: ["offsider", "logs", "--no-redact"], decision: .ask,
              reason: "Prints passwords and tokens from the device's log."),
         Rule(claude: "offsider permission*", codex: ["offsider", "permission"], decision: .ask,
@@ -85,9 +71,28 @@ public enum AgentPermissionRules {
              reason: "Streams with no check for password fields or masked text."),
         Rule(claude: "offsider type --file*", codex: ["offsider", "type", "--file"], decision: .ask,
              reason: "Types a file's contents, which may hold a secret."),
+        Rule(claude: "offsider unlock-code remove*", codex: ["offsider", "unlock-code", "remove"], decision: .ask,
+             reason: "Removes a saved unlock code."),
         Rule(claude: "xcrun devicectl *", codex: ["xcrun", "devicectl"], decision: .ask,
              reason: "Raw devicectl reaches any attached iPhone without Offsider's checks."),
     ]
+
+    /// Commands a person may allow once rather than approve per call, as each reaches only allowed apps; `init` never adds them by itself.
+    public static let allowOnce: [(command: [String], reason: String)] = [
+        (["offsider", "app", "install"], "Installs an APK checked against the allowed app."),
+        (["offsider", "app", "uninstall"], "Removes an allowed app and its data."),
+        (["offsider", "app", "prefs"], "Lists an allowed app's preference names, never values."),
+        (["offsider", "app", "broadcast"], "Sends a broadcast to an allowed app's own receivers."),
+        (["offsider", "airplane"], "Turns airplane mode on or off; session stop resets it."),
+    ]
+
+    public static var allowOnceClaude: [String] {
+        allowOnce.map { "Bash(\($0.command.joined(separator: " "))*)" }
+    }
+
+    public static var allowOnceCodex: [String] {
+        allowOnce.map { "prefix_rule(pattern=[\($0.command.map { "\"\($0)\"" }.joined(separator: ", "))], decision=\"allow\", justification=\"\($0.reason)\")" }
+    }
 
     /// The rules Codex can express.
     public static var codexRules: [Rule] { rules.filter { !$0.codex.isEmpty } }
@@ -96,10 +101,24 @@ public enum AgentPermissionRules {
         rules.filter { $0.decision == decision }.map(\.claudePattern)
     }
 
-    /// Offsider's earlier rules: where init put one, the narrower rules replace it; moved elsewhere, it is the person's choice.
+    /// Offsider's earlier rules: where init put one, it comes out; moved elsewhere, it is the person's choice.
     static let replacedRules: [Rule] = [
         Rule(claude: "offsider credential*", codex: ["offsider", "credential"], decision: .ask,
              reason: "Saves, shares or removes test passwords."),
+        Rule(claude: "offsider credential join*", codex: ["offsider", "credential", "join"], decision: .deny,
+             reason: "Links saved test passwords between apps; a person runs it."),
+        Rule(claude: "offsider describe-ui --raw-source*", codex: ["offsider", "describe-ui", "--raw-source"], decision: .deny,
+             reason: "Dumps the unfiltered tree, secure fields included."),
+        Rule(claude: "offsider devices add*", codex: ["offsider", "devices", "add"], decision: .deny,
+             reason: "Allows physical devices; a person runs it."),
+        Rule(claude: "offsider runner build --register-device*", codex: ["offsider", "runner", "build", "--register-device"], decision: .deny,
+             reason: "Registers a device with a signing team; a person runs it."),
+        Rule(claude: "offsider unlock-code*", codex: ["offsider", "unlock-code"], decision: .deny,
+             reason: "Saves the device unlock code; a person runs it."),
+        Rule(claude: "offsider wake --unlock*", codex: ["offsider", "wake", "--unlock"], decision: .deny,
+             reason: "Types the saved unlock code into a device."),
+        Rule(claude: "offsider login*", codex: ["offsider", "login"], decision: .ask,
+             reason: "Signs in with a saved test password."),
     ]
 
     /// `offsider credential` for `Bash(offsider credential*)`, `Bash(offsider credential:*)` or `Bash(offsider credential *)`; nil for an exact command.
@@ -138,7 +157,7 @@ public enum AgentPermissionRules {
         public var pickerRow: [String] { ["Permission rules for \(name)", AgentPermissionRules.pickerDetail] }
     }
 
-    public static let pickerDetail = "deny join, unlock, device access; ask login, permission"
+    public static let pickerDetail = "ask before raw adb, permissions, saved login changes"
     public static let maxFileBytes = 1 << 20
 
     /// The agents whose folder exists under `home`, in a stable order.
@@ -294,7 +313,11 @@ public enum AgentPermissionRules {
                 ("reason", .string(rule.reason)),
             ])
         })
-        return OrderedJSON.object([("claude", claude), ("codex", codex), ("rules", reasons)]).rendered() + "\n"
+        let optional = OrderedJSON.object([
+            ("claude", .array(allowOnceClaude.map(OrderedJSON.string))),
+            ("codex", .array(allowOnceCodex.map(OrderedJSON.string))),
+        ])
+        return OrderedJSON.object([("claude", claude), ("codex", codex), ("rules", reasons), ("allowOnce", optional)]).rendered() + "\n"
     }
 
     /// `Rules added to ~/.claude/settings.json (15 new)`, `Rules updated in ...` or `Rules already present in ...`.

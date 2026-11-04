@@ -115,30 +115,17 @@ struct TestDeviceAddTests {
     static let policy = PhysicalDevicePolicy(managed: .none, list: .empty)
     static let apps = [InstalledApp(id: "com.example.app", name: "Example")]
 
-    @Test("the row comes last, is never chosen for you, and a managed Mac is not offered it", arguments: [true, false])
-    func menuRow(listed: Bool) {
-        let menu = DeviceAccessAllow.appMenu(listed ? Self.apps : [], platform: .ios, policy: Self.policy, profile: nil, front: nil)
-        #expect(menu.choices.last == .testDevice)
-        #expect(menu.choices[menu.selected] != .testDevice)
-        #expect(menu.rows().last?.recommended == false)
-
-        let managed = PhysicalDevicePolicy(managed: ManagedDevicePolicy(allowPhysicalDevices: true), list: .empty)
-        #expect(!DeviceAccessAllow.appMenu(Self.apps, platform: .ios, policy: managed, profile: nil, front: nil).choices.contains(.testDevice))
-    }
-
     @Test("the question starts on the answer that stops")
     func questionDefaultsToStop() {
         #expect(DeviceAccessAllow.personalRows[0].columns == [AllowScreen.personalYes])
         #expect(DeviceAccessAllow.personalNoIndex != 0)
     }
 
-    @Test("Until removed comes first for a test device, and every other allowance keeps 12 hours")
+    @Test("one app recommends 7 days, and any app stays at 12 hours")
     func expiry() {
-        let test = DeviceAccessAllow.expiryRows(testDevice: true)
-        #expect(test.options[test.recommended].value == "never")
-        #expect(test.options.count == DeviceAccessAllow.expiryOptions.count)
-        let plain = DeviceAccessAllow.expiryRows(testDevice: false)
-        #expect(plain.options[plain.recommended].value == "12h")
+        #expect(DeviceAccessAllow.expiryOptions[DeviceAccessAllow.expiryRecommended(apps: ["com.example.app"])].value == "7d")
+        #expect(DeviceAccessAllow.expiryOptions[DeviceAccessAllow.expiryRecommended(apps: [])].value == "12h")
+        #expect(DeviceAccessAllow.expiryOptions[DeviceAccessAllow.expiryRecommended(apps: [DeviceAllowance.wholeDevicePin])].value == "12h")
     }
 
     @Test("--test-device with --app is a usage error")
@@ -159,13 +146,13 @@ struct TestDeviceAddTests {
         #expect(!FileManager.default.fileExists(atPath: DeviceAccessCommandTests.file(home)))
     }
 
-    @Test("choosing the row and saying nothing is personal saves it, until removed by default, after Touch ID")
+    @Test("choosing the row and saying nothing is personal saves it until removed, after Touch ID, asking nothing else")
     func saved() async throws {
         let home = try makePolicyHome()
         defer { try? FileManager.default.removeItem(atPath: home) }
         let presence = RecordingPresence()
-        // Device, the row (Any app, Type, Test device), "No, nothing personal", then the first expiry row.
-        _ = try await DeviceAccessCommandTests.allow(["--team", "ABCDE12345"], answers: ["1", "3", "2", "1"], context: { terminal in
+        // The only phone needs no menu: the Test device row, then "No, nothing personal".
+        _ = try await DeviceAccessCommandTests.allow(["--team", "ABCDE12345"], answers: ["2", "2"], context: { terminal in
             DeviceAccessCommandTests.context(home: home, seal: MemorySeal(), terminal: terminal)
         }, presence: presence)
         let entry = try #require(try DeviceAccessCommandTests.entries(home).first)

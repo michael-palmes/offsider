@@ -15,6 +15,8 @@ public struct IOSDeviceDoctorFacts: Equatable, Sendable {
 
     public enum LockFact: Equatable, Sendable {
         case read(passcodeRequired: Bool?, backlightOn: Bool?)
+        /// `devicectl` itself said so, unlike a dark screen with a passcode.
+        case locked
         case unreadable(String)
     }
 

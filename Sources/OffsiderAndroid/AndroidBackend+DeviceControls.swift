@@ -95,6 +95,7 @@ extension AndroidBackend: AutoRotateControlling {
 
     public func setAccelerometerRotation(_ value: Int, on id: DeviceID) async throws {
         _ = try await settingsShell("settings put system accelerometer_rotation \(value == 0 ? 0 : 1)", on: id.rawValue)
+        geometries[id.rawValue] = nil
     }
 
     public func setUserRotation(_ value: Int, on id: DeviceID) async throws {

@@ -91,6 +91,8 @@ public enum KeyboardDismiss {
             let keys = keyboard.flattened().compactMap(\.frame).filter { candidate in
                 candidate.width > 0 && candidate.height > 0 && candidate != frame && !isBackdrop(candidate, in: viewport)
             }
+            // An Android window that spans the screen with no keys listed says nothing about where they are.
+            if keys.isEmpty, keyboard.isAndroidNode, isBackdrop(frame, in: viewport) { return nil }
             return UIFrame.union(of: keys) ?? frame
         }
     }

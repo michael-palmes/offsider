@@ -34,6 +34,16 @@ struct AssertCommandTests {
         #expect(json.hasSuffix(#""reason":"has value '2', expected '3'","match":null,"matched":null,"nearest":[],"leaveOut":null}"#))
     }
 
+    @Test("an empty iPhone field whose value XCTest reports as its placeholder does not have that value")
+    func placeholderIsNotAValue() async throws {
+        let roots = try IOSAccessibilityMapping.roots(fromJSON: Data("""
+        [{"type": "Application", "AXLabel": "Playground", "frame": {"x": 0, "y": 0, "width": 393, "height": 852}, "children": [
+          {"type": "TextField", "AXUniqueId": "email", "AXValue": "Email", "placeholder": "Email", "frame": {"x": 20, "y": 100, "width": 300, "height": 40}}]}]
+        """.utf8))
+        let (_, outcome, _) = try await Self.check(["--id", "email", "--has-value", "Email"], on: UITree(platform: .ios, device: Self.device.rawValue, roots: roots))
+        #expect(!outcome.met)
+    }
+
     @Test("--has-value that is the element's label says to use --label")
     func hasValueThatIsTheLabel() async throws {
         let (command, outcome, _) = try await Self.check(["--id", "save", "--has-value", "Save"], on: Self.screen())
@@ -129,6 +139,33 @@ struct AssertCommandTests {
             #expect(!outcome.met)
             #expect(outcome.reason.hasPrefix("does not say whether it is enabled"))
         }
+    }
+
+    @Test("a group holding its own copy judges --enabled and --disabled instead of crashing", arguments: [
+        (["--id", "screen", "--enabled"], true),
+        (["--id", "screen", "--disabled"], false),
+    ])
+    func identicalNestedMatches(arguments: [String], met: Bool) async throws {
+        let copy = FakeUI.node(.other, id: "screen", label: "Screen", frame: FakeUI.frame(0, 0, 393, 852), enabled: true)
+        var group = copy
+        group.children = [copy]
+
+        let (_, outcome, _) = try await Self.check(arguments, on: FakeUI.tree(width: 393, height: 852, [group]))
+
+        #expect(outcome.met == met)
+        #expect(met || outcome.reason == "is enabled, expected disabled")
+    }
+
+    @Test("a separate match does not stand in for a group holding its own copy")
+    func identicalNestedBesideASeparateMatch() async throws {
+        let copy = FakeUI.node(.other, id: "screen", label: "Screen", frame: FakeUI.frame(0, 0, 393, 400), enabled: true)
+        var group = copy
+        group.children = [copy]
+        let separate = FakeUI.node(.other, id: "screen", label: "Screen", frame: FakeUI.frame(0, 400, 393, 400), enabled: false)
+
+        let (_, enabled, _) = try await Self.check(["--id", "screen", "--enabled"], on: FakeUI.tree(width: 393, height: 852, [group, separate]))
+
+        #expect(enabled.met, "only the separate match is disabled, and the group is enabled")
     }
 
     @Test("a disabled button and the enabled text inside it read as the one disabled button")

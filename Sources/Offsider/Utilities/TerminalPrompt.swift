@@ -328,6 +328,18 @@ final class TerminalPrompt {
         return use(key)
     }
 
+    /// Waits up to `seconds` for a key, for a screen that watches something else; true when the person pressed Q or Control-C. Other keys are dropped, an arrow's Escape among them.
+    func quitPressed(within seconds: TimeInterval) -> Bool {
+        let deadline = Date().addingTimeInterval(seconds)
+        while let woke = try? awaitKey(until: deadline) {
+            guard !woke else { continue }
+            var byte: UInt8 = 0
+            guard Darwin.read(descriptor, &byte, 1) == 1 else { return false }
+            if [0x03, 0x71, 0x51].contains(byte) { return true }
+        }
+        return false
+    }
+
     /// Waits until `deadline` for the terminal to have a byte to read, and says true when a resize woke it first.
     /// `select`, since macOS `poll` does not support `/dev/tty`.
     private func awaitKey(until deadline: Date) throws -> Bool {

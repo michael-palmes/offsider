@@ -3,9 +3,17 @@ import Foundation
 /// What `devices add` shows, drawn with `TerminalUI`: a banner, one short question per step that collapses to a
 /// receipt line, a bold summary before Touch ID, and a closing block that names the full ID only in its commands.
 public enum AllowScreen {
-    public static let title = "Allow agents to control which phone or tablet"
+    public static let title = "Allow agents to control a phone or tablet"
     public static let deviceQuestion = "Which phone or tablet?"
     public static let teamQuestion = "Which team?"
+    public static let watching = "Watching for it. Q stops."
+    public static let useQuestion = "How will you use it?"
+    public static let useOneApp = "One app"
+    public static let useOneAppDetail = "only that app"
+    public static let loginQuestion = "Add a test login?"
+    public static let skipLogin = "Skip"
+    public static let addLogin = "Add one"
+    public static let addLoginDetail = "username and password, here"
     public static let appQuestion = "Which app?"
     public static let expiryQuestion = "For how long?"
     public static let metroQuestion = "Which Metro port?"
@@ -14,7 +22,7 @@ public enum AllowScreen {
     public static let metroPortDetail = "every app on it can reach Metro"
     public static let typePorts = "Type ports"
     public static let anotherQuestion = "Allow another?"
-    public static let noDevice = "Nothing over USB. Plug in, unlock, trust this Mac."
+    public static let noDevice = "Nothing over USB. Plug in and unlock. Android: USB debugging on."
     public static let wifiOnly = "Wi-Fi only, plug in a cable"
     public static let allAllowed = "All connected devices are allowed. Choose one to change it."
     public static let anyApp = "Any app"
@@ -25,6 +33,10 @@ public enum AllowScreen {
     public static let personalYes = "Yes, stop"
     public static let personalNo = "No, nothing personal"
     public static let typeApp = "Type an app ID"
+    public static let appsLocked = "It is locked. Unlock it and run this again, or type an app ID."
+    public static let appsDeveloperModeOff = "Developer Mode is off. Turn it on in Settings > Privacy & Security, restart it and run this again, or type an app ID."
+    public static let appsDiskImageFailed = "Xcode could not prepare it. Run this again with it unlocked, update Xcode if that fails, or type an app ID."
+    public static let appsUnread = "Could not read its apps. Run this again, or type an app ID."
     public static let typeTeam = "Type a team ID"
     public static let freeTeam = "Free"
     public static let paidTeam = "Paid"
@@ -105,12 +117,12 @@ public enum AllowScreen {
     }
 
     /// The closing block for one device: the only place the full ID shows, since the commands need it.
-    public static func allowed(name: String, key: String, until: String, apps: [String], metroPorts: [Int] = [], testDevice: Bool = false, width: Int, style: TerminalStyle) -> [String] {
+    /// `ready` means Offsider proved it can drive the device, so nothing is left to run.
+    public static func allowed(name: String, key: String, until: String, apps: [String], metroPorts: [Int] = [], testDevice: Bool = false, notes: [String] = [], ready: Bool = false, width: Int, style: TerminalStyle) -> [String] {
         let key = PromptScreen.visible(key)
         let metro = metroPorts.isEmpty ? "" : ", \(Self.metro(metroPorts))"
-        return TerminalUI.closing("Allowed \(name) \(until), \(Self.apps(apps, testDevice: testDevice))\(metro).", commands: [
-            ("Withdraw", "offsider devices remove --device \(key)"),
-            ("Next", "offsider doctor --device \(key)"),
-        ], width: width, style: style)
+        let what = "\(name) \(until), \(Self.apps(apps, testDevice: testDevice))\(metro)."
+        let withdraw = ("Withdraw", "offsider devices remove --device \(key)")
+        return TerminalUI.closing(ready ? "Ready: \(what)" : "Allowed \(what)", notes: notes, commands: ready ? [withdraw] : [withdraw, ("Next", "offsider doctor --device \(key)")], width: width, style: style)
     }
 }

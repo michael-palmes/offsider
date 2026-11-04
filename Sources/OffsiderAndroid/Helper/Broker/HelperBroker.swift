@@ -183,9 +183,12 @@ final class HelperBroker {
         var decoder = HelperWire.FrameDecoder()
         var frames: [Data] = []
         var isAttached = false
+        let input = ClientInput()
         defer {
             if isAttached { attached -= 1 }
             Task { await stream.close() }
+            // A command killed during a hold can no longer lift, and the helper would refuse the next one's touch.
+            if !input.held.isEmpty { Task { await releaseHeldInput() } }
         }
         while true {
             if frames.isEmpty {
@@ -208,7 +211,7 @@ final class HelperBroker {
                 _ = await send([HelperBrokerWire.error(id: 0, code: HelperBrokerWire.Code.badRequest, message: "the request is not a helper request")], to: stream)
                 return
             }
-            guard let replies = await answer(request, payload: payload, from: stream), await send(replies, to: stream) else { return }
+            guard let replies = await answer(request, payload: payload, from: stream, input: input), await send(replies, to: stream) else { return }
             if request.op == "hello", !isAttached, replies.first.map(HelperBrokerWire.isOK) == true {
                 isAttached = true
                 attached += 1
@@ -218,7 +221,7 @@ final class HelperBroker {
     }
 
     /// The frames to send back, nil to close without a reply (input whose command has already gone).
-    private func answer(_ request: HelperBrokerWire.Request, payload: Data, from stream: PosixAdbStream) async -> [Data]? {
+    private func answer(_ request: HelperBrokerWire.Request, payload: Data, from stream: PosixAdbStream, input: ClientInput) async -> [Data]? {
         switch request.op {
         case "status":
             return [HelperBrokerWire.statusReply(id: request.id, status())]
@@ -258,8 +261,14 @@ final class HelperBroker {
                 inFlight -= 1
                 lastRequest = .now
             }
-            return await relay(request, payload: payload, through: session, from: stream)
+            return await relay(request, payload: payload, through: session, from: stream, input: input)
         }
+    }
+
+    /// The fingers and keys one command has down on the helper.
+    @MainActor
+    private final class ClientInput {
+        var held = Set<String>()
     }
 
     /// Why a request is not sent once its turn on the helper comes.
@@ -283,7 +292,7 @@ final class HelperBroker {
 
     /// The command's timeout counts from the request's arrival, as the command's own does, so time spent behind another command's request is part of it.
     private func relay(
-        _ request: HelperBrokerWire.Request, payload: Data, through session: HelperSession, from stream: PosixAdbStream
+        _ request: HelperBrokerWire.Request, payload: Data, through session: HelperSession, from stream: PosixAdbStream, input: ClientInput
     ) async -> [Data]? {
         let arrival = ContinuousClock.now
         let timeout = Self.relayTimeout(for: request, cap: limits.relayTimeout)
@@ -295,6 +304,12 @@ final class HelperBroker {
             ) {
                 unsent = Self.unsent(op: request.op, peerClosed: stream.peerClosed(), waited: .now - arrival, timeout: timeout)
                 return unsent != nil
+            } follow: { reply in
+                if request.op == "inject", HelperBrokerWire.isOK(reply) { input.held = HelperBrokerWire.held(after: payload, given: input.held) }
+                // A command killed during this request: the release goes before a request waiting behind it can be refused.
+                guard !input.held.isEmpty, stream.peerClosed(), session.ops.contains("release"), let release = releaseRequest() else { return nil }
+                input.held = []
+                return (release.payload, "release", release.id)
             }
         } catch {
             outcome = .lost(String(describing: error))
@@ -409,6 +424,24 @@ final class HelperBroker {
             return nil
         }
         return envelope.eventSeq ?? 0
+    }
+
+    /// Lets go of what a command that has gone left held; not a use of the helper.
+    private func releaseHeldInput() async {
+        guard case .ready(let session) = state, !stopping, helperGone == nil, session.ops.contains("release") else { return }
+        inFlight += 1
+        defer { inFlight -= 1 }
+        guard let release = releaseRequest() else { return }
+        let outcome = try? await session.relay(payload: release.payload, op: "release", id: release.id, deadline: .now, atLeast: limits.pingTimeout)
+        guard case .reply? = outcome else {
+            if helperGone == nil { helperGone = "it did not answer release" }
+            return
+        }
+    }
+
+    private func releaseRequest() -> (payload: Data, id: Int)? {
+        probeID += 1
+        return (try? HelperRequest.release.payload(id: probeID)).map { ($0, probeID) }
     }
 
     /// Why the helper failed a ping, or nil when it answered; a ping does not count as use.

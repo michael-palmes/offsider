@@ -11,15 +11,17 @@ struct ListDevices: AsyncParsableCommand, RunsWithoutSubcommand {
         abstract: "List devices and their IDs, and add or remove the phones and tablets agents may drive.",
         discussion: """
         Simulators and emulators need nothing added. A physical iPhone, iPad or Android phone is refused until a person adds it \
-        from their own terminal: `add` lets you pick the device, the signing team (iPhone or iPad), the app and how long from menus, \
-        then asks for Touch ID or your password. Each one lapses (12 hours by default, at most 30 days unless `never`) and can pin the \
-        app Offsider may drive on it. The list lives in ~/.config/offsider/allowed-devices.json, sealed in the login Keychain; an edit \
+        from their own terminal, with one command and Touch ID or your password. `add` asks only what it cannot work out, then registers \
+        an iPhone or iPad and starts its runner. `add --plan` prints the command, filled in, for each connected phone, and an agent can \
+        read it. One app lasts 7 days and any app 12 hours unless you choose, at most 30 days unless `never`; a test device stays until \
+        removed. The list lives in ~/.config/offsider/allowed-devices.json, sealed in the login Keychain; an edit \
         made outside Offsider refuses every device until `add` runs again. A managed preference (domain com.mpalmes.offsider) can \
         forbid devices the list allows, never the reverse.
 
         Examples:
           offsider devices
           offsider devices add
+          offsider devices add --plan
           offsider devices remove
           offsider devices status --json
         """,

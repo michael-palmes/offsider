@@ -200,11 +200,22 @@ struct WaitCommandTests {
         #expect(backend.screenshotReads >= 3)
     }
 
+    @Test("--settle-by screen with an --ignore-region over the whole screen refuses instead of passing on a painted image")
+    func screenWaitLeftWithNothing() async throws {
+        let backend = FakeDeviceBackend(trees: [], screenshots: [try ScreenImage.encode(TestImages.make(width: 40, height: 40), as: .png)], screen: UIScreenInfo(width: 40, height: 40, scale: 1))
+        let wait = try Self.command(["--settled", "--settle-by", "screen", "--ignore-region", "0,0,40,40", "--timeout", "2"])
+
+        await #expect(throws: WaitLeftNothingError(flag: "--ignore-region")) { _ = try await Self.evaluate(wait, on: backend) }
+    }
+
     @Test("conflicting or incomplete conditions are rejected", arguments: [
         (["--id", "a", "--settled"], "Choose only one of a selector, --settled, --region or --seconds."),
         (["--timeout", "5"], "Choose one of a selector (--id, --label, --label-contains or --value), --settled, --region or --seconds."),
         (["--id", "a", "--gone", "--disabled"], "--gone does not take --enabled or --disabled."),
         (["--any", "--id", "a", "--id", "b", "--enabled"], "--any does not take --enabled or --disabled."),
+        (["--any", "--settled"], "--any needs --id, --label, --label-contains or --value."),
+        (["--any", "--seconds", "1"], "--any needs --id, --label, --label-contains or --value."),
+        (["--any", "--region", "0,0,10,10", "--stable"], "--any needs --id, --label, --label-contains or --value."),
         (["--settled", "--enabled"], "--enabled needs --id, --label, --label-contains or --value."),
         (["--settled", "--changed"], "--changed and --stable need --region."),
         (["--region", "0,0,10,10"], "--region needs --changed or --stable."),
@@ -226,6 +237,18 @@ struct WaitCommandTests {
     ])
     func rejectsInvalidConditions(arguments: [String], message: String) {
         #expect(Self.validationMessage(arguments) == message)
+    }
+
+    @Test("a wait that reads the tree claims an Android device before the watchdog is armed; only --settle-by screen and pixel waits read no tree", arguments: [
+        (["--id", "a"], true),
+        (["--settled"], true),
+        (["--settled", "--settle-by", "tree"], true),
+        (["--settled", "--settle-by", "both"], true),
+        (["--settled", "--settle-by", "screen"], false),
+        (["--region", "0,0,10,10", "--changed"], false),
+    ])
+    func readsTree(arguments: [String], reads: Bool) throws {
+        #expect(try Self.command(arguments).readsTree == reads)
     }
 
     @Test("a --settled timeout where only text moved suggests --ignore-values; with it, or when frames moved, it does not")

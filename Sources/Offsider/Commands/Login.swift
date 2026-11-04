@@ -54,11 +54,6 @@ struct LoginCommand: AsyncParsableCommand {
     }
 
     func run() async throws {
-        try CLIError.refuseOnPhone(
-            deviceOption.id,
-            command: "login",
-            alternative: "Use a simulator or an Android device."
-        )
         let logger = OffsiderLogger()
         let watchdog = DeviceWatchdog()
         let profile = try LoginProfiles.load(project: project)
@@ -77,9 +72,10 @@ struct LoginCommand: AsyncParsableCommand {
         let report: LoginReport
         do {
             report = try await console.progress(Self.signingInLabel) {
-                try await watchdog.guarding(setupThen: timeout * 2 + 30, device: deviceOption.id) { ready in
+                try await watchdog.guarding(setupThen: timeout * 2 + 30, of: route.device) { ready in
                     try await Self.perform(
                         on: route, profile: profile, key: key, where: filter, timeout: timeout, logger: logger, tracker: .live(),
+                        wholeDevice: route.allowance.map { DevicePolicyGate.current.policy().drivesWhole($0) } ?? false,
                         onPrepared: ready,
                         keychainWillRead: { app in
                             watchdog.disarm()
@@ -165,6 +161,7 @@ struct LoginCommand: AsyncParsableCommand {
         logger: OffsiderLogger,
         store: any LoginCredentialStoring = KeychainLoginCredentialStore(),
         tracker: SignInTracker? = nil,
+        wholeDevice: Bool = false,
         onPrepared: @Sendable () -> Void = {},
         keychainWillRead: (_ app: String) -> Void = { _ in },
         keychainDidRead: () -> Void = {},
@@ -186,15 +183,15 @@ struct LoginCommand: AsyncParsableCommand {
             entry = try resolveLogin(requestedKey, where: filter, app: app, entries: try store.entries(app: canonical), device: route.device)
             let reason = presenceReason(app: app, key: entry.key, device: route.device)
             var confirmed = false
-            if entry.context.confirm {
+            if entry.context.confirm, !wholeDevice {
                 try await PersonPresence.confirm(reason: reason)
                 confirmed = true
             }
             saved = try stored(app: canonical, key: entry.key, foreground: app, store: store)
-            if saved.confirm, !confirmed { try await PersonPresence.confirm(reason: reason) }
+            if saved.confirm, !confirmed, !wholeDevice { try await PersonPresence.confirm(reason: reason) }
         }
         try requireConfirmedLink(saved, app: app, canonical: canonical, device: route.device)
-        try requireDeviceScope(saved, key: entry.key, app: canonical, device: route.device)
+        try requireDeviceScope(saved, key: entry.key, app: canonical, device: route.device, wholeDevice: wholeDevice)
         let credential = saved.credential
         let services = LoginFlow.Services(
             readTree: { try await route.backend.accessibilityTree(for: route.device) },
@@ -216,19 +213,22 @@ struct LoginCommand: AsyncParsableCommand {
                 return try? await tester.hitTest(at: point, on: route.device, appPIDs: [])
             },
             noteDevice: { await route.noteNameForAsk() },
-            turnstileWatch: Turnstile.waitCommand(app: route.allowance == nil ? nil : app)
+            turnstileWatch: Turnstile.waitCommand(app: route.allowance == nil ? nil : app),
+            device: route.device.rawValue
         )
         let deviceID = route.device.rawValue
         var report: LoginReport
         do {
-            report = try await LoginFlow.run(
-                app: app, key: entry.key, credential: credential, profile: profile, webLogin: saved.webLogin, timeout: timeout, services: services,
-                lastSignIn: {
-                    tracker?.last(app: canonical, deviceID: deviceID).map {
-                        LoginFlow.LastSignIn(key: $0.record.key, since: $0.record.since, restarted: $0.restarted, deviceID: deviceID)
+            report = try await InputSecrecy.$keysOnly.withValue(route.device.isPhysicalIOSDevice) {
+                try await LoginFlow.run(
+                    app: app, key: entry.key, credential: credential, profile: profile, webLogin: saved.webLogin, timeout: timeout, services: services,
+                    lastSignIn: {
+                        tracker?.last(app: canonical, deviceID: deviceID).map {
+                            LoginFlow.LastSignIn(key: $0.record.key, since: $0.record.since, restarted: $0.restarted, deviceID: deviceID)
+                        }
                     }
-                }
-            )
+                )
+            }
         } catch var failure as LoginFailure {
             failure.report.tags = entry.context.tags
             failure.report.filter = filter
@@ -357,12 +357,12 @@ struct LoginCommand: AsyncParsableCommand {
         )
     }
 
-    /// A physical Android phone takes only a login a person saved for any device.
-    static func requireDeviceScope(_ saved: StoredLogin, key: String, app: String, device: DeviceID) throws {
-        guard device.isPhysicalAndroidDevice, saved.devices != .any else { return }
+    /// A physical device takes only a login a person saved for any device, unless it is a test device, which holds nothing personal.
+    static func requireDeviceScope(_ saved: StoredLogin, key: String, app: String, device: DeviceID, wholeDevice: Bool = false) throws {
+        guard device.isPhysicalAndroidDevice || device.isPhysicalIOSDevice, saved.devices != .any, !wholeDevice else { return }
         let command = "offsider credential describe \(LoginCredential.displayKey(key)) --devices any --app \(app)"
         throw CLIError(
-            errorDescription: "The saved login \(LoginCredential.displayKey(key)) for \(app) is for simulators and emulators only, and \(device.rawValue) is a physical phone. "
+            errorDescription: "The saved login \(LoginCredential.displayKey(key)) for \(app) is for simulators and emulators only, and \(device.rawValue) is a physical device. "
                 + "Nothing was typed." + ErrorAudience.current.personStep(command, agentTail: " if this login may be used there"),
             reason: .deviceNotAllowed,
             hint: command

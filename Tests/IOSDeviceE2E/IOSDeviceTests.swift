@@ -304,6 +304,25 @@ struct IOSDeviceTreeE2ETests {
         let wrong = try await IOSDeviceE2E.offsider("assert --label 'Search Books' --element-type searchField --has-value hello \(Self.app)")
         #expect(wrong.exitCode != 0, "assert --has-value accepted a value the field does not hold")
     }
+
+    /// Text the US keyboard cannot type would go through XCTest, which names it in its logs.
+    @Test("type --file of text the keyboard cannot type into a password field is refused, and the field stays empty")
+    func passwordNeverReachesXCTest() async throws {
+        _ = try IOSDeviceE2E.team()
+        try await IOSDeviceE2E.requireAwake()
+        try await IOSDeviceE2E.open("batch-login-flow", waitingForLabel: "Current Screen: Email")
+        try await IOSDeviceE2E.run("tap --label Continue \(Self.app)")
+        _ = try await IOSDeviceE2E.waitForNode { $0["role"] as? String == "secureTextField" && ($0["state"] as? [String: Any])?["focused"] as? Bool == true }
+        let file = FileManager.default.temporaryDirectory.appendingPathComponent("offsider-e2e-\(UUID().uuidString).txt")
+        try Data("pässwörd".utf8).write(to: file)
+        defer { try? FileManager.default.removeItem(at: file) }
+        let typed = try await IOSDeviceE2E.offsider("type --file \(IOSDeviceE2E.quote(file.path)) --json \(Self.app)")
+        #expect(typed.exitCode == 1, "type into a password field exited \(typed.exitCode): \(typed.stderr)")
+        #expect(typed.stdout.contains(#""reason":"secure_paste_refused""#), "\(typed.stdout)")
+        // The playground's field reports "empty" until it holds text, so its masked value is five bullets.
+        let field = try await IOSDeviceE2E.waitForNode { $0["role"] as? String == "secureTextField" }
+        #expect(field["value"] as? String == String(repeating: "•", count: 5), "the password field took text: \(field)")
+    }
 }
 
 @Suite("iOS device runner", .serialized, .enabled(if: isIOSDeviceE2EEnabled))

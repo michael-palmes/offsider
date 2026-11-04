@@ -39,6 +39,15 @@ public enum StartPersonView {
         )
     }
 
+    /// `shutdown`'s end: a person's receipt; an agent's one line.
+    public static func shutDown(_ report: ShutdownReport) -> Page {
+        let shown = TerminalText.field(report.name, profile: .person)
+        return Page([
+            .person([.outcome(.done(report.alreadyOff ? "\(shown) was already off" : "\(shown) is off", aside: report.id))]),
+            .agent(report.line),
+        ])
+    }
+
     // MARK: Run
 
     /// How `run start` found the folder.

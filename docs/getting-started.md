@@ -27,14 +27,12 @@ offsider type 'héllo'
 offsider button back
 ```
 
-On a physical iPhone or iPad, connected by cable, allow it once from your own terminal, then pass its UDID and name the app to drive:
+On a physical iPhone or iPad, connected by cable, add it once with one command and Touch ID. Ask your agent to help and it gives you the line, or run it yourself:
 
 ```bash
-# A person picks the device, signing team, app and how long from menus, then Touch ID or your password
+# Asks what it cannot work out, then Touch ID or your password; registers the device, starts its runner and says Ready
 offsider devices add
-# Check trust, Developer Mode, UI Automation and signing (add prints this line with the UDID)
-offsider doctor --device <UDID>
-# Read the app's screen; the first read builds the runner
+# Read the app's screen
 offsider describe-ui --summary --app com.example.app --device <UDID>
 ```
 

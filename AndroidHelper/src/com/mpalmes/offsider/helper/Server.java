@@ -38,6 +38,8 @@ final class Server {
     private volatile OutputStream clientOut;
     private LocalServerSocket listener;
 
+    private volatile Requests active;
+
     Server(Connection connection, EventLog events, Options options) {
         this.connection = connection;
         this.events = events;
@@ -56,6 +58,7 @@ final class Server {
         }
         OffsiderHelper.ready(name, token);
         Requests requests = new Requests(connection, events);
+        active = requests;
         LocalSocket client = accept(token.getBytes(StandardCharsets.UTF_8), requests);
         serve(client, requests);
     }
@@ -231,6 +234,10 @@ final class Server {
         }
         Log.i(OffsiderHelper.TAG, "exiting with status " + status + (byeReason == null ? "" : " (" + byeReason + ")")
                 + (detail == null ? "" : ": " + detail));
+        Requests serving = active;
+        if (serving != null) {
+            serving.releaseInput();
+        }
         String problem = connection.close();
         if (problem != null) {
             Log.w(OffsiderHelper.TAG, "disconnecting UiAutomation failed: " + problem);

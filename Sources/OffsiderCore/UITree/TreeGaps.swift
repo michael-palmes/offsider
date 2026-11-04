@@ -193,7 +193,9 @@ public enum TreeGapFill {
         let kept = withoutRepeats(found)
         guard !kept.isEmpty else { return plain }
         var filled = plain
-        filled.roots = everyView.roots.map { pruned($0, keeping: kept, listed: listed, isRoot: true) ?? $0 }
+        // The plain read's keyboard is framed by its keys; every view's spans the screen around them, and pruning would lose them.
+        let apps = everyView.roots.filter { $0.role != .keyboard }.map { pruned($0, keeping: kept, listed: listed, isRoot: true) ?? $0 }
+        filled.roots = apps + plain.roots.filter { $0.role == .keyboard }
         filled.filledFromGaps = kept.count
         return filled
     }

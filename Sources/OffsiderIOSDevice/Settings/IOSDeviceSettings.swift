@@ -23,7 +23,7 @@ enum IOSDeviceSettings {
     }
 
     static func setAppearance(_ appearance: Appearance, udid: String) -> [String] {
-        ["device", "settings", "appearance", "--device", udid, "--mode", appearance.rawValue, "--timeout", "20", "-q"]
+        ["device", "settings", "appearance", "--device", udid, "--mode", appearance.rawValue, "--timeout", "20", "--json-output", "-", "-q"]
     }
 
     /// The accessibility sizes need Larger Accessibility Sizes on; a smaller size leaves that switch as it is.
@@ -32,11 +32,11 @@ enum IOSDeviceSettings {
         if category.rawValue.hasPrefix("accessibility-") {
             arguments += ["--larger-accessibility-sizes", "on"]
         }
-        return arguments + ["--timeout", "20", "-q"]
+        return arguments + ["--timeout", "20", "--json-output", "-", "-q"]
     }
 
     static func setOrientation(_ orientation: DeviceOrientation, udid: String) -> [String] {
-        ["device", "orientation", "set", "--device", udid, devicectlName(orientation), "--timeout", "20", "-q"]
+        ["device", "orientation", "set", "--device", udid, devicectlName(orientation), "--timeout", "20", "--json-output", "-", "-q"]
     }
 
     static func devicectlName(_ orientation: DeviceOrientation) -> String {

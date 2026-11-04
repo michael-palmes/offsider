@@ -87,6 +87,13 @@ struct TerminalTextTests {
         #expect(TerminalText.line("ok " + flood).hasSuffix("…(+19504)"))
     }
 
+    @Test("withoutColour drops colour codes only, and leaves other escapes for line to show")
+    func withoutColour() {
+        #expect(TerminalText.withoutColour("3, \u{1B}[31m[SIGNIN]\u{1B}[0m widget expired") == "3, [SIGNIN] widget expired")
+        #expect(TerminalText.withoutColour("\u{1B}[1;32mok\u{1B}[0m \u{1B}[2J") == "ok \u{1B}[2J")
+        #expect(TerminalText.withoutColour("Sign in") == "Sign in")
+    }
+
     @Test("colour codes survive only with keepsSGR; other escapes never do")
     func sgr() {
         let text = "\u{1B}[1;32mok\u{1B}[0m \u{1B}[2J"

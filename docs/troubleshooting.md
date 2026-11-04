@@ -20,7 +20,7 @@ A swipe-up unlock on a simulator (after `button lock`) can freeze its display wh
 
 After an app crash and relaunch, a simulator can return an empty accessibility tree while the app is plainly on screen. When `describe-ui` still reads an empty tree after its retries, it checks the simulator's `launchctl list` and warns when an app is running, and `doctor --device <UDID>` fails `simulator.accessibility` with `<bundle> is running (pid N) but its accessibility tree is empty`. Both print the fix: relaunch the app with `offsider app launch --restart`, then, if the tree stays empty, reboot the simulator. No simulator service restart was found that reliably brings the tree back, so `doctor --fix` does not try one.
 
-When `describe-ui`, `screenshot` or `rn logbox` exits `device_unresponsive` after 30 s, that simulator or emulator stopped answering, even if others still do. Run `offsider doctor --device <ID>`; if a simulator is stuck, `xcrun simctl shutdown <UDID>`, then `offsider boot <UDID>`. Its app data survives.
+When `describe-ui`, `screenshot`, `rn logbox`, or a `--verify` or selector read exits `device_unresponsive` after 30 s or more, that simulator or emulator stopped answering, even if others still do. Run `offsider doctor --device <ID>`; if a simulator is stuck, `xcrun simctl shutdown <UDID>`, then `offsider boot <UDID>`. Its app data survives.
 
 ## Android devices
 
@@ -32,6 +32,7 @@ On a USB phone, the checks come from its row in adb's device list, the emulator 
 
 `doctor --device <UDID>` runs the `ios-device.*` checks: `xcode`, `coredevice`, `listed`, `transport`, `pairing`, `developer-mode`, `ddi`, `tunnel`, `lock-state`, `hid`, `ui-automation`, `session`, `usbmuxd` and `runner-signing` (which passes for a team from `OFFSIDER_IOS_TEAM_ID` or the allowance, and warns when only Xcode's signed-in teams exist).
 
+- `The developer disk image could not be mounted` is what `devicectl` says first for several causes, so Offsider reads the error beneath it: `device_locked` means unlock it, `developer_mode_off` means turn on Developer Mode and restart. If it still fails with the device unlocked and Developer Mode on, update Xcode, as this one's disk image may not cover the device.
 - `ios-device.hid` opens the HID button socket and round-trips a barrier on it.
 - iOS does not report the UI Automation setting, so `ios-device.ui-automation` is skipped with the Settings path unless the unlocked device refused input.
 - `ios-device.session` reports the session broker and its screen stream, and is a skip when none is running: doctor never starts one. It names `caffeinate -d` when this Mac's display is asleep, and a terminal on the Mac's desktop when the process has no desktop session.

@@ -29,15 +29,21 @@ extension IOSDeviceBackend {
         set { state.targetApp = newValue }
     }
 
+    /// Proves the runner answers on the device, starting it when needed; throws what stands in the way.
+    public func checkRunner(_ id: DeviceID) async throws {
+        _ = try await runner(for: id).ping()
+    }
+
     /// One connection per device per command, started or reused through the session file.
     func runner(for id: DeviceID) async throws -> RunnerClient {
         let udid = id.rawValue
         if let client = state.runners[udid] { return client }
         let booted = try await requireBootedDevice(id)
         let connector = try await runnerConnector()
-        let client = try await host.timing.measure("runner") {
+        var client = try await host.timing.measure("runner") {
             try await connector.connect(.device(udid: udid), deviceName: DeviceName.display(udid, label: booted.name))
         }
+        client.testDevice = state.drivesWhole
         state.runners[udid] = client
         return client
     }

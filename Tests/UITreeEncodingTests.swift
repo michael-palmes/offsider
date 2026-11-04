@@ -66,7 +66,7 @@ struct UITreeEncodingTests {
         for key in ["checked", "selected", "focused"] {
             #expect(state[key] is NSNull, "state.\(key) should be null")
         }
-        for key in ["type", "role", "subrole", "roleDescription", "title", "help", "contentRequired", "pid", "axFrame"] {
+        for key in ["type", "role", "subrole", "roleDescription", "title", "help", "hint", "contentRequired", "pid", "axFrame"] {
             #expect(native[key] is NSNull, "native.\(key) should be null")
         }
         #expect((native["customActions"] as? [Any])?.isEmpty == true)
@@ -153,12 +153,14 @@ struct UITreeEncodingTests {
     @Test("iOS native attributes are written flat under native")
     func iosNative() throws {
         let native = IOSNativeAttributes(
-            type: "Button", role: "AXButton", roleDescription: "back button",
+            type: "Button", role: "AXButton", roleDescription: "back button", hint: "Search",
             customActions: ["Delete"], contentRequired: false, pid: 42, axFrame: "{{16, 62}, {44, 44}}"
         )
         let root = try firstRoot(UITree(platform: .ios, device: "D", roots: [UINode(role: .button, native: .ios(native))]))
         let decoded = try #require(root["native"] as? [String: Any])
 
+        #expect(decoded["hint"] as? String == "Search")
+        #expect(try UITree(jsonData: UITree(platform: .ios, device: "D", roots: [UINode(role: .button, native: .ios(native))]).jsonData()).roots.first?.native == .ios(native))
         #expect(decoded["type"] as? String == "Button")
         #expect(decoded["role"] as? String == "AXButton")
         #expect(decoded["roleDescription"] as? String == "back button")

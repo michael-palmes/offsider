@@ -152,6 +152,54 @@ struct WakeCommandTests {
         }
     }
 
+    @Test("--unlock on a phone reads and types the code only after Touch ID, and a cancelled one types nothing")
+    func unlockNeedsPersonOnPhone() async throws {
+        try await Self.withLedger { (ledger: UnlockAttemptLedger) async throws in
+            let store = try Self.store("2580")
+            let backend = Self.backend(Self.locked, afterWake: AwakeReading(screen: .on, lockScreen: .secure, credential: "pin"))
+            backend.afterCode = Self.usable
+            let refused = RecordingPresence(failing: CLIError.personRequired(PersonPresence.cancelledMessage))
+            await #expect(throws: CLIError.self) {
+                try await PersonPresence.$current.withValue(refused) {
+                    _ = try await Wake.result(unlock: true, json: false, booted: Self.booted, backend: backend, store: store, ledger: ledger, confirm: Wake.unlockConsent(whole: false))
+                }
+            }
+            #expect(refused.reasons == ["type the saved unlock code on Motorola moto g (ZY22FAKE01)"])
+            #expect(store.reads == 0, "the code stays in the Keychain until a person says yes")
+            #expect(backend.enteredCodes.isEmpty)
+            #expect(ledger.lastAttempt("ZY22FAKE01") == nil, "nothing was typed, so the code is not blocked")
+
+            let allowed = RecordingPresence()
+            _ = try await PersonPresence.$current.withValue(allowed) {
+                try await Wake.result(unlock: true, json: false, booted: Self.booted, backend: backend, store: store, ledger: ledger, confirm: Wake.unlockConsent(whole: false))
+            }
+            #expect(allowed.reasons.count == 1)
+            #expect(backend.enteredCodes.map(\.text) == ["2580"])
+        }
+    }
+
+    @Test("--unlock asks no one on an emulator or a test device, and asks nothing when no code is saved")
+    func unlockFreeWhereNothingPersonal() async throws {
+        try await Self.withLedger { (ledger: UnlockAttemptLedger) async throws in
+            let presence = RecordingPresence()
+            let backend = Self.backend(Self.locked, afterWake: AwakeReading(screen: .on, lockScreen: .secure, credential: "pin"))
+            backend.afterCode = Self.usable
+            _ = try await PersonPresence.$current.withValue(presence) {
+                try await Wake.result(unlock: true, json: false, booted: Self.booted, backend: backend, store: try Self.store("2580"), ledger: ledger, confirm: Wake.unlockConsent(whole: true))
+            }
+            #expect(presence.reasons.isEmpty)
+            #expect(backend.enteredCodes.count == 1)
+
+            let none = Self.backend(Self.locked, afterWake: AwakeReading(screen: .on, lockScreen: .secure, credential: "pin"))
+            await #expect(throws: CLIError.self) {
+                try await PersonPresence.$current.withValue(presence) {
+                    _ = try await Wake.result(unlock: true, json: false, booted: Self.booted, backend: none, store: MemoryUnlockCodeStore(), ledger: ledger, confirm: Wake.unlockConsent(whole: false))
+                }
+            }
+            #expect(presence.reasons.isEmpty, "no box for a code that is not there")
+        }
+    }
+
     @Test("--unlock refuses with device_busy (exit 8) while a recording runs on the device, before reading the saved code or typing")
     func unlockRefusedWhileRecording() async throws {
         try await Self.withLedger { (ledger: UnlockAttemptLedger) async throws in

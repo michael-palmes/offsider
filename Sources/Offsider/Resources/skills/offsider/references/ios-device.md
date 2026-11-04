@@ -2,10 +2,10 @@
 
 ## Choosing and preparing the device
 
-- Never choose a `physical` device yourself: drive an iPhone or iPad only when the user names its UDID, and pass that UDID to `--device` on every command (`OFFSIDER_DEVICE` never names one).
-- The user must also allow it: ask them to run `offsider devices add` in their own terminal, and say which device to choose (by its name) and which app to pin. Its menus need nothing looked up or pasted, so never hand them a UDID, team ID or command with flags. Until then every command exits 7 `device_not_allowed` before anything reaches the device; never allow it yourself. An allowance expires (12 hours by default), and while it holds each command prints one stderr line saying it drives a physical device. `devices status --device <UDID>` checks it.
+- Add it with one command. Run `offsider devices add --plan --json`: it lists each connected device with `testDeviceCommand`, `oneAppCommand` and any `ask`, needs no terminal and reaches no phone. Give the user the command that fits, whole, on its own line. It does the rest with one Touch ID: registers the device with its team, builds the runner and proves it answers. Use `testDeviceCommand` only when they said this device is kept for testing, never for a phone they use. `oneAppCommand` lasts 7 days and names the project's app when `offsider.login.json` does; without one, its menu lists the apps. You never run `devices add`: it exits 1 `person_required`.
+- Which device: you may pick an added test device (`devices status --json` says `testDevice`), asking if there are several. Any other added device only when the user names it, in words such as "the iPad"; find its UDID in `offsider devices`, and never ask them to paste one. Pass the UDID to `--device` on every command (`OFFSIDER_DEVICE` never names one). A device no one added exits 7 `device_not_allowed` before anything reaches it. An allowance can lapse, and while it holds each command prints one stderr line saying it drives a physical device.
 - USB only. A device on Wi-Fi, or one usbmuxd stops listing on USB, exits 7 with `device_not_wired`: ask the user to connect its cable. Offsider never pairs a device or taps Trust on it.
-- The user prepares the device once: unlock it and tap Trust, turn on Developer Mode (Settings > Privacy & Security), and for input turn on Settings > Developer > UI Automation.
+- The device needs Trust tapped, Developer Mode on (Settings > Privacy & Security) and, for input, Settings > Developer > UI Automation. `devices add` asks for each by name and watches for it, so pass on the plan's `ask` as it reads.
 - `offsider devices` shows the device with `kind` `physical`, `connection` `usb` or `network`, and a state: Booted (ready), Wireless, Untrusted, Developer Mode off, Preparing, Reconnecting or Unavailable. A hint on stderr says what to do for each problem state.
 - Run `offsider doctor --device <UDID> --json` first. Its `ios-device.*` checks cover Xcode, CoreDevice, the listing, the connection, trust, Developer Mode, the developer disk image, the tunnel, the lock state, HID input (`hid` round-trips a barrier on the button socket), UI Automation, the session broker, usbmuxd and runner signing. `--fix` only mounts the developer disk image, on an allowed device named with `--device`. A device no one allowed reports one failing `device.policy` check and nothing else.
 - iOS does not report UI Automation, so `ios-device.ui-automation` is a skip naming the Settings path: ask the user to check it. `ios-device.session` is a skip when no broker is running; doctor never starts one.
@@ -20,7 +20,7 @@ When `devices status --device <UDID> --json` says `"testDevice": true` with no `
 - Leave out `--app`: commands read and drive what is in front, so a system alert or sheet shows in `describe-ui` and `tap --label Allow` taps it. Pass `--app` only to read one app that is in front.
 - Safari, Settings, the home screen and the rest may be driven. Still ask before anything the safety rules name, such as signing in to an Apple account or erasing the device.
 - The screen sleeps when the session goes idle or `session stop` ends it, and your next command wakes it.
-- Only the user makes a device a test device, with `offsider devices add`; never suggest it for a phone they use. Ask for it only on a phone they have said is kept for testing, naming the device and "Test device: whole device".
+- Only the user makes a device a test device, by running its `testDeviceCommand`; never suggest it for a phone they use.
 
 ## The session broker (Xcode 27)
 
@@ -45,13 +45,15 @@ When `devices status --device <UDID> --json` says `"testDevice": true` with no `
 | `key`, `key-sequence`, `key-combo`, `touch`, `gesture`, `drag`, `lock`, `side-button`, `siri` | broker | refused | `xcode_too_old` |
 
 - `xcode_too_old` exits 9; its hint selects an installed Xcode 27 and runs its first launch, or says to install Xcode 27. The device can run iOS or iPadOS 26 or 27.
+- A password field takes only US keyboard text through the broker, as XCTest logs what it types: where the table says runner, and for `--replace`, `type` into one exits 1 `secure_paste_refused` with nothing typed. Run `doctor` and ask the user to log in to the Mac's desktop.
+- A text field showing only its placeholder reads `value: null`, with the placeholder in `native.hint` (`hint=` in `--summary` when it has no label or id).
 - `apple-pay` is refused on a device: press `button side-button` twice instead. `app-switch` is refused too.
 
 ## The runner and `--app`
 
 - The accessibility tree comes from a small XCUITest runner app. On first use Offsider builds it with `xcodebuild` (about a minute, with a line on stderr) and caches it under `~/Library/Caches/offsider/runner/`.
-- It is signed with the team the user chose in `devices add`'s team menu, or, when the allowance names none, the team in `OFFSIDER_IOS_TEAM_ID` (10 letters and digits); a variable naming another team exits 64, so unset it. The team signed in to Xcode is never picked on its own. With neither, the command exits 9 with `team_missing`: ask the user to run `offsider devices add` again and choose a team. `OFFSIDER_IOS_RUNNER_PREFIX` sets the runner's bundle id prefix (default `com.mpalmes.offsider`); the first build under any other prefix exits 1 `person_required` until the user runs `offsider runner build --device <UDID>` in their own terminal and confirms with Touch ID.
-- A build that fails exits 1 with `runner_build_failed`, and its hint names the build log. When the hint is `offsider runner build --device <UDID> --register-device`, the device is not registered with the team: only the user may run that, in their own terminal with Touch ID, since it adds the device to their Apple team. Offsider never registers a device on its own.
+- It is signed with the team the user chose in `devices add`'s team menu, or, when the allowance names none, the team in `OFFSIDER_IOS_TEAM_ID` (10 letters and digits); a variable naming another team exits 64, so unset it. The team signed in to Xcode is never picked on its own. With neither, the command exits 9 with `team_missing`: give the user the command its hint names. `OFFSIDER_IOS_RUNNER_PREFIX` sets the runner's bundle id prefix (default `com.mpalmes.offsider`); the first build under any other prefix exits 1 `person_required` until the user runs `offsider runner build --device <UDID>` in their own terminal and confirms with Touch ID.
+- A build that fails exits 1 with `runner_build_failed`, and its hint names the build log. When the hint is `offsider runner build --device <UDID> --register-device`, the device is not registered with the team: give the user that command, since only they may add it to their Apple team, with Touch ID. `devices add` normally does this in its one Touch ID.
 - Before each session starts, the built runner is checked against the digests recorded at build time and must be signed by the chosen team; a mismatch is rebuilt once, then refused.
 - The runner keeps running in the background, reached over USB through usbmuxd with a per-session token, and stops after `OFFSIDER_IOS_RUNNER_IDLE` seconds without a request (default 300, at most 3600); a session older than 12 hours is restarted.
 - usbmuxd can stop listing a wired device that `devicectl` still sees. A command that needs the runner then exits 9 with `usbmux_unavailable` at once (about 10 s after the drop while the runner starts), and `doctor` fails `ios-device.usbmuxd`: ask the user to unplug and replug the cable, then retry.
@@ -79,7 +81,7 @@ offsider session stop --device <UDID> --clean
 
 ## Refused on a device
 
-`permission`, `status-bar`, `biometric`, `shake`, `posture`, `stream-video --format bgra`, `logs`, `rn prepare`, `wake --unlock`, `stay-awake`, `unlock-code`, `login` and `credential` (when it would read the device) and a `touch --down` without `--up` exit 1 with `not_supported`, most naming an alternative; `boot`, `button apple-pay` and `button app-switch` exit 64. Use an iOS simulator for permissions, the status bar, biometrics, logs and sign-in, and install apps with `xcrun devicectl`. `record-video` and the other `stream-video` formats build each frame from a screenshot, so their frame rate is low. `credential --app <bundle-id>` saves or describes a test user without reading the device.
+`permission`, `status-bar`, `biometric`, `shake`, `posture`, `stream-video --format bgra`, `logs`, `rn prepare`, `wake --unlock`, `stay-awake`, `unlock-code`, `credential` (when it would read the device, so pass `--app`) and a `touch --down` without `--up` exit 1 with `not_supported`, most naming an alternative; `boot`, `button apple-pay` and `button app-switch` exit 64. Use an iOS simulator for permissions, the status bar, biometrics, logs and sign-in, and install apps with `xcrun devicectl`. `record-video` and the other `stream-video` formats build each frame from a screenshot, so their frame rate is low. `credential --app <bundle-id>` saves or describes a test user without reading the device.
 
 ## Errors
 
@@ -94,17 +96,21 @@ A refusal only the user's hands can clear carries `error.ask` (an `Ask:` line wi
 | `developer_mode_off` | 7 | Ask the user to turn on Developer Mode and restart |
 | `device_preparing` | 7 | Wait for Xcode, then retry |
 | `device_locked` | 7 | Run `offsider wake --device <UDID>`; if a passcode stays up, ask the user to unlock the device |
-| `system_prompt_in_front` | 7 | A system prompt such as Allow Paste is over the app. Ask the user to answer it on the device; only on a test device may you tap it, by coordinates from a `screenshot`. Nothing was read or sent |
+| `system_prompt_in_front` | 7 | A system prompt such as Allow Paste is over the app. Nothing was read or sent. Ask the user to answer it on the device; on a test device run the two commands the message names, which read and tap it with no `--app`. There a tap by coordinates, a swipe or keys are not checked and reach the prompt |
 | `ui_automation_off` | 7 | Ask the user to enter the passcode if the device shows `Enter Passcode for "XCTest"`, else to turn on Settings > Developer > UI Automation |
 | `certificate_not_trusted` | 7 | Pass on `error.ask`: the user trusts the certificate in Settings > General > VPN & Device Management |
 | `xcode_too_old` | 9 | The command needs Xcode 27; use a runner command or ask the user |
 | `team_missing` | 9 | Ask the user to run `offsider devices add` and choose a team, or to set `OFFSIDER_IOS_TEAM_ID` |
 | `usbmux_unavailable` | 9 | Ask the user to unplug and replug the cable |
 | `runner_build_failed` | 1 | Read the build log the hint names; a hint of `runner build --register-device` is for the user to run |
-| `runner_unavailable` | 1 | Nothing was sent; a `screenshot` shows any system prompt to answer; else retry once, then run `doctor` |
+| `runner_unavailable` | 1 | Nothing was sent; a `screenshot` shows any system prompt to answer (on a test device, run the read the message names); else retry once, then run `doctor` |
 | `hid_broker_failed` | 1 | Nothing was sent; retry once, then `session stop` and retry |
 | `input_outcome_unknown` | 1 | Check the screen before resending |
 
 ## End-to-end tests
 
 `make e2e-ios-device` runs the device suites on one device, which must be on its cable, unlocked, with UI Automation on, and allowed by the user with the playground app pinned or as a test device. The device and team come from its allowance (`OFFSIDER_IOS_DEVICE=<UDID>` overrides the device, and `OFFSIDER_IOS_TEAM_ID` serves only when the allowance names no team); `test-runner.sh` checks it and says what to choose. Run it only when the user asks, on the device they name, and run `offsider session stop --device <UDID>` afterwards.
+
+## Signing in
+
+`login` works here: on a test device any saved user signs in with no Touch ID; on any other added device the user must be saved with `--devices any`, and each sign-in asks for Touch ID. It types only as keys through the session broker, so it never reaches `runner.log`: with no broker (Xcode 26, no desktop login) it exits 1 `not_supported`, and so does a password with a character the US keyboard lacks. Saving a user is the user's to do: give them `offsider credential add --app <bundle-id>` (`guide login`).

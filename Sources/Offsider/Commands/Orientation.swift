@@ -19,8 +19,9 @@ struct OrientationCommand: AsyncParsableCommand {
         auto-rotate off while the device is turned and restores it on \
         `orientation portrait`: the first turn in a boot, portrait included, \
         records auto-rotate and `user_rotation`, and portrait, even on a screen already portrait, writes them back \
-        (`user_rotation` only when auto-rotate was on) and forgets the record. When auto-rotate cannot be read or \
-        recorded, it fails before turning.
+        (`user_rotation` only when auto-rotate was on) and forgets the record, also when the app in front refuses \
+        portrait. With auto-rotate back on, a phone's screen follows how it is held, and Offsider reports what it \
+        shows a moment later. When auto-rotate cannot be read or recorded, it fails before turning.
 
         Examples:
           offsider orientation --device DEVICE_ID
@@ -121,7 +122,11 @@ struct OrientationCommand: AsyncParsableCommand {
             turn: { try await turn(true) },
             warn: { Console.current.notice(Self.autoRotateNotice($0, serial: device.rawValue)) }
         )
-        try await report(target, previous: previous, setting: true, backend: backend, device: device, rotation: rotationReport)
+        let shown = await Self.settled(
+            target, rotation: rotationReport, on: device, turner: turner,
+            sleep: { try await Task.sleep(for: $0) }, now: { Date().timeIntervalSinceReferenceDate }
+        )
+        try await report(shown, previous: previous, setting: true, backend: backend, device: device, rotation: rotationReport, extra: Self.sensorNotice(shown: shown, target: target))
     }
 
     /// Turns and waits for the screen. A simulator can hold a turn its screen never showed, which a later app or fold takes,
@@ -217,36 +222,76 @@ struct OrientationCommand: AsyncParsableCommand {
                 )
             }
         }
+        func restore(_ value: Int) async -> RotationReport {
+            let retry = "Run `offsider orientation portrait --device \(serial)` to try again."
+            let switched = value == 0 ? "off" : "on"
+            var now: AutoRotateState?
+            do {
+                // Some phones keep the old value after one put, so it is put again once when it reads back unchanged.
+                for _ in 0..<2 {
+                    try await writeAccelerometer(value)
+                    now = try? await read()
+                    if now?.accelerometerRotation == nil || now?.accelerometerRotation == value { break }
+                }
+                if let reading = now?.accelerometerRotation, reading != value {
+                    warn("Warning: auto-rotate on \(serial) still reads \(reading == 0 ? "off" : "on") after Offsider switched it \(switched) twice. \(retry)")
+                    return RotationReport(before: before, now: now, restored: false)
+                }
+                if let userRotation = plan.restoreUserRotation, now?.userRotation != userRotation {
+                    try await writeUserRotation(userRotation)
+                    now = try? await read()
+                }
+            } catch {
+                warn("Warning: Offsider could not switch auto-rotate back \(switched) on \(serial) (\(Self.message(error))). \(retry)")
+                return RotationReport(before: before, now: try? await read(), restored: false)
+            }
+            if plan.deleteRecord { store.remove(serial: serial) }
+            return RotationReport(before: before, now: now, restored: true)
+        }
         if plan.sendsTurn {
-            try await turn()
+            do {
+                try await turn()
+            } catch {
+                // A portrait the app in front refuses still gives auto-rotate back: that is what the command is for.
+                if let value = plan.restoreAccelerometer { _ = await restore(value) }
+                throw error
+            }
         }
         guard let value = plan.restoreAccelerometer else {
             return RotationReport(before: before, now: try? await read(), restored: false)
         }
-        let retry = "Run `offsider orientation portrait --device \(serial)` to try again."
-        let switched = value == 0 ? "off" : "on"
-        var now: AutoRotateState?
-        do {
-            // Some phones keep the old value after one put, so it is put again once when it reads back unchanged.
-            for _ in 0..<2 {
-                try await writeAccelerometer(value)
-                now = try? await read()
-                if now?.accelerometerRotation == nil || now?.accelerometerRotation == value { break }
-            }
-            if let reading = now?.accelerometerRotation, reading != value {
-                warn("Warning: auto-rotate on \(serial) still reads \(reading == 0 ? "off" : "on") after Offsider switched it \(switched) twice. \(retry)")
-                return RotationReport(before: before, now: now, restored: false)
-            }
-            if let userRotation = plan.restoreUserRotation, now?.userRotation != userRotation {
-                try await writeUserRotation(userRotation)
-                now = try? await read()
-            }
-        } catch {
-            warn("Warning: Offsider could not switch auto-rotate back \(switched) on \(serial) (\(Self.message(error))). \(retry)")
-            return RotationReport(before: before, now: try? await read(), restored: false)
+        return await restore(value)
+    }
+
+    /// How long a phone's screen is watched after auto-rotate comes back on: its sensor can turn the screen away moments later.
+    static let sensorSettle: TimeInterval = 1
+
+    /// What the screen shows once auto-rotate is back: a phone may follow its sensor away from `target`, while an emulator's stays put.
+    @MainActor
+    static func settled(
+        _ target: DeviceOrientation,
+        rotation: RotationReport,
+        on device: DeviceID,
+        turner: any OrientationControlling,
+        sleep: @MainActor (Duration) async throws -> Void,
+        now: @MainActor () -> TimeInterval
+    ) async -> DeviceOrientation {
+        guard rotation.restored, rotation.now?.autoRotate == true, device.isPhysicalAndroidDevice else { return target }
+        let deadline = now() + sensorSettle
+        while now() < deadline {
+            try? await sleep(.milliseconds(250))
+            if let reading = try? await turner.orientation(of: device), reading != target { return reading }
         }
-        if plan.deleteRecord { store.remove(serial: serial) }
-        return RotationReport(before: before, now: now, restored: true)
+        return target
+    }
+
+    /// When the sensor turned the screen away from what was asked, an agent's portrait coordinates no longer hold.
+    static func sensorNotice(shown: DeviceOrientation, target: DeviceOrientation) -> [Notice] {
+        guard shown != target else { return [] }
+        return [.warning(
+            "Now \(shown.rawValue): auto-rotate is on again",
+            agent: "the screen turned to \(shown.rawValue) after auto-rotate came back on, as it follows how the phone is held; the size above is for \(shown.rawValue)."
+        )]
     }
 
     private static func message(_ error: any Error) -> String {
@@ -262,18 +307,21 @@ struct OrientationCommand: AsyncParsableCommand {
         case .ios:
             let app = target.isLandscape ? "supports portrait only" : "does not support \(target.rawValue)"
             let back = turnedBack.map { ", so Offsider turned it back to \($0.rawValue)" } ?? ""
-            return "The simulator did not turn to \(target.rawValue) within \(seconds) s\(back). This iOS runtime may ignore the orientation event Offsider sends, or the frontmost app \(app). Check with `offsider orientation --device \(device)`."
+            return "The simulator did not turn to \(target.rawValue) within \(seconds) s\(back). The frontmost app \(app), this iOS runtime ignored the turn, or the app stopped following turns. Check with `offsider orientation --device \(device)`. If an app that allows it still will not turn, run `offsider button home --device \(device)`, then `offsider orientation portrait --device \(device)`, and launch the app again."
         case .android:
             let noun = physical ? "The phone \(device)" : "The emulator"
+            if target == .portrait {
+                return "\(noun) did not turn to portrait within \(seconds) s: the app in front may lock its orientation. Bring an app that allows portrait to the front, then run `offsider orientation portrait --device \(device)` again."
+            }
             return "\(noun) did not turn to \(target.rawValue) within \(seconds) s. The foreground app may lock its orientation; `offsider orientation portrait --device \(device)` puts auto-rotate back. Check with `offsider orientation --device \(device)`."
         }
     }
 
-    private func report(_ current: DeviceOrientation, previous: DeviceOrientation?, setting: Bool, backend: any DeviceBackend, device: DeviceID, rotation: RotationReport? = nil) async throws {
+    private func report(_ current: DeviceOrientation, previous: DeviceOrientation?, setting: Bool, backend: any DeviceBackend, device: DeviceID, rotation: RotationReport? = nil, extra: [Notice] = []) async throws {
         let screen = try? await backend.screenInfo(for: device)
         let text = json ? DeviceSettingsReport.orientation(current, previous: previous, screen: screen, rotation: rotation) : Self.line(current, screen: screen, platform: device.platform)
         let person = DevicePersonView.orientation(current, previous: previous, screen: screen, platform: device.platform, rotation: rotation, setting: setting)
-        DevicePersonView.emit(text, json: json, person: person, notices: Self.notices(current, rotation: rotation, on: device))
+        DevicePersonView.emit(text, json: json, person: person, notices: Self.notices(current, rotation: rotation, on: device) + extra)
     }
 
     /// When this turn switched Android's auto-rotate off, how a person gets it back.

@@ -215,7 +215,7 @@ extension UINode {
         var texts = [label, isSecure ? nil : value]
         switch native {
         case .ios(let attributes):
-            texts.append(attributes.title)
+            texts += [attributes.title, attributes.hint]
         case .android(let attributes):
             texts += [isSecure ? nil : attributes.text, attributes.contentDescription, attributes.hint]
         }

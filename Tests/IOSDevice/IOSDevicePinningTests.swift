@@ -78,7 +78,7 @@ struct IOSDevicePinningTests {
     /// Commands with `--device` that never read or drive a phone's screen: refused on a phone, a setting, or their own `--app`.
     static let noScreenOnPhone: Set<String> = [
         "device-session serve", "android-session serve", "doctor", "logs", "notifications", "displays", "shake", "login", "credential", "rn prepare", "rn open",
-        "orientation", "posture", "appearance", "content-size", "permission", "status-bar", "biometric", "stay-awake", "wake", "sleep", "unlock-code",
+        "orientation", "posture", "appearance", "content-size", "permission", "status-bar", "biometric", "stay-awake", "airplane", "wake", "sleep", "unlock-code",
         "devices add", "devices status", "devices remove", "runner status", "runner build", "runner stop",
         "session status", "session stop", "lease",
     ]
@@ -108,8 +108,7 @@ struct IOSDevicePinningTests {
         backend.targetApp = "com.example.other"
         let other = await #expect(throws: IOSDeviceError.self) { _ = try await backend.rawAccessibilitySource(for: Self.phone) }
         #expect(other?.reason == .appNotAllowed)
-        #expect(other?.message.contains("`offsider devices add` in their own terminal, choose") == true)
-        #expect(other?.message.contains("(\(IOSDeviceFixtures.phone)) and pin com.example.other") == true)
+        #expect(other?.message.contains("`offsider devices add --device \(IOSDeviceFixtures.phone) --app com.example.other`") == true)
         #expect(transport.calls.isEmpty)
     }
 
@@ -142,28 +141,61 @@ struct IOSDevicePinningTests {
         #expect(!transport.calls.contains { $0.path == "/tap-point" })
     }
 
-    @Test("a read under a system prompt tells a test device's agent it may tap the prompt, and any other device's only to ask")
-    func promptAdviceFollowsTheAllowance() async throws {
-        let transport = FakeRunnerTransport()
-        transport.foregroundApp = Self.playground
-        let pinned = try Self.backend(transport)
-        pinned.targetApp = Self.playground
-        transport.stuckPrompt = "Allow?"
-        let asks = await #expect(throws: IOSDeviceError.self) { _ = try await pinned.rawAccessibilitySource(for: Self.phone) }
-        #expect(asks?.reason == .systemPromptInFront)
-        #expect(asks?.message.contains("test device") == false)
-
+    private static func testDeviceBackend(_ transport: FakeRunnerTransport) throws -> IOSDeviceBackend {
         var host = IOSDeviceHost.fake(try FakeDevicectl.listing("devicectl-list-xcode26.json"), usbmux: FakeUsbmuxListing.onUSB(IOSDeviceFixtures.phone))
         host.runnerConnector = FakeRunnerConnector(transport: transport)
         let whole = IOSDeviceBackend(host: host) { _, _ in }
         whole.input.coreDeviceVersion = { CoreDeviceVersion("518.24") }
         let allowance = DeviceAllowance(platform: .ios, key: IOSDeviceFixtures.phone, name: "Test iPhone", added: Date(), expires: nil, apps: [], testDevice: true)
         IOSDevicePinning.configure(whole, allowance: allowance, policy: PhysicalDevicePolicy(managed: .none, list: DeviceAllowList(entries: [allowance])), profileBundleID: { nil })
+        return whole
+    }
+
+    @Test("a read under a system prompt gives a test device's agent the commands that answer it, and any other device's only a request to a person")
+    func promptAdviceFollowsTheAllowance() async throws {
+        let transport = FakeRunnerTransport()
+        transport.foregroundApp = Self.playground
+        let pinned = try Self.backend(transport)
+        pinned.targetApp = Self.playground
+        transport.promptOverApp = "Allow?"
+        let asks = await #expect(throws: IOSDeviceError.self) { _ = try await pinned.rawAccessibilitySource(for: Self.phone) }
+        #expect(asks?.reason == .systemPromptInFront)
+        #expect(asks?.ask != nil)
+        #expect(asks?.hint == nil)
+
+        let whole = try Self.testDeviceBackend(transport)
         whole.targetApp = Self.playground
         let may = await #expect(throws: IOSDeviceError.self) { _ = try await whole.rawAccessibilitySource(for: Self.phone) }
         #expect(may?.reason == .systemPromptInFront)
-        #expect(may?.message.contains("On this test device you may tap") == true)
-        #expect(may?.hint == "offsider screenshot --device \(IOSDeviceFixtures.phone)")
+        #expect(may?.reason.exitCode == .deviceUnavailable)
+        #expect(may?.ask == nil, "an agent may answer a test device's prompt, so it never asks a person")
+        #expect(may?.isOtherAppInFront == false, "a wait fails at once, as nobody else will answer it")
+        #expect(may?.message.contains("Allow?") == true)
+        #expect(may?.message.contains("Retry") == false)
+        #expect(may?.message.contains("offsider tap --label <button> --device \(IOSDeviceFixtures.phone)") == true)
+        #expect(may?.hint == "offsider describe-ui --summary --device \(IOSDeviceFixtures.phone)")
+    }
+
+    @Test("the read a prompt's error names reaches the runner without an app, so it reads what is in front")
+    func namedReadAnswersOnATestDevice() async throws {
+        let transport = FakeRunnerTransport()
+        transport.promptOverApp = "Allow?"
+        let whole = try Self.testDeviceBackend(transport)
+        _ = try await whole.rawAccessibilitySource(for: Self.phone)
+        #expect(transport.calls.last?.path == "/snapshot")
+        #expect(transport.calls.last?.body["app"] == nil)
+    }
+
+    @Test("a read on a test device that times out names the read that works, not a retry")
+    func timeoutOnATestDevice() async throws {
+        let transport = FakeRunnerTransport()
+        transport.timesOut = "/snapshot"
+        let whole = try Self.testDeviceBackend(transport)
+        whole.targetApp = Self.playground
+        let error = await #expect(throws: IOSDeviceError.self) { _ = try await whole.rawAccessibilitySource(for: Self.phone) }
+        #expect(error?.reason == .runnerUnavailable)
+        #expect(error?.message.contains("Retry") == false)
+        #expect(error?.hint == "offsider describe-ui --summary --device \(IOSDeviceFixtures.phone)")
     }
 
     static func foregroundChecks(_ transport: FakeRunnerTransport) -> Int {

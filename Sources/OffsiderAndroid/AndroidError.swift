@@ -41,6 +41,8 @@ public struct AndroidError: LocalizedError, CustomStringConvertible, Equatable, 
         case appNotAllowed
         /// `app_not_allowed` only because of what is in front now; it clears when the app under test comes back.
         case otherAppInFront
+        /// The named app's widget is not on the screen, or something beyond it would show in the crop.
+        case widgetNotShown
         case textNotAccepted
         case unsupportedKey
         case unsupportedButton
@@ -64,6 +66,11 @@ public struct AndroidError: LocalizedError, CustomStringConvertible, Equatable, 
         case screenshotFailed
         case videoOutputFailed
         case noAVDNamed
+        case shutdownPhone
+        case emulatorUnconfirmed
+        case emulatorStillStarting
+        case emulatorStopRefused
+        case emulatorStopTimedOut
         case emulatorMissing
         case emulatorLaunchFailed
         case emulatorExited
@@ -71,6 +78,8 @@ public struct AndroidError: LocalizedError, CustomStringConvertible, Equatable, 
     }
 
     public let kind: Kind
+    /// adb's own `FAIL`: the service did not run, unlike a timeout or a dropped link, which leave that open.
+    public private(set) var refusedByAdb = false
     public let message: String
     /// The command to run next, when the message does not quote it.
     public let explicitHint: String?
@@ -147,9 +156,18 @@ public struct AndroidError: LocalizedError, CustomStringConvertible, Equatable, 
         )
     }
 
-    static func adbCommandFailed(serial: String, command: String, detail: String) -> AndroidError {
+    static func adbCommandFailed(serial: String, command: String, detail: String, refused: Bool = false) -> AndroidError {
         let reason = detail.isEmpty ? "" : ": \(detail)"
-        return AndroidError(.adbCommandFailed, "`\(command)` failed on \(serial)\(reason).")
+        var error = AndroidError(.adbCommandFailed, "`\(command)` failed on \(serial)\(reason).")
+        error.refusedByAdb = refused
+        return error
+    }
+
+    /// This error, as adb's own refusal of the service.
+    var asAdbRefusal: AndroidError {
+        var error = self
+        error.refusedByAdb = true
+        return error
     }
 
     static func serialNotRunning(_ serial: String) -> AndroidError {
@@ -186,6 +204,30 @@ public struct AndroidError: LocalizedError, CustomStringConvertible, Equatable, 
 
     static func bootPhone(_ serial: String) -> AndroidError {
         AndroidError(.unsupportedDevice, "boot starts emulators, and \(serial) is a connected phone. Run `offsider devices` to see AVD names.")
+    }
+
+    static func shutdownPhone(_ serial: String) -> AndroidError {
+        AndroidError(.shutdownPhone, "shutdown stops simulators and emulators, and \(serial) is a connected phone. Nothing was sent to it.")
+    }
+
+    static func emulatorUnconfirmed(_ serial: String) -> AndroidError {
+        AndroidError(.emulatorUnconfirmed, "Offsider could not confirm which emulator is on \(serial), so it stopped nothing. Close that emulator's window instead.")
+    }
+
+    static func emulatorNamesDiffer(_ serial: String, file: String, device: String) -> AndroidError {
+        AndroidError(.emulatorUnconfirmed, "\(serial) reads as \(device), but its discovery file says \(file), so Offsider stopped nothing. Check with `offsider devices`, then name the AVD.")
+    }
+
+    static func emulatorStillStarting(_ name: String, pid: Int32) -> AndroidError {
+        AndroidError(.emulatorStillStarting, "\(name) is still starting (pid \(pid)). Wait with `offsider boot \(name)`, then run this again.")
+    }
+
+    static func emulatorStopRefused(_ name: String, detail: String) -> AndroidError {
+        AndroidError(.emulatorStopRefused, "\(name) did not take the stop (\(detail)). adb signs in with ~/.emulator_console_auth_token, so check that file is yours, then run this again.")
+    }
+
+    static func emulatorStopTimedOut(_ name: String, pid: Int32, seconds: Int64) -> AndroidError {
+        AndroidError(.emulatorStopTimedOut, "\(name) was still running after \(seconds) s. Run this again with a longer --timeout, or stop it with `kill \(pid)`.")
     }
 
     static func ambiguousDeviceName(_ name: String, emulatorSerial: String) -> AndroidError {
@@ -578,6 +620,19 @@ public struct AndroidError: LocalizedError, CustomStringConvertible, Equatable, 
         )
     }
 
+    /// A system window over the app takes input that Offsider never sends it; a person closes it.
+    static func systemWindowCovers(_ serial: String, title: String?) -> AndroidError {
+        let name = title.flatMap(AndroidWindowFocus.shown).map { "(\(TerminalText.quoted($0))) " } ?? ""
+        return AndroidError(
+            .otherAppInFront,
+            "A system window \(name)covers the app on \(serial), so Offsider did nothing. Only `describe-ui` and `screenshot` read over it, and nothing taps it. Can you close it on \(serial)?"
+        )
+    }
+
+    static func widgetNotShown(_ message: String, hint: String? = nil) -> AndroidError {
+        AndroidError(.widgetNotShown, message, hint: hint)
+    }
+
     static func foregroundUnknown(_ serial: String) -> AndroidError {
         AndroidError(
             .otherAppInFront,
@@ -797,6 +852,7 @@ extension AndroidError: OffsiderFailure {
         case .fieldNotEditable: return .fieldNotEditable
         case .securePasteRefused: return .securePasteRefused
         case .appNotAllowed, .otherAppInFront: return .appNotAllowed
+        case .widgetNotShown: return .widgetNotShown
         case .textNotAccepted: return .textNotAccepted
         case .unsupportedKey: return .unsupportedKey
         case .unsupportedButton: return .unsupportedButton
@@ -817,6 +873,10 @@ extension AndroidError: OffsiderFailure {
         case .emulatorMissing: return .emulatorMissing
         case .emulatorLaunchFailed, .emulatorExited: return .emulatorLaunchFailed
         case .bootTimeout: return .bootTimedOut
+        case .shutdownPhone, .emulatorUnconfirmed: return .deviceNotAllowed
+        case .emulatorStillStarting: return .deviceNotReady
+        case .emulatorStopRefused: return .shutdownFailed
+        case .emulatorStopTimedOut: return .shutdownTimedOut
         }
     }
 

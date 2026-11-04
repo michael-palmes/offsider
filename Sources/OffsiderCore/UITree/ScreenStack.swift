@@ -99,6 +99,7 @@ public struct ScreenStack: Equatable, Sendable {
                     guard let visible = flat.entries[lower].node.frame?.intersection(viewport),
                           page.frame.encloses(visible, tolerance: tolerance),
                           byDrawingOrder || share(of: visible, in: viewport) >= minimumShare,
+                          !flat.isOrderedByPosition(lower, under: candidate),
                           flat.subtree(lower).contains(where: { flat.entries[$0].node.isTelling }) else { continue }
                     for index in flat.subtree(lower) {
                         if lowestSealer[index] == nil { lowestSealer[index] = candidate }
@@ -177,6 +178,13 @@ struct FlatTree {
         return siblings.indices.sorted { orders[$0] != orders[$1] ? orders[$0] < orders[$1] : $0 < $1 }.map { siblings[$0] }
     }
 
+    /// A simulator lists siblings by position, the smaller first at the same corner, so only two of one size are in the order they were added; a hit-test settles the rest.
+    func isOrderedByPosition(_ lower: Int, under upper: Int) -> Bool {
+        let bottom = entries[lower].node, top = entries[upper].node
+        guard bottom.iosPID != nil, let mine = bottom.frame, let theirs = top.frame else { return false }
+        return abs(mine.width - theirs.width) > ScreenStack.tolerance || abs(mine.height - theirs.height) > ScreenStack.tolerance
+    }
+
     private static let overlayTypes = ["alert", "dialog", "sheet"]
 
     /// The candidate as a page: big, no control, overlay, LogBox or scrim, labelled from its top quarter past its middle; `above` adds Android siblings on it.
@@ -237,7 +245,7 @@ struct FlatTree {
 
 extension UINode {
     /// Labelled or actionable: something a covered screen shows or offers.
-    var isTelling: Bool {
+    public var isTelling: Bool {
         role.isActionable || label?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
     }
 

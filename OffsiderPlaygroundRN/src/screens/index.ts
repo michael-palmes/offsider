@@ -21,6 +21,7 @@ import { LiveChartTestScreen } from './LiveChartTestScreen';
 import { LiveTickerTestScreen } from './LiveTickerTestScreen';
 import { LongScrollTestScreen } from './LongScrollTestScreen';
 import { GapTabsTestScreen } from './GapTabsTestScreen';
+import { MaskRuleTestScreen } from './MaskRuleTestScreen';
 import { MaskSheetTestScreen } from './MaskSheetTestScreen';
 import { ModalNavigationTestScreen } from './ModalNavigationTestScreen';
 import { MultiTouchScreen } from './MultiTouchScreen';
@@ -31,6 +32,8 @@ import { RowsTestScreen } from './RowsTestScreen';
 import { SearchableTestScreen } from './SearchableTestScreen';
 import { SheetTestScreen } from './SheetTestScreen';
 import { SliderValueTestScreen } from './SliderValueTestScreen';
+import { OwnCoverTestScreen } from './OwnCoverTestScreen';
+import { PageOverTestScreen } from './PageOverTestScreen';
 import { StackTestScreen } from './StackTestScreen';
 import { StickyFooterTestScreen } from './StickyFooterTestScreen';
 import { SwipeTestScreen } from './SwipeTestScreen';
@@ -72,8 +75,11 @@ export const screens: Record<RouteId, ComponentType> = {
   'sticky-footer-test': StickyFooterTestScreen,
   'parked-sheet-test': ParkedSheetTestScreen,
   'mask-sheet-test': MaskSheetTestScreen,
+  'mask-rule-test': MaskRuleTestScreen,
   'gap-tabs-test': GapTabsTestScreen,
   'stack-test': StackTestScreen,
+  'page-over-test': PageOverTestScreen,
+  'own-cover-test': OwnCoverTestScreen,
   'overlay-test': OverlayTestScreen,
   'rows-test': RowsTestScreen,
   'environment-test': EnvironmentTestScreen,

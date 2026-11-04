@@ -17,11 +17,6 @@ extension IOSDeviceBackend: RawAccessibilitySource {
                 .otherAppInFront,
                 "\(app) is not in front on \(id.rawValue), so Offsider read nothing. Leave out --app to read what is in front, or run `offsider app launch --app \(app) --device \(id.rawValue)` first."
             )
-        } catch let error as IOSDeviceError where state.drivesWhole && error.kind == .systemPromptInFront {
-            throw IOSDeviceError(
-                .systemPromptInFront,
-                "\(error.message) On this test device you may tap its answer yourself, by coordinates: `offsider screenshot --device \(id.rawValue)` shows it."
-            )
         }
     }
 

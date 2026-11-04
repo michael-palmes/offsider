@@ -78,7 +78,13 @@ public enum IOSAccessibilityMapping {
         if role == .group, id?.hasPrefix(keyboardLayoutPrefix) == true {
             role = .keyboard
         }
-        let raw = text(dictionary["AXValue"])
+        let placeholder = text(dictionary["placeholder"])
+        var raw = text(dictionary["AXValue"])
+        if role.isTextInput {
+            // XCTest reports an empty field's value as its placeholder.
+            if raw == placeholder { raw = nil }
+            if SecureText.isMaskDots(raw) { role = .secureTextField }
+        }
         var value = role == .secureTextField ? SecureText.masked(raw) : raw
         // Traits that could not be read (absent or null) leave selection unknown.
         let selected = (dictionary["traits"] as? [Any])?.compactMap(text).contains("Selected")
@@ -94,7 +100,7 @@ public enum IOSAccessibilityMapping {
         return UINode(
             role: role,
             id: id,
-            label: text(dictionary["AXLabel"]),
+            label: text(dictionary["AXLabel"]).map(TerminalText.withoutColour),
             value: value,
             frame: frame(dictionary["frame"]),
             enabled: dictionary["enabled"] as? Bool,
@@ -106,10 +112,12 @@ public enum IOSAccessibilityMapping {
                 roleDescription: roleDescription,
                 title: text(dictionary["title"]),
                 help: text(dictionary["help"]),
+                hint: placeholder,
                 customActions: (dictionary["custom_actions"] as? [Any] ?? []).compactMap(text),
                 contentRequired: dictionary["content_required"] as? Bool,
                 pid: (dictionary["pid"] as? NSNumber)?.intValue,
-                axFrame: text(dictionary["AXFrame"])
+                axFrame: text(dictionary["AXFrame"]),
+                bundleID: text(dictionary["bundleId"])
             ))
         )
     }

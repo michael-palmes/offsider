@@ -101,6 +101,8 @@ public struct UITree: Equatable, Sendable {
     public var filledFromGaps: Int?
     /// A prompt another process draws over an iOS app, which `describe-ui` found with a point read; JSON carries it only in `context`.
     public var systemPrompt: SystemPrompt?
+    /// The system window a phone's read went ahead under, with the allowed app still holding focus beneath it; nil otherwise.
+    public var systemWindow: UITreeContext.Window?
     /// The context a decoded describe-ui JSON carried, which its windows no longer can.
     var decodedContext: UITreeContext?
     /// Set by `redacted(_:)` for output: what it hid. JSON carries `redacted` and `revealed` only when either is above zero.
@@ -218,6 +220,7 @@ extension UINative {
                 ("roleDescription", .optional(native.roleDescription, OrderedJSON.string)),
                 ("title", .optional(native.title, OrderedJSON.string)),
                 ("help", .optional(native.help, OrderedJSON.string)),
+                ("hint", .optional(native.hint, OrderedJSON.string)),
                 ("customActions", .array(native.customActions.map(OrderedJSON.string))),
                 ("contentRequired", .optional(native.contentRequired, OrderedJSON.bool)),
                 ("pid", .optional(native.pid, OrderedJSON.integer)),

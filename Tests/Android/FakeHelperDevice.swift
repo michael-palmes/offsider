@@ -83,7 +83,7 @@ final class FakeHelperDevice: @unchecked Sendable {
     var syncAnswer: FakeSyncSession.Answer = .okay
     var dump = FakeHelperDevice.tapTestDump
     /// What `hello` lists; nil leaves `ops` out, as a protocol 1 helper did.
-    var helloOps: [String]? = ["hello", "ping", "dump", "display", "setProgress", "setText", "paste", "events", "inject", "screenshot", "quit"]
+    var helloOps: [String]? = ["hello", "ping", "dump", "display", "setProgress", "setText", "paste", "events", "inject", "release", "screenshot", "quit"]
     var answer: @Sendable (_ process: Int, _ op: String, _ json: String) -> Answer? = { _, _, _ in nil }
     var pidof: @Sendable (_ call: Int) -> String = { _ in "" }
     /// Every other device service, such as the display probe.
@@ -256,7 +256,7 @@ final class FakeHelperDevice: @unchecked Sendable {
         case "hello":
             let ops = lock.withLock { helloOps }.map { #","ops":[\#($0.map { "\"\($0)\"" }.joined(separator: ","))]"# } ?? ""
             return .ok(#"{"helper":"1.5.0","protocol":2\#(ops)}"#)
-        case "ping", "quit": return .ok("{}")
+        case "ping", "quit", "release": return .ok("{}")
         case "dump": return .ok(lock.withLock { dump })
         case "display": return .ok(Self.displayReply)
         case "inject": return .ok(Self.injectReply(to: json))

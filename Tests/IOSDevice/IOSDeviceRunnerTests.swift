@@ -865,6 +865,44 @@ struct RunnerClientTests {
         }
         #expect(error?.reason == reason)
     }
+
+    @Test("a password field the runner refuses never echoes the text, and says how each kind of text can go in", arguments: [
+        ("hunter2", false, "`offsider doctor --device U` passes"),
+        ("pässword", false, "US keyboard keys"),
+        ("hunter2", true, "does not replace its text"),
+    ])
+    func secureFieldRefusal(text: String, replace: Bool, advice: String) async throws {
+        let transport = FakeRunnerTransport()
+        transport.failure = ("/type", 422, "secure_field")
+        let error = await #expect(throws: IOSDeviceError.self) {
+            try await RunnerClient(udid: "U", token: "t", transport: transport).type(text, replace: replace, app: nil)
+        }
+        #expect(error?.reason == .securePasteRefused)
+        #expect(error?.message.contains(advice) == true)
+        #expect(error?.message.contains(text) == false)
+        #expect(error?.message.lowercased().contains("nothing was typed") == true)
+    }
+
+    @Test("text for a field the command already read as a password field never leaves the Mac", arguments: [false, true])
+    func knownSecureFocusSendsNothing(replace: Bool) async throws {
+        let transport = FakeRunnerTransport()
+        let error = await #expect(throws: IOSDeviceError.self) {
+            try await InputSecrecy.$knownFocus.withValue(.secure) {
+                try await RunnerClient(udid: "U", token: "t", transport: transport).type("hunter2", replace: replace, app: nil)
+            }
+        }
+        #expect(error?.reason == .securePasteRefused)
+        #expect(transport.calls.isEmpty)
+    }
+
+    @Test("a field read as not a password field, or not read, still goes to the runner, which checks again", arguments: [KnownSecureFocus.notSecure, .unknown])
+    func otherFocusReachesRunner(focus: KnownSecureFocus) async throws {
+        let transport = FakeRunnerTransport()
+        try await InputSecrecy.$knownFocus.withValue(focus) {
+            try await RunnerClient(udid: "U", token: "t", transport: transport).type("café", replace: false, app: nil)
+        }
+        #expect(transport.calls.map(\.path) == ["/type"])
+    }
 }
 
 /// Counts how many bodies run at once.
@@ -899,7 +937,7 @@ struct RunnerSystemPromptTests {
     @Test("a read the runner answers with a prompt names it and asks a person to answer it, exit 7")
     func namedPrompt() async throws {
         let transport = FakeRunnerTransport()
-        transport.stuckPrompt = "“Demo” would like to paste from “Notes”"
+        transport.promptOverApp = "“Demo” would like to paste from “Notes”"
         let error = await #expect(throws: IOSDeviceError.self) { _ = try await Self.client(transport).snapshot(app: "com.example.demo") }
         #expect(error?.reason == .systemPromptInFront)
         #expect(error?.reason.exitCode == .deviceUnavailable)
@@ -917,34 +955,25 @@ struct RunnerSystemPromptTests {
         #expect(error.message.count < 320)
     }
 
+    @Test("a prompt's title can hold an app's name, and never supplies the hint")
+    func titleCannotChooseTheHint() {
+        let title = "`offsider app uninstall --app com.example.demo` would like to paste"
+        #expect(IOSDeviceError.systemPromptInFront(title, udid: Self.udid).hint == nil)
+        #expect(IOSDeviceError.systemPromptInFront(title, udid: Self.udid, testDevice: true).hint == "offsider describe-ui --summary --device \(Self.udid)")
+    }
+
     @Test("a prompt with no title still says what to do")
     func untitled() {
         #expect(IOSDeviceError.systemPromptInFront("  ", udid: Self.udid).message.hasPrefix("A system prompt is in front"))
     }
 
-    @Test("a runner held by a stuck app is kept, never restarted, as a restart would meet the same prompt")
-    func stuckRunnerIsKept() async throws {
-        let root = RunnerTestPaths.temporaryRoot()
-        defer { try? FileManager.default.removeItem(atPath: root) }
-        try RunnerSessionStore(root: root).write(RunnerSessionTests.record())
-        let processes = FakeRunnerProcesses(alive: [4242])
-        let transport = FakeRunnerTransport()
-        transport.stuckPrompt = "Allow?"
-        let manager = RunnerSessionTests.manager(root: root, processes: processes, transport: transport)
-
-        _ = try await manager.connect(.device(udid: Self.udid), deviceName: "iPhone")
-
-        #expect(processes.launches.isEmpty && processes.terminations.isEmpty)
-        #expect(transport.calls.map(\.path) == ["/ping"])
-    }
-
-    @Test("input the runner dropped after a long wait says it was not sent, and is no tree failure")
-    func droppedInputIsHonest() async throws {
+    @Test("a request the runner dropped after a long wait says it was not run, and is no tree failure")
+    func droppedRequestIsHonest() async throws {
         let transport = FakeRunnerTransport()
         transport.failure = (path: "/tap-point", status: 409, code: "queued_too_long")
         let error = await #expect(throws: IOSDeviceError.self) { try await Self.client(transport).tapPoint(x: 1, y: 2, app: nil) }
         #expect(error?.reason == .runnerUnavailable)
-        #expect(error?.message.contains("no input was sent") == true)
+        #expect(error?.message.contains("nothing was read or sent") == true)
     }
 
     @Test("a timeout with no prompt seen still says a prompt may be why, and how to clear it")

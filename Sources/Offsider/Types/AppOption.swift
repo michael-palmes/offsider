@@ -91,6 +91,10 @@ extension AppInfoCommand: AppNaming { var namedApp: String? { appOption.bundleID
 extension AppLaunchCommand: AppNaming { var namedApp: String? { appOption.bundleID } }
 extension AppStopCommand: AppNaming { var namedApp: String? { appOption.bundleID } }
 extension AppOpenCommand: AppNaming { var namedApp: String? { appOption.bundleID } }
+extension AppInstallCommand: AppNaming { var namedApp: String? { appOption.bundleID } }
+extension AppUninstallCommand: AppNaming { var namedApp: String? { appOption.bundleID } }
+extension AppPrefsCommand: AppNaming { var namedApp: String? { appOption.bundleID } }
+extension AppBroadcastCommand: AppNaming { var namedApp: String? { appOption.bundleID } }
 extension NotificationsCommand: AppNaming { var namedApp: String? { app } }
 extension Logs: AppNaming { var namedApp: String? { app } }
 extension PermissionCommand: AppNaming { var namedApp: String? { app } }

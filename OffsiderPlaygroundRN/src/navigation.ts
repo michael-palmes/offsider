@@ -177,11 +177,29 @@ export const routeInfo = {
     menuTitle: 'Mask Sheet Test',
     subtitle: 'A short sheet over values that stay drawn',
   },
+  'mask-rule-test': {
+    section: 'Real-world RN',
+    title: 'Mask Rule',
+    menuTitle: 'Mask Rule Test',
+    subtitle: 'A password a toggle reveals and text nested in a masked row',
+  },
   'stack-test': {
     section: 'Real-world RN',
     title: 'Mounted Stack',
     menuTitle: 'Mounted Stack Test',
     subtitle: 'Previous pages stay mounted with the same ids',
+  },
+  'page-over-test': {
+    section: 'Real-world RN',
+    title: 'Page Over',
+    menuTitle: 'Page Over Test',
+    subtitle: 'A full page over a screen, drawn several ways',
+  },
+  'own-cover-test': {
+    section: 'Real-world RN',
+    title: 'Own Cover',
+    menuTitle: 'Own Cover Test',
+    subtitle: 'A step screen with its own empty wrappers, and real covers',
   },
   'overlay-test': {
     section: 'Real-world RN',

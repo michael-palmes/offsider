@@ -15,7 +15,7 @@ struct CredentialAddContext: Sendable {
     var profile: @Sendable () -> LoginProfile?
     /// The app in front on each running simulator and emulator, never a phone.
     var frontApps: @Sendable @MainActor () async -> [(app: String, platform: DevicePlatform, device: String)]
-    /// An Android phone on the allow-list now, read from the file alone so no Keychain prompt shows; `login` checks the sealed list.
+    /// A phone or tablet on the allow-list now, read from the file alone so no Keychain prompt shows; `login` checks the sealed list.
     var phoneAllowed: @Sendable () -> Bool
     /// A pseudo-terminal in tests; nil opens `/dev/tty`.
     var promptDescriptor: Int32?
@@ -26,7 +26,7 @@ struct CredentialAddContext: Sendable {
         phoneAllowed: {
             let now = Date()
             let entries = (try? DevicePolicySources.store()?.load().list.entries) ?? []
-            return entries.contains { $0.platform == .android && ($0.expires ?? .distantFuture) > now }
+            return entries.contains { ($0.expires ?? .distantFuture) > now }
         },
         promptDescriptor: nil
     )
@@ -79,22 +79,21 @@ extension CredentialCommand {
                 : apps.map { LoginTarget(id: $0, platform: nil) }
             if !apps.isEmpty { prompt.lines([TerminalUI.receipt("Apps", LoginDirectory.list(targets.map(\.id)), style: prompt.style)]) }
             var phones = false
-            if settings.devices == nil, targets.contains(where: { $0.platform != .ios }), context.phoneAllowed() {
+            if settings.devices == nil, context.phoneAllowed() {
                 phones = try Self.askPhones(on: prompt)
             }
             let chosen = Self.settings(settings, phones: phones)
-            let loosening = targets.contains { !Self.settings(chosen, for: $0).loosening.isEmpty }
+            let loosening = !chosen.loosening.isEmpty
             if loosening {
                 let start = prompt.mark
                 prompt.lines([prompt.style.dim(AllowScreen.confirm)])
-                let looser = targets.map { Self.settings(chosen, for: $0) }.first { !$0.loosening.isEmpty } ?? chosen
-                try await PersonPresence.confirm(reason: Self.looseningReason(key: key, apps: targets.map(\.id), settings: looser))
+                try await PersonPresence.confirm(reason: Self.looseningReason(key: key, apps: targets.map(\.id), settings: chosen))
                 prompt.rewind(to: start)
             }
             let questions = TerminalCredentialQuestions(prompt: prompt)
             if targets.count == 1 {
                 return try Self.perform(
-                    .set, app: targets[0].id, key: key, update: update, edit: edit, settings: Self.settings(chosen, for: targets[0]), personConfirmed: loosening,
+                    .set, app: targets[0].id, key: key, update: update, edit: edit, settings: chosen, personConfirmed: loosening,
                     json: json, styled: styled, store: store, questions: questions, readCredential: questions.credential
                 )
             }
@@ -114,20 +113,12 @@ extension CredentialCommand {
         return next
     }
 
-    /// An iPhone never takes `login`, so an app the picker knows is iOS is never saved for phones by the phone question.
-    static func settings(_ settings: LoginSettingsEdit, for target: LoginTarget) -> LoginSettingsEdit {
-        guard target.platform == .ios, settings.devices == .any else { return settings }
-        var next = settings
-        next.devices = nil
-        return next
-    }
-
     static func looseningReason(key: String?, apps: [String], settings: LoginSettingsEdit) -> String {
         let name = key.map(LoginCredential.displayKey) ?? "default"
         return "let the saved login \(name) for \(LoginDirectory.list(apps)) \(settings.loosening.joined(separator: " and "))"
     }
 
-    /// Asks whether the login may be typed on allowed Android phones too; leaves one receipt line.
+    /// Asks whether the login may be typed on allowed phones too; leaves one receipt line.
     @MainActor
     static func askPhones(on prompt: TerminalPrompt) throws -> Bool {
         let start = prompt.mark
@@ -189,7 +180,7 @@ extension CredentialCommand {
         readCredential: () throws -> LoginCredential
     ) throws -> String {
         let key = key.map { storedKey($0) ?? $0 }
-        if targets.contains(where: { !Self.settings(settings, for: $0).loosening.isEmpty }), !personConfirmed {
+        if !settings.loosening.isEmpty, !personConfirmed {
             throw CLIError.personRequired(
                 "Letting a saved login \(settings.loosening.joined(separator: " and ")) needs a person at a terminal with Touch ID or the login password. Nothing was saved.",
                 hint: "offsider credential add"
@@ -199,11 +190,7 @@ extension CredentialCommand {
         var apps: [(target: LoginTarget, canonical: String, entries: [LoginEntry])] = []
         for target in targets {
             let canonical = try store.canonical(of: target.id)
-            if let index = apps.firstIndex(where: { $0.canonical == canonical }) {
-                // One save serves both linked ids, so it takes settings meant for either platform.
-                if apps[index].target.platform != target.platform { apps[index].target.platform = nil }
-                continue
-            }
+            if apps.contains(where: { $0.canonical == canonical }) { continue }
             apps.append((target, canonical, try store.entries(app: canonical)))
         }
         let marks = apps.map { (app: $0.canonical, entries: $0.entries as [any LoginMark]) }
@@ -252,7 +239,7 @@ extension CredentialCommand {
             do {
                 if let stamp = write.stampDefault { try store.markDefault(app: app.canonical, key: stamp) }
                 let base = try settingsBase(for: credential, key: write.key, existing: existing, entries: app.entries, app: app.canonical, store: store)
-                next = Self.settings(settings, for: app.target).applied(to: base)
+                next = settings.applied(to: base)
                 if let mirrored = mirrored(context, existing: existing, stored: next) { context = mirrored }
                 try store.saveStored(next, app: app.canonical, key: write.key, isDefault: write.makeDefault, context: context)
             } catch where !reports.isEmpty {

@@ -103,7 +103,12 @@ extension IOSBackend: DisplayControlling {
     }
 }
 
-extension IOSBackend: PostureControlling, HingeControlling {
+extension IOSBackend: PostureControlling, HingeControlling, PostureReading {
+    func postureReads(of id: DeviceID, fresh: Bool) async -> PostureReads? {
+        guard let simulator = try? await simulator(for: id), displayCatalog.isFoldable(simulator) else { return nil }
+        return await displayCatalog.postureReads(of: simulator, applicationFrame: applicationFrames[id.rawValue], fresh: fresh)
+    }
+
     func posture(of id: DeviceID) async throws -> Posture? {
         let simulator = try await simulator(for: id)
         guard displayCatalog.isFoldable(simulator) else { return nil }

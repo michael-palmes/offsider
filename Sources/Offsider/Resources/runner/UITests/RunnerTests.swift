@@ -2,14 +2,21 @@ import XCTest
 
 /// One test that serves Offsider's requests until it goes idle or is told to stop.
 final class RunnerTests: XCTestCase {
+    /// XCTest's own screenshots and screen recordings would keep whatever the screen shows, passwords too; the third key is an older Xcode's name.
+    static let captureOffKeys = ["DisableDiagnosticScreenshots", "DisableDiagnosticScreenRecordings", "DisableScreenshots"]
+
+    override class func setUp() {
+        for key in captureOffKeys { UserDefaults.standard.set(true, forKey: key) }
+        super.setUp()
+    }
+
     func testServe() throws {
         let environment = ProcessInfo.processInfo.environment
         let token = try XCTUnwrap(environment["OFFSIDER_RUNNER_TOKEN"].flatMap { $0.isEmpty ? nil : $0 }, "OFFSIDER_RUNNER_TOKEN is required")
         let port = UInt16(environment["OFFSIDER_RUNNER_PORT"] ?? "") ?? 0
         let idle = TimeInterval(environment["OFFSIDER_RUNNER_IDLE_SECONDS"] ?? "").flatMap { $0 > 0 ? $0 : nil } ?? 300
-        let mainThread = RunnerMainThreadState()
-        let commands = RunnerCommands(buildKey: environment["OFFSIDER_RUNNER_BUILD_KEY"] ?? "", mainThread: mainThread)
-        let server = try RunnerServer(port: port, token: token, mainThread: mainThread, handler: commands.handle)
+        let commands = RunnerCommands(buildKey: environment["OFFSIDER_RUNNER_BUILD_KEY"] ?? "")
+        let server = try RunnerServer(port: port, token: token, handler: commands.handle)
         let done = expectation(description: "stop or idle")
         var finished = false
         let finish = {

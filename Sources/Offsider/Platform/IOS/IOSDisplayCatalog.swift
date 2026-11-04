@@ -13,6 +13,7 @@ final class IOSDisplayCatalog {
     private let displayReadings = FreshReadings<DevicectlDisplays?>()
     private let hingeReadings = FreshReadings<SimulatorHingeLog.Reading?>()
     private var hingeHistories: [String: SimulatorHingeLog.History] = [:]
+    private var lastHinge: [String: SimulatorHingeLog.Reading] = [:]
     static let hingeReadTimeout: TimeInterval = 5
 
     init(logger: OffsiderLogger) {
@@ -75,6 +76,13 @@ final class IOSDisplayCatalog {
         postures[simulator.udid] ?? actives[simulator.udid]?.posture
     }
 
+    /// What the hinge and the showing panel each say, from what this command has read unless `fresh`.
+    func postureReads(of simulator: FBSimulator, applicationFrame: UIFrame?, fresh: Bool) async -> PostureReads? {
+        guard let active = await activeDisplay(of: simulator, applicationFrame: applicationFrame, refresh: fresh) else { return nil }
+        let reading = fresh ? await hingeReading(of: simulator) : lastHinge[simulator.udid]
+        return PostureReads(hinge: reading?.posture, angle: reading?.angle, display: active.posture)
+    }
+
     /// The hinge angle in degrees from the simulator's log; nil when the log gives only its state, or nothing.
     func hingeAngle(of simulator: FBSimulator) async -> Double? {
         await hingeReading(of: simulator)?.angle
@@ -95,6 +103,7 @@ final class IOSDisplayCatalog {
             let read = await Self.hingeReading(udid: udid, since: history.start(boot: Self.bootDate(of: simulator)), logger: logger)
             let reading = history.record(read)
             hingeHistories[udid] = history
+            lastHinge[udid] = reading
             logger.info().log("Hinge: \(reading.map { "\($0)" } ?? "no reading")")
             return reading
         }
@@ -104,6 +113,7 @@ final class IOSDisplayCatalog {
     func forgetReadings(of udid: String) {
         displayReadings.forget(udid)
         hingeReadings.forget(udid)
+        lastHinge[udid] = nil
     }
 
     // MARK: - Sources

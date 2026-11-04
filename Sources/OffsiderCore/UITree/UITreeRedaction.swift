@@ -402,6 +402,7 @@ extension UINative {
         case .ios(var attributes):
             attributes.title = attributes.title.map(transform)
             attributes.help = attributes.help.map(transform)
+            attributes.hint = attributes.hint.map(transform)
             attributes.roleDescription = attributes.roleDescription.map(transform)
             attributes.customActions = attributes.customActions.map(transform)
             self = .ios(attributes)

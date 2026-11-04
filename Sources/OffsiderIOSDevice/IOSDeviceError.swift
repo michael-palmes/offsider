@@ -2,6 +2,31 @@ import Foundation
 import OffsiderCore
 
 /// Every physical iOS device failure a user can see; each message says what happened and what to do next.
+extension IOSDeviceError {
+    /// Why sign-in text cannot go as key presses; never holds the text.
+    static func keysOnlyRefusal(_ text: String, device: DeviceID) -> IOSDeviceError {
+        guard TextToHIDEvents.validateText(text) else {
+            return IOSDeviceError(.notSupported, "Offsider signs in on \(device.rawValue) with US keyboard keys, and this login has a character they cannot type. Nothing was typed. Use a test password with plain letters, digits and symbols.")
+        }
+        return .notSupportedOnDevice(
+            "Signing in without the device session",
+            instead: "Retry once `offsider doctor --device \(device.rawValue)` passes. It needs Xcode 27 and a logged-in desktop on this Mac."
+        )
+    }
+
+    /// The runner's XCTest names typed text in its logs, so a password field takes text only as key presses through the device session; never holds the text.
+    static func secureFieldRunnerRefusal(_ text: String, replace: Bool, udid: String) -> IOSDeviceError {
+        let field = "The field with focus on \(udid) is a password field"
+        if replace {
+            return IOSDeviceError(.secureFieldRefused, "\(field), and Offsider does not replace its text. Nothing was typed. Clear it in the app, or type without --replace.")
+        }
+        guard TextToHIDEvents.validateText(text) else {
+            return IOSDeviceError(.secureFieldRefused, "\(field), which Offsider types into only with US keyboard keys, and this text has a character they cannot type. Nothing was typed. Use a test password with plain letters, digits and symbols.")
+        }
+        return IOSDeviceError(.secureFieldRefused, "\(field), which Offsider types into only through the device session, so nothing was typed. Retry once `offsider doctor --device \(udid)` passes. It needs Xcode 27 and a logged-in desktop on this Mac.")
+    }
+}
+
 public struct IOSDeviceError: LocalizedError, CustomStringConvertible, Equatable, Sendable {
     public enum Kind: String, Equatable, Sendable {
         case notYetSupported
@@ -9,6 +34,8 @@ public struct IOSDeviceError: LocalizedError, CustomStringConvertible, Equatable
         /// The developer directory is not inside an Apple-signed Xcode.
         case xcodeUntrusted
         case devicectlFailed
+        /// Xcode could not mount its developer disk image, for a reason other than the lock or Developer Mode.
+        case diskImageFailed
         case notListed
         case unavailable
         case notWired
@@ -41,6 +68,8 @@ public struct IOSDeviceError: LocalizedError, CustomStringConvertible, Equatable
         case otherAppInFront
         /// A system alert or sheet is over the app.
         case systemPromptInFront
+        /// The same on a test device, where an agent may answer it, so no person is asked.
+        case systemPromptOnTestDevice
         /// A physical iPhone or iPad needs a pinned app and none was named.
         case appRequired
         /// The device's allowance lapsed while a session broker ran (expired, removed or its seal broken).
@@ -74,7 +103,20 @@ public struct IOSDeviceError: LocalizedError, CustomStringConvertible, Equatable
         IOSDeviceError(.xcodeMissing, XcodeSuggestion.current.adding(to: "No usable Xcode is selected: \(detail)."), hint: XcodeSuggestion.current.select)
     }
 
-    static func devicectlFailed(_ command: String, udid: String?, detail: String) -> IOSDeviceError {
+    /// `cause` is devicectl's own error: what it names beats its first line, which only says what it was trying.
+    static func devicectlFailed(_ command: String, udid: String?, detail: String, cause: CoreDeviceErrorInfo? = nil) -> IOSDeviceError {
+        if let udid, let cause {
+            if cause.isLocked {
+                return IOSDeviceError(.locked, "\(udid) is locked, so Xcode could not reach it. Unlock it, then retry; Offsider never types a passcode.")
+            }
+            if cause.isDeveloperModeOff { return developerModeOff(udid) }
+            if cause.isDiskImageMountFailure {
+                return IOSDeviceError(
+                    .diskImageFailed,
+                    "Xcode could not mount its developer disk image on \(udid): \(TerminalText.line(cause.rootCause, cap: 200)). Keep it connected and unlocked, then retry; if it fails again, update Xcode."
+                )
+            }
+        }
         let reason = detail.isEmpty ? "" : ": \(detail)"
         let next = udid.map { "Run `offsider doctor --device \($0)` to check the device." } ?? "Run `offsider doctor` to check Xcode."
         return IOSDeviceError(.devicectlFailed, "`devicectl \(command)` failed\(reason). \(next)")
@@ -171,12 +213,21 @@ extension IOSDeviceError {
         }
     }
 
-    /// A system alert or sheet the app may be waiting on, which stalls every read of it. `title` comes from the device, so it is cleaned and capped.
-    static func systemPromptInFront(_ title: String, udid: String) -> IOSDeviceError {
-        let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
+    /// A system alert or sheet the app may be waiting on, which stalls every read of it. `title` comes from the device and can hold an app's name, so it is cleaned and capped, and loses backticks, which mark the hint.
+    static func systemPromptInFront(_ title: String, udid: String, testDevice: Bool = false) -> IOSDeviceError {
+        let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines).replacingOccurrences(of: "`", with: "'")
         let prompt = trimmed.isEmpty ? "A system prompt" : "The system prompt \(TerminalText.quoted(SelectorText.truncated(trimmed, limit: 120)))"
+        let stopped = "\(prompt) is in front on \(udid), so Offsider did not read or touch the app."
+        if testDevice {
+            return IOSDeviceError(.systemPromptOnTestDevice, "\(stopped) Read it with `offsider describe-ui --summary --device \(udid)`, then answer it with `offsider tap --label <button> --device \(udid)`.")
+        }
         let answer = ErrorAudience.current == .person ? "Answer it on the device" : "Ask the user to answer it on the device"
-        return IOSDeviceError(.systemPromptInFront, "\(prompt) is in front on \(udid), so Offsider did not read or touch the app. \(answer), then retry.")
+        return IOSDeviceError(.systemPromptInFront, "\(stopped) \(answer), then retry.")
+    }
+
+    /// A prompt that rose just after a read began holds that read; the next one gets through as it ends, within seconds, and is not held.
+    static func runnerTimedOutOnTestDevice(_ udid: String) -> IOSDeviceError {
+        IOSDeviceError(.runnerUnavailable, "The runner on \(udid) did not answer in time, so nothing was read or sent. A system prompt may be holding the app: `offsider describe-ui --summary --device \(udid)` reads what is in front.")
     }
 
     static func runnerNotListening(_ udid: String) -> IOSDeviceError {
@@ -195,7 +246,7 @@ extension IOSDeviceError: OffsiderFailure {
         case .notYetSupported: return .notSupported
         case .xcodeMissing: return .xcodeMissing
         case .xcodeUntrusted: return .xcodeUnusable
-        case .devicectlFailed: return .commandFailed
+        case .devicectlFailed, .diskImageFailed: return .commandFailed
         case .notListed, .unavailable: return .deviceNotFound
         case .notWired: return .deviceNotWired
         case .untrusted: return .deviceUntrusted
@@ -207,7 +258,7 @@ extension IOSDeviceError: OffsiderFailure {
         case .locked: return .deviceLocked
         case .stateNotReached: return .stateNotReached
         case .uiAutomationOff: return .uiAutomationOff
-        case .systemPromptInFront: return .systemPromptInFront
+        case .systemPromptInFront, .systemPromptOnTestDevice: return .systemPromptInFront
         case .certificateNotTrusted: return .certificateNotTrusted
         case .xcodeTooOld: return .xcodeTooOld
         case .notSupported: return .notSupported
@@ -229,6 +280,8 @@ extension IOSDeviceError: OffsiderFailure {
     }
 
     public var failureMessage: String { message }
+
+    public var ask: String? { kind == .systemPromptOnTestDevice ? nil : reason.personAsk }
 
     /// The message's first backticked Offsider or xcode-select command.
     public var hint: String? {
