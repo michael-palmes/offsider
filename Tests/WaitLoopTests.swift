@@ -173,7 +173,7 @@ struct WaitLoopTests {
 
         let outcome = try await WaitLoop.run(.settled(by: .tree, quiet: 0.5), timeout: 5, interval: 0.25, sources: script.sources)
 
-        #expect(outcome == WaitOutcome(met: true, elapsed: 0.5, reason: "settled"))
+        #expect(outcome.met && outcome.elapsed == 0.5 && outcome.reason == "settled")
         #expect(script.treeReads == 3)
     }
 
@@ -719,10 +719,137 @@ struct WaitLoopTests {
     @Test("the report is one compact object with the unique match or null")
     func reportShape() {
         let missed = WaitReport(WaitOutcome(met: false, elapsed: 10.0004, reason: "not found")).jsonLine()
-        #expect(missed == #"{"met":false,"elapsedMs":10000,"reason":"not found","match":null,"matched":null,"nearest":[],"leaveOut":null}"#)
+        #expect(missed == #"{"met":false,"elapsedMs":10000,"reason":"not found","match":null,"matched":null,"nearest":[],"leaveOut":null,"sparse":false}"#)
 
         let found = WaitReport(WaitOutcome(met: true, elapsed: 1.2, reason: "on screen", match: Self.save)).jsonLine()
         #expect(found.hasPrefix(#"{"met":true,"elapsedMs":1200,"reason":"on screen","match":{"role":"button","id":"save","label":"Save","#))
         #expect(!found.contains("children"))
+    }
+}
+
+@Suite("Wait loop: reads that prove nothing")
+@MainActor
+struct WaitLoopBlindReadTests {
+    private final class Script {
+        var now: TimeInterval = 0
+        var treeReads = 0
+        var trees: [UITree] = []
+
+        var sources: WaitSources {
+            WaitSources(
+                tree: { [self] in
+                    defer { treeReads += 1 }
+                    return trees[min(treeReads, trees.count - 1)]
+                },
+                fingerprint: { throw CancellationError() },
+                sleep: { [self] duration in
+                    now += Double(duration.components.seconds) + Double(duration.components.attoseconds) / 1e18
+                },
+                now: { [self] in now }
+            )
+        }
+    }
+
+    private static let save = FakeUI.node(.button, id: "save", label: "Save", frame: FakeUI.frame(20, 600, 350, 44))
+    private static let childless = UITree(platform: .ios, device: "fake-device", roots: [FakeUI.node(.application, label: "Playground")])
+
+    private static func screen(_ children: [UINode] = []) -> UITree {
+        FakeUI.tree([FakeUI.node(.text, label: "Title", frame: FakeUI.frame(0, 0, 100, 20))] + children)
+    }
+
+    private static func cut(_ tree: UITree, source: Bool) -> UITree {
+        var cut = tree
+        if source { cut.sourceTruncated = true } else { cut.truncated = UITreeTruncation(nodes: true) }
+        return cut
+    }
+
+    private static func probe(_ tree: UITree) -> ElementProbe {
+        let match = tree.roots.flatMap { $0.flattened() }.first { $0.id == "save" }
+        return match.map { .present($0) } ?? .absent(reason: ElementProbe.notFound)
+    }
+
+    @Test("--gone over a present element then a childless root is not met: the screen read empty")
+    func goneOverEmptyReadsNotMet() async throws {
+        let script = Script()
+        script.trees = [Self.screen([Self.save]), Self.childless]
+
+        let outcome = try await WaitLoop.run(.element(probe: Self.probe, gone: true, stableFor: 0.5), timeout: 2, interval: 0.25, sources: script.sources)
+
+        #expect(!outcome.met)
+        #expect(outcome.reason == ElementProbe.readEmpty)
+    }
+
+    @Test("--gone on one childless read, as assert reads, throws tree_read_failed naming doctor")
+    func goneOnOnlyEmptyReadThrows() async throws {
+        let script = Script()
+        script.trees = [Self.childless]
+
+        let error = await #expect(throws: WaitUnreadableError.self) {
+            try await WaitLoop.run(.element(probe: Self.probe, gone: true), timeout: 0, interval: 0, sources: script.sources)
+        }
+        #expect(error?.reason == .treeReadFailed)
+        #expect(error?.message == "Could not confirm gone: the screen read empty.")
+        #expect(error?.hint == "offsider doctor --device fake-device")
+    }
+
+    @Test("--gone over a childless read then real trees without the element is met only after the real reads hold")
+    func goneAfterEmptyThenRealMet() async throws {
+        let script = Script()
+        script.trees = [Self.childless, Self.screen()]
+
+        let outcome = try await WaitLoop.run(.element(probe: Self.probe, gone: true, stableFor: 0.5), timeout: 5, interval: 0.25, sources: script.sources)
+
+        #expect(outcome.met)
+        #expect(outcome.elapsed == 0.75)
+    }
+
+    @Test("a wait for an element, not --gone, still reads past a childless root until it appears")
+    func presentWaitIgnoresEmptyRule() async throws {
+        let script = Script()
+        script.trees = [Self.childless, Self.screen([Self.save])]
+
+        let outcome = try await WaitLoop.run(.element(probe: Self.probe, gone: false), timeout: 5, interval: 0.25, sources: script.sources)
+
+        #expect(outcome.met)
+    }
+
+    @Test("--gone on a cut read without a match is not met, and with a match is still on screen", arguments: [true, false])
+    func goneOnCutRead(source: Bool) async throws {
+        let missing = Script()
+        missing.trees = [Self.cut(Self.screen(), source: source)]
+        let unmet = try await WaitLoop.run(.element(probe: Self.probe, gone: true), timeout: 0, interval: 0, sources: missing.sources)
+        #expect(!unmet.met)
+        #expect(unmet.reason == ElementProbe.readCut)
+
+        let present = Script()
+        present.trees = [Self.cut(Self.screen([Self.save]), source: source)]
+        let still = try await WaitLoop.run(.element(probe: Self.probe, gone: true), timeout: 0, interval: 0, sources: present.sources)
+        #expect(!still.met)
+        #expect(still.reason == "still on screen")
+    }
+
+    @Test("a cut read still finds an element it holds")
+    func cutReadStillMatches() async throws {
+        let script = Script()
+        script.trees = [Self.cut(Self.screen([Self.save]), source: true)]
+
+        let outcome = try await WaitLoop.run(.element(probe: Self.probe, gone: false), timeout: 0, interval: 0, sources: script.sources)
+
+        #expect(outcome.met)
+    }
+
+    @Test("--settled on a tree of three elements marks the pass sparse; on forty it does not")
+    func settledSparse() async throws {
+        let few = Script()
+        few.trees = [FakeUI.tree([FakeUI.node(.image, frame: FakeUI.frame(100, 300, 200, 200)), FakeUI.node(.text, label: "Loading")])]
+        let sparse = try await WaitLoop.run(.settled(by: .tree, quiet: 0.5), timeout: 5, interval: 0.25, sources: few.sources)
+        #expect(sparse.met && sparse.sparse)
+        #expect(WaitReport(sparse).jsonLine().hasSuffix(#""sparse":true}"#))
+
+        let many = Script()
+        many.trees = [FakeUI.tree((0..<40).map { FakeUI.node(.button, id: "row-\($0)", label: "Row \($0)", frame: FakeUI.frame(0, Double($0) * 20, 300, 20)) })]
+        let full = try await WaitLoop.run(.settled(by: .tree, quiet: 0.5), timeout: 5, interval: 0.25, sources: many.sources)
+        #expect(full.met && !full.sparse)
+        #expect(WaitReport(full).jsonLine().hasSuffix(#""sparse":false}"#))
     }
 }

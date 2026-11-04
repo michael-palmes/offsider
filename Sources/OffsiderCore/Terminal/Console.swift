@@ -263,7 +263,7 @@ public final class Console: @unchecked Sendable {
         )
     }
 
-    /// stdout is flushed first, so these bytes stay in order with `print`; a closed pipe is ignored rather than raised.
+    /// stdout is flushed first, so these bytes stay in order with `print`. A closed pipe raises SIGPIPE, which ends the process unless the command ignores it, as `batch` and `login` do.
     private static let standardWrite: @Sendable (Stream, String) -> Void = { stream, text in
         let data = Data(text.utf8)
         switch stream {

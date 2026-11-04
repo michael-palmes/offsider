@@ -18,7 +18,10 @@ struct Wait: AsyncParsableCommand {
         to 2 s for the pixels to hold still, so the next capture shows the new screen; --settle-by tree skips that. Exits 0 when the \
         condition is met and 5 when --timeout passes first, naming the nearest element when a selector found nothing, or the flag \
         that leaves out what kept moving for --settled; --settled exits 1 when the accessibility tree was never readable, where \
-        --settle-by screen still works, and 64 at once when --ignore-region or --ignore-id leaves out the whole screen. A selector exits 1 (logbox_inspector_open) once React Native's LogBox inspector has hidden \
+        --settle-by screen still works, and 64 at once when --ignore-region or --ignore-id leaves out the whole screen. --gone never \
+        passes on a read with nothing under the app or one cut short: every read empty exits 1 (tree_read_failed). On an iOS \
+        simulator or Android, a selector that times out, or a --gone about to pass, on another app than the one it began on exits 1 \
+        (app_crashed or app_stopped) when that app stopped. A selector exits 1 (logbox_inspector_open) once React Native's LogBox inspector has hidden \
         the app on Android for 1.5 s, since nothing in the app can match until it closes. On a phone, another app in front counts \
         as not yet met and nothing is read from it; if it is still in front at --timeout, the wait exits 1 (app_not_allowed).
         """
@@ -273,12 +276,19 @@ struct Wait: AsyncParsableCommand {
         if probesOnMiss {
             sources.probe = Self.presentationProbe(on: route)
         }
+        sources.appExit = Self.appExit(on: route, clock: clock)
         if notesOtherApp {
             let (limit, device) = (timeout, route.device.rawValue)
             sources.onOtherApp = { Self.noteOtherApp(limit: limit, device: device) }
         }
         logger.info().log("Waiting for \(target)")
         return try await WaitLoop.run(condition, timeout: timeout, interval: pollInterval, sources: sources)
+    }
+
+    /// The crash check for a backend that can tell whether an app runs: iOS simulators and Android, not an iPhone.
+    @MainActor
+    static func appExit(on route: DeviceRouter.Route, clock: PollClock = .live) -> AppExitCheck? {
+        (route.backend as? any AppLivenessReading).map { AppExitCheck(reader: $0, device: route.device, sleep: clock.sleep) }
     }
 
     /// Tells the reader once that another app in front is holding a wait up.
@@ -362,12 +372,16 @@ struct Wait: AsyncParsableCommand {
             if settled, !ignoreValues, shown.onlyTextMoved { details.append("Only text kept changing; --ignore-values lets it settle") }
             if let moving = shown.movingPart { details.append("Part of it keeps moving; \(moving.flag) leaves it out") }
             if let stuck = Self.noFlagHint(shown) { details.append(stuck) }
+            if shown.reason == ElementProbe.readCut { details.append(Self.cutHint) }
             return .failed("Timed out after \(WaitLoop.seconds(timeout)) waiting for \(target)", details: details)
         }
         let parts = successParts(shown)
         let timing = [parts.after, parts.selectors].compactMap { $0 }.joined(separator: " · ")
         return .done(parts.headline, aside: timing.isEmpty ? nil : timing, details: note.map { [$0] } ?? [])
     }
+
+    /// After a `--gone` wait whose reads were cut short before they reached the element.
+    static let cutHint = "The element may be further down than the read reached: scroll to it, then wait again."
 
     /// What to do about movement no flag can leave out; the pixels settle only when the mover does not show.
     static func noFlagHint(_ outcome: WaitOutcome) -> String? {
@@ -386,6 +400,8 @@ struct Wait: AsyncParsableCommand {
             hint = " Part of the screen keeps moving; add \(moving.flag) to leave it out."
         } else if let stuck = Self.noFlagHint(outcome) {
             hint = " \(stuck)."
+        } else if outcome.reason == ElementProbe.readCut {
+            hint = " " + Self.cutHint
         } else {
             hint = ""
         }
@@ -528,6 +544,7 @@ struct Wait: AsyncParsableCommand {
         )
         shown.onlyTextMoved = outcome.onlyTextMoved
         shown.goneBecause = outcome.goneBecause.map { LogRedactor.redactValue($0).text }
+        shown.sparse = outcome.sparse
         shown.movingPart = outcome.movingPart.flatMap { LogRedactor.redactValue($0.flag).text == $0.flag ? $0 : nil }
         shown.movingUnseen = outcome.movingUnseen
         shown.movedPastFlags = outcome.movedPastFlags
@@ -589,8 +606,17 @@ struct Wait: AsyncParsableCommand {
         } else {
             console.data(line + "\n", to: outcome.met ? .out : .err)
         }
+        if outcome.sparse {
+            console.notice(sparseNotice)
+        }
         if !outcome.met {
             throw ExitCode(OffsiderExitCode.unverified.rawValue)
         }
     }
+
+    /// A splash screen holds still too, so a pass on so few elements may come before the screen does.
+    static let sparseNotice = Notice.note(
+        "Nearly empty screen; it may still be loading",
+        agent: "Settled on a nearly empty screen; it may still be loading. Wait for an element."
+    )
 }

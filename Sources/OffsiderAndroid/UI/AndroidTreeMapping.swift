@@ -162,7 +162,7 @@ enum AndroidTreeMapping {
         return UIFrame(x: numbers[0], y: numbers[1], width: max(0, numbers[2] - numbers[0]), height: max(0, numbers[3] - numbers[1]))
     }
 
-    private static func dp(_ frame: UIFrame, scale: Double) -> UIFrame {
+    static func dp(_ frame: UIFrame, scale: Double) -> UIFrame {
         UIFrame(x: rounded(frame.x / scale), y: rounded(frame.y / scale), width: rounded(frame.width / scale), height: rounded(frame.height / scale))
     }
 

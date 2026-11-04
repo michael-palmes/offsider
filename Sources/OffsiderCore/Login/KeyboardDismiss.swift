@@ -130,6 +130,11 @@ public enum KeyboardDismiss {
         return visible.width * visible.height >= 0.8 * viewport.width * viewport.height
     }
 
+    /// A control whose one effect may be closing the keyboard: a hide keyboard control, or Done.
+    public static func closesKeyboard(_ node: UINode) -> Bool {
+        isHideControl(node) || (node.role == .button && [node.label, node.id].contains { $0?.trimmingCharacters(in: .whitespaces).lowercased() == "done" })
+    }
+
     private static func isHideControl(_ node: UINode) -> Bool {
         guard node.role == .button || node.role == .other, node.frame != nil else { return false }
         let text = [node.label, node.id].compactMap { $0?.lowercased() }.joined(separator: " ")

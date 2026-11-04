@@ -691,3 +691,100 @@ struct TypeIntoTests {
         }
     }
 }
+
+@Suite("type --verify reads the text back")
+@MainActor
+struct TypeReadBackTests {
+    /// The `--into-id second-field` flow's reads: before the focus tap, focused three times, then the field holding `value`.
+    private static func trees(value: String, role: UIRole = .textField) -> [UITree] {
+        func form(focused: Bool, value: String?) -> UITree {
+            var tree = TypeIntoTests.form(focused: focused ? "second-field" : nil)
+            tree.roots[0].children[1].role = role
+            tree.roots[0].children[1].value = value
+            return tree
+        }
+        return [form(focused: false, value: nil), form(focused: true, value: nil), form(focused: true, value: nil), form(focused: true, value: nil), form(focused: true, value: value)]
+    }
+
+    private static func type(_ text: String, landing value: String, role: UIRole = .textField) async throws -> (report: [String: Any], failed: Bool, sent: Int, capture: ConsoleCapture) {
+        let backend = TypeIntoTests.TextSessionBackend(platform: .android, trees: Self.trees(value: value, role: role))
+        let capture = ConsoleCapture()
+        let command = try Type.parse([text, "--into-id", "second-field", "--verify", "--verify-timeout", "0.5", "--json", "--device", TypeIntoTests.android.rawValue])
+        var failed = false
+        try await DispatchTracker.$current.withValue(DispatchTracker()) {
+            try await Console.$current.withValue(capture.console(out: .agent, err: .agent)) {
+                do {
+                    try await VerifyOutput.reportingFailures(command: "type", target: "text", options: command.verification, scope: CommandScope()) { progress in
+                        try await TypeIntoTests.quiet { try await command.execute(on: DeviceRouter.Route(backend: backend, device: TypeIntoTests.android), progress: progress, logger: OffsiderLogger()) }
+                    }
+                } catch is ExitCode {
+                    failed = true
+                }
+            }
+        }
+        let report = try #require(try JSONSerialization.jsonObject(with: Data(capture.out.utf8)) as? [String: Any])
+        return (report, failed, backend.text.calls.filter { $0 == .typeText(text) }.count, capture)
+    }
+
+    @Test("a field holding dropped keys exits 5 with text_differs, sent once")
+    func droppedKeysDiffer() async throws {
+        let result = try await Self.type("display", landing: "splay")
+
+        #expect(result.failed)
+        #expect(result.report["exitCode"] as? Int == 5)
+        #expect(result.report["note"] as? String == "text_differs")
+        #expect(result.report["textCheck"] as? String == "differs")
+        #expect(result.report["dispatched"] as? String == "yes")
+        #expect(result.sent == 1)
+    }
+
+    @Test("a formatter's separators still match, so the phone number verifies")
+    func formattedTextMatches() async throws {
+        let result = try await Self.type("0412345678", landing: "0412 345 678")
+
+        #expect(!result.failed)
+        #expect(result.report["verified"] as? Bool == true)
+        #expect(result.report["textCheck"] as? String == "match")
+    }
+
+    @Test("a password field is never judged, and nothing printed holds the text or its length")
+    func secureFieldUnknown() async throws {
+        let result = try await Self.type("hunter22", landing: SecureText.masked("hunter22") ?? "", role: .secureTextField)
+
+        #expect(!result.failed)
+        #expect(result.report["textCheck"] as? String == "unknown")
+        let printed = result.capture.out + result.capture.err
+        #expect(!printed.contains("hunter22"))
+        #expect(!printed.contains("8 character"))
+    }
+}
+
+@Suite("Typed text against the field's value")
+struct TypedTextTests {
+    @Test("dropped or swapped keys differ, a formatter's separators and capitals match, a count of digits says nothing", arguments: [
+        ("display", "", "splay", false, TextCheck.differs),
+        ("display", "", "dispaly", false, .differs),
+        ("0412345678", "", "0412 345 678", false, .match),
+        ("hello world", "", "Hello World", false, .match),
+        ("123456", "", "2 of 6 digits", false, .unknown),
+        ("def", "abc", "abcdef", false, .match),
+        ("def", "abc", "abcde", false, .differs),
+        ("hl", "hello", "hello", false, .differs),
+        ("123456", "old", "old123456", true, .differs),
+        ("0412345678", "old", "+61 0412 345 678", true, .differs),
+        ("0412345678", "old", "(0412) 345-678", true, .match),
+        ("", "old", "", true, .match),
+        ("", "old", "Find items", true, .unknown),
+        ("seattle", "Search", "Seattle", false, .match),
+    ])
+    func judge(sent: String, before: String, after: String, replacing: Bool, expected: TextCheck) {
+        #expect(TypedText.judge(sent: sent, before: before, after: after, replacing: replacing) == expected)
+    }
+
+    @Test("a field with no value, or text longer than a read may hold, is unknown")
+    func unknownWithoutAValue() {
+        #expect(TypedText.judge(sent: "hello", before: nil, after: nil, replacing: false) == .unknown)
+        let long = String(repeating: "a", count: TypedText.longest + 1)
+        #expect(TypedText.judge(sent: long, before: nil, after: long, replacing: true) == .unknown)
+    }
+}

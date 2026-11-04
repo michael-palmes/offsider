@@ -93,45 +93,8 @@ struct AccessibilityPoller {
         return await backend.withGapsFilled(tree, on: device)
     }
 
-    /// Refuses (`target_covered`), warns or returns the tap to send for a resolved tap; `pollForResolution` retries a refusal until `--wait-timeout`.
+    /// Refuses (`target_covered`, `target_disabled`), warns or returns the tap to send for a resolved tap; `pollForResolution` retries a refusal until `--wait-timeout`.
     typealias CoverCheck = (TapResolution, UITree) async throws -> TapResolution
-
-    static func resolveElementWithPolling(
-        query: AccessibilityQuery,
-        on backend: any DeviceBackend,
-        device: DeviceID,
-        waitTimeout: TimeInterval,
-        pollInterval: TimeInterval,
-        elementType: String? = nil,
-        allowOffscreen: Bool = false,
-        settle: SettlePolicy = .off,
-        logger: OffsiderLogger
-    ) async throws -> Polled<AccessibilityMatch> {
-        let resolver: (UITree, Bool) throws -> AccessibilityMatch = { tree, explain in
-            try AccessibilityTargetResolver.resolveElement(
-                roots: tree.roots, query: query, elementType: elementType, allowOffscreen: allowOffscreen, explainFailures: explain, logger: logger
-            )
-        }
-        let watchdog = DeviceWatchdog()
-        let fetch: () async throws -> UITree = {
-            try await watchdog.guardingInputRead(of: device) {
-                await fillingGaps(try await backend.accessibilityTree(for: device), for: [query], elementType: elementType, allowOffscreen: allowOffscreen, on: backend, device: device)
-            }
-        }
-        let polled = try await poll(
-            waitTimeout: waitTimeout,
-            pollInterval: pollInterval,
-            transientGrace: 0,
-            logger: logger,
-            clock: .live,
-            resolver: resolver,
-            position: { match in match.element.frame?.center ?? UIPoint(x: 0, y: 0) },
-            treeFetcher: fetch
-        )
-        return try await settled(polled, policy: settle, target: \.element, logger: logger, treeFetcher: fetch) { tree in
-            try resolver(tree, false)
-        }
-    }
 
     static func pollForResolution(
         query: AccessibilityQuery,
@@ -151,10 +114,17 @@ struct AccessibilityPoller {
         let start = clock.now()
         while true {
             let remaining = max(0, waitTimeout - (clock.now() - start))
-            let polled = try await pollOnce(
-                query: query, waitTimeout: remaining, pollInterval: pollInterval, transientGrace: transientGrace, elementType: elementType,
-                allowOffscreen: allowOffscreen, settle: settle, pick: pick, logger: logger, clock: clock, treeFetcher: treeFetcher
-            )
+            let polled: Polled<TapResolution>
+            do {
+                polled = try await pollOnce(
+                    query: query, waitTimeout: remaining, pollInterval: pollInterval, transientGrace: transientGrace, elementType: elementType,
+                    allowOffscreen: allowOffscreen, settle: settle, pick: pick, logger: logger, clock: clock, treeFetcher: treeFetcher
+                )
+            } catch where retryableMiss(error) != nil && clock.now() - start < waitTimeout {
+                logger.info().log("\(retryableMiss(error)?.isOffScreen == true ? "Element off screen" : "Element not found") once the screen settled, retrying in \(pollInterval)s…")
+                try await clock.sleep(.seconds(pollInterval))
+                continue
+            }
             guard let coverCheck else { return polled }
             do {
                 var checked = polled
@@ -165,6 +135,9 @@ struct AccessibilityPoller {
                 try await clock.sleep(.seconds(pollInterval))
             } catch where TapCover.isKeyboardRefusal(error) && clock.now() - start < max(waitTimeout, TapCover.keyboardSettle) {
                 logger.info().log("The keyboard covers the target, checking again in \(pollInterval)s…")
+                try await clock.sleep(.seconds(pollInterval))
+            } catch where TapCover.isDisabledRefusal(error) && clock.now() - start < waitTimeout {
+                logger.info().log("Target disabled, checking again in \(pollInterval)s…")
                 try await clock.sleep(.seconds(pollInterval))
             }
         }
@@ -200,14 +173,14 @@ struct AccessibilityPoller {
             position: { resolution in UIPoint(x: resolution.point.x, y: resolution.point.y) },
             treeFetcher: treeFetcher
         )
-        return try await settled(polled, policy: settle, target: { $0.target ?? $0.matched }, logger: logger, treeFetcher: treeFetcher) { tree in
+        return try await settled(polled, policy: settle, target: { $0.target ?? $0.matched }, logger: logger, treeFetcher: treeFetcher) { tree, explain in
             do {
-                return try await resolver(tree, false)
-            } catch ElementResolutionError.multipleMatches {
+                return try await resolver(tree, explain)
+            } catch let error as ElementResolutionError {
                 // Mid-transition copies of the target: take the one nearest where it was first found.
-                guard let first = polled.value.matched, let centre = first.frame?.center,
+                guard case .multipleMatches = error, let first = polled.value.matched, let centre = first.frame?.center,
                       let nearest = NodeIdentity.nearest(tree.roots.flatMap { $0.flattened() }.filter { NodeIdentity.isGuardMatch($0, first) }, to: centre) else {
-                    throw ElementResolutionError.notFound(kind: query.kind, value: query.rawValue)
+                    throw error
                 }
                 return try AccessibilityTargetResolver.resolveTap(
                     roots: [nearest], query: query, elementType: elementType, allowOffscreen: true, explainFailures: false, logger: logger
@@ -224,7 +197,7 @@ struct AccessibilityPoller {
         logger: OffsiderLogger,
         environment: TreeCacheEnvironment = .current,
         treeFetcher: () async throws -> UITree,
-        resolve: (UITree) async throws -> T
+        resolve: (UITree, Bool) async throws -> T
     ) async throws -> Polled<T> {
         var result = polled
         guard case .guarded(let cached) = policy else {
@@ -237,19 +210,34 @@ struct AccessibilityPoller {
         }
         guard let node = target(polled.value) else { return result }
         let record = cached.flatMap { $0.matches(appFrame: polled.tree.applicationFrame) ? $0 : nil }
-        let decision = TransitionGuard.decide(target: node, record: record, now: environment.now())
+        let decision = TransitionGuard.decide(target: node, record: record, now: environment.now(), keyboardShowing: TextFocus.hasKeyboard(polled.tree))
         result.settledBy = decision
         guard case .recheck(let delay) = decision else { return result }
-        let tree = try await Timings.measure("settle") {
-            try await environment.sleep(delay)
-            return try await treeFetcher()
+        func read(_ delay: Duration) async throws -> UITree {
+            try await Timings.measure("settle") {
+                try await environment.sleep(delay)
+                return try await treeFetcher()
+            }
         }
+        let tree = try await read(delay)
         do {
-            return Polled(value: try await resolve(tree), tree: tree, settledBy: decision)
-        } catch {
-            logger.info().log("The target was not found again after waiting for the screen to settle; acting where it was first found.")
-            return result
+            return Polled(value: try await resolve(tree, false), tree: tree, settledBy: decision)
+        } catch is ElementResolutionError {
+            logger.info().log("The target was not found again after waiting for the screen to settle; reading once more.")
         }
+        // Never where it was first found: whatever replaced it there would take the tap.
+        let last = try await read(TransitionGuard.goneGap)
+        do {
+            return Polled(value: try await resolve(last, true), tree: last, settledBy: decision)
+        } catch let miss as ElementResolutionError {
+            throw CutTreeMiss.wrapping(miss, tree: last)
+        }
+    }
+
+    /// The miss in `error` when a later read could find the target, through the cut tree line.
+    private static func retryableMiss(_ error: any Error) -> ElementResolutionError? {
+        let miss = error as? ElementResolutionError ?? (error as? CutTreeMiss)?.miss
+        return miss?.isRetryable == true ? miss : nil
     }
 
     /// Missing or off-screen elements retry until `waitTimeout` and then until two reads agree; transient read failures until the larger window, and at least once.
@@ -299,7 +287,11 @@ struct AccessibilityPoller {
                 logger.info().log("\(reason), retrying in \(pollInterval)s…")
                 try await clock.sleep(.seconds(pollInterval))
             } catch ElementResolutionError.notFound {
-                return Polled(value: try await resolver(tree, true), tree: tree)
+                do {
+                    return Polled(value: try await resolver(tree, true), tree: tree)
+                } catch let miss as ElementResolutionError {
+                    throw CutTreeMiss.wrapping(miss, tree: tree)
+                }
             }
         }
     }

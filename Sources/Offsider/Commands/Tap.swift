@@ -52,6 +52,9 @@ struct Tap: AsyncParsableCommand, VerifiableCommand {
     @Flag(name: .customLong("allow-covered"), help: "Tap even when a hit-test or Android's drawing order finds another element over the target, with a warning; the keyboard still refuses.")
     var allowCovered: Bool = false
 
+    @Flag(name: .customLong("allow-disabled"), help: "Tap a selector's target even when it says it is disabled, with a warning, to prove a disabled control does nothing; without it such a tap is refused and nothing is sent.")
+    var allowDisabled: Bool = false
+
     @Option(name: .customLong("nth"), help: ArgumentHelp("With several on-screen matches, tap the nth in tree order (1-based) instead of failing as ambiguous.", valueName: "n"))
     var nth: Int?
 
@@ -190,7 +193,7 @@ struct Tap: AsyncParsableCommand, VerifiableCommand {
         let resolvedDescription: String
         let resolvedTree: UITree?
         let picker = query.flatMap { matchPicker(query: $0, backend: backend, device: device) }
-        let checkCover = coverCheck(selector: query?.selectorDescription ?? "", backend: backend, device: device)
+        let checkCover = coverCheck(query: query, backend: backend, device: device)
         let startedAt = ProcessInfo.processInfo.systemUptime
         var lastInput: Date?
 
@@ -254,6 +257,7 @@ struct Tap: AsyncParsableCommand, VerifiableCommand {
             let subject = pointX != nil ? "Tap at \(verifyTarget)" : "Tap on \(verifyTarget)"
             let targetNode = resolution.target ?? resolution.matched
             var aimed = resolution.point
+            var aimedFrame = targetNode?.frame
             /// The tap the target's place in `tree` calls for, judged as the first read was, so the check covers the point sent; a target gone or newly covered throws.
             func resolvedAgain(in tree: UITree, waitTimeout: TimeInterval, coverSettle: TimeInterval = 0) async throws -> TapResolution {
                 guard let query else { return resolution }
@@ -297,12 +301,15 @@ struct Tap: AsyncParsableCommand, VerifiableCommand {
                     logger.info().log("\(verifyTarget) moved to \(VerifyOutput.pointDescription(x: tap.point.x, y: tap.point.y)) while settling; tapping there")
                     physicalPoint = try await backend.deviceCoordinates(for: [tap.point], tree: tree, on: device)[0]
                     aimed = tap.point
+                    aimedFrame = (tap.target ?? tap.matched)?.frame
                 },
                 targetStays: query == nil ? nil : { tree in
                     guard let tap = try? await resolvedAgain(in: tree, waitTimeout: 0) else { return false }
                     return isAimed(tap.point)
                 },
-                expectsDevMenu: { tree in Self.aimsAtDevMenu(targetNode, point: resolution.point, in: tree) }
+                expectsDevMenu: { tree in Self.aimsAtDevMenu(targetNode, point: resolution.point, in: tree) },
+                keyboardOnlyFails: query != nil && !Self.closesKeyboard(targetNode, in: resolvedTree),
+                targetArea: { query == nil ? UIFrame(x: aimed.x, y: aimed.y, width: 0, height: 0) : aimedFrame }
             )
             try await VerifyOutput.perform(request, progress: progress) { attempt, session in
                 let attemptStyle: TapStyle = attempt.style == .physical ? .physical : .simulator
@@ -327,6 +334,12 @@ struct Tap: AsyncParsableCommand, VerifiableCommand {
             aside: selector == nil ? nil : VerifyOutput.pointDescription(x: resolution.point.x, y: resolution.point.y),
             agent: Self.completionLine(selector: selector, at: resolution.point) + "\n"
         ))
+    }
+
+    /// A keyboard's own control, such as Done or a key, whose one effect may rightly be closing the keyboard.
+    static func closesKeyboard(_ target: UINode?, in tree: UITree?) -> Bool {
+        guard let target else { return false }
+        return KeyboardDismiss.closesKeyboard(target) || tree.map { AccessibilityTargetResolver.isUnderKeyboard(target, in: $0.roots) } == true
     }
 
     /// True when no floating dev menu button shows, so a tap cannot have reached one by mistake, or the tap names it: `target` holds its icon, or a coordinate tap lands on the icon.
@@ -448,9 +461,11 @@ struct Tap: AsyncParsableCommand, VerifiableCommand {
         Console.current.notice(.warning(warning, agent: warning + "."))
     }
 
-    /// The keyboard and confident covers refuse unless `--allow-covered`; a tree-order guess warns, or with `--fail-if-covered` refuses.
-    func coverCheck(selector: String, backend: any DeviceBackend, device: DeviceID) -> AccessibilityPoller.CoverCheck {
-        let cover = TapCover(allowCovered: allowCovered, failIfCovered: failIfCovered, dryRun: dryRun)
+    /// The keyboard and confident covers refuse unless `--allow-covered`; a tree-order guess warns, or with `--fail-if-covered` refuses; a disabled target refuses unless `--allow-disabled`.
+    func coverCheck(query: AccessibilityQuery?, backend: any DeviceBackend, device: DeviceID) -> AccessibilityPoller.CoverCheck {
+        let selector = query?.selectorDescription ?? ""
+        var cover = TapCover(allowCovered: allowCovered, failIfCovered: failIfCovered, dryRun: dryRun, allowDisabled: allowDisabled)
+        cover.query = query
         return { resolution, tree in
             try await Self.withKeyboardAdvice({
                 try await cover.check(resolution, selector: selector, tree: tree, backend: backend, device: device)
@@ -459,7 +474,7 @@ struct Tap: AsyncParsableCommand, VerifiableCommand {
     }
 
     /// `tap` and `type --into-id` refuse; with `tree`, Back is offered only over docked keys, as over a toolbar it goes to the app.
-    static func keyboardCoverError(selector: String, at point: (x: Double, y: Double), device: DeviceID, tree: UITree? = nil, appArgument: String = "") -> CLIError {
+    static func keyboardCoverError(selector: String, at point: (x: Double, y: Double), device: DeviceID, tree: UITree? = nil, appArgument: String = "", gesture: String = "tap") -> CLIError {
         let pointText = VerifyOutput.pointDescription(x: point.x, y: point.y)
         let back = device.platform == .android && tree.map(KeyboardDismiss.showsKeys(in:)) != false
         let hide: String
@@ -471,7 +486,7 @@ struct Tap: AsyncParsableCommand, VerifiableCommand {
             hide = "Dismiss the keyboard in the app (or scroll the target above it)"
         }
         return CLIError(
-            errorDescription: "The keyboard covers \(selector) at \(pointText), so the tap would press a key. \(hide), then retry. Nothing was sent.",
+            errorDescription: "The keyboard covers \(selector) at \(pointText), so the \(gesture) would press a key. \(hide), then retry. Nothing was sent.",
             reason: .targetUnderKeyboard,
             hint: back ? "offsider button back\(appArgument) --device \(device.rawValue)" : "offsider describe-ui --summary\(appArgument) --device \(device.rawValue)"
         )
@@ -479,11 +494,13 @@ struct Tap: AsyncParsableCommand, VerifiableCommand {
 
     /// The cover check's keyboard refusal again with the tree it read, so its advice fits the keyboard on screen.
     @MainActor
-    static func withKeyboardAdvice<Checked>(_ check: @MainActor () async throws -> Checked, selector: String, at point: (x: Double, y: Double), device: DeviceID, tree: UITree) async throws -> Checked {
+    static func withKeyboardAdvice<Checked>(
+        _ check: @MainActor () async throws -> Checked, selector: String, at point: (x: Double, y: Double), device: DeviceID, tree: UITree, gesture: String = "tap"
+    ) async throws -> Checked {
         do {
             return try await check()
         } catch let error as CLIError where error.reason == .targetUnderKeyboard {
-            throw keyboardCoverError(selector: selector, at: point, device: device, tree: tree, appArgument: CommandScope.current.appArgument(device: device.rawValue))
+            throw keyboardCoverError(selector: selector, at: point, device: device, tree: tree, appArgument: CommandScope.current.appArgument(device: device.rawValue), gesture: gesture)
         }
     }
 

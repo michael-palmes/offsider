@@ -18,6 +18,14 @@ extension AndroidBackend: AppLivenessReading {
         return status == 1 && text.isEmpty ? .notRunning : .unknown
     }
 
+    /// With no pid read before the process went, the newest crash the buffer names for the package since `since`.
+    public func crashReport(_ appID: String, since: Date, on id: DeviceID) async -> AppCrashReport? {
+        guard let package = try? ExpoDevClient.validate(appID: appID),
+              let client = try? requireClient(),
+              let result = try? await client.shell(CrashBufferParser.command(since: since), on: id.rawValue, label: "logcat -b crash") else { return nil }
+        return CrashBufferParser.cause(in: result.stdoutText, package: package).map(AppCrashReport.cause)
+    }
+
     public func crashReport(_ appID: String, process: AppProcess, since: Date, on id: DeviceID) async -> AppCrashReport? {
         guard let client = try? requireClient(),
               let result = try? await client.shell(CrashBufferParser.command(pid: process.pid), on: id.rawValue, label: "logcat -b crash") else { return nil }

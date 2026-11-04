@@ -317,6 +317,7 @@ SIMULATOR_SUITES=(
     "TouchTests"
     "TypeTests"
     "VerifyTests"
+    "AppExitE2ETests"
     "WaitSettleE2ETests"
 )
 ANDROID_SUITES=(
@@ -364,6 +365,7 @@ RN_SUITES=(
     "ReactNativeOnScreenTests"
     "ReactNativeGapFillTests"
     "ReactNativeSettleTests"
+    "ReactNativeDisabledTargetTests"
     "ReactNativeVerifyHoldTests"
     "ReactNativeLoginTests"
     "ReactNativeSystemPromptTests"

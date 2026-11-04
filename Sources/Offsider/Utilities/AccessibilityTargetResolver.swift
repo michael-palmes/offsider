@@ -57,6 +57,14 @@ indirect enum AccessibilityQuery {
         return ([primary] + refinements).map(\.selectorDescription).joined(separator: " ")
     }
 
+    /// The selector as flags a shell takes back: `--id save --label 'Save all'`.
+    var shellArguments: String {
+        guard case .all(let primary, let refinements) = self else {
+            return "\(kind) \(VerifyOutput.shellWord(rawValue))"
+        }
+        return ([primary] + refinements).map(\.shellArguments).joined(separator: " ")
+    }
+
     /// The trimmed field this query reads from `node`.
     func field(of node: UINode) -> String? {
         switch self {
@@ -768,6 +776,12 @@ struct AccessibilityTargetResolver {
         underKeyboard || CoverJudge.isPlausibleOccluder(node)
     }
 
+    /// The control a touch on `target` reaches when it says it is disabled: the target itself when it is a control, else the nearest control around it; nil when that control is enabled, does not say, or there is none.
+    static func disabledControl(reachedBy target: UINode, in roots: [UINode]) -> UINode? {
+        let control = target.isActionable ? target : ancestors(of: target, in: roots).last(where: \.isActionable)
+        return control?.enabled == false ? control : nil
+    }
+
     static func ancestorsOf(_ element: UINode, in roots: [UINode]) -> [UINode] {
         ancestors(of: element, in: roots)
     }
@@ -1116,4 +1130,29 @@ extension UINode {
         if case .android(let attributes) = native { return attributes.visibleToUser }
         return nil
     }
+}
+
+/// A selector that matched nothing on a read cut short, so the element may lie past where the read stopped.
+struct CutTreeMiss: LocalizedError, UserFacingError, OffsiderFailure {
+    let miss: ElementResolutionError
+    /// `at 64 levels`, or how the source stopped.
+    let cut: String
+
+    /// `miss` with the line, when `tree` was cut; else `miss` as it was.
+    static func wrapping(_ miss: ElementResolutionError, tree: UITree) -> any Error {
+        guard case .notFound = miss else { return miss }
+        if let truncation = tree.truncated {
+            let limits = [truncation.depth ? "\(UITreeLimits.maxDepth) levels" : nil, truncation.nodes ? "\(UITreeLimits.maxNodes.formatted()) elements" : nil]
+            return CutTreeMiss(miss: miss, cut: "The tree was cut at \(limits.compactMap { $0 }.joined(separator: " and ")), so it may be further down.")
+        }
+        guard tree.sourceTruncated else { return miss }
+        return CutTreeMiss(miss: miss, cut: "The tree was cut where the read stopped, so it may be further down.")
+    }
+
+    var userFacingDescription: String { miss.userFacingDescription + " " + cut }
+    var errorDescription: String? { userFacingDescription }
+    var reason: FailureReason { miss.reason }
+    var failureMessage: String { userFacingDescription }
+    var hint: String? { miss.hint }
+    var candidates: [FailureCandidate] { miss.candidates }
 }

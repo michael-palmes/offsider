@@ -9,7 +9,9 @@ struct Assert: AsyncParsableCommand {
         discussion: """
         Reads the accessibility tree once. Only on-screen matches count unless --allow-offscreen; several matches still pass. \
         To wait for the state instead, use offsider wait with the same selector. Exits 1 (logbox_inspector_open) when \
-        React Native's LogBox inspector hides the app on Android.
+        React Native's LogBox inspector hides the app on Android. --gone does not pass on a read with nothing under the app \
+        (exit 1, tree_read_failed) or one cut short (exit 5); on an iOS simulator or Android, one that shows another app than \
+        the last command saw exits 1 (app_crashed or app_stopped) when that app stopped.
         """
     )
 
@@ -79,6 +81,11 @@ struct Assert: AsyncParsableCommand {
         if probesOnMiss {
             sources.probe = Wait.presentationProbe(on: route)
         }
+        // One read has nothing of its own to compare, so the app before it is the cached tree's.
+        if let check = Wait.appExit(on: route) {
+            sources.appExit = check
+            sources.appBefore = { check.app(in: await TreeCache.load(for: route.device, backend: route.backend)?.tree) }
+        }
         let revealed = selector.hasValue == nil ? nil : await TreeCache.revealedSecrets(for: route.device, backend: route.backend)
         return try await WaitLoop.run(
             .element(probe: selector.probe(for: query, revealed: revealed), gone: gone, explain: SelectorQuery.explain(query)),
@@ -120,6 +127,7 @@ struct Assert: AsyncParsableCommand {
     /// Turns a loop reason such as "not found" into the end of a sentence: "was not found".
     static func predicate(_ reason: String) -> String {
         if reason == "not found" || reason.hasPrefix("not found;") { return "was \(reason)" }
+        if reason == ElementProbe.readCut { return "is not proved gone: \(reason), so it may be further down; scroll to it and check again" }
         if ["off screen", "still", "under ", "beneath "].contains(where: reason.hasPrefix) { return "is \(reason)" }
         return reason
     }

@@ -40,6 +40,15 @@ public protocol AppLivenessReading: DeviceBackend {
     func appLiveness(_ appID: String, seen: AppProcess?, tree: UITree?, mayList: Bool, on id: DeviceID) async -> AppLiveness
     /// What the device recorded about `process` stopping after `since`; nil when it recorded nothing Offsider can read.
     func crashReport(_ appID: String, process: AppProcess, since: Date, on id: DeviceID) async -> AppCrashReport?
+    /// The same for an app whose process was never read, by its id alone.
+    func crashReport(_ appID: String, since: Date, on id: DeviceID) async -> AppCrashReport?
+    /// The app `tree` shows, with the id `app launch` takes when it can be read now.
+    func shownApp(in tree: UITree) -> ShownApp?
+}
+
+extension AppLivenessReading {
+    public func crashReport(_ appID: String, since: Date, on id: DeviceID) async -> AppCrashReport? { nil }
+    public func shownApp(in tree: UITree) -> ShownApp? { ShownApp.of(tree) }
 }
 
 /// Reads liveness every 2 s and calls a crash only when a process seen running is gone or replaced on two reads at least 1 s apart.

@@ -17,6 +17,13 @@ extension IOSBackend: AppLivenessReading {
         )
     }
 
+    /// The application's pid, and its bundle id while the process still runs: one `proc_pidpath` and its `Info.plist`.
+    func shownApp(in tree: UITree) -> ShownApp? {
+        guard let pid = SimulatorAppLiveness.applicationPID(in: tree) else { return nil }
+        let bundle = Int32(exactly: pid).flatMap(ProcessPath.of(pid:)).flatMap(ForegroundApp.bundleIdentifier(atExecutable:))
+        return ShownApp(pid: pid, appID: bundle)
+    }
+
     /// ReportCrash writes the report after the process dies, sometimes 10 s or more later, so this looks for 5 s and then names the folder.
     func crashReport(_ appID: String, process: AppProcess, since: Date, on id: DeviceID) async -> AppCrashReport? {
         for attempt in 0..<10 {

@@ -61,6 +61,8 @@ struct ContentView: View {
             TabViewTestView()
         case "motion-test":
             MotionTestView()
+        case "crash-test":
+            CrashTestView()
         case "slider-value-test":
             SliderValueTestView()
         case "searchable-test":
@@ -130,7 +132,8 @@ struct MainMenuView: View {
             ("landscape-coordinate-test", "Landscape Coordinates", "Verifies orientation-aware taps"),
             ("switch-test", "Switch Test", "SwiftUI and UIKit switch controls"),
             ("tab-view-test", "TabView Test", "Standard SwiftUI tab switching"),
-            ("motion-test", "Motion Test", "Motion only screenshots can see")
+            ("motion-test", "Motion Test", "Motion only screenshots can see"),
+            ("crash-test", "Crash Test", "Buttons that crash or quit the app")
         ]),
         ("Input & Text", [
             ("text-input", "Text Input", "Text typed by CLI commands"),
@@ -211,6 +214,7 @@ struct BatchTestView: View {
     @State private var currentState = "Initial"
     @State private var showStateTarget = false
     @State private var showDelayedTarget = false
+    @State private var enableTargetDisabled = false
 
     var body: some View {
         VStack(spacing: 16) {
@@ -258,6 +262,24 @@ struct BatchTestView: View {
                 .buttonStyle(.bordered)
                 .accessibilityIdentifier("batch-delayed-target")
             }
+
+            Button("Disable For 5 s") {
+                currentState = "Enable target disabled"
+                enableTargetDisabled = true
+                Task { @MainActor in
+                    try? await Task.sleep(nanoseconds: 5_000_000_000)
+                    enableTargetDisabled = false
+                }
+            }
+            .buttonStyle(.borderedProminent)
+            .accessibilityIdentifier("batch-disable-trigger")
+
+            Button("Enable Target") {
+                currentState = "Enable target tapped"
+            }
+            .buttonStyle(.bordered)
+            .disabled(enableTargetDisabled)
+            .accessibilityIdentifier("batch-enable-target")
 
             Spacer()
         }

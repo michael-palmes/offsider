@@ -61,6 +61,9 @@ struct Type: AsyncParsableCommand, VerifiableCommand {
         Android emulators: printable ASCII, newlines and tabs are typed as key events. Text with any other
         character needs the emulator's gRPC endpoint. --replace sets the text in one accessibility action
         (any Unicode, no gRPC needed); a trailing newline is then pressed as Return.
+
+        With --verify, the field is read back after a change: one that does not hold the text sent, in order, exits 5
+        (note text_differs) and nothing is sent again. A formatter's separators and capitals still pass.
         """
     )
     
@@ -159,6 +162,8 @@ struct Type: AsyncParsableCommand, VerifiableCommand {
         var tree: UITree?
         /// `tree`, when no tap came before it, so the verifier need not read the same screen again.
         var untappedTree: UITree?
+        /// The field the text goes into, as read before it went; nil when none could be named.
+        var field: UINode?
     }
 
     /// `--into-*` taps the field and waits for focus, `--require-focus-id` checks it, and plain text needs one; each throws before sending.
@@ -196,10 +201,11 @@ struct Type: AsyncParsableCommand, VerifiableCommand {
                 )
             }
             if let secureRefusal, focused?.isSecure == true { throw secureRefusal }
-            return FocusCheck(tree: tree, untappedTree: tree)
+            return FocusCheck(tree: tree, untappedTree: tree, field: focused)
         }
         guard let query = intoQuery else { return FocusCheck() }
-        let cover = TapCover(override: "tap the field with `offsider tap --allow-covered` and type without --into-id")
+        var cover = TapCover(override: "tap the field with `offsider tap --allow-covered` and type without --into-id", stopFlag: nil, disabledOverride: nil)
+        cover.query = query
         let polled = try await AccessibilityPoller.resolveWithPolling(
             query: query, on: backend, device: device, waitTimeout: 0, pollInterval: 0.25,
             settle: .guarded(record: await TreeCache.load(for: device, backend: backend)),
@@ -227,7 +233,7 @@ struct Type: AsyncParsableCommand, VerifiableCommand {
                 last = tree
                 if Self.hasFocus(field, query: query, in: tree, keyboardOnly: simulator && !keyboardAlreadyUp) {
                     logger.info().log("\(query.selectorDescription) has focus")
-                    return FocusCheck(tree: tree)
+                    return FocusCheck(tree: tree, field: field)
                 }
             }
         } while clock.now() < deadline
@@ -235,7 +241,7 @@ struct Type: AsyncParsableCommand, VerifiableCommand {
         if keyboardAlreadyUp, !InputSecrecy.isSecret, let last, !last.roots.flatMap({ $0.flattened() }).contains(where: { $0.state.focused == true }) {
             warn("the keyboard was already up, so the iOS simulator cannot confirm which field has focus; check with assert --has-value.")
             logger.info().log("Tapped \(query.selectorDescription); focusCheck: unproven")
-            return FocusCheck(tree: last)
+            return FocusCheck(tree: last, field: field)
         }
         let noKeyboard = simulator && !keyboardAlreadyUp
             ? " (no keyboard appeared, and the field does not report focus; with the simulator's hardware keyboard connected, no keyboard shows)"
@@ -284,7 +290,9 @@ struct Type: AsyncParsableCommand, VerifiableCommand {
             if unlistedField, case .unlisted = focus { return FocusCheck(secure: .unknown, tree: tree, untappedTree: tree) }
             throw noFocusRefusal(focus, in: tree, device: device, keys: keys)
         }
-        return FocusCheck(secure: secure ? .secure : .notSecure, tree: tree, untappedTree: tree)
+        var field = swept
+        if case .field(let focused) = focus { field = focused }
+        return FocusCheck(secure: secure ? .secure : .notSecure, tree: tree, untappedTree: tree, field: field)
     }
 
     /// The longest a sweep holds a command; a slower one finds nothing, as an unread point does.
@@ -471,7 +479,7 @@ struct Type: AsyncParsableCommand, VerifiableCommand {
         if throughSession {
             try await InputSecrecy.$fromArgument.withValue(refusingSecureArgument) {
                 try await InputSecrecy.$knownFocus.withValue(focus.secure) {
-                    try await typeThroughSession(inputText, backend: backend, device: device, progress: progress, baseline: focus.untappedTree)
+                    try await typeThroughSession(inputText, backend: backend, device: device, progress: progress, focus: focus)
                 }
             }
             return
@@ -482,18 +490,7 @@ struct Type: AsyncParsableCommand, VerifiableCommand {
         logger.info().log("Performing HID event sequence for text typing\(paced ? ", paced for React Native" : "")")
 
         if let progress {
-            let target = "text (\(inputText.count) character\(inputText.count == 1 ? "" : "s"))"
-            let request = VerifyRequest(
-                command: "type",
-                subject: "Typing \(target)",
-                target: target,
-                backend: backend,
-                device: device,
-                options: verification,
-                styles: Array(repeating: nil, count: RetryPolicy.attemptCount(retries: verification.resolvedRetries(replacing: replace))),
-                initialTree: focus.untappedTree,
-                personSubject: Self.personSubject
-            )
+            let request = verifyRequest(inputText, focus: focus, backend: backend, device: device)
             try await VerifyOutput.perform(request, progress: progress) { _, session in
                 try await session.perform(.composite(hidEvents))
             }
@@ -510,7 +507,7 @@ struct Type: AsyncParsableCommand, VerifiableCommand {
     }
     
     /// Android and physical iOS devices pick key events, a paste or the runner themselves, so the US-keyboard check and HID conversion do not apply here.
-    private func typeThroughSession(_ inputText: String, backend: any DeviceBackend, device: DeviceID, progress: VerifyProgress?, baseline: UITree?) async throws {
+    private func typeThroughSession(_ inputText: String, backend: any DeviceBackend, device: DeviceID, progress: VerifyProgress?, focus: FocusCheck) async throws {
         let typeText: @MainActor (any InputSession) async throws -> Void = { session in
             guard let textSession = session as? any TextInputSession else {
                 throw CLIError(errorDescription: "This device's input session cannot type text.", reason: .internalError)
@@ -532,8 +529,16 @@ struct Type: AsyncParsableCommand, VerifiableCommand {
             await session.close()
             return
         }
-        let target = "text (\(inputText.count) character\(inputText.count == 1 ? "" : "s"))"
-        let request = VerifyRequest(
+        try await VerifyOutput.perform(verifyRequest(inputText, focus: focus, backend: backend, device: device), progress: progress) { _, session in
+            try await typeText(session)
+        }
+    }
+
+    /// What `--verify` checks: a change near the field, then the field read back; a password field's report counts no characters.
+    func verifyRequest(_ inputText: String, focus: FocusCheck, backend: any DeviceBackend, device: DeviceID) -> VerifyRequest {
+        let secure = InputSecrecy.isSecret || focus.secure == .secure || focus.field?.isSecure == true
+        let target = secure ? "text" : "text (\(inputText.count) character\(inputText.count == 1 ? "" : "s"))"
+        return VerifyRequest(
             command: "type",
             subject: "Typing \(target)",
             target: target,
@@ -541,12 +546,13 @@ struct Type: AsyncParsableCommand, VerifiableCommand {
             device: device,
             options: verification,
             styles: Array(repeating: nil, count: RetryPolicy.attemptCount(retries: verification.resolvedRetries(replacing: replace))),
-            initialTree: baseline,
-            personSubject: Self.personSubject
+            initialTree: focus.untappedTree,
+            personSubject: Self.personSubject,
+            targetArea: { focus.field?.frame },
+            typed: TypedExpectation(
+                text: inputText, replacing: replace, field: focus.field, query: intoQuery, secure: secure, ignoringText: verification.ignoreText
+            )
         )
-        try await VerifyOutput.perform(request, progress: progress) { _, session in
-            try await typeText(session)
-        }
     }
 
     /// A person's verify lines name the input, never how long the text was.
