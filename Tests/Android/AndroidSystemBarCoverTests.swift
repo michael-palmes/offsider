@@ -47,8 +47,26 @@ struct AndroidSystemBarCoverTests {
         #expect(error?.reason == .targetCovered)
         #expect(error?.coveredBy?.evidence == .systemBar)
         #expect(error?.coveredBy?.label == "Navigation bar")
-        #expect(error?.userFacingDescription.contains("so the tap would land on the bar. Nothing was sent. Scroll it clear of the bar") == true)
+        #expect(error?.userFacingDescription.contains(#"at (201, 850) is under "Navigation bar" (0, 826) 402x48, which takes every touch there, so the tap would land on the bar. Nothing was sent. Scroll it clear of the bar"#) == true)
         #expect(error?.hint == "offsider swipe --start-x 101 --start-y 717 --end-x 101 --end-y 209 --duration 0.5 --hold-end 300 --device emulator-5554")
+        #expect(backend.session.calls.isEmpty)
+    }
+
+    @Test("a tab bar wholly under the navigation bar refuses, naming no scroll as nothing scrolls it clear, and sends nothing")
+    func fixedTabBarRefuses() async throws {
+        var tree = Self.screen(rowTop: 400)
+        tree.roots.append(FakeUI.node(.button, id: "tab-saved", label: "Saved Tab", frame: FakeUI.frame(134, Self.barTop - 0.8, 134, Self.height - Self.barTop + 0.8), platform: .android, drawingOrder: 3))
+        let backend = FakeDeviceBackend(platform: .android, trees: [tree])
+
+        let error = await #expect(throws: CLIError.self) {
+            try await Tap.parse(["--id", "tab-saved", "--no-settle", "--device", Self.device.rawValue])
+                .execute(on: DeviceRouter.Route(backend: backend, device: Self.device), progress: nil, logger: OffsiderLogger())
+        }
+
+        #expect(error?.reason == .targetCovered)
+        #expect(error?.coveredBy?.evidence == .systemBar)
+        #expect(error?.userFacingDescription.contains("Nothing was sent. Nothing scrolls it clear, so the app needs to draw it above the bar; or pass --allow-covered") == true)
+        #expect(error?.hint?.contains("swipe") == false)
         #expect(backend.session.calls.isEmpty)
     }
 
@@ -78,7 +96,7 @@ struct AndroidSystemBarCoverTests {
         let route = DeviceRouter.Route(backend: FakeDeviceBackend(platform: .android, trees: [Self.screen(rowTop: 830)]), device: Self.device)
         let waited = try await Wait.parse(["--id", "row-2", "--timeout", "0", "--device", Self.device.rawValue]).evaluate(on: route, logger: OffsiderLogger(), clock: ScriptedClock().poll)
         #expect(!waited.met)
-        #expect(waited.reason == #"under other "Navigation bar" (0, 826) 402x48, so a tap would not reach it"#)
+        #expect(waited.reason == #"under "Navigation bar" (0, 826) 402x48, so a tap would not reach it"#)
 
         let showing = DeviceRouter.Route(backend: FakeDeviceBackend(platform: .android, trees: [Self.screen(rowTop: 806)]), device: Self.device)
         let asserted = try await Assert.parse(["--id", "row-2", "--device", Self.device.rawValue]).evaluate(on: showing, logger: OffsiderLogger())

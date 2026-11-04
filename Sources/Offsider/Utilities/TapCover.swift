@@ -353,8 +353,9 @@ struct TapCover {
             return
         }
         if verdict.evidence == .systemBar {
+            let fix = scrollHint == nil ? "Nothing scrolls it clear, so the app needs to draw it above the bar" : "Scroll it clear of the bar, then retry"
             throw CLIError(
-                errorDescription: "\(selector) at \(pointText) is under \(cover), which takes every touch there, so the \(gesture) would land on the bar. Nothing was sent. Scroll it clear of the bar, then retry; or \(override).",
+                errorDescription: "\(selector) at \(pointText) is under \(cover), which takes every touch there, so the \(gesture) would land on the bar. Nothing was sent. \(fix); or \(override).",
                 reason: .targetCovered,
                 hint: scrollHint ?? CommandScope.current.describeHint(device: device.rawValue),
                 coveredBy: CoverReport(verdict)
@@ -457,7 +458,7 @@ struct TapCover {
 
     /// `button "Buy" (197, 793) 189x45 on stack-test-full-page-1`.
     static func describe(_ verdict: CoverVerdict) -> String {
-        var parts = [verdict.cover.role.rawValue]
+        var parts = verdict.evidence == .systemBar ? [] : [verdict.cover.role.rawValue]
         if let name = MatchSummary.shownLabel(of: verdict.cover) ?? verdict.cover.normalizedID {
             parts.append(TerminalText.quoted(SelectorText.truncated(name)))
         }
