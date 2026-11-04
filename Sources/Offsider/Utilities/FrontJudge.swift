@@ -70,12 +70,12 @@ enum FrontJudge {
 
     /// `read` for every on-screen match of `queries`.
     static func read(matching queries: [AccessibilityQuery], elementType: String?, in tree: inout UITree, backend: any DeviceBackend, device: DeviceID, everyPoint: Bool = false) async {
-        let flat = tree.roots.flatMap { $0.flattened() }
+        let index = TreeIndex(roots: tree.roots)
         var indexes = Set<Int>()
         for query in queries {
             let found = AccessibilityTargetResolver.candidates(roots: tree.roots, query: query, elementType: elementType)
             for match in found.onScreen {
-                indexes.formUnion(flat.indices.filter { flat[$0].isSameElement(as: match) })
+                indexes.formUnion(index.indexes(of: match))
             }
         }
         guard !indexes.isEmpty else { return }
@@ -103,12 +103,15 @@ enum FrontJudge {
         /// `spareReads` is how many points may be hit-tested for what a group holds, beyond those asked about: a group needing more stays as its own point says. Nil when reading costs nothing.
         init(tree: UITree, indexes: some Sequence<Int>, reading: FrontReading, spareReads: Int? = nil) {
             guard let viewport = tree.viewport else { return }
-            let flat = tree.roots.flatMap { $0.flattened() }
-            let stack = ScreenStack.build(roots: tree.roots, viewport: viewport)
+            let indexed = TreeIndex(roots: tree.roots)
+            let flat = indexed.nodes
+            let stack = ScreenStack.build(indexed, viewport: viewport)
+            guard let shared = TapCover.Shared(tree, index: indexed, stack: stack) else { return }
+            let occluders = AccessibilityTargetResolver.Occluders(indexed, viewport: viewport)
             let indicators = ScrollIndicator.all(in: tree.roots)
             var asked = Set(indexes)
             for index in asked.sorted() where index < flat.count && Self.isGroup(flat[index]) && reading.covered[index] == nil && reading.beneath[index] == nil {
-                let held = (index + 1)..<(index + flat[index].flattened().count)
+                let held = (index + 1)..<indexed.subtree(index).upperBound
                 let telling = held.filter { position in
                     flat[position].isTelling && flat[position].frame?.isVisible(in: viewport) == true && !indicators.contains { $0.isSameElement(as: flat[position]) }
                 }
@@ -123,11 +126,11 @@ enum FrontJudge {
                     beneath[index] = page.name
                     continue
                 }
-                guard let resolution = AccessibilityTargetResolver.resolution(of: node, roots: tree.roots, viewport: viewport, stack: stack) else {
-                    clipped[index] = AccessibilityTargetResolver.sidePastScrollView(of: node, frame: frame, viewport: viewport, roots: tree.roots) ?? .below
+                guard let resolution = AccessibilityTargetResolver.resolution(of: node, among: occluders, stack: stack) else {
+                    clipped[index] = AccessibilityTargetResolver.sidePastScrollView(of: node, frame: frame, viewport: viewport, in: indexed) ?? .below
                     continue
                 }
-                guard let judging = TapCover.Judging(resolution, in: tree, beneath: false) else { continue }
+                guard let judging = TapCover.Judging(resolution, on: shared, beneath: false) else { continue }
                 entries.append(Entry(index: index, resolution: resolution, judging: judging))
             }
         }

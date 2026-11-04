@@ -1,0 +1,33 @@
+# 69 nodes, 16 listed
+## no point read
+16 header "menu-title" 0,70 402x48.67: at 201,94.33 reaches
+17 header "menu-section-touch-gestures" 0,134.67 402x21.67: at 201,145.50 reaches
+19 button "menu-tap-test" 16,156.33 370x57: at 201,184.83 reaches
+20 button "menu-touch-control" 16,213.33 370x57.00: at 201,241.83 reaches
+21 button "menu-swipe-test" 16,270.33 370x57: at 201,298.83 reaches
+22 button "menu-multi-touch" 16,327.33 370x57: at 201,355.83 reaches
+23 button "menu-hold-drag" 16,384.33 370x57: at 201,412.83 reaches
+24 button "menu-gesture-presets" 16,441.33 370x57: at 201,469.83 reaches
+25 button "menu-switch-test" 16,498.33 370x57.00: at 201,526.83 reaches
+26 button "menu-tab-view-test" 16,555.33 370x57: at 201,583.83 reaches
+27 button "menu-choice-test" 16,612.33 370x57: at 201,640.83 reaches
+28 header "menu-section-input-text" 0,685.33 402x21.67: at 201,696.17 reaches
+30 button "menu-text-input" 16,707.00 370x57: at 201,735.50 reaches
+31 button "menu-key-press" 16,764.00 370x57: at 201,792.50 reaches
+32 button "menu-key-sequence" 16,821.00 370x57: at 201,849.50 reaches
+## hit-tested
+16 header "menu-title" 0,70 402x48.67: at 201,94.33 reaches
+17 header "menu-section-touch-gestures" 0,134.67 402x21.67: at 201,145.50 reaches
+19 button "menu-tap-test" 16,156.33 370x57: at 201,184.83 reaches
+20 button "menu-touch-control" 16,213.33 370x57.00: at 201,241.83 reaches
+21 button "menu-swipe-test" 16,270.33 370x57: at 201,298.83 reaches
+22 button "menu-multi-touch" 16,327.33 370x57: at 201,355.83 reaches
+23 button "menu-hold-drag" 16,384.33 370x57: at 201,412.83 reaches
+24 button "menu-gesture-presets" 16,441.33 370x57: at 201,469.83 reaches
+25 button "menu-switch-test" 16,498.33 370x57.00: at 201,526.83 reaches
+26 button "menu-tab-view-test" 16,555.33 370x57: at 201,583.83 reaches
+27 button "menu-choice-test" 16,612.33 370x57: at 201,640.83 reaches
+28 header "menu-section-input-text" 0,685.33 402x21.67: at 201,696.17 reaches
+30 button "menu-text-input" 16,707.00 370x57: at 201,735.50 reaches
+31 button "menu-key-press" 16,764.00 370x57: at 201,792.50 reaches
+32 button "menu-key-sequence" 16,821.00 370x57: at 201,849.50 reaches

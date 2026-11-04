@@ -1,0 +1,17 @@
+# 17 nodes, 16 listed
+## no point read
+2 group "menu-title" 0,62.10 411.43x54.10: at 205.72,89.15 reaches
+3 group "menu-section-touch-gestures" 0,132.19 411.43x24: at 205.72,144.19 reaches
+4 button "menu-tap-test" 16,156.19 379.43x62.10: at 205.72,187.24 reaches
+5 button "menu-touch-control" 16,218.29 379.43x61.71: at 205.72,249.14 reaches
+6 button "menu-swipe-test" 16,280.38 379.43x62.10: at 205.72,311.43 reaches
+7 button "menu-multi-touch" 16,342.10 379.43x62.10: at 205.72,373.15 reaches
+8 button "menu-hold-drag" 16,404.19 379.43x62.10: at 205.72,435.24 reaches
+9 button "menu-gesture-presets" 16,466.29 379.43x61.71: at 205.72,497.15 reaches
+10 button "menu-switch-test" 16,528.38 379.43x62.10: at 205.72,559.43 reaches
+11 button "menu-tab-view-test" 16,590.10 379.43x62.10: at 205.72,621.15 reaches
+12 button "menu-choice-test" 16,652.19 379.43x62.10: at 205.72,683.24 reaches
+13 group "menu-section-input-text" 0,730.29 411.43x23.62: at 205.72,742.10 reaches
+14 button "menu-text-input" 16,754.29 379.43x62.10: at 205.72,785.34 reaches
+15 button "menu-key-press" 16,816.38 379.43x62.10: at 205.72,847.43 reaches
+16 button "menu-key-sequence" 16,878.48 379.43x44.95: at 205.72,900.96 reaches

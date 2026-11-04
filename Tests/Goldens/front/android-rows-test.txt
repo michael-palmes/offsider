@@ -1,0 +1,28 @@
+# 27 nodes, 27 listed
+## no point read
+1 button "BackButton" 8,54.10 44.19x44.19: at 30.09,76.19 reaches
+2 group "rows-test-screen" 60.19,64.38 291.43x23.24: at 205.91,76 reaches
+3 text "rows-test-state" 16,114.67 379.43x23.24: at 205.72,126.29 reaches
+4 text "rows-test-download" 16,145.90 379.43x23.24: at 205.72,157.52 reaches
+5 button "rows-test-toggle-live" 16,177.14 379.43x43.81: at 205.72,199.04 reaches
+6 scrollView "rows-test-scroll-view" 0,237.71 411.43x685.71: at 205.72,580.57 reaches
+7 button "Inbox, 3 unread" 0,237.71 411.43x63.62: at 205.72,269.52 reaches
+8 text "Inbox" 16,247.62 379.43x23.24: at 205.72,259.24 reaches
+9 text "3 unread" 16,272.76 379.43x17.90: at 205.72,281.71 reaches
+10 button "Downloads, 1% complete" 0,301.33 411.43x63.62: at 205.72,333.14 reaches
+11 text "Downloads" 16,311.24 379.43x23.24: at 205.72,322.86 reaches
+12 text "1% complete" 16,336.38 379.43x17.90: at 205.72,345.33 reaches
+13 button "Today’s Summary, Updated just now" 0,364.95 411.43x63.24: at 205.72,396.57 reaches
+14 text "Today’s Summary" 16,374.86 379.43x23.24: at 205.72,386.48 reaches
+15 text "Updated just now" 16,400 379.43x17.90: at 205.72,408.95 reaches
+16 button "Don’t Disturb, Off" 0,428.19 411.43x63.62: at 205.72,460 reaches
+17 text "Don’t Disturb" 16,438.10 379.43x23.24: at 205.72,449.72 reaches
+18 text "Off" 16,463.24 379.43x17.90: at 205.72,472.19 reaches
+19 button "rows-test-item-1" 0,491.81 411.43x56: at 205.72,519.81 reaches
+20 button "rows-test-item-2" 0,547.81 411.43x56: at 205.72,575.81 reaches
+21 button "rows-test-item-3" 0,603.81 411.43x56: at 205.72,631.81 reaches
+22 button "rows-test-item-4" 0,659.81 411.43x56: at 205.72,687.81 reaches
+23 button "rows-test-item-5" 0,715.81 411.43x56: at 205.72,743.81 reaches
+24 button "rows-test-item-6" 0,771.81 411.43x56: at 205.72,799.81 reaches
+25 button "rows-test-item-7" 0,827.81 411.43x56: at 205.72,855.81 reaches
+26 button "rows-test-item-8" 0,883.81 411.43x39.62: at 205.72,903.62 reaches

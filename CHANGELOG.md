@@ -32,6 +32,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Changed
 
+- `describe-ui --summary`, `--on-screen` and every selector command judge what is on screen in one pass over the tree, so a long list on an iPhone or iPad no longer takes seconds, and Android and simulators judge faster too. Every verdict stays the same. A `gesture pinch` centred on a simulator's app reads the screen once.
 - `offsider init` denies nothing, and no longer asks before `login`, so an agent can read `--help` for every command: `devices add`, `credential join`, `unlock-code set`, `runner build --register-device` and `describe-ui --raw-source` refuse by themselves without a person. The next `init --rules-only` takes the older rules out, and `doctor` warns until then.
 - `wake --unlock` on a phone that is not a test device asks for Touch ID or the password each time, where the deny rule was its only gate. Emulators and test devices are not asked, and `--unlock` may come anywhere in the command.
 - `devices add` asks only what it cannot work out: a new "How will you use it?" comes first, one connected phone or one team needs no menu, a step on the phone is asked for by name and watched, and `--test-device` or `--app` settles the rest. One app now defaults to 7 days; any app stays at 12 hours and a test device until removed.

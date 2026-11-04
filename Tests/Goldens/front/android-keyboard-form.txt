@@ -1,0 +1,33 @@
+# 34 nodes, 32 listed
+## no point read
+2 text "Field 0" 16,100 120x20: at 76,110 reaches
+3 textField "form-field-0" 16,124 379x40: at 205.50,144 reaches
+4 text "Field 1" 16,170 120x20: at 76,180 reaches
+5 textField "form-field-1" 16,194 379x40: at 205.50,214 reaches
+6 text "Field 2" 16,240 120x20: at 76,250 reaches
+7 textField "form-field-2" 16,264 379x40: at 205.50,284 reaches
+8 text "Field 3" 16,310 120x20: at 76,320 reaches
+9 textField "form-field-3" 16,334 379x40: at 205.50,354 reaches
+10 text "Field 4" 16,380 120x20: at 76,390 reaches
+11 textField "form-field-4" 16,404 379x40: at 205.50,424 reaches
+12 text "Field 5" 16,450 120x20: at 76,460 reaches
+13 textField "form-field-5" 16,474 379x40: at 205.50,494 reaches
+14 text "Field 6" 16,520 120x20: at 76,530 reaches
+15 textField "form-field-6" 16,544 379x40: at 205.50,564 reaches
+16 text "Field 7" 16,590 120x20: at 76,600 reaches
+17 textField "form-field-7" 16,614 379x40: at 205.50,634 reaches
+18 text "Field 8" 16,660 120x20: covered by button "w" 42.90,640 38x52 (drawingOrder, sure): at 76,670 judged button "w" 42.90,640 38x52 (drawingOrder, sure)
+19 textField "form-field-8" 16,684 379x40: covered by keyboard 0,24 411x899 (drawingOrder, sure): at 205.50,704 judged keyboard 0,24 411x899 (drawingOrder, sure)
+20 text "Field 9" 16,730 120x20: covered by keyboard 0,24 411x899 (drawingOrder, sure): at 76,740 judged keyboard 0,24 411x899 (drawingOrder, sure)
+21 textField "form-field-9" 16,754 379x40: covered by keyboard 0,24 411x899 (drawingOrder, sure): at 205.50,774 judged keyboard 0,24 411x899 (drawingOrder, sure)
+23 button "q" 2,640 38x52: covered by text "Field 8" 16,660 120x20 (drawingOrder, sure): at 21,666 judged text "Field 8" 16,660 120x20 (drawingOrder, sure)
+24 button "w" 42.90,640 38x52: covered by text "Field 8" 16,660 120x20 (drawingOrder, sure): at 61.90,666 judged text "Field 8" 16,660 120x20 (drawingOrder, sure)
+25 button "e" 83.80,640 38x52: covered by text "Field 8" 16,660 120x20 (drawingOrder, sure): at 102.80,666 judged text "Field 8" 16,660 120x20 (drawingOrder, sure)
+26 button "r" 124.70,640 38x52: at 143.70,666 judged other 0,0 411x923 (drawingOrder, guess)
+27 button "t" 165.60,640 38x52: at 184.60,666 judged other 0,0 411x923 (drawingOrder, guess)
+28 button "y" 206.50,640 38x52: at 225.50,666 judged other 0,0 411x923 (drawingOrder, guess)
+29 button "u" 247.40,640 38x52: at 266.40,666 judged other 0,0 411x923 (drawingOrder, guess)
+30 button "i" 288.30,640 38x52: at 307.30,666 judged other 0,0 411x923 (drawingOrder, guess)
+31 button "o" 329.20,640 38x52: at 348.20,666 judged other 0,0 411x923 (drawingOrder, guess)
+32 button "p" 370.10,640 38x52: at 389.10,666 judged other 0,0 411x923 (drawingOrder, guess)
+33 button "Done" 330,840 77x52: at 368.50,866 judged other 0,0 411x923 (drawingOrder, guess)

@@ -23,14 +23,43 @@ struct TapCover {
         }
     }
 
+    /// What every cover check on one tree shares, read once: its index, the roots and pages a check judges, LogBox's inset and where the keyboard takes touches.
+    struct Shared {
+        let tree: UITree
+        /// Over `tree.roots`.
+        let index: TreeIndex
+        /// Over the roots a check judges: on Android the keyboard's root leaves them.
+        let ground: CoverGround
+        let logBoxInset: Double
+        let keyboardTouchAreas: [UIFrame]?
+        /// Empty hosts of other processes' prompts.
+        let promptHosts: [(index: Int, window: UINode)]
+
+        /// Nil for a tree without a viewport; `index` and `stack`, when given, are already read over `tree.roots`.
+        init?(_ tree: UITree, index: TreeIndex? = nil, stack: ScreenStack? = nil) {
+            guard let viewport = tree.viewport else { return nil }
+            let index = index ?? TreeIndex(roots: tree.roots)
+            let roots = AccessibilityTargetResolver.coverRoots(tree.roots, android: tree.platform == .android)
+            if roots.count == tree.roots.count {
+                ground = CoverGround(tree: index, viewport: viewport, stack: stack ?? ScreenStack.build(index, viewport: viewport))
+            } else {
+                let judged = TreeIndex(roots: roots)
+                ground = CoverGround(tree: judged, viewport: viewport, stack: ScreenStack.build(judged, viewport: viewport))
+            }
+            self.tree = tree
+            self.index = index
+            logBoxInset = KnownOverlays.logBoxTopInset(in: tree)
+            keyboardTouchAreas = AccessibilityTargetResolver.keyboardTouchAreas(in: tree)
+            promptHosts = SystemPrompt.hosts(in: tree)
+        }
+    }
+
     /// What a cover check needs about one resolved target: the roots and pages it judges, what may draw over the point, and whether a hit-test would tell.
     struct Judging {
         let target: UINode
         let matched: UINode
         let point: UIPoint
-        let roots: [UINode]
-        let viewport: UIFrame
-        let stack: ScreenStack
+        let ground: CoverGround
         let candidates: [UINode]
         let logBoxInset: Double
         /// The app's tree shows the empty host of another process's prompt over the target.
@@ -41,40 +70,48 @@ struct TapCover {
         /// The keyboard over the point, which `check` refuses before anything else; nil when it is clear of keys.
         let keyboard: UINode?
 
+        var roots: [UINode] { ground.roots }
+        var viewport: UIFrame { ground.viewport }
+        var stack: ScreenStack { ground.stack }
+
         /// Nil for a coordinate tap or a tree without a viewport; `beneath` is what the caller already knows of the target's screen.
         init?(_ resolution: TapResolution, in tree: UITree, beneath known: Bool? = nil) {
-            guard let target = resolution.target ?? resolution.matched, let viewport = tree.viewport else {
+            guard resolution.target ?? resolution.matched != nil, let shared = Shared(tree, stack: resolution.stack) else {
                 return nil
             }
+            self.init(resolution, on: shared, beneath: known)
+        }
+
+        /// `init(_:in:beneath:)` on a tree already read for many checks.
+        init?(_ resolution: TapResolution, on shared: Shared, beneath known: Bool? = nil) {
+            guard let target = resolution.target ?? resolution.matched else {
+                return nil
+            }
+            let tree = shared.tree, ground = shared.ground
             let android = tree.platform == .android
-            keyboard = AccessibilityTargetResolver.keyboardCover(resolution, in: tree)
-            let roots = AccessibilityTargetResolver.coverRoots(tree.roots, android: android)
+            keyboard = AccessibilityTargetResolver.keyboardCover(resolution, in: tree, index: shared.index, touchAreas: shared.keyboardTouchAreas)
             var candidates = resolution.coverCandidates
             if android {
-                candidates.removeAll { AccessibilityTargetResolver.isUnderKeyboard($0, in: tree.roots) }
+                candidates.removeAll(where: shared.index.isUnderKeyboard)
             }
-            let stack = roots.count == tree.roots.count ? resolution.stack ?? ScreenStack.build(roots: roots, viewport: viewport) : ScreenStack.build(roots: roots, viewport: viewport)
             let matched = resolution.matched ?? target
-            let beneath = known ?? (stack.isBeneath(target, in: roots) || stack.isBeneath(matched, in: roots))
+            let beneath = known ?? (ground.stack.isBeneath(target, in: ground.tree) || ground.stack.isBeneath(matched, in: ground.tree))
             let point = UIPoint(x: resolution.point.x, y: resolution.point.y)
-            let logBoxInset = KnownOverlays.logBoxTopInset(in: tree)
-            if logBoxInset > 0 {
-                candidates += TapCover.logBoxToasts(reaching: target, at: point, inset: logBoxInset, roots: roots, viewport: viewport, stack: stack, besides: candidates)
+            if shared.logBoxInset > 0 {
+                candidates += TapCover.logBoxToasts(reaching: target, at: point, inset: shared.logBoxInset, on: ground, besides: candidates)
             }
             // Empty containers never cover, but the empty host of another process's prompt is worth a hit-test.
-            promptHost = !android && SystemPrompt.hasHost(over: target, in: tree)
-            let takenByDevMenu = KnownOverlays.devMenuButtons(in: roots, viewport: viewport).contains { button in
+            promptHost = !android && SystemPrompt.hasHost(over: target, in: tree, hosts: shared.promptHosts)
+            let takenByDevMenu = ground.devMenuButtons.contains { button in
                 button.frame.map { KnownOverlays.devMenuButton(at: $0, takes: point) } == true
             }
             isContested = android || !candidates.isEmpty || beneath || promptHost || takenByDevMenu
             self.target = target
             self.matched = matched
             self.point = point
-            self.roots = roots
-            self.viewport = viewport
-            self.stack = stack
+            self.ground = ground
             self.candidates = candidates
-            self.logBoxInset = logBoxInset
+            logBoxInset = shared.logBoxInset
         }
 
         /// The process ids a hit-test should count as the app's own: the prompt host's, while one is up.
@@ -82,7 +119,7 @@ struct TapCover {
 
         /// True only when the simulator's `hit` is the target or inside it.
         func surelyReaches(hit: UINode) -> Bool {
-            CoverJudge.surelyReaches(target: target, matched: matched, point: point, roots: roots, viewport: viewport, stack: stack, hit: hit)
+            CoverJudge.surelyReaches(target: target, matched: matched, point: point, on: ground, hit: hit)
         }
 
         /// `surelyReaches`, but never a control inside the target: moved beside a cover, a tap must not press something nobody named. Text inside it still counts.
@@ -92,24 +129,24 @@ struct TapCover {
             var bareTarget = target, bareMatched = matched
             bareTarget.children = []
             bareMatched.children = []
-            return CoverJudge.surelyReaches(target: bareTarget, matched: bareMatched, point: point, roots: roots, viewport: viewport, stack: stack, hit: hit)
+            return CoverJudge.surelyReaches(target: bareTarget, matched: bareMatched, point: point, on: ground, hit: hit)
         }
 
         /// A guess that another scroll view's content lies over a target the hit-test found counts only if that content shows: a read at its own point that finds something else puts it beneath what is drawn there. A footer outside any scroll view stays guessed, as a hit-test can answer through one.
         @MainActor
         func isHiddenAtItsOwnPoint(_ cover: UINode, hitTester: any PointHitTesting, device: DeviceID) async -> Bool {
-            guard let path = UITree.indexPath(to: cover, in: roots),
-                  UITree.nodes(along: path, in: roots).dropLast().contains(where: { [.scrollView, .list].contains($0.role) }),
+            guard let index = ground.tree.firstIndex(of: cover),
+                  ground.tree.chain(to: index).dropLast().contains(where: { [.scrollView, .list].contains($0.role) }),
                   let centre = cover.frame?.center, viewport.contains(centre),
                   let hit = try? await hitTester.hitTest(at: centre, on: device, appPIDs: appPIDs) else { return false }
-            return CoverJudge.judge(target: cover, matched: cover, point: centre, candidates: [], roots: roots, viewport: viewport, stack: stack, hit: hit) != nil
+            return CoverJudge.judge(target: cover, matched: cover, point: centre, candidates: [], on: ground, hit: hit) != nil
         }
 
         /// What the tap would reach instead, given the simulator's `hit` if one was read; nil when it reaches the target, or nothing contests it and no hit was read.
         func verdict(hit: UINode?) -> CoverVerdict? {
             guard isContested || hit != nil else { return nil }
             return CoverJudge.judge(
-                target: target, matched: matched, point: point, candidates: candidates, roots: roots, viewport: viewport, stack: stack, hit: hit,
+                target: target, matched: matched, point: point, candidates: candidates, on: ground, hit: hit,
                 logBoxInset: logBoxInset, otherProcessCovers: promptHost
             )
         }
@@ -335,13 +372,13 @@ struct TapCover {
     }
 
     /// Toasts whose touch area, grown by `inset`, holds the point or reaches the target, beyond those the resolver found; never one holding the target or beneath a page.
-    static func logBoxToasts(reaching target: UINode, at point: UIPoint, inset: Double, roots: [UINode], viewport: UIFrame, stack: ScreenStack, besides found: [UINode]) -> [UINode] {
-        roots.flatMap { $0.flattened() }.filter { node in
-            guard let area = KnownOverlays.logBoxTouchArea(of: node, in: viewport, inset: inset),
+    static func logBoxToasts(reaching target: UINode, at point: UIPoint, inset: Double, on ground: CoverGround, besides found: [UINode]) -> [UINode] {
+        ground.logBoxToasts.filter { node in
+            guard let area = KnownOverlays.logBoxTouchArea(of: node, in: ground.viewport, inset: inset),
                   area.contains(point) || CoverJudge.reaches(area, target.frame),
                   !found.contains(where: { $0.isSameElement(as: node) }),
-                  !node.flattened().contains(where: { $0.isSameElement(as: target) }) else { return false }
-            return !stack.isBeneath(node, in: roots)
+                  !node.contains(where: { $0.isSameElement(as: target) }) else { return false }
+            return !ground.stack.isBeneath(node, in: ground.tree)
         }
     }
 

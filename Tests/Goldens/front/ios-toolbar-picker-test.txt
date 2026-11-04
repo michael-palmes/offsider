@@ -1,0 +1,19 @@
+# 18 nodes, 9 listed
+## no point read
+10 button "BackButton" 8,62 44x44: at 30,84 reaches
+11 group "toolbar-picker-test-filter" 235.67,66 158.33x36: at 314.83,84 reaches
+12 header "toolbar-picker-test-screen" 60,74 167.67x20.33: at 143.83,84.17 reaches
+13 radioButton "toolbar-picker-test-filter-all" 237.67,68 36.33x32: at 255.83,84 reaches
+14 radioButton "toolbar-picker-test-filter-unread" 274.00,68 66x32: at 307.00,84 reaches
+15 radioButton "toolbar-picker-test-filter-read" 340.00,68 52x32: at 366.00,84 reaches
+16 text "toolbar-picker-test-state" 16,106.33 370x44.67: at 201,128.67 reaches
+17 text "toolbar-picker-test-body" 16,151.00 370x44.67: at 201,173.33 reaches
+## hit-tested
+10 button "BackButton" 8,62 44x44: at 30,84 reaches
+11 group "toolbar-picker-test-filter" 235.67,66 158.33x36: at 314.83,84 reaches
+12 header "toolbar-picker-test-screen" 60,74 167.67x20.33: at 143.83,84.17 reaches
+13 radioButton "toolbar-picker-test-filter-all" 237.67,68 36.33x32: at 255.83,84 reaches
+14 radioButton "toolbar-picker-test-filter-unread" 274.00,68 66x32: at 307.00,84 reaches
+15 radioButton "toolbar-picker-test-filter-read" 340.00,68 52x32: at 366.00,84 reaches
+16 text "toolbar-picker-test-state" 16,106.33 370x44.67: at 201,128.67 reaches
+17 text "toolbar-picker-test-body" 16,151.00 370x44.67: at 201,173.33 reaches

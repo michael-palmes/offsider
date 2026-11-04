@@ -1,0 +1,47 @@
+# 38 nodes, 23 listed
+## no point read
+11 group "stack-test-full-page-1" 0,0 402x874: at 201,437 reaches
+12 button "BackButton" 8,62 44x44: at 30,84 judged button "stack-test-full-back-1" 8,62 72x44 (treeOrder, guess)
+13 button "stack-test-full-back-1" 8,62 72x44: at 44,84 reaches
+14 header "stack-test-screen" 60,74 282x20.33: at 201,84.17 reaches
+15 header "stack-test-full-title-1" 88,74 226x20.33: at 201,84.17 judged header "stack-test-screen" 60,74 282x20.33 (treeOrder, guess)
+17 text "stack-test-state" 16,122.33 370x20.33: at 201,132.50 judged button "stack-test-full-close-later" 140,122.33 122.33x44.00 (treeOrder, guess)
+18 button "stack-test-full-close-later" 140,122.33 122.33x44.00: at 201.17,144.33 reaches
+19 text "stack-test-depth" 16,150.67 370x20.33: at 201,160.83 judged button "stack-test-full-close-later" 140,122.33 122.33x44.00 (treeOrder, guess)
+20 text "stack-test-full-depth" 16,179 370x20.33: at 201,189.17 reaches
+21 button "stack-test-hide-inactive" 16,207.33 181x44: at 106.50,229.33 reaches
+22 button "stack-test-offset" 205,207.33 181x44: at 295.50,229.33 reaches
+24 header "stack-test-page-title" 16.33,283.67 369.67x44.33: at 201.17,305.83 reaches
+25 text "stack-test-page-1" 163,344 76.67x20.33: at 201.33,354.17 reaches
+26 button "stack-test-next" 144.67,380.33 113.00x44: at 201.17,402.33 reaches
+27 button "stack-test-mark" 143.33,440.33 116.00x44: at 201.33,462.33 reaches
+28 button "stack-test-back" 129,500.33 144.67x44.00: at 201.33,522.33 reaches
+31 button "stack-test-full-next" 16,738.67 370x44: at 201,760.67 judged button "stack-test-open-full" 16,738.67 370x44 (treeOrder, guess)
+32 button "stack-test-open-full" 16,738.67 370x44: at 201,760.67 judged button "stack-test-full-next" 16,738.67 370x44 (treeOrder, guess)
+33 group "stack-test-tab-bar" 0,790.67 402x83.33: at 201,832.33 reaches
+35 button "stack-test-tab-home" 0,791.00 201x49: at 100.50,815.50 reaches
+36 button "stack-test-full-buy" 197,793.00 189x45: at 291.50,815.50 judged button "stack-test-tab-products" 201,791.00 201x49 (treeOrder, guess)
+37 button "stack-test-tab-products" 201,791.00 201x49: at 301.50,815.50 judged button "stack-test-full-buy" 197,793.00 189x45 (treeOrder, guess)
+## hit-tested
+11 group "stack-test-full-page-1" 0,0 402x874: at 201,437 reaches
+12 button "BackButton" 8,62 44x44: covered by button "stack-test-full-back-1" 8,62 72x44 (hitTest, sure): at 30,84 judged button "stack-test-full-back-1" 8,62 72x44 (hitTest, sure), other hit
+13 button "stack-test-full-back-1" 8,62 72x44: at 44,84 reaches, own hit
+14 header "stack-test-screen" 60,74 282x20.33: at 201,84.17 reaches, other hit
+15 header "stack-test-full-title-1" 88,74 226x20.33: at 201,84.17 reaches, own hit
+17 text "stack-test-state" 16,122.33 370x20.33: covered by button "stack-test-full-close-later" 140,122.33 122.33x44.00 (hitTest, sure): at 201,132.50 judged button "stack-test-full-close-later" 140,122.33 122.33x44.00 (hitTest, sure), other hit
+18 button "stack-test-full-close-later" 140,122.33 122.33x44.00: at 201.17,144.33 reaches
+19 text "stack-test-depth" 16,150.67 370x20.33: at 201,160.83 reaches, own hit
+20 text "stack-test-full-depth" 16,179 370x20.33: at 201,189.17 reaches
+21 button "stack-test-hide-inactive" 16,207.33 181x44: at 106.50,229.33 reaches
+22 button "stack-test-offset" 205,207.33 181x44: at 295.50,229.33 reaches
+24 header "stack-test-page-title" 16.33,283.67 369.67x44.33: at 201.17,305.83 reaches
+25 text "stack-test-page-1" 163,344 76.67x20.33: at 201.33,354.17 reaches
+26 button "stack-test-next" 144.67,380.33 113.00x44: at 201.17,402.33 reaches
+27 button "stack-test-mark" 143.33,440.33 116.00x44: at 201.33,462.33 reaches
+28 button "stack-test-back" 129,500.33 144.67x44.00: at 201.33,522.33 reaches
+31 button "stack-test-full-next" 16,738.67 370x44: covered by button "stack-test-open-full" 16,738.67 370x44 (hitTest, sure): at 201,760.67 judged button "stack-test-open-full" 16,738.67 370x44 (hitTest, sure), other hit
+32 button "stack-test-open-full" 16,738.67 370x44: at 201,760.67 reaches, own hit
+33 group "stack-test-tab-bar" 0,790.67 402x83.33: at 201,832.33 reaches
+35 button "stack-test-tab-home" 0,791.00 201x49: at 100.50,815.50 reaches
+36 button "stack-test-full-buy" 197,793.00 189x45: covered by button "stack-test-tab-products" 201,791.00 201x49 (hitTest, sure): at 291.50,815.50 judged button "stack-test-tab-products" 201,791.00 201x49 (hitTest, sure), other hit
+37 button "stack-test-tab-products" 201,791.00 201x49: at 301.50,815.50 reaches, own hit

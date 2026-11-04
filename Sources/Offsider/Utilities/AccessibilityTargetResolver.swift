@@ -504,10 +504,11 @@ struct AccessibilityTargetResolver {
         var candidates: [UINode] = []
         var stack: ScreenStack?
         if !allowOffscreen, let viewport = UITree.viewport(in: roots) {
-            candidates = coverCandidates(of: activationElement, matched: match.element, at: UIPoint(x: point.x, y: point.y), viewport: viewport, roots: roots)
+            let tree = TreeIndex(roots: roots)
+            candidates = coverCandidates(of: activationElement, matched: match.element, at: UIPoint(x: point.x, y: point.y), viewport: viewport, in: tree)
             if !candidates.isEmpty {
-                let built = ScreenStack.build(roots: roots, viewport: viewport)
-                candidates = onTopCandidates(candidates, over: activationElement, roots: roots, stack: built)
+                let built = ScreenStack.build(tree, viewport: viewport)
+                candidates = onTopCandidates(candidates, over: activationElement, in: tree, stack: built)
                 stack = built
             }
         }
@@ -523,17 +524,23 @@ struct AccessibilityTargetResolver {
 
     /// The tap a selector on `element` itself would make, for the shared on-screen judgement: its own activation point, what may draw over it, and the pages; nil when no point of it shows.
     static func resolution(of element: UINode, roots: [UINode], viewport: UIFrame, stack: ScreenStack) -> TapResolution? {
+        resolution(of: element, among: Occluders(TreeIndex(roots: roots), viewport: viewport), stack: stack)
+    }
+
+    /// `resolution(of:roots:viewport:stack:)` among a tree's possible occluders already read.
+    static func resolution(of element: UINode, among occluders: Occluders, stack: ScreenStack) -> TapResolution? {
+        let tree = occluders.tree, viewport = occluders.viewport
         guard let frame = element.frame, frame.width > 0, frame.height > 0,
-              let point = try? visiblePoint(activationPoint(for: element, frame: frame), of: element, frame: frame, viewport: viewport, roots: roots, selector: "") else {
+              let point = try? visiblePoint(activationPoint(for: element, frame: frame), of: element, frame: frame, viewport: viewport, ancestors: tree.ancestors(of: element), selector: "") else {
             return nil
         }
-        let candidates = coverCandidates(of: element, matched: element, at: UIPoint(x: point.x, y: point.y), viewport: viewport, roots: roots)
+        let candidates = coverCandidates(of: element, matched: element, at: UIPoint(x: point.x, y: point.y), among: occluders)
         return TapResolution(
             point: point,
             isSwitchLikeControl: element.isSwitch,
             target: element,
             matched: element,
-            coverCandidates: candidates.isEmpty ? [] : onTopCandidates(candidates, over: element, roots: roots, stack: stack),
+            coverCandidates: candidates.isEmpty ? [] : onTopCandidates(candidates, over: element, in: tree, stack: stack),
             stack: stack
         )
     }
@@ -550,7 +557,13 @@ struct AccessibilityTargetResolver {
     static func visiblePoint(
         _ point: (x: Double, y: Double), of element: UINode, frame: UIFrame, viewport: UIFrame, roots: [UINode], selector: String
     ) throws -> (x: Double, y: Double) {
-        let visible = try shownPart(of: element, frame: frame, viewport: viewport, roots: roots, selector: selector)
+        try visiblePoint(point, of: element, frame: frame, viewport: viewport, ancestors: ancestors(of: element, in: roots), selector: selector)
+    }
+
+    private static func visiblePoint(
+        _ point: (x: Double, y: Double), of element: UINode, frame: UIFrame, viewport: UIFrame, ancestors: [UINode], selector: String
+    ) throws -> (x: Double, y: Double) {
+        let visible = try shownPart(of: element, frame: frame, viewport: viewport, ancestors: ancestors, selector: selector)
         if visible.contains(UIPoint(x: point.x, y: point.y)) {
             return point
         }
@@ -559,13 +572,13 @@ struct AccessibilityTargetResolver {
 
     /// What the screen and the scroll views around the element show of `frame`; nil when too little does.
     static func visibleRegion(of element: UINode, frame: UIFrame, viewport: UIFrame, roots: [UINode]) -> UIFrame? {
-        try? shownPart(of: element, frame: frame, viewport: viewport, roots: roots, selector: "")
+        try? shownPart(of: element, frame: frame, viewport: viewport, ancestors: ancestors(of: element, in: roots), selector: "")
     }
 
     /// The side of its scroll view an element with too little showing lies past; nil when it shows.
-    static func sidePastScrollView(of element: UINode, frame: UIFrame, viewport: UIFrame, roots: [UINode]) -> OffScreenSide? {
+    static func sidePastScrollView(of element: UINode, frame: UIFrame, viewport: UIFrame, in tree: TreeIndex) -> OffScreenSide? {
         do {
-            _ = try shownPart(of: element, frame: frame, viewport: viewport, roots: roots, selector: "")
+            _ = try shownPart(of: element, frame: frame, viewport: viewport, ancestors: tree.ancestors(of: element), selector: "")
             return nil
         } catch ElementResolutionError.beyondScrollView(_, _, _, let side) {
             return side
@@ -581,19 +594,20 @@ struct AccessibilityTargetResolver {
             target: resolution.target, matched: resolution.matched, stack: resolution.stack
         )
         guard let target = resolution.target ?? resolution.matched else { return moved }
-        let candidates = coverCandidates(of: target, matched: resolution.matched ?? target, at: point, viewport: viewport, roots: roots)
-        let stack = resolution.stack ?? ScreenStack.build(roots: roots, viewport: viewport)
-        moved.coverCandidates = candidates.isEmpty ? [] : onTopCandidates(candidates, over: target, roots: roots, stack: stack)
+        let tree = TreeIndex(roots: roots)
+        let candidates = coverCandidates(of: target, matched: resolution.matched ?? target, at: point, viewport: viewport, in: tree)
+        let stack = resolution.stack ?? ScreenStack.build(tree, viewport: viewport)
+        moved.coverCandidates = candidates.isEmpty ? [] : onTopCandidates(candidates, over: target, in: tree, stack: stack)
         moved.stack = stack
         return moved
     }
 
-    private static func shownPart(of element: UINode, frame: UIFrame, viewport: UIFrame, roots: [UINode], selector: String) throws -> UIFrame {
+    private static func shownPart(of element: UINode, frame: UIFrame, viewport: UIFrame, ancestors: [UINode], selector: String) throws -> UIFrame {
         guard frame.isVisible(in: viewport), var visible = frame.intersection(viewport) else {
             throw ElementResolutionError.offScreen(selector: selector, frames: [frame], viewport: viewport)
         }
         let scrollRoles: Set<UIRole> = [.scrollView, .list]
-        for ancestor in ancestors(of: element, in: roots).reversed() where scrollRoles.contains(ancestor.role) && ancestor.hasPositiveFrame {
+        for ancestor in ancestors.reversed() where scrollRoles.contains(ancestor.role) && ancestor.hasPositiveFrame {
             guard let shown = ancestor.frame?.intersection(viewport) else { continue }
             // Only the top and bottom clip: a carousel may draw peeking cards past its sides.
             let band = UIFrame(x: visible.x, y: shown.y, width: visible.width, height: shown.height)
@@ -616,10 +630,10 @@ struct AccessibilityTargetResolver {
     }
 
     /// Drops candidates on a screen beneath a page, and on Android those its drawing order puts below the target.
-    static func onTopCandidates(_ candidates: [UINode], over target: UINode, roots: [UINode], stack: ScreenStack) -> [UINode] {
+    static func onTopCandidates(_ candidates: [UINode], over target: UINode, in tree: TreeIndex, stack: ScreenStack) -> [UINode] {
         candidates.filter { candidate in
-            guard !stack.isBeneath(candidate, in: roots) else { return false }
-            guard candidate.isAndroid, let order = UITree.zOrder(of: candidate, over: target, in: roots), order.byDrawingOrder else { return true }
+            guard !stack.isBeneath(candidate, in: tree) else { return false }
+            guard candidate.isAndroid, let order = UITree.zOrder(of: candidate, over: target, in: tree), order.byDrawingOrder else { return true }
             return order.isAbove
         }
     }
@@ -627,62 +641,147 @@ struct AccessibilityTargetResolver {
     /// Plausible occluders whose frame holds `point`; tree order is not z-order on either platform, so a real hit-test must confirm one.
     /// On Android a node in a lower window (the app beneath a keyboard) or not visible to the user cannot cover the target;
     /// Android sorts siblings by position, not drawing order, so a sibling listed first may still be drawn on top. A scroll indicator takes no taps, so it is never one.
-    static func coverCandidates(of target: UINode, matched: UINode, at point: UIPoint, viewport: UIFrame, roots: [UINode]) -> [UINode] {
-        let path = UITree.indexPath(to: target, in: roots)
+    static func coverCandidates(of target: UINode, matched: UINode, at point: UIPoint, viewport: UIFrame, in tree: TreeIndex) -> [UINode] {
+        coverCandidates(of: target, matched: matched, at: point, among: Occluders(tree, viewport: viewport))
+    }
+
+    /// `coverCandidates(of:matched:at:viewport:in:)` among a tree's possible occluders already read.
+    static func coverCandidates(of target: UINode, matched: UINode, at point: UIPoint, among occluders: Occluders) -> [UINode] {
+        let tree = occluders.tree, roots = tree.roots, viewport = occluders.viewport
+        let targetIndex = tree.firstIndex(of: target)
         let same = matched.isSameElement(as: target)
-        let matchedPath = same ? path : UITree.indexPath(to: matched, in: roots)
-        let lineage = [path, matchedPath].compactMap { $0 }.flatMap { UITree.nodes(along: $0, in: roots) }
-        let related = lineage + target.flattened() + (same ? [] : matched.flattened())
+        let matchedIndex = same ? targetIndex : tree.firstIndex(of: matched)
+        let path = targetIndex.map(tree.indexPath(to:))
+        let matchedPath = matchedIndex.map(tree.indexPath(to:))
+        // Each related node by the first node identical to it, so a node is related when any node identical to it is.
+        var related = Set([targetIndex, matchedIndex].compactMap { $0 }.flatMap { tree.lineage(of: $0) }.compactMap(tree.firstIndex(at:)))
+        related.formUnion((target.flattened() + (same ? [] : matched.flattened())).compactMap(tree.firstIndex(of:)))
         // Keys sit over the app, its own keypad's as much as the system's, so only another key can cover one.
-        let targetIsKey = path.map { UITree.nodes(along: $0, in: roots).contains { $0.role == .keyboard } } ?? isUnderKeyboard(target, in: roots)
+        let targetIsKey = targetIndex.map(tree.isInKeyboard) ?? (target.role == .keyboard)
         let android = target.isAndroid
         let targetRoot = (path ?? matchedPath)?.first ?? 0
         // A simulator lists an app's windows, children of it that fill the screen, bottom first, so one listed before the target's is drawn beneath it.
         let simulator = target.iosPID != nil
-        func isWindow(_ node: UINode, of parent: UINode) -> Bool {
-            simulator && parent.role == .application && node.frame.map { isBackdrop($0, in: viewport) } == true
-        }
-        let windowPath = path ?? matchedPath
-        let targetWindow = windowPath.flatMap { path -> Int? in
-            guard !android, path.count > 1, roots[path[0]].children.indices.contains(path[1]) else { return nil }
-            return isWindow(roots[path[0]].children[path[1]], of: roots[path[0]]) ? path[1] : nil
+        let targetWindow = (path ?? matchedPath).flatMap { path -> Int? in
+            guard simulator, !android, path.count > 1, roots[path[0]].children.indices.contains(path[1]) else { return nil }
+            return Occluders.isWindow(roots[path[0]].children[path[1]], of: roots[path[0]], viewport: viewport) ? path[1] : nil
         }
         // What lies inside an unlabelled container the target is, such as a tab bar listed beside its tabs, is its own content.
         let content = target.isActionable || target.normalizedLabel != nil ? nil : target.frame
-        func reaches(_ node: UINode, band: ClosedRange<Double>?) -> Bool {
-            guard let area = KnownOverlays.logBoxTouchArea(of: node, in: viewport) else {
+        func reaches(_ node: UINode, _ place: Occluders.Place) -> Bool {
+            guard let area = place.logBoxArea else {
                 guard let frame = node.frame, frame.contains(point), frame.isVisible(in: viewport) else { return false }
-                return band?.contains(point.y) ?? true
+                return place.band?.contains(point.y) ?? true
             }
             return area.contains(point) || CoverJudge.reaches(area, target.frame)
         }
-        var found: [UINode] = []
-        func visit(_ node: UINode, parent: UINode?, root: Int, window: Int?, band: ClosedRange<Double>?, underKeyboard: Bool) {
-            let underKeyboard = underKeyboard || node.role == .keyboard
-            let beneath = android ? root < targetRoot || node.androidVisibleToUser == false
-                : root == targetRoot && window.map { window in targetWindow.map { window < $0 } ?? false } == true
-            if !beneath, !targetIsKey || underKeyboard, reaches(node, band: band),
-               isPlausibleOccluder(node, underKeyboard: underKeyboard) || CoverJudge.isBar(node, over: target, at: point, viewport: viewport),
-               !ScrollIndicator.isIndicator(node, parent: parent),
-               !(content.map { content in node.frame.map { content.encloses($0, tolerance: TransitionGuard.frameTolerance) } ?? false } ?? false),
-               !related.contains(where: { $0.isSameElement(as: node) }) {
-                found.append(node)
-            }
-            // A scroll view or list shows its rows only between its top and bottom.
-            var childBand = band
-            if [.scrollView, .list].contains(node.role), let frame = node.frame, node.hasPositiveFrame {
-                let top = max(band?.lowerBound ?? -.infinity, frame.y), bottom = min(band?.upperBound ?? .infinity, frame.y + frame.height)
-                childBand = top <= bottom ? top...bottom : frame.y...frame.y
-            }
-            for (index, child) in node.children.enumerated() {
-                let childWindow = parent == nil && isWindow(child, of: node) ? index : window
-                visit(child, parent: node, root: root, window: childWindow, band: childBand, underKeyboard: underKeyboard)
-            }
+        return occluders.near(point).compactMap { index -> UINode? in
+            let node = tree.nodes[index]
+            guard let place = occluders.place(of: index) else { return nil }
+            let beneath = android ? place.root < targetRoot || node.androidVisibleToUser == false
+                : simulator && place.root == targetRoot && place.window.map { window in targetWindow.map { window < $0 } ?? false } == true
+            guard !beneath, !targetIsKey || place.underKeyboard, reaches(node, place),
+                  place.occludes || CoverJudge.isBar(node, over: target, at: point, viewport: viewport),
+                  !(content.map { content in node.frame.map { content.encloses($0, tolerance: TransitionGuard.frameTolerance) } ?? false } ?? false),
+                  !(tree.firstIndex(at: index).map(related.contains) ?? false) else { return nil }
+            return node
         }
-        for (index, root) in roots.enumerated() {
-            visit(root, parent: nil, root: index, window: nil, band: nil, underKeyboard: false)
+    }
+
+    /// What may draw over any point of one tree, read once for many points: each node that could, with the window, scroll views and keyboard around it, by the rows of the screen it spans.
+    struct Occluders {
+        let tree: TreeIndex
+        let viewport: UIFrame
+        /// By pre-order index; nil for a node that never covers, a scroll indicator or one off the screen.
+        private let places: [Place?]
+        /// Pre-order indexes by the row of the viewport their frame spans.
+        private let rows: [[Int]]
+        /// LogBox toasts, whose touch area any point may meet.
+        private let anywhere: [Int]
+        private let all: [Int]
+
+        struct Place {
+            let root: Int
+            /// On a simulator, the application's screen-filling child holding the node.
+            let window: Int?
+            /// The top and bottom of the scroll views around the node: it shows only between them.
+            let band: ClosedRange<Double>?
+            let underKeyboard: Bool
+            let occludes: Bool
+            /// A LogBox toast's touch area; nil for anything else.
+            let logBoxArea: UIFrame?
         }
-        return found
+
+        static let rowCount = 64
+
+        init(_ tree: TreeIndex, viewport: UIFrame) {
+            self.tree = tree
+            self.viewport = viewport
+            var places = [Place?](repeating: nil, count: tree.nodes.count)
+            var rows = [[Int]](repeating: [], count: Self.rowCount)
+            var anywhere: [Int] = [], all: [Int] = []
+            var bands = [ClosedRange<Double>?](repeating: nil, count: tree.nodes.count)
+            var windows = [Int?](repeating: nil, count: tree.nodes.count)
+            for (index, node) in tree.nodes.enumerated() {
+                let parent = tree.parent(of: index)
+                if let parent {
+                    let above = tree.nodes[parent]
+                    var band = bands[parent]
+                    // A scroll view or list shows its rows only between its top and bottom.
+                    if [.scrollView, .list].contains(above.role), let frame = above.frame, above.hasPositiveFrame {
+                        let top = max(band?.lowerBound ?? -.infinity, frame.y), bottom = min(band?.upperBound ?? .infinity, frame.y + frame.height)
+                        band = top <= bottom ? top...bottom : frame.y...frame.y
+                    }
+                    bands[index] = band
+                    windows[index] = tree.parent(of: parent) == nil && Self.isWindow(node, of: above, viewport: viewport) ? tree.indexPath(to: index).last : windows[parent]
+                }
+                let underKeyboard = tree.isInKeyboard(index)
+                let occludes = isPlausibleOccluder(node, underKeyboard: underKeyboard)
+                let logBoxArea = KnownOverlays.logBoxTouchArea(of: node, in: viewport)
+                guard occludes || CoverJudge.isBar(node), !ScrollIndicator.isIndicator(node, parent: parent.map { tree.nodes[$0] }) else { continue }
+                if logBoxArea != nil {
+                    anywhere.append(index)
+                } else if let frame = node.frame, frame.isVisible(in: viewport) {
+                    let low = max(frame.y, viewport.y), high = min(frame.y + frame.height, viewport.y + viewport.height)
+                    guard let first = Self.row(of: low, in: viewport), let last = Self.row(of: high, in: viewport) else { continue }
+                    for row in first...last { rows[row].append(index) }
+                } else {
+                    continue
+                }
+                places[index] = Place(
+                    root: tree.root(of: index), window: windows[index], band: bands[index], underKeyboard: underKeyboard, occludes: occludes, logBoxArea: logBoxArea
+                )
+                all.append(index)
+            }
+            self.places = places
+            self.rows = rows
+            self.anywhere = anywhere
+            self.all = all
+        }
+
+        func place(of index: Int) -> Place? {
+            places[index]
+        }
+
+        /// Pre-order indexes of the nodes that may cover `point`, in tree order.
+        func near(_ point: UIPoint) -> [Int] {
+            guard point.y >= viewport.y, point.y < viewport.y + viewport.height, let row = Self.row(of: point.y, in: viewport) else { return all }
+            guard !anywhere.isEmpty else { return rows[row] }
+            return Array(Set(rows[row]).union(anywhere)).sorted()
+        }
+
+        /// The row of the viewport holding `y`, clamped to the rows; nil for a size or place that is not finite.
+        private static func row(of y: Double, in viewport: UIFrame) -> Int? {
+            let height = viewport.height / Double(rowCount)
+            let row = ((y - viewport.y) / height).rounded(.down)
+            guard height > 0, row.isFinite else { return nil }
+            return Int(min(max(row, 0), Double(rowCount - 1)))
+        }
+
+        /// A simulator lists an app's windows as children of it that fill the screen.
+        static func isWindow(_ node: UINode, of parent: UINode, viewport: UIFrame) -> Bool {
+            parent.role == .application && node.frame.map { isBackdrop($0, in: viewport) } == true
+        }
     }
 
     /// The roots a cover check judges: on Android the keyboard's window bounds decide, and its root view spans the screen, so it leaves the judging.
@@ -692,16 +791,21 @@ struct AccessibilityTargetResolver {
 
     /// The keyboard over the tap point, from the tree already read; on Android its window's bounds decide, as its root view spans the screen.
     static func keyboardCover(_ resolution: TapResolution, in tree: UITree) -> UINode? {
+        keyboardCover(resolution, in: tree, index: TreeIndex(roots: tree.roots), touchAreas: keyboardTouchAreas(in: tree))
+    }
+
+    /// `keyboardCover(_:in:)` with the tree's index and the keyboard's touch areas already read.
+    static func keyboardCover(_ resolution: TapResolution, in tree: UITree, index: TreeIndex, touchAreas: [UIFrame]?) -> UINode? {
         let roots = tree.roots
         let targets = [resolution.target, resolution.matched].compactMap { $0 }
-        guard !targets.isEmpty, !targets.contains(where: { isUnderKeyboard($0, in: roots) }) else {
+        guard !targets.isEmpty, !targets.contains(where: index.isUnderKeyboard) else {
             return nil
         }
-        let keyboardCandidates = resolution.coverCandidates.filter { isUnderKeyboard($0, in: roots) }
-        if isHiddenByKeyboard(resolution, in: roots) {
+        let keyboardCandidates = resolution.coverCandidates.filter(index.isUnderKeyboard)
+        if isHiddenByKeyboard(resolution, in: index) {
             return keyboardCandidates.last ?? roots.first { $0.role == .keyboard }
         }
-        if let touchAreas = keyboardTouchAreas(in: tree) {
+        if let touchAreas {
             let point = UIPoint(x: resolution.point.x, y: resolution.point.y)
             guard touchAreas.contains(where: { $0.contains(point) }) else { return nil }
             return keyboardCandidates.last ?? roots.first { $0.role == .keyboard }
@@ -716,17 +820,18 @@ struct AccessibilityTargetResolver {
     }
 
     /// The helper lists an Android app node the keyboard and the bars beside it wholly cover, marked not visible, so a tap on it lands on one of them.
-    static func isHiddenByKeyboard(_ resolution: TapResolution, in roots: [UINode]) -> Bool {
-        guard let target = resolution.target, target.androidVisibleToUser == false, roots.contains(where: { $0.role == .keyboard }) else {
+    static func isHiddenByKeyboard(_ resolution: TapResolution, in tree: TreeIndex) -> Bool {
+        guard let target = resolution.target, target.androidVisibleToUser == false, tree.roots.contains(where: { $0.role == .keyboard }) else {
             return false
         }
-        return roots.contains { root in
-            root.role == .application && root.androidVisibleToUser != false && root.flattened().contains { $0.isSameElement(as: target) }
+        return tree.indexes(of: target).contains { index in
+            let root = tree.roots[tree.root(of: index)]
+            return root.role == .application && root.androidVisibleToUser != false
         }
     }
 
     /// Where Android's input method windows take touches: their bounds around the keyboard's own nodes; nil on iOS and when no window bounds were read.
-    private static func keyboardTouchAreas(in tree: UITree) -> [UIFrame]? {
+    static func keyboardTouchAreas(in tree: UITree) -> [UIFrame]? {
         guard tree.platform == .android, let windows = tree.windows else { return nil }
         let areas = windows.filter { $0.kind == "inputMethod" }.compactMap(\.bounds).filter { $0.width > 0 && $0.height > 0 }
         guard !areas.isEmpty else { return nil }

@@ -1,0 +1,56 @@
+# 55 nodes, 55 listed
+## no point read
+1 button "BackButton" 8,54.10 44.19x44.19: at 30.09,76.19 reaches
+2 group "text-input-screen" 60.19,64.38 291.43x23.24: at 205.91,76 reaches
+3 text "text-input-title" 16,114.67 379.43x27.05: at 205.72,128.19 reaches
+4 textField "text-input-field" 16,194.29 379.43x44.19: at 205.72,216.38 reaches
+5 textField "text-input-second-field" 16,254.10 379.43x44.19: at 205.72,276.19 reaches
+6 text "text-input-second-value" 16,314.29 379.43x23.24: at 205.72,325.91 reaches
+7 textField "text-input-short-field" 16,353.52 379.43x44.19: at 205.72,375.62 reaches
+8 text "typing-active-indicator" 16,413.71 379.43x23.24: at 205.72,425.33 reaches
+9 keyboard "Password keyboard" 1.90,587.05 407.62x336.38: at 205.71,755.24 judged application "OffsiderPlaygroundRN" 0,0 411.43x923.43 (drawingOrder, guess)
+10 group "com.google.android.inputmethod.latin:id…" 1.90,587.05 407.62x288.38: at 205.71,731.24 judged application "OffsiderPlaygroundRN" 0,0 411.43x923.43 (drawingOrder, guess)
+11 button "com.google.android.inputmethod.latin:id…" 1.90,587.05 40.76x44.19: at 22.28,609.14 judged application "OffsiderPlaygroundRN" 0,0 411.43x923.43 (drawingOrder, guess)
+12 button "com.google.android.inputmethod.latin:id…" 42.67,587.05 40.76x44.19: at 63.05,609.14 judged application "OffsiderPlaygroundRN" 0,0 411.43x923.43 (drawingOrder, guess)
+13 button "com.google.android.inputmethod.latin:id…" 83.43,587.05 40.76x44.19: at 103.81,609.14 judged application "OffsiderPlaygroundRN" 0,0 411.43x923.43 (drawingOrder, guess)
+14 button "com.google.android.inputmethod.latin:id…" 124.19,587.05 40.76x44.19: at 144.57,609.14 judged application "OffsiderPlaygroundRN" 0,0 411.43x923.43 (drawingOrder, guess)
+15 button "com.google.android.inputmethod.latin:id…" 164.95,587.05 40.76x44.19: at 185.33,609.14 judged application "OffsiderPlaygroundRN" 0,0 411.43x923.43 (drawingOrder, guess)
+16 button "com.google.android.inputmethod.latin:id…" 205.71,587.05 40.76x44.19: at 226.09,609.14 judged application "OffsiderPlaygroundRN" 0,0 411.43x923.43 (drawingOrder, guess)
+17 button "com.google.android.inputmethod.latin:id…" 246.48,587.05 40.76x44.19: at 266.86,609.14 judged application "OffsiderPlaygroundRN" 0,0 411.43x923.43 (drawingOrder, guess)
+18 button "com.google.android.inputmethod.latin:id…" 287.24,587.05 40.76x44.19: at 307.62,609.14 judged application "OffsiderPlaygroundRN" 0,0 411.43x923.43 (drawingOrder, guess)
+19 button "com.google.android.inputmethod.latin:id…" 328,587.05 40.76x44.19: at 348.38,609.14 judged application "OffsiderPlaygroundRN" 0,0 411.43x923.43 (drawingOrder, guess)
+20 button "com.google.android.inputmethod.latin:id…" 368.76,587.05 40.76x44.19: at 389.14,609.14 judged application "OffsiderPlaygroundRN" 0,0 411.43x923.43 (drawingOrder, guess)
+21 button "com.google.android.inputmethod.latin:id…" 1.90,639.24 40.76x58.67: at 22.28,668.58 judged application "OffsiderPlaygroundRN" 0,0 411.43x923.43 (drawingOrder, guess)
+22 button "com.google.android.inputmethod.latin:id…" 42.67,639.24 40.76x58.67: at 63.05,668.58 judged application "OffsiderPlaygroundRN" 0,0 411.43x923.43 (drawingOrder, guess)
+23 button "com.google.android.inputmethod.latin:id…" 83.43,639.24 40.76x58.67: at 103.81,668.58 judged application "OffsiderPlaygroundRN" 0,0 411.43x923.43 (drawingOrder, guess)
+24 button "com.google.android.inputmethod.latin:id…" 124.19,639.24 40.76x58.67: at 144.57,668.58 judged application "OffsiderPlaygroundRN" 0,0 411.43x923.43 (drawingOrder, guess)
+25 button "com.google.android.inputmethod.latin:id…" 164.95,639.24 40.76x58.67: at 185.33,668.58 judged application "OffsiderPlaygroundRN" 0,0 411.43x923.43 (drawingOrder, guess)
+26 button "com.google.android.inputmethod.latin:id…" 205.71,639.24 40.76x58.67: at 226.09,668.58 judged application "OffsiderPlaygroundRN" 0,0 411.43x923.43 (drawingOrder, guess)
+27 button "com.google.android.inputmethod.latin:id…" 246.48,639.24 40.76x58.67: at 266.86,668.58 judged application "OffsiderPlaygroundRN" 0,0 411.43x923.43 (drawingOrder, guess)
+28 button "com.google.android.inputmethod.latin:id…" 287.24,639.24 40.76x58.67: at 307.62,668.58 judged application "OffsiderPlaygroundRN" 0,0 411.43x923.43 (drawingOrder, guess)
+29 button "com.google.android.inputmethod.latin:id…" 328,639.24 40.76x58.67: at 348.38,668.58 judged application "OffsiderPlaygroundRN" 0,0 411.43x923.43 (drawingOrder, guess)
+30 button "com.google.android.inputmethod.latin:id…" 368.76,639.24 40.76x58.67: at 389.14,668.58 judged application "OffsiderPlaygroundRN" 0,0 411.43x923.43 (drawingOrder, guess)
+31 button "com.google.android.inputmethod.latin:id…" 1.90,697.90 60.95x59.05: at 32.38,727.42 judged application "OffsiderPlaygroundRN" 0,0 411.43x923.43 (drawingOrder, guess)
+32 button "com.google.android.inputmethod.latin:id…" 62.86,697.90 40.76x59.05: at 83.24,727.42 judged application "OffsiderPlaygroundRN" 0,0 411.43x923.43 (drawingOrder, guess)
+33 button "com.google.android.inputmethod.latin:id…" 103.62,697.90 40.76x59.05: at 124,727.42 judged application "OffsiderPlaygroundRN" 0,0 411.43x923.43 (drawingOrder, guess)
+34 button "com.google.android.inputmethod.latin:id…" 144.38,697.90 40.76x59.05: at 164.76,727.42 judged application "OffsiderPlaygroundRN" 0,0 411.43x923.43 (drawingOrder, guess)
+35 button "com.google.android.inputmethod.latin:id…" 185.14,697.90 40.76x59.05: at 205.52,727.42 judged application "OffsiderPlaygroundRN" 0,0 411.43x923.43 (drawingOrder, guess)
+36 button "com.google.android.inputmethod.latin:id…" 225.90,697.90 40.76x59.05: at 246.28,727.42 judged application "OffsiderPlaygroundRN" 0,0 411.43x923.43 (drawingOrder, guess)
+37 button "com.google.android.inputmethod.latin:id…" 266.67,697.90 40.76x59.05: at 287.05,727.42 judged application "OffsiderPlaygroundRN" 0,0 411.43x923.43 (drawingOrder, guess)
+38 button "com.google.android.inputmethod.latin:id…" 307.43,697.90 40.76x59.05: at 327.81,727.42 judged application "OffsiderPlaygroundRN" 0,0 411.43x923.43 (drawingOrder, guess)
+39 button "com.google.android.inputmethod.latin:id…" 348.19,697.90 61.33x59.05: at 378.86,727.42 judged application "OffsiderPlaygroundRN" 0,0 411.43x923.43 (drawingOrder, guess)
+40 button "com.google.android.inputmethod.latin:id…" 1.90,756.95 60.95x59.05: at 32.38,786.48 judged application "OffsiderPlaygroundRN" 0,0 411.43x923.43 (drawingOrder, guess)
+41 button "com.google.android.inputmethod.latin:id…" 62.86,756.95 40.76x59.05: at 83.24,786.48 judged application "OffsiderPlaygroundRN" 0,0 411.43x923.43 (drawingOrder, guess)
+42 button "com.google.android.inputmethod.latin:id…" 103.62,756.95 40.76x59.05: at 124,786.48 judged application "OffsiderPlaygroundRN" 0,0 411.43x923.43 (drawingOrder, guess)
+43 button "com.google.android.inputmethod.latin:id…" 144.38,756.95 40.76x59.05: at 164.76,786.48 judged application "OffsiderPlaygroundRN" 0,0 411.43x923.43 (drawingOrder, guess)
+44 button "com.google.android.inputmethod.latin:id…" 185.14,756.95 40.76x59.05: at 205.52,786.48 judged application "OffsiderPlaygroundRN" 0,0 411.43x923.43 (drawingOrder, guess)
+45 button "com.google.android.inputmethod.latin:id…" 225.90,756.95 40.76x59.05: at 246.28,786.48 judged application "OffsiderPlaygroundRN" 0,0 411.43x923.43 (drawingOrder, guess)
+46 button "com.google.android.inputmethod.latin:id…" 266.67,756.95 40.76x59.05: at 287.05,786.48 judged application "OffsiderPlaygroundRN" 0,0 411.43x923.43 (drawingOrder, guess)
+47 button "com.google.android.inputmethod.latin:id…" 307.43,756.95 40.76x59.05: at 327.81,786.48 judged application "OffsiderPlaygroundRN" 0,0 411.43x923.43 (drawingOrder, guess)
+48 button "com.google.android.inputmethod.latin:id…" 348.19,756.95 61.33x59.05: at 378.86,786.48 judged application "OffsiderPlaygroundRN" 0,0 411.43x923.43 (drawingOrder, guess)
+49 button "com.google.android.inputmethod.latin:id…" 1.90,816 60.95x59.43: at 32.38,845.72 judged application "OffsiderPlaygroundRN" 0,0 411.43x923.43 (drawingOrder, guess)
+50 button "com.google.android.inputmethod.latin:id…" 62.86,816 40.76x59.43: at 83.24,845.72 judged application "OffsiderPlaygroundRN" 0,0 411.43x923.43 (drawingOrder, guess)
+51 button "com.google.android.inputmethod.latin:id…" 103.62,816 203.81x59.43: at 205.53,845.72 judged application "OffsiderPlaygroundRN" 0,0 411.43x923.43 (drawingOrder, guess)
+52 button "com.google.android.inputmethod.latin:id…" 307.43,816 40.76x59.43: at 327.81,845.72 judged application "OffsiderPlaygroundRN" 0,0 411.43x923.43 (drawingOrder, guess)
+53 button "com.google.android.inputmethod.latin:id…" 348.19,816 61.33x59.43: at 378.86,845.72 judged application "OffsiderPlaygroundRN" 0,0 411.43x923.43 (drawingOrder, guess)
+54 image "android:id/input_method_nav_back" 8,875.43 69.71x48: at 42.85,899.43 judged application "OffsiderPlaygroundRN" 0,0 411.43x923.43 (drawingOrder, guess)

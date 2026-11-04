@@ -1,0 +1,19 @@
+# 18 nodes, 9 listed
+## no point read
+10 button "BackButton" 8,62 44x44: at 30,84 reaches
+11 header "tab-view-test-screen" 60,74 282x20.33: at 201,84.17 reaches
+12 text "tab-view-test-title" 105.67,122.33 190.67x24.00: at 201.00,134.33 reaches
+13 text "tab-view-current-tab" 129,162.33 144.33x20.33: at 201.17,172.50 reaches
+14 text "tab-view-home-panel" 130.33,198.67 141.33x20.33: at 201.00,208.83 reaches
+15 group "tab-view-tab-bar" 0,790.67 402x83.33: at 201,832.33 reaches
+16 button "tab-view-tab-home" 0,791.00 201x49: at 100.50,815.50 reaches
+17 button "tab-view-tab-settings" 201,791.00 201x49: at 301.50,815.50 reaches
+## hit-tested
+10 button "BackButton" 8,62 44x44: at 30,84 reaches
+11 header "tab-view-test-screen" 60,74 282x20.33: at 201,84.17 reaches
+12 text "tab-view-test-title" 105.67,122.33 190.67x24.00: at 201.00,134.33 reaches
+13 text "tab-view-current-tab" 129,162.33 144.33x20.33: at 201.17,172.50 reaches
+14 text "tab-view-home-panel" 130.33,198.67 141.33x20.33: at 201.00,208.83 reaches
+15 group "tab-view-tab-bar" 0,790.67 402x83.33: at 201,832.33 reaches
+16 button "tab-view-tab-home" 0,791.00 201x49: at 100.50,815.50 reaches
+17 button "tab-view-tab-settings" 201,791.00 201x49: at 301.50,815.50 reaches

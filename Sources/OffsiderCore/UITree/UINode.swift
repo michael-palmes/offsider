@@ -200,7 +200,25 @@ public struct UINode: Equatable, Sendable {
 
     /// This node, then its descendants depth first.
     public func flattened() -> [UINode] {
-        [self] + children.flatMap { $0.flattened() }
+        var nodes: [UINode] = []
+        appendFlattened(to: &nodes)
+        return nodes
+    }
+
+    private func appendFlattened(to nodes: inout [UINode]) {
+        nodes.append(self)
+        for child in children {
+            child.appendFlattened(to: &nodes)
+        }
+    }
+
+    /// True when this node or one inside it satisfies `predicate`, as `flattened().contains(where:)` without building the list.
+    public func contains(where predicate: (UINode) -> Bool) -> Bool {
+        if predicate(self) { return true }
+        for child in children where child.contains(where: predicate) {
+            return true
+        }
+        return false
     }
 
     /// The id trimmed of white space; nil when nothing is left.
