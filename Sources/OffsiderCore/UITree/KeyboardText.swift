@@ -117,9 +117,9 @@ public enum KeyboardText {
 
 /// Android's copy preview: SystemUI's overlay of what was just copied, on an emulator whatever was copied on the Mac.
 public enum CopyPreview {
-    static let package = "com.android.systemui"
+    public static let package = "com.android.systemui"
     /// Its root view's id, and the prefix of the ids beside it.
-    static let idPrefix = "com.android.systemui:id/clipboard"
+    public static let idPrefix = "com.android.systemui:id/clipboard"
 
     /// True when `root`, a window's tree, is the copy preview.
     public static func isPreview(_ root: UINode) -> Bool {

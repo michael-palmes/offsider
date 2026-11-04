@@ -210,8 +210,15 @@ struct KeyboardTextTests {
         var previewOnly = keysOnly
         previewOnly.windows = Self.screenTree().windows
 
-        #expect(VideoMaskPolicy.showsKeyboardText(Self.screenTree()))
-        #expect(VideoMaskPolicy.showsKeyboardText(previewOnly))
-        #expect(!VideoMaskPolicy.showsKeyboardText(keysOnly))
+        #expect(VideoMaskPolicy.keyboardTextRefusal(command: "record-video", in: Self.screenTree())?.contains("Close the keyboard") == true)
+        #expect(VideoMaskPolicy.keyboardTextRefusal(command: "record-video", in: previewOnly)?.contains("copy preview") == true)
+        #expect(VideoMaskPolicy.keyboardTextRefusal(command: "record-video", in: keysOnly) == nil)
+    }
+
+    @Test("an every-window read tells the copy preview from another untitled system window")
+    func previewInDump() throws {
+        let dump = try HelperTreeMappingTests.dump(Self.previewWindow + "," + HelperTreeMappingTests.statusBar.replacingOccurrences(of: #""focused":false}"#, with: #""focused":false,"root":{"i":9,"class":"android.widget.FrameLayout","package":"com.android.systemui","resourceId":"com.android.systemui:id/status_bar","bounds":[0,0,1080,142]}}"#))
+
+        #expect(dump.windows.compactMap(\.root).map(HelperTreeMapping.isCopyPreview) == [true, false])
     }
 }

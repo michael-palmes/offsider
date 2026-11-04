@@ -137,6 +137,14 @@ enum HelperTreeMapping {
         return (trees.map(\.1), HelperTreeIndex(pid: pid, generation: dump.generation, entries: entries))
     }
 
+    /// True when a window's views are the copy preview, read from the dump without mapping it.
+    static func isCopyPreview(_ root: HelperNode) -> Bool {
+        func holdsID(_ node: HelperNode) -> Bool {
+            node.resourceId?.hasPrefix(CopyPreview.idPrefix) == true || node.children.contains(where: holdsID)
+        }
+        return root.package == CopyPreview.package && holdsID(root)
+    }
+
     /// A floating keyboard's window and views span the screen around its keys, so each keyboard view is framed by what it holds.
     static func fittedToKeys(_ node: UINode) -> UINode {
         var fitted = node

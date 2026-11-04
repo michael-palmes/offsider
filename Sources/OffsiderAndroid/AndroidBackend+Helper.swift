@@ -211,10 +211,8 @@ extension AndroidBackend {
         guard !candidates.isEmpty else { return }
         var found = candidates
         if phones[serial] == nil, HelperBrokerSettings.isEmulatorSerial(serial), case .helper(let session)? = try? await treeSource(for: serial),
-           let dump = try? await helperDump(serial, session: session, options: HelperDumpOptions(windows: "all")) {
-            found = Set(dump.windows.filter { window in
-                candidates.contains(window.id) && (window.root.map { CopyPreview.isPreview(AndroidTreeMapping.node(from: HelperTreeMapping.rawNode($0), scale: 1)) } ?? true)
-            }.map(\.id))
+           let dump = try? await helperDump(serial, session: session, options: HelperDumpOptions(windows: "all", idleQuietMs: 0, idleTimeoutMs: 0)) {
+            found = Set(dump.windows.filter { window in candidates.contains(window.id) && (window.root.map(HelperTreeMapping.isCopyPreview) ?? true) }.map(\.id))
         }
         for index in windows.indices where found.contains(windows[index].id) {
             windows[index].copyPreview = true

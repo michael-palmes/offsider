@@ -61,18 +61,23 @@ public enum VideoMaskPolicy {
 
     /// True when the tree shows keyboard text beside the keys, a keyboard it could not read, or Android's copy preview.
     public static func showsKeyboardText(_ tree: UITree) -> Bool {
+        keyboardTextRefusal(command: "", in: tree) != nil
+    }
+
+    /// The refusal for what the tree shows: keyboard text first, then the copy preview; nil when neither shows.
+    public static func keyboardTextRefusal(command: String, in tree: UITree) -> String? {
         let viewport = tree.viewport
         let hidden = KeyboardText.hiddenElements(in: tree.roots).contains { node in
             guard let viewport, let frame = node.frame else { return true }
             return frame.isVisible(in: viewport)
         }
-        return hidden || !KeyboardText.unreadWindows(in: tree).isEmpty || !CopyPreview.frames(in: tree).isEmpty
-    }
-
-    /// The refusal when the keyboard shows suggestions or the clipboard.
-    public static func keyboardTextRefusal(command: String) -> String {
-        "\(command) will not start while the keyboard shows suggestions or the clipboard: video cannot be masked reliably frame by frame. "
-            + "Close the keyboard first, use `screenshot`, which masks it, or pass --unmasked to record anyway."
+        if hidden || !KeyboardText.unreadWindows(in: tree).isEmpty {
+            return "\(command) will not start while the keyboard shows suggestions or the clipboard: video cannot be masked reliably frame by frame. "
+                + "Close the keyboard first, use `screenshot`, which masks it, or pass --unmasked to record anyway."
+        }
+        guard !CopyPreview.frames(in: tree).isEmpty else { return nil }
+        return "\(command) will not start while Android's copy preview shows what was just copied: video cannot be masked reliably frame by frame. "
+            + "Wait a few seconds for it to close, use `screenshot`, which masks it, or pass --unmasked to record anyway."
     }
 
     /// The refusal when a password field is on screen.
