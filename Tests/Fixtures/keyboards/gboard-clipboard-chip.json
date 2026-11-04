@@ -1,0 +1,321 @@
+{
+ "id": 2,
+ "ok": true,
+ "generation": 1,
+ "idle": true,
+ "display": {
+  "displayId": 0,
+  "source": "DisplayManagerGlobal",
+  "logicalWidthPx": 2076,
+  "logicalHeightPx": 2152,
+  "rotation": 0,
+  "physicalWidthPx": 2076,
+  "physicalHeightPx": 2152,
+  "densityDpi": 390,
+  "densityStableDpi": 390
+ },
+ "windows": [
+  {
+   "id": 970,
+   "type": "system",
+   "layer": 3,
+   "displayId": 0,
+   "bounds": [
+    0,
+    0,
+    2076,
+    136
+   ],
+   "active": false,
+   "focused": false
+  },
+  {
+   "id": 968,
+   "type": "inputMethod",
+   "layer": 2,
+   "title": "Gboard",
+   "displayId": 0,
+   "bounds": [
+    0,
+    1372,
+    2076,
+    2152
+   ],
+   "active": false,
+   "focused": false,
+   "root": {
+    "i": 14,
+    "class": "android.widget.FrameLayout",
+    "package": "com.google.android.inputmethod.latin",
+    "bounds": [
+     98,
+     1372,
+     1972,
+     2152
+    ],
+    "children": [
+     {
+      "i": 12,
+      "class": "android.widget.FrameLayout",
+      "package": "com.google.android.inputmethod.latin",
+      "resourceId": "com.google.android.inputmethod.latin:id/0_resource_name_obfuscated",
+      "bounds": [
+       103,
+       1372,
+       1973,
+       2035
+      ],
+      "children": [
+       {
+        "i": 0,
+        "class": "android.widget.FrameLayout",
+        "package": "com.google.android.inputmethod.latin",
+        "resourceId": "com.google.android.inputmethod.latin:id/key_pos_header_access_points_menu",
+        "contentDescription": "Open features menu",
+        "bounds": [
+         103,
+         1372,
+         239,
+         1479
+        ],
+        "clickable": true,
+        "focusable": true
+       },
+       {
+        "i": 3,
+        "class": "android.widget.HorizontalScrollView",
+        "package": "com.google.android.inputmethod.latin",
+        "resourceId": "com.google.android.inputmethod.latin:id/0_resource_name_obfuscated",
+        "bounds": [
+         850,
+         1399,
+         1276,
+         1452
+        ],
+        "children": [
+         {
+          "i": 2,
+          "class": "android.view.ViewGroup",
+          "package": "com.google.android.inputmethod.latin",
+          "bounds": [
+           850,
+           1399,
+           1276,
+           1452
+          ],
+          "clickable": true,
+          "focusable": true,
+          "children": [
+           {
+            "i": 1,
+            "class": "android.widget.TextView",
+            "package": "com.google.android.inputmethod.latin",
+            "resourceId": "com.google.android.inputmethod.latin:id/0_resource_name_obfuscated",
+            "text": "synthetic-clip-0001",
+            "bounds": [
+             850,
+             1399,
+             1276,
+             1452
+            ]
+           }
+          ]
+         }
+        ]
+       },
+       {
+        "i": 4,
+        "class": "android.widget.FrameLayout",
+        "package": "com.google.android.inputmethod.latin",
+        "resourceId": "com.google.android.inputmethod.latin:id/key_pos_header_power_key",
+        "contentDescription": "Use voice typing",
+        "bounds": [
+         1837,
+         1372,
+         1973,
+         1479
+        ],
+        "clickable": true,
+        "focusable": true
+       },
+       {
+        "i": 5,
+        "class": "android.widget.FrameLayout",
+        "package": "com.google.android.inputmethod.latin",
+        "resourceId": "com.google.android.inputmethod.latin:id/key_pos_0_0",
+        "contentDescription": "q",
+        "bounds": [
+         103,
+         1499,
+         236,
+         1635
+        ],
+        "clickable": true,
+        "focusable": true
+       },
+       {
+        "i": 6,
+        "class": "android.widget.FrameLayout",
+        "package": "com.google.android.inputmethod.latin",
+        "resourceId": "com.google.android.inputmethod.latin:id/key_pos_0_1",
+        "contentDescription": "w",
+        "bounds": [
+         236,
+         1499,
+         369,
+         1635
+        ],
+        "clickable": true,
+        "focusable": true
+       },
+       {
+        "i": 7,
+        "class": "android.widget.FrameLayout",
+        "package": "com.google.android.inputmethod.latin",
+        "resourceId": "com.google.android.inputmethod.latin:id/key_pos_shift",
+        "contentDescription": "Shift",
+        "bounds": [
+         103,
+         1771,
+         270,
+         1907
+        ],
+        "clickable": true,
+        "focusable": true
+       },
+       {
+        "i": 8,
+        "class": "android.widget.FrameLayout",
+        "package": "com.google.android.inputmethod.latin",
+        "resourceId": "com.google.android.inputmethod.latin:id/key_pos_del",
+        "contentDescription": "Delete",
+        "bounds": [
+         1805,
+         1771,
+         1973,
+         1907
+        ],
+        "clickable": true,
+        "focusable": true
+       },
+       {
+        "i": 9,
+        "class": "android.widget.FrameLayout",
+        "package": "com.google.android.inputmethod.latin",
+        "resourceId": "com.google.android.inputmethod.latin:id/key_pos_switch_to_symbol",
+        "contentDescription": "Symbol keyboard",
+        "bounds": [
+         103,
+         1907,
+         270,
+         2035
+        ],
+        "clickable": true,
+        "focusable": true
+       },
+       {
+        "i": 10,
+        "class": "android.widget.FrameLayout",
+        "package": "com.google.android.inputmethod.latin",
+        "resourceId": "com.google.android.inputmethod.latin:id/key_pos_space",
+        "contentDescription": "Space",
+        "bounds": [
+         520,
+         1907,
+         1680,
+         2035
+        ],
+        "clickable": true,
+        "focusable": true
+       },
+       {
+        "i": 11,
+        "class": "android.widget.FrameLayout",
+        "package": "com.google.android.inputmethod.latin",
+        "resourceId": "com.google.android.inputmethod.latin:id/key_pos_ime_action",
+        "contentDescription": "Done",
+        "bounds": [
+         1805,
+         1907,
+         1973,
+         2035
+        ],
+        "clickable": true,
+        "focusable": true
+       }
+      ]
+     },
+     {
+      "i": 13,
+      "class": "android.widget.ImageView",
+      "package": "com.google.android.inputmethod.latin",
+      "resourceId": "android:id/input_method_nav_back",
+      "contentDescription": "Back",
+      "bounds": [
+       98,
+       2035,
+       268,
+       2152
+      ],
+      "clickable": true,
+      "focusable": true
+     }
+    ]
+   }
+  },
+  {
+   "id": 969,
+   "type": "application",
+   "layer": 1,
+   "title": "OffsiderPlaygroundRN",
+   "displayId": 0,
+   "bounds": [
+    0,
+    0,
+    2076,
+    2152
+   ],
+   "active": true,
+   "focused": true,
+   "root": {
+    "i": 16,
+    "class": "android.widget.FrameLayout",
+    "package": "com.mpalmes.offsider.playground.rn",
+    "bounds": [
+     0,
+     0,
+     2076,
+     2152
+    ],
+    "children": [
+     {
+      "i": 15,
+      "class": "android.widget.EditText",
+      "package": "com.mpalmes.offsider.playground.rn",
+      "resourceId": "text-input-short-field",
+      "contentDescription": "Two characters",
+      "bounds": [
+       39,
+       478,
+       2037,
+       586
+      ],
+      "clickable": true,
+      "focusable": true,
+      "focused": true,
+      "editable": true
+     }
+    ]
+   }
+  }
+ ],
+ "truncated": false,
+ "source": "getWindows",
+ "stats": {
+  "windows": 3
+ },
+ "timings": {
+  "totalMs": 20
+ },
+ "eventSeq": 1
+}

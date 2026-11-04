@@ -108,6 +108,9 @@ struct VideoMaskOptions: ParsableArguments {
         if VideoMaskPolicy.showsSecureField(tree, revealed: await TreeCache.revealedSecrets(for: device, backend: backend)) {
             throw CLIError(errorDescription: VideoMaskPolicy.secureFieldRefusal(command: command), reason: .videoUnmasked)
         }
+        if VideoMaskPolicy.showsKeyboardText(tree) {
+            throw CLIError(errorDescription: VideoMaskPolicy.keyboardTextRefusal(command: command), reason: .videoUnmasked)
+        }
         if let config, let shown = try configMatch(config.config, in: tree) {
             throw CLIError(
                 errorDescription: "\(command) will not start while \(shown), which \(MaskConfig.fileName) masks, is on screen: video cannot be masked reliably frame by frame. "

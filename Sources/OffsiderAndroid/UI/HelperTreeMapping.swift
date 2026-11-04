@@ -104,12 +104,14 @@ enum HelperTreeMapping {
     }
 
     /// The app window as `application`, its popups as `window`, then each keyboard as `keyboard`, all titled; bars and other apps' windows are left out.
+    /// Keyboard text beside the keys, and the copy preview when it is in front, are hidden before anything indexes them.
     static func roots(from dump: HelperDump, scale: Double, pid: Int32) -> (roots: [UINode], index: HelperTreeIndex) {
         guard let app = appWindow(in: dump), let appRoot = app.root else {
             return ([], HelperTreeIndex(pid: pid, generation: dump.generation, entries: []))
         }
+        let mappedApp = AndroidTreeMapping.node(from: rawNode(appRoot), scale: scale, rootRole: .application, rootLabel: app.title, windowLayer: app.layer)
         var trees: [(HelperNode, UINode)] = [
-            (appRoot, AndroidTreeMapping.node(from: rawNode(appRoot), scale: scale, rootRole: .application, rootLabel: app.title, windowLayer: app.layer)),
+            (appRoot, CopyPreview.isPreview(mappedApp) ? CopyPreview.hiding(mappedApp) : mappedApp),
         ]
         for popup in popups(over: app, in: dump) {
             guard let root = popup.root else { continue }
@@ -126,7 +128,7 @@ enum HelperTreeMapping {
         for keyboard in dump.windows where keyboard.type == "inputMethod" {
             guard let root = keyboard.root else { continue }
             let mapped = AndroidTreeMapping.node(from: rawNode(root), scale: scale, rootRole: .keyboard, rootLabel: keyboard.title, windowLayer: keyboard.layer)
-            trees.append((root, fittedToKeys(mapped)))
+            trees.append((root, KeyboardText.hiding(fittedToKeys(mapped))))
         }
         var entries: [HelperTreeEntry] = []
         for (helperRoot, mappedRoot) in trees {

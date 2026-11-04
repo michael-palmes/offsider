@@ -169,7 +169,9 @@ public final class AndroidBackend: DeviceBackend, AccessibilityActionPerforming,
     /// With views an app hides from accessibility but still draws, such as a screen behind a sheet; for masks only, never cached.
     public func maskTree(for id: DeviceID) async throws -> UITree {
         try await requireDrivableForeground(id.rawValue)
-        return try await readTree(id, point: nil, checkingWindows: true, everyView: true)
+        var tree = try await readTree(id, point: nil, checkingWindows: true, everyView: true)
+        await markCopyPreview(in: &tree, serial: id.rawValue)
+        return tree
     }
 
     public func startGapSamples(on id: DeviceID) async -> GapSamples? { nil }
