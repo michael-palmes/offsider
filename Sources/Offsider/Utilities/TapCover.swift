@@ -113,7 +113,7 @@ struct TapCover {
             if let bar = KnownOverlays.systemBar(at: UIPoint(x: asked.point.x, y: asked.point.y), in: tree), let barFrame = bar.frame {
                 var named = asked
                 named.target = asked.target ?? asked.matched
-                let clear = TapCover.clearParts(of: named, beside: barFrame, in: tree).first { part in
+                let clear = TapCover.clearParts(of: named, beside: barFrame, in: tree, index: shared.index).first { part in
                     KnownOverlays.systemBar(at: UIPoint(x: part.point.x, y: part.point.y), in: tree) == nil
                 }
                 if movingBesideBars, let clear {
@@ -335,9 +335,10 @@ struct TapCover {
 
     /// The tap moved to the middle of a part of the target that a cover at `coverFrame` leaves showing, at least 8 pt across, where the simulator's hit-test finds the target itself; full-width parts first. Only a hit-test proves the part is not under something the tree leaves out.
     @MainActor
-    static func reachablePart(of resolution: TapResolution, beside coverFrame: UIFrame, in tree: UITree, reader: FrontJudge.PointReader) async -> TapResolution? {
-        for moved in clearParts(of: resolution, beside: coverFrame, in: tree).prefix(partTries) {
-            guard let judging = Judging(moved, in: tree, beneath: false), judging.keyboard == nil,
+    static func reachablePart(of resolution: TapResolution, beside coverFrame: UIFrame, in tree: UITree, shared: Shared? = nil, reader: FrontJudge.PointReader) async -> TapResolution? {
+        guard let shared = shared ?? Shared(tree, stack: resolution.stack) else { return nil }
+        for moved in clearParts(of: resolution, beside: coverFrame, in: tree, index: shared.index).prefix(partTries) {
+            guard let judging = Judging(moved, on: shared, beneath: false), judging.keyboard == nil,
                   let hit = await reader.read(at: judging.point),
                   judging.reachesPart(hit: hit) else { continue }
             return moved
@@ -346,7 +347,7 @@ struct TapCover {
     }
 
     /// The tap moved to the middle of each part of the target that a cover at `coverFrame` leaves showing, best first; empty when none is 8 pt across. A wide switch toggles only at its knob, so its tap keeps the knob's x, and a part without it does not count.
-    static func clearParts(of resolution: TapResolution, beside coverFrame: UIFrame, in tree: UITree) -> [TapResolution] {
+    static func clearParts(of resolution: TapResolution, beside coverFrame: UIFrame, in tree: UITree, index: TreeIndex? = nil) -> [TapResolution] {
         guard let target = resolution.target, let frame = target.frame, let viewport = tree.viewport,
               let visible = AccessibilityTargetResolver.visibleRegion(of: target, frame: frame, viewport: viewport, roots: tree.roots),
               let overlap = visible.intersection(coverFrame) else { return [] }
@@ -354,7 +355,7 @@ struct TapCover {
         return parts(of: visible, outside: overlap, minimum: frame).compactMap { part in
             if let knob, knob < part.x || knob > part.x + part.width { return nil }
             let point = UIPoint(x: knob ?? part.center.x, y: part.center.y)
-            return AccessibilityTargetResolver.resolution(of: resolution, at: point, roots: tree.roots, viewport: viewport)
+            return AccessibilityTargetResolver.resolution(of: resolution, at: point, in: index ?? TreeIndex(roots: tree.roots), viewport: viewport)
         }
     }
 

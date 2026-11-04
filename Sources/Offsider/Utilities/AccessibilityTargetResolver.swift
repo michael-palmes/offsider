@@ -597,12 +597,16 @@ struct AccessibilityTargetResolver {
 
     /// `resolution` moved to `point`, with what may draw over it there.
     static func resolution(of resolution: TapResolution, at point: UIPoint, roots: [UINode], viewport: UIFrame) -> TapResolution {
+        self.resolution(of: resolution, at: point, in: TreeIndex(roots: roots), viewport: viewport)
+    }
+
+    /// `resolution(of:at:roots:viewport:)` over a tree already indexed.
+    static func resolution(of resolution: TapResolution, at point: UIPoint, in tree: TreeIndex, viewport: UIFrame) -> TapResolution {
         var moved = TapResolution(
             point: (x: point.x, y: point.y), isSwitchLikeControl: resolution.isSwitchLikeControl,
             target: resolution.target, matched: resolution.matched, stack: resolution.stack
         )
         guard let target = resolution.target ?? resolution.matched else { return moved }
-        let tree = TreeIndex(roots: roots)
         let candidates = coverCandidates(of: target, matched: resolution.matched ?? target, at: point, viewport: viewport, in: tree)
         let stack = resolution.stack ?? ScreenStack.build(tree, viewport: viewport)
         moved.coverCandidates = candidates.isEmpty ? [] : onTopCandidates(candidates, over: target, in: tree, stack: stack)

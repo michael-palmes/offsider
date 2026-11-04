@@ -63,7 +63,7 @@ struct FrontVerdictGoldenTests {
 
     static func judge(_ tree: UITree, listed: [Int], hitTest: Bool) -> FrontReading {
         var reading = FrontReading()
-        let plan = FrontJudge.Plan(tree: tree, indexes: listed, reading: reading, spareReads: hitTest ? FrontJudge.hitLimit : nil)
+        let plan = FrontJudge.Plan(tree: tree, indexes: listed, reading: reading, spareReads: hitTest ? 0 : nil)
         var hits: [Int: UINode] = [:]
         if hitTest {
             for entry in plan.contested.prefix(FrontJudge.hitLimit) {

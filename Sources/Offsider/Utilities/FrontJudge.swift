@@ -10,17 +10,17 @@ enum FrontJudge {
     static let hitLimit = 24
 
     /// Judges the elements at `indexes` (pre-order over `tree.roots`) and stores the reading on `tree`, merged with any it had; `everyPoint` hit-tests each on a simulator, not only those something labelled overlaps.
-    static func read(_ indexes: some Sequence<Int>, in tree: inout UITree, backend: any DeviceBackend, device: DeviceID, everyPoint: Bool = false) async {
+    static func read(_ indexes: some Sequence<Int>, in tree: inout UITree, index: TreeIndex? = nil, backend: any DeviceBackend, device: DeviceID, everyPoint: Bool = false) async {
         let reader = tree.platform == .android ? nil : PointReader(backend: backend, device: device)
         var reading = tree.front ?? FrontReading()
         let judged = tree
         await Timings.measure("front") {
-            let plan = Plan(tree: judged, indexes: indexes, reading: reading, spareReads: reader == nil ? nil : everyPoint ? hitLimit : 0)
+            let plan = Plan(tree: judged, indexes: indexes, reading: reading, spareReads: reader == nil ? nil : everyPoint ? hitLimit : 0, index: index)
             let contested = Array((everyPoint ? plan.unblocked : plan.contested).prefix(hitLimit))
             let hits = await hitTests(contested.map { ($0.index, $0.judging) }, reader: reader)
             plan.record(into: &reading, hits: hits, hitTested: reader != nil, platform: judged.platform)
             if let reader {
-                await readParts(of: contested, into: &reading, in: judged, reader: reader)
+                await readParts(of: contested, into: &reading, in: judged, shared: plan.shared, reader: reader)
             }
             plan.settleGroups(in: &reading)
         }
@@ -28,7 +28,7 @@ enum FrontJudge {
     }
 
     /// A tap goes to the part of a covered element beside its cover, so an element counts when that part reaches it, read as a tap reads it and only once its centre is known to be covered.
-    private static func readParts(of contested: [Plan.Entry], into reading: inout FrontReading, in tree: UITree, reader: PointReader) async {
+    private static func readParts(of contested: [Plan.Entry], into reading: inout FrontReading, in tree: UITree, shared: TapCover.Shared?, reader: PointReader) async {
         let spare = (hitLimit - contested.count) / TapCover.partTries
         let covered = contested.compactMap { entry -> (Plan.Entry, UIFrame)? in
             guard let verdict = reading.covered[entry.index], verdict.leavesPartShowing, let frame = verdict.touchFrame else { return nil }
@@ -38,7 +38,7 @@ enum FrontJudge {
         let reached = await withTaskGroup(of: Int?.self) { group in
             for (entry, frame) in covered {
                 group.addTask { @MainActor in
-                    await TapCover.reachablePart(of: entry.resolution, beside: frame, in: tree, reader: reader) == nil ? nil : entry.index
+                    await TapCover.reachablePart(of: entry.resolution, beside: frame, in: tree, shared: shared, reader: reader) == nil ? nil : entry.index
                 }
             }
             var indexes: [Int] = []
@@ -79,7 +79,7 @@ enum FrontJudge {
             }
         }
         guard !indexes.isEmpty else { return }
-        await read(indexes.sorted(), in: &tree, backend: backend, device: device, everyPoint: everyPoint)
+        await read(indexes.sorted(), in: &tree, index: index, backend: backend, device: device, everyPoint: everyPoint)
     }
 
     /// The elements judged without a device: pages and the drawing order, and which need a hit-test.
@@ -99,14 +99,17 @@ enum FrontJudge {
         var entries: [Entry] = []
         /// Each unlabelled group asked about, with the labelled elements and controls it holds.
         var groups: [Int: [Int]] = [:]
+        /// What every judgement on the tree shares, for the parts beside covers read after.
+        var shared: TapCover.Shared?
 
-        /// `spareReads` is how many points may be hit-tested for what a group holds, beyond those asked about: a group needing more stays as its own point says. Nil when reading costs nothing.
-        init(tree: UITree, indexes: some Sequence<Int>, reading: FrontReading, spareReads: Int? = nil) {
+        /// `spareReads` is how many points may be hit-tested for what a group holds, beyond those asked about: a group needing more stays as its own point says. Nil when reading costs nothing. `index`, when given, is already read over `tree.roots`.
+        init(tree: UITree, indexes: some Sequence<Int>, reading: FrontReading, spareReads: Int? = nil, index: TreeIndex? = nil) {
             guard let viewport = tree.viewport else { return }
-            let indexed = TreeIndex(roots: tree.roots)
+            let indexed = index ?? TreeIndex(roots: tree.roots)
             let flat = indexed.nodes
             let stack = ScreenStack.build(indexed, viewport: viewport)
             guard let shared = TapCover.Shared(tree, index: indexed, stack: stack) else { return }
+            self.shared = shared
             let occluders = AccessibilityTargetResolver.Occluders(indexed, viewport: viewport)
             let indicators = ScrollIndicator.all(in: tree.roots)
             var asked = Set(indexes)
