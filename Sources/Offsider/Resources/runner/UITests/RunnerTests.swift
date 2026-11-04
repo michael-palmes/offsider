@@ -2,6 +2,14 @@ import XCTest
 
 /// One test that serves Offsider's requests until it goes idle or is told to stop.
 final class RunnerTests: XCTestCase {
+    /// XCTest's own screenshots and screen recordings would keep whatever the screen shows, passwords too; the third key is an older Xcode's name.
+    static let captureOffKeys = ["DisableDiagnosticScreenshots", "DisableDiagnosticScreenRecordings", "DisableScreenshots"]
+
+    override class func setUp() {
+        for key in captureOffKeys { UserDefaults.standard.set(true, forKey: key) }
+        super.setUp()
+    }
+
     func testServe() throws {
         let environment = ProcessInfo.processInfo.environment
         let token = try XCTUnwrap(environment["OFFSIDER_RUNNER_TOKEN"].flatMap { $0.isEmpty ? nil : $0 }, "OFFSIDER_RUNNER_TOKEN is required")

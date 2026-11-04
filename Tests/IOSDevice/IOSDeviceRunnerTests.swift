@@ -865,6 +865,44 @@ struct RunnerClientTests {
         }
         #expect(error?.reason == reason)
     }
+
+    @Test("a password field the runner refuses never echoes the text, and says how each kind of text can go in", arguments: [
+        ("hunter2", false, "`offsider doctor --device U` passes"),
+        ("pässword", false, "US keyboard keys"),
+        ("hunter2", true, "does not replace its text"),
+    ])
+    func secureFieldRefusal(text: String, replace: Bool, advice: String) async throws {
+        let transport = FakeRunnerTransport()
+        transport.failure = ("/type", 422, "secure_field")
+        let error = await #expect(throws: IOSDeviceError.self) {
+            try await RunnerClient(udid: "U", token: "t", transport: transport).type(text, replace: replace, app: nil)
+        }
+        #expect(error?.reason == .securePasteRefused)
+        #expect(error?.message.contains(advice) == true)
+        #expect(error?.message.contains(text) == false)
+        #expect(error?.message.lowercased().contains("nothing was typed") == true)
+    }
+
+    @Test("text for a field the command already read as a password field never leaves the Mac", arguments: [false, true])
+    func knownSecureFocusSendsNothing(replace: Bool) async throws {
+        let transport = FakeRunnerTransport()
+        let error = await #expect(throws: IOSDeviceError.self) {
+            try await InputSecrecy.$knownFocus.withValue(.secure) {
+                try await RunnerClient(udid: "U", token: "t", transport: transport).type("hunter2", replace: replace, app: nil)
+            }
+        }
+        #expect(error?.reason == .securePasteRefused)
+        #expect(transport.calls.isEmpty)
+    }
+
+    @Test("a field read as not a password field, or not read, still goes to the runner, which checks again", arguments: [KnownSecureFocus.notSecure, .unknown])
+    func otherFocusReachesRunner(focus: KnownSecureFocus) async throws {
+        let transport = FakeRunnerTransport()
+        try await InputSecrecy.$knownFocus.withValue(focus) {
+            try await RunnerClient(udid: "U", token: "t", transport: transport).type("café", replace: false, app: nil)
+        }
+        #expect(transport.calls.map(\.path) == ["/type"])
+    }
 }
 
 /// Counts how many bodies run at once.

@@ -45,6 +45,8 @@ When `devices status --device <UDID> --json` says `"testDevice": true` with no `
 | `key`, `key-sequence`, `key-combo`, `touch`, `gesture`, `drag`, `lock`, `side-button`, `siri` | broker | refused | `xcode_too_old` |
 
 - `xcode_too_old` exits 9; its hint selects an installed Xcode 27 and runs its first launch, or says to install Xcode 27. The device can run iOS or iPadOS 26 or 27.
+- A password field takes only US keyboard text through the broker, as XCTest logs what it types: where the table says runner, and for `--replace`, `type` into one exits 1 `secure_paste_refused` with nothing typed. Run `doctor` and ask the user to log in to the Mac's desktop.
+- A text field showing only its placeholder reads `value: null`, with the placeholder in `native.hint` (`hint=` in `--summary` when it has no label or id).
 - `apple-pay` is refused on a device: press `button side-button` twice instead. `app-switch` is refused too.
 
 ## The runner and `--app`

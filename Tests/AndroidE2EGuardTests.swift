@@ -162,10 +162,19 @@ struct E2EDeviceAllowanceTests {
     static let now = Date(timeIntervalSince1970: 1_790_000_000)
     static let phone = "R58M123ABC"
 
-    static func status(expires: String?, apps: [String] = [], allowed: Bool = true, id: String = phone) -> String {
+    static func status(expires: String?, apps: [String] = [], allowed: Bool = true, id: String = phone, testDevice: Bool = false) -> String {
         let expiry = expires.map { "\"\($0)\"" } ?? "null"
         let list = apps.map { "\"\($0)\"" }.joined(separator: ",")
-        return #"{"version":1,"devices":[{"platform":"android","id":"\#(id)","name":"Pixel 9","added":"2026-09-21T12:00:00Z","expires":\#(expiry),"apps":[\#(list)],"active":\#(allowed)}],"allowed":\#(allowed),"refusal":null}"#
+        let test = testDevice ? #","testDevice":true"# : ""
+        return #"{"version":1,"devices":[{"platform":"android","id":"\#(id)","name":"Pixel 9","added":"2026-09-21T12:00:00Z","expires":\#(expiry),"apps":[\#(list)]\#(test),"active":\#(allowed)}],"allowed":\#(allowed),"refusal":null}"#
+    }
+
+    @Test("a suite's app must be pinned, unless a person made the whole device a test device")
+    func pinOrTestDevice() {
+        let app = "com.mpalmes.offsider.playground"
+        #expect(E2EDeviceAllowance.verdict(device: Self.phone, exitCode: 0, json: Self.status(expires: nil), now: Self.now, app: app)?.contains("does not pin") == true)
+        #expect(E2EDeviceAllowance.verdict(device: Self.phone, exitCode: 0, json: Self.status(expires: nil, apps: [app]), now: Self.now, app: app) == nil)
+        #expect(E2EDeviceAllowance.verdict(device: Self.phone, exitCode: 0, json: Self.status(expires: nil, testDevice: true), now: Self.now, app: app) == nil)
     }
 
     @Test("a device the CLI refuses stops the run and quotes the exact command a person runs")
