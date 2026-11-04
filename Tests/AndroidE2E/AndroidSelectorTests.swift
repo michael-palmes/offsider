@@ -75,6 +75,22 @@ struct AndroidSelectorTests {
         _ = try await AndroidE2E.waitForLabel(of: "long-scroll-test-state") { $0 == "Long Scroll Selected: Row 3" }
     }
 
+    @Test("--id on a row Android lists only as a hidden branch, such as one under the navigation bar, exits 2 saying it is hidden, not Did you mean")
+    func hiddenRowNamed() async throws {
+        try await AndroidE2E.open("long-scroll-test", waitingFor: "long-scroll-test-row-3")
+        let context = try #require(try await AndroidE2E.tree()["context"] as? [String: Any])
+        let branches = (context["hiddenBranches"] as? [[String: Any]]) ?? []
+        let id = try #require(branches.lazy.compactMap { $0["id"] as? String }.first { $0.hasPrefix("long-scroll-test-row-") }, "no row is listed as hidden: \(branches)")
+
+        let before = try await AndroidE2E.label(of: "long-scroll-test-state")
+        let result = try await AndroidE2E.offsider("tap --id \(id) --wait-timeout 0")
+
+        #expect(result.exitCode == 2, "\(result.stderr)")
+        #expect(result.stderr.contains("Android marks it hidden"), "\(result.stderr)")
+        #expect(!result.stderr.contains("Did you mean"), "\(result.stderr)")
+        #expect(try await AndroidE2E.label(of: "long-scroll-test-state") == before, "the refused tap reached a row")
+    }
+
     @Test("with the keyboard up, --id still finds the text field")
     func idWithKeyboard() async throws {
         try await AndroidE2E.open("text-input", waitingFor: "text-input-field")

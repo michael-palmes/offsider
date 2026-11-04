@@ -185,10 +185,14 @@ struct AccessibilityPoller {
     ) async throws -> Polled<TapResolution> {
         let resolver: (UITree, Bool) async throws -> TapResolution = { tree, explain in
             let chosen: MatchPick? = await pick?(tree.roots) ?? nil
-            return try AccessibilityTargetResolver.resolveTap(
-                roots: tree.roots, query: query, elementType: elementType, allowOffscreen: allowOffscreen, explainFailures: explain, pick: chosen,
-                front: tree.front, logger: logger
-            )
+            do {
+                return try AccessibilityTargetResolver.resolveTap(
+                    roots: tree.roots, query: query, elementType: elementType, allowOffscreen: allowOffscreen, explainFailures: explain, pick: chosen,
+                    front: tree.front, logger: logger
+                )
+            } catch let miss as ElementResolutionError where explain {
+                throw HiddenBranchMiss.wrapping(miss, query: query, tree: tree)
+            }
         }
         let polled = try await poll(
             waitTimeout: waitTimeout,
