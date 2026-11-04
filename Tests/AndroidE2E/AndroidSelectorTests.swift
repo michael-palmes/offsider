@@ -75,20 +75,49 @@ struct AndroidSelectorTests {
         _ = try await AndroidE2E.waitForLabel(of: "long-scroll-test-state") { $0 == "Long Scroll Selected: Row 3" }
     }
 
-    @Test("--id on a row Android lists only as a hidden branch, such as one under the navigation bar, exits 2 saying it is hidden, not Did you mean")
+    /// The emulator's navigation overlay, `gestural` or `threebutton`, from the one enabled in its category.
+    static func navigationOverlay() async throws -> String? {
+        let listing = try await AndroidE2E.shell("cmd overlay list")
+        return listing.split(separator: "\n").first { $0.contains("[x] com.android.internal.systemui.navbar.") }
+            .map { String($0.split(separator: ".").last ?? "") }
+    }
+
+    static func setNavigation(_ overlay: String) async throws {
+        _ = try await AndroidE2E.shell("cmd overlay enable-exclusive --category com.android.internal.systemui.navbar.\(overlay)")
+        _ = try await AndroidE2E.eventually(timeout: 15) { try await navigationOverlay() == overlay }
+    }
+
+    @Test("--id on a row under three-button navigation's bar, which Android lists only as a hidden branch, exits 2 saying so, not Did you mean")
     func hiddenRowNamed() async throws {
+        // Gesture navigation lists no bar, so the test sets three-button navigation and puts the AVD's own mode back.
+        let before = try await Self.navigationOverlay()
+        if before != "threebutton" { try await Self.setNavigation("threebutton") }
+        do {
+            try await Self.tapHiddenRow()
+        } catch {
+            if let before, before != "threebutton" { try? await Self.setNavigation(before) }
+            throw error
+        }
+        if let before, before != "threebutton" { try await Self.setNavigation(before) }
+    }
+
+    static func tapHiddenRow() async throws {
         try await AndroidE2E.open("long-scroll-test", waitingFor: "long-scroll-test-row-3")
+        let barShown = try await AndroidE2E.eventually(timeout: 15) {
+            try await AndroidE2E.shell("dumpsys window | grep -c 'Window{.* NavigationBar' || true").trimmingCharacters(in: .whitespacesAndNewlines) != "0"
+        }
+        #expect(barShown, "the navigation bar never came up")
         let context = try #require(try await AndroidE2E.tree()["context"] as? [String: Any])
         let branches = (context["hiddenBranches"] as? [[String: Any]]) ?? []
         let id = try #require(branches.lazy.compactMap { $0["id"] as? String }.first { $0.hasPrefix("long-scroll-test-row-") }, "no row is listed as hidden: \(branches)")
 
-        let before = try await AndroidE2E.label(of: "long-scroll-test-state")
+        let state = try await AndroidE2E.label(of: "long-scroll-test-state")
         let result = try await AndroidE2E.offsider("tap --id \(id) --wait-timeout 0")
 
         #expect(result.exitCode == 2, "\(result.stderr)")
-        #expect(result.stderr.contains("Android marks it hidden"), "\(result.stderr)")
+        #expect(result.stderr.contains("is under the navigation bar"), "\(result.stderr)")
         #expect(!result.stderr.contains("Did you mean"), "\(result.stderr)")
-        #expect(try await AndroidE2E.label(of: "long-scroll-test-state") == before, "the refused tap reached a row")
+        #expect(try await AndroidE2E.label(of: "long-scroll-test-state") == state, "the refused tap reached a row")
     }
 
     @Test("with the keyboard up, --id still finds the text field")

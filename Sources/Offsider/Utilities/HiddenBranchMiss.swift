@@ -6,12 +6,15 @@ struct HiddenBranchMiss: LocalizedError, UserFacingError, OffsiderFailure {
     let miss: ElementResolutionError
     let selector: String
     let branch: UITreeContext.HiddenBranch
-    let underBar: Bool
+    /// `the navigation bar` or `the status bar`, when one lies over it.
+    let bar: String?
 
     /// `miss` naming the hidden branch the query matches, when `tree` lists one; else `miss` as it was.
     static func wrapping(_ miss: ElementResolutionError, query: AccessibilityQuery, tree: UITree) -> any Error {
         guard case .notFound = miss, let branch = tree.namedHiddenBranches?.first(where: { matches($0, query) }) else { return miss }
-        return HiddenBranchMiss(miss: miss, selector: query.selectorDescription, branch: branch, underBar: underNavigationBar(branch.frame, in: tree))
+        let over = bar(over: branch.frame, in: tree)
+        let name = over?.frame.map { $0.y <= (tree.viewport?.y ?? 0) + 1 ? "the status bar" : "the navigation bar" }
+        return HiddenBranchMiss(miss: miss, selector: query.selectorDescription, branch: branch, bar: name)
     }
 
     /// The id or label the helper named it by; never a value, which it does not send.
@@ -29,22 +32,18 @@ struct HiddenBranchMiss: LocalizedError, UserFacingError, OffsiderFailure {
         }
     }
 
-    /// A listed system window along the app's bottom edge, at least 90 % as wide as the app's and at most a quarter as tall, over part of `frame`.
-    static func underNavigationBar(_ frame: UIFrame?, in tree: UITree) -> Bool {
-        guard let frame, let windows = tree.windows,
-              let app = (windows.first { $0.kind == "application" && $0.active } ?? windows.first { $0.kind == "application" })?.bounds,
-              app.width > 0, app.height > 0 else { return false }
-        return windows.contains { window in
-            guard window.kind == "system", let bar = window.bounds, bar.width >= 0.9 * app.width, bar.height > 0, bar.height <= app.height / 4,
-                  bar.y > app.y + 1, bar.y + bar.height >= app.y + app.height - 1 else { return false }
-            return frame.intersection(bar) != nil
-        }
+    /// The Android bar over the part of `frame` the screen shows, as a selector tap's cover check finds it.
+    static func bar(over frame: UIFrame?, in tree: UITree) -> UINode? {
+        guard let frame else { return nil }
+        let shown = tree.viewport.flatMap(frame.intersection) ?? frame
+        return KnownOverlays.systemBar(at: shown.center, in: tree)
     }
 
     var userFacingDescription: String {
         let place = branch.frame.map { " at \($0.summary)" } ?? ""
-        if underBar {
-            return "\(selector) is under the navigation bar\(place), so Android marks it hidden and nothing was sent. Scroll it up above the bar, then retry."
+        if let bar {
+            let way = bar == "the status bar" ? "down below" : "up above"
+            return "\(selector) is under \(bar)\(place), so Android marks it hidden and nothing was sent. Scroll it \(way) the bar, then retry."
         }
         return "\(selector) is on the page\(place), but Android marks it hidden, as it does a view another covers or clips, so nothing was sent. Scroll it into view or close what covers it, then retry."
     }
