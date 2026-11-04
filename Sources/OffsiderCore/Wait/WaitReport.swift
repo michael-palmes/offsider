@@ -8,7 +8,7 @@ public struct WaitReport: Equatable, Sendable {
         self.outcome = outcome
     }
 
-    /// `{"met":true,"elapsedMs":1200,"reason":"on screen","match":{...},"matched":null,"nearest":[]}`; `nearest` lists near misses after a not-found timeout.
+    /// `{"met":true,"elapsedMs":1200,"reason":"on screen","match":{...},"matched":null,"nearest":[],"leaveOut":null,"sparse":false}`; `nearest` lists near misses after a not-found timeout, and `sparse` marks a `--settled` pass on a nearly empty tree.
     public func jsonLine() -> String {
         UntrustedPaths.marked(.object([
             ("met", .bool(outcome.met)),
@@ -18,6 +18,7 @@ public struct WaitReport: Equatable, Sendable {
             ("matched", .optional(outcome.matched) { .object([("by", .string($0.by)), ("text", .string($0.text))]) }),
             ("nearest", Self.nearest(outcome)),
             ("leaveOut", .optional(outcome.movingPart) { .string($0.flag) }),
+            ("sparse", .bool(outcome.sparse)),
         ]), Self.untrustedPaths).rendered(compact: true)
     }
 

@@ -61,6 +61,8 @@ struct ContentView: View {
             TabViewTestView()
         case "motion-test":
             MotionTestView()
+        case "crash-test":
+            CrashTestView()
         case "slider-value-test":
             SliderValueTestView()
         case "searchable-test":
@@ -130,7 +132,8 @@ struct MainMenuView: View {
             ("landscape-coordinate-test", "Landscape Coordinates", "Verifies orientation-aware taps"),
             ("switch-test", "Switch Test", "SwiftUI and UIKit switch controls"),
             ("tab-view-test", "TabView Test", "Standard SwiftUI tab switching"),
-            ("motion-test", "Motion Test", "Motion only screenshots can see")
+            ("motion-test", "Motion Test", "Motion only screenshots can see"),
+            ("crash-test", "Crash Test", "Buttons that crash or quit the app")
         ]),
         ("Input & Text", [
             ("text-input", "Text Input", "Text typed by CLI commands"),

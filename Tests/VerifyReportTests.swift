@@ -13,9 +13,10 @@ struct VerifyReportTests {
         let report = VerifyReport(command: "key", target: "keycode 40", dispatched: .yes, verified: true, attempts: 1, change: .accessibilityTree)
         let json = try object(report)
         #expect(Set(json.keys) == [
-            "version", "command", "target", "dispatched", "verified", "attempts", "change", "changes", "changesTruncated", "ignored", "note", "style",
+            "version", "command", "target", "dispatched", "verified", "attempts", "change", "changes", "changesTruncated", "ignored", "note", "textCheck", "style",
             "elapsedMs", "phasesMs", "exitCode", "error",
         ])
+        #expect(json["textCheck"] is NSNull)
         #expect((json["ignored"] as? [Any])?.isEmpty == true)
         #expect((json["changes"] as? [Any])?.isEmpty == true)
         #expect(json["changesTruncated"] as? Int == 0)

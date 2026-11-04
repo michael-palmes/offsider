@@ -292,6 +292,20 @@ public struct ImageFingerprint: Equatable, Sendable {
         return touched
     }
 
+    /// `tiles` with every tile beside one of them, across or diagonally.
+    public func dilated(_ tiles: Set<Int>) -> Set<Int> {
+        var grown = tiles
+        for tile in tiles {
+            let row = tile / columns, column = tile % columns
+            for nearRow in max(0, row - 1)...min(rows - 1, row + 1) {
+                for nearColumn in max(0, column - 1)...min(columns - 1, column + 1) {
+                    grown.insert(nearRow * columns + nearColumn)
+                }
+            }
+        }
+        return grown
+    }
+
     private static func overlaps(column: Int, row: Int, left: Int, right: Int, top: Int, bottom: Int, width: Int, height: Int, columns: Int, rows: Int) -> Bool {
         let tileLeft = column * width / columns, tileRight = (column + 1) * width / columns
         let tileTop = (row * height + rows - 1) / rows, tileBottom = ((row + 1) * height + rows - 1) / rows
@@ -309,16 +323,30 @@ public struct ImageFingerprint: Equatable, Sendable {
 public enum ScreenChange {
     /// The share of compared tiles that counts as motion: a transition, a video or a carousel moves more, a ticking label, a caret or a small spinner less.
     public static let movingFraction = 0.1
+    /// The share of compared tiles a change away from the target needs: a repaint such as a glass back button's covers less.
+    public static let elsewhereFraction = 0.02
+
+    public enum Verdict: Equatable, Sendable {
+        case changed
+        /// Pixels changed, but too few and too far from the target to show the input worked.
+        case small
+        case none
+    }
 
     /// Tiles in `ignoring` never count; changed tiles still moving after the input count only when still across the before-shots and over `movingFraction`.
-    public static func detect(before: [ImageFingerprint], after: [ImageFingerprint], ignoring: Set<Int> = []) -> Bool {
-        guard let reference = before.last, let last = after.last else { return false }
-        guard let changed = reference.changedTiles(comparedTo: last)?.subtracting(ignoring) else { return true }
-        if !changed.isSubset(of: movingTiles(after) ?? []) { return true }
-        guard before.count > 1, let movingBefore = movingTiles(before) else { return false }
+    /// A still change touching `near`, the target's tiles, counts; elsewhere, and with no `near`, it needs `elsewhereFraction` of the tiles.
+    public static func detect(before: [ImageFingerprint], after: [ImageFingerprint], ignoring: Set<Int> = [], near: Set<Int> = []) -> Verdict {
+        guard let reference = before.last, let last = after.last else { return .none }
+        guard let changed = reference.changedTiles(comparedTo: last)?.subtracting(ignoring) else { return .changed }
         let compared = max(min(reference.comparedTileCount, last.comparedTileCount), 1)
+        let still = changed.subtracting(movingTiles(after) ?? [])
+        if !still.isEmpty {
+            if !still.isDisjoint(with: near) { return .changed }
+            return Double(still.count) / Double(compared) + 1e-9 >= elsewhereFraction ? .changed : .small
+        }
+        guard before.count > 1, let movingBefore = movingTiles(before) else { return .none }
         let started = Double(changed.subtracting(movingBefore).count) / Double(compared)
-        return ScreenCompare.outcome(changedFraction: started, threshold: movingFraction) == .changed
+        return ScreenCompare.outcome(changedFraction: started, threshold: movingFraction) == .changed ? .changed : .none
     }
 
     /// Tiles that differ between any two of `shots`; nil when two cannot be compared tile for tile.

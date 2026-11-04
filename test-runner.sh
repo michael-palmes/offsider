@@ -318,6 +318,7 @@ SIMULATOR_SUITES=(
     "TouchTests"
     "TypeTests"
     "VerifyTests"
+    "AppExitE2ETests"
     "WaitSettleE2ETests"
 )
 ANDROID_SUITES=(

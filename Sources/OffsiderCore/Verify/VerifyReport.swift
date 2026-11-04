@@ -24,6 +24,8 @@ public struct VerifyReport: Equatable, Sendable {
     public let changesTruncated: Int
     public let ignored: [VerifyIgnored]
     public let note: VerifyNote?
+    /// `type` only: whether the field holds the text sent.
+    public let textCheck: TextCheck?
     public let style: TapDeliveryStyle?
     /// From the command's start to the report, in seconds.
     public let elapsed: TimeInterval
@@ -41,6 +43,7 @@ public struct VerifyReport: Equatable, Sendable {
         changesTruncated: Int = 0,
         ignored: [VerifyIgnored] = [],
         note: VerifyNote? = nil,
+        textCheck: TextCheck? = nil,
         style: TapDeliveryStyle? = nil,
         elapsed: TimeInterval = 0,
         phases: VerifyPhases = VerifyPhases(),
@@ -57,6 +60,7 @@ public struct VerifyReport: Equatable, Sendable {
         self.changesTruncated = changesTruncated
         self.ignored = ignored
         self.note = note
+        self.textCheck = textCheck
         self.style = style
         self.elapsed = elapsed
         self.phases = phases
@@ -73,7 +77,7 @@ public struct VerifyReport: Equatable, Sendable {
     static let untrustedPaths = UntrustedPaths.under("changes[]", ["node", "old", "new"]) + ["ignored[].node"]
         + UntrustedPaths.under("error", UntrustedPaths.errorFields)
 
-    /// Keys in order: version, command, target, dispatched, verified, attempts, change, changes, changesTruncated, ignored, note, style, elapsedMs, phasesMs, exitCode, error, then `untrusted` when any applies.
+    /// Keys in order: version, command, target, dispatched, verified, attempts, change, changes, changesTruncated, ignored, note, textCheck, style, elapsedMs, phasesMs, exitCode, error, then `untrusted` when any applies.
     public func jsonData() throws -> Data {
         let members: [(String, OrderedJSON)] = [
             ("version", .integer(version)),
@@ -87,6 +91,7 @@ public struct VerifyReport: Equatable, Sendable {
             ("changesTruncated", .integer(changesTruncated)),
             ("ignored", .array(ignored.map(\.jsonValue))),
             ("note", .optional(note?.rawValue, OrderedJSON.string)),
+            ("textCheck", .optional(textCheck?.rawValue, OrderedJSON.string)),
             ("style", .optional(style?.rawValue, OrderedJSON.string)),
             ("elapsedMs", .integer(VerifyPhases.milliseconds(elapsed))),
             ("phasesMs", phases.jsonValue),

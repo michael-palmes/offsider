@@ -309,6 +309,52 @@ struct VerifierTests {
         #expect(outcome.changes.contains { $0.kind == .removed })
     }
 
+    @Test("a selector tap whose only change is the keyboard closing is unverified with keyboard_closed and sent once; any other input still verifies with the note", arguments: [true, false])
+    func keyboardOnlyTap(fails: Bool) async throws {
+        let open = Self.keyboardScreen(keyboard: true)
+        let fake = FakeSimulator(trees: [open, open, Self.keyboardScreen(keyboard: false)])
+        var sent = 0
+
+        let outcome = try await Verifier.run(
+            styles: [.simulator, .physical], timeout: .seconds(1), dependencies: fake.dependencies, keyboardOnlyFails: fails
+        ) { _ in sent += 1 }
+
+        #expect(outcome.verified == !fails)
+        #expect(outcome.note == .keyboardClosed)
+        #expect(sent == 1)
+        #expect(outcome.changes.contains { $0.kind == .removed })
+    }
+
+    @Test("a keyboard-only tap says once that only the keyboard closed, and a tap on Done or a key counts as the keyboard's own")
+    func keyboardOnlyLine() {
+        let device = DeviceID(rawValue: "00000000-0000-0000-0000-000000000001", platform: .ios)
+        let request = VerifyRequest(command: "tap", subject: "Tap on id=submit", target: "id=submit", backend: StubBackend(session: RecordingInputSession()), device: device, options: VerificationOptions(), styles: [.simulator, .physical])
+        let outcome = Verifier.Outcome(verified: false, attempts: 1, change: .none, style: .simulator, summary: nil, note: .keyboardClosed)
+        #expect(VerifyOutput.unverifiedLine(outcome, for: request) == "✗ Tap on id=submit was dispatched once, and it was not sent again. Only the keyboard closed. Tap again if the control shows no effect.")
+
+        let open = Self.keyboardScreen(keyboard: true)
+        let key = try? #require(open.roots.flatMap { $0.flattened() }.first { $0.label == "return" })
+        #expect(Tap.closesKeyboard(FakeUI.node(.button, label: "Done", frame: FakeUI.frame(300, 450, 80, 44)), in: open))
+        #expect(Tap.closesKeyboard(key, in: open))
+        #expect(!Tap.closesKeyboard(FakeUI.node(.button, id: "submit", label: "Submit", frame: FakeUI.frame(16, 400, 370, 44)), in: open))
+        #expect(!Tap.closesKeyboard(nil, in: open))
+    }
+
+    @Test("a two-tile repaint away from the target holds the retry, so the tap is sent once and ends unsettled; the same repaint at the target verifies")
+    func smallRepaintAwayFromTarget() async throws {
+        for (area, verifies) in [(UIFrame(x: 40, y: 100, width: 10, height: 10), false), (UIFrame(x: 8, y: 68, width: 6, height: 10), true)] {
+            let fake = FakeSimulator(trees: [tree(count: "0")], screens: [screen(shade: 10), screen(shade: 10, caret: true)])
+            var sent = 0
+
+            let outcome = try await Verifier.run(styles: [.simulator, .physical], timeout: .seconds(1), dependencies: fake.dependencies, targetArea: { area }) { _ in sent += 1 }
+
+            #expect(outcome.verified == verifies)
+            #expect(outcome.change == (verifies ? .screenshot : .none))
+            #expect(outcome.note == (verifies ? nil : .unsettled))
+            #expect(sent == 1)
+        }
+    }
+
     @Test("keyboard_closed is not noted when another node changed, or when the read was truncated")
     func keyboardClosedNotNoted() {
         let base = Verifier.Outcome(verified: true, attempts: 1, change: .accessibilityTree, style: nil, summary: nil)
@@ -713,10 +759,10 @@ struct VerifierTests {
     func sideColumnsExcluded() throws {
         let before = try #require(ImageFingerprint(pngData: screen(shade: 10), excludingRightPixels: 8))
         let changedRight = try #require(ImageFingerprint(pngData: rightEdge(shade: 200), excludingRightPixels: 8))
-        #expect(!ScreenChange.detect(before: [before], after: [changedRight]))
+        #expect(ScreenChange.detect(before: [before], after: [changedRight]) == .none)
         #expect(before.comparedTileCount == 14 * 32)
         let unmasked = try #require(ImageFingerprint(pngData: rightEdge(shade: 200)))
-        #expect(ScreenChange.detect(before: [try #require(ImageFingerprint(pngData: screen(shade: 10)))], after: [unmasked]))
+        #expect(ScreenChange.detect(before: [try #require(ImageFingerprint(pngData: screen(shade: 10)))], after: [unmasked]) == .changed)
     }
 
     @Test("A screen change only in the bottom band verifies with no bottom band and not with one")

@@ -1117,3 +1117,28 @@ extension UINode {
         return nil
     }
 }
+
+/// A selector that matched nothing on a read cut short, so the element may lie past where the read stopped.
+struct CutTreeMiss: LocalizedError, UserFacingError, OffsiderFailure {
+    let miss: ElementResolutionError
+    /// `at 64 levels`, or how the source stopped.
+    let cut: String
+
+    /// `miss` with the line, when `tree` was cut; else `miss` as it was.
+    static func wrapping(_ miss: ElementResolutionError, tree: UITree) -> any Error {
+        guard case .notFound = miss else { return miss }
+        if let truncation = tree.truncated {
+            let limits = [truncation.depth ? "\(UITreeLimits.maxDepth) levels" : nil, truncation.nodes ? "\(UITreeLimits.maxNodes.formatted()) elements" : nil]
+            return CutTreeMiss(miss: miss, cut: "The tree was cut at \(limits.compactMap { $0 }.joined(separator: " and ")), so it may be further down.")
+        }
+        guard tree.sourceTruncated else { return miss }
+        return CutTreeMiss(miss: miss, cut: "The tree was cut where the read stopped, so it may be further down.")
+    }
+
+    var userFacingDescription: String { miss.userFacingDescription + " " + cut }
+    var errorDescription: String? { userFacingDescription }
+    var reason: FailureReason { miss.reason }
+    var failureMessage: String { userFacingDescription }
+    var hint: String? { miss.hint }
+    var candidates: [FailureCandidate] { miss.candidates }
+}
