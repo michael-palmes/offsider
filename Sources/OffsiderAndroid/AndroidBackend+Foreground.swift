@@ -33,7 +33,11 @@ extension AndroidBackend {
             foregroundChecks[serial] = AndroidForegroundCheck.beforeInput ? nil : (ContinuousClock.now, package)
         }
         guard let package else { throw AndroidError.foregroundUnknown(serial) }
-        try requireDrivable(package, on: serial)
+        do {
+            try requireDrivable(package, on: serial)
+        } catch let error as AndroidError where error.kind == .otherAppInFront && SystemAppDenyList.isPermissionDialog(package, platform: .android) && appScopes[serial]?.wholeDevice != true {
+            throw await permissionDialogRefusal(serial)
+        }
         if AndroidForegroundCheck.beforeInput {
             systemWindowChecks[serial] = nil
             try await requireInputFocus(serial)
@@ -44,6 +48,31 @@ extension AndroidBackend {
     private func requireInputFocus(_ serial: String) async throws {
         let focus = try await host.timing.measure(.foregroundRecheck) { try await windowFocus(serial) }
         guard let focus, let owner = focus.owner, try await !isKeyboard(focus, on: serial) else { return }
+        try requireDrivableWindow(owner, title: focus.title, on: serial)
+    }
+
+    /// The permission dialog's refusal, naming what the app requests and lacks from its own state, never the dialog's words; one `dumpsys package`, only on this path.
+    private func permissionDialogRefusal(_ serial: String) async -> AndroidError {
+        let scope = appScopes[serial]
+        guard let app = scope?.target ?? scope?.permitted.onlyElement else { return .permissionDialogInFront(serial, app: nil) }
+        let state = try? await permissions(of: app, on: DeviceID(rawValue: serial, platform: .android))
+        return .permissionDialogInFront(serial, app: app, asked: state.map(Self.askedServices) ?? [])
+    }
+
+    /// The services a dialog may be asking for: one of whose runtime permissions the app requests, lacks and was not refused for good.
+    nonisolated static func askedServices(_ state: AndroidPackagePermissions) -> [PermissionService] {
+        PermissionService.offered(on: .android).filter { service in
+            guard service != .all, service != .locationAlways, let names = service.androidPermissions else { return false }
+            return names.contains { state.isGranted($0) == false && !state.userFixed.contains($0) }
+        }
+    }
+
+    /// Buttons skip the front-app check, so Home can always leave an app this phone may not drive; a window over that app, such as the notification shade, still refuses them as it refuses a tap.
+    func requireButtonFocus(_ serial: String) async throws {
+        guard !readsAnyWindow(serial) else { return }
+        systemWindowChecks[serial] = nil
+        let focus = try await host.timing.measure(.foregroundRecheck) { try await windowFocus(serial) }
+        guard let focus, let owner = focus.owner, !focus.focusedApps.contains(owner), try await !isKeyboard(focus, on: serial) else { return }
         try requireDrivableWindow(owner, title: focus.title, on: serial)
     }
 
@@ -149,7 +178,7 @@ extension AndroidBackend {
             throw AndroidError.otherAppNotPermitted(serial, package: package, byManagedPolicy: true)
         }
         if !scope.needsTarget, !scope.permitted.contains(package) {
-            throw AndroidError.otherAppNotPermitted(serial, package: package, byManagedPolicy: false)
+            throw AndroidError.otherAppNotPermitted(serial, package: package, byManagedPolicy: false, pinned: scope.permitted.sorted())
         }
         if let target = scope.target, package != target { throw Self.otherThanTarget(package, target, on: serial) }
     }
@@ -185,7 +214,7 @@ extension AndroidBackend {
             throw AndroidError.appNotPermitted(serial, package: target, byManagedPolicy: true)
         }
         if !scope.needsTarget, !scope.permitted.contains(target) {
-            throw AndroidError.appNotPermitted(serial, package: target, byManagedPolicy: false)
+            throw AndroidError.appNotPermitted(serial, package: target, byManagedPolicy: false, pinned: scope.permitted.sorted())
         }
     }
 

@@ -1,0 +1,11 @@
+# 10 nodes, 10 listed
+## no point read
+1 button "BackButton" 8,54.10 44.19x44.19: at 30.09,76.19 reaches
+2 group "switch-test-screen" 60.19,64.38 291.43x23.24: at 205.91,76 reaches
+3 text "switch-test-title" 16,114.67 379.43x27.05: at 205.72,128.19 reaches
+4 switch "swiftui-weather-alerts-switch" 348.95,165.71 46.48x27.05: at 372.19,179.24 reaches
+5 text "swiftui-weather-alerts-state" 16,200.76 379.43x23.24: at 205.72,212.38 reaches
+6 switch "uikit-weather-alerts-switch" 343.62,248 51.81x32: at 369.52,264 reaches
+7 text "uikit-weather-alerts-state" 16,288 379.43x23.24: at 205.72,299.62 reaches
+8 switch "slow-commit-switch" 348.95,335.24 46.48x27.05: at 372.19,348.76 reaches
+9 text "slow-commit-state" 16,370.29 379.43x23.24: at 205.72,381.91 reaches

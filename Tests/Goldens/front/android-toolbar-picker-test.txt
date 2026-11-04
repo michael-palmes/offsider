@@ -1,0 +1,10 @@
+# 9 nodes, 9 listed
+## no point read
+1 button "BackButton" 8,54.10 44.19x44.19: at 30.09,76.19 reaches
+2 group "toolbar-picker-test-screen" 60.19,64.38 181.71x23.24: at 151.05,76 reaches
+3 group "toolbar-picker-test-filter" 249.90,58.29 153.52x35.81: covered by radioButton "toolbar-picker-test-filter-unread" 288,60.19 62.86x32 (drawingOrder, sure): at 326.66,76.19 judged radioButton "toolbar-picker-test-filter-unread" 288,60.19 62.86x32 (drawingOrder, sure)
+4 radioButton "toolbar-picker-test-filter-all" 251.81,60.19 36.19x32: at 269.90,76.19 reaches
+5 radioButton "toolbar-picker-test-filter-unread" 288,60.19 62.86x32: at 319.43,76.19 reaches
+6 radioButton "toolbar-picker-test-filter-read" 350.86,60.19 50.67x32: at 376.19,76.19 reaches
+7 text "toolbar-picker-test-state" 16,98.67 379.43x47.62: at 205.72,122.48 reaches
+8 text "toolbar-picker-test-body" 16,146.29 379.43x47.62: at 205.72,170.10 reaches

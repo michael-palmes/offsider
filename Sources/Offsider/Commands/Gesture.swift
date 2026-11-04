@@ -202,7 +202,11 @@ struct Gesture: AsyncParsableCommand {
     /// The preset's input: a sized swipe, or a held press and drag between the given points.
     @MainActor
     func presetEvent(tree: @MainActor () async throws -> UITree, backend: any DeviceBackend, device: DeviceID, logger: OffsiderLogger) async throws -> InputEvent {
-        if preset.kind == .pinch { return try await presetPinch(tree: tree, backend: backend, device: device) }
+        guard preset.kind != .pinch else {
+            return try await SimulatorOrientationReader.$sharedReadings.withValue(SimulatorOrientationReader.SharedReadings()) {
+                try await presetPinch(tree: tree, backend: backend, device: device)
+            }
+        }
         guard preset.kind == .longPressDrag else {
             // Sizing to the screen and mapping the points then read the simulator's orientation once.
             return try await SimulatorOrientationReader.$sharedReadings.withValue(SimulatorOrientationReader.SharedReadings()) {
@@ -229,14 +233,16 @@ struct Gesture: AsyncParsableCommand {
         )
     }
 
-    /// Two fingers about the centre, each frame checked on screen, then mapped to the backend's input space in one call.
+    /// Two fingers about the centre, each frame checked on screen, then mapped to the backend's input space in one call, with the tree read for the centre.
     @MainActor
     func presetPinch(tree: @MainActor () async throws -> UITree, backend: any DeviceBackend, device: DeviceID) async throws -> InputEvent {
         let centre: UIPoint
+        var read: UITree?
         if let startX, let startY {
             centre = UIPoint(x: startX, y: startY)
         } else {
-            guard let frame = try await tree().applicationFrame else {
+            read = try await tree()
+            guard let frame = read?.applicationFrame else {
                 throw CLIError(
                     errorDescription: "Unable to centre the pinch because the accessibility tree has no application frame. Pass --x and --y, or check an app is in the foreground.",
                     reason: .treeReadFailed
@@ -250,7 +256,10 @@ struct Gesture: AsyncParsableCommand {
         }
         let duration = duration ?? preset.defaultDuration
         let frames = GesturePreset.pinchFrames(centre: centre, from: from ?? 0, to: to ?? 0, moves: GesturePreset.pinchMoves(duration: duration))
-        let mapped = try await backend.deviceCoordinates(for: frames.flatMap { [(x: $0.0.x, y: $0.0.y), (x: $0.1.x, y: $0.1.y)] }, tree: nil, on: device)
+        // An iPhone or iPad would judge the tree's window before refusing two fingers, a dead end a pinch never needs.
+        let mapped = try await backend.deviceCoordinates(
+            for: frames.flatMap { [(x: $0.0.x, y: $0.0.y), (x: $0.1.x, y: $0.1.y)] }, tree: device.isPhysicalIOSDevice ? nil : read, on: device
+        )
         let pairs = stride(from: 0, to: mapped.count - 1, by: 2).map { (first: mapped[$0], second: mapped[$0 + 1]) }
         return InputEvent.compositePinch(frames: pairs, duration: duration)
     }

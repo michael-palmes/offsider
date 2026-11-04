@@ -1,0 +1,24 @@
+# 23 nodes, 23 listed
+## no point read
+1 group "stack-test-full-page-1" 0,0 411.43x923.43: at 205.72,461.71 reaches
+2 button "stack-test-full-back-1" 8,54.10 72x44.19: at 44,76.19 reaches
+3 button "BackButton" 8,54.10 44.19x44.19: beneath "stack-test-full-page-1"
+4 group "stack-test-screen" 60.19,64.38 291.43x23.24: beneath "stack-test-full-page-1"
+5 group "stack-test-full-title-1" 88,64.38 235.43x23.24: at 205.72,76 reaches
+6 text "stack-test-state" 16,114.67 379.43x23.24: beneath "stack-test-full-page-1"
+7 text "stack-test-depth" 16,145.90 379.43x23.24: beneath "stack-test-full-page-1"
+8 button "stack-test-full-close-later" 145.90,114.67 119.62x43.81: at 205.71,136.57 reaches
+9 text "stack-test-full-depth" 16,177.14 379.43x23.24: beneath "stack-test-full-page-1"
+10 button "stack-test-hide-inactive" 16,208.38 185.90x43.81: beneath "stack-test-full-page-1"
+11 button "stack-test-offset" 209.90,208.38 185.52x43.81: beneath "stack-test-full-page-1"
+12 group "stack-test-page-title" 16.38,284.95 379.05x47.24: beneath "stack-test-full-page-1"
+13 text "stack-test-page-1" 167.24,348.19 77.71x23.24: beneath "stack-test-full-page-1"
+14 button "stack-test-next" 150.48,387.43 111.24x44.19: beneath "stack-test-full-page-1"
+15 button "stack-test-mark" 148.57,447.62 115.05x43.81: beneath "stack-test-full-page-1"
+16 button "stack-test-back" 134.48,507.43 142.86x44.19: beneath "stack-test-full-page-1"
+17 button "stack-test-open-full" 16,798.10 379.43x43.81: beneath "stack-test-full-page-1"
+18 button "stack-test-full-next" 16,798.10 379.43x43.81: at 205.72,820.00 reaches
+19 group "stack-test-tab-bar" 0,850.29 411.43x73.14: covered by button "stack-test-full-buy" 201.90,852.19 193.52x44.95 (drawingOrder, sure, on "stack-test-full-page-1"): at 205.72,886.86 judged button "stack-test-full-buy" 201.90,852.19 193.52x44.95 (drawingOrder, sure, on "stack-test-full-page-1")
+20 button "stack-test-tab-home" 0,850.67 205.71x49.14: beneath "stack-test-full-page-1"
+21 button "stack-test-full-buy" 201.90,852.19 193.52x44.95: at 298.66,874.67 reaches
+22 button "stack-test-tab-products" 205.71,850.67 205.71x49.14: beneath "stack-test-full-page-1"

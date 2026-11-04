@@ -61,7 +61,20 @@ public struct ScreenStack: Equatable, Sendable {
 
     /// The page drawn over `node`, when every identical copy of it the tree holds lies beneath one; nil otherwise.
     public func page(over node: UINode, in roots: [UINode]) -> Page? {
-        let positions = Self.indexes(of: node, in: roots)
+        page(overCopies: Self.indexes(of: node, in: roots))
+    }
+
+    /// `isBeneath(_:in:)` over a tree already indexed.
+    public func isBeneath(_ node: UINode, in tree: TreeIndex) -> Bool {
+        page(over: node, in: tree) != nil
+    }
+
+    /// `page(over:in:)` over a tree already indexed.
+    public func page(over node: UINode, in tree: TreeIndex) -> Page? {
+        page(overCopies: tree.indexes(of: node))
+    }
+
+    private func page(overCopies positions: [Int]) -> Page? {
         guard let first = positions.first, positions.allSatisfy(isBeneath(index:)) else { return nil }
         return page(over: first)
     }
@@ -83,8 +96,16 @@ public struct ScreenStack: Equatable, Sendable {
 
     /// Reads the stack from a tree; empty without a viewport, and on Android for siblings without drawing order.
     public static func build(roots: [UINode], viewport: UIFrame?) -> ScreenStack {
+        build(FlatTree(roots: roots), viewport: viewport)
+    }
+
+    /// `build(roots:viewport:)` over a tree already indexed.
+    public static func build(_ tree: TreeIndex, viewport: UIFrame?) -> ScreenStack {
+        build(tree.flat, viewport: viewport)
+    }
+
+    private static func build(_ flat: FlatTree, viewport: UIFrame?) -> ScreenStack {
         guard let viewport, viewport.width > 0, viewport.height > 0 else { return .empty }
-        let flat = FlatTree(roots: roots)
         var pages: [Int: Page] = [:]
         var lowestSealer: [Int: Int] = [:]
         var topSealer: [Int: Int] = [:]
@@ -203,7 +224,7 @@ struct FlatTree {
         let nodes = content.map { entries[$0].node }
         guard !nodes.contains(where: { $0.role.isActionable && ($0.frame?.intersection(visible).map { ScreenStack.share(of: $0, in: visible) >= 0.8 } ?? false) }),
               !nodes.contains(where: { KnownOverlays.logBoxToast($0, viewport: viewport) != nil }),
-              KnownOverlays.logBoxInspector(in: nodes, viewport: viewport) == nil else {
+              KnownOverlays.logBoxInspector(among: nodes, viewport: viewport) == nil else {
             return nil
         }
         let labelled = nodes.compactMap { node -> UIFrame? in

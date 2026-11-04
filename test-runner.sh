@@ -205,7 +205,8 @@ Foldables (--foldable, --android-fold):
   OFFSIDER_ANDROID_FOLD_AVD The fold AVD for --android-fold (default: Offsider_E2E_Fold); OFFSIDER_ANDROID_DEVICE overrides it
 
 Android phone (--android-phone):
-  OFFSIDER_ANDROID_PHONE    The phone's exact USB serial from adb devices -l; no other device is touched
+  OFFSIDER_ANDROID_PHONE    The phone's exact USB serial from adb devices -l; no other device is touched; its
+                            allowance must pin com.mpalmes.offsider.playground.rn or be a test device
                             Unset: the one active Android phone on the allow-list, only when its allowance pins
                             com.mpalmes.offsider.playground.rn (several, none or another app is an error)
                             The user must first allow it: .build/debug/offsider devices add, then choose the phone
@@ -936,12 +937,12 @@ require_device_allowance() {
         expiry_epoch="$(date -j -u -f "%Y-%m-%dT%H:%M:%SZ" "$expires" +%s 2>/dev/null || echo 0)"
         if (( expiry_epoch - $(date -u +%s) <= 1800 )); then
             print_error "$allow_name's allowance ends at $expires, within 30 minutes. $RENEW_YOURSELF:"
-            print_device_allow "$allow_name" "$app"
+            print_device_allow "$device" "$app"
             exit 1
         fi
     elif ! printf '%s' "$status" | plutil -extract devices.0 json -o - - 2>/dev/null | grep -q '"expires":null'; then
         print_error "Could not read $allow_name's allowance. $RUN_YOURSELF:"
-        print_device_allow "$allow_name" "$app"
+        print_device_allow "$device" "$app"
         exit 1
     fi
     if [[ -n "$app" && "$(allowance_drives_whole "$(printf '%s' "$status" | plutil -extract devices.0 json -o - - 2>/dev/null)")" != 1 ]]; then
@@ -949,7 +950,7 @@ require_device_allowance() {
         apps="$(printf '%s' "$status" | plutil -extract devices.0.apps json -o - - 2>/dev/null || echo '[]')"
         if [[ "$apps" != *"\"$app\""* ]]; then
             print_error "$allow_name's allowance does not include $app. $RUN_YOURSELF:"
-            print_device_allow "$allow_name" "$app"
+            print_device_allow "$device" "$app"
             exit 1
         fi
     fi
@@ -985,7 +986,7 @@ run_android_phone_tests() {
         log "Using ${picked#*$'\t'}, the one Android phone on the allow-list"
     fi
     export OFFSIDER_ANDROID_PHONE
-    require_device_allowance "$OFFSIDER_ANDROID_PHONE"
+    require_device_allowance "$OFFSIDER_ANDROID_PHONE" "$ANDROID_PLAYGROUND_PACKAGE"
     resolve_android_apk
     export OFFSIDER_ANDROID_APK
     log "Environment: OFFSIDER_ANDROID_PHONE=$OFFSIDER_ANDROID_PHONE, OFFSIDER_ANDROID_APK=$OFFSIDER_ANDROID_APK"
@@ -1027,7 +1028,7 @@ run_ios_device_tests() {
         OFFSIDER_IOS_TEAM_ID="$(allowance_team "$OFFSIDER_IOS_DEVICE")"
         if [[ -z "$OFFSIDER_IOS_TEAM_ID" ]]; then
             print_error "No team signs the runner and the playground. $RUN_YOURSELF and choose a team in its menu, or set OFFSIDER_IOS_TEAM_ID:"
-            print_person_command "$(offsider_command) devices add"
+            print_person_command "$(offsider_command) devices add --device $OFFSIDER_IOS_DEVICE --app $BUNDLE_ID"
             exit 1
         fi
         log "Using the team the device's allowance records"

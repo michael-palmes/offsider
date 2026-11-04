@@ -976,6 +976,30 @@ struct RunnerSystemPromptTests {
         #expect(error?.message.contains("nothing was read or sent") == true)
     }
 
+    @Test("a type the runner was still working on when the wait ran out says the field may be half done, not that a prompt holds the app", arguments: [false, true])
+    func typingTimeout(testDevice: Bool) async throws {
+        let transport = FakeRunnerTransport()
+        transport.timesOut = "/type"
+        var client = Self.client(transport)
+        client.testDevice = testDevice
+        let error = await #expect(throws: IOSDeviceError.self) { try await client.type("hello", replace: true, app: "com.example.demo") }
+        #expect(error?.reason == .runnerUnavailable)
+        #expect(error?.message.contains("was still typing when Offsider stopped waiting, so the field may be cleared or hold part of the text") == true)
+        #expect(error?.message.contains("prompt") == false)
+        #expect(error?.hint == "offsider describe-ui --summary --device \(Self.udid)")
+    }
+
+    @Test("typing waits longer for longer text and for clearing the field first, never past a minute")
+    func typingWaits() async throws {
+        let transport = FakeRunnerTransport()
+        try await Self.client(transport).type("hello", replace: false, app: nil)
+        let plain = try #require(transport.timeout(of: "/type"))
+        try await Self.client(transport).type("hello", replace: true, app: nil)
+        let replacing = try #require(transport.timeout(of: "/type"))
+        #expect(plain > RunnerClient.timeout && replacing > plain)
+        #expect(RunnerClient.typeTimeout(String(repeating: "a", count: 5000), replace: true) == 60)
+    }
+
     @Test("a timeout with no prompt seen still says a prompt may be why, and how to clear it")
     func timeoutNamesThePossibility() {
         let error = IOSDeviceError.runner(.timedOut, udid: Self.udid)

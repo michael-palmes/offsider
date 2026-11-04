@@ -1,0 +1,35 @@
+# 107 nodes, 17 listed
+## no point read
+10 button "BackButton" 8,62 44x44: at 30,84 reaches
+11 header "long-scroll-test-screen" 60,74 282x20.33: at 201,84.17 reaches
+12 text "long-scroll-test-state" 0,106.33 402x52.67: at 201,132.67 reaches
+13 group "long-scroll-test-scroll-view" 0,159.00 402x715: at 201,516.50 reaches
+17 button "long-scroll-test-start" 0,159.00 402x64: at 201,191.00 reaches
+18 button "long-scroll-test-row-1" 0,223.00 402x64: at 201,255.00 reaches
+19 button "long-scroll-test-row-2" 0,287.00 402x64: at 201,319.00 reaches
+20 button "long-scroll-test-row-3" 0,351.00 402x64: at 201,383.00 reaches
+21 button "long-scroll-test-row-4" 0,415.00 402x64: at 201,447.00 reaches
+22 button "long-scroll-test-row-5" 0,479.00 402x64: at 201,511.00 reaches
+23 button "long-scroll-test-row-6" 0,543.00 402x64: at 201,575.00 reaches
+24 button "long-scroll-test-row-7" 0,607.00 402x64: at 201,639.00 reaches
+25 button "long-scroll-test-row-8" 0,671.00 402x64: at 201,703.00 reaches
+26 button "long-scroll-test-row-9" 0,735.00 402x64: at 201,767.00 reaches
+27 button "long-scroll-test-row-10" 0,799.00 402x64: at 201,831.00 reaches
+28 button "long-scroll-test-row-11" 0,863.00 402x64: at 201,868.50 reaches
+## hit-tested
+10 button "BackButton" 8,62 44x44: at 30,84 reaches
+11 header "long-scroll-test-screen" 60,74 282x20.33: at 201,84.17 reaches
+12 text "long-scroll-test-state" 0,106.33 402x52.67: at 201,132.67 reaches
+13 group "long-scroll-test-scroll-view" 0,159.00 402x715: at 201,516.50 reaches
+17 button "long-scroll-test-start" 0,159.00 402x64: at 201,191.00 reaches
+18 button "long-scroll-test-row-1" 0,223.00 402x64: at 201,255.00 reaches
+19 button "long-scroll-test-row-2" 0,287.00 402x64: at 201,319.00 reaches
+20 button "long-scroll-test-row-3" 0,351.00 402x64: at 201,383.00 reaches
+21 button "long-scroll-test-row-4" 0,415.00 402x64: at 201,447.00 reaches
+22 button "long-scroll-test-row-5" 0,479.00 402x64: at 201,511.00 reaches
+23 button "long-scroll-test-row-6" 0,543.00 402x64: at 201,575.00 reaches
+24 button "long-scroll-test-row-7" 0,607.00 402x64: at 201,639.00 reaches
+25 button "long-scroll-test-row-8" 0,671.00 402x64: at 201,703.00 reaches
+26 button "long-scroll-test-row-9" 0,735.00 402x64: at 201,767.00 reaches
+27 button "long-scroll-test-row-10" 0,799.00 402x64: at 201,831.00 reaches
+28 button "long-scroll-test-row-11" 0,863.00 402x64: at 201,868.50 reaches

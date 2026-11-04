@@ -68,7 +68,7 @@ extension DevicePolicyGate {
         guard let refusal = policy().appRefusal(app, on: allowance) else { return }
         throw CLIError(
             errorDescription: refusal, reason: .appNotAllowed,
-            hint: refusal.contains(" is not among the apps allowed on ") ? "offsider devices add" : nil
+            hint: refusal.contains(" is not among the apps allowed on ") ? DeviceAddPlan.pinCommand(key: allowance.key, keeping: allowance.pinnedApps, adding: app) : nil
         )
     }
 }

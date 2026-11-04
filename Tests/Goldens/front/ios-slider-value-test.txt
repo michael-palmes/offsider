@@ -1,0 +1,19 @@
+# 18 nodes, 9 listed
+## no point read
+10 button "BackButton" 8,62 44x44: at 30,84 reaches
+11 header "slider-value-test-screen" 60,74 282x20.33: at 201,84.17 reaches
+12 text "slider-value-state" 109.67,122.33 182.67x20.33: at 201.00,132.50 reaches
+13 button "slider-value-button" 109.33,166.67 183.67x44: at 201.17,188.67 reaches
+14 text "slider-position-value" 125.33,234.67 151.33x20.33: at 201.00,244.83 reaches
+15 text "slider-percent-state" 99.33,279.00 203.67x20.33: at 201.17,289.17 reaches
+16 text "slider-exact-value-state" 101.33,323.33 199.33x20.33: at 201.00,333.50 reaches
+17 slider "slider-value-slider" 16,369.67 370x40: at 201,389.67 reaches
+## hit-tested
+10 button "BackButton" 8,62 44x44: at 30,84 reaches
+11 header "slider-value-test-screen" 60,74 282x20.33: at 201,84.17 reaches
+12 text "slider-value-state" 109.67,122.33 182.67x20.33: at 201.00,132.50 reaches
+13 button "slider-value-button" 109.33,166.67 183.67x44: at 201.17,188.67 reaches
+14 text "slider-position-value" 125.33,234.67 151.33x20.33: at 201.00,244.83 reaches
+15 text "slider-percent-state" 99.33,279.00 203.67x20.33: at 201.17,289.17 reaches
+16 text "slider-exact-value-state" 101.33,323.33 199.33x20.33: at 201.00,333.50 reaches
+17 slider "slider-value-slider" 16,369.67 370x40: at 201,389.67 reaches

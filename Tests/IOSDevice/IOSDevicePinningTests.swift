@@ -108,7 +108,9 @@ struct IOSDevicePinningTests {
         backend.targetApp = "com.example.other"
         let other = await #expect(throws: IOSDeviceError.self) { _ = try await backend.rawAccessibilitySource(for: Self.phone) }
         #expect(other?.reason == .appNotAllowed)
-        #expect(other?.message.contains("`offsider devices add --device \(IOSDeviceFixtures.phone) --app com.example.other`") == true)
+        // The command keeps the apps already pinned and adds this one.
+        #expect(other?.message.contains("`offsider devices add --device \(IOSDeviceFixtures.phone) --app ") == true, "\(other?.message ?? "")")
+        #expect(other?.message.contains(" --app com.example.other`") == true)
         #expect(transport.calls.isEmpty)
     }
 

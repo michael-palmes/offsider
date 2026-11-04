@@ -23,7 +23,8 @@ android-tap-id-verify-live android-batch-describe-5 \
 android-tap-xy android-tap-xy-input android-tap-xy-helper android-tap-physical android-swipe android-type-ascii android-type-ascii-helper \
 android-screenshot android-screenshot-json android-screenshot-raw android-screenshot-helper android-batch-tap-5 android-wait-settled \
 ios-describe ios-tap-id ios-tap-id-first ios-tap-id-verify ios-tap-id-verify-live ios-tap-xy ios-tap-xy-first \
-android-describe-summary android-describe-summary-drawer ios-describe-summary ios-describe-summary-drawer"
+android-describe-summary android-describe-summary-drawer android-describe-summary-long android-describe-summary-keyboard \
+ios-describe-summary ios-describe-summary-drawer ios-describe-summary-long ios-describe-summary-keyboard"
 PLAYGROUND_RN="com.mpalmes.offsider.playground.rn"
 
 usage() {
@@ -238,7 +239,8 @@ scenario_screen() {
   case "$1" in
     *-live) echo live-ticker ;;
     *-drawer) echo drawer-test ;;
-    android-type-*) echo text-input ;;
+    *-long) echo long-scroll-test ;;
+    android-type-* | *-keyboard) echo text-input ;;
     android-swipe) echo swipe-test ;;
     *) echo tap-test ;;
   esac
@@ -329,7 +331,7 @@ for scenario in ${SCENARIOS//,/ }; do
     read -r ANCHOR_X ANCHOR_Y < <(centre_of "$anchor") || true
     [[ -n "$ANCHOR_X" && -n "$ANCHOR_Y" ]] || die "could not find $anchor on the screen for $scenario" 1
   fi
-  if [[ "$scenario" == android-type-* ]]; then
+  if [[ "$scenario" == android-type-* || "$scenario" == *-keyboard ]]; then
     "$HEAD_BIN" tap --id text-input-field --device "$DEVICE" >/dev/null 2>&1 || echo "bench-ab: warning: could not focus text-input-field" >&2
   fi
   BENCH_SCENARIO="$scenario" BENCH_ANCHOR_X="$ANCHOR_X" BENCH_ANCHOR_Y="$ANCHOR_Y" python3 - <<'PY' || STOP_REASON="interrupted"
@@ -362,8 +364,12 @@ commands = {
     "ios-describe": (["describe-ui", "--device", device], {}),
     "ios-describe-summary": (["describe-ui", "--summary", "--device", device], {}),
     "ios-describe-summary-drawer": (["describe-ui", "--summary", "--device", device], {}),
+    "ios-describe-summary-long": (["describe-ui", "--summary", "--device", device], {}),
+    "ios-describe-summary-keyboard": (["describe-ui", "--summary", "--device", device], {}),
     "android-describe-summary": (["describe-ui", "--summary", "--device", device], {}),
     "android-describe-summary-drawer": (["describe-ui", "--summary", "--device", device], {}),
+    "android-describe-summary-long": (["describe-ui", "--summary", "--device", device], {}),
+    "android-describe-summary-keyboard": (["describe-ui", "--summary", "--device", device], {}),
     "ios-tap-id": (["tap", "--id", "tap-test-area", "--device", device], {}),
     "ios-tap-id-first": (["tap", "--id", "tap-test-area", "--device", device], {}),
     "ios-tap-id-verify": (["tap", "--id", "tap-test-area", "--verify", "--device", device], {}),

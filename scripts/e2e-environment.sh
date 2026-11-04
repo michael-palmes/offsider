@@ -205,13 +205,13 @@ print_person_command() {
     return 0
 }
 
-# The command a person runs to allow a device, with what to choose in its menus.
+# The one command a person runs to allow a device, as devices add --plan gives it; pinning an app lasts 7 days.
 print_device_allow() {
-    local name="$1"
+    local device="$1"
     local app="${2:-}"
     if [[ -n "$app" ]]; then
-        print_person_command "$(offsider_command) devices add" "Then choose $name, pin $app, and allow at least 2 hours."
+        print_person_command "$(offsider_command) devices add --device $device --app $app" "It pins $app; confirm with Touch ID or your password."
     else
-        print_person_command "$(offsider_command) devices add" "Then choose $name and allow at least 2 hours."
+        print_person_command "$(offsider_command) devices add --device $device" "Allow it for at least 2 hours."
     fi
 }

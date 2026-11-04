@@ -1,0 +1,19 @@
+# 18 nodes, 18 listed
+## no point read
+1 button "BackButton" 8,54.10 44.19x44.19: at 30.09,76.19 reaches
+2 group "long-scroll-test-screen" 60.19,64.38 291.43x23.24: at 205.91,76 reaches
+3 text "long-scroll-test-state" 0,98.67 411.43x55.62: at 205.72,126.48 reaches
+4 scrollView "long-scroll-test-scroll-view" 0,154.29 411.43x769.14: at 205.72,538.86 reaches
+5 button "long-scroll-test-start" 0,154.29 411.43x64: at 205.72,186.29 reaches
+6 button "long-scroll-test-row-1" 0,218.29 411.43x64: at 205.72,250.29 reaches
+7 button "long-scroll-test-row-2" 0,282.29 411.43x64: at 205.72,314.29 reaches
+8 button "long-scroll-test-row-3" 0,346.29 411.43x64: at 205.72,378.29 reaches
+9 button "long-scroll-test-row-4" 0,410.29 411.43x64: at 205.72,442.29 reaches
+10 button "long-scroll-test-row-5" 0,474.29 411.43x64: at 205.72,506.29 reaches
+11 button "long-scroll-test-row-6" 0,538.29 411.43x64: at 205.72,570.29 reaches
+12 button "long-scroll-test-row-7" 0,602.29 411.43x64: at 205.72,634.29 reaches
+13 button "long-scroll-test-row-8" 0,666.29 411.43x64: at 205.72,698.29 reaches
+14 button "long-scroll-test-row-9" 0,730.29 411.43x64: at 205.72,762.29 reaches
+15 button "long-scroll-test-row-10" 0,794.29 411.43x64: at 205.72,826.29 reaches
+16 button "long-scroll-test-row-11" 0,858.29 411.43x64: at 205.72,890.29 reaches
+17 button "long-scroll-test-row-12" 0,922.29 411.43x1.14: at 205.72,922.86 reaches

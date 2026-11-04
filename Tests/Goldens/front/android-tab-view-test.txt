@@ -1,0 +1,10 @@
+# 9 nodes, 9 listed
+## no point read
+1 button "BackButton" 8,54.10 44.19x44.19: at 30.09,76.19 reaches
+2 group "tab-view-test-screen" 60.19,64.38 291.43x23.24: at 205.91,76 reaches
+3 text "tab-view-test-title" 112.76,114.67 185.90x27.05: at 205.71,128.19 reaches
+4 text "tab-view-current-tab" 134.10,157.71 143.24x23.24: at 205.72,169.33 reaches
+5 text "tab-view-home-panel" 134.86,196.95 141.71x23.24: at 205.72,208.57 reaches
+6 group "tab-view-tab-bar" 0,850.29 411.43x73.14: covered by button "tab-view-tab-settings" 205.71,850.67 205.71x49.14 (drawingOrder, sure): at 205.72,886.86 judged button "tab-view-tab-settings" 205.71,850.67 205.71x49.14 (drawingOrder, sure)
+7 button "tab-view-tab-home" 0,850.67 205.71x49.14: at 102.86,875.24 reaches
+8 button "tab-view-tab-settings" 205.71,850.67 205.71x49.14: at 308.56,875.24 reaches

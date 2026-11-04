@@ -43,12 +43,18 @@ final class FakeRunnerTransport: RunnerTransport, @unchecked Sendable {
     }
 
     var calls: [RunnerCall] { lock.withLock { recorded } }
+    /// Each request's timeout, by path, the latest kept.
+    private var waits: [String: TimeInterval] = [:]
+    func timeout(of path: String) -> TimeInterval? { lock.withLock { waits[path] } }
 
     func exchange(method: String, path: String, token: String, body: Data?, timeout: TimeInterval) throws -> UsbmuxHTTPResponse {
         if refuseConnections { throw UsbmuxError.result(3) }
         if pingTimesOut, path == "/ping" { throw UsbmuxError.timedOut }
         let object = body.flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: AnyHashable] } ?? [:]
-        lock.withLock { recorded.append(RunnerCall(method: method, path: path, token: token, body: object)) }
+        lock.withLock {
+            recorded.append(RunnerCall(method: method, path: path, token: token, body: object))
+            waits[path] = timeout
+        }
         if timesOut == path { throw UsbmuxError.timedOut }
         if let promptOverApp, object["app"] != nil, path != "/foreground" {
             return Self.response(409, ["ok": false, "error": ["code": "system_prompt", "message": promptOverApp]])

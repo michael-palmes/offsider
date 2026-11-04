@@ -1,0 +1,17 @@
+# 18 nodes, 8 listed
+## no point read
+10 button "BackButton" 8,62 44x44: at 30,84 reaches
+11 header "switch-test-screen" 60,74 282x20.33: at 201,84.17 reaches
+12 text "switch-test-title" 16,122.33 370x24.00: at 201,134.33 reaches
+14 switch "swiftui-weather-alerts-switch" 323,170.33 63x28: at 354.50,184.33 reaches
+15 text "swiftui-weather-alerts-state" 16,206.33 370x20.33: at 201,216.50 reaches
+16 switch "uikit-weather-alerts-switch" 334,250.67 52x32.00: at 360,266.67 reaches
+17 text "uikit-weather-alerts-state" 16,290.67 370x20.33: at 201,300.83 reaches
+## hit-tested
+10 button "BackButton" 8,62 44x44: at 30,84 reaches
+11 header "switch-test-screen" 60,74 282x20.33: at 201,84.17 reaches
+12 text "switch-test-title" 16,122.33 370x24.00: at 201,134.33 reaches
+14 switch "swiftui-weather-alerts-switch" 323,170.33 63x28: at 354.50,184.33 reaches
+15 text "swiftui-weather-alerts-state" 16,206.33 370x20.33: at 201,216.50 reaches
+16 switch "uikit-weather-alerts-switch" 334,250.67 52x32.00: at 360,266.67 reaches
+17 text "uikit-weather-alerts-state" 16,290.67 370x20.33: at 201,300.83 reaches

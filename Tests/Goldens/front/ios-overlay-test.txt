@@ -1,0 +1,47 @@
+# 44 nodes, 23 listed
+## no point read
+10 button "BackButton" 8,62 44x44: at 30,84 reaches
+11 header "overlay-test-screen" 60,74 282x20.33: at 201,84.17 reaches
+16 text "overlay-test-tab" 129,122.33 144.33x20.33: at 201.17,132.50 reaches
+17 text "overlay-test-swallowed" 131,154.67 140.33x20.33: at 201.17,164.83 reaches
+18 text "overlay-test-scrim" 147.33,187 107.67x20.33: at 201.17,197.17 reaches
+19 button "overlay-test-start-clock" 103.33,219.33 121.00x44.00: at 163.83,241.33 reaches
+20 text "overlay-test-clock" 236.33,231.33 62.67x20.33: at 267.67,241.50 reaches
+21 text "overlay-test-hidden-taps" 144,275.33 114.33x20.33: at 201.17,285.50 reaches
+22 button "overlay-test-toggle-banner" 132.67,307.67 136.67x44: at 201.00,329.67 reaches
+23 button "overlay-test-show-scrim" 113.33,363.67 175.33x44: at 201.00,385.67 reaches
+24 button "overlay-test-flicker" 158.67,419.67 84.67x44: at 201,441.67 reaches
+25 text "overlay-test-flicker-node" 141.67,475.67 118.67x20.33: at 201.00,485.83 reaches
+26 other "overlay-test-hidden-frame" 81,511.67 240x56.00: at 201,539.67 reaches
+27 button "overlay-test-log-warning" 76.67,579.67 131.67x44: at 142.50,601.67 reaches
+28 button "overlay-test-log-error" 220.33,579.67 105.33x44: at 273,601.67 reaches
+29 button "overlay-test-log-two-errors" 61.33,635.67 151x44: at 136.83,657.67 reaches
+30 button "overlay-test-clear-logs" 224.33,635.67 116.33x44: at 282.50,657.67 reaches
+39 button "overlay-test-amount" 16,730.67 370x56: at 201,758.67 reaches
+40 group "overlay-test-tab-bar" 0,790.67 402x83.33: at 201,832.33 reaches
+41 button "overlay-test-tab-home" 0,791.00 134x49: at 67,815.50 reaches
+42 button "overlay-test-tab-search" 134,791.00 134x49: at 201,815.50 reaches
+43 button "overlay-test-tab-profile" 268,791.00 134x49: at 335,815.50 reaches
+## hit-tested
+10 button "BackButton" 8,62 44x44: at 30,84 reaches
+11 header "overlay-test-screen" 60,74 282x20.33: at 201,84.17 reaches
+16 text "overlay-test-tab" 129,122.33 144.33x20.33: at 201.17,132.50 reaches
+17 text "overlay-test-swallowed" 131,154.67 140.33x20.33: at 201.17,164.83 reaches
+18 text "overlay-test-scrim" 147.33,187 107.67x20.33: at 201.17,197.17 reaches
+19 button "overlay-test-start-clock" 103.33,219.33 121.00x44.00: at 163.83,241.33 reaches
+20 text "overlay-test-clock" 236.33,231.33 62.67x20.33: at 267.67,241.50 reaches
+21 text "overlay-test-hidden-taps" 144,275.33 114.33x20.33: at 201.17,285.50 reaches
+22 button "overlay-test-toggle-banner" 132.67,307.67 136.67x44: at 201.00,329.67 reaches
+23 button "overlay-test-show-scrim" 113.33,363.67 175.33x44: at 201.00,385.67 reaches
+24 button "overlay-test-flicker" 158.67,419.67 84.67x44: at 201,441.67 reaches
+25 text "overlay-test-flicker-node" 141.67,475.67 118.67x20.33: at 201.00,485.83 reaches
+26 other "overlay-test-hidden-frame" 81,511.67 240x56.00: at 201,539.67 reaches
+27 button "overlay-test-log-warning" 76.67,579.67 131.67x44: at 142.50,601.67 reaches
+28 button "overlay-test-log-error" 220.33,579.67 105.33x44: at 273,601.67 reaches
+29 button "overlay-test-log-two-errors" 61.33,635.67 151x44: at 136.83,657.67 reaches
+30 button "overlay-test-clear-logs" 224.33,635.67 116.33x44: at 282.50,657.67 reaches
+39 button "overlay-test-amount" 16,730.67 370x56: at 201,758.67 reaches
+40 group "overlay-test-tab-bar" 0,790.67 402x83.33: at 201,832.33 reaches
+41 button "overlay-test-tab-home" 0,791.00 134x49: at 67,815.50 reaches
+42 button "overlay-test-tab-search" 134,791.00 134x49: at 201,815.50 reaches
+43 button "overlay-test-tab-profile" 268,791.00 134x49: at 335,815.50 reaches

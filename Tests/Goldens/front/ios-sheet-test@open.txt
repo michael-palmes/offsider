@@ -1,0 +1,17 @@
+# 26 nodes, 8 listed
+## no point read
+11 button "BackButton" 8,62 44x44: at 30,84 judged header "sheet-test-sheet" 16,78 370x44.33 (treeOrder, guess)
+12 header "sheet-test-screen" 60,74 282x20.33: at 201,84.17 judged header "sheet-test-sheet" 16,78 370x44.33 (treeOrder, guess)
+14 text "sheet-test-state" 132.33,122.33 137.33x20.33: at 201.00,132.50 reaches
+15 button "sheet-test-open-sheet" 138.33,166.67 125.33x44: at 201.00,188.67 judged button "sheet-test-action" 116.67,146.33 168.67x44 (treeOrder, guess)
+23 header "sheet-test-sheet" 16,78 370x44.33: at 201,100.17 reaches
+24 button "sheet-test-action" 116.67,146.33 168.67x44: at 201.00,168.33 judged button "sheet-test-open-sheet" 138.33,166.67 125.33x44 (treeOrder, guess)
+25 button "sheet-test-close" 137.33,214.33 127.33x44: at 201.00,236.33 reaches
+## hit-tested
+11 button "BackButton" 8,62 44x44: covered by header "sheet-test-sheet" 16,78 370x44.33 (hitTest, sure): at 30,84 judged header "sheet-test-sheet" 16,78 370x44.33 (hitTest, sure), other hit
+12 header "sheet-test-screen" 60,74 282x20.33: covered by header "sheet-test-sheet" 16,78 370x44.33 (hitTest, sure): at 201,84.17 judged header "sheet-test-sheet" 16,78 370x44.33 (hitTest, sure), other hit
+14 text "sheet-test-state" 132.33,122.33 137.33x20.33: at 201.00,132.50 reaches
+15 button "sheet-test-open-sheet" 138.33,166.67 125.33x44: covered by button "sheet-test-action" 116.67,146.33 168.67x44 (hitTest, sure): at 201.00,188.67 judged button "sheet-test-action" 116.67,146.33 168.67x44 (hitTest, sure), other hit
+23 header "sheet-test-sheet" 16,78 370x44.33: at 201,100.17 reaches
+24 button "sheet-test-action" 116.67,146.33 168.67x44: at 201.00,168.33 reaches, own hit
+25 button "sheet-test-close" 137.33,214.33 127.33x44: at 201.00,236.33 reaches

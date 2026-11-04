@@ -186,7 +186,7 @@ enum VerifyOutput {
         case .none:
             change = "no change"
         }
-        let style = outcome.style.map { ", \($0.rawValue) style" } ?? ""
+        let style = outcome.style.map { ", sent as \($0.shown)" } ?? ""
         let note = outcome.note == .keyboardClosed
             ? "; only the keyboard closed: the input may have been spent closing it; repeat it if the control shows no effect"
             : ""
@@ -231,15 +231,8 @@ enum VerifyOutput {
 
     static func unverifiedLine(_ outcome: Verifier.Outcome, for request: VerifyRequest) -> String {
         let plural = outcome.attempts == 1 ? "attempt" : "attempts"
-        let styles = request.styles.prefix(outcome.attempts).compactMap { $0?.rawValue }
-        let styleText: String
-        if styles.count > 1 {
-            styleText = " (\(styles.dropLast().joined(separator: ", ")), then \(styles.last!) style)"
-        } else if let only = styles.first {
-            styleText = " (\(only) style)"
-        } else {
-            styleText = ""
-        }
+        let styles = request.styles.prefix(outcome.attempts).compactMap { $0?.shown }
+        let styleText = styles.isEmpty ? "" : " (\(styles.joined(separator: ", then ")))"
         if outcome.note == .logBoxOpened {
             return "✗ \(request.subject) was dispatched but the React Native LogBox inspector opened over the app, so its effect cannot be seen. Read the log, then close it with offsider rn logbox dismiss\(CommandScope.current.appArgument(device: request.device.rawValue)) --device \(request.device.rawValue)."
         }
@@ -268,9 +261,17 @@ enum VerifyOutput {
                 + lateStateHint(node, selector: request.target, device: request.device, retried: outcome.attempts > 1)
         }
         return "✗ \(request.subject) was dispatched but nothing observable changed after \(outcome.attempts) \(plural)\(styleText).\(ignoredText(outcome.ignored)) "
+            + (pressedOnce(request) ? "\(onePressNote) " : "")
             + (request.device.platform == .ios
                 ? "Check the target with describe-ui, or run offsider doctor --device \(request.device.rawValue)."
                 : "Check the target with describe-ui.")
+    }
+
+    static let onePressNote = "It was not tapped again: a second press could submit twice. Check for its effect first; --retries 1 allows one more press."
+
+    /// A button, link or menu item tapped once by default, whose effect may be hidden rather than missing.
+    static func pressedOnce(_ request: VerifyRequest) -> Bool {
+        request.command == "tap" && request.options.retries == nil && request.styles.count == 1 && VerificationOptions.retriesRepeat(request.targetNode)
     }
 
     /// A switch, checkbox or radio button may change late, after the app hears back, and another tap would undo the first.
@@ -316,7 +317,7 @@ enum VerifyOutput {
 
     static func retryLine(failed: Verifier.Attempt, next: Verifier.Attempt) -> String {
         if let failedStyle = failed.style, let nextStyle = next.style {
-            return "! No observable change after attempt \(failed.number) (\(failedStyle.rawValue) style); retrying with \(nextStyle.rawValue) style"
+            return "! No observable change after attempt \(failed.number) (\(failedStyle.shown)); retrying with \(nextStyle.shown)"
         }
         return "! No observable change after attempt \(failed.number); retrying"
     }
@@ -330,7 +331,7 @@ enum VerifyOutput {
 
     static func personRetry(failed: Verifier.Attempt, next: Verifier.Attempt) -> String {
         guard let nextStyle = next.style else { return "Nothing changed after attempt \(failed.number); trying again" }
-        return "Nothing changed after attempt \(failed.number); trying \(nextStyle.rawValue) style"
+        return "Nothing changed after attempt \(failed.number); trying \(nextStyle.shown)"
     }
 
     static func personHold(request: VerifyRequest) -> String {
@@ -358,7 +359,7 @@ enum VerifyOutput {
             details.append("Only the keyboard closed; repeat the input if the control shows no effect")
         }
         let attempts = max(request.styles.count, 1)
-        let tries = (attempts > 1 ? ["attempt \(outcome.attempts) of \(attempts)"] : []) + (outcome.style.map { ["\($0.rawValue) style"] } ?? [])
+        let tries = (attempts > 1 ? ["attempt \(outcome.attempts) of \(attempts)"] : []) + (outcome.style.map { ["sent as \($0.shown)"] } ?? [])
         if !tries.isEmpty { details.append(InputPersonView.sentence(tries.joined(separator: ", "))) }
         details.append(InputPersonView.sentence(timing(outcome.phases, input: request.command)))
         return .done("\(request.personSubject ?? request.subject) verified", details: details)
@@ -400,10 +401,11 @@ enum VerifyOutput {
             let details = [lateStateHint(node, selector: request.target, device: request.device, retried: outcome.attempts > 1, includingWait: false)] + (ignored.isEmpty ? [] : [ignored])
             return .failed("\(subject) changed nothing yet", details: details, try: [waitCommand(node, selector: request.target, device: request.device) ?? look])
         }
-        let styles = request.styles.prefix(outcome.attempts).compactMap { $0?.rawValue }
-        let sent = "Sent \(outcome.attempts == 1 ? "once" : "\(outcome.attempts) times")" + (styles.isEmpty ? "" : " (\(styles.joined(separator: ", then ")) style)")
+        let styles = request.styles.prefix(outcome.attempts).compactMap { $0?.shown }
+        let sent = "Sent \(outcome.attempts == 1 ? "once" : "\(outcome.attempts) times")" + (styles.isEmpty ? "" : " (\(styles.joined(separator: ", then ")))")
         let doctor = request.device.platform == .ios ? ["offsider doctor --device \(device)"] : []
-        return .failed("\(subject) changed nothing", details: [sent] + (ignored.isEmpty ? [] : [ignored]), try: [look] + doctor)
+        let once = pressedOnce(request) ? ["Not tapped again: a second press could submit twice"] : []
+        return .failed("\(subject) changed nothing", details: [sent] + once + (ignored.isEmpty ? [] : [ignored]), try: [look] + doctor)
     }
 
     /// `settle 0.4 s, tap 0.1 s, verify 1.2 s`: the agent's timing suffix without its brackets.

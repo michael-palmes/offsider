@@ -66,6 +66,21 @@ extension IOSBackend: ExpoDevClientPreparing {
     }
 }
 
+extension IOSBackend: ExpoDevMenuIntroReading {
+    /// One `defaults read` of the app's own preferences; a domain never written reads as the intro still to come.
+    func devMenuIntroPending(_ appID: String, on id: DeviceID) async -> Bool? {
+        guard let bundleID = try? ExpoDevClient.validate(appID: appID),
+              let data = try? await Self.appContainer(udid: id.rawValue, bundleID: bundleID, kind: "data") else { return nil }
+        let read = try? await ProcessCapture.run(
+            executable: "/usr/bin/xcrun",
+            arguments: ExpoDevClient.iosDefaultsReadArguments(udid: id.rawValue, dataContainer: data, bundleID: bundleID),
+            timeout: 15
+        )
+        guard let read else { return nil }
+        return read.status == 0 ? ExpoDevClient.iosIntroPending(read.stdout) : true
+    }
+}
+
 extension IOSBackend: ExpoDevClientOpening {
     func devClientSchemes(_ appID: String, on id: DeviceID) async throws -> [String] {
         let bundleID = try ExpoDevClient.validate(appID: appID)

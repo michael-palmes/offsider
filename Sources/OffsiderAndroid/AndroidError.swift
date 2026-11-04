@@ -575,18 +575,28 @@ public struct AndroidError: LocalizedError, CustomStringConvertible, Equatable, 
         )
     }
 
-    /// `app` is the one this command drives, when it names one; the dialog's words stay unread, so `permission show` names what is left to grant.
-    static func permissionDialogInFront(_ serial: String, app: String?) -> AndroidError {
-        let grant = "offsider permission grant <service> --app \(app ?? "<app>") --device \(serial)"
-        return AndroidError(
-            .otherAppInFront,
-            "A permission dialog is in front on \(serial), and Offsider never answers one on a physical phone, so it did nothing. Run `\(grant)` with the service the app asked for, such as notifications or camera, then open the app again.",
-            hint: app.map { "offsider permission show --app \($0) --device \(serial)" }
-        )
+    /// `app` is the one this command drives, when it names one; the dialog's words stay unread, so `asked` comes from the app's own permissions: what it requests and lacks.
+    static func permissionDialogInFront(_ serial: String, app: String?, asked: [PermissionService] = []) -> AndroidError {
+        let lead = "A permission dialog is in front on \(serial), and Offsider never answers one on a physical phone, so it did nothing."
+        guard let app else {
+            return AndroidError(.otherAppInFront, "\(lead) Name the app it is for with --app and retry, and the refusal names what that app lacks.")
+        }
+        let show = "offsider permission show --app \(app) --device \(serial)"
+        let grants = asked.prefix(3).map { "offsider permission grant \($0.rawValue) --app \(app) --device \(serial)" }
+        switch grants.count {
+        case 0:
+            return AndroidError(.otherAppInFront, "\(lead) Run `\(show)` to see what \(app) lacks, grant it with `offsider permission grant`, then open the app again.", hint: show)
+        case 1:
+            return AndroidError(.otherAppInFront, "\(lead) \(app) lacks \(asked[0].rawValue): run `\(grants[0])`, then open the app again.", hint: grants[0])
+        default:
+            let listed = grants.map { "`\($0)`" }.joined(separator: " or ")
+            return AndroidError(.otherAppInFront, "\(lead) \(app) lacks \(asked.prefix(3).map(\.rawValue).joined(separator: ", ")): run \(listed), whichever the dialog asks for, then open the app again.", hint: show)
+        }
     }
 
     /// The app a command names is outside this phone's allowance, whatever is in front.
-    static func appNotPermitted(_ serial: String, package: String, byManagedPolicy: Bool, audience: ErrorAudience = .current) -> AndroidError {
+    static func appNotPermitted(_ serial: String, package: String, byManagedPolicy: Bool, pinned: [String] = [], audience: ErrorAudience = .current) -> AndroidError {
+        let pin = DeviceAddPlan.pinCommand(key: serial, keeping: pinned, adding: package)
         if byManagedPolicy {
             return AndroidError(
                 .appNotAllowed,
@@ -598,12 +608,13 @@ public struct AndroidError: LocalizedError, CustomStringConvertible, Equatable, 
             "\(package), the app this command drives, is not among the apps allowed on \(serial), so Offsider did nothing. "
                 + (audience == .person
                     ? "Name an allowed app, or pin this one."
-                    : "Name an allowed app, or ask the user to run `offsider devices add` in their own terminal, choose \(serial) and pin \(package)."),
-            hint: "offsider devices add"
+                    : "Name an allowed app, or ask the user to run `\(pin)` in their own terminal; it pins \(package), with Touch ID or the password."),
+            hint: pin
         )
     }
 
-    static func otherAppNotPermitted(_ serial: String, package: String, byManagedPolicy: Bool, audience: ErrorAudience = .current) -> AndroidError {
+    static func otherAppNotPermitted(_ serial: String, package: String, byManagedPolicy: Bool, pinned: [String] = [], audience: ErrorAudience = .current) -> AndroidError {
+        let pin = DeviceAddPlan.pinCommand(key: serial, keeping: pinned, adding: package)
         if byManagedPolicy {
             return AndroidError(
                 .otherAppInFront,
@@ -615,8 +626,8 @@ public struct AndroidError: LocalizedError, CustomStringConvertible, Equatable, 
             "\(package) is in front on \(serial), and it is not among the apps allowed on this phone, so Offsider did nothing. "
                 + (audience == .person
                     ? "Bring an allowed app to the front, or pin this one."
-                    : "Bring an allowed app to the front, or ask the user to run `offsider devices add` in their own terminal, choose \(serial) and pin \(package)."),
-            hint: "offsider devices add"
+                    : "Bring an allowed app to the front, or ask the user to run `\(pin)` in their own terminal; it pins \(package), with Touch ID or the password."),
+            hint: pin
         )
     }
 

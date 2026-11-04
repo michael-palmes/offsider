@@ -1,0 +1,6 @@
+# 5 nodes, 5 listed
+## no point read
+1 button "BackButton" 8,54.10 44.19x44.19: at 30.09,76.19 reaches
+2 group "tap-test-screen" 60.19,64.38 291.43x23.24: at 205.91,76 reaches
+3 group "tap-test-area" 0,98.67 411.43x824.76: at 205.72,511.05 reaches
+4 text "tap-count" 157.33,159.24 97.14x23.24: at 205.90,170.86 reaches

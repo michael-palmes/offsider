@@ -37,9 +37,13 @@ public struct SystemPrompt: Equatable, Sendable {
 
     /// True when a host sits in a window over the one holding `target`.
     public static func hasHost(over target: UINode, in tree: UITree) -> Bool {
-        let hosts = hosts(in: tree)
+        hasHost(over: target, in: tree, hosts: hosts(in: tree))
+    }
+
+    /// `hasHost(over:in:)` with the tree's `hosts(in:)` already read.
+    public static func hasHost(over target: UINode, in tree: UITree, hosts: [(index: Int, window: UINode)]) -> Bool {
         guard let last = hosts.last else { return false }
-        let holding = windows(in: tree.roots).firstIndex { $0.flattened().contains { $0.isSameElement(as: target) } } ?? 0
+        let holding = windows(in: tree.roots).firstIndex { $0.contains { $0.isSameElement(as: target) } } ?? 0
         return last.index > holding
     }
 
