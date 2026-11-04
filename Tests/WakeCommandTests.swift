@@ -134,8 +134,19 @@ struct WakeCommandTests {
             #expect(error?.reason == .deviceLocked)
             #expect(error?.reason.exitCode.rawValue == 7)
             #expect(error?.hint == "offsider wake --unlock --device ZY22FAKE01")
+            #expect(error?.userFacingDescription.hasSuffix("lock screen is showing. Run `offsider wake --unlock --device ZY22FAKE01` to type the saved code, or unlock it on the device.") == true)
             #expect(backend.enteredCodes.isEmpty)
             #expect(store.reads == 0)
+        }
+    }
+
+    @Test("a PIN lock screen with no code saved names the command a person saves it with, never a wake that would only fail again")
+    func wakeLockedUnsaved() async throws {
+        try await Self.withLedger { (ledger: UnlockAttemptLedger) async throws in
+            let backend = Self.backend(Self.locked, afterWake: AwakeReading(screen: .on, lockScreen: .secure, credential: "pin"))
+            let error = await #expect(throws: CLIError.self) { try await Self.wake(backend, ledger: ledger) }
+            #expect(error?.hint == "offsider unlock-code set --device ZY22FAKE01")
+            #expect(error?.userFacingDescription.contains("save its code in your own terminal with `offsider unlock-code set --device ZY22FAKE01`, then run `offsider wake --unlock --device ZY22FAKE01`") == true)
         }
     }
 
@@ -503,7 +514,8 @@ struct WakeCommandTests {
         let refusal = AndroidError(.otherAppInFront, "com.android.systemui is part of the system UI, which Offsider never signs in to or drives on a physical phone.")
         let annotated = try #require(await ScreenStateHint.annotate(refusal, routes: Self.route(Self.backend(Self.locked))) as? ScreenStateFailure)
         #expect(annotated.reason == .screenOff && annotated.reason.exitCode == .failure)
-        #expect(annotated.failureMessage.hasPrefix("The screen of Motorola (ZY22FAKE01) is off"))
+        // The command listed no device, so the hint reads it once and names the phone as wake does.
+        #expect(annotated.failureMessage.hasPrefix("The screen of Motorola Fake (ZY22FAKE01) is off"))
         #expect(!annotated.failureMessage.contains("system UI"))
         #expect(annotated.hint == "offsider wake --device ZY22FAKE01")
 
@@ -579,7 +591,7 @@ struct WakeCommandTests {
 
         let report = String(decoding: written, as: UTF8.self)
         #expect(report.contains("offsider wake --device ZY22FAKE01"))
-        #expect(report.contains("The screen of Motorola (ZY22FAKE01) is off"))
+        #expect(report.contains("The screen of Motorola Fake (ZY22FAKE01) is off"))
         #expect(thrown?.underlying is ScreenStateFailure)
         #expect(thrown?.exitCode.rawValue == 2)
     }
@@ -588,9 +600,28 @@ struct WakeCommandTests {
     func hintNote() async {
         var notes: [String] = []
         let exit = ExitCode(OffsiderExitCode.unverified.rawValue)
-        let result = await ScreenStateHint.annotate(exit, routes: Self.route(Self.backend(AwakeReading(screen: .on, lockScreen: .secure, credential: "password")))) { notes.append($0) }
+        let backend = Self.backend(AwakeReading(screen: .on, lockScreen: .swipe, credential: "none"))
+        let result = await ScreenStateHint.annotate(exit, routes: Self.route(backend), store: MemoryUnlockCodeStore()) { notes.append($0) }
 
         #expect((result as? ExitCode)?.rawValue == 5)
-        #expect(notes == ["Note: ZY22FAKE01 is showing its password lock screen, so input and screen reads do not reach the app. Run `offsider wake --device ZY22FAKE01`, then retry."])
+        #expect(notes == ["Note: Fake (ZY22FAKE01) is showing its lock screen, so input and screen reads do not reach the app. Run `offsider wake --device ZY22FAKE01`, then retry."])
+    }
+
+    @Test("a PIN or password lock screen names wake --unlock once a code is saved, and saving one when none is, so the hint never loops")
+    func lockedHintNamesUnlock() async throws {
+        try await Self.withLedger { (ledger: UnlockAttemptLedger) async throws in
+            let failure = CLIError(errorDescription: "No accessibility element matched --label 'Save'.", reason: .selectorNotFound)
+            let backend = Self.backend(AwakeReading(screen: .on, lockScreen: .secure, credential: "password", maker: "motorola"))
+            backend.listedDeviceName = "moto g"
+
+            let saved = try #require(await ScreenStateHint.annotate(failure, routes: Self.route(backend), store: try Self.store("2580"), ledger: ledger) as? ScreenStateFailure)
+            #expect(saved.failureMessage.hasSuffix("Motorola moto g (ZY22FAKE01) is showing its password lock screen, so input and screen reads do not reach the app. Run `offsider wake --unlock --device ZY22FAKE01` to type the saved code, or unlock it on the device."))
+            #expect(saved.hint == "offsider wake --unlock --device ZY22FAKE01")
+
+            let unsaved = try #require(await ScreenStateHint.annotate(failure, routes: Self.route(backend), store: MemoryUnlockCodeStore(), ledger: ledger) as? ScreenStateFailure)
+            #expect(unsaved.failureMessage.contains("`offsider unlock-code set --device ZY22FAKE01`, then run `offsider wake --unlock --device ZY22FAKE01`"))
+            #expect(unsaved.hint == "offsider unlock-code set --device ZY22FAKE01")
+            #expect(!unsaved.failureMessage.contains("Run `offsider wake --device"))
+        }
     }
 }
