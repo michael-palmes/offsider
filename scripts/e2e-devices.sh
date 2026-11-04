@@ -19,24 +19,27 @@ EOF
 
 command -v jq >/dev/null 2>&1 || die "jq is not installed." "brew install jq"
 
-# A header with how many are ready, then a row per device.
+# A header with how many are ready, then a row per device; a device that cannot boot gets its fix under it.
 show_status() {
-    local status="$1" name kind profile exists what width ready total names=() avd="Android emulator" simulator="iOS simulator"
+    local status="$1" name kind profile exists ready_row problem fix what width ready total names=() avd="Android emulator" simulator="iOS simulator"
     while IFS= read -r name; do names+=("$name"); done < <(jq -r '.devices[].name' <<<"$status")
     width="$(ui_widest "${names[@]}")"
     total="$(jq '.devices | length' <<<"$status")"
-    ready="$(jq '[.devices[] | select(.exists)] | length' <<<"$status")"
+    ready="$(jq '[.devices[] | select(.ready)] | length' <<<"$status")"
     if [[ "$(ui_breakpoint)" == narrow ]]; then avd="AVD" simulator="simulator"; fi
     ui_header "🧪" "E2E devices" "$ready of $total ready"
-    while IFS=$'\t' read -r name kind profile exists; do
+    while IFS=$'\037' read -r name kind profile exists ready_row problem fix; do
         what="$avd"
         [[ "$kind" == avd ]] || what="$simulator"
-        if [[ "$exists" == true ]]; then
+        if [[ "$ready_row" == true ]]; then
             UI_ROW_LABEL_WIDTH="$width" ui_row ok "$name" "$what ${UI_DOT} $profile"
+        elif [[ "$exists" == true ]]; then
+            UI_ROW_LABEL_WIDTH="$width" ui_row fail "$name" "cannot boot ${UI_DOT} $problem"
+            [[ -n "$fix" ]] && ui_try "$fix"
         else
             UI_ROW_LABEL_WIDTH="$width" ui_row warn "$name" "missing ${UI_DOT} $what ${UI_DOT} $profile"
         fi
-    done < <(jq -r '.devices[] | [.name, .kind, .profile, (.exists | tostring)] | @tsv' <<<"$status")
+    done < <(jq -r '.devices[] | [.name, .kind, .profile, (.exists | tostring), (.ready | tostring), (.problem // ""), (.fix // "")] | join("\u001f")' <<<"$status")
 }
 
 create_missing() {
@@ -71,6 +74,9 @@ case "${1:-}" in
         show_status "$status"
         echo ""
         if [[ "$(jq '.missing | length' <<<"$status")" == 0 ]]; then
+            if [[ "$(jq '.broken | length' <<<"$status")" != 0 ]]; then
+                die "Some devices cannot boot. Run the fix under each one."
+            fi
             ui_receipt "All set"
             ui_next "./test-runner.sh"
             exit 0

@@ -42,6 +42,7 @@ EOF
 echo "xcrun \$*" >> "$CALLS"
 case "\$*" in
   "simctl list devices -j") cat "$SANDBOX/devices.json" ;;
+  "simctl list runtimes -j") cat "$SANDBOX/runtimes.json" 2>/dev/null || echo '{"runtimes":[]}' ;;
   "simctl list devicetypes -j") echo '{"devicetypes":[{"name":"iPhone 17 Pro","identifier":"type.pro"},{"name":"iPhone Duo","identifier":"type.duo"}]}' ;;
   "simctl list runtimes available -j") echo '{"runtimes":[
      {"platform":"iOS","isAvailable":true,"version":"27.1","identifier":"rt.27-1","supportedDeviceTypes":[{"identifier":"type.duo"}]},
@@ -116,6 +117,66 @@ rm -rf "$ANDROID_HOME/cmdline-tools/latest"
 "$CORE" create >/dev/null 2>&1
 check "without latest, the newest versioned tools run" "12.0 sdkmanager" "$(grep -o '^[0-9.]* sdkmanager' "$CALLS" | sort -u)"
 check "only the newest avdmanager runs" "12.0 avdmanager" "$(grep -o '^[0-9.]* avdmanager' "$CALLS" | sort -u)"
+teardown
+
+# Every device exists: an emulator, an AVD on the installed image, and a Duo on a runtime that is on disk.
+setup_ready() {
+    setup
+    mkdir -p "$ANDROID_HOME/emulator" "$ANDROID_HOME/system-images/android-36/google_apis_ps16k/arm64-v8a" "$SANDBOX/root-27-1"
+    printf '#!/bin/bash\n' > "$ANDROID_HOME/emulator/emulator"
+    chmod +x "$ANDROID_HOME/emulator/emulator"
+    for name in Offsider_E2E Offsider_E2E_Fold; do
+        mkdir -p "$ANDROID_AVD_HOME/$name.avd"
+        printf 'path=%s\n' "$ANDROID_AVD_HOME/$name.avd" > "$ANDROID_AVD_HOME/$name.ini"
+        printf 'image.sysdir.1=system-images/android-36/google_apis_ps16k/arm64-v8a/\n' > "$ANDROID_AVD_HOME/$name.avd/config.ini"
+    done
+    echo '{"devices":{"com.apple.CoreSimulator.SimRuntime.iOS-27-1":[{"name":"Offsider Duo","udid":"B","isAvailable":true}]}}' > "$SANDBOX/devices.json"
+    printf '{"runtimes":[{"identifier":"com.apple.CoreSimulator.SimRuntime.iOS-27-1","version":"27.1","isAvailable":true,"runtimeRoot":"%s"}]}\n' "$SANDBOX/root-27-1" > "$SANDBOX/runtimes.json"
+}
+
+setup_ready
+out="$("$CORE" status)"
+check "devices that can boot are ready" '[true,true,true]' "$(jq -c '[.devices[].ready]' <<<"$out")"
+check "nothing is broken" '[]' "$(jq -c .broken <<<"$out")"
+teardown
+
+setup_ready
+rm -rf "$SANDBOX/root-27-1"
+out="$("$CORE" status)"
+check "a Duo whose runtime is gone from disk exists but is not ready" 'true false' "$(jq -r '.devices[2] | "\(.exists) \(.ready)"' <<<"$out")"
+check "it says why" 'its iOS 27.1 runtime is not on disk' "$(jq -r '.devices[2].problem' <<<"$out")"
+check "its fix makes it again on an installed runtime" 'xcrun simctl delete B && scripts/e2e-devices.sh create' "$(jq -r '.devices[2].fix' <<<"$out")"
+check "it is listed as broken, not missing" '["Offsider Duo"] []' "$(jq -c .broken <<<"$out") $(jq -c .missing <<<"$out")"
+teardown
+
+setup_ready
+echo '{"devices":{"com.apple.CoreSimulator.SimRuntime.iOS-26-0":[{"name":"Offsider Duo","udid":"C","isAvailable":false,"availabilityError":"runtime profile not found"}]}}' > "$SANDBOX/devices.json"
+out="$("$CORE" status)"
+check "a Duo CoreSimulator calls unavailable gives its reason" 'false runtime profile not found' "$(jq -r '.devices[2] | "\(.ready) \(.problem)"' <<<"$out")"
+teardown
+
+setup_ready
+echo '{"devices":{"com.apple.CoreSimulator.SimRuntime.iOS-26-0":[{"name":"Offsider Duo","udid":"C","isAvailable":false}],"com.apple.CoreSimulator.SimRuntime.iOS-27-1":[{"name":"Offsider Duo","udid":"B","isAvailable":true}]}}' > "$SANDBOX/devices.json"
+check "one Duo that can boot is enough" 'true' "$("$CORE" status | jq -r '.devices[2].ready')"
+teardown
+
+setup_ready
+rm -f "$SANDBOX/runtimes.json"
+check "a Duo whose runtime simctl does not list is judged by its own availability" 'true' "$("$CORE" status | jq -r '.devices[2].ready')"
+teardown
+
+setup_ready
+rm -rf "$ANDROID_HOME/system-images"
+out="$("$CORE" status)"
+check "an AVD whose system image is not installed is not ready" 'false' "$(jq -r '.devices[0].ready' <<<"$out")"
+check "it names the image" 'its system image system-images/android-36/google_apis_ps16k/arm64-v8a is not installed' "$(jq -r '.devices[0].problem' <<<"$out")"
+check "its fix installs the image" "\"$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager\" --install \"system-images;android-36;google_apis_ps16k;arm64-v8a\"" "$(jq -r '.devices[0].fix' <<<"$out")"
+check "status installs nothing" "0" "$(grep -c '^sdkmanager' "$CALLS")"
+teardown
+
+setup_ready
+rm -rf "$ANDROID_HOME/emulator"
+check "with no emulator neither AVD can boot" '["Offsider_E2E","Offsider_E2E_Fold"]' "$("$CORE" status | jq -c .broken)"
 teardown
 
 setup
