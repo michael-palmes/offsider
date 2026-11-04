@@ -71,13 +71,22 @@ struct TreeGoldenCaptureTests {
             try await Self.requireOffsiderSimulator()
         }
         let devicePlatform: DevicePlatform = platform == .ios ? .ios : .android
-        // Gboard offers the latest copied text as a chip, and the emulator shares the Mac's clipboard, so the run empties it and puts it back.
+        let keyboardSetting = platform == .android ? try await AndroidE2E.shell("settings get secure \(Self.fullKeyboardSetting)").trimmingCharacters(in: .whitespacesAndNewlines) : nil
+        // Gboard offers the latest copied text as a chip, and the emulator shares its clipboard with the Mac both ways, so the run empties it and
+        // puts its text back after, whatever happens; the text stays in memory, never written or printed.
         let emulator = platform == .android ? try await AndroidE2E.emulatorClient() : nil
         let clip = try await emulator?.clipboard()
-        try await emulator?.setClipboard("")
-        defer { if let emulator { Task { await emulator.close() } } }
-        let keyboardSetting = platform == .android ? try await AndroidE2E.shell("settings get secure \(Self.fullKeyboardSetting)").trimmingCharacters(in: .whitespacesAndNewlines) : nil
+        func putBack() async throws {
+            var failure: (any Error)?
+            do { try await Self.restoreKeyboard(keyboardSetting) } catch { failure = error }
+            if let emulator, let clip {
+                do { try await emulator.setClipboard(clip) } catch { failure = failure ?? error }
+            }
+            await emulator?.close()
+            if let failure { throw failure }
+        }
         do {
+            try await emulator?.setClipboard("")
             for screen in Self.screens {
                 let full = screen.fullKeyboard && platform == .android
                 // Set before the app opens: Gboard keeps its toolbar for a field that took focus earlier.
@@ -98,12 +107,10 @@ struct TreeGoldenCaptureTests {
                 try TreeGoldens.write(object, to: TreeGoldens.Golden(platform: devicePlatform, screen: screen.name))
             }
         } catch {
-            try? await Self.restoreKeyboard(keyboardSetting)
-            if let emulator, let clip { try? await emulator.setClipboard(clip) }
+            try? await putBack()
             throw error
         }
-        try await Self.restoreKeyboard(keyboardSetting)
-        if let emulator, let clip { try await emulator.setClipboard(clip) }
+        try await putBack()
         try TreeGoldens.writeBudgets()
     }
 
