@@ -16,12 +16,12 @@ public struct UITreeRedactionCounts: Equatable, Sendable {
 
     public var isEmpty: Bool { redacted == 0 && revealed == 0 && keyboard == 0 && copyPreview == 0 }
 
-    /// `# redacted: 2 values, 1 revealed password field, 1 keyboard suggestion, 1 copy preview`.
+    /// `# redacted: 2 values, 1 revealed password field, 1 keyboard element, 1 copy preview`.
     public var footer: String {
         var parts: [String] = []
         if redacted > 0 { parts.append("\(redacted) value\(redacted == 1 ? "" : "s")") }
         if revealed > 0 { parts.append("\(revealed) revealed password field\(revealed == 1 ? "" : "s")") }
-        if keyboard > 0 { parts.append("\(keyboard) keyboard suggestion\(keyboard == 1 ? "" : "s")") }
+        if keyboard > 0 { parts.append("\(keyboard) keyboard element\(keyboard == 1 ? "" : "s")") }
         if copyPreview > 0 { parts.append("\(copyPreview) copy preview\(copyPreview == 1 ? "" : "s")") }
         return "# redacted: " + parts.joined(separator: ", ")
     }

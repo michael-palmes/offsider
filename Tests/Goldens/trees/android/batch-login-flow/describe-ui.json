@@ -321,7 +321,7 @@
         {
           "role": "button",
           "id": "com.google.android.inputmethod.latin:id/0_resource_name_obfuscated",
-          "label": "Voice typing disabled",
+          "label": "[redacted]",
           "value": null,
           "frame": {
             "x": 12.19,
@@ -346,7 +346,7 @@
               "height": 126
             },
             "text": null,
-            "contentDescription": "Voice typing disabled",
+            "contentDescription": "[redacted]",
             "hint": null,
             "stateDescription": null,
             "roleDescription": null,
@@ -357,7 +357,7 @@
         {
           "role": "button",
           "id": null,
-          "label": "Delete",
+          "label": "[redacted]",
           "value": null,
           "frame": {
             "x": 12.19,
@@ -382,7 +382,7 @@
               "height": 126
             },
             "text": null,
-            "contentDescription": "Delete",
+            "contentDescription": "[redacted]",
             "hint": null,
             "stateDescription": null,
             "roleDescription": null,
@@ -393,7 +393,7 @@
         {
           "role": "button",
           "id": null,
-          "label": "Done",
+          "label": "[redacted]",
           "value": null,
           "frame": {
             "x": 12.19,
@@ -418,7 +418,7 @@
               "height": 126
             },
             "text": null,
-            "contentDescription": "Done",
+            "contentDescription": "[redacted]",
             "hint": null,
             "stateDescription": null,
             "roleDescription": null,
@@ -429,7 +429,7 @@
         {
           "role": "button",
           "id": null,
-          "label": "Show emoji keyboard",
+          "label": "[redacted]",
           "value": null,
           "frame": {
             "x": 12.19,
@@ -454,7 +454,7 @@
               "height": 126
             },
             "text": null,
-            "contentDescription": "Show emoji keyboard",
+            "contentDescription": "[redacted]",
             "hint": null,
             "stateDescription": null,
             "roleDescription": null,
@@ -465,7 +465,7 @@
         {
           "role": "button",
           "id": "com.google.android.inputmethod.latin:id/0_resource_name_obfuscated",
-          "label": "More stylus options",
+          "label": "[redacted]",
           "value": null,
           "frame": {
             "x": 12.19,
@@ -490,7 +490,7 @@
               "height": 126
             },
             "text": null,
-            "contentDescription": "More stylus options",
+            "contentDescription": "[redacted]",
             "hint": null,
             "stateDescription": null,
             "roleDescription": null,

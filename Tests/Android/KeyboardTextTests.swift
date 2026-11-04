@@ -38,16 +38,18 @@ struct KeyboardTextTests {
 
     // MARK: - Trees
 
-    @Test("Gboard: keys keep their labels and the clipboard chip in the header shows none")
+    @Test("Gboard: keys keep their labels; the clipboard chip and the word suggestions it draws as keys are drawn show none")
     func gboardChip() throws {
         let tree = try Self.tree("gboard-clipboard-chip.json")
         let keyboard = try Self.keyboard(tree)
+        let texts = Self.texts(tree.roots.flatMap { $0.flattened() })
 
-        #expect(!Self.texts(tree.roots.flatMap { $0.flattened() }).contains { $0.contains(Self.clip) })
+        #expect(!texts.contains { $0.contains(Self.clip) || $0.contains("synthetic-word") || $0.contains("🌟") })
         #expect(keyboard.compactMap(\.label) == [
-            "Gboard", "Open features menu", KeyboardText.marker, KeyboardText.marker, "Use voice typing", "q", "w", "Shift", "Delete", "Symbol keyboard", "Space", "Done", "Back",
+            "Gboard", "Open features menu", KeyboardText.marker, KeyboardText.marker, KeyboardText.marker, KeyboardText.marker,
+            "Use voice typing", "q", "w", "Shift", "Delete", "Symbol keyboard", "Space", "Done", "Back",
         ])
-        #expect(KeyboardText.hiddenCount(in: tree.roots) == 1)
+        #expect(KeyboardText.hiddenCount(in: tree.roots) == 3)
     }
 
     @Test("Gboard's floating chip, in nothing that scrolls, is hidden too")
@@ -100,8 +102,8 @@ struct KeyboardTextTests {
         let text = String(decoding: UITreeRenderer.render(shown, UITreeRenderOptions(format: .text)), as: UTF8.self)
         let json = String(decoding: UITreeRenderer.render(shown, UITreeRenderOptions(format: .json, compact: true)), as: UTF8.self)
 
-        #expect(text.hasSuffix("# redacted: 1 keyboard suggestion\n"))
-        #expect(json.contains(#""redacted":0,"revealed":0,"keyboardSuggestions":1"#))
+        #expect(text.hasSuffix("# redacted: 3 keyboard elements\n"))
+        #expect(json.contains(#""redacted":0,"revealed":0,"keyboardElements":3"#))
         #expect(!text.contains(Self.clip) && !json.contains(Self.clip))
     }
 

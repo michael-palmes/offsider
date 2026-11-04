@@ -147,11 +147,11 @@ public struct UITree: Equatable, Sendable {
         ])
     }
 
-    /// `redacted` and `revealed` after `context`, only when the output hid something; `keyboardSuggestions` and `copyPreviews` only when it hid one.
+    /// `redacted` and `revealed` after `context`, only when the output hid something; `keyboardElements` and `copyPreviews` only when it hid one.
     var redactionMembers: [(String, OrderedJSON)] {
         guard let redaction, !redaction.isEmpty else { return [] }
         var members: [(String, OrderedJSON)] = [("redacted", .integer(redaction.redacted)), ("revealed", .integer(redaction.revealed))]
-        if redaction.keyboard > 0 { members.append(("keyboardSuggestions", .integer(redaction.keyboard))) }
+        if redaction.keyboard > 0 { members.append(("keyboardElements", .integer(redaction.keyboard))) }
         if redaction.copyPreview > 0 { members.append(("copyPreviews", .integer(redaction.copyPreview))) }
         return members
     }

@@ -27,7 +27,7 @@ extension UITree {
         if let redacted = object["redacted"] as? NSNumber, let revealed = object["revealed"] as? NSNumber {
             redaction = UITreeRedactionCounts(
                 redacted: redacted.intValue, revealed: revealed.intValue,
-                keyboard: (object["keyboardSuggestions"] as? NSNumber)?.intValue ?? 0, copyPreview: (object["copyPreviews"] as? NSNumber)?.intValue ?? 0
+                keyboard: (object["keyboardElements"] as? NSNumber)?.intValue ?? 0, copyPreview: (object["copyPreviews"] as? NSNumber)?.intValue ?? 0
             )
         }
     }

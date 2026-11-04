@@ -124,6 +124,34 @@
         ]
        },
        {
+        "i": 900,
+        "class": "android.widget.FrameLayout",
+        "package": "com.google.android.inputmethod.latin",
+        "contentDescription": "synthetic-word",
+        "bounds": [
+         239,
+         1372,
+         534,
+         1479
+        ],
+        "clickable": true,
+        "focusable": true
+       },
+       {
+        "i": 901,
+        "class": "android.widget.FrameLayout",
+        "package": "com.google.android.inputmethod.latin",
+        "contentDescription": "emoji 🌟",
+        "bounds": [
+         1540,
+         1372,
+         1687,
+         1479
+        ],
+        "clickable": true,
+        "focusable": true
+       },
+       {
         "i": 4,
         "class": "android.widget.FrameLayout",
         "package": "com.google.android.inputmethod.latin",

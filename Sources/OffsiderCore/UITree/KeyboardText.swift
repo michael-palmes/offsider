@@ -7,45 +7,74 @@ public enum KeyboardText {
 
     /// Gboard's key ids; its other ids are obfuscated.
     static let gboardKeyID = ":id/key_pos_"
+    static let gboardPackage = "com.google.android.inputmethod.latin"
+    /// Android's own back and switcher buttons, which it draws in every keyboard's window.
+    static let navigationID = "android:id/input_method_nav_"
 
     /// View classes whose children scroll, as suggestion strips and clipboard history do and rows of keys do not.
     static let scrollingClasses: Set<String> = [
         "ScrollView", "HorizontalScrollView", "NestedScrollView", "RecyclerView", "ListView", "GridView", "ViewPager", "ViewPager2",
     ]
 
+    /// How one keyboard's keys are told apart: Gboard draws word suggestions as keys are drawn, so in its window only its key ids are keys.
+    struct Rule {
+        let byID: Bool
+
+        init(_ root: UINode) {
+            if case .android(let attributes) = root.native, attributes.package == KeyboardText.gboardPackage {
+                byID = true
+            } else {
+                byID = root.contains { $0.normalizedID?.hasPrefix(KeyboardText.gboardPackage + ":id/") == true }
+            }
+        }
+    }
+
     /// A keyboard window's tree with every element that is not a key reading `marker` for its label, value and text; the root keeps its window's title.
     public static func hiding(_ root: UINode) -> UINode {
+        let rule = Rule(root)
         var copy = root
         for index in copy.children.indices {
-            copy.children[index] = hide(copy.children[index], scrolls: scrolls(root), keyName: nil).node
+            copy.children[index] = hide(copy.children[index], rule: rule, scrolls: scrolls(root), parent: nil).node
         }
         return copy
     }
 
-    /// The node, its text hidden unless a key, and whether it holds view text; `keyName` is the parent's description when the parent may be a key.
-    private static func hide(_ node: UINode, scrolls inherited: Bool, keyName: String?) -> (node: UINode, holdsText: Bool) {
+    /// The parent a text view may draw a key's character for: its description, and whether it carries Gboard's key id.
+    private struct KeyParent {
+        let name: String?
+        let hasKeyID: Bool
+    }
+
+    /// The node, its text hidden unless a key, and whether it holds view text.
+    private static func hide(_ node: UINode, rule: Rule, scrolls inherited: Bool, parent: KeyParent?) -> (node: UINode, holdsText: Bool) {
         let scrolling = inherited || scrolls(node)
         let own = holdsText(node)
-        let name = !own && !scrolling ? description(of: node) : nil
+        let me = !own && !scrolling ? KeyParent(name: description(of: node), hasKeyID: hasKeyID(node)) : nil
         var copy = node
         var textBelow = false
         for index in copy.children.indices {
-            let hidden = hide(copy.children[index], scrolls: scrolling, keyName: name)
+            let hidden = hide(copy.children[index], rule: rule, scrolls: scrolling, parent: me)
             copy.children[index] = hidden.node
             textBelow = textBelow || hidden.holdsText
         }
-        let glyph = own && !scrolling && node.children.isEmpty && isGlyph(node, of: keyName)
-        if glyph { return (copy, false) }
-        if !isKey(node, holdsText: own, textBelow: textBelow, scrolling: scrolling) {
+        if own, !scrolling, node.children.isEmpty, let parent, !rule.byID || parent.hasKeyID, isGlyph(node, of: parent.name) {
+            return (copy, false)
+        }
+        if !isKey(node, rule: rule, holdsText: own, textBelow: textBelow, scrolling: scrolling) {
             hideText(&copy)
         }
         return (copy, own || textBelow)
     }
 
-    /// A key holds no view text, nor does anything inside it, and sits in nothing that scrolls, unless Gboard's key id names it.
-    static func isKey(_ node: UINode, holdsText: Bool, textBelow: Bool, scrolling: Bool) -> Bool {
+    /// A key holds no view text, nor does anything inside it; in Gboard it carries a key id, elsewhere it sits in nothing that scrolls.
+    static func isKey(_ node: UINode, rule: Rule, holdsText: Bool, textBelow: Bool, scrolling: Bool) -> Bool {
         guard !holdsText, !textBelow else { return false }
-        return !scrolling || node.normalizedID?.contains(gboardKeyID) == true
+        if node.normalizedID?.hasPrefix(navigationID) == true { return true }
+        return rule.byID ? hasKeyID(node) : !scrolling
+    }
+
+    static func hasKeyID(_ node: UINode) -> Bool {
+        node.normalizedID?.contains(gboardKeyID) == true
     }
 
     /// What a key draws in a text view, as Gboard's number row and Samsung Keyboard's letters do: one character, or the key's own name.
