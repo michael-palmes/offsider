@@ -61,6 +61,8 @@ struct RNOpen: AsyncParsableCommand {
     static let failingFor: TimeInterval = 10
     static let otherScreenFor: TimeInterval = 15
     static let coveredFor: TimeInterval = 1
+    /// On iOS the dev menu's intro opens a moment after the bundle settles, so an app whose preferences still leave it to open is watched this much longer.
+    static let introGrace: TimeInterval = 3
 
     struct Report: Equatable {
         var bundleID: String
@@ -225,6 +227,7 @@ struct RNOpen: AsyncParsableCommand {
         var anyRead = false
         var shown: (name: String, since: TimeInterval)?
         var coveredSince: TimeInterval?
+        var introPending: (pending: Bool, since: TimeInterval)?
         while clock.now() < deadline {
             try await clock.sleep(Self.poll)
             let readStart = clock.now()
@@ -320,6 +323,11 @@ struct RNOpen: AsyncParsableCommand {
                 if !watch.readRecently(at: now, within: Self.quietFor) { try await watchApp(tree, force: true) }
                 if watch.hasPendingMiss { continue }
             }
+            if ExpoDevLauncher.isDevMenuIntro(tree) { throw covered(by: .devMenuIntro, route: route) }
+            if introPending == nil {
+                introPending = (await (route.backend as? any ExpoDevMenuIntroReading)?.devMenuIntroPending(bundleID, on: device) ?? false, now)
+            }
+            if let introPending, introPending.pending, now - introPending.since < Self.introGrace, now + Self.poll.timeInterval < deadline { continue }
             return Report(
                 bundleID: bundleID, url: url, host: host, port: port, sends: sends, launcherSeen: launcherSeen, waitID: waitID,
                 elapsedMs: Int(((now - start) * 1000).rounded()), bundleMs: Int(((now - lastSend) * 1000).rounded()), reverseRecorded: reverseRecorded, reverseSet: reverseSet
