@@ -143,6 +143,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - iPhone and iPad: the runner turns off XCTest's own screenshots and screen recordings of the session, which could keep a password screen unmasked.
 - iPhone and iPad: a React Native password field that XCTest reports as a text field holding only dots counts as a password field, so screenshots paint it, argument text is refused and `type --replace` does not touch it.
 - iPhone and iPad: limited contacts access, which iOS draws in a process of its own, stops reads and input with exit 7 `system_prompt_in_front` (`Contacts access`) instead of reaching it.
+- Android: `type` with non-ASCII text on an emulator puts the saved clipboard back after Ctrl+C, SIGTERM, a cancelled command or a clipboard set that timed out after it landed, so the typed text no longer stays on a clipboard the emulator shares with the Mac.
 
 ## [0.15.0] - 2026-11-01
 

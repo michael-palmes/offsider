@@ -427,8 +427,10 @@ final class AndroidInputSession: InputSession, TextInputSession {
         var pasted = false
         if !InputSecrecy.isSecret, let clipboard = try await route().clipboard {
             let saved = try await clipboard.clipboard()
-            try await clipboard.setClipboard(text)
+            let hold = ClipboardHold { await self.restoreClipboard(saved, on: clipboard) }
+            defer { hold.end() }
             do {
+                try await clipboard.setClipboard(text)
                 try await sleep(Self.clipboardSyncWait)
                 pasted = try await pasteFocused(target) != nil
                 if pasted { try await sleep(Self.pasteReadWait) }
@@ -456,11 +458,13 @@ final class AndroidInputSession: InputSession, TextInputSession {
         }
     }
 
-    /// Save the clipboard, set the text, let it sync, paste over adb, let the app read it, then restore, on failure too.
+    /// Save the clipboard, set the text, let it sync, paste over adb, let the app read it, then restore: on failure, a set that timed out after it landed, and Ctrl-C too.
     private func paste(_ text: String, through emulator: any EmulatorControlling) async throws {
         let saved = try await emulator.clipboard()
-        try await emulator.setClipboard(text)
+        let hold = ClipboardHold { await self.restoreClipboard(saved, on: emulator) }
+        defer { hold.end() }
         do {
+            try await emulator.setClipboard(text)
             try await sleep(Self.clipboardSyncWait)
             try await shell.run("input keyevent \(Self.pasteKeyCode)")
             try await sleep(Self.pasteReadWait)
@@ -471,9 +475,10 @@ final class AndroidInputSession: InputSession, TextInputSession {
         await restoreClipboard(saved, on: emulator)
     }
 
+    /// From a fresh task, so a cancelled command still puts the clipboard back.
     private func restoreClipboard(_ saved: String, on emulator: any EmulatorControlling) async {
         do {
-            try await emulator.setClipboard(saved)
+            try await Task { try await emulator.setClipboard(saved) }.value
         } catch {
             log(.warning, "Could not restore the emulator's clipboard after pasting: \((error as? AndroidError)?.message ?? error.localizedDescription)")
         }
