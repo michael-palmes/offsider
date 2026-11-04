@@ -421,7 +421,16 @@ public enum CoverJudge {
             return indicators.contains { $0.isSameElement(as: placed) }
         }
 
+        /// An unlabelled hit whose own frame does not hold the point answered for another place, as a turned simulator's point read can, so it proves no cover; a label still names its carrier.
         func judge(hit: UINode) -> HitJudgement {
+            let judgement = judgeAnswer(hit)
+            if case .cover = judgement, hit.normalizedLabel == nil, let frame = hit.frame, !frame.encloses(UIFrame(x: point.x, y: point.y, width: 0, height: 0), tolerance: TransitionGuard.frameTolerance) {
+                return .undecided
+            }
+            return judgement
+        }
+
+        private func judgeAnswer(_ hit: UINode) -> HitJudgement {
             let placed = placed(hit)
             if isOwn(hit) || isOwnHit(hit, placed: placed) {
                 return .clear

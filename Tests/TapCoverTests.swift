@@ -38,6 +38,25 @@ struct TapCoverTests {
         #expect(verdict.evidence == .hitTest && verdict.isConfident)
     }
 
+    @Test("on the folded Duo turned landscape, a point read answering the screen's content, whose frame misses BackButton's point, proves no cover")
+    func hitMissingThePoint() throws {
+        let url = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("Fixtures/duo-cover-landscape-tap-test.json")
+        let tree = try UITree(jsonData: Data(contentsOf: url))
+        let nodes = tree.roots.flatMap { $0.flattened() }
+        let back = try #require(nodes.first { $0.id == "BackButton" })
+        let content = try #require(nodes.first { $0.id == "tap-test-screen" && $0.role == .other })
+        let point = UIPoint(x: 48, y: 106)
+        try #require(content.frame?.contains(point) == false)
+        let viewport = try #require(tree.viewport)
+
+        let verdict = CoverJudge.judge(
+            target: back, matched: back, point: point, candidates: [], roots: tree.roots, viewport: viewport,
+            stack: ScreenStack.build(roots: tree.roots, viewport: viewport), hit: content
+        )
+
+        #expect(verdict?.isConfident != true, "\(String(describing: verdict))")
+    }
+
     @Test("a hit on the target's own text is no cover")
     func ownText() throws {
         let hit = Self.text("Buy", FakeUI.frame(276, 805.3, 30.7, 20.3))
