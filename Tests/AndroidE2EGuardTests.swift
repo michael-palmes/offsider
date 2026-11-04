@@ -129,7 +129,7 @@ struct AndroidPhoneGuardTests {
         #expect(try AndroidPhoneGuard.verdict(requested: "R5CRFAKE01", emulatorFlags: set, devices: Self.devices).get() == "R5CRFAKE01")
     }
 
-    @Test("every non-phone runner in test-runner.sh drops OFFSIDER_ANDROID_PHONE, and the phone runner turns the emulator suites off")
+    @Test("every non-phone runner in test-runner.sh drops OFFSIDER_ANDROID_PHONE, and the phone runner turns the emulator suites off and needs the playground pinned")
     func runnerDropsPhone() throws {
         let url = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().appendingPathComponent("test-runner.sh")
         let script = try String(contentsOf: url, encoding: .utf8)
@@ -146,6 +146,7 @@ struct AndroidPhoneGuardTests {
         for flag in AndroidPhoneGuard.emulatorFlags {
             #expect(phone.contains("export \(flag)=0"), "run_android_phone_tests leaves \(flag) as it was")
         }
+        #expect(phone.contains(#"require_device_allowance "$OFFSIDER_ANDROID_PHONE" "$ANDROID_PLAYGROUND_PACKAGE""#), "an any-app phone would run every phone suite to failure")
     }
 
     @Test("the phone suites never send emu commands")
@@ -175,6 +176,12 @@ struct E2EDeviceAllowanceTests {
         #expect(E2EDeviceAllowance.verdict(device: Self.phone, exitCode: 0, json: Self.status(expires: nil), now: Self.now, app: app)?.contains("does not pin") == true)
         #expect(E2EDeviceAllowance.verdict(device: Self.phone, exitCode: 0, json: Self.status(expires: nil, apps: [app]), now: Self.now, app: app) == nil)
         #expect(E2EDeviceAllowance.verdict(device: Self.phone, exitCode: 0, json: Self.status(expires: nil, testDevice: true), now: Self.now, app: app) == nil)
+    }
+
+    @Test("a phone allowed for any app is no pin, as the phone suites name no app")
+    func anyAppIsNoPin() {
+        let refusal = E2EDeviceAllowance.verdict(device: Self.phone, exitCode: 0, json: Self.status(expires: nil, apps: ["*"]), now: Self.now, app: AndroidE2E.package)
+        #expect(refusal?.contains("does not pin \(AndroidE2E.package)") == true)
     }
 
     @Test("a device the CLI refuses stops the run and quotes the exact command a person runs")
