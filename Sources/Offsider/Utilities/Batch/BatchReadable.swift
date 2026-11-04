@@ -73,7 +73,8 @@ extension Wait: BatchReadable {
             // Time passed without a tree read, so the cached tree may be stale.
             context.invalidateTree()
         }
-        return try await .redacted(outcome, on: context.route, success: successLine(outcome), failure: failureLine, checked: selector.query == nil ? nil : selector)
+        let sparse = outcome.sparse ? " (nearly empty screen; it may still be loading)" : ""
+        return try await .redacted(outcome, on: context.route, success: successLine(outcome) + sparse, failure: failureLine, checked: selector.query == nil ? nil : selector)
     }
 }
 

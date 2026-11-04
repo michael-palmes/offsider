@@ -25,7 +25,7 @@ public struct UITreeFilter: Equatable, Sendable {
                 return false
             }
         }
-        if labelled, ![node.label, node.id, node.value].contains(where: Self.hasText) {
+        if labelled, ![node.label, node.id, node.value, node.placeholderName].contains(where: Self.hasText) {
             return false
         }
         if actionable, !(native ? node.isActionable : node.role.isActionable) {

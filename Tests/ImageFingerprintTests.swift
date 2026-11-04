@@ -127,7 +127,7 @@ struct ImageFingerprintTests {
         }
         let full = fingerprint(pixels())
         #expect(full.changedTiles(comparedTo: small) == nil)
-        #expect(ScreenChange.detect(before: [full], after: [small]))
+        #expect(ScreenChange.detect(before: [full], after: [small]) == .changed)
     }
 
     @Test("A change inside the excluded top band is ignored")
@@ -154,18 +154,47 @@ struct ImageFingerprintTests {
     }
 
     @Test("Screen change ignores a tile that alternates across the after-shots")
-    func alternatingTileIsVolatile() {
+    func alternatingTileIsVolatile() throws {
         let before = fingerprint(pixels())
         let caretOn = fingerprint(pixels { setPixel(&$0, x: 10, y: 60) })
-        #expect(!ScreenChange.detect(before: [before], after: [caretOn, before, caretOn]))
+        #expect(ScreenChange.detect(before: [before], after: [caretOn, before, caretOn]) == .none)
 
         let realChange = fingerprint(pixels {
             setPixel(&$0, x: 10, y: 60)
             setPixel(&$0, x: 50, y: 120)
         })
         let caretAndChange = fingerprint(pixels { setPixel(&$0, x: 50, y: 120) })
-        #expect(ScreenChange.detect(before: [before], after: [realChange, caretAndChange, realChange]))
-        #expect(!ScreenChange.detect(before: [before], after: [before, before, before]))
+        let changedTile = try #require(before.changedTiles(comparedTo: caretAndChange))
+        #expect(ScreenChange.detect(before: [before], after: [realChange, caretAndChange, realChange], near: changedTile) == .changed)
+        #expect(ScreenChange.detect(before: [before], after: [realChange, caretAndChange, realChange]) == .small)
+        #expect(ScreenChange.detect(before: [before], after: [before, before, before]) == .none)
+    }
+
+    /// Changes one pixel in each of `tiles`, on the 16 by 32 grid of a 64 by 128 image.
+    private func changing(_ tiles: [Int]) -> ImageFingerprint {
+        fingerprint(pixels { bytes in
+            for tile in tiles { setPixel(&bytes, x: (tile % 16) * 4 + 1, y: (tile / 16) * 4 + 1) }
+        })
+    }
+
+    @Test("A still change away from the target needs 2% of the tiles: six tiles are small, twelve change, and one tile at the target changes")
+    func changeAwayFromTarget() {
+        let before = fingerprint(pixels())
+        let target = before.dilated([16 * 24 + 8])
+        let far = [0, 1, 2, 16, 17, 18]
+
+        #expect(ScreenChange.detect(before: [before], after: [changing(far)], near: target) == .small)
+        #expect(ScreenChange.detect(before: [before], after: [changing(far)]) == .small)
+        #expect(ScreenChange.detect(before: [before], after: [changing([16 * 24 + 8])], near: target) == .changed)
+        #expect(ScreenChange.detect(before: [before], after: [changing([16 * 24 + 9])], near: target) == .changed)
+        #expect(ScreenChange.detect(before: [before], after: [changing(far + [3, 4, 5, 19, 20, 21])], near: target) == .changed)
+    }
+
+    @Test("Dilating a tile adds its neighbours, and stops at the grid's edges")
+    func dilation() {
+        let print = fingerprint(pixels())
+        #expect(print.dilated([16 * 5 + 5]).count == 9)
+        #expect(print.dilated([0]) == [0, 1, 16, 17])
     }
 
     @Test("A change inside a region is detected and one outside it is not")

@@ -128,6 +128,7 @@ extension IOSNativeAttributes {
             roleDescription: object["roleDescription"] as? String,
             title: object["title"] as? String,
             help: object["help"] as? String,
+            hint: object["hint"] as? String,
             customActions: object["customActions"] as? [String] ?? [],
             contentRequired: object["contentRequired"] as? Bool,
             pid: (object["pid"] as? NSNumber)?.intValue,

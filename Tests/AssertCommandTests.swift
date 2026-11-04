@@ -31,7 +31,17 @@ struct AssertCommandTests {
         #expect(command.failureLine(outcome) == "✗ Assertion failed: --id 'count' has value '2', expected '3'.")
         let json = WaitReport(outcome).jsonLine()
         #expect(json.hasPrefix(#"{"met":false,"elapsedMs":"#))
-        #expect(json.hasSuffix(#""reason":"has value '2', expected '3'","match":null,"matched":null,"nearest":[],"leaveOut":null}"#))
+        #expect(json.hasSuffix(#""reason":"has value '2', expected '3'","match":null,"matched":null,"nearest":[],"leaveOut":null,"sparse":false}"#))
+    }
+
+    @Test("an empty iPhone field whose value XCTest reports as its placeholder does not have that value")
+    func placeholderIsNotAValue() async throws {
+        let roots = try IOSAccessibilityMapping.roots(fromJSON: Data("""
+        [{"type": "Application", "AXLabel": "Playground", "frame": {"x": 0, "y": 0, "width": 393, "height": 852}, "children": [
+          {"type": "TextField", "AXUniqueId": "email", "AXValue": "Email", "placeholder": "Email", "frame": {"x": 20, "y": 100, "width": 300, "height": 40}}]}]
+        """.utf8))
+        let (_, outcome, _) = try await Self.check(["--id", "email", "--has-value", "Email"], on: UITree(platform: .ios, device: Self.device.rawValue, roots: roots))
+        #expect(!outcome.met)
     }
 
     @Test("--has-value that is the element's label says to use --label")

@@ -257,6 +257,7 @@ struct Tap: AsyncParsableCommand, VerifiableCommand {
             let subject = pointX != nil ? "Tap at \(verifyTarget)" : "Tap on \(verifyTarget)"
             let targetNode = resolution.target ?? resolution.matched
             var aimed = resolution.point
+            var aimedFrame = targetNode?.frame
             /// The tap the target's place in `tree` calls for, judged as the first read was, so the check covers the point sent; a target gone or newly covered throws.
             func resolvedAgain(in tree: UITree, waitTimeout: TimeInterval, coverSettle: TimeInterval = 0) async throws -> TapResolution {
                 guard let query else { return resolution }
@@ -300,12 +301,15 @@ struct Tap: AsyncParsableCommand, VerifiableCommand {
                     logger.info().log("\(verifyTarget) moved to \(VerifyOutput.pointDescription(x: tap.point.x, y: tap.point.y)) while settling; tapping there")
                     physicalPoint = try await backend.deviceCoordinates(for: [tap.point], tree: tree, on: device)[0]
                     aimed = tap.point
+                    aimedFrame = (tap.target ?? tap.matched)?.frame
                 },
                 targetStays: query == nil ? nil : { tree in
                     guard let tap = try? await resolvedAgain(in: tree, waitTimeout: 0) else { return false }
                     return isAimed(tap.point)
                 },
-                expectsDevMenu: { tree in Self.aimsAtDevMenu(targetNode, point: resolution.point, in: tree) }
+                expectsDevMenu: { tree in Self.aimsAtDevMenu(targetNode, point: resolution.point, in: tree) },
+                keyboardOnlyFails: query != nil && !Self.closesKeyboard(targetNode, in: resolvedTree),
+                targetArea: { query == nil ? UIFrame(x: aimed.x, y: aimed.y, width: 0, height: 0) : aimedFrame }
             )
             try await VerifyOutput.perform(request, progress: progress) { attempt, session in
                 let attemptStyle: TapStyle = attempt.style == .physical ? .physical : .simulator
@@ -330,6 +334,12 @@ struct Tap: AsyncParsableCommand, VerifiableCommand {
             aside: selector == nil ? nil : VerifyOutput.pointDescription(x: resolution.point.x, y: resolution.point.y),
             agent: Self.completionLine(selector: selector, at: resolution.point) + "\n"
         ))
+    }
+
+    /// A keyboard's own control, such as Done or a key, whose one effect may rightly be closing the keyboard.
+    static func closesKeyboard(_ target: UINode?, in tree: UITree?) -> Bool {
+        guard let target else { return false }
+        return KeyboardDismiss.closesKeyboard(target) || tree.map { AccessibilityTargetResolver.isUnderKeyboard(target, in: $0.roots) } == true
     }
 
     /// True when no floating dev menu button shows, so a tap cannot have reached one by mistake, or the tap names it: `target` holds its icon, or a coordinate tap lands on the icon.

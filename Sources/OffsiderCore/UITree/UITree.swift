@@ -220,6 +220,7 @@ extension UINative {
                 ("roleDescription", .optional(native.roleDescription, OrderedJSON.string)),
                 ("title", .optional(native.title, OrderedJSON.string)),
                 ("help", .optional(native.help, OrderedJSON.string)),
+                ("hint", .optional(native.hint, OrderedJSON.string)),
                 ("customActions", .array(native.customActions.map(OrderedJSON.string))),
                 ("contentRequired", .optional(native.contentRequired, OrderedJSON.bool)),
                 ("pid", .optional(native.pid, OrderedJSON.integer)),

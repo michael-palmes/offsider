@@ -5,6 +5,14 @@ import XCTest
 enum ActiveApplication {
     static let springBoard = "com.apple.springboard"
 
+    /// System prompts drawn by a process of their own that the active-app lookups never list, each with the fixed name an error gives it.
+    static let promptHosts = [(bundleID: "com.apple.ContactsUI.LimitedAccessPromptView", name: "Contacts access")]
+
+    /// The name of such a prompt in front, by its own process state, which XCTest's public API reads on every Xcode.
+    static func hostedPrompt() -> String? {
+        promptHosts.first { XCUIApplication(bundleIdentifier: $0.bundleID).state == .runningForeground }?.name
+    }
+
     static func resolve(requested: String?, remembered: String?) -> XCUIApplication {
         if let requested { return XCUIApplication(bundleIdentifier: requested) }
         let active = activeBundleIDs()

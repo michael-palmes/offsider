@@ -315,3 +315,37 @@ struct AccessibilityPollerTests {
         #expect(error?.candidates.map(\.id) == ["gon"])
     }
 }
+
+@Suite("A selector miss on a cut tree")
+@MainActor
+struct CutTreeMissTests {
+    private static func miss(on tree: UITree) async -> String? {
+        do {
+            _ = try await AccessibilityPoller.pollForResolution(
+                query: .id("save"), waitTimeout: 0, pollInterval: 0.01, transientGrace: 0, elementType: nil,
+                logger: OffsiderLogger(), clock: ScriptedClock().poll
+            ) { tree }
+            return nil
+        } catch let error as any OffsiderFailure {
+            #expect(error.reason == .selectorNotFound)
+            return error.failureMessage
+        } catch {
+            return nil
+        }
+    }
+
+    private static let screen = FakeUI.tree([FakeUI.node(.button, id: "cancel", label: "Cancel", frame: FakeUI.frame(20, 600, 350, 44))])
+
+    @Test("a miss on a tree the source cut, or the limits cut, says it may be further down; a miss on a whole tree does not")
+    func cutTreeLine() async throws {
+        var sourceCut = Self.screen
+        sourceCut.sourceTruncated = true
+        var limited = Self.screen
+        limited.truncated = UITreeTruncation(depth: true)
+
+        let whole = try #require(await Self.miss(on: Self.screen))
+        #expect(!whole.contains("cut"))
+        #expect(try #require(await Self.miss(on: sourceCut)).hasSuffix(" The tree was cut where the read stopped, so it may be further down."))
+        #expect(try #require(await Self.miss(on: limited)).hasSuffix(" The tree was cut at 64 levels, so it may be further down."))
+    }
+}

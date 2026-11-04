@@ -25,7 +25,7 @@ A person and an agent read the same output; a person also sees a spinner while i
       "frame": { "x": 16, "y": 62, "width": 44, "height": 44 },
       "enabled": true,
       "state": { "checked": null, "selected": null, "focused": null },
-      "native": { "type": "Button", "role": "AXButton", "subrole": null, "roleDescription": "back button", "title": null, "help": null, "customActions": [], "contentRequired": false, "pid": 4242, "axFrame": "{{16, 62}, {44, 44}}" },
+      "native": { "type": "Button", "role": "AXButton", "subrole": null, "roleDescription": "back button", "title": null, "help": null, "hint": null, "customActions": [], "contentRequired": false, "pid": 4242, "axFrame": "{{16, 62}, {44, 44}}" },
       "children": []
     }
   ]
@@ -69,11 +69,11 @@ Labels and values that look like a one-time code after a keyword, a card number,
 | `roots` | The frontmost app's `application` element | The active window as `application`, labelled with its title (such as `Settings`), then each window the same app draws over it without taking focus, such as a dropdown or a text selection toolbar, as `window`, then the keyboard as `keyboard`, labelled with its title, while it is shown. The status and navigation bars and other apps' windows are left out |
 | `id` | `AXUniqueId` (`accessibilityIdentifier`, or `testID` in React Native), else `AXIdentifier` | `resource-id` (`testID` in React Native), else a Jetpack Compose `testTag` |
 | `label` | `AXLabel` | `content-desc`, else the text of a non-editable node; a clickable node with neither takes its children's text |
-| `value` | `AXValue`, as a string | A text field's text; `1` or `0` for switches, checkboxes and radio buttons, and `2` for a partly checked checkbox; a slider's or progress bar's position in its range as a percentage with up to two decimals, such as `25%` or `39.95%` |
+| `value` | `AXValue`, as a string; on a physical iPhone or iPad, `null` for a text field whose value is its placeholder, as XCTest reports an empty field, so a field holding exactly its placeholder text reads as empty too | A text field's text; `1` or `0` for switches, checkboxes and radio buttons, and `2` for a partly checked checkbox; a slider's or progress bar's position in its range as a percentage with up to two decimals, such as `25%` or `39.95%` |
 | `frame`, `enabled` | The same keys | `bounds` over density / 160, `enabled` |
 | `state.checked` | `switch` and `checkbox` only: `AXValue` `1` or `0` | `checked` for checkable nodes; `null` when partly checked |
 | `state.selected`, `state.focused` | `selected` is `true` with the Selected trait and `false` without it, or `null` when the traits could not be read; `focused` is `true` on the field with keyboard focus on an iOS simulator, a physical iPhone or iPad, and on the element with input focus on Android | `selected`, `focused` |
-| `native` | `type`, `role`, `subrole`, `roleDescription`, `title`, `help`, `customActions`, `contentRequired`, `pid`, `axFrame` | `className`, `resourceId`, `package`, `pixelFrame`, `text`, `contentDescription`, `hint`, `stateDescription` (the spoken state, such as `25%`), `roleDescription`, `testTag` |
+| `native` | `type`, `role`, `subrole`, `roleDescription`, `title`, `help`, `hint` (a field's placeholder, on a physical iPhone or iPad), `customActions`, `contentRequired`, `pid`, `axFrame` | `className`, `resourceId`, `package`, `pixelFrame`, `text`, `contentDescription`, `hint`, `stateDescription` (the spoken state, such as `25%`), `roleDescription`, `testTag` |
 
 </details>
 
@@ -93,6 +93,8 @@ application "Playground" (0,0 402x874)
 # folded 2 repeated labels
 # off-screen: 34 elements folded into runs; check one with assert --label-contains <text> --allow-offscreen
 ```
+
+A text field with no label or id shows its placeholder as `hint="Email"` on a physical iPhone or iPad, so it keeps a name once it reads empty.
 
 On a foldable the header line ends with the display and posture, such as `inner open`. When the screen is turned on its panel, SpringBoard's alerts and home screen are given in the screen's points, as an app's are.
 
