@@ -21,7 +21,9 @@ struct Type: AsyncParsableCommand, VerifiableCommand {
         Password fields: text given as an argument is refused (exit 64, secure_field_argument) when the field it
         names with --into-id, --into-label or --into-label-contains, or the field with focus, is a password field;
         use `offsider login`, or --stdin. While record-video or stream-video records the device, --stdin and --file
-        text is refused (exit 8, device_busy) when a password field is on screen or the screen cannot be read.
+        text is refused (exit 8, device_busy) when a password field is on screen or the screen cannot be read. On a
+        physical iPhone or iPad, a password field takes only US keyboard text through the session broker, since XCTest
+        logs what it types: other text, --replace, or no broker (Xcode 26, no desktop login) exits 1, secure_paste_refused.
 
         Replacing a field's text:
         • offsider type --replace "new text" --device DEVICE_ID sets the focused field to exactly "new text"

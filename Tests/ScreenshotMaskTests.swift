@@ -116,6 +116,27 @@ struct ScreenshotMaskTests {
         #expect(Self.point(result.image, 300, 250) == Self.white)
     }
 
+    @Test("--mask-secure paints a React Native password field the iPhone runner reports as a text field of dots")
+    func maskDotsFieldIsPainted() async throws {
+        let field = IOSAccessibilityMapping.node(from: [
+            "type": "TextField", "AXUniqueId": "password", "AXValue": "••••••", "placeholder": "Password",
+            "frame": ["x": 20, "y": 280, "width": 350, "height": 44],
+        ])
+        let result = try await Self.capture(["--mask-secure"], on: try Self.backend([field]))
+        defer { try? FileManager.default.removeItem(atPath: result.path) }
+
+        #expect(result.report.masked == 1)
+        #expect(Self.point(result.image, 195, 302) == Self.black)
+    }
+
+    @Test("--mask-text reads an iPhone field's placeholder")
+    func textReadsIOSPlaceholder() throws {
+        var hinted = FakeUI.node(.textField, frame: FakeUI.frame(0, 0, 10, 10))
+        hinted.native = .ios(IOSNativeAttributes(type: "TextField", hint: "Search people"))
+        let targets = try MaskPlan(texts: ["search"]).textTargets(in: FakeUI.tree(label: nil, [hinted]))
+        #expect(targets.frames[.text]?.count == 1)
+    }
+
     @Test("--mask-text reads Android hints and content descriptions, case-insensitively")
     func textReadsHints() throws {
         var hinted = FakeUI.node(.textField, frame: FakeUI.frame(0, 0, 10, 10), platform: .android)

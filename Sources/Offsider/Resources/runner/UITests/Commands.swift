@@ -57,9 +57,15 @@ final class RunnerCommands {
         }
     }
 
-    /// What iOS calls a system alert or sheet over `app`. The active list comes first, as it costs about 10 ms and looking for one about 70 ms; with no list, it looks.
+    /// What iOS calls a system alert or sheet over `app`, or a prompt in its own process.
     private func systemPrompt(over app: String) -> String? {
-        guard app != ActiveApplication.springBoard, ActiveApplication.activeBundleIDs()?.contains(ActiveApplication.springBoard) != false else { return nil }
+        guard app != ActiveApplication.springBoard else { return nil }
+        return ActiveApplication.hostedPrompt() ?? springBoardPrompt(active: ActiveApplication.activeBundleIDs())
+    }
+
+    /// SpringBoard's alert or sheet. The active list comes first, as it costs about 10 ms and looking for one about 70 ms; with no list, it looks.
+    private func springBoardPrompt(active: [String]?) -> String? {
+        guard active?.contains(ActiveApplication.springBoard) != false else { return nil }
         let springBoard = XCUIApplication(bundleIdentifier: ActiveApplication.springBoard)
         return [springBoard.alerts.firstMatch, springBoard.sheets.firstMatch].first(where: \.exists)?.label
     }
@@ -97,15 +103,17 @@ final class RunnerCommands {
         // A dark screen counts as locked: the lock state itself can lag the press by up to a second.
         let locked = ScreenState.isLocked == true || ScreenState.isOn == false
         var reply: [String: Any] = ["locked": locked]
+        let hosted = app == ActiveApplication.springBoard ? nil : ActiveApplication.hostedPrompt()
+        reply["prompt"] = hosted
         guard let active = ActiveApplication.activeBundleIDs() else {
-            reply["inFront"] = running && !locked
+            reply["inFront"] = running && !locked && hosted == nil
             reply["activeBundleId"] = running ? app as Any : NSNull()
             reply["sheetsVisible"] = false
             return .ok(reply)
         }
         let covered = app != ActiveApplication.springBoard && active.contains(ActiveApplication.springBoard)
-        if covered, let prompt = systemPrompt(over: app) { reply["prompt"] = prompt }
-        reply["inFront"] = running && active.contains(app) && !covered && !locked
+        if hosted == nil, covered, let prompt = springBoardPrompt(active: active) { reply["prompt"] = prompt }
+        reply["inFront"] = running && active.contains(app) && !covered && !locked && hosted == nil
         reply["activeBundleId"] = active.first as Any? ?? NSNull()
         reply["sheetsVisible"] = true
         return .ok(reply)
@@ -148,20 +156,29 @@ final class RunnerCommands {
     private func type(_ body: [String: Any]) -> RunnerResponse {
         guard let text = body["text"] as? String else { return .failure(400, code: "bad_request", message: "text is required") }
         let app = app(body)
+        let focused = app.descendants(matching: .any).matching(NSPredicate(format: "hasKeyboardFocus == true")).firstMatch
+        let field = try? focused.snapshot()
+        // XCTest names the text in each typeText's activity, which runner.log and the result bundle keep.
+        if let field, Self.isSecure(field) {
+            return .failure(422, code: "secure_field", message: "typing into a secure field is refused")
+        }
         guard body["replace"] as? Bool == true else {
             app.typeText(text)
             return .ok([String: Any]())
         }
-        let focused = app.descendants(matching: .any).matching(NSPredicate(format: "hasKeyboardFocus == true")).firstMatch
-        guard focused.exists else { return .failure(409, code: "no_focus", message: "no field has keyboard focus") }
-        guard focused.elementType != .secureTextField else {
-            return .failure(422, code: "secure_field", message: "replacing the text of a secure field is refused")
-        }
+        guard field != nil else { return .failure(409, code: "no_focus", message: "no field has keyboard focus") }
         guard clear(focused) else {
             return .failure(409, code: "replace_failed", message: "the focused field still held text after clearing it")
         }
         focused.typeText(text)
         return .ok([String: Any]())
+    }
+
+    /// A secure field, or a React Native one XCTest reports as a text field whose value is only its mask's dots.
+    static func isSecure(_ field: XCUIElementSnapshot) -> Bool {
+        if field.elementType == .secureTextField { return true }
+        guard let value = SnapshotEncoder.text(field.value), !value.isEmpty, value != field.placeholderValue else { return false }
+        return value.unicodeScalars.allSatisfy { $0 == "\u{2022}" || $0 == "\u{25CF}" }
     }
 
     /// Taps the field's right edge (the end of its text, or its clear button) and deletes the whole value, retrying while text is left.

@@ -41,6 +41,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - `session stop --device <id>` also stops and saves a recording on that device, and says so only once it has ended. `doctor --device` warns `device.recording` while one runs, and the refusal `login`, `wake --unlock` and `type --stdin` give names its pid, with `kill -INT <pid>` as the `hint`.
 - `app open` on an iPhone or iPad says `Sent the link to`, as iOS reports only that it delivered the link. `--json` adds `linkHandled`: `true` once Android or a simulator showed the app took the link, `null` on an iPhone or iPad.
 - `record-video` and `stream-video` end when a simulator or emulator gives no frame for 30 s (exit 1, `device_unresponsive`); a recording saves its frames first.
+- iPhone and iPad: `type` into a password field goes only as US keyboard keys through the session broker. Where it would reach XCTest (Xcode 26, no desktop login, or text a US keyboard cannot type), `type --stdin` and `--file` now exit 1 `secure_paste_refused` with nothing typed, as XCTest names the text it types in `runner.log` and its result bundle.
+- iPhone and iPad: a text field whose value is its placeholder, as XCTest reports an empty one, reads `value: null` with the placeholder in a new `native.hint`, so an empty form no longer reads filled and an empty password field no longer reads as holding one. `--value`, `--has-value` and `wait --value` no longer match a placeholder there, as on Android. `--summary` shows `hint="…"` for a field with no label or id.
 
 ### Fixed
 
@@ -120,6 +122,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - `button home --verify` on an iOS simulator no longer passes on a system alert over an app; it compares the tree there. It and a `--verify` or selector read of a hung simulator now exit `device_unresponsive` instead of holding the device.
 - On a screen turned on its panel (an unfolded iPhone Duo, or any simulator in landscape), system alerts and the home screen report frames in screen points, so label taps reach them.
 - iPhone and iPad: a read under a system prompt such as Allow Paste exits 7 `system_prompt_in_front` at once, not after about 3 s, as the runner now looks for an alert or sheet before it reads; input the runner sends exits the same way. On a test device the error names the commands that read and answer the prompt, with no `ask`, and `wait` fails at once instead of waiting out its timeout. A tap by coordinates, a swipe or keys on a test device still go straight to the session broker, unchecked. Runner reads that waited 14 s are dropped, and input after 4 s, not 5.
+- iPhone and iPad: the runner turns off XCTest's own screenshots and screen recordings of the session, which could keep a password screen unmasked.
+- iPhone and iPad: a React Native password field that XCTest reports as a text field holding only dots counts as a password field, so screenshots paint it, argument text is refused and `type --replace` does not touch it.
+- iPhone and iPad: limited contacts access, which iOS draws in a process of its own, stops reads and input with exit 7 `system_prompt_in_front` (`Contacts access`) instead of reaching it.
 
 ## [0.15.0] - 2026-11-01
 

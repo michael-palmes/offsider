@@ -134,9 +134,14 @@ public struct RunnerClient: Sendable {
 
     public func type(_ text: String, replace: Bool, app: String?) async throws {
         if InputSecrecy.keysOnly { throw IOSDeviceError.keysOnlyRefusal(text, device: DeviceID(rawValue: udid, platform: .ios)) }
+        if InputSecrecy.knownFocus == .secure { throw IOSDeviceError.secureFieldRunnerRefusal(text, replace: replace, udid: udid) }
         var body: [String: Any] = ["text": text, "replace": replace]
         body["app"] = app
-        _ = try await call("POST", "/type", body)
+        do {
+            _ = try await call("POST", "/type", body)
+        } catch let error as IOSDeviceError where error.kind == .secureFieldRefused {
+            throw IOSDeviceError.secureFieldRunnerRefusal(text, replace: replace, udid: udid)
+        }
     }
 
     public func swipe(fromX: Double, fromY: Double, toX: Double, toY: Double, duration: Double, app: String?) async throws {
@@ -206,7 +211,7 @@ public struct RunnerClient: Sendable {
         case "no_focus":
             throw IOSDeviceError(.noFocusedField, "No field on \(udid) has keyboard focus. Tap a text field first, then retry.")
         case "secure_field":
-            throw IOSDeviceError(.secureFieldRefused, "The focused field on \(udid) is a secure field, and Offsider does not replace its text. Clear it in the app, or type without --replace.")
+            throw IOSDeviceError(.secureFieldRefused, "The field with focus on \(udid) is a password field, so nothing was typed.")
         case "system_prompt":
             throw IOSDeviceError.systemPromptInFront(message, udid: udid, testDevice: testDevice)
         case "queued_too_long":

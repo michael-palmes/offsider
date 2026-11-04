@@ -47,5 +47,6 @@ schemes:
         OffsiderRunnerUITests: [test]
     test:
       config: Debug
+      captureScreenshotsAutomatically: false
       targets:
         - OffsiderRunnerUITests

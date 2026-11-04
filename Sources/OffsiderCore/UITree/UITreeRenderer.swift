@@ -184,6 +184,9 @@ public enum UITreeRenderer {
         if fields.contains(.id), let id = nonEmpty(node.id) {
             parts.append("id=" + token(id))
         }
+        if fields.contains(.label), let hint = node.placeholderName {
+            parts.append("hint=" + quoted(hint))
+        }
         if let value = nonEmpty(value) {
             parts.append("value=" + quoted(value))
         }

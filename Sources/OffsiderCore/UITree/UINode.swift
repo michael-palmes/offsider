@@ -55,6 +55,8 @@ public struct IOSNativeAttributes: Equatable, Sendable {
     public var roleDescription: String?
     public var title: String?
     public var help: String?
+    /// A text field's placeholder, which only the iPhone runner reports.
+    public var hint: String?
     public var customActions: [String]
     public var contentRequired: Bool?
     public var pid: Int?
@@ -69,6 +71,7 @@ public struct IOSNativeAttributes: Equatable, Sendable {
         roleDescription: String? = nil,
         title: String? = nil,
         help: String? = nil,
+        hint: String? = nil,
         customActions: [String] = [],
         contentRequired: Bool? = nil,
         pid: Int? = nil,
@@ -81,6 +84,7 @@ public struct IOSNativeAttributes: Equatable, Sendable {
         self.roleDescription = roleDescription
         self.title = title
         self.help = help
+        self.hint = hint
         self.customActions = customActions
         self.contentRequired = contentRequired
         self.pid = pid
