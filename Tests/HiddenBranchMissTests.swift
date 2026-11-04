@@ -43,7 +43,8 @@ struct HiddenBranchMissTests {
     func underNavigationBar(arguments: [String]) async throws {
         let error = try #require(await Self.miss(arguments + ["--wait-timeout", "0"]) as? HiddenBranchMiss)
         #expect(error.reason == .selectorNotFound)
-        #expect(error.userFacingDescription.contains("is under the navigation bar at (0, 870) 412x56, so Android marks it hidden and nothing was sent. Scroll it up above the bar, then retry."))
+        #expect(error.userFacingDescription.hasPrefix("No accessibility element matched"))
+        #expect(error.userFacingDescription.contains("it is under the navigation bar at (0, 870) 412x56, so Android marks it hidden. Nothing was sent. Scroll it up above the bar, then retry."))
         #expect(!error.userFacingDescription.contains("Did you mean"))
     }
 
@@ -51,7 +52,15 @@ struct HiddenBranchMissTests {
     func hiddenElsewhere() async throws {
         let behind = UITreeContext.HiddenBranch(id: "row-12", label: nil, className: nil, frame: FakeUI.frame(0, 300, 412, 56))
         let error = try #require(await Self.miss(["--id", "row-12", "--wait-timeout", "0"], hidden: behind) as? HiddenBranchMiss)
-        #expect(error.userFacingDescription.hasPrefix("--id 'row-12' is on the page at (0, 300) 412x56, but Android marks it hidden"))
+        #expect(error.userFacingDescription.hasPrefix("No accessibility element matched --id 'row-12' on screen: Android lists it as hidden at (0, 300) 412x56, as it does a view another covers"))
+        #expect(!error.userFacingDescription.contains("navigation bar"))
+    }
+
+    @Test("a hidden branch wholly off the screen, as on a parked sheet, is named as off the screen")
+    func hiddenOffScreen() async throws {
+        let parked = UITreeContext.HiddenBranch(id: "row-12", label: nil, className: nil, frame: FakeUI.frame(140, 10_643, 128, 0))
+        let error = try #require(await Self.miss(["--id", "row-12", "--wait-timeout", "0"], hidden: parked) as? HiddenBranchMiss)
+        #expect(error.userFacingDescription.contains("off the screen, as on a sheet parked out of view"), "\(error.userFacingDescription)")
         #expect(!error.userFacingDescription.contains("navigation bar"))
     }
 

@@ -8,13 +8,16 @@ struct HiddenBranchMiss: LocalizedError, UserFacingError, OffsiderFailure {
     let branch: UITreeContext.HiddenBranch
     /// `the navigation bar` or `the status bar`, when one lies over it.
     let bar: String?
+    /// Wholly outside the screen, as on a sheet parked out of view.
+    var offScreen = false
 
     /// `miss` naming the hidden branch the query matches, when `tree` lists one; else `miss` as it was.
     static func wrapping(_ miss: ElementResolutionError, query: AccessibilityQuery, tree: UITree) -> any Error {
         guard case .notFound = miss, let branch = tree.namedHiddenBranches?.first(where: { matches($0, query) }) else { return miss }
         let over = bar(over: branch.frame, in: tree)
         let name = over?.frame.map { $0.y <= (tree.viewport?.y ?? 0) + 1 ? "the status bar" : "the navigation bar" }
-        return HiddenBranchMiss(miss: miss, selector: query.selectorDescription, branch: branch, bar: name)
+        let offScreen = branch.frame.map { frame in tree.viewport.map { frame.intersection($0) == nil } ?? false } ?? false
+        return HiddenBranchMiss(miss: miss, selector: query.selectorDescription, branch: branch, bar: name, offScreen: offScreen)
     }
 
     /// The id or label the helper named it by; never a value, which it does not send.
@@ -41,11 +44,15 @@ struct HiddenBranchMiss: LocalizedError, UserFacingError, OffsiderFailure {
 
     var userFacingDescription: String {
         let place = branch.frame.map { " at \($0.summary)" } ?? ""
+        let lead = "No accessibility element matched \(selector) on screen:"
         if let bar {
             let way = bar == "the status bar" ? "down below" : "up above"
-            return "\(selector) is under \(bar)\(place), so Android marks it hidden and nothing was sent. Scroll it \(way) the bar, then retry."
+            return "\(lead) it is under \(bar)\(place), so Android marks it hidden. Nothing was sent. Scroll it \(way) the bar, then retry."
         }
-        return "\(selector) is on the page\(place), but Android marks it hidden, as it does a view another covers or clips, so nothing was sent. Scroll it into view or close what covers it, then retry."
+        if offScreen {
+            return "\(lead) Android lists it as hidden\(place), off the screen, as on a sheet parked out of view. Nothing was sent. Open what holds it or scroll it into view, then retry."
+        }
+        return "\(lead) Android lists it as hidden\(place), as it does a view another covers or clips. Nothing was sent. Scroll it into view or close what covers it, then retry."
     }
 
     var errorDescription: String? { userFacingDescription }

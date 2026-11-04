@@ -84,7 +84,9 @@ struct AndroidSelectorTests {
 
     static func setNavigation(_ overlay: String) async throws {
         _ = try await AndroidE2E.shell("cmd overlay enable-exclusive --category com.android.internal.systemui.navbar.\(overlay)")
-        _ = try await AndroidE2E.eventually(timeout: 15) { try await navigationOverlay() == overlay }
+        guard try await AndroidE2E.eventually(timeout: 15, { try await navigationOverlay() == overlay }) else {
+            throw AndroidE2EError(description: "the navigation overlay did not switch to \(overlay)")
+        }
     }
 
     @Test("--id on a row under three-button navigation's bar, which Android lists only as a hidden branch, exits 2 saying so, not Did you mean")
@@ -103,10 +105,11 @@ struct AndroidSelectorTests {
 
     static func tapHiddenRow() async throws {
         try await AndroidE2E.open("long-scroll-test", waitingFor: "long-scroll-test-row-3")
-        let barShown = try await AndroidE2E.eventually(timeout: 15) {
-            try await AndroidE2E.shell("dumpsys window | grep -c 'Window{.* NavigationBar' || true").trimmingCharacters(in: .whitespacesAndNewlines) != "0"
+        // 0 is three-button navigation, the mode whose bar takes touches.
+        let threeButton = try await AndroidE2E.eventually(timeout: 15) {
+            try await AndroidE2E.shell("settings get secure navigation_mode").trimmingCharacters(in: .whitespacesAndNewlines) == "0"
         }
-        #expect(barShown, "the navigation bar never came up")
+        #expect(threeButton, "three-button navigation never took effect")
         let context = try #require(try await AndroidE2E.tree()["context"] as? [String: Any])
         let branches = (context["hiddenBranches"] as? [[String: Any]]) ?? []
         let id = try #require(branches.lazy.compactMap { $0["id"] as? String }.first { $0.hasPrefix("long-scroll-test-row-") }, "no row is listed as hidden: \(branches)")
@@ -115,7 +118,7 @@ struct AndroidSelectorTests {
         let result = try await AndroidE2E.offsider("tap --id \(id) --wait-timeout 0")
 
         #expect(result.exitCode == 2, "\(result.stderr)")
-        #expect(result.stderr.contains("is under the navigation bar"), "\(result.stderr)")
+        #expect(result.stderr.contains("it is under the navigation bar"), "\(result.stderr)")
         #expect(!result.stderr.contains("Did you mean"), "\(result.stderr)")
         #expect(try await AndroidE2E.label(of: "long-scroll-test-state") == state, "the refused tap reached a row")
     }
