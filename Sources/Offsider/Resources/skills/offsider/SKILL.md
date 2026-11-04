@@ -60,7 +60,7 @@ Every input command takes `--json` (`guide verify`); a failure prints `exitCode`
 
 | Topic | Read it when |
 | --- | --- |
-| `selectors` | A selector misses, matches twice, or the target is off screen, covered or moving; you need coordinates, gestures, sliders, text replacement or button names |
+| `selectors` | A selector misses, matches twice, or the target is off screen, covered, disabled or moving; you need coordinates, gestures, sliders, text replacement or button names |
 | `verify` | You need proof an input worked, `--verify` exited 5, or you are waiting on a condition |
 | `errors` | A command exited non-zero, the device is busy, or doctor reports a problem |
 | `android` | The device is an Android emulator or a USB phone |
