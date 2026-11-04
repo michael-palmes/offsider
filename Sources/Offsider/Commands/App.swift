@@ -80,12 +80,14 @@ enum AppTarget {
     /// Installing and removing replace or delete an app's data, so a phone allowed for any app still needs this one pinned by name; a test device does not.
     static func requirePinned(_ app: String, route: DeviceRouter.Route, command: String, gate: DevicePolicyGate = .current) throws {
         guard let allowance = route.allowance, !gate.policy().drivesWhole(allowance), !allowance.pinnedApps.contains(app) else { return }
-        let audience = ErrorAudience.current
+        let pin = DeviceAddPlan.pinCommand(key: allowance.key, keeping: allowance.pinnedApps, adding: app)
         throw CLIError(
             errorDescription: "app \(command) changes an app's data, so \(app) must be pinned by name on \(allowance.name) (\(allowance.key)). Nothing was sent."
-                + audience.personStep("offsider devices add", agentTail: ", choose \(allowance.name) (\(allowance.key)) and pin \(app)"),
+                + ErrorAudience.current.personStep(pin, agentTail: allowance.allowsWholeDevice
+                    ? "; it pins \(app) in place of any app, with Touch ID or the password"
+                    : "; it pins \(app), with Touch ID or the password"),
             reason: .appNotAllowed,
-            hint: "offsider devices add"
+            hint: pin
         )
     }
 

@@ -11,47 +11,82 @@ enum ScreenStateHint {
     /// On a usable screen, `no_window` with an app in front (one foreground read) is `app_not_responding`.
     /// `wait`, `assert` and `screenshot --compare` have printed their own failure, so they get a `Note:` line on stderr instead.
     @MainActor
-    static func annotate(_ error: any Error, routes: [DeviceRouter.Route], note: (String) -> Void = { writeNote($0) }) async -> any Error {
+    static func annotate(
+        _ error: any Error,
+        routes: [DeviceRouter.Route],
+        store: any UnlockCodeStoring = KeychainUnlockCodeStore(),
+        ledger: UnlockAttemptLedger = UnlockAttemptLedger(),
+        note: (String) -> Void = { writeNote($0) }
+    ) async -> any Error {
         if let reported = error as? ReportedFailure {
-            let inner = await annotate(reported.underlying, routes: routes, note: note)
+            let inner = await annotate(reported.underlying, routes: routes, store: store, ledger: ledger, note: note)
             return inner is ScreenStateFailure ? ReportedFailure(underlying: inner, exitCode: reported.exitCode) : error
         }
         if let exit = error as? ExitCode, exit.rawValue == OffsiderExitCode.unverified.rawValue {
-            if let (serial, name, reading) = await obstructed(routes) {
-                note("Note: " + sentence(serial: serial, name: name, reading: reading))
+            if let state = await screenState(routes, store: store, ledger: ledger), !state.reading.isUsable {
+                note("Note: " + state.sentence)
             }
             return error
         }
         guard let failure = error as? any OffsiderFailure, reasons.contains(failure.reason) || error.isOtherAppInFront,
-              let (route, name, reading) = await screenState(routes) else {
+              let state = await screenState(routes, store: store, ledger: ledger) else {
             return error
         }
-        guard reading.isUsable else {
-            return ScreenStateFailure(underlying: failure, device: route.device.rawValue, name: name, reading: reading, screenIsCause: error.isOtherAppInFront)
+        guard state.reading.isUsable else {
+            return ScreenStateFailure(underlying: failure, sentence: state.sentence, hint: state.fix.hint, screenIsCause: error.isOtherAppInFront)
         }
-        guard failure.reason == .noWindow, let package = await AppNotResponding.frontApp(on: route, awake: reading) else { return error }
-        return AppNotResponding.failure(package: package, route: route)
+        guard failure.reason == .noWindow, let package = await AppNotResponding.frontApp(on: state.route, awake: state.reading) else { return error }
+        return AppNotResponding.failure(package: package, route: state.route)
     }
 
-    /// The serial, the device's name from what the command already read (no extra round trip), and the reading, when the screen is off or locked.
-    @MainActor
-    private static func obstructed(_ routes: [DeviceRouter.Route]) async -> (String, String, AwakeReading)? {
-        guard let (route, name, reading) = await screenState(routes), !reading.isUsable else { return nil }
-        return (route.device.rawValue, name, reading)
+    struct State {
+        let route: DeviceRouter.Route
+        let reading: AwakeReading
+        let fix: Fix
+        let sentence: String
     }
 
+    /// The reading, the device named as `wake` names it (one listing when the command read none) and the step that clears the screen.
     @MainActor
-    private static func screenState(_ routes: [DeviceRouter.Route]) async -> (DeviceRouter.Route, String, AwakeReading)? {
+    private static func screenState(_ routes: [DeviceRouter.Route], store: any UnlockCodeStoring, ledger: UnlockAttemptLedger) async -> State? {
         guard routes.count == 1, let route = routes.first, route.device.platform == .android,
               let backend = route.backend as? any AwakeControlling,
               let reading = try? await backend.awakeState(on: route.device) else {
             return nil
         }
         let serial = route.device.rawValue
-        return (route, DeviceName.android(serial: serial, listed: backend.listedName(of: route.device), maker: reading.maker), reading)
+        var listed = backend.listedName(of: route.device)
+        if !reading.isUsable, listed == nil, let booted = try? await route.backend.requireBootedDevice(route.device) {
+            listed = booted.name
+        }
+        // An emulator's code is kept under its AVD name, a phone's under its serial.
+        var key: String? = serial
+        if case .androidSerial = DeviceIDClassifier.classify(serial) { key = listed == serial ? nil : listed }
+        let name = DeviceName.android(serial: serial, listed: listed, maker: reading.maker)
+        let step = fix(serial: serial, reading: reading, codeKey: key, store: store, ledger: ledger)
+        return State(route: route, reading: reading, fix: step, sentence: sentence(name: name, reading: reading, fix: step))
     }
 
-    static func sentence(serial: String, name: String, reading: AwakeReading) -> String {
+    /// What clears the screen, and the command a hint names.
+    struct Fix: Equatable {
+        let text: String
+        let hint: String?
+    }
+
+    /// `wake` lights a dark screen and clears a swipe; a PIN or password needs its saved code typed, or a person, so `wake` alone would only loop.
+    static func fix(serial: String, reading: AwakeReading, codeKey: String?, store: any UnlockCodeStoring, ledger: UnlockAttemptLedger) -> Fix {
+        let wake = "offsider wake --device \(serial)"
+        guard reading.screen == .on, reading.lockScreen == .secure else { return Fix(text: "Run `\(wake)`, then retry.", hint: wake) }
+        let key = codeKey ?? serial
+        // Attributes only, so the code itself is never read.
+        let saved = (try? store.hasCode(for: key)) ?? false
+        let report = LockReport(reading, savedCode: saved, lastAttempt: ledger.lastAttempt(key))
+        let unlock = "offsider wake --unlock --device \(serial)"
+        let hint = reading.credential == "pattern" ? nil : saved && report.blockingAttempt == nil ? unlock : UnlockCodeScreen.setCommand(key)
+        return Fix(text: report.unlockHint(deviceID: serial, codeKey: key), hint: hint)
+    }
+
+    static func sentence(name: String, reading: AwakeReading, fix: Fix) -> String {
         let state: String
         switch (reading.screen, reading.lockScreen) {
         case (.on, .secure): state = "\(name) is showing its \(reading.credentialName) lock screen"
@@ -59,7 +94,7 @@ enum ScreenStateHint {
         case (.dreaming, _): state = "\(name) is showing a screen saver"
         case (.off, _), (.dozing, _): state = "The screen of \(name) is off"
         }
-        return "\(state), so input and screen reads do not reach the app. Run `offsider wake --device \(serial)`, then retry."
+        return "\(state), so input and screen reads do not reach the app. \(fix.text)"
     }
 
     static func writeNote(_ line: String) {
@@ -82,17 +117,12 @@ enum ScreenStateHint {
 
 struct ScreenStateFailure: LocalizedError, UserFacingError, OffsiderFailure {
     let underlying: any OffsiderFailure
-    let device: String
-    let name: String
-    let reading: AwakeReading
+    let sentence: String
+    let hint: String?
     var screenIsCause = false
 
     var reason: FailureReason { screenIsCause ? .screenOff : underlying.reason }
-    var failureMessage: String {
-        let sentence = ScreenStateHint.sentence(serial: device, name: name, reading: reading)
-        return screenIsCause ? sentence : "\(underlying.failureMessage) \(sentence)"
-    }
-    var hint: String? { "offsider wake --device \(device)" }
+    var failureMessage: String { screenIsCause ? sentence : "\(underlying.failureMessage) \(sentence)" }
     var ask: String? { underlying.ask }
     var candidates: [FailureCandidate] { underlying.candidates }
     var userFacingDescription: String { failureMessage }

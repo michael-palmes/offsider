@@ -60,7 +60,7 @@ struct VerifyTests {
         #expect(result.exitCode == 5)
         #expect(json["attempts"] as? Int == 2)
         #expect(json["style"] as? String == "physical")
-        #expect(result.stderr.contains("retrying with physical style"))
+        #expect(result.stderr.contains("retrying with touch down and up"))
     }
 
     @Test("Verified typing lands the text once")

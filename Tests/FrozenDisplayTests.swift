@@ -13,7 +13,7 @@ struct FrozenDisplayTests {
     }
 
     /// The notices `screenshot` gives for each tree in turn, all over the same picture unless `images` says otherwise.
-    static func warnings(trees: [UITree], images: [Data]? = nil, device: DeviceID = simulator, cacheOn: Bool = true) async throws -> String {
+    static func warnings(trees: [UITree], images: [Data]? = nil, screen: UIScreenInfo? = nil, device: DeviceID = simulator, cacheOn: Bool = true) async throws -> String {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("frozen-\(UUID().uuidString)").path
         try FileManager.default.createDirectory(atPath: directory, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
         defer { try? FileManager.default.removeItem(atPath: directory) }
@@ -24,7 +24,7 @@ struct FrozenDisplayTests {
             await Console.$current.withValue(capture.console(out: .agent, err: .agent)) {
                 for (index, tree) in trees.enumerated() {
                     let png = images?[index] ?? same
-                    FrozenDisplay.check(try! ScreenCapture.make(png: png, platform: device.platform, screen: nil), tree: tree, device: device)
+                    FrozenDisplay.check(try! ScreenCapture.make(png: png, platform: device.platform, screen: screen), tree: tree, device: device)
                 }
             }
         }
@@ -47,6 +47,35 @@ struct FrozenDisplayTests {
         let other = try ScreenImage.encode(TestImages.make(width: 30, height: 60, marked: [(5, 5)]), as: .png)
         let first = try ScreenImage.encode(TestImages.make(width: 30, height: 60), as: .png)
         #expect(try await Self.warnings(trees: [Self.tree("Log in"), Self.tree("Home")], images: [first, other]).isEmpty)
+    }
+
+    /// A 402 x 874 point screen at one pixel a point, marked at each point given.
+    static func screenPicture(marked: [(x: Int, y: Int)] = []) throws -> Data {
+        try ScreenImage.encode(TestImages.make(width: 402, height: 874, marked: marked), as: .png)
+    }
+
+    static let screen = UIScreenInfo(width: 402, height: 874, captureArrivesUpright: true)
+
+    @Test("a frozen display whose status bar clock and bottom edge still change warns, and a change between them stays quiet")
+    func bandsLeftOut() async throws {
+        let moved = try Self.screenPicture(marked: [(30, 20), (200, 860)])
+        let err = try await Self.warnings(trees: [Self.tree("Log in"), Self.tree("Home")], images: [try Self.screenPicture(), moved], screen: Self.screen)
+        #expect(err.contains("This screenshot matches the last one, though the elements on screen changed"))
+
+        let changed = try Self.screenPicture(marked: [(200, 400)])
+        #expect(try await Self.warnings(trees: [Self.tree("Log in"), Self.tree("Home")], images: [try Self.screenPicture(), changed], screen: Self.screen).isEmpty)
+    }
+
+    @Test("an element wholly in the status bar or bottom edge is no tree change, as the picture leaves those rows out")
+    func bandElementsLeftOut() {
+        let plain = FakeUI.tree([FakeUI.node(.button, label: "Log in", frame: FakeUI.frame(20, 100, 200, 44))])
+        let clock = FakeUI.tree([
+            FakeUI.node(.button, label: "Log in", frame: FakeUI.frame(20, 100, 200, 44)),
+            FakeUI.node(.text, label: "9:41", frame: FakeUI.frame(30, 14, 40, 20)),
+            FakeUI.node(.other, label: "Home indicator", frame: FakeUI.frame(130, 850, 140, 8)),
+        ])
+        #expect(FrozenDisplayRecord.digest(tree: plain, leavingOut: FrozenDisplay.bands) == FrozenDisplayRecord.digest(tree: clock, leavingOut: FrozenDisplay.bands))
+        #expect(FrozenDisplayRecord.digest(tree: plain) != FrozenDisplayRecord.digest(tree: clock))
     }
 
     @Test("an emulator is never checked")

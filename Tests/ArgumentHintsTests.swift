@@ -88,6 +88,11 @@ struct ArgumentHintsTests {
         (["assert", "--label-prefix=Select"], "assert takes --label-contains <text> for part of a label, in the same case.", ["assert", "--label-contains", "Select"]),
         (["slider", "--label-includes", "Volume", "--value", "5"], "slider takes --label-contains <text> for part of a label, in the same case.", ["slider", "--label-contains", "Volume", "--value", "5"]),
         (["describe-ui", "--json"], "describe-ui prints JSON by default and has no --json; --format chooses json, ndjson or text.", ["describe-ui", "--format", "json"]),
+        (["orientation", "--json", "--app", "com.example.app"], ArgumentHints.takesNoApp("orientation"), ["orientation", "--json"]),
+        (["appearance", "--app=com.example.app"], ArgumentHints.takesNoApp("appearance"), ["appearance"]),
+        (["content-size", "--app", "com.example.app"], ArgumentHints.takesNoApp("content-size"), ["content-size"]),
+        (["posture", "--app", "com.example.app"], ArgumentHints.takesNoApp("posture"), ["posture"]),
+        (["stay-awake", "--app", "com.example.app"], ArgumentHints.takesNoApp("stay-awake"), ["stay-awake"]),
     ]
 
     @Test("each misnamed option gets its hint as a usage error, never a rename", arguments: misnamed.indices)

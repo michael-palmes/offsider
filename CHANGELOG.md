@@ -59,6 +59,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - A selector tap within 500 ms of the keyboard opening or closing reads the screen again before it taps, as the layout follows the keyboard a moment later, even when the target has not moved yet.
 - On Android with three-button navigation, a selector tap whose point falls under the navigation or status bar taps the part of the target showing beside it, or, with less than 8 dp showing, refuses with `target_covered` (`evidence` `systemBar`) and the `swipe` that scrolls it clear, or, for something fixed there such as a tab bar, says the app needs to draw it above the bar. It used to tap the bar, which could press Home and exit 0. `wait`, `assert` and `describe-ui --on-screen` agree. Gesture navigation is unchanged, as its touches reach the app.
 - On Android a window the app draws over its own without taking focus, such as a dropdown or a text selection toolbar, is now in the tree as a `window` root, so selectors find its rows and a tap on a control beneath it refuses with `target_covered`. Other apps' windows stay out.
+- `tap --verify` on a button, link or menu item presses it once by default, as it already did a switch: a retry after an effect it could not see, such as a change beneath a panel, would submit twice. `--retries 1` allows one more. Verify lines name what was sent, one tap event or touch down and up, rather than a "simulator style" that read oddly on a phone.
 
 ### Fixed
 
@@ -150,6 +151,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - iPhone and iPad: the runner turns off XCTest's own screenshots and screen recordings of the session, which could keep a password screen unmasked.
 - iPhone and iPad: a React Native password field that XCTest reports as a text field holding only dots counts as a password field, so screenshots paint it, argument text is refused and `type --replace` does not touch it.
 - iPhone and iPad: limited contacts access, which iOS draws in a process of its own, stops reads and input with exit 7 `system_prompt_in_front` (`Contacts access`) instead of reaching it.
+- On an Android phone, `button back` and `button home` with the notification shade or another system window focused over the allowed app exit 1, as `tap`, `key`, `describe-ui` and `screenshot` do. Home still leaves an app the phone may not drive.
+- On an iOS simulator, a selector tap no longer opens the React Native dev menu when its target lies within about 40 pt of the floating button's centre: Offsider took the button's touch area for 25 pt, as it is on Android.
+- `type --replace` on an iPhone or iPad sets a field whose accessibility value is not its text, such as one that reads "empty" when blank or a mask's `(___) ___-____`, instead of exiting 1 `replace_failed`. A type the runner is still busy with when the wait runs out says the field may be half done, rather than blaming a system prompt, and the wait grows with the text.
+- The frozen display warning leaves the status bar and the bottom edge out of both the picture and the tree, since a frozen simulator display still redraws them, so it no longer misses one.
+- On a PIN or password lock screen with a code saved, `wake` and a failed read or tap name `offsider wake --unlock --device <serial>`, where they said to save a code or to run `wake`, which only looped; with none saved they name `offsider unlock-code set --device <serial>`. Those errors name a phone by maker and model every time.
+- A `tap` selector that only a branch Android marks hidden matches, such as a row under three-button navigation, says it is there and to scroll it up, rather than suggesting other elements (exit 2, nothing sent).
+- Pin refusals on a phone (`app install`, `app uninstall`, an app outside the allowance) give the complete `offsider devices add --device <serial> --app <id>` command, keeping the apps already pinned, as do `test-runner.sh` and the device suites.
+- A permission dialog in front of an app on a phone names the service the app requests and lacks, as a complete `permission grant` command, instead of a `<service>` placeholder.
+- `orientation`, `appearance`, `content-size`, `posture` and `stay-awake` given a stray `--app <id>` say they take no `--app`, instead of "Unknown orientation '<id>'".
+- `rn open` on a fresh iOS install no longer reports the app loaded just before Expo's dev menu intro opens over it: it exits 5 naming `rn prepare`, as on Android.
 
 ## [0.15.0] - 2026-11-01
 

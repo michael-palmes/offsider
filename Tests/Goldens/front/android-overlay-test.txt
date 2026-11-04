@@ -1,4 +1,4 @@
-# 24 nodes, 23 listed
+# 27 nodes, 26 listed
 ## no point read
 1 button "BackButton" 8,54.10 44.19x44.19: at 30.09,76.19 reaches
 2 group "overlay-test-screen" 60.19,64.38 291.43x23.24: at 205.91,76 reaches
@@ -17,8 +17,11 @@
 16 button "overlay-test-log-error" 224.76,583.62 102.86x43.81: at 276.19,605.52 reaches
 17 button "overlay-test-log-two-errors" 68.57,639.62 148.19x43.81: at 142.66,661.52 reaches
 18 button "overlay-test-clear-logs" 228.95,639.62 114.29x43.81: at 286.09,661.52 reaches
-19 button "overlay-test-amount" 16,790.48 379.43x56: at 205.72,818.48 reaches
-20 group "overlay-test-tab-bar" 0,850.29 411.43x73.14: covered by button "overlay-test-tab-search" 137.14,850.67 137.14x49.14 (drawingOrder, sure): at 205.72,886.86 judged button "overlay-test-tab-search" 137.14,850.67 137.14x49.14 (drawingOrder, sure)
-21 button "overlay-test-tab-home" 0,850.67 137.14x49.14: at 68.57,875.24 reaches
-22 button "overlay-test-tab-search" 137.14,850.67 137.14x49.14: at 205.71,875.24 reaches
-23 button "overlay-test-tab-profile" 274.29,850.67 137.14x49.14: at 342.86,875.24 reaches
+19 button "overlay-test-render-error" 0,695.62 109.33x43.81: at 54.66,717.52 reaches
+20 button "overlay-test-toggle-edge-row" 121.52,695.62 154.67x43.81: at 198.85,717.52 reaches
+21 button "overlay-test-empty-logbox" 288,695.62 123.43x43.81: at 349.72,717.52 reaches
+22 button "overlay-test-amount" 16,790.48 379.43x56: at 205.72,818.48 reaches
+23 group "overlay-test-tab-bar" 0,850.29 411.43x73.14: covered by button "overlay-test-tab-search" 137.14,850.67 137.14x49.14 (drawingOrder, sure): at 205.72,886.86 judged button "overlay-test-tab-search" 137.14,850.67 137.14x49.14 (drawingOrder, sure)
+24 button "overlay-test-tab-home" 0,850.67 137.14x49.14: at 68.57,875.24 reaches
+25 button "overlay-test-tab-search" 137.14,850.67 137.14x49.14: at 205.71,875.24 reaches
+26 button "overlay-test-tab-profile" 274.29,850.67 137.14x49.14: at 342.86,875.24 reaches

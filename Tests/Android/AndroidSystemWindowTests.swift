@@ -292,6 +292,32 @@ struct AndroidSystemWindowTests {
         #expect(!server.services.contains { $0.contains("input ") })
     }
 
+    @Test("Back and Home with the notification shade or a system window focused over an allowed app are refused", arguments: [
+        focus(title: "NotificationShade", owner: "com.android.systemui"),
+        focus(),
+    ])
+    func buttonsRefusedUnderSystemWindow(dump: String) async throws {
+        let (backend, server) = try await Self.backend(focus: dump)
+        let session = try await backend.openInputSession(for: Self.phone)
+        for button in [HardwareButton.back, .home] {
+            let error = await #expect(throws: AndroidError.self) { try await session.perform(.shortButtonPress(button)) }
+            #expect(error?.isOtherAppInFront == true)
+        }
+        #expect(!server.services.contains { $0.contains("input ") })
+    }
+
+    @Test("Home still leaves an app the phone may not drive, and a bare wait reads no focus")
+    func buttonsLeaveOtherApps() async throws {
+        let other = "com.example.other"
+        let (backend, server) = try await Self.backend(focus: Self.focus(title: "\(other)/\(other).Main", owner: other, focusedApp: other), top: "\(other)/.Main")
+        let session = try await backend.openInputSession(for: Self.phone)
+        try await session.perform(.delay(0.01))
+        #expect(Self.focusReads(server) == 0)
+        try await session.perform(.shortButtonPress(.home))
+        #expect(Self.focusReads(server) == 1)
+        #expect(server.services.contains { $0.contains("input ") })
+    }
+
     @Test("input reaches the app's own window, the keyboard, or a phone with no focus to read", arguments: [
         focus(title: "\(app)/\(app).MainActivity", owner: app),
         focus(title: "InputMethod", owner: "com.example.keyboard"),

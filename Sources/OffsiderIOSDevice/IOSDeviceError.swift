@@ -230,6 +230,16 @@ extension IOSDeviceError {
         IOSDeviceError(.runnerUnavailable, "The runner on \(udid) did not answer in time, so nothing was read or sent. A system prompt may be holding the app: `offsider describe-ui --summary --device \(udid)` reads what is in front.")
     }
 
+    /// The runner took the text and was still typing, or clearing the field first, when the wait ran out; the request is not known to be stuck.
+    static func runnerStillTyping(_ udid: String, replace: Bool) -> IOSDeviceError {
+        let field = replace ? "the field may be cleared or hold part of the text" : "the field may hold part of the text"
+        return IOSDeviceError(
+            .runnerUnavailable,
+            "The runner on \(udid) was still typing when Offsider stopped waiting, so \(field). Read it with `offsider describe-ui --summary --device \(udid)` before typing again.",
+            hint: "offsider describe-ui --summary --device \(udid)"
+        )
+    }
+
     static func runnerNotListening(_ udid: String) -> IOSDeviceError {
         IOSDeviceError(.runnerUnavailable, "Nothing on \(udid) accepted the runner connection, so no input was sent. Retry; if it persists, run `offsider doctor --device \(udid)`.")
     }
