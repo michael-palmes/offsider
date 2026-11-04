@@ -179,7 +179,11 @@ public enum KnownOverlays {
 
     /// The full-screen LogBox inspector: a `Log n of m` header, or `Dismiss` and `Minimize` buttons near the bottom.
     public static func logBoxInspector(in roots: [UINode], viewport: UIFrame?) -> LogBoxInspector? {
-        let nodes = roots.flatMap { $0.flattened() }
+        logBoxInspector(among: roots.flatMap { $0.flattened() }, viewport: viewport)
+    }
+
+    /// `logBoxInspector(in:viewport:)` over nodes already flattened.
+    static func logBoxInspector(among nodes: [UINode], viewport: UIFrame?) -> LogBoxInspector? {
         let header = nodes.lazy.compactMap { node in node.label.flatMap(LogBoxInspector.position(in:)) }.first
         let band: Double? = viewport.map { $0.y + $0.height - bottomBand }
         func inBand(_ node: UINode) -> Bool {

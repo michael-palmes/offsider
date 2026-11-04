@@ -1,0 +1,67 @@
+# 616 nodes, 33 listed
+## no point read
+7 header "Long Scroll" 0,59 430x54: at 215,86 reaches
+8 button "BackButton" 20,59 44x44: at 42,81 reaches
+9 text "Long Scroll" 150,71 130x21: at 215,81.50 reaches
+10 text "long-scroll-test-state" 16,129 212x20: at 122,139 reaches
+11 list "long-scroll-test-scroll-view" 0,165 430x684: at 215,507 reaches
+12 cell "long-scroll-test-row-0" 0,165 430x64: at 215,197 reaches
+15 text "Long Scroll Row 0" 20,165 390x64: at 215,197 reaches
+17 cell "long-scroll-test-row-1" 0,229 430x64: at 215,261 reaches
+20 text "Long Scroll Row 1" 20,229 390x64: at 215,261 reaches
+22 cell "long-scroll-test-row-2" 0,293 430x64: at 215,325 reaches
+25 text "Long Scroll Row 2" 20,293 390x64: at 215,325 reaches
+27 cell "long-scroll-test-row-3" 0,357 430x64: at 215,389 reaches
+30 text "Long Scroll Row 3" 20,357 390x64: at 215,389 reaches
+32 cell "long-scroll-test-row-4" 0,421 430x64: at 215,453 reaches
+35 text "Long Scroll Row 4" 20,421 390x64: at 215,453 reaches
+37 cell "long-scroll-test-row-5" 0,485 430x64: at 215,517 reaches
+40 text "Long Scroll Row 5" 20,485 390x64: at 215,517 reaches
+42 cell "long-scroll-test-row-6" 0,549 430x64: at 215,581 reaches
+45 text "Long Scroll Row 6" 20,549 390x64: at 215,581 reaches
+47 cell "long-scroll-test-row-7" 0,613 430x64: at 215,645 reaches
+50 text "Long Scroll Row 7" 20,613 390x64: at 215,645 reaches
+52 cell "long-scroll-test-row-8" 0,677 430x64: at 215,709 reaches
+55 text "Long Scroll Row 8" 20,677 390x64: at 215,709 reaches
+57 cell "long-scroll-test-row-9" 0,741 430x64: at 215,773 reaches
+60 text "Long Scroll Row 9" 20,741 390x64: at 215,773 reaches
+62 cell "long-scroll-test-row-10" 0,805 430x64: at 215,837 judged other "long-scroll-test-toolbar" 0,820 430x112 (treeOrder, guess)
+65 text "Long Scroll Row 10" 20,805 390x64: at 215,837 judged other "long-scroll-test-toolbar" 0,820 430x112 (treeOrder, guess)
+67 cell "long-scroll-test-row-11" 0,869 430x64: clipped below
+70 text "Long Scroll Row 11" 20,869 390x64: clipped below
+613 other "long-scroll-test-toolbar" 0,820 430x112: at 215,876 reaches
+614 button "long-scroll-test-top" 20,830 80x44: at 60,852 reaches
+615 button "long-scroll-test-bottom" 330,830 80x44: at 370,852 reaches
+## hit-tested
+7 header "Long Scroll" 0,59 430x54: at 215,86 reaches
+8 button "BackButton" 20,59 44x44: at 42,81 reaches
+9 text "Long Scroll" 150,71 130x21: at 215,81.50 reaches
+10 text "long-scroll-test-state" 16,129 212x20: at 122,139 reaches
+11 list "long-scroll-test-scroll-view" 0,165 430x684: at 215,507 reaches
+12 cell "long-scroll-test-row-0" 0,165 430x64: at 215,197 reaches
+15 text "Long Scroll Row 0" 20,165 390x64: at 215,197 reaches
+17 cell "long-scroll-test-row-1" 0,229 430x64: at 215,261 reaches
+20 text "Long Scroll Row 1" 20,229 390x64: at 215,261 reaches
+22 cell "long-scroll-test-row-2" 0,293 430x64: at 215,325 reaches
+25 text "Long Scroll Row 2" 20,293 390x64: at 215,325 reaches
+27 cell "long-scroll-test-row-3" 0,357 430x64: at 215,389 reaches
+30 text "Long Scroll Row 3" 20,357 390x64: at 215,389 reaches
+32 cell "long-scroll-test-row-4" 0,421 430x64: at 215,453 reaches
+35 text "Long Scroll Row 4" 20,421 390x64: at 215,453 reaches
+37 cell "long-scroll-test-row-5" 0,485 430x64: at 215,517 reaches
+40 text "Long Scroll Row 5" 20,485 390x64: at 215,517 reaches
+42 cell "long-scroll-test-row-6" 0,549 430x64: at 215,581 reaches
+45 text "Long Scroll Row 6" 20,549 390x64: at 215,581 reaches
+47 cell "long-scroll-test-row-7" 0,613 430x64: at 215,645 reaches
+50 text "Long Scroll Row 7" 20,613 390x64: at 215,645 reaches
+52 cell "long-scroll-test-row-8" 0,677 430x64: at 215,709 reaches
+55 text "Long Scroll Row 8" 20,677 390x64: at 215,709 reaches
+57 cell "long-scroll-test-row-9" 0,741 430x64: at 215,773 reaches
+60 text "Long Scroll Row 9" 20,741 390x64: at 215,773 reaches
+62 cell "long-scroll-test-row-10" 0,805 430x64: covered by other "long-scroll-test-toolbar" 0,820 430x112 (hitTest, sure): at 215,837 judged other "long-scroll-test-toolbar" 0,820 430x112 (hitTest, sure), other hit
+65 text "Long Scroll Row 10" 20,805 390x64: covered by other "long-scroll-test-toolbar" 0,820 430x112 (hitTest, sure): at 215,837 judged other "long-scroll-test-toolbar" 0,820 430x112 (hitTest, sure), other hit
+67 cell "long-scroll-test-row-11" 0,869 430x64: clipped below
+70 text "Long Scroll Row 11" 20,869 390x64: clipped below
+613 other "long-scroll-test-toolbar" 0,820 430x112: at 215,876 reaches
+614 button "long-scroll-test-top" 20,830 80x44: at 60,852 reaches
+615 button "long-scroll-test-bottom" 330,830 80x44: at 370,852 reaches

@@ -1,0 +1,29 @@
+# 23 nodes, 14 listed
+## no point read
+10 button "BackButton" 8,62 44x44: at 30,84 reaches
+11 header "choice-test-screen" 60,74 282x20.33: at 201,84.17 reaches
+12 text "choice-test-state" 16,122.33 370x40.67: at 201,142.67 reaches
+13 checkbox "choice-test-checkbox-terms" 16,183 130.67x44: at 81.33,205 reaches
+14 checkbox "choice-test-checkbox-updates" 16,235 153x44: at 92.50,257 reaches
+15 checkbox "choice-test-checkbox-mixed" 16,287 99.33x44: at 65.67,309 reaches
+16 group "choice-test-size" 16,351.00 213.67x36: at 122.83,369.00 reaches
+17 radioButton "choice-test-radio-small" 18,353.00 63.67x32: at 49.83,369.00 reaches
+18 radioButton "choice-test-radio-medium" 81.67,353.00 81.33x32: at 122.33,369.00 reaches
+19 radioButton "choice-test-radio-large" 163,353.00 64.67x32: at 195.33,369.00 reaches
+20 switch "choice-test-switch" 16,407.00 52x32: at 42,423.00 reaches
+21 other "choice-test-combobox" 16,447.00 90x44: at 61,469.00 reaches
+22 other "choice-test-progress" 16,499.00 200x8: at 116,503.00 reaches
+## hit-tested
+10 button "BackButton" 8,62 44x44: at 30,84 reaches
+11 header "choice-test-screen" 60,74 282x20.33: at 201,84.17 reaches
+12 text "choice-test-state" 16,122.33 370x40.67: at 201,142.67 reaches
+13 checkbox "choice-test-checkbox-terms" 16,183 130.67x44: at 81.33,205 reaches
+14 checkbox "choice-test-checkbox-updates" 16,235 153x44: at 92.50,257 reaches
+15 checkbox "choice-test-checkbox-mixed" 16,287 99.33x44: at 65.67,309 reaches
+16 group "choice-test-size" 16,351.00 213.67x36: at 122.83,369.00 reaches
+17 radioButton "choice-test-radio-small" 18,353.00 63.67x32: at 49.83,369.00 reaches
+18 radioButton "choice-test-radio-medium" 81.67,353.00 81.33x32: at 122.33,369.00 reaches
+19 radioButton "choice-test-radio-large" 163,353.00 64.67x32: at 195.33,369.00 reaches
+20 switch "choice-test-switch" 16,407.00 52x32: at 42,423.00 reaches
+21 other "choice-test-combobox" 16,447.00 90x44: at 61,469.00 reaches
+22 other "choice-test-progress" 16,499.00 200x8: at 116,503.00 reaches

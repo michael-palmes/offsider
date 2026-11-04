@@ -1,0 +1,81 @@
+# 47 nodes, 40 listed
+## no point read
+7 header "Form" 0,59 430x54: at 215,86 reaches
+8 button "BackButton" 20,59 44x44: at 42,81 reaches
+9 text "Form" 150,71 130x21: at 215,81.50 reaches
+10 text "Field 0" 20,130 100x20: at 70,140 reaches
+11 textField "form-field-0" 20,152 390x34: at 215,169 reaches
+12 text "Field 1" 20,190 100x20: at 70,200 reaches
+13 textField "form-field-1" 20,212 390x34: at 215,229 reaches
+14 text "Field 2" 20,250 100x20: at 70,260 reaches
+15 textField "form-field-2" 20,272 390x34: at 215,289 reaches
+16 text "Field 3" 20,310 100x20: at 70,320 reaches
+17 textField "form-field-3" 20,332 390x34: at 215,349 reaches
+18 text "Field 4" 20,370 100x20: at 70,380 reaches
+19 textField "form-field-4" 20,392 390x34: at 215,409 reaches
+20 text "Field 5" 20,430 100x20: at 70,440 reaches
+21 textField "form-field-5" 20,452 390x34: at 215,469 reaches
+22 text "Field 6" 20,490 100x20: at 70,500 reaches
+23 textField "form-field-6" 20,512 390x34: at 215,529 reaches
+24 text "Field 7" 20,550 100x20: at 70,560 reaches
+25 textField "form-field-7" 20,572 390x34: at 215,589 reaches
+26 text "Field 8" 20,610 100x20: covered by keyboard 0,590 430x342 (treeOrder, sure): at 70,620 judged keyboard 0,590 430x342 (treeOrder, sure)
+27 textField "form-field-8" 20,632 390x34: covered by keyboard 0,590 430x342 (treeOrder, sure): at 215,649 judged keyboard 0,590 430x342 (treeOrder, sure)
+28 text "Field 9" 20,670 100x20: covered by keyboard 0,590 430x342 (treeOrder, sure): at 70,680 judged keyboard 0,590 430x342 (treeOrder, sure)
+29 textField "form-field-9" 20,692 390x34: covered by keyboard 0,590 430x342 (treeOrder, sure): at 215,709 judged keyboard 0,590 430x342 (treeOrder, sure)
+30 text "Field 10" 20,730 100x20: covered by keyboard 0,590 430x342 (treeOrder, sure): at 70,740 judged keyboard 0,590 430x342 (treeOrder, sure)
+31 textField "form-field-10" 20,752 390x34: covered by keyboard 0,590 430x342 (treeOrder, sure): at 215,769 judged keyboard 0,590 430x342 (treeOrder, sure)
+32 text "Field 11" 20,790 100x20: covered by keyboard 0,590 430x342 (treeOrder, sure): at 70,800 judged keyboard 0,590 430x342 (treeOrder, sure)
+33 textField "form-field-11" 20,812 390x34: covered by keyboard 0,590 430x342 (treeOrder, sure): at 215,829 judged keyboard 0,590 430x342 (treeOrder, sure)
+34 button "form-save" 20,860 390x44: covered by keyboard 0,590 430x342 (treeOrder, sure): at 215,882 judged keyboard 0,590 430x342 (treeOrder, sure)
+36 button "q" 3,600 38x46: at 22,623 reaches
+37 button "w" 45.50,600 38x46: at 64.50,623 reaches
+38 button "e" 88,600 38x46: at 107,623 reaches
+39 button "r" 130.50,600 38x46: at 149.50,623 reaches
+40 button "t" 173,600 38x46: at 192,623 reaches
+41 button "y" 215.50,600 38x46: at 234.50,623 reaches
+42 button "u" 258,600 38x46: at 277,623 reaches
+43 button "i" 300.50,600 38x46: at 319.50,623 reaches
+44 button "o" 343,600 38x46: at 362,623 reaches
+45 button "p" 385.50,600 38x46: at 404.50,623 reaches
+46 button "return" 320,750 106x46: at 373,773 reaches
+## hit-tested
+7 header "Form" 0,59 430x54: at 215,86 reaches
+8 button "BackButton" 20,59 44x44: at 42,81 reaches
+9 text "Form" 150,71 130x21: at 215,81.50 reaches
+10 text "Field 0" 20,130 100x20: at 70,140 reaches
+11 textField "form-field-0" 20,152 390x34: at 215,169 reaches
+12 text "Field 1" 20,190 100x20: at 70,200 reaches
+13 textField "form-field-1" 20,212 390x34: at 215,229 reaches
+14 text "Field 2" 20,250 100x20: at 70,260 reaches
+15 textField "form-field-2" 20,272 390x34: at 215,289 reaches
+16 text "Field 3" 20,310 100x20: at 70,320 reaches
+17 textField "form-field-3" 20,332 390x34: at 215,349 reaches
+18 text "Field 4" 20,370 100x20: at 70,380 reaches
+19 textField "form-field-4" 20,392 390x34: at 215,409 reaches
+20 text "Field 5" 20,430 100x20: at 70,440 reaches
+21 textField "form-field-5" 20,452 390x34: at 215,469 reaches
+22 text "Field 6" 20,490 100x20: at 70,500 reaches
+23 textField "form-field-6" 20,512 390x34: at 215,529 reaches
+24 text "Field 7" 20,550 100x20: at 70,560 reaches
+25 textField "form-field-7" 20,572 390x34: at 215,589 reaches
+26 text "Field 8" 20,610 100x20: covered by keyboard 0,590 430x342 (treeOrder, sure): at 70,620 judged keyboard 0,590 430x342 (treeOrder, sure)
+27 textField "form-field-8" 20,632 390x34: covered by keyboard 0,590 430x342 (treeOrder, sure): at 215,649 judged keyboard 0,590 430x342 (treeOrder, sure)
+28 text "Field 9" 20,670 100x20: covered by keyboard 0,590 430x342 (treeOrder, sure): at 70,680 judged keyboard 0,590 430x342 (treeOrder, sure)
+29 textField "form-field-9" 20,692 390x34: covered by keyboard 0,590 430x342 (treeOrder, sure): at 215,709 judged keyboard 0,590 430x342 (treeOrder, sure)
+30 text "Field 10" 20,730 100x20: covered by keyboard 0,590 430x342 (treeOrder, sure): at 70,740 judged keyboard 0,590 430x342 (treeOrder, sure)
+31 textField "form-field-10" 20,752 390x34: covered by keyboard 0,590 430x342 (treeOrder, sure): at 215,769 judged keyboard 0,590 430x342 (treeOrder, sure)
+32 text "Field 11" 20,790 100x20: covered by keyboard 0,590 430x342 (treeOrder, sure): at 70,800 judged keyboard 0,590 430x342 (treeOrder, sure)
+33 textField "form-field-11" 20,812 390x34: covered by keyboard 0,590 430x342 (treeOrder, sure): at 215,829 judged keyboard 0,590 430x342 (treeOrder, sure)
+34 button "form-save" 20,860 390x44: covered by keyboard 0,590 430x342 (treeOrder, sure): at 215,882 judged keyboard 0,590 430x342 (treeOrder, sure)
+36 button "q" 3,600 38x46: at 22,623 reaches
+37 button "w" 45.50,600 38x46: at 64.50,623 reaches
+38 button "e" 88,600 38x46: at 107,623 reaches
+39 button "r" 130.50,600 38x46: at 149.50,623 reaches
+40 button "t" 173,600 38x46: at 192,623 reaches
+41 button "y" 215.50,600 38x46: at 234.50,623 reaches
+42 button "u" 258,600 38x46: at 277,623 reaches
+43 button "i" 300.50,600 38x46: at 319.50,623 reaches
+44 button "o" 343,600 38x46: at 362,623 reaches
+45 button "p" 385.50,600 38x46: at 404.50,623 reaches
+46 button "return" 320,750 106x46: at 373,773 reaches

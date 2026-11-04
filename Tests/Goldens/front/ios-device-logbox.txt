@@ -1,0 +1,77 @@
+# 92 nodes, 38 listed
+## no point read
+7 header "Rows" 0,59 430x54: at 215,86 reaches
+8 button "BackButton" 20,59 44x44: at 42,81 reaches
+9 text "Rows" 150,71 130x21: at 215,81.50 reaches
+10 list "rows-test-list" 0,120 430x812: at 215,526 reaches
+11 cell "rows-test-row-0" 0,120 430x50: at 215,145 reaches
+14 text "Row 0" 20,120 390x50: at 215,145 reaches
+16 cell "rows-test-row-1" 0,170 430x50: at 215,195 reaches
+19 text "Row 1" 20,170 390x50: at 215,195 reaches
+21 cell "rows-test-row-2" 0,220 430x50: at 215,245 reaches
+24 text "Row 2" 20,220 390x50: at 215,245 reaches
+26 cell "rows-test-row-3" 0,270 430x50: at 215,295 reaches
+29 text "Row 3" 20,270 390x50: at 215,295 reaches
+31 cell "rows-test-row-4" 0,320 430x50: at 215,345 reaches
+34 text "Row 4" 20,320 390x50: at 215,345 reaches
+36 cell "rows-test-row-5" 0,370 430x50: at 215,395 reaches
+39 text "Row 5" 20,370 390x50: at 215,395 reaches
+41 cell "rows-test-row-6" 0,420 430x50: at 215,445 reaches
+44 text "Row 6" 20,420 390x50: at 215,445 reaches
+46 cell "rows-test-row-7" 0,470 430x50: at 215,495 reaches
+49 text "Row 7" 20,470 390x50: at 215,495 reaches
+51 cell "rows-test-row-8" 0,520 430x50: at 215,545 reaches
+54 text "Row 8" 20,520 390x50: at 215,545 reaches
+56 cell "rows-test-row-9" 0,570 430x50: at 215,595 reaches
+59 text "Row 9" 20,570 390x50: at 215,595 reaches
+61 cell "rows-test-row-10" 0,620 430x50: at 215,645 reaches
+64 text "Row 10" 20,620 390x50: at 215,645 reaches
+66 cell "rows-test-row-11" 0,670 430x50: at 215,695 reaches
+69 text "Row 11" 20,670 390x50: at 215,695 reaches
+71 cell "rows-test-row-12" 0,720 430x50: at 215,745 reaches
+74 text "Row 12" 20,720 390x50: at 215,745 reaches
+76 cell "rows-test-row-13" 0,770 430x50: at 215,795 reaches
+79 text "Row 13" 20,770 390x50: at 215,795 reaches
+81 cell "rows-test-row-14" 0,820 430x50: at 215,845 judged button "!, Request failed" 10,838 410x48 (treeOrder, guess)
+84 text "Row 14" 20,820 390x50: at 215,845 judged button "!, Request failed" 10,838 410x48 (treeOrder, guess)
+86 cell "rows-test-row-15" 0,870 430x50: covered by button "!, Request failed" 10,838 410x48 (logBoxTouchArea, sure): at 215,895 judged button "!, Request failed" 10,838 410x48 (logBoxTouchArea, sure)
+89 text "Row 15" 20,870 390x50: covered by button "!, Request failed" 10,838 410x48 (logBoxTouchArea, sure): at 215,895 judged button "!, Request failed" 10,838 410x48 (logBoxTouchArea, sure)
+91 button "!, Request failed" 10,838 410x48: at 215,862 judged cell "rows-test-row-14" 0,820 430x50 (treeOrder, guess)
+## hit-tested
+7 header "Rows" 0,59 430x54: at 215,86 reaches
+8 button "BackButton" 20,59 44x44: at 42,81 reaches
+9 text "Rows" 150,71 130x21: at 215,81.50 reaches
+10 list "rows-test-list" 0,120 430x812: at 215,526 reaches
+11 cell "rows-test-row-0" 0,120 430x50: at 215,145 reaches
+14 text "Row 0" 20,120 390x50: at 215,145 reaches
+16 cell "rows-test-row-1" 0,170 430x50: at 215,195 reaches
+19 text "Row 1" 20,170 390x50: at 215,195 reaches
+21 cell "rows-test-row-2" 0,220 430x50: at 215,245 reaches
+24 text "Row 2" 20,220 390x50: at 215,245 reaches
+26 cell "rows-test-row-3" 0,270 430x50: at 215,295 reaches
+29 text "Row 3" 20,270 390x50: at 215,295 reaches
+31 cell "rows-test-row-4" 0,320 430x50: at 215,345 reaches
+34 text "Row 4" 20,320 390x50: at 215,345 reaches
+36 cell "rows-test-row-5" 0,370 430x50: at 215,395 reaches
+39 text "Row 5" 20,370 390x50: at 215,395 reaches
+41 cell "rows-test-row-6" 0,420 430x50: at 215,445 reaches
+44 text "Row 6" 20,420 390x50: at 215,445 reaches
+46 cell "rows-test-row-7" 0,470 430x50: at 215,495 reaches
+49 text "Row 7" 20,470 390x50: at 215,495 reaches
+51 cell "rows-test-row-8" 0,520 430x50: at 215,545 reaches
+54 text "Row 8" 20,520 390x50: at 215,545 reaches
+56 cell "rows-test-row-9" 0,570 430x50: at 215,595 reaches
+59 text "Row 9" 20,570 390x50: at 215,595 reaches
+61 cell "rows-test-row-10" 0,620 430x50: at 215,645 reaches
+64 text "Row 10" 20,620 390x50: at 215,645 reaches
+66 cell "rows-test-row-11" 0,670 430x50: at 215,695 reaches
+69 text "Row 11" 20,670 390x50: at 215,695 reaches
+71 cell "rows-test-row-12" 0,720 430x50: at 215,745 reaches
+74 text "Row 12" 20,720 390x50: at 215,745 reaches
+76 cell "rows-test-row-13" 0,770 430x50: at 215,795 reaches
+79 text "Row 13" 20,770 390x50: at 215,795 reaches
+81 cell "rows-test-row-14" 0,820 430x50: covered by button "!, Request failed" 10,838 410x48 (hitTest, sure): at 215,845 judged button "!, Request failed" 10,838 410x48 (hitTest, sure), other hit
+84 text "Row 14" 20,820 390x50: covered by button "!, Request failed" 10,838 410x48 (hitTest, sure): at 215,845 judged button "!, Request failed" 10,838 410x48 (hitTest, sure), other hit
+86 cell "rows-test-row-15" 0,870 430x50: covered by button "!, Request failed" 10,838 410x48 (logBoxTouchArea, sure): at 215,895 judged button "!, Request failed" 10,838 410x48 (logBoxTouchArea, sure), own hit
+89 text "Row 15" 20,870 390x50: covered by button "!, Request failed" 10,838 410x48 (logBoxTouchArea, sure): at 215,895 judged button "!, Request failed" 10,838 410x48 (logBoxTouchArea, sure), own hit
+91 button "!, Request failed" 10,838 410x48: at 215,862 reaches, own hit

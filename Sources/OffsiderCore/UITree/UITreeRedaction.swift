@@ -72,7 +72,8 @@ public struct TreeValueMask: @unchecked Sendable {
     var hidesElements: Bool { !ids.isEmpty || !labels.isEmpty || !labelContains.isEmpty }
 
     public func hidesValue(of node: UINode) -> Bool {
-        hides(id: node.normalizedID, label: node.normalizedLabel)
+        guard hidesElements else { return false }
+        return hides(id: node.normalizedID, label: node.normalizedLabel)
     }
 
     /// Whether a masked id or label names the element with this trimmed `id` and `label`, so output hides its text.

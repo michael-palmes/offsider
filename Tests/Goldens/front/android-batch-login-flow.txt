@@ -1,0 +1,14 @@
+# 13 nodes, 13 listed
+## no point read
+1 button "BackButton" 8,54.10 44.19x44.19: at 30.09,76.19 reaches
+2 group "batch-login-screen" 60.19,64.38 291.43x23.24: at 205.91,76 reaches
+3 text "batch-login-title" 16,114.67 379.43x27.05: at 205.72,128.19 reaches
+4 text "batch-login-current-screen" 16,153.90 379.43x23.24: at 205.72,165.52 reaches
+5 textField "batch-login-email-field" 16,221.33 379.43x44.19: at 205.72,243.43 reaches
+6 button "batch-login-continue" 16,277.71 379.43x44.19: at 205.72,299.80 reaches
+7 keyboard "Gboard" 12.19,352.38 48x255.24: at 36.19,480 judged application "OffsiderPlaygroundRN" 0,0 411.43x923.43 (drawingOrder, guess)
+8 button "com.google.android.inputmethod.latin:id…" 12.19,352.38 48x48: at 36.19,376.38 judged application "OffsiderPlaygroundRN" 0,0 411.43x923.43 (drawingOrder, guess)
+9 button "Delete" 12.19,404.19 48x48: at 36.19,428.19 judged application "OffsiderPlaygroundRN" 0,0 411.43x923.43 (drawingOrder, guess)
+10 button "Done" 12.19,456 48x48: at 36.19,480 judged application "OffsiderPlaygroundRN" 0,0 411.43x923.43 (drawingOrder, guess)
+11 button "Show emoji keyboard" 12.19,507.81 48x48: at 36.19,531.81 judged application "OffsiderPlaygroundRN" 0,0 411.43x923.43 (drawingOrder, guess)
+12 button "com.google.android.inputmethod.latin:id…" 12.19,559.62 48x48: at 36.19,583.62 judged application "OffsiderPlaygroundRN" 0,0 411.43x923.43 (drawingOrder, guess)
