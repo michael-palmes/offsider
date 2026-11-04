@@ -46,6 +46,9 @@ struct Slider: AsyncParsableCommand {
     @Flag(name: .customLong("no-settle"), help: "Set the slider at once, without waiting out a transition an input under 500 ms ago may have started.")
     var noSettle: Bool = false
 
+    @Flag(name: .customLong("allow-covered"), help: "Set the slider even when a hit-test or Android's drawing order finds another element over the point the drag starts from, with a warning; the keyboard still refuses.")
+    var allowCovered: Bool = false
+
     @OptionGroup
     var jsonOption: InputJSONOption
 
@@ -127,7 +130,8 @@ struct Slider: AsyncParsableCommand {
         let query = try accessibilityQuery()
         let targetNormalized = value / 100.0
 
-        let polled = try await AccessibilityPoller.resolveElementWithPolling(
+        let record = noSettle ? nil : await TreeCache.load(for: target.device, backend: target.backend)
+        let polled = try await AccessibilityPoller.resolveWithPolling(
             query: query,
             on: target.backend,
             device: target.device,
@@ -135,18 +139,38 @@ struct Slider: AsyncParsableCommand {
             pollInterval: pollInterval,
             elementType: elementType,
             allowOffscreen: allowOffscreen,
-            settle: noSettle ? .off : .guarded(record: await TreeCache.load(for: target.device, backend: target.backend)),
+            settle: noSettle ? .off : .guarded(record: record),
+            coverCheck: coverCheck(query: query, targetNormalized: targetNormalized, on: target),
+            coverSettle: TapCover.coverSettle(lastInput: record?.lastInputAt),
             logger: logger
         )
+        guard let slider = polled.value.matched else {
+            throw CLIError(errorDescription: "Unexpected state: no slider was matched.", reason: .internalError)
+        }
 
         return try await setAndVerifySliderValue(
-            initialMatch: polled.value,
+            initialMatch: AccessibilityMatch(element: slider, selectorDescription: query.selectorDescription, applicationFrame: polled.tree.applicationFrame),
             initialTree: polled.tree,
             query: query,
             targetNormalized: targetNormalized,
             target: target,
             logger: logger
         )
+    }
+
+    /// Covers and the keyboard are judged where the drag starts, at the slider's thumb, since whatever takes that touch takes the whole drag.
+    private func coverCheck(query: AccessibilityQuery, targetNormalized: Double, on target: SliderTarget) -> AccessibilityPoller.CoverCheck {
+        var cover = TapCover(allowCovered: allowCovered, override: "pass --allow-covered to drag anyway", stopFlag: nil, gesture: "drag", movesToVisiblePart: false, refusesDisabled: false)
+        cover.query = query
+        return { resolution, tree in
+            guard let slider = resolution.matched, let viewport = tree.viewport else { return resolution }
+            let start = (try? makeDragPlan(for: slider, applicationFrame: tree.applicationFrame, targetNormalized: targetNormalized))?.logicalStart
+            let touched = start.map { AccessibilityTargetResolver.resolution(of: resolution, at: UIPoint(x: $0.x, y: $0.y), roots: tree.roots, viewport: viewport) } ?? resolution
+            try await Tap.withKeyboardAdvice({
+                try await cover.check(touched, selector: query.selectorDescription, tree: tree, backend: target.backend, device: target.device)
+            }, selector: query.selectorDescription, at: touched.point, device: target.device, tree: tree, gesture: "drag")
+            return resolution
+        }
     }
 
     private func accessibilityQuery() throws -> AccessibilityQuery {

@@ -171,7 +171,7 @@ struct DevMenuDriver {
     }
 
     /// A vertical swipe over 70% of `band`'s height, a quarter in from its left edge, clear of the switches on the right.
-    private static func scrollSwipe(up: Bool, in band: UIFrame) -> (x: Int, from: Int, to: Int) {
+    static func scrollSwipe(up: Bool, in band: UIFrame) -> (x: Int, from: Int, to: Int) {
         let low = Int((band.y + band.height * 0.85).rounded()), high = Int((band.y + band.height * 0.15).rounded())
         return (Int((band.x + band.width / 4).rounded()), up ? low : high, up ? high : low)
     }

@@ -14,6 +14,8 @@ public enum CoverEvidence: String, Sendable {
     case otherProcess
     /// The touch area of Expo's floating dev menu button, a circle wider than the icon the tree gives.
     case devMenuTouchArea
+    /// Android's status or navigation bar, a window of its own over an app drawn behind it, which takes every touch in its frame.
+    case systemBar
 }
 
 /// What a selector tap would land on instead of its target.

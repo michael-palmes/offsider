@@ -45,6 +45,20 @@ public enum KnownOverlays {
         return underBar ? bottom - app.y : 0
     }
 
+    /// The Android status or navigation bar holding `point`, named for a cover check: a listed system window at least 90 % as wide as the app's and at most a quarter as tall, at its top or bottom. Gesture navigation lists no bar, as its touches reach the app.
+    public static func systemBar(at point: UIPoint, in tree: UITree) -> UINode? {
+        guard tree.platform == .android, let windows = tree.windows,
+              let app = (windows.first { $0.kind == "application" && $0.active } ?? windows.first { $0.kind == "application" })?.bounds,
+              app.width > 0, app.height > 0 else { return nil }
+        for window in windows where window.kind == "system" {
+            guard let bar = window.bounds, bar.contains(point), bar.width >= 0.9 * app.width, bar.height > 0, bar.height <= app.height / 4 else { continue }
+            let atTop = bar.y <= app.y + 1
+            guard atTop || bar.y + bar.height >= app.y + app.height - 1 else { continue }
+            return UINode(role: .other, label: window.title ?? (atTop ? "Status bar" : "Navigation bar"), frame: bar, native: .android(AndroidNativeAttributes()))
+        }
+        return nil
+    }
+
     /// How far from its icon's centre Expo's floating dev menu button takes touches: the tree gives only the 26 pt icon of a 50 pt circle.
     static let devMenuButtonRadius = 25.0
     /// The id iOS gives the button's icon, an SF Symbol's name.
