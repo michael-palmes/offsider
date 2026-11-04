@@ -120,8 +120,8 @@ struct AccessibilityPoller {
                     query: query, waitTimeout: remaining, pollInterval: pollInterval, transientGrace: transientGrace, elementType: elementType,
                     allowOffscreen: allowOffscreen, settle: settle, pick: pick, logger: logger, clock: clock, treeFetcher: treeFetcher
                 )
-            } catch let error as ElementResolutionError where error.isRetryable && clock.now() - start < waitTimeout {
-                logger.info().log("\(error.isOffScreen ? "Element off screen" : "Element not found") once the screen settled, retrying in \(pollInterval)s…")
+            } catch where retryableMiss(error) != nil && clock.now() - start < waitTimeout {
+                logger.info().log("\(retryableMiss(error)?.isOffScreen == true ? "Element off screen" : "Element not found") once the screen settled, retrying in \(pollInterval)s…")
                 try await clock.sleep(.seconds(pollInterval))
                 continue
             }
@@ -227,7 +227,17 @@ struct AccessibilityPoller {
         }
         // Never where it was first found: whatever replaced it there would take the tap.
         let last = try await read(TransitionGuard.goneGap)
-        return Polled(value: try await resolve(last, true), tree: last, settledBy: decision)
+        do {
+            return Polled(value: try await resolve(last, true), tree: last, settledBy: decision)
+        } catch let miss as ElementResolutionError {
+            throw CutTreeMiss.wrapping(miss, tree: last)
+        }
+    }
+
+    /// The miss in `error` when a later read could find the target, through the cut tree line.
+    private static func retryableMiss(_ error: any Error) -> ElementResolutionError? {
+        let miss = error as? ElementResolutionError ?? (error as? CutTreeMiss)?.miss
+        return miss?.isRetryable == true ? miss : nil
     }
 
     /// Missing or off-screen elements retry until `waitTimeout` and then until two reads agree; transient read failures until the larger window, and at least once.

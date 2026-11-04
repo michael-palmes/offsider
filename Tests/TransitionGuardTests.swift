@@ -197,6 +197,24 @@ struct TransitionGuardTests {
         #expect(backend.session.calls.isEmpty)
     }
 
+    @Test("a target gone from a cut read after settling says it may be further down, and is still looked for under --wait-timeout")
+    func goneOnCutTree() async throws {
+        var cut = FakeUI.tree([])
+        cut.sourceTruncated = true
+        let refused = FakeDeviceBackend(trees: [Self.screen(applyY: 650), cut, cut])
+
+        let error = await #expect(throws: CutTreeMiss.self) {
+            try await Self.tap(["--id", "apply"], on: refused, fixture: try TreeCacheFixture())
+        }
+        #expect(error?.reason == .selectorNotFound)
+        #expect(error?.failureMessage.hasSuffix(" The tree was cut where the read stopped, so it may be further down.") == true)
+        #expect(refused.session.calls.isEmpty)
+
+        let waited = FakeDeviceBackend(trees: [Self.screen(applyY: 650), cut, cut, Self.screen(applyY: 600), Self.screen(applyY: 600)])
+        try await Self.tap(["--id", "apply", "--wait-timeout", "5", "--poll-interval", "0.01"], on: waited, fixture: try TreeCacheFixture())
+        #expect(waited.session.calls == [.perform(.tapAt(x: 195, y: 622))])
+    }
+
     @Test("a target back in the read after a miss is tapped where it now is")
     func goneThenBack() async throws {
         let fixture = try TreeCacheFixture()
