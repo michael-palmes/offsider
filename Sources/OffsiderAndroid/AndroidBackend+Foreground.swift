@@ -47,6 +47,15 @@ extension AndroidBackend {
         try requireDrivableWindow(owner, title: focus.title, on: serial)
     }
 
+    /// Buttons skip the front-app check, so Home can always leave an app this phone may not drive; a window over that app, such as the notification shade, still refuses them as it refuses a tap.
+    func requireButtonFocus(_ serial: String) async throws {
+        guard !readsAnyWindow(serial) else { return }
+        systemWindowChecks[serial] = nil
+        let focus = try await host.timing.measure(.foregroundRecheck) { try await windowFocus(serial) }
+        guard let focus, let owner = focus.owner, !focus.focusedApps.contains(owner), try await !isKeyboard(focus, on: serial) else { return }
+        try requireDrivableWindow(owner, title: focus.title, on: serial)
+    }
+
     /// `dumpsys window`'s focus; nil when no window has it.
     func windowFocus(_ serial: String) async throws -> AndroidWindowFocus? {
         let result = try await requireClient().shell(AndroidWindowFocus.readScript, on: serial, timeout: .seconds(5), label: "dumpsys window")
