@@ -53,10 +53,10 @@ struct ErrorHintTests {
     @Test("an app outside the phone's allowance and a missing team split the same way")
     func appAndTeamWording() {
         let agent = AndroidError.appNotPermitted("SERIAL123", package: "com.example.app", byManagedPolicy: false, audience: .agent)
-        #expect(agent.message.contains("ask the user to run `offsider devices add` in their own terminal"))
+        #expect(agent.message.contains("ask the user to run `offsider devices add --device SERIAL123 --app com.example.app` in their own terminal"))
         let person = AndroidError.appNotPermitted("SERIAL123", package: "com.example.app", byManagedPolicy: false, audience: .person)
         #expect(!person.message.contains("ask the user"))
-        #expect(person.hint == "offsider devices add")
+        #expect(person.hint == "offsider devices add --device SERIAL123 --app com.example.app")
 
         let team = #expect(throws: IOSDeviceError.self) {
             try XcodeRunnerBuilder.resolveTeam(environment: [:], allowanceTeam: nil, signedInTeams: [], audience: .person)

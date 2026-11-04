@@ -367,8 +367,8 @@ struct AndroidBackendHelperTests {
         for error in [treeError, shotError, typeError] {
             #expect(error?.reason == .appNotAllowed)
             #expect(error?.message.contains("com.example.app is in front on R58M123ABC") == true)
-            #expect(error?.hint == "offsider devices add")
-            #expect(error?.message.contains("choose R58M123ABC and pin com.example.app") == true)
+            #expect(error?.hint == "offsider devices add --device R58M123ABC --app com.example.pinned --app com.example.app")
+            #expect(error?.message.contains("run `offsider devices add --device R58M123ABC --app com.example.pinned --app com.example.app` in their own terminal") == true)
         }
         #expect(!server.services.contains { $0.contains("uiautomator") || $0.contains("screencap") || $0.contains("input ") || $0.contains("app_process") })
     }

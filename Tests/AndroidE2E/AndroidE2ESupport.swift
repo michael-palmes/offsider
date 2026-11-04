@@ -364,9 +364,10 @@ enum E2EDeviceAllowance {
     /// Minutes the allowance must still have, so a run does not lapse half way.
     static let minimumMinutes: TimeInterval = 30
 
-    /// What the person does in the walkthrough: the bare command, then the device, the pin and at least 2 hours.
+    /// The one command a person runs, as `devices add --plan` gives it: the app pinned, which lasts 7 days, else the device's menus and at least 2 hours.
     static func allowSteps(device: String, app: String?) -> String {
-        "run `offsider devices add` in their own terminal, choose \(device)" + (app.map { ", pin \($0)" } ?? "") + " and allow at least 2 hours"
+        guard let app else { return "run `offsider devices add --device \(device)` in their own terminal and allow at least 2 hours" }
+        return "run `offsider devices add --device \(device) --app \(app)` in their own terminal"
     }
 
     /// Nil when `devices status --device <device> --json` exited 0 with an entry lasting past 30 minutes from `now` (and pinning `app`, or a test device); otherwise the refusal, quoting the command a person runs.

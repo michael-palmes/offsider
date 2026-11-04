@@ -33,6 +33,12 @@ public struct DeviceAddPlan: Equatable, Sendable {
     /// Why every iPhone or iPad here waits on a person, or what to do when nothing is plugged in.
     public let ask: String?
 
+    /// The one command a person runs to pin `adding` on an allowed device, keeping the apps already pinned, as `--plan` gives it.
+    public static func pinCommand(key: String, keeping pinned: [String], adding app: String) -> String {
+        let apps = pinned.filter { $0 != app && $0 != DeviceAllowance.wholeDevicePin } + [app]
+        return "offsider devices add --device \(key)" + apps.map { " --app \($0)" }.joined()
+    }
+
     public static let noDeviceAsk = "Can you plug in the phone and unlock it? On Android, turn on USB debugging first: tap Build number seven times in Settings > About phone, then Settings > Developer options."
     public static let noTeamAsk = "Can you add your Apple account in Xcode > Settings > Apple Accounts? An iPhone or iPad needs its team."
 

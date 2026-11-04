@@ -254,7 +254,7 @@ struct LogsCommandTests {
 
         let other = #expect(throws: CLIError.self) { try Self.scoped(.app("com.example.bank"), apps: ["com.example.app"]) }
         #expect(other?.reason == .appNotAllowed)
-        #expect(other?.hint == "offsider devices add")
+        #expect(other?.hint?.hasSuffix("--app com.example.app --app com.example.bank") == true, "\(other?.hint ?? "")")
         let denied = #expect(throws: CLIError.self) { try Self.scoped(.app("com.android.chrome"), apps: []) }
         #expect(denied?.reason == .appNotAllowed)
 
