@@ -21,6 +21,8 @@ struct Verifier {
         var valueMask: @MainActor () async throws -> TreeValueMask = { .none }
         /// The tree with the shared on-screen judgement read for the `--verify-id` element, so one beneath a page or covered is not in front.
         var judge: @MainActor (UITree, String) async -> UITree = { tree, _ in tree }
+        /// Asks, after a verified tree change shows another app, whether the app the input aimed at stopped; nil never asks.
+        var appExit: AppExitCheck? = nil
     }
 
     /// Where `--verify-id`'s element is.
@@ -64,6 +66,18 @@ struct Verifier {
         var note: VerifyNote?
         var ignored: [VerifyIgnored] = []
         var phases = VerifyPhases()
+        var textCheck: TextCheck?
+
+        /// The same change and its list, unverified for `note`: the input was sent once.
+        func unverified(_ note: VerifyNote) -> Outcome {
+            var spent = Outcome(verified: false, attempts: attempts, change: change, style: style, summary: nil, note: note)
+            spent.changes = changes
+            spent.changesTruncated = changesTruncated
+            spent.ignored = ignored
+            spent.phases = phases
+            spent.textCheck = textCheck
+            return spent
+        }
     }
 
     /// One read as the change detector and the change list each need it; `tree` is nil when the read failed.
@@ -109,7 +123,7 @@ struct Verifier {
         moving && taken < maxScreenshots && (taken == screenshotCount || withinDeadline)
     }
 
-    /// `initialTree`, the tree the selector was resolved on, stands in for the first read; `beforeAction` sees the second; a retry is held for one more window after a change that did not last, a failed read or `targetStays` false.
+    /// `initialTree`, the tree the selector was resolved on, stands in for the first read; `beforeAction` sees the second; a retry is held for one more window after a change that did not last, a failed read, a small screen change away from `targetArea` or `targetStays` false.
     /// `expectsDevMenu` says from the read before the input whether the input aims at the dev menu; nil when it opening says nothing.
     static func run(
         styles: [TapDeliveryStyle?],
@@ -121,6 +135,9 @@ struct Verifier {
         target: UINode? = nil,
         targetStays: ((UITree) async -> Bool)? = nil,
         expectsDevMenu: ((UITree) -> Bool)? = nil,
+        keyboardOnlyFails: Bool = false,
+        targetArea: @MainActor () -> UIFrame? = { nil },
+        typed: TypedExpectation? = nil,
         beforeAction: (UITree) async throws -> Void = { _ in },
         onRetry: (Attempt, Attempt) -> Void = { _, _ in },
         onHold: (Attempt) -> Void = { _ in },
@@ -152,6 +169,19 @@ struct Verifier {
         func read(_ tree: UITree?) -> Read { Read(tree, keepingBeneath: keepsBeneath) }
         let firstRead = read(firstTree)
         let first = firstRead.snapshot
+        let firstApp = dependencies.appExit?.app(in: firstTree)
+        /// The raw reads the last tree change was told from; never in the outcome, which output may print.
+        var changedReads: (before: UITree?, after: UITree?)?
+        /// A change to another app counts only while the app the input aimed at still runs; typed text is read back from the field.
+        func confirmed(_ outcome: Outcome) async throws -> Outcome {
+            guard outcome.verified else { return outcome }
+            if let after = changedReads?.after { try await dependencies.appExit?.check(firstApp, latest: after) }
+            guard let typed else { return outcome }
+            let readStart = dependencies.now()
+            var checked = try await readBack(typed, outcome: outcome, reads: changedReads, timeout: timeoutSeconds, dependencies: dependencies)
+            checked.phases.verify += dependencies.now() - readStart
+            return checked
+        }
         let firstReadAt = dependencies.date()
         let capturesBaseline = !ignoringText && !(target.map { stateRoles.contains($0.role) } ?? false)
         // With a tree to catch the change, the baseline capture runs alongside the reads before the input.
@@ -224,14 +254,15 @@ struct Verifier {
             }
         }
 
+        /// With `keyboardOnlyFails`, a change that only closed the keyboard is no proof the control was pressed, and it is not sent again.
         func verified(read current: Read, attempt: Attempt, attemptStart: TimeInterval) -> Outcome {
             let before = baselineRead.compared.map { detector.maskingLive($0, live: live).redacted(valueMask) }
             let after = current.compared.map { detector.maskingLive($0, live: live).redacted(valueMask) }
-            return finish(
-                Outcome(verified: true, attempts: attempt.number, change: .accessibilityTree, style: attempt.style, summary: shownSummary(from: before, to: after))
-                    .listing(from: before, to: after, skipping: volatileIdentities),
-                attemptStart: attemptStart
-            )
+            let listed = Outcome(verified: true, attempts: attempt.number, change: .accessibilityTree, style: attempt.style, summary: shownSummary(from: before, to: after))
+                .listing(from: before, to: after, skipping: volatileIdentities)
+            changedReads = (baselineRead.tree, current.tree)
+            guard keyboardOnlyFails, listed.note == .keyboardClosed else { return finish(listed, attemptStart: attemptStart) }
+            return finish(listed.unverified(.keyboardClosed), attemptStart: attemptStart)
         }
 
         /// What the read shows opened over the app that is no effect of this input.
@@ -261,6 +292,7 @@ struct Verifier {
             let style = attempt.style
             let deadline = dependencies.now() + timeoutSeconds
             var seenChange = false
+            var smallChange = false
             var pending: AccessibilitySnapshot?
             var lastUnchanged: Read?
             var lastRead: Read?
@@ -332,8 +364,14 @@ struct Verifier {
                 let explained = detector.frames(of: volatile, live: live, in: baseline)
                     + (baselineRead.toasts + (lastRead?.toasts ?? [])).map { AccessibilitySnapshot.Frame(x: $0.frame.x, y: $0.frame.y, width: $0.frame.width, height: $0.frame.height) }
                 let skipped = afterPrints.last.map { Self.tiles(under: explained, in: $0, screenFrame: screenFrame) } ?? []
-                if ScreenChange.detect(before: baselinePrints, after: afterPrints, ignoring: skipped) {
+                let near = afterPrints.last.map { print in Self.nearTiles(targetArea(), in: print, screenFrame: screenFrame) } ?? []
+                switch ScreenChange.detect(before: baselinePrints, after: afterPrints, ignoring: skipped, near: near) {
+                case .changed:
                     return (finish(Outcome(verified: true, attempts: attempt.number, change: .screenshot, style: style, summary: nil), attemptStart: attemptStart), false, nil, nil)
+                case .small:
+                    smallChange = true
+                case .none:
+                    break
                 }
                 if let last = afterShots.last {
                     baselineShots = [last.data]
@@ -342,7 +380,7 @@ struct Verifier {
             }
 
             // A slow push may land after the poll: one more read before any retry, so it verifies on this attempt.
-            guard baseline.isKnown else { return (nil, false, nil, lastUnchanged) }
+            guard baseline.isKnown else { return (nil, smallChange, nil, lastUnchanged) }
             let lateRead = read(try? await dependencies.tree())
             if let surprise = surprise(lateRead) {
                 return (finish(Outcome(verified: false, attempts: attempt.number, change: .none, style: style, summary: nil, note: surprise), attemptStart: attemptStart), false, nil, nil)
@@ -354,7 +392,7 @@ struct Verifier {
             if lateRead.snapshot.isKnown {
                 lastUnchanged = lateRead
             }
-            return (nil, seenChange || !lateRead.snapshot.isKnown, lateRead, lastUnchanged)
+            return (nil, seenChange || smallChange || !lateRead.snapshot.isKnown, lateRead, lastUnchanged)
         }
 
         for (index, style) in attempts.enumerated() {
@@ -370,7 +408,7 @@ struct Verifier {
                 return unverified(attempt, note: .unreadable)
             }
             let checked = try await check(attempt, from: attemptStart)
-            if let outcome = checked.outcome { return outcome }
+            if let outcome = checked.outcome { return try await confirmed(outcome) }
 
             // A real effect taken for live text could be undone by a second input, so live text holds the retry back.
             let retrying = index + 1 < attempts.count && !ignored.contains { $0.reason == .live }
@@ -384,7 +422,7 @@ struct Verifier {
                 // A second input would land on whatever the change brings, so this one is watched for one more window instead.
                 onHold(attempt)
                 let watchStart = dependencies.now()
-                if let outcome = try await check(attempt, from: watchStart).outcome { return outcome }
+                if let outcome = try await check(attempt, from: watchStart).outcome { return try await confirmed(outcome) }
                 phases.verify += dependencies.now() - watchStart
                 return unverified(attempt, note: .unsettled)
             }
@@ -475,6 +513,30 @@ struct Verifier {
         return outcome(Attempt(number: attempts.count, style: attempts.last ?? nil), verified: false)
     }
 
+    /// A verified `type` whose field does not hold the text sent is unverified, with nothing sent again.
+    private static func readBack(
+        _ typed: TypedExpectation, outcome: Outcome, reads: (before: UITree?, after: UITree?)?, timeout: TimeInterval, dependencies: Dependencies
+    ) async throws -> Outcome {
+        let check = try await checkTypedText(typed, reads: reads, timeout: timeout, dependencies: dependencies)
+        var checked = outcome
+        checked.textCheck = check
+        return check == .differs ? checked.unverified(.textDiffers) : checked
+    }
+
+    /// Whether the field holds `typed`'s text: the verified read first, then fresh reads for up to `timeout` while it differs, as a React Native field's value lags its keys.
+    private static func checkTypedText(_ typed: TypedExpectation, reads: (before: UITree?, after: UITree?)?, timeout: TimeInterval, dependencies: Dependencies) async throws -> TextCheck {
+        guard typed.judged else { return .unknown }
+        var after = reads?.after
+        if after == nil { after = try? await dependencies.tree() }
+        let deadline = dependencies.now() + timeout
+        while true {
+            let check = after.map { typed.check(before: reads?.before, after: $0) } ?? .unknown
+            guard check == .differs, dependencies.now() < deadline else { return check }
+            try await dependencies.sleep(pollInterval)
+            if let read = try? await dependencies.tree() { after = read }
+        }
+    }
+
     /// `--verify-id` cannot prove an input when its element is in front already; the refusal says whether this command sent anything before it.
     static func refuseIfOnScreen(_ id: String, in tree: UITree) throws {
         guard isOnScreen(id, in: tree) else { return }
@@ -541,6 +603,15 @@ struct Verifier {
         return print.tiles(intersecting: rects)
     }
 
+    /// The tiles under `area`, a point when it has no size, and one tile around them; none without an area or a capture to map it to.
+    static func nearTiles(_ area: UIFrame?, in print: ImageFingerprint, screenFrame: AccessibilitySnapshot.Frame?) -> Set<Int> {
+        guard let area else { return [] }
+        let frame = area.width > 0 && area.height > 0
+            ? AccessibilitySnapshot.Frame(x: area.x, y: area.y, width: area.width, height: area.height)
+            : AccessibilitySnapshot.Frame(x: area.x - 0.5, y: area.y - 0.5, width: 1, height: 1)
+        return print.dilated(tiles(under: [frame], in: print, screenFrame: screenFrame))
+    }
+
     /// Portrait only, unless the bands hold in every orientation and say how the raw screenshot turns upright.
     static func bandPixels(pngData: Data, screenFrame: AccessibilitySnapshot.Frame?, bands: ScreenBands) -> (top: Int, bottom: Int, left: Int, right: Int) {
         guard let screenFrame, bands.everyOrientation || screenFrame.height >= screenFrame.width,
@@ -560,6 +631,7 @@ struct Verifier {
 }
 
 extension Verifier.Dependencies {
+    @MainActor
     static func live(backend: any DeviceBackend, device: DeviceID, watchdog: DeviceWatchdog = DeviceWatchdog()) -> Self {
         var dependencies = Self(
             tree: { try await watchdog.guardingInputRead(of: device) { try await backend.accessibilityTree(for: device) } },
@@ -569,7 +641,8 @@ extension Verifier.Dependencies {
             bands: { await backend.volatileScreenBands(for: device) },
             cachedRecord: { await TreeCache.load(for: device, backend: backend) },
             valueMask: { try AmbientMasks.treeMask(revealed: await TreeCache.revealedSecrets(for: device, backend: backend)) },
-            judge: { tree, id in await Verifier.judged(tree, id: id, backend: backend, device: device) }
+            judge: { tree, id in await Verifier.judged(tree, id: id, backend: backend, device: device) },
+            appExit: (backend as? any AppLivenessReading).map { AppExitCheck(reader: $0, device: device) }
         )
         if let waiting = backend as? any AccessibilityChangeWaiting {
             dependencies.waitForChange = { duration in

@@ -136,6 +136,8 @@ struct Batch: AsyncParsableCommand {
 
     /// Every step shares one input session, so an Android batch holds one gRPC client or adb executor throughout.
     func run(on route: DeviceRouter.Route, logger: OffsiderLogger, watchdog: DeviceWatchdog = DeviceWatchdog()) async throws {
+        // A batch is one intent: a reader that leaves, as `head` does, must not stop it between steps.
+        signal(SIGPIPE, SIG_IGN)
         // Before the input session opens: a phone's runner checks its app in front as the session starts.
         await appOption.apply(to: route)
         let backend = route.backend

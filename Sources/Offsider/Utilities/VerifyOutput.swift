@@ -23,6 +23,12 @@ struct VerifyRequest {
     var expectsDevMenu: ((UITree) -> Bool)? = nil
     /// What a person reads in place of `subject`, which for `type` counts the characters.
     var personSubject: String? = nil
+    /// A selector tap on a control that is not a keyboard's own: closing the keyboard alone does not verify it.
+    var keyboardOnlyFails = false
+    /// Where the input aims, in points: the target's frame, or a coordinate tap's point with no size; pixels changed near it prove the input.
+    var targetArea: @MainActor () -> UIFrame? = { nil }
+    /// `type`: the text and field to read back once a change is seen.
+    var typed: TypedExpectation? = nil
 }
 
 /// Tracks how far a verified command got, so a failure under --json reports it.
@@ -100,6 +106,9 @@ enum VerifyOutput {
                     target: request.targetNode,
                     targetStays: request.targetStays,
                     expectsDevMenu: request.expectsDevMenu,
+                    keyboardOnlyFails: request.keyboardOnlyFails,
+                    targetArea: request.targetArea,
+                    typed: request.typed,
                     beforeAction: request.beforeAction,
                     onRetry: { failed, next in
                         Console.current.line(retryLine(failed: failed, next: next), person: .warning(personRetry(failed: failed, next: next)))
@@ -123,6 +132,7 @@ enum VerifyOutput {
         progress.phases = outcome.phases
         try report(outcome, for: request, elapsed: progress.elapsed)
     }
+
 
     static func report(_ outcome: Verifier.Outcome, for request: VerifyRequest, elapsed: TimeInterval = 0) throws {
         let json = request.options.json
@@ -148,6 +158,7 @@ enum VerifyOutput {
             changesTruncated: outcome.changesTruncated,
             ignored: outcome.ignored,
             note: outcome.note,
+            textCheck: outcome.textCheck,
             style: outcome.style,
             elapsed: elapsed,
             phases: outcome.phases
@@ -184,6 +195,8 @@ enum VerifyOutput {
     }
 
     static let listedChanges = 3
+
+    static let keyboardOnlyLine = "Only the keyboard closed. Tap again if the control shows no effect."
 
     /// Up to three changes, `value of text id=count "0" to "1"; button "Save" added`, and how many more; nil with none listed.
     static func changeList(_ outcome: Verifier.Outcome) -> String? {
@@ -235,6 +248,12 @@ enum VerifyOutput {
         }
         if outcome.note == .unreadable {
             return "✗ \(request.subject) was dispatched once, but nothing could be read before it, so Offsider cannot tell what it changed. It was not sent again. Check the screen with a screenshot."
+        }
+        if outcome.note == .keyboardClosed {
+            return "✗ \(request.subject) was dispatched once, and it was not sent again. \(keyboardOnlyLine)"
+        }
+        if outcome.note == .textDiffers {
+            return "✗ \(request.subject) was dispatched once, but the field does not hold the text sent, so it was not sent again. Read the field with describe-ui, then set it with type --replace."
         }
         if let id = request.options.verifyID {
             let whereabouts = outcome.summary.map { ": \($0)" } ?? ""
@@ -359,6 +378,12 @@ enum VerifyOutput {
         }
         if outcome.note == .unreadable {
             return .failed("Could not read the screen", details: ["\(subject) was sent once; not sent again"], try: ["offsider screenshot\(CommandScope.current.appArgument(device: device)) --device \(device)"])
+        }
+        if outcome.note == .keyboardClosed {
+            return .failed("Only the keyboard closed", details: ["\(subject) was sent once; tap again if the control shows no effect"])
+        }
+        if outcome.note == .textDiffers {
+            return .failed("The field does not hold the text sent", details: ["Sent once; not sent again. Set it with type --replace"], try: [look])
         }
         if let id = request.options.verifyID {
             let waited = "\(subject) was sent; waited \(WaitLoop.seconds(request.options.resolvedTimeout)) after \(outcome.attempts) \(plural)"

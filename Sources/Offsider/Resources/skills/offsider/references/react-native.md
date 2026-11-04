@@ -15,6 +15,7 @@
 - A previous screen still partly on screen under the current one keeps its ids. A selector takes the match on the page drawn over it when Offsider can tell the page covers it; when `--id` still reports multiple matches, add `--topmost` to tap the page on top (or `--nth <n>` from the candidates' `index`). On Android a page reported as not visible to the user never counts as covering it.
 - On Android a `Modal` is its own window, so only the modal is in the tree while it is open; `describe-ui --summary` then starts with `# window: <title> (modal)`, or the package when the modal has no title.
 - Content under `accessibilityElementsHidden` or `importantForAccessibility="no-hide-descendants"` (apps often wrap charts and web views this way) is missing from the tree, buttons included, but still takes taps. Tap by coordinates and say so, or ask for the wrapper to expose its controls.
+- In a form inside a `ScrollView`, the first tap after typing may only close the keyboard: `tap --verify` then exits 5 with `note` `keyboard_closed`, sent once. Tap again if the control shows no effect.
 - Charts, maps, canvases and web views change pixels, not the tree: check them with `wait --region <x,y,w,h> --changed` or `screenshot --region <x,y,w,h> --compare before.png`, and with the app's logs.
 
 ## Cloudflare Turnstile

@@ -121,3 +121,25 @@ struct BatchStepFailureTests {
         #expect(payload["dispatched"] as? String == "unknown")
     }
 }
+
+@Suite("Batch with a reader that leaves")
+struct BatchClosedPipeTests {
+    @Test("a reader that leaves after the first line does not stop the batch: every step runs and it exits 0")
+    func closedPipeRunsEveryStep() async {
+        await #expect(processExitsWith: .success) { @MainActor in
+            var ends: [Int32] = [0, 0]
+            guard pipe(&ends) == 0 else { exit(3) }
+            close(ends[0])
+            dup2(ends[1], STDOUT_FILENO)
+            let device = DeviceID(rawValue: "00000000-0000-0000-0000-000000000001", platform: .ios)
+            let backend = FakeDeviceBackend(trees: [FakeUI.tree([])])
+            do {
+                let batch = try Batch.parse(["--step", "key 40", "--step", "key 41", "--json", "--no-settle", "--device", device.rawValue])
+                try await batch.run(on: DeviceRouter.Route(backend: backend, device: device), logger: OffsiderLogger())
+            } catch {
+                exit(4)
+            }
+            exit(backend.session.calls == [.perform(.shortKeyPress(40)), .perform(.shortKeyPress(41))] ? 0 : 5)
+        }
+    }
+}

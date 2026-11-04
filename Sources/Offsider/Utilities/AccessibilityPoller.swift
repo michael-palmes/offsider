@@ -299,7 +299,11 @@ struct AccessibilityPoller {
                 logger.info().log("\(reason), retrying in \(pollInterval)s…")
                 try await clock.sleep(.seconds(pollInterval))
             } catch ElementResolutionError.notFound {
-                return Polled(value: try await resolver(tree, true), tree: tree)
+                do {
+                    return Polled(value: try await resolver(tree, true), tree: tree)
+                } catch let miss as ElementResolutionError {
+                    throw CutTreeMiss.wrapping(miss, tree: tree)
+                }
             }
         }
     }
