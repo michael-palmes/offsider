@@ -1,0 +1,24 @@
+# 24 nodes, 23 listed
+## no point read
+1 button "BackButton" 8,54.10 44.19x44.19: at 30.09,76.19 reaches
+2 group "overlay-test-screen" 60.19,64.38 291.43x23.24: at 205.91,76 reaches
+4 text "overlay-test-tab" 134.48,114.67 142.86x23.24: at 205.91,126.29 reaches
+5 text "overlay-test-swallowed" 135.24,150.10 141.33x23.24: at 205.91,161.72 reaches
+6 text "overlay-test-scrim" 152.38,185.14 106.67x23.24: at 205.72,196.76 reaches
+7 button "overlay-test-start-clock" 110.48,220.57 117.71x44.19: at 169.34,242.66 reaches
+8 text "overlay-test-clock" 240.38,230.86 60.95x23.24: at 270.86,242.48 reaches
+9 text "overlay-test-hidden-taps" 149.33,276.57 113.14x23.24: at 205.90,288.19 reaches
+10 button "overlay-test-toggle-banner" 139.05,311.62 133.33x43.81: at 205.72,333.52 reaches
+11 button "overlay-test-show-scrim" 120,367.62 171.81x43.81: at 205.91,389.52 reaches
+12 button "overlay-test-flicker" 163.81,423.62 83.81x43.81: at 205.72,445.52 reaches
+13 text "overlay-test-flicker-node" 146.29,479.62 118.86x23.24: at 205.72,491.24 reaches
+14 group "overlay-test-hidden-frame" 85.71,515.81 240x56: at 205.71,543.81 reaches
+15 button "overlay-test-log-warning" 83.81,583.62 128.76x43.81: at 148.19,605.52 reaches
+16 button "overlay-test-log-error" 224.76,583.62 102.86x43.81: at 276.19,605.52 reaches
+17 button "overlay-test-log-two-errors" 68.57,639.62 148.19x43.81: at 142.66,661.52 reaches
+18 button "overlay-test-clear-logs" 228.95,639.62 114.29x43.81: at 286.09,661.52 reaches
+19 button "overlay-test-amount" 16,790.48 379.43x56: at 205.72,818.48 reaches
+20 group "overlay-test-tab-bar" 0,850.29 411.43x73.14: covered by button "overlay-test-tab-search" 137.14,850.67 137.14x49.14 (drawingOrder, sure): at 205.72,886.86 judged button "overlay-test-tab-search" 137.14,850.67 137.14x49.14 (drawingOrder, sure)
+21 button "overlay-test-tab-home" 0,850.67 137.14x49.14: at 68.57,875.24 reaches
+22 button "overlay-test-tab-search" 137.14,850.67 137.14x49.14: at 205.71,875.24 reaches
+23 button "overlay-test-tab-profile" 274.29,850.67 137.14x49.14: at 342.86,875.24 reaches

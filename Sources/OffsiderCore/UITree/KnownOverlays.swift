@@ -45,6 +45,20 @@ public enum KnownOverlays {
         return underBar ? bottom - app.y : 0
     }
 
+    /// The Android status or navigation bar holding `point`, named for a cover check: a listed system window at least 90 % as wide as the app's and at most a quarter as tall, at its top or bottom. Gesture navigation lists no bar, as its touches reach the app.
+    public static func systemBar(at point: UIPoint, in tree: UITree) -> UINode? {
+        guard tree.platform == .android, let windows = tree.windows,
+              let app = (windows.first { $0.kind == "application" && $0.active } ?? windows.first { $0.kind == "application" })?.bounds,
+              app.width > 0, app.height > 0 else { return nil }
+        for window in windows where window.kind == "system" {
+            guard let bar = window.bounds, bar.contains(point), bar.width >= 0.9 * app.width, bar.height > 0, bar.height <= app.height / 4 else { continue }
+            let atTop = bar.y <= app.y + 1
+            guard atTop || bar.y + bar.height >= app.y + app.height - 1 else { continue }
+            return UINode(role: .other, label: window.title ?? (atTop ? "Status bar" : "Navigation bar"), frame: bar, native: .android(AndroidNativeAttributes()))
+        }
+        return nil
+    }
+
     /// Expo's floating dev menu button is a 50 pt circle, though the tree gives only its 26 pt icon.
     static let devMenuButtonSize = 50.0
 
@@ -171,7 +185,11 @@ public enum KnownOverlays {
 
     /// The full-screen LogBox inspector: a `Log n of m` header, or `Dismiss` and `Minimize` buttons near the bottom.
     public static func logBoxInspector(in roots: [UINode], viewport: UIFrame?) -> LogBoxInspector? {
-        let nodes = roots.flatMap { $0.flattened() }
+        logBoxInspector(among: roots.flatMap { $0.flattened() }, viewport: viewport)
+    }
+
+    /// `logBoxInspector(in:viewport:)` over nodes already flattened.
+    static func logBoxInspector(among nodes: [UINode], viewport: UIFrame?) -> LogBoxInspector? {
         let header = nodes.lazy.compactMap { node in node.label.flatMap(LogBoxInspector.position(in:)) }.first
         let band: Double? = viewport.map { $0.y + $0.height - bottomBand }
         func inBand(_ node: UINode) -> Bool {

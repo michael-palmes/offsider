@@ -21,10 +21,12 @@ public enum TransitionDecision: Equatable, Sendable {
 public enum TransitionGuard {
     public static let window: Duration = .milliseconds(500)
     public static let noRecordGap: Duration = .milliseconds(150)
+    /// How long a target missing from the settled read gets before one last read.
+    public static let goneGap: Duration = .milliseconds(150)
     public static let frameTolerance = 1.0
 
-    /// A clock that stepped back counts as no time passed, so it waits the full window rather than none.
-    public static func decide(target: UINode, record: TreeCacheRecord?, now: Date) -> TransitionDecision {
+    /// A clock that stepped back counts as no time passed; a keyboard that came or went since the cached read voids the same frame, as the layout may not have moved yet.
+    public static func decide(target: UINode, record: TreeCacheRecord?, now: Date, keyboardShowing: @autoclosure () -> Bool = false) -> TransitionDecision {
         guard let record else {
             return .recheck(after: noRecordGap)
         }
@@ -36,7 +38,8 @@ public enum TransitionGuard {
         if elapsed >= windowSeconds {
             return .actNow(.noRecentInput)
         }
-        if let roots = record.roots, hasSameFrame(target, in: roots) {
+        if let roots = record.roots, hasSameFrame(target, in: roots),
+           keyboardShowing() == record.tree.map(TextFocus.hasKeyboard) {
             return .actNow(.sameFrame)
         }
         return .recheck(after: .milliseconds(Int(((windowSeconds - elapsed) * 1000).rounded())))

@@ -403,10 +403,12 @@ enum E2EDeviceAllowance {
 actor GuardedPhone {
     static let shared = GuardedPhone()
     private var resolved: String?
+    private var refusal: String?
     private var installed = false
 
     func serial() async throws -> String {
         if let resolved { return resolved }
+        if let refusal { throw AndroidE2EError(description: refusal) }
         guard let requested = androidPhoneSerial else {
             throw AndroidE2EError(description: "OFFSIDER_ANDROID_PHONE must name the phone's USB serial.")
         }
@@ -419,8 +421,9 @@ actor GuardedPhone {
             throw AndroidE2EError(description: "adb devices -l exited \(listing.exitCode): \(listing.stderr)")
         }
         let serial = try AndroidPhoneGuard.verdict(requested: requested, emulatorFlags: emulatorFlags, devices: listing.stdout).get()
-        if let refusal = try await E2EDeviceAllowance.require(device: serial) {
-            throw AndroidE2EError(description: refusal)
+        if let refused = try await E2EDeviceAllowance.require(device: serial, app: AndroidE2E.package) {
+            refusal = refused
+            throw AndroidE2EError(description: refused)
         }
         resolved = serial
         return serial

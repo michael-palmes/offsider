@@ -8,6 +8,7 @@ public enum FailureReason: String, CaseIterable, Sendable {
     case inputOutcomeUnknown = "input_outcome_unknown"
     case targetCovered = "target_covered"
     case targetUnderKeyboard = "target_under_keyboard"
+    case targetDisabled = "target_disabled"
     case targetHasNoFrame = "target_has_no_frame"
     case targetMoved = "target_moved"
     case notASlider = "not_a_slider"

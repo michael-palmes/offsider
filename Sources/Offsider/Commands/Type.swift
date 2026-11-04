@@ -204,7 +204,8 @@ struct Type: AsyncParsableCommand, VerifiableCommand {
             return FocusCheck(tree: tree, untappedTree: tree, field: focused)
         }
         guard let query = intoQuery else { return FocusCheck() }
-        let cover = TapCover(override: "tap the field with `offsider tap --allow-covered` and type without --into-id")
+        var cover = TapCover(override: "tap the field with `offsider tap --allow-covered` and type without --into-id", stopFlag: nil, disabledOverride: nil)
+        cover.query = query
         let polled = try await AccessibilityPoller.resolveWithPolling(
             query: query, on: backend, device: device, waitTimeout: 0, pollInterval: 0.25,
             settle: .guarded(record: await TreeCache.load(for: device, backend: backend)),

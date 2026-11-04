@@ -29,6 +29,43 @@ extension UITree {
         return []
     }
 
+    /// `hitPath(in:at:skipping:)` over a tree already indexed, passing by each branch none of whose frames holds the point.
+    static func hitPath(in tree: TreeIndex, at point: UIPoint, skipping: Set<[Int]> = []) -> [Int] {
+        var path: [Int] = []
+        for index in topFirstRootIndexes(tree.roots) {
+            path.append(index)
+            if hitPath(at: tree.index(at: [index]), in: tree, point: point, parentHidden: true, skipping: skipping, path: &path) {
+                return path
+            }
+            path.removeLast()
+        }
+        return []
+    }
+
+    private static func hitPath(at index: Int, in tree: TreeIndex, point: UIPoint, parentHidden: Bool, skipping: Set<[Int]>, path: inout [Int]) -> Bool {
+        if !skipping.isEmpty, skipping.contains(path) {
+            return false
+        }
+        let node = tree.nodes[index]
+        let hidden = node.visibleToUser == false
+        if hidden, !parentHidden {
+            return false
+        }
+        guard tree.mayHold(point, at: index) else { return false }
+        let children = tree.children(of: index)
+        for position in topFirstIndexes(node.children) {
+            path.append(position)
+            if hitPath(at: children[position], in: tree, point: point, parentHidden: hidden, skipping: skipping, path: &path) {
+                return true
+            }
+            path.removeLast()
+        }
+        guard let frame = node.frame, frame.contains(point) else {
+            return false
+        }
+        return true
+    }
+
     /// The nodes from a root down to the one `path` leads to, both included.
     public static func nodes(along path: [Int], in roots: [UINode]) -> [UINode] {
         guard let first = path.first else { return [] }
@@ -86,6 +123,18 @@ extension UITree {
         guard let upperPath = indexPath(to: upper, in: roots), let lowerPath = indexPath(to: lower, in: roots) else {
             return nil
         }
+        return zOrder(upperPath, over: lowerPath, in: roots)
+    }
+
+    /// `zOrder(of:over:in:)` over a tree already indexed.
+    public static func zOrder(of upper: UINode, over lower: UINode, in tree: TreeIndex) -> (isAbove: Bool, byDrawingOrder: Bool)? {
+        guard let upper = tree.firstIndex(of: upper), let lower = tree.firstIndex(of: lower) else {
+            return nil
+        }
+        return zOrder(tree.indexPath(to: upper), over: tree.indexPath(to: lower), in: tree.roots)
+    }
+
+    private static func zOrder(_ upperPath: [Int], over lowerPath: [Int], in roots: [UINode]) -> (isAbove: Bool, byDrawingOrder: Bool) {
         guard upperPath[0] == lowerPath[0] else {
             let layers = roots.compactMap(\.windowLayer)
             if layers.count == roots.count, layers[upperPath[0]] != layers[lowerPath[0]] {

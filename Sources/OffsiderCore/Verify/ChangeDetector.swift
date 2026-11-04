@@ -571,6 +571,7 @@ public struct ChangeDetector: Sendable {
             && Self.resizedAlongItsLine(before.signature.frame, after.signature.frame)
         let a = live || textMoved ? before.signature.structural : before.signature
         let b = live || textMoved ? after.signature.structural : after.signature
+        guard a != b else { return nil }
         let name = after.name
         if a.value != b.value, before.node.isSecure || after.node.isSecure { return "value of \(name) changed (secure field)" }
         let masked = Self.isMasked(before.node) || Self.isMasked(after.node)

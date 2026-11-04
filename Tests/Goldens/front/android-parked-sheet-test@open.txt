@@ -1,0 +1,13 @@
+# 12 nodes, 12 listed
+## no point read
+1 button "BackButton" 8,54.10 44.19x44.19: at 30.09,76.19 reaches
+2 group "parked-sheet-test-screen" 60.19,64.38 291.43x23.24: at 205.91,76 reaches
+3 text "parked-sheet-test-state" 108.19,114.67 195.05x23.24: at 205.72,126.29 reaches
+4 text "parked-sheet-test-position" 126.10,153.90 159.24x23.24: at 205.72,165.52 reaches
+5 button "parked-sheet-test-open" 143.24,193.14 124.95x43.81: at 205.72,215.04 reaches
+6 button "parked-sheet-test-open-slow" 116.19,253.33 179.43x44.19: at 205.91,275.43 reaches
+7 button "parked-sheet-test-body-save" 171.05,313.14 69.33x43.81: at 205.72,335.04 reaches
+8 group "parked-sheet-test-sheet-title" 16,580.19 379.43x47.24: at 205.72,603.81 reaches
+9 button "parked-sheet-test-apply" 141.71,643.43 128.38x44.19: at 205.90,665.52 reaches
+10 button "parked-sheet-test-sheet-save" 171.05,703.62 69.33x43.81: at 205.72,725.52 reaches
+11 button "parked-sheet-test-close" 141.71,763.43 128x44.19: at 205.71,785.52 reaches

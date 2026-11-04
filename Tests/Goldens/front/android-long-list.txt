@@ -1,0 +1,42 @@
+# 408 nodes, 41 listed
+## no point read
+2 scrollView "rows-test-list" 0,120 411x803: at 205.50,521.50 reaches
+3 button "rows-test-row-0" 0,120 411x44: at 205.50,142 reaches
+4 text "Row 0 detail" 16,130 200x20: at 116,140 reaches
+5 button "rows-test-row-1" 0,168 411x44: covered by text "rows-test-banner" 0,150 411x60 (drawingOrder, sure): at 205.50,190 judged text "rows-test-banner" 0,150 411x60 (drawingOrder, sure)
+6 text "Row 1 detail" 16,178 200x20: covered by text "rows-test-banner" 0,150 411x60 (drawingOrder, sure): at 116,188 judged text "rows-test-banner" 0,150 411x60 (drawingOrder, sure)
+7 button "rows-test-row-2" 0,216 411x44: at 205.50,238 reaches
+8 text "Row 2 detail" 16,226 200x20: at 116,236 reaches
+9 button "rows-test-row-3" 0,264 411x44: at 205.50,286 reaches
+10 text "Row 3 detail" 16,274 200x20: at 116,284 reaches
+11 button "rows-test-row-4" 0,312 411x44: at 205.50,334 reaches
+12 text "Row 4 detail" 16,322 200x20: at 116,332 reaches
+13 button "rows-test-row-5" 0,360 411x44: at 205.50,382 reaches
+14 text "Row 5 detail" 16,370 200x20: at 116,380 reaches
+15 button "rows-test-row-6" 0,408 411x44: at 205.50,430 reaches
+16 text "Row 6 detail" 16,418 200x20: at 116,428 reaches
+17 button "rows-test-row-7" 0,456 411x44: at 205.50,478 reaches
+18 text "Row 7 detail" 16,466 200x20: at 116,476 reaches
+19 button "rows-test-row-8" 0,504 411x44: at 205.50,526 reaches
+20 text "Row 8 detail" 16,514 200x20: at 116,524 reaches
+21 button "rows-test-row-9" 0,552 411x44: at 205.50,574 reaches
+22 text "Row 9 detail" 16,562 200x20: at 116,572 reaches
+23 button "rows-test-row-10" 0,600 411x44: at 205.50,622 reaches
+24 text "Row 10 detail" 16,610 200x20: at 116,620 reaches
+25 button "rows-test-row-11" 0,648 411x44: at 205.50,670 reaches
+26 text "Row 11 detail" 16,658 200x20: at 116,668 reaches
+27 button "rows-test-row-12" 0,696 411x44: at 205.50,718 reaches
+28 text "Row 12 detail" 16,706 200x20: at 116,716 reaches
+29 button "rows-test-row-13" 0,744 411x44: at 205.50,766 reaches
+30 text "Row 13 detail" 16,754 200x20: at 116,764 reaches
+31 button "rows-test-row-14" 0,792 411x44: at 205.50,814 reaches
+32 text "Row 14 detail" 16,802 200x20: at 116,812 reaches
+33 button "rows-test-row-15" 0,840 411x44: covered by other "rows-test-footer" 0,840 411x83 (drawingOrder, sure): at 205.50,862 judged other "rows-test-footer" 0,840 411x83 (drawingOrder, sure)
+34 text "Row 15 detail" 16,850 200x20: covered by button "rows-test-save" 16,850 180x48 (drawingOrder, sure): at 116,860 judged button "rows-test-save" 16,850 180x48 (drawingOrder, sure)
+35 button "rows-test-row-16" 0,888 411x44: covered by other "rows-test-footer" 0,840 411x83 (drawingOrder, sure): at 205.50,910 judged other "rows-test-footer" 0,840 411x83 (drawingOrder, sure)
+36 text "Row 16 detail" 16,898 200x20: covered by other "rows-test-footer" 0,840 411x83 (drawingOrder, sure): at 116,908 judged other "rows-test-footer" 0,840 411x83 (drawingOrder, sure)
+403 other "rows-test-footer" 0,840 411x83: at 205.50,881.50 reaches
+404 button "rows-test-save" 16,850 180x48: at 106,874 reaches
+405 button "rows-test-cancel" 215,850 180x48: at 305,874 reaches
+406 text "rows-test-banner" 0,150 411x60: at 205.50,180 reaches
+407 header "Rows" 16,60 200x40: at 116,80 reaches

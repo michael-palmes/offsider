@@ -69,6 +69,7 @@ type TargetProps = {
   role?: AccessibilityRole;
   state?: AccessibilityState;
   hint?: string;
+  disabled?: boolean;
   style?: StyleProp<ViewStyle>;
   textStyle?: StyleProp<TextStyle>;
   children?: ReactNode;
@@ -82,6 +83,7 @@ export function Target({
   role = 'button',
   state,
   hint,
+  disabled,
   style,
   textStyle,
   children,
@@ -91,8 +93,9 @@ export function Target({
       testID={id}
       accessibilityRole={role}
       accessibilityLabel={label}
-      accessibilityState={state}
+      accessibilityState={disabled === undefined ? state : { ...state, disabled }}
       accessibilityHint={hint}
+      disabled={disabled}
       onPress={onPress}
       onLongPress={onLongPress}
       style={({ pressed }) => [styles.target, pressed && styles.pressed, style]}

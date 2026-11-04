@@ -1,0 +1,39 @@
+# 74 nodes, 19 listed
+## no point read
+10 button "BackButton" 8,62 44x44: at 30,84 reaches
+11 header "rows-test-screen" 60,74 282x20.33: at 201,84.17 reaches
+13 text "rows-test-state" 16,122.33 370x20.33: at 201,132.50 reaches
+14 text "rows-test-download" 16,150.67 370x20.33: at 201,160.83 reaches
+15 button "rows-test-toggle-live" 16,179 370x44: at 201,201 reaches
+16 group "rows-test-scroll-view" 0,239.33 402x634.67: at 201,556.67 reaches
+20 button "Inbox, 3 unread" 0,239.33 402x58.33: at 201,268.50 reaches
+21 button "Downloads, 2% complete" 0,297.67 402x58.33: at 201,326.83 reaches
+22 button "Today’s Summary, Updated just now" 0,356 402x58.33: at 201,385.17 reaches
+23 button "Don’t Disturb, Off" 0,414.33 402x58.33: at 201,443.50 reaches
+24 button "rows-test-item-1" 0,472.67 402x56.00: at 201,500.67 reaches
+25 button "rows-test-item-2" 0,528.67 402x56: at 201,556.67 reaches
+26 button "rows-test-item-3" 0,584.67 402x56: at 201,612.67 reaches
+27 button "rows-test-item-4" 0,640.67 402x56: at 201,668.67 reaches
+28 button "rows-test-item-5" 0,696.67 402x56: at 201,724.67 reaches
+29 button "rows-test-item-6" 0,752.67 402x56: at 201,780.67 reaches
+30 button "rows-test-item-7" 0,808.67 402x56: at 201,836.67 reaches
+31 button "rows-test-item-8" 0,864.67 402x56: at 201,869.33 reaches
+## hit-tested
+10 button "BackButton" 8,62 44x44: at 30,84 reaches
+11 header "rows-test-screen" 60,74 282x20.33: at 201,84.17 reaches
+13 text "rows-test-state" 16,122.33 370x20.33: at 201,132.50 reaches
+14 text "rows-test-download" 16,150.67 370x20.33: at 201,160.83 reaches
+15 button "rows-test-toggle-live" 16,179 370x44: at 201,201 reaches
+16 group "rows-test-scroll-view" 0,239.33 402x634.67: at 201,556.67 reaches
+20 button "Inbox, 3 unread" 0,239.33 402x58.33: at 201,268.50 reaches
+21 button "Downloads, 2% complete" 0,297.67 402x58.33: at 201,326.83 reaches
+22 button "Today’s Summary, Updated just now" 0,356 402x58.33: at 201,385.17 reaches
+23 button "Don’t Disturb, Off" 0,414.33 402x58.33: at 201,443.50 reaches
+24 button "rows-test-item-1" 0,472.67 402x56.00: at 201,500.67 reaches
+25 button "rows-test-item-2" 0,528.67 402x56: at 201,556.67 reaches
+26 button "rows-test-item-3" 0,584.67 402x56: at 201,612.67 reaches
+27 button "rows-test-item-4" 0,640.67 402x56: at 201,668.67 reaches
+28 button "rows-test-item-5" 0,696.67 402x56: at 201,724.67 reaches
+29 button "rows-test-item-6" 0,752.67 402x56: at 201,780.67 reaches
+30 button "rows-test-item-7" 0,808.67 402x56: at 201,836.67 reaches
+31 button "rows-test-item-8" 0,864.67 402x56: at 201,869.33 reaches

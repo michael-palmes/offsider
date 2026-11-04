@@ -315,6 +315,19 @@ struct GestureRotatedInputTests {
         #expect(error?.userFacingDescription.contains("--from and --to") == true)
     }
 
+    @Test("a pinch centred on the app reads the tree once, for its centre and its mapping, and hands an iPhone none")
+    @MainActor
+    func pinchReadsTheTreeOnce() async throws {
+        let tree = FakeUI.tree([FakeUI.node(.button, id: "zoom", frame: FakeUI.frame(100, 300, 200, 200))])
+        for (device, handsTree) in [(DeviceID(rawValue: "SIMULATOR", platform: .ios), true), (DeviceID(rawValue: "00008130-0000000000000ABC", platform: .ios), false)] {
+            let backend = FakeDeviceBackend(trees: [tree], screen: UIScreenInfo(width: 402, height: 874, scale: 3))
+            let gesture = try Gesture.parse(["pinch", "--from", "100", "--to", "50", "--device", device.rawValue])
+            _ = try await gesture.presetEvent(tree: { try await backend.accessibilityTree(for: device) }, backend: backend, device: device, logger: OffsiderLogger())
+            #expect(backend.treeReads == (handsTree ? 1 : 2), "\(device)")
+            #expect(backend.coordinateCalls.map(\.hadTree) == [handsTree], "\(device)")
+        }
+    }
+
     @Test("a tree without an application frame fails with an actionable error")
     func missingApplicationFrameFails() async throws {
         let error = await #expect(throws: CLIError.self) {

@@ -1,0 +1,22 @@
+# 22 nodes, 21 listed
+## no point read
+2 header "Rows" 16,10 200x30: at 116,25 reaches
+3 button "rows-test-row-0" 0,60 411x50: at 205.50,85 reaches
+4 button "rows-test-row-1" 0,114 411x50: at 205.50,139 reaches
+5 button "rows-test-row-2" 0,168 411x50: at 205.50,193 reaches
+6 button "rows-test-row-3" 0,222 411x50: at 205.50,247 reaches
+7 button "rows-test-row-4" 0,276 411x50: at 205.50,301 reaches
+8 button "rows-test-row-5" 0,330 411x50: at 205.50,355 reaches
+9 button "rows-test-row-6" 0,384 411x50: at 205.50,409 reaches
+10 button "rows-test-row-7" 0,438 411x50: at 205.50,463 reaches
+11 button "rows-test-row-8" 0,492 411x50: at 205.50,517 reaches
+12 button "rows-test-row-9" 0,546 411x50: at 205.50,571 reaches
+13 button "rows-test-row-10" 0,600 411x50: at 205.50,625 reaches
+14 button "rows-test-row-11" 0,654 411x50: at 205.50,679 reaches
+15 button "rows-test-row-12" 0,708 411x50: at 205.50,733 reaches
+16 button "rows-test-row-13" 0,762 411x50: at 205.50,787 reaches
+17 button "rows-test-row-14" 0,816 411x50: covered by button "!, Request failed" 10,850 391x56 (logBoxTouchArea, sure): at 205.50,841 judged button "!, Request failed" 10,850 391x56 (logBoxTouchArea, sure)
+18 button "rows-test-row-15" 0,870 411x50: covered by button "!, Request failed" 10,850 391x56 (drawingOrder, sure): at 205.50,895 judged button "!, Request failed" 10,850 391x56 (drawingOrder, sure)
+19 button "!, Request failed" 10,850 391x56: at 205.50,878 reaches
+20 button "rows-test-status" 300,0 100x44: at 350,34 reaches
+21 text "rows-test-clock" 230,2 60x20: covered by other "StatusBar" 0,0 411x24 (systemBar, sure): at 260,12 judged other "StatusBar" 0,0 411x24 (systemBar, sure)

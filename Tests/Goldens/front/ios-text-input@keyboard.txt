@@ -1,0 +1,97 @@
+# 101 nodes, 48 listed
+## no point read
+11 button "BackButton" 8,62 44x44: at 30,84 reaches
+12 header "text-input-screen" 60,74 282x20.33: at 201,84.17 reaches
+13 text "text-input-title" 16,122.33 370x24.00: at 201,134.33 reaches
+15 textField "text-input-field" 17,197.33 368x42: at 201,218.33 reaches
+17 textField "text-input-second-field" 17,257.33 368x42: at 201,278.33 reaches
+18 text "text-input-second-value" 16,316.33 370x20.33: at 201,326.50 reaches
+20 textField "text-input-short-field" 17,353.67 368x42: at 201,374.67 reaches
+21 text "typing-active-indicator" 16,412.67 370x20.33: at 201,422.83 reaches
+27 group "inputView" 0,573 402x301: at 201,723.50 reaches
+34 other "AutoFill" 20,244.33 83x44.00: at 61.50,266.33 reaches
+36 text "AutoFill" 36,257.33 51x18: at 61.50,266.33 reaches
+37 button "Previous Page" -15,248.33 36x36.00: at 3,266.33 reaches
+38 button "Next Page" 103,248.33 36x36.00: at 121,266.33 reaches
+58 keyboard "UIKeyboardLayoutStar Preview" 0,590 402x226: at 201,703 reaches
+60 button "q" 4.67,597 39.33x54: at 24.33,624 reaches
+61 button "w" 44,597 39.67x54: at 63.83,624 reaches
+62 button "e" 83.67,597 39.33x54: at 103.33,624 reaches
+63 button "r" 123.00,597 39.67x54: at 142.83,624 reaches
+64 button "t" 162.67,597 39.33x54: at 182.33,624 reaches
+65 button "y" 202,597 39.67x54: at 221.83,624 reaches
+66 button "u" 241.67,597 39.33x54: at 261.33,624 reaches
+67 button "i" 281,597 39.67x54: at 300.83,624 reaches
+68 button "o" 320.67,597 39.33x54: at 340.33,624 reaches
+69 button "p" 360,597 39.67x54: at 379.83,624 reaches
+72 button "a" 24.33,651 39.33x54: at 44.00,678 reaches
+73 button "s" 63.67,651 39.67x54: at 83.50,678 reaches
+74 button "d" 103.33,651 39.33x54: at 123.00,678 reaches
+75 button "f" 142.67,651 39.67x54: at 162.50,678 reaches
+76 button "g" 182.33,651 39.33x54: at 202,678 reaches
+77 button "h" 221.67,651 39.67x54: at 241.50,678 reaches
+78 button "j" 261.33,651 39.33x54: at 281.00,678 reaches
+79 button "k" 300.67,651 39.67x54: at 320.50,678 reaches
+80 button "l" 340.33,651 39.33x54: at 360.00,678 reaches
+82 button "shift" 4.67,705 51.33x54: at 30.33,732 reaches
+84 button "z" 63.67,705 39.67x54: at 83.50,732 reaches
+85 button "x" 103.33,705 39.33x54: at 123.00,732 reaches
+86 button "c" 142.67,705 39.67x54: at 162.50,732 reaches
+87 button "v" 182.33,705 39.33x54: at 202,732 reaches
+88 button "b" 221.67,705 39.67x54: at 241.50,732 reaches
+89 button "n" 261.33,705 39.33x54: at 281.00,732 reaches
+90 button "m" 300.67,705 39.67x54: at 320.50,732 reaches
+92 button "delete" 348,705 51.67x54: at 373.83,732 reaches
+93 button "more" 4.67,759 98.67x54: at 54.00,786 reaches
+94 button "space" 103.33,759 197.33x54: at 202.00,786 reaches
+95 button "Return" 300.67,759 99x54: at 350.17,786 reaches
+97 button "dictation" 325.44,805.37 68.09x68.74: at 359.48,839.73 reaches
+99 button "dictation" 325.44,805.37 68.09x68.74: at 359.48,839.73 reaches
+## hit-tested
+11 button "BackButton" 8,62 44x44: at 30,84 reaches
+12 header "text-input-screen" 60,74 282x20.33: at 201,84.17 reaches
+13 text "text-input-title" 16,122.33 370x24.00: at 201,134.33 reaches
+15 textField "text-input-field" 17,197.33 368x42: at 201,218.33 reaches
+17 textField "text-input-second-field" 17,257.33 368x42: at 201,278.33 reaches
+18 text "text-input-second-value" 16,316.33 370x20.33: at 201,326.50 reaches
+20 textField "text-input-short-field" 17,353.67 368x42: at 201,374.67 reaches
+21 text "typing-active-indicator" 16,412.67 370x20.33: at 201,422.83 reaches
+27 group "inputView" 0,573 402x301: at 201,723.50 reaches
+34 other "AutoFill" 20,244.33 83x44.00: at 61.50,266.33 reaches
+36 text "AutoFill" 36,257.33 51x18: at 61.50,266.33 reaches
+37 button "Previous Page" -15,248.33 36x36.00: at 3,266.33 reaches
+38 button "Next Page" 103,248.33 36x36.00: at 121,266.33 reaches
+58 keyboard "UIKeyboardLayoutStar Preview" 0,590 402x226: at 201,703 reaches
+60 button "q" 4.67,597 39.33x54: at 24.33,624 reaches
+61 button "w" 44,597 39.67x54: at 63.83,624 reaches
+62 button "e" 83.67,597 39.33x54: at 103.33,624 reaches
+63 button "r" 123.00,597 39.67x54: at 142.83,624 reaches
+64 button "t" 162.67,597 39.33x54: at 182.33,624 reaches
+65 button "y" 202,597 39.67x54: at 221.83,624 reaches
+66 button "u" 241.67,597 39.33x54: at 261.33,624 reaches
+67 button "i" 281,597 39.67x54: at 300.83,624 reaches
+68 button "o" 320.67,597 39.33x54: at 340.33,624 reaches
+69 button "p" 360,597 39.67x54: at 379.83,624 reaches
+72 button "a" 24.33,651 39.33x54: at 44.00,678 reaches
+73 button "s" 63.67,651 39.67x54: at 83.50,678 reaches
+74 button "d" 103.33,651 39.33x54: at 123.00,678 reaches
+75 button "f" 142.67,651 39.67x54: at 162.50,678 reaches
+76 button "g" 182.33,651 39.33x54: at 202,678 reaches
+77 button "h" 221.67,651 39.67x54: at 241.50,678 reaches
+78 button "j" 261.33,651 39.33x54: at 281.00,678 reaches
+79 button "k" 300.67,651 39.67x54: at 320.50,678 reaches
+80 button "l" 340.33,651 39.33x54: at 360.00,678 reaches
+82 button "shift" 4.67,705 51.33x54: at 30.33,732 reaches
+84 button "z" 63.67,705 39.67x54: at 83.50,732 reaches
+85 button "x" 103.33,705 39.33x54: at 123.00,732 reaches
+86 button "c" 142.67,705 39.67x54: at 162.50,732 reaches
+87 button "v" 182.33,705 39.33x54: at 202,732 reaches
+88 button "b" 221.67,705 39.67x54: at 241.50,732 reaches
+89 button "n" 261.33,705 39.33x54: at 281.00,732 reaches
+90 button "m" 300.67,705 39.67x54: at 320.50,732 reaches
+92 button "delete" 348,705 51.67x54: at 373.83,732 reaches
+93 button "more" 4.67,759 98.67x54: at 54.00,786 reaches
+94 button "space" 103.33,759 197.33x54: at 202.00,786 reaches
+95 button "Return" 300.67,759 99x54: at 350.17,786 reaches
+97 button "dictation" 325.44,805.37 68.09x68.74: at 359.48,839.73 reaches
+99 button "dictation" 325.44,805.37 68.09x68.74: at 359.48,839.73 reaches

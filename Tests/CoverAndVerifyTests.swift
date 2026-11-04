@@ -257,7 +257,7 @@ struct CoverAndVerifyTests {
         let backend = FakeDeviceBackend(platform: .android, trees: [])
         let polled = try await AccessibilityPoller.pollForResolution(
             query: .id("tab-library"), waitTimeout: 0, pollInterval: 0.25, elementType: nil,
-            coverCheck: tap.coverCheck(selector: "--id 'tab-library'", backend: backend, device: device),
+            coverCheck: tap.coverCheck(query: .id("tab-library"), backend: backend, device: device),
             coverSettle: coverSettle, logger: OffsiderLogger(), clock: clock.poll
         ) {
             reads += 1

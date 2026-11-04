@@ -1,0 +1,5 @@
+# 4 nodes, 3 listed
+## no point read
+1 group "sheet-test-sheet" 16,70.10 379.43x47.24: at 205.72,93.72 reaches
+2 button "sheet-test-action" 123.43,141.33 164.95x43.81: at 205.91,163.24 reaches
+3 button "sheet-test-close" 143.62,209.52 124.19x44.19: at 205.72,231.62 reaches

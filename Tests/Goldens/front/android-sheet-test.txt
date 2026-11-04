@@ -1,0 +1,6 @@
+# 5 nodes, 5 listed
+## no point read
+1 button "BackButton" 8,54.10 44.19x44.19: at 30.09,76.19 reaches
+2 group "sheet-test-screen" 60.19,64.38 291.43x23.24: at 205.91,76 reaches
+3 text "sheet-test-state" 136.76,114.67 137.90x23.24: at 205.71,126.29 reaches
+4 button "sheet-test-open-sheet" 145.52,161.90 120.76x43.81: at 205.90,183.81 reaches
