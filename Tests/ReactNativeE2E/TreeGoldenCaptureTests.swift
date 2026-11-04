@@ -23,6 +23,17 @@ struct TreeGoldenCaptureTests {
         }
     }
 
+    /// Beside the emulator's hardware keyboard Gboard shows only its floating toolbar; this Android setting asks for its full keys.
+    static let fullKeyboardSetting = "show_ime_with_hard_keyboard"
+
+    /// The keyboard golden keeps the full keyboard, whatever the AVD's own setting; the capture puts that setting back.
+    static func withFullKeyboard(_ prepare: @escaping @Sendable (RNApp) async throws -> Void) -> @Sendable (RNApp) async throws -> Void {
+        { app in
+            if app.platform == .android { _ = try await AndroidE2E.shell("settings put secure \(fullKeyboardSetting) 1") }
+            try await prepare(app)
+        }
+    }
+
     static let screens: [Screen] = [
         Screen(name: "menu", route: "menu", marker: "menu-title"),
         Screen(name: "tap-test", route: "tap-test"),
@@ -40,7 +51,7 @@ struct TreeGoldenCaptureTests {
         Screen(name: "parked-sheet-test@open", route: "parked-sheet-test", prepare: tap("parked-sheet-test-open")),
         Screen(name: "overlay-test", route: "overlay-test"),
         Screen(name: "slider-value-test", route: "slider-value-test"),
-        Screen(name: "text-input@keyboard", route: "text-input", prepare: tap("text-input-field", thenWaitFor: "typing-active-indicator")),
+        Screen(name: "text-input@keyboard", route: "text-input", prepare: withFullKeyboard(tap("text-input-field", thenWaitFor: "typing-active-indicator"))),
         Screen(name: "stack-test@full", route: "stack-test", prepare: tap("stack-test-open-full", thenWaitFor: "stack-test-full-title-1")),
         Screen(name: "stack-test@flags", route: "stack-test", prepare: { app in
             try await tap("stack-test-open-full", thenWaitFor: "stack-test-full-title-1")(app)
@@ -55,19 +66,32 @@ struct TreeGoldenCaptureTests {
             try await Self.requireOffsiderSimulator()
         }
         let devicePlatform: DevicePlatform = platform == .ios ? .ios : .android
-        for screen in Self.screens {
-            let raw = try await Self.retrying {
-                try await app.open(screen.route, waitingFor: screen.marker)
-                try await screen.prepare?(app)
-                return try await Self.settledCapture(app)
+        let keyboardSetting = platform == .android ? try await AndroidE2E.shell("settings get secure \(Self.fullKeyboardSetting)").trimmingCharacters(in: .whitespacesAndNewlines) : nil
+        do {
+            for screen in Self.screens {
+                let raw = try await Self.retrying {
+                    try await app.open(screen.route, waitingFor: screen.marker)
+                    try await screen.prepare?(app)
+                    return try await Self.settledCapture(app)
+                }
+                let scrubbed = try TreeGoldenScrubber.scrub(raw, platform: devicePlatform)
+                guard let object = scrubbed as? [String: Any] else {
+                    throw DescribeUIError(description: "describe-ui --raw-source did not print an object")
+                }
+                try TreeGoldens.write(object, to: TreeGoldens.Golden(platform: devicePlatform, screen: screen.name))
             }
-            let scrubbed = try TreeGoldenScrubber.scrub(raw, platform: devicePlatform)
-            guard let object = scrubbed as? [String: Any] else {
-                throw DescribeUIError(description: "describe-ui --raw-source did not print an object")
-            }
-            try TreeGoldens.write(object, to: TreeGoldens.Golden(platform: devicePlatform, screen: screen.name))
+        } catch {
+            try? await Self.restoreKeyboard(keyboardSetting)
+            throw error
         }
+        try await Self.restoreKeyboard(keyboardSetting)
         try TreeGoldens.writeBudgets()
+    }
+
+    /// Puts the AVD's keyboard setting back as the capture found it; nil on iOS.
+    static func restoreKeyboard(_ value: String?) async throws {
+        guard let value else { return }
+        _ = try await AndroidE2E.shell(value == "1" || value == "0" ? "settings put secure \(fullKeyboardSetting) \(value)" : "settings delete secure \(fullKeyboardSetting)")
     }
 
     /// A busy host can time out one read; each screen gets three tries from a fresh launch.
