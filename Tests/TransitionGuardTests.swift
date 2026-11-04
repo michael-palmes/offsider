@@ -93,17 +93,29 @@ struct TransitionGuardTests {
         #expect(backend.session.calls == [.perform(.tapAt(x: 195, y: 622))])
     }
 
-    @Test("a selector tap right after input on a moving target reads twice and taps the settled point")
+    @Test("a selector tap right after input on a moving target reads until two reads agree and taps the settled point")
     func movingTargetRechecks() async throws {
         let fixture = try TreeCacheFixture()
         try fixture.write(Self.record(applyY: 10700, inputAge: 0.1, now: fixture.now))
-        let backend = FakeDeviceBackend(trees: [Self.screen(applyY: 650), Self.screen(applyY: 600)])
+        let backend = FakeDeviceBackend(trees: [Self.screen(applyY: 650), Self.screen(applyY: 600), Self.screen(applyY: 600)])
 
         try await Self.tap(["--id", "apply"], on: backend, fixture: fixture)
 
-        #expect(backend.treeReads == 2)
-        #expect(fixture.sleeps == [.milliseconds(400)])
+        #expect(backend.treeReads == 3)
+        #expect(fixture.sleeps == [.milliseconds(400), .milliseconds(100)])
         #expect(backend.session.calls == [.perform(.tapAt(x: 195, y: 622))])
+    }
+
+    @Test("a window still sliding in at the recheck, as an Android dialog does, is read until it rests, never tapped where it passed")
+    func slidingWindowWaitsToRest() async throws {
+        let fixture = try TreeCacheFixture()
+        try fixture.write(Self.record(applyY: nil, inputAge: 0.25, now: fixture.now))
+        let backend = FakeDeviceBackend(trees: [Self.screen(applyY: 820), Self.screen(applyY: 700), Self.screen(applyY: 610), Self.screen(applyY: 600), Self.screen(applyY: 600)])
+
+        try await Self.tap(["--id", "apply"], on: backend, fixture: fixture)
+
+        #expect(backend.session.calls == [.perform(.tapAt(x: 195, y: 622))])
+        #expect(backend.treeReads == 5)
     }
 
     @Test("tap --verify-id right after an input keeps the guard, so it taps the target where it settled")
@@ -111,7 +123,7 @@ struct TransitionGuardTests {
         let fixture = try TreeCacheFixture()
         try fixture.write(Self.record(applyY: 10700, inputAge: 0.1, now: fixture.now))
         let done = FakeUI.tree([FakeUI.node(.text, id: "done", label: "Done", frame: FakeUI.frame(20, 100, 350, 44))])
-        let backend = FakeDeviceBackend(trees: [Self.screen(applyY: 650), Self.screen(applyY: 600), done])
+        let backend = FakeDeviceBackend(trees: [Self.screen(applyY: 650), Self.screen(applyY: 600), Self.screen(applyY: 600), done])
 
         try await DispatchTracker.$current.withValue(DispatchTracker()) {
             try await fixture.run {
@@ -120,7 +132,7 @@ struct TransitionGuardTests {
             }
         }
 
-        #expect(fixture.sleeps == [.milliseconds(400)])
+        #expect(fixture.sleeps == [.milliseconds(400), .milliseconds(100)])
         #expect(backend.session.calls == [.perform(.tapAt(x: 195, y: 622))])
     }
 
@@ -147,19 +159,19 @@ struct TransitionGuardTests {
             ) { sent.append($0) }
         }
 
-        #expect(fixture.sleeps == [.milliseconds(400)])
+        #expect(fixture.sleeps == [.milliseconds(400), .milliseconds(100)])
         #expect(sent == [.tapAt(x: 200, y: 622)])
     }
 
-    @Test("a selector tap with no record waits 150 ms and reads once more")
+    @Test("a selector tap with no record waits 150 ms and reads once more, and again while the target moves")
     func noRecordRechecks() async throws {
         let fixture = try TreeCacheFixture()
         let backend = FakeDeviceBackend(trees: [Self.screen(applyY: 650), Self.screen(applyY: 600)])
 
         try await Self.tap(["--id", "apply"], on: backend, fixture: fixture)
 
-        #expect(backend.treeReads == 2)
-        #expect(fixture.sleeps == [.milliseconds(150)])
+        #expect(backend.treeReads == 3)
+        #expect(fixture.sleeps == [.milliseconds(150), .milliseconds(100)])
         #expect(backend.session.calls == [.perform(.tapAt(x: 195, y: 622))])
     }
 
@@ -249,7 +261,7 @@ struct TransitionGuardTests {
 
         try await Self.tap(["--id", "apply"], on: backend, fixture: fixture)
 
-        #expect(fixture.sleeps == [.milliseconds(400)])
+        #expect(fixture.sleeps == [.milliseconds(400), .milliseconds(100)])
         #expect(backend.session.calls == [.perform(.tapAt(x: 195, y: 222))])
     }
 
@@ -273,14 +285,14 @@ struct TransitionGuardTests {
             FakeUI.tree([FakeUI.node(.slider, id: "volume", value: "\(percent)%", frame: FakeUI.frame(20, y, 360, 20))])
         }
         try fixture.write(TreeCacheRecord(platform: .ios, device: Self.device.rawValue, command: "tap", writtenAt: fixture.now, lastInputAt: fixture.now - 0.2))
-        let backend = FakeDeviceBackend(trees: [slider(700, percent: 50), slider(600, percent: 50), slider(600, percent: 80)])
+        let backend = FakeDeviceBackend(trees: [slider(700, percent: 50), slider(600, percent: 50), slider(600, percent: 50), slider(600, percent: 80)])
 
         _ = try await fixture.run {
             try await Slider.parse(["--id", "volume", "--value", "80", "--device", Self.device.rawValue])
                 .setSlider(on: SliderTarget(backend: backend, device: Self.device), logger: OffsiderLogger())
         }
 
-        #expect(fixture.sleeps == [.milliseconds(300)])
+        #expect(fixture.sleeps == [.milliseconds(300), .milliseconds(100)])
         #expect(Self.dragStarts(backend).map(\.y) == [610])
     }
 
@@ -311,8 +323,8 @@ struct TransitionGuardTests {
             }
         }
 
-        #expect(backend.treeReads == 3)
-        #expect(fixture.sleeps == [.milliseconds(500)])
+        #expect(backend.treeReads == 4)
+        #expect(fixture.sleeps == [.milliseconds(500), .milliseconds(100)])
         #expect(backend.session.calls == [.perform(.tapAt(x: 195, y: 122)), .perform(.tapAt(x: 195, y: 622))])
     }
 }

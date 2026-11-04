@@ -221,7 +221,19 @@ struct AccessibilityPoller {
         }
         let tree = try await read(delay)
         do {
-            return Polled(value: try await resolve(tree, false), tree: tree, settledBy: decision)
+            var settled = Polled(value: try await resolve(tree, false), tree: tree, settledBy: decision)
+            // A window sliding in, as an Android dialog does, moves its content between reads: act once two reads agree.
+            var before = node.frame?.center
+            var moving = Duration.zero
+            while let now = target(settled.value)?.frame?.center, let last = before, abs(now.x - last.x) > TransitionGuard.frameTolerance || abs(now.y - last.y) > TransitionGuard.frameTolerance,
+                  moving < TransitionGuard.movingLimit {
+                before = now
+                moving += TransitionGuard.movingGap
+                let next = try await read(TransitionGuard.movingGap)
+                guard let value = try? await resolve(next, false) else { break }
+                settled = Polled(value: value, tree: next, settledBy: decision)
+            }
+            return settled
         } catch is ElementResolutionError {
             logger.info().log("The target was not found again after waiting for the screen to settle; reading once more.")
         }
