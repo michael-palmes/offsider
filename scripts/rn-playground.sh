@@ -7,6 +7,9 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 # shellcheck source=/dev/null
 . "${SCRIPT_DIR}/lib/ui.sh"
+# shellcheck source=/dev/null
+. "${SCRIPT_DIR}/lib/adb.sh"
+[ -x "${REPO_ROOT}/.build/debug/offsider" ] && export ADB_FIX_OFFSIDER="${REPO_ROOT}/.build/debug/offsider"
 APP_DIR="${REPO_ROOT}/OffsiderPlaygroundRN"
 BUILD_DIR="${APP_DIR}/build"
 IOS_DERIVED_DATA="${BUILD_DIR}/ios/DerivedData"
@@ -324,7 +327,7 @@ launch_android() {
   local adb
   adb=$(adb_bin)
   # Android 9's `am start -S` matches no activity for a package-scoped link, so stop the app first.
-  "${adb}" -s "$1" shell "am force-stop ${APP_ID}; am start -W -a android.intent.action.VIEW -d ${SCREEN_URL}/$2 ${APP_ID}"
+  adb_limited 60 "${adb}" -s "$1" shell "am force-stop ${APP_ID}; am start -W -a android.intent.action.VIEW -d ${SCREEN_URL}/$2 ${APP_ID}"
 }
 
 # Parsed by parse_dev_args: DEV_DEVICE and the optional DEV_SCREEN.
@@ -400,7 +403,7 @@ running_serial_for_avd() {
   while read -r serial state; do
     case "${serial}" in emulator-*) ;; *) continue ;; esac
     [ "${state}" = device ] || continue
-    name=$("${adb}" -s "${serial}" emu avd name </dev/null 2>/dev/null | tr -d '\r' | sed -n 1p) || name=""
+    name=$(ADB_QUIET=1 adb_limited 10 "${adb}" -s "${serial}" emu avd name </dev/null | tr -d '\r' | sed -n 1p) || name=""
     if [ "${name}" = "${avd}" ]; then
       echo "${serial}"
       return
@@ -441,7 +444,10 @@ dev_android() {
   local adb serial="" offsider
   adb=$(adb_bin)
   if [[ "${DEV_DEVICE}" =~ ^emulator-[0-9]+$ ]]; then
-    "${adb}" -s "${DEV_DEVICE}" emu avd name >/dev/null 2>&1 || die "${DEV_DEVICE} is not a running emulator." "${adb} devices"
+    local code=0
+    ADB_QUIET=1 adb_limited 10 "${adb}" -s "${DEV_DEVICE}" emu avd name >/dev/null || code=$?
+    [ "${code}" -eq 124 ] && exit 1
+    [ "${code}" -eq 0 ] || die "${DEV_DEVICE} is not a running emulator." "${adb} devices"
     serial="${DEV_DEVICE}"
   else
     serial=$(running_serial_for_avd "${adb}" "${DEV_DEVICE}")
@@ -458,17 +464,17 @@ dev_android() {
   reset_build_flags
   install_android "${serial}" --debug ||
     die "Install failed on ${serial} (a build signed with another key is in the way)." "${adb} -s ${serial} uninstall ${APP_ID}"
-  "${adb}" -s "${serial}" reverse "tcp:${METRO_PORT}" "tcp:${METRO_PORT}" >/dev/null
+  adb_limited 15 "${adb}" -s "${serial}" reverse "tcp:${METRO_PORT}" "tcp:${METRO_PORT}" >/dev/null
   grep -qx "${serial}" "${METRO_REVERSES}" 2>/dev/null || echo "${serial}" >>"${METRO_REVERSES}"
   echo "adb reverse: ${serial}'s 127.0.0.1:${METRO_PORT} reaches Metro on this Mac until 'metro stop'"
-  "${adb}" -s "${serial}" shell am force-stop "${APP_ID}"
-  "${adb}" -s "${serial}" shell am start -W -a android.intent.action.VIEW \
+  adb_limited 30 "${adb}" -s "${serial}" shell am force-stop "${APP_ID}"
+  adb_limited 60 "${adb}" -s "${serial}" shell am start -W -a android.intent.action.VIEW \
     -d "'exp+offsiderplaygroundrn://expo-development-client/?url=http%3A%2F%2F127.0.0.1%3A${METRO_PORT}'" "${APP_ID}"
   if [ -n "${DEV_SCREEN}" ]; then
     offsider=$(offsider_bin)
     "${offsider}" wait --id menu-title --timeout 180 --device "${serial}" ||
       die "The app did not show its menu within 180 s." "tail -40 ${METRO_LOG}"
-    "${adb}" -s "${serial}" shell am start -W -a android.intent.action.VIEW -d "${SCREEN_URL}/${DEV_SCREEN}" "${APP_ID}"
+    adb_limited 60 "${adb}" -s "${serial}" shell am start -W -a android.intent.action.VIEW -d "${SCREEN_URL}/${DEV_SCREEN}" "${APP_ID}"
   fi
   print_metro_help
 }
@@ -571,8 +577,8 @@ remove_metro_reverses() {
   adb=$(adb_bin) || return 0
   while read -r serial; do
     [[ "${serial}" =~ ^emulator-[0-9]+$ ]] || continue
-    "${adb}" -s "${serial}" emu avd name </dev/null >/dev/null 2>&1 || continue
-    "${adb}" -s "${serial}" reverse --remove "tcp:${METRO_PORT}" </dev/null >/dev/null 2>&1 &&
+    ADB_QUIET=1 adb_limited 10 "${adb}" -s "${serial}" emu avd name </dev/null >/dev/null || continue
+    ADB_QUIET=1 adb_limited 15 "${adb}" -s "${serial}" reverse --remove "tcp:${METRO_PORT}" </dev/null >/dev/null &&
       echo "adb reverse removed: ${serial} tcp:${METRO_PORT}"
   done <"${METRO_REVERSES}"
   rm -f "${METRO_REVERSES}"

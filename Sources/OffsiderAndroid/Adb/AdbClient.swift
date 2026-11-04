@@ -33,6 +33,8 @@ actor AdbClient {
     let maxOutputBytes: Int
     /// The SDK's adb, named in advice when the server misbehaves.
     let adb: String?
+    /// An emulator serial's AVD, named in the fix when the emulator stops answering.
+    let avdName: @Sendable (String) -> String?
 
     init(
         endpoint: LoopbackEndpoint,
@@ -41,9 +43,11 @@ actor AdbClient {
         hostTimeout: Duration = .seconds(3),
         timing: AndroidTiming = .disabled,
         maxOutputBytes: Int = AdbClient.maxOutputBytes,
-        adb: String? = nil
+        adb: String? = nil,
+        avdName: @escaping @Sendable (String) -> String? = { _ in nil }
     ) {
         self.adb = adb
+        self.avdName = avdName
         self.maxOutputBytes = maxOutputBytes
         self.endpoint = endpoint
         self.connector = connector
@@ -152,8 +156,8 @@ actor AdbClient {
     }
 
     /// The raw stream after `OKAY` for any device service; the caller owns it and must close it.
-    func openService(_ service: String, on serial: String, timeout: Duration) async throws -> AdbServiceStream {
-        let connection = try await openDevice(serial, service: service, label: service, timeout: timeout)
+    func openService(_ service: String, on serial: String, timeout: Duration, label: String? = nil) async throws -> AdbServiceStream {
+        let connection = try await openDevice(serial, service: service, label: label ?? service, timeout: timeout)
         return AdbServiceStream(stream: connection.stream, pending: connection.takeBuffered())
     }
 
@@ -241,7 +245,9 @@ actor AdbClient {
 
     func deviceError(_ error: AdbConnectError, serial: String, command: String, timeout: Duration) -> AndroidError {
         guard error == .timedOut else { return serverError(error, seconds: Int(connectTimeout.components.seconds)) }
-        return .adbCommandFailed(serial: serial, command: command, detail: "no answer within \(timeout.components.seconds) s")
+        let failed = AndroidError.adbCommandFailed(serial: serial, command: command, detail: "no answer within \(timeout.components.seconds) s")
+        guard case .androidSerial = DeviceIDClassifier.classify(serial), let avd = avdName(serial) else { return failed }
+        return failed.frozenEmulator(serial: serial, avd: avd)
     }
 
     private func transportError(_ message: String, serial: String) -> AndroidError {

@@ -142,7 +142,7 @@ struct HelperLauncher {
     }
 
     private func startAttempt(_ script: String) async throws -> Attempt {
-        let opened = try await client.openService("shell,v2,raw:" + script, on: serial, timeout: Self.readyTimeout)
+        let opened = try await client.openService("shell,v2,raw:" + script, on: serial, timeout: Self.readyTimeout, label: Self.startLabel)
         let shell = ShellStream(opened, serial: serial, label: Self.startLabel)
         let deadline = ContinuousClock.now + Self.readyTimeout
         var lines: [String] = []
