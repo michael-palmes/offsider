@@ -224,14 +224,14 @@ struct AccessibilityPoller {
             var settled = Polled(value: try await resolve(tree, false), tree: tree, settledBy: decision)
             // A window sliding in, as an Android dialog does, moves its content between reads: act once two reads agree.
             var before = node.frame?.center
-            var moving = Duration.zero
+            var reads = 0
+            let started = ContinuousClock.now
             while let now = target(settled.value)?.frame?.center, let last = before, abs(now.x - last.x) > TransitionGuard.frameTolerance || abs(now.y - last.y) > TransitionGuard.frameTolerance,
-                  moving < TransitionGuard.movingLimit {
+                  TransitionGuard.movingGap * reads < TransitionGuard.movingLimit, ContinuousClock.now - started < TransitionGuard.movingLimit {
                 before = now
-                moving += TransitionGuard.movingGap
+                reads += 1
                 let next = try await read(TransitionGuard.movingGap)
-                guard let value = try? await resolve(next, false) else { break }
-                settled = Polled(value: value, tree: next, settledBy: decision)
+                settled = Polled(value: try await resolve(next, false), tree: next, settledBy: decision)
             }
             return settled
         } catch is ElementResolutionError {

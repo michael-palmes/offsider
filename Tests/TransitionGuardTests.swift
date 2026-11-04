@@ -106,6 +106,18 @@ struct TransitionGuardTests {
         #expect(backend.session.calls == [.perform(.tapAt(x: 195, y: 622))])
     }
 
+    @Test("a target that goes while it still moves is not tapped where it passed: it is not found, and nothing is sent")
+    func movingTargetGoneIsNotTapped() async throws {
+        let fixture = try TreeCacheFixture()
+        try fixture.write(Self.record(applyY: 10700, inputAge: 0.1, now: fixture.now))
+        let gone = FakeUI.tree([FakeUI.node(.button, id: "open", label: "Open", frame: FakeUI.frame(20, 100, 350, 44))])
+        let backend = FakeDeviceBackend(trees: [Self.screen(applyY: 650), Self.screen(applyY: 600), gone, gone])
+
+        await #expect(throws: (any Error).self) { try await Self.tap(["--id", "apply"], on: backend, fixture: fixture) }
+
+        #expect(backend.session.calls.isEmpty)
+    }
+
     @Test("a window still sliding in at the recheck, as an Android dialog does, is read until it rests, never tapped where it passed")
     func slidingWindowWaitsToRest() async throws {
         let fixture = try TreeCacheFixture()
