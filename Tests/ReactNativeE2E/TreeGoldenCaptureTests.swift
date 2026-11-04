@@ -1,6 +1,7 @@
 import Foundation
 import OffsiderCore
 import Testing
+@testable import OffsiderAndroid
 
 /// Recaptures the tree goldens from the React Native playground with OFFSIDER_GOLDENS_UPDATE=1 and the device variables.
 @Suite("Tree golden capture", .serialized, .enabled(if: TreeGoldens.isUpdating && RNPlatform.anyEnabled))
@@ -30,6 +31,13 @@ struct TreeGoldenCaptureTests {
 
     /// Gboard's full keys stand about 336 pt tall, its toolbar 48 pt.
     static let fullKeyboardHeight = 200.0
+
+    /// What a keyboard golden may hold besides single characters: Gboard's own key and control names. A clipboard chip or a suggestion is none of them.
+    static let keyNames: Set<String> = [
+        "Back", "Clipboard", "Delete", "Done", "Emoji", "Enter", "Gboard", "Go", "More keyboard options", "More stylus options", "Next",
+        "Password keyboard", "Search", "Send", "Settings", "Shift", "Show emoji keyboard", "Space", "Switch input method", "Symbol keyboard",
+        "Voice input", "Voice typing disabled",
+    ]
 
     static let screens: [Screen] = [
         Screen(name: "menu", route: "menu", marker: "menu-title"),
@@ -63,6 +71,11 @@ struct TreeGoldenCaptureTests {
             try await Self.requireOffsiderSimulator()
         }
         let devicePlatform: DevicePlatform = platform == .ios ? .ios : .android
+        // Gboard offers the latest copied text as a chip, and the emulator shares the Mac's clipboard, so the run empties it and puts it back.
+        let emulator = platform == .android ? try await AndroidE2E.emulatorClient() : nil
+        let clip = try await emulator?.clipboard()
+        try await emulator?.setClipboard("")
+        defer { if let emulator { Task { await emulator.close() } } }
         let keyboardSetting = platform == .android ? try await AndroidE2E.shell("settings get secure \(Self.fullKeyboardSetting)").trimmingCharacters(in: .whitespacesAndNewlines) : nil
         do {
             for screen in Self.screens {
@@ -73,6 +86,7 @@ struct TreeGoldenCaptureTests {
                     try await app.open(screen.route, waitingFor: screen.marker)
                     try await screen.prepare?(app)
                     let raw = try await Self.settledCapture(app)
+                    if platform == .android { try Self.requireOnlyKeys(raw, screen: screen.name) }
                     if full { try Self.requireFullKeyboard(raw, screen: screen.name) }
                     return raw
                 }
@@ -85,10 +99,25 @@ struct TreeGoldenCaptureTests {
             }
         } catch {
             try? await Self.restoreKeyboard(keyboardSetting)
+            if let emulator, let clip { try? await emulator.setClipboard(clip) }
             throw error
         }
         try await Self.restoreKeyboard(keyboardSetting)
+        if let emulator, let clip { try await emulator.setClipboard(clip) }
         try TreeGoldens.writeBudgets()
+    }
+
+    /// Refuses a keyboard holding anything but keys, such as a clipboard chip, a suggestion or other text, so a person's copied text never reaches a golden; the message never repeats it.
+    static func requireOnlyKeys(_ raw: Any, screen: String) throws {
+        let tree = try TreeGoldens.tree(from: try RawTreeCapture(jsonData: try JSONSerialization.data(withJSONObject: raw)))
+        let strays = tree.roots.filter { $0.role == .keyboard }.flatMap { $0.flattened() }.filter { node in
+            if node.value?.isEmpty == false { return true }
+            guard let label = node.label, !label.isEmpty else { return false }
+            return label.count > 1 && !keyNames.contains(label)
+        }
+        guard strays.isEmpty else {
+            throw DescribeUIError(description: "\(screen): the keyboard holds \(strays.count) element\(strays.count == 1 ? "" : "s") that \(strays.count == 1 ? "is" : "are") not a key, such as a clipboard chip or a suggestion, so nothing was written. Clear the emulator's clipboard and try again.")
+        }
     }
 
     /// Refuses a capture whose keyboard is Gboard's toolbar alone, so the golden never loses its keys unnoticed.
