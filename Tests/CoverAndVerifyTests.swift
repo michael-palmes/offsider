@@ -541,7 +541,7 @@ struct CoverAndVerifyTests {
         var failure: (any Error)?
         var stderr = ""
         do {
-            stderr = try await Self.tap(["--id", "save", "--verify", "--verify-timeout", "0.5"], on: backend, progress: VerifyProgress()).err
+            stderr = try await Self.tap(["--id", "save", "--verify", "--verify-timeout", "0.5", "--retries", "1"], on: backend, progress: VerifyProgress()).err
         } catch {
             failure = error
         }

@@ -7,6 +7,11 @@ public enum TapDeliveryStyle: String, Codable, Sendable {
     public var alternate: TapDeliveryStyle {
         self == .simulator ? .physical : .simulator
     }
+
+    /// What was sent, in words that read the same on a simulator and a phone.
+    public var shown: String {
+        self == .simulator ? "one tap event" : "touch down and up"
+    }
 }
 
 public enum RetryPolicy {
