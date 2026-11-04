@@ -10,6 +10,8 @@ struct TreeGoldenCaptureTests {
         let route: String
         var marker: String? = nil
         var prepare: (@Sendable (RNApp) async throws -> Void)? = nil
+        /// On Android, captured with Gboard's full keys, which it shows beside a hardware keyboard only when asked before the app opens.
+        var fullKeyboard = false
 
         var testDescription: String { name }
     }
@@ -26,13 +28,8 @@ struct TreeGoldenCaptureTests {
     /// Beside the emulator's hardware keyboard Gboard shows only its floating toolbar; this Android setting asks for its full keys.
     static let fullKeyboardSetting = "show_ime_with_hard_keyboard"
 
-    /// The keyboard golden keeps the full keyboard, whatever the AVD's own setting; the capture puts that setting back.
-    static func withFullKeyboard(_ prepare: @escaping @Sendable (RNApp) async throws -> Void) -> @Sendable (RNApp) async throws -> Void {
-        { app in
-            if app.platform == .android { _ = try await AndroidE2E.shell("settings put secure \(fullKeyboardSetting) 1") }
-            try await prepare(app)
-        }
-    }
+    /// Gboard's full keys stand about 336 pt tall, its toolbar 48 pt.
+    static let fullKeyboardHeight = 200.0
 
     static let screens: [Screen] = [
         Screen(name: "menu", route: "menu", marker: "menu-title"),
@@ -51,7 +48,7 @@ struct TreeGoldenCaptureTests {
         Screen(name: "parked-sheet-test@open", route: "parked-sheet-test", prepare: tap("parked-sheet-test-open")),
         Screen(name: "overlay-test", route: "overlay-test"),
         Screen(name: "slider-value-test", route: "slider-value-test"),
-        Screen(name: "text-input@keyboard", route: "text-input", prepare: withFullKeyboard(tap("text-input-field", thenWaitFor: "typing-active-indicator"))),
+        Screen(name: "text-input@keyboard", route: "text-input", prepare: tap("text-input-field", thenWaitFor: "typing-active-indicator"), fullKeyboard: true),
         Screen(name: "stack-test@full", route: "stack-test", prepare: tap("stack-test-open-full", thenWaitFor: "stack-test-full-title-1")),
         Screen(name: "stack-test@flags", route: "stack-test", prepare: { app in
             try await tap("stack-test-open-full", thenWaitFor: "stack-test-full-title-1")(app)
@@ -69,11 +66,17 @@ struct TreeGoldenCaptureTests {
         let keyboardSetting = platform == .android ? try await AndroidE2E.shell("settings get secure \(Self.fullKeyboardSetting)").trimmingCharacters(in: .whitespacesAndNewlines) : nil
         do {
             for screen in Self.screens {
+                let full = screen.fullKeyboard && platform == .android
+                // Set before the app opens: Gboard keeps its toolbar for a field that took focus earlier.
+                if full { _ = try await AndroidE2E.shell("settings put secure \(Self.fullKeyboardSetting) 1") }
                 let raw = try await Self.retrying {
                     try await app.open(screen.route, waitingFor: screen.marker)
                     try await screen.prepare?(app)
-                    return try await Self.settledCapture(app)
+                    let raw = try await Self.settledCapture(app)
+                    if full { try Self.requireFullKeyboard(raw, screen: screen.name) }
+                    return raw
                 }
+                if full { try await Self.restoreKeyboard(keyboardSetting) }
                 let scrubbed = try TreeGoldenScrubber.scrub(raw, platform: devicePlatform)
                 guard let object = scrubbed as? [String: Any] else {
                     throw DescribeUIError(description: "describe-ui --raw-source did not print an object")
@@ -86,6 +89,15 @@ struct TreeGoldenCaptureTests {
         }
         try await Self.restoreKeyboard(keyboardSetting)
         try TreeGoldens.writeBudgets()
+    }
+
+    /// Refuses a capture whose keyboard is Gboard's toolbar alone, so the golden never loses its keys unnoticed.
+    static func requireFullKeyboard(_ raw: Any, screen: String) throws {
+        let tree = try TreeGoldens.tree(from: try RawTreeCapture(jsonData: try JSONSerialization.data(withJSONObject: raw)))
+        let height = tree.roots.filter { $0.role == .keyboard }.compactMap(\.frame?.height).max() ?? 0
+        guard height >= fullKeyboardHeight else {
+            throw DescribeUIError(description: "\(screen) shows a keyboard \(height) pt tall, not Gboard's full keys; check \(fullKeyboardSetting) on the AVD.")
+        }
     }
 
     /// Puts the AVD's keyboard setting back as the capture found it; nil on iOS.
