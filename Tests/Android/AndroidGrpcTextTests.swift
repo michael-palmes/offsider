@@ -46,6 +46,65 @@ struct AndroidGrpcTextTests {
         #expect(rig.emulator.clipboardNow == "sentinel")
     }
 
+    @Test("a clipboard set that times out after it landed is still put back")
+    func restoreAfterTimedOutSet() async throws {
+        let emulator = FakeEmulator(clipboard: "sentinel") { $0 == .setClipboard("日本") ? .grpcDeadlineExceeded(method: "setClipboard", seconds: 2) : nil }
+        let rig = try AndroidGrpcInputTests.rig(emulator: emulator, uiautomatorDump: Self.plainFocus)
+
+        await #expect(throws: AndroidError.self) { try await Self.session(rig).typeText("日本") }
+        #expect(rig.emulator.calls == [.getClipboard, .setClipboard("日本"), .setClipboard("sentinel")])
+    }
+
+    @Test("a cancelled type still puts the clipboard back, which a cancelled gRPC call would refuse")
+    func restoreAfterCancel() async throws {
+        let refused = AndroidError.grpcFailed(endpoint: "127.0.0.1:8556", method: "setClipboard", detail: "cancelled")
+        let emulator = FakeEmulator(clipboard: "sentinel") { call in
+            if call == .setClipboard("日本") { withUnsafeCurrentTask { $0?.cancel() } }
+            return call == .setClipboard("sentinel") && Task.isCancelled ? refused : nil
+        }
+        let rig = try AndroidGrpcInputTests.rig(emulator: emulator, uiautomatorDump: Self.plainFocus)
+        let session = try await Self.session(rig)
+
+        _ = await Task { try await session.typeText("日本") }.result
+        #expect(rig.emulator.clipboardNow == "sentinel")
+        #expect(rig.logs.warnings.isEmpty)
+    }
+
+    /// Types `日本` through a clipboard set that holds the paste open, and sends `number` while it does.
+    static func pasteUntil(_ number: Int32) async throws {
+        let emulator = FakeEmulator(clipboard: "sentinel") { call in
+            if call == .setClipboard("sentinel") { print("restored") }
+            fflush(stdout)
+            if call == .setClipboard("日本") {
+                DispatchQueue.global().asyncAfter(deadline: .now() + 0.1) { kill(getpid(), number) }
+                Thread.sleep(forTimeInterval: 10)
+            }
+            return nil
+        }
+        let rig = try AndroidGrpcInputTests.rig(emulator: emulator, uiautomatorDump: plainFocus)
+        // A dead process fails the expectation, where a hung one would stop the whole run.
+        DispatchQueue.global().asyncAfter(deadline: .now() + 20) { Darwin.exit(99) }
+        try await session(rig).typeText("日本")
+    }
+
+    @Test("Ctrl-C during a paste puts the clipboard back, then ends the process as the signal would")
+    func sigintRestores() async {
+        let result = await #expect(processExitsWith: .exitCode(130), observing: [\.standardOutputContent]) { @MainActor in
+            try await AndroidGrpcTextTests.pasteUntil(SIGINT)
+        }
+        let output = String(decoding: result?.standardOutputContent ?? [], as: UTF8.self)
+        #expect(output.contains("restored"))
+    }
+
+    @Test("SIGTERM during a paste puts the clipboard back too")
+    func sigtermRestores() async {
+        let result = await #expect(processExitsWith: .exitCode(143), observing: [\.standardOutputContent]) { @MainActor in
+            try await AndroidGrpcTextTests.pasteUntil(SIGTERM)
+        }
+        let output = String(decoding: result?.standardOutputContent ?? [], as: UTF8.self)
+        #expect(output.contains("restored"))
+    }
+
     @Test("a failed restore is a warning, not an error")
     func failedRestoreWarns() async throws {
         let failure = AndroidError.grpcDeadlineExceeded(method: "setClipboard", seconds: 2)
@@ -110,3 +169,4 @@ struct AndroidGrpcTextTests {
         #expect(AndroidInputSessionTests.scripts(server).filter { $0.hasPrefix("input") }.isEmpty)
     }
 }
+

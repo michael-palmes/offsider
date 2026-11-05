@@ -2,7 +2,7 @@ import Foundation
 import Testing
 
 /// Sign-in on the debug playground, where Expo's Tools button floats over every screen in a full-screen window of its own.
-@Suite("React Native debug login", .serialized, .enabled(if: isRNDebugE2EEnabled && RNPlatform.anyEnabled), RNDebugSession(), SavedUsersScope())
+@Suite("React Native debug login", .serialized, .enabled(if: isRNDebugE2EEnabled && RNPlatform.anyEnabled), RNDebugSession(), SavedUsersScope(), StylusHandwritingOff())
 struct ReactNativeDebugLoginTests {
     @Test("login signs in first time with the Tools button left on, as a fresh dev build has it", arguments: RNPlatform.enabled)
     func signsInUnderToolsButton(platform: RNPlatform) async throws {

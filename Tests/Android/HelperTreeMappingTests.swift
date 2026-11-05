@@ -74,7 +74,7 @@ struct HelperTreeMappingTests {
         let roots = HelperTreeMapping.roots(from: try Self.dump(Self.textInputWindows), scale: Self.scale, pid: 1).roots
         #expect(roots.map(\.role) == [.application, .keyboard])
         #expect(roots.map(\.label) == ["OffsiderPlaygroundRN", "Gboard"])
-        #expect(Self.flat([roots[1]]).last?.label == "More keyboard options")
+        #expect(Self.flat([roots[1]]).last?.label == KeyboardText.marker)
         #expect(Self.flat([roots[0]]).first { $0.id == "text-input-field" }?.role == .textField)
     }
 

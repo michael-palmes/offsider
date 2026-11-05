@@ -4,7 +4,7 @@ import ImageIO
 import OffsiderCore
 import Testing
 
-@Suite("React Native evidence", .serialized, .enabled(if: RNPlatform.anyEnabled))
+@Suite("React Native evidence", .serialized, .enabled(if: RNPlatform.anyEnabled), StylusHandwritingOff())
 struct ReactNativeEvidenceTests {
     struct Shot: Decodable {
         let masked: Int?

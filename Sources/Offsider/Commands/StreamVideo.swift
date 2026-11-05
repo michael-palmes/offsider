@@ -21,7 +21,8 @@ struct StreamVideo: AsyncParsableCommand {
         and takes no --mask-region. Video cannot be masked by the accessibility tree: --mask-secure, --mask-id, \
         --mask-label, --mask-label-contains, --mask-text and --mask-emails exit 1 with video_unmasked and send nothing, as does a stream \
         while the evidence run masks emails or ids. One tree read before the first frame refuses the same way when a password \
-        field is on screen or the tree cannot be read (OFFSIDER_MASK_SECURE=0 skips it outside a run); --unmasked streams anyway, \
+        field, keyboard text beside the keys or Android's copy preview is on screen or the tree cannot be read \
+        (OFFSIDER_MASK_SECURE=0 skips it outside a run); --unmasked streams anyway, \
         with a warning. A stop before the first frame ends it at once with nothing streamed (exit 1, video_failed); \
         bgra has no first-frame signal, so there it exits 0 with no frames. A simulator or emulator that stops answering for 30 s ends it \
         (exit 1, device_unresponsive), and a stop that a stalled reader or capture holds up ends it within 5 s (exit 1, video_failed).

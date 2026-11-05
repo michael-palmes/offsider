@@ -104,12 +104,14 @@ enum HelperTreeMapping {
     }
 
     /// The app window as `application`, its popups as `window`, then each keyboard as `keyboard`, all titled; bars and other apps' windows are left out.
+    /// Keyboard text beside the keys, and the copy preview when it is in front, are hidden before anything indexes them.
     static func roots(from dump: HelperDump, scale: Double, pid: Int32) -> (roots: [UINode], index: HelperTreeIndex) {
         guard let app = appWindow(in: dump), let appRoot = app.root else {
             return ([], HelperTreeIndex(pid: pid, generation: dump.generation, entries: []))
         }
+        let mappedApp = AndroidTreeMapping.node(from: rawNode(appRoot), scale: scale, rootRole: .application, rootLabel: app.title, windowLayer: app.layer)
         var trees: [(HelperNode, UINode)] = [
-            (appRoot, AndroidTreeMapping.node(from: rawNode(appRoot), scale: scale, rootRole: .application, rootLabel: app.title, windowLayer: app.layer)),
+            (appRoot, CopyPreview.isPreview(mappedApp) ? CopyPreview.hiding(mappedApp) : mappedApp),
         ]
         for popup in popups(over: app, in: dump) {
             guard let root = popup.root else { continue }
@@ -126,7 +128,7 @@ enum HelperTreeMapping {
         for keyboard in dump.windows where keyboard.type == "inputMethod" {
             guard let root = keyboard.root else { continue }
             let mapped = AndroidTreeMapping.node(from: rawNode(root), scale: scale, rootRole: .keyboard, rootLabel: keyboard.title, windowLayer: keyboard.layer)
-            trees.append((root, fittedToKeys(mapped)))
+            trees.append((root, KeyboardText.hiding(fittedToKeys(mapped))))
         }
         // A dialog sliding in reports the frame it starts from, below the display, so what it holds counts as off screen until it lands.
         if let display = AndroidDisplayGeometry(display: dump.display), scale > 0 {
@@ -139,6 +141,14 @@ enum HelperTreeMapping {
             index(helperRoot, mappedRoot, generation: dump.generation, into: &entries)
         }
         return (trees.map(\.1), HelperTreeIndex(pid: pid, generation: dump.generation, entries: entries))
+    }
+
+    /// True when a window's views are the copy preview, read from the dump without mapping it.
+    static func isCopyPreview(_ root: HelperNode) -> Bool {
+        func holdsID(_ node: HelperNode) -> Bool {
+            node.resourceId?.hasPrefix(CopyPreview.idPrefix) == true || node.children.contains(where: holdsID)
+        }
+        return root.package == CopyPreview.package && holdsID(root)
     }
 
     /// A floating keyboard's window and views span the screen around its keys, so each keyboard view is framed by what it holds.

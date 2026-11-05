@@ -115,15 +115,19 @@ struct TreeGoldenCaptureTests {
     }
 
     /// Refuses a keyboard holding anything but keys, such as a clipboard chip, a suggestion or other text, so a person's copied text never reaches a golden; the message never repeats it.
+    /// It reads the device's own text in the raw capture, which the golden keeps, as the mapped tree hides keyboard text.
     static func requireOnlyKeys(_ raw: Any, screen: String) throws {
-        let tree = try TreeGoldens.tree(from: try RawTreeCapture(jsonData: try JSONSerialization.data(withJSONObject: raw)))
-        let strays = tree.roots.filter { $0.role == .keyboard }.flatMap { $0.flattened() }.filter { node in
-            if node.value?.isEmpty == false { return true }
-            guard let label = node.label, !label.isEmpty else { return false }
-            return label.count > 1 && !keyNames.contains(label)
+        guard let windows = ((raw as? [String: Any])?["source"] as? [String: Any])?["windows"] as? [[String: Any]] else {
+            throw DescribeUIError(description: "\(screen): the capture lists no windows, so its keyboard could not be checked and nothing was written.")
         }
-        guard strays.isEmpty else {
-            throw DescribeUIError(description: "\(screen): the keyboard holds \(strays.count) element\(strays.count == 1 ? "" : "s") that \(strays.count == 1 ? "is" : "are") not a key, such as a clipboard chip or a suggestion, so nothing was written. Clear the emulator's clipboard and try again.")
+        func strays(in node: [String: Any]) -> Int {
+            let texts = ["text", "contentDescription", "hint", "stateDescription"].compactMap { (node[$0] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) }
+            let stray = texts.contains { $0.count > 1 && !keyNames.contains($0) } ? 1 : 0
+            return stray + ((node["children"] as? [[String: Any]]) ?? []).reduce(0) { $0 + strays(in: $1) }
+        }
+        let count = windows.filter { $0["type"] as? String == "inputMethod" }.compactMap { $0["root"] as? [String: Any] }.reduce(0) { $0 + strays(in: $1) }
+        guard count == 0 else {
+            throw DescribeUIError(description: "\(screen): the keyboard holds \(count) element\(count == 1 ? "" : "s") that \(count == 1 ? "is" : "are") not a key, such as a clipboard chip or a suggestion, so nothing was written. Clear the emulator's clipboard and try again.")
         }
     }
 

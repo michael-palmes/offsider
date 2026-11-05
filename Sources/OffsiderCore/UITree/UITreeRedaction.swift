@@ -1,22 +1,28 @@
 import Foundation
 
-/// How many values one tree's output hid: text the value patterns or masks replaced, and password fields shown as plain text.
+/// How many values one tree's output hid: masked or patterned text, revealed password fields, keyboard text and copy previews.
 public struct UITreeRedactionCounts: Equatable, Sendable {
     public var redacted: Int
     public var revealed: Int
+    public var keyboard: Int
+    public var copyPreview: Int
 
-    public init(redacted: Int = 0, revealed: Int = 0) {
+    public init(redacted: Int = 0, revealed: Int = 0, keyboard: Int = 0, copyPreview: Int = 0) {
         self.redacted = redacted
         self.revealed = revealed
+        self.keyboard = keyboard
+        self.copyPreview = copyPreview
     }
 
-    public var isEmpty: Bool { redacted == 0 && revealed == 0 }
+    public var isEmpty: Bool { redacted == 0 && revealed == 0 && keyboard == 0 && copyPreview == 0 }
 
-    /// `# redacted: 2 values, 1 revealed password field`.
+    /// `# redacted: 2 values, 1 revealed password field, 1 keyboard element, 1 copy preview`.
     public var footer: String {
         var parts: [String] = []
         if redacted > 0 { parts.append("\(redacted) value\(redacted == 1 ? "" : "s")") }
         if revealed > 0 { parts.append("\(revealed) revealed password field\(revealed == 1 ? "" : "s")") }
+        if keyboard > 0 { parts.append("\(keyboard) keyboard element\(keyboard == 1 ? "" : "s")") }
+        if copyPreview > 0 { parts.append("\(copyPreview) copy preview\(copyPreview == 1 ? "" : "s")") }
         return "# redacted: " + parts.joined(separator: ", ")
     }
 }
@@ -289,6 +295,8 @@ extension UITree {
             Self.redact(&copy.roots[index], mask: mask, scope: scope, inherited: false, hiddenBelow: &hiddenBelow, counts: &counts)
         }
         if scope == .output {
+            counts.keyboard = KeyboardText.hiddenCount(in: copy.roots)
+            counts.copyPreview = CopyPreview.shownCount(in: copy.roots)
             copy.redaction = counts
         }
         return copy

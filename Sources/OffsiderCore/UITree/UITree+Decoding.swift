@@ -25,7 +25,10 @@ extension UITree {
         )
         decodedContext = (object["context"] as? [String: Any]).map(UITreeContext.init(jsonObject:))
         if let redacted = object["redacted"] as? NSNumber, let revealed = object["revealed"] as? NSNumber {
-            redaction = UITreeRedactionCounts(redacted: redacted.intValue, revealed: revealed.intValue)
+            redaction = UITreeRedactionCounts(
+                redacted: redacted.intValue, revealed: revealed.intValue,
+                keyboard: (object["keyboardElements"] as? NSNumber)?.intValue ?? 0, copyPreview: (object["copyPreviews"] as? NSNumber)?.intValue ?? 0
+            )
         }
     }
 }

@@ -19,7 +19,9 @@ struct Screenshot: AsyncParsableCommand {
         is captured as it is, often dark. \
         Password fields are masked by default: the accessibility tree is read first and every password field is painted \
         opaque black before the image is written or compared; when a password field cannot be located, the image is \
-        withheld and no file is written. --no-mask-secure (or OFFSIDER_MASK_SECURE=0) skips the tree read and the mask, \
+        withheld and no file is written. On Android the same mask paints keyboard text beside the keys (suggestions, \
+        a clipboard chip, clipboard history) and Android's copy preview, counted in maskedBy as keyboard and copyPreview. \
+        --no-mask-secure (or OFFSIDER_MASK_SECURE=0) skips the tree read and the mask, \
         except during an evidence run that masks them. --mask-id, --mask-label, --mask-label-contains, --mask-text and --mask-emails paint the elements \
         they match the same way, even on a screen beneath a page (counted in maskedBeneath); --mask-region paints a rectangle \
         in points before any --region crop and reads no tree. A selector that matches nothing is named in maskUnmatched \
@@ -29,7 +31,7 @@ struct Screenshot: AsyncParsableCommand {
         page found nothing is skipped. Use it only when the page on top is opaque: a translucent or animating page shows what is \
         beneath, so check the image. \
         Masks cover what the tree describes: web views, canvases, images and text drawn after the tree read can \
-        still show. Video is never masked: record-video and stream-video refuse while a password field is on screen. \
+        still show. Video is never masked: record-video and stream-video refuse while a password field or keyboard text is on screen. \
         --widget captures only the app's own home screen widget on Android, cropped to the bounds the device reports and masked \
         like any capture; the launcher itself is never captured, and nothing is written unless the widget holds still and \
         nothing covers it. On an allowed phone a capture still works while the allowed app holds focus beneath a system window \
@@ -73,7 +75,7 @@ struct Screenshot: AsyncParsableCommand {
     @Option(help: ArgumentHelp("With --compare, the outcome that passes: changed (the default) or unchanged. Exit 5 when the capture does not match it.", valueName: "changed|unchanged"))
     var expect: ScreenCompare.Outcome?
 
-    @Flag(name: .customLong("mask-secure"), inversion: .prefixedNo, help: "Paint password fields black before writing the image, and withhold it when one cannot be located (the default; OFFSIDER_MASK_SECURE=0 turns it off).")
+    @Flag(name: .customLong("mask-secure"), inversion: .prefixedNo, help: "Paint password fields, and on Android keyboard text beside the keys and the copy preview, black before writing the image, and withhold it when one cannot be located (the default; OFFSIDER_MASK_SECURE=0 turns it off).")
     var maskSecure: Bool?
 
     @Option(name: .customLong("mask-id"), parsing: .upToNextOption, help: ArgumentHelp("Paint every element with this id black. Repeatable.", valueName: "id"))

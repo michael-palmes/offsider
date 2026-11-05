@@ -88,7 +88,7 @@ struct Batch: AsyncParsableCommand {
     @Option(name: .customLong("poll-interval"), help: "Seconds between accessibility tree polls when --wait-timeout is active.")
     var pollInterval: Double = 0.25
 
-    @Flag(name: .customLong("mask-secure"), inversion: .prefixedNo, help: "Whether screenshot steps paint password fields black, reusing the cached tree when it is fresh (the default; OFFSIDER_MASK_SECURE=0 turns it off). A step's own flag wins.")
+    @Flag(name: .customLong("mask-secure"), inversion: .prefixedNo, help: "Whether screenshot steps paint password fields, and on Android keyboard text beside the keys and the copy preview, black, reusing the cached tree when it is fresh (the default; OFFSIDER_MASK_SECURE=0 turns it off). A step's own flag wins.")
     var maskSecure: Bool?
 
     @Flag(name: .customLong("no-settle"), help: "Steps act at once: tap steps do not wait out a transition an earlier input may have started, and read steps do not give an input 100 ms to draw.")

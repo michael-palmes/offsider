@@ -38,6 +38,28 @@ struct RNDebugSession: SuiteTrait, TestScoping {
     }
 }
 
+/// Stylus handwriting off around a suite that types, as Gboard takes an emulator's taps for a stylus and its tutorial takes the text; put back as found.
+struct StylusHandwritingOff: SuiteTrait, TestScoping {
+    static let setting = "stylus_handwriting_enabled"
+
+    func provideScope(for test: Test, testCase: Test.Case?, performing function: @Sendable () async throws -> Void) async throws {
+        guard isAndroidE2EEnabled else {
+            try await function()
+            return
+        }
+        let found = try await AndroidE2E.shell("settings get secure \(Self.setting)").trimmingCharacters(in: .whitespacesAndNewlines)
+        let restore = found == "null" ? "settings delete secure \(Self.setting)" : "settings put secure \(Self.setting) \(AndroidE2E.quote(found))"
+        do {
+            try await AndroidE2E.shell("settings put secure \(Self.setting) 0")
+            try await function()
+        } catch {
+            _ = try? await AndroidE2E.shell(restore)
+            throw error
+        }
+        try await AndroidE2E.shell(restore)
+    }
+}
+
 enum RNPlatform: String, Sendable, CustomTestStringConvertible {
     case ios
     case android

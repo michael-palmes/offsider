@@ -1,0 +1,438 @@
+{
+ "id": 2,
+ "ok": true,
+ "generation": 1,
+ "idle": true,
+ "display": {
+  "displayId": 0,
+  "source": "DisplayManagerGlobal",
+  "logicalWidthPx": 1080,
+  "logicalHeightPx": 2340,
+  "rotation": 0,
+  "physicalWidthPx": 1080,
+  "physicalHeightPx": 2340,
+  "densityDpi": 450,
+  "densityStableDpi": 450
+ },
+ "windows": [
+  {
+   "id": 12,
+   "type": "system",
+   "layer": 3,
+   "displayId": 0,
+   "bounds": [
+    0,
+    0,
+    1080,
+    95
+   ],
+   "active": false,
+   "focused": false
+  },
+  {
+   "id": 11,
+   "type": "inputMethod",
+   "layer": 2,
+   "title": "Samsung Keyboard",
+   "displayId": 0,
+   "bounds": [
+    0,
+    1360,
+    1080,
+    2340
+   ],
+   "active": false,
+   "focused": false,
+   "root": {
+    "i": 23,
+    "class": "android.widget.FrameLayout",
+    "package": "com.samsung.android.honeyboard",
+    "bounds": [
+     0,
+     1360,
+     1080,
+     2205
+    ],
+    "children": [
+     {
+      "i": 22,
+      "class": "android.widget.LinearLayout",
+      "package": "com.samsung.android.honeyboard",
+      "resourceId": "com.samsung.android.honeyboard:id/layout_base_frame_wrapper",
+      "bounds": [
+       0,
+       1360,
+       1080,
+       2205
+      ],
+      "children": [
+       {
+        "i": 6,
+        "class": "android.view.ViewGroup",
+        "package": "com.samsung.android.honeyboard",
+        "resourceId": "com.samsung.android.honeyboard:id/smart_candidate_container",
+        "bounds": [
+         43,
+         1360,
+         806,
+         1427
+        ],
+        "clickable": true,
+        "focusable": true,
+        "children": [
+         {
+          "i": 0,
+          "class": "android.widget.ImageView",
+          "package": "com.samsung.android.honeyboard",
+          "resourceId": "com.samsung.android.honeyboard:id/smart_candidate_close_button",
+          "contentDescription": "Close",
+          "bounds": [
+           43,
+           1360,
+           110,
+           1427
+          ],
+          "clickable": true,
+          "focusable": true
+         },
+         {
+          "i": 5,
+          "class": "androidx.recyclerview.widget.RecyclerView",
+          "package": "com.samsung.android.honeyboard",
+          "resourceId": "com.samsung.android.honeyboard:id/smart_candidate_holder",
+          "bounds": [
+           339,
+           1364,
+           806,
+           1423
+          ],
+          "children": [
+           {
+            "i": 4,
+            "class": "android.widget.FrameLayout",
+            "package": "com.samsung.android.honeyboard",
+            "resourceId": "com.samsung.android.honeyboard:id/smart_candidate_frame",
+            "bounds": [
+             339,
+             1364,
+             806,
+             1423
+            ],
+            "children": [
+             {
+              "i": 3,
+              "class": "android.widget.LinearLayout",
+              "package": "com.samsung.android.honeyboard",
+              "resourceId": "com.samsung.android.honeyboard:id/smart_candidate_view",
+              "contentDescription": "Paste from clipboard",
+              "bounds": [
+               339,
+               1364,
+               806,
+               1423
+              ],
+              "clickable": true,
+              "focusable": true,
+              "children": [
+               {
+                "i": 1,
+                "class": "android.widget.ImageView",
+                "package": "com.samsung.android.honeyboard",
+                "resourceId": "com.samsung.android.honeyboard:id/smart_candidate_image",
+                "bounds": [
+                 339,
+                 1364,
+                 398,
+                 1423
+                ]
+               },
+               {
+                "i": 2,
+                "class": "android.widget.TextView",
+                "package": "com.samsung.android.honeyboard",
+                "resourceId": "com.samsung.android.honeyboard:id/smart_candidate_text",
+                "contentDescription": "synthetic-clip-0001",
+                "text": "synthetic-clip-0001",
+                "bounds": [
+                 398,
+                 1364,
+                 806,
+                 1423
+                ]
+               }
+              ]
+             }
+            ]
+           }
+          ]
+         }
+        ]
+       },
+       {
+        "i": 21,
+        "class": "android.view.ViewGroup",
+        "package": "com.samsung.android.honeyboard",
+        "bounds": [
+         0,
+         1455,
+         1080,
+         2205
+        ],
+        "children": [
+         {
+          "i": 8,
+          "class": "android.view.ViewGroup",
+          "package": "com.samsung.android.honeyboard",
+          "contentDescription": "1",
+          "bounds": [
+           23,
+           1477,
+           112,
+           1573
+          ],
+          "clickable": true,
+          "focusable": true,
+          "children": [
+           {
+            "i": 7,
+            "class": "android.widget.TextView",
+            "package": "com.samsung.android.honeyboard",
+            "text": "1",
+            "bounds": [
+             23,
+             1477,
+             112,
+             1573
+            ]
+           }
+          ]
+         },
+         {
+          "i": 10,
+          "class": "android.view.ViewGroup",
+          "package": "com.samsung.android.honeyboard",
+          "contentDescription": "q",
+          "bounds": [
+           23,
+           1607,
+           112,
+           1723
+          ],
+          "clickable": true,
+          "focusable": true,
+          "children": [
+           {
+            "i": 9,
+            "class": "android.widget.TextView",
+            "package": "com.samsung.android.honeyboard",
+            "text": "q",
+            "bounds": [
+             23,
+             1607,
+             112,
+             1723
+            ]
+           }
+          ]
+         },
+         {
+          "i": 12,
+          "class": "android.view.ViewGroup",
+          "package": "com.samsung.android.honeyboard",
+          "contentDescription": "w",
+          "bounds": [
+           128,
+           1607,
+           217,
+           1723
+          ],
+          "clickable": true,
+          "focusable": true,
+          "children": [
+           {
+            "i": 11,
+            "class": "android.widget.TextView",
+            "package": "com.samsung.android.honeyboard",
+            "text": "w",
+            "bounds": [
+             128,
+             1607,
+             217,
+             1723
+            ]
+           }
+          ]
+         },
+         {
+          "i": 14,
+          "class": "android.view.ViewGroup",
+          "package": "com.samsung.android.honeyboard",
+          "contentDescription": "Shift off",
+          "bounds": [
+           23,
+           1907,
+           148,
+           2023
+          ],
+          "clickable": true,
+          "focusable": true,
+          "children": [
+           {
+            "i": 13,
+            "class": "android.widget.ImageView",
+            "package": "com.samsung.android.honeyboard",
+            "bounds": [
+             23,
+             1907,
+             148,
+             2023
+            ]
+           }
+          ]
+         },
+         {
+          "i": 16,
+          "class": "android.view.ViewGroup",
+          "package": "com.samsung.android.honeyboard",
+          "contentDescription": "Backspace",
+          "bounds": [
+           932,
+           1907,
+           1057,
+           2023
+          ],
+          "clickable": true,
+          "focusable": true,
+          "children": [
+           {
+            "i": 15,
+            "class": "android.widget.ImageView",
+            "package": "com.samsung.android.honeyboard",
+            "bounds": [
+             932,
+             1907,
+             1057,
+             2023
+            ]
+           }
+          ]
+         },
+         {
+          "i": 18,
+          "class": "android.view.ViewGroup",
+          "package": "com.samsung.android.honeyboard",
+          "contentDescription": "Space bar",
+          "bounds": [
+           286,
+           2057,
+           794,
+           2173
+          ],
+          "clickable": true,
+          "focusable": true,
+          "children": [
+           {
+            "i": 17,
+            "class": "android.widget.TextView",
+            "package": "com.samsung.android.honeyboard",
+            "text": "English (UK)",
+            "bounds": [
+             286,
+             2057,
+             794,
+             2173
+            ]
+           }
+          ]
+         },
+         {
+          "i": 20,
+          "class": "android.view.ViewGroup",
+          "package": "com.samsung.android.honeyboard",
+          "contentDescription": "Enter",
+          "bounds": [
+           916,
+           2057,
+           1057,
+           2173
+          ],
+          "clickable": true,
+          "focusable": true,
+          "children": [
+           {
+            "i": 19,
+            "class": "android.widget.TextView",
+            "package": "com.samsung.android.honeyboard",
+            "text": "Done",
+            "bounds": [
+             916,
+             2057,
+             1057,
+             2173
+            ]
+           }
+          ]
+         }
+        ]
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "id": 10,
+   "type": "application",
+   "layer": 1,
+   "title": "OffsiderPlaygroundRN",
+   "displayId": 0,
+   "bounds": [
+    0,
+    0,
+    1080,
+    2340
+   ],
+   "active": true,
+   "focused": true,
+   "root": {
+    "i": 25,
+    "class": "android.widget.FrameLayout",
+    "package": "com.mpalmes.offsider.playground.rn",
+    "bounds": [
+     0,
+     0,
+     1080,
+     2340
+    ],
+    "children": [
+     {
+      "i": 24,
+      "class": "android.widget.EditText",
+      "package": "com.mpalmes.offsider.playground.rn",
+      "resourceId": "text-input-short-field",
+      "contentDescription": "Two characters",
+      "bounds": [
+       65,
+       940,
+       1015,
+       1068
+      ],
+      "clickable": true,
+      "focusable": true,
+      "focused": true,
+      "editable": true
+     }
+    ]
+   }
+  }
+ ],
+ "truncated": false,
+ "source": "getWindows",
+ "stats": {
+  "windows": 3
+ },
+ "timings": {
+  "totalMs": 20
+ },
+ "eventSeq": 1
+}
