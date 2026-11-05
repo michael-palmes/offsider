@@ -1,4 +1,5 @@
 import Foundation
+import OffsiderCore
 import Testing
 
 @Suite("Android doctor and timings", .serialized, .enabled(if: isAndroidE2EEnabled))
@@ -23,9 +24,8 @@ struct AndroidDoctorE2ETests {
         #expect(device["id"] as? String == serial)
         #expect(device["platform"] as? String == "android")
         let perDevice = checks.filter { ($0["id"] as? String)?.hasPrefix("android-device.") == true }
-        #expect(perDevice.count == 12)
-        #expect(perDevice.contains { $0["id"] as? String == "android-device.memory" })
-        #expect(perDevice.contains { $0["id"] as? String == "android-device.lock" })
+        let every = DoctorCheckID.allCases.map(\.rawValue).filter { $0.hasPrefix("android-device.") }
+        #expect(perDevice.compactMap { $0["id"] as? String }.sorted() == every.sorted())
         let phoneOnly: Set = ["android-device.adb-expiry", "android-device.system-updates"]
         for check in perDevice {
             let expected = phoneOnly.contains(check["id"] as? String ?? "") ? "skip" : "pass"
@@ -45,9 +45,10 @@ struct AndroidDoctorE2ETests {
         #expect(detail.contains("token auth") || detail.contains("jwt auth"))
     }
 
+    // The second dump reads every view, to fill in what the app hides from accessibility.
     @Test("describe-ui with OFFSIDER_TIMINGS=1 prints the helper phases in the iOS line format, warm or per command", arguments: [
-        ("auto", ["helper-attach", "helper-dump", "tree-map", "helper-close"]),
-        ("off", ["helper-launch", "helper-hello", "helper-dump", "tree-map", "helper-close"]),
+        ("auto", ["helper-attach", "helper-dump", "tree-map", "helper-dump", "tree-map", "helper-close"]),
+        ("off", ["helper-launch", "helper-hello", "helper-dump", "tree-map", "helper-dump", "tree-map", "helper-close"]),
     ])
     func describeTimings(session: String, expected: [String]) async throws {
         try await AndroidE2E.open("tap-test", waitingFor: "tap-test-area")

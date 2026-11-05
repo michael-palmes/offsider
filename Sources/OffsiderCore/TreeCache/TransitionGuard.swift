@@ -24,6 +24,9 @@ public enum TransitionGuard {
     /// How long a target missing from the settled read gets before one last read.
     public static let goneGap: Duration = .milliseconds(150)
     public static let frameTolerance = 1.0
+    /// After the recheck, how long apart reads go while the target still moves, and for how long in all.
+    public static let movingGap: Duration = .milliseconds(100)
+    public static let movingLimit: Duration = .milliseconds(1500)
 
     /// A clock that stepped back counts as no time passed; a keyboard that came or went since the cached read voids the same frame, as the layout may not have moved yet.
     public static func decide(target: UINode, record: TreeCacheRecord?, now: Date, keyboardShowing: @autoclosure () -> Bool = false) -> TransitionDecision {

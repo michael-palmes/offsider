@@ -31,6 +31,7 @@ A name close to an AVD's exits 7 `avd_not_found` naming the closest, with `Try: 
 - It refuses a device another session leases (exit 8 `device_leased`) or a command holds (exit 8 `device_busy`, `--wait-lock` waits), naming the holder; `--label` or `OFFSIDER_LEASE` says a lease is yours.
 - It then stops the device's sessions, as `session stop` does, and stops and saves a recording on it. A recording that will not stop keeps the device running.
 - It waits up to `--timeout` (default 120 s) until the device has gone. Past that it exits 1 `shutdown_timed_out` with the fix in one line. A device already off exits 0 with `alreadyOff`.
+- An emulator whose console never answers the stop has frozen, so it ends that emulator's own process, TERM and then KILL, once its discovery file still names the same AVD, pid and serial. An Android read such an emulator never answers names the same fix: `offsider shutdown <serial> && offsider boot <AVD>`.
 
 An emulator stops through `adb emu kill`, which connects to the serial's console port on loopback and signs in with `~/.emulator_console_auth_token`. adb sends that token to whatever holds the port, so Offsider first matches the port to a live emulator's discovery file, and checks that the file and the device name one AVD, as serials change. Without that match it sends nothing and exits 7. A serial is reported as the AVD it serves now.
 

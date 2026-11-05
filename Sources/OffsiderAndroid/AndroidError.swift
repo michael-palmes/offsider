@@ -163,6 +163,14 @@ public struct AndroidError: LocalizedError, CustomStringConvertible, Equatable, 
         return error
     }
 
+    /// A read an emulator never answered: it is more often frozen than slow, and only starting it again brings it back.
+    func frozenEmulator(serial: String, avd: String) -> AndroidError {
+        let restart = "offsider shutdown \(serial) && offsider boot \(avd)"
+        var error = AndroidError(kind, message + " \(avd) may be frozen; start it again: `\(restart)`.", hint: restart)
+        error.refusedByAdb = refusedByAdb
+        return error
+    }
+
     /// This error, as adb's own refusal of the service.
     var asAdbRefusal: AndroidError {
         var error = self

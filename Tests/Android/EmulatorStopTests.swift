@@ -278,6 +278,56 @@ struct EmulatorStopTests {
         #expect(Self.kills(processes).count == 1)
     }
 
+    @Test("a frozen emulator, whose console never answers the kill, is ended by its own process: TERM, and KILL only when TERM is not enough", arguments: [
+        ([SIGTERM], [SIGTERM]), ([SIGKILL], [SIGTERM, SIGKILL]),
+    ])
+    func frozenConsole(endsOn: [Int32], sent: [Int32]) async throws {
+        let home = try Self.home()
+        try Self.writeDiscovery(in: home)
+        let emulator = Emulator()
+        let processes = RecordingProcessRunner(failure: { call in
+            call.arguments.contains("kill") ? ProcessCaptureTimeoutError(command: "adb emu kill", timeout: EmulatorStopper.killTimeout) : nil
+        })
+        var host = AndroidTestHost.make(home: home, adb: Self.adb(rows: Self.row), processes: processes, liveProcesses: [Self.pid])
+        host.isProcessAlive = { $0 == Self.pid && emulator.alive }
+        host.processStartTime = { $0 == Self.pid ? emulator.started : nil }
+        let signals = Signals()
+        host.signalProcess = { pid, signal in
+            signals.append(pid, signal)
+            if endsOn.contains(signal) { emulator.end() }
+            return true
+        }
+        let stopper = Self.stopper(host)
+        let target = try Self.running(try await stopper.find(Self.avd))
+
+        #expect(try await stopper.stop(target, timeout: .seconds(120)))
+        #expect(signals.sent == sent.map { (Self.pid, $0) }.map(Signals.Sent.init))
+    }
+
+    @Test("a console that answers is never followed by a signal, even when the emulator then outlasts the limit")
+    func answeredConsoleSendsNoSignal() async throws {
+        let home = try Self.home()
+        try Self.writeDiscovery(in: home)
+        var (host, _) = Self.host(home: home, adb: Self.adb(rows: Self.row), respond: { _ in
+            ProcessCaptureResult(status: 0, stdout: "OK: killing emulator, bye bye\n", stderr: "")
+        })
+        let signals = Signals()
+        host.signalProcess = { signals.append($0, $1); return true }
+        let stopper = Self.stopper(host)
+        let target = try Self.running(try await stopper.find(Self.avd))
+
+        await #expect(throws: AndroidError.self) { try await stopper.stop(target, timeout: .seconds(5)) }
+        #expect(signals.sent.isEmpty)
+    }
+
+    final class Signals: @unchecked Sendable {
+        struct Sent: Equatable { let pid: Int32; let signal: Int32; init(_ pair: (Int32, Int32)) { (pid, signal) = pair } }
+        private let lock = NSLock()
+        private var list: [Sent] = []
+        var sent: [Sent] { lock.withLock { list } }
+        func append(_ pid: Int32, _ signal: Int32) { lock.withLock { list.append(Sent((pid, signal))) } }
+    }
+
     @Test("a pid reused by another emulator reads as this one gone")
     func reusedPid() async throws {
         let home = try Self.home()

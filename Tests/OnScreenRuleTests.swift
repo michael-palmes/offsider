@@ -484,9 +484,11 @@ struct OnScreenRuleTests {
         var (tree, _, row) = Self.listsOverLists()
         // A line of the group shows below the row, so only the point at its middle can tell.
         let shown = FakeUI.node(.text, id: "lower-end", label: "Lower End", frame: FakeUI.frame(0, 820, 402, 40), pid: 42)
+        let middle = FakeUI.node(.button, id: "row-9", label: "Row Nine", frame: FakeUI.frame(12, 463, 378, 48), pid: 42)
         tree.roots[0].children[1].children[0].children.append(shown)
+        tree.roots[0].children[0].children[0].children.append(middle)
         let backend = HitTestingFakeBackend(trees: [tree])
-        backend.hits = { point in point.y > 800 ? shown : row }
+        backend.hits = { point in point.y > 800 ? shown : point.y > 400 ? middle : row }
         let judged = await Verifier.judged(tree, id: "lower-list", backend: backend, device: Self.ios)
         #expect(Verifier.placement(of: "lower-list", in: judged) != .front)
         #expect(Verifier.placement(of: "lower-end", in: judged) == .front)

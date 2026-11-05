@@ -231,6 +231,30 @@ struct TreeGapFillTests {
         #expect(Self.ids(filled) == ["row", "tab"])
     }
 
+    @Test("a filled tree leaves out the views the plain read left out around what it listed, such as the window's content frame, so no framework id shows")
+    func androidFillAddsNoWrappers() {
+        let row = Self.android(.button, id: "row", label: "Saved Item 1", frame: FakeUI.frame(0, 200, 390, 56))
+        let pane = Self.android(.group, frame: FakeUI.frame(0, 100, 390, 695), order: 1, children: [row])
+        let content = Self.android(.group, id: "android:id/content", frame: FakeUI.frame(0, 0, 390, 844), children: [pane, Self.androidTab])
+        let filled = TreeGapFill.filling(Self.androidTree([Self.androidTab]), from: Self.androidTree([content]))
+
+        #expect(filled.filledFromGaps == 1)
+        #expect(Self.ids(filled) == ["row", "tab"])
+        #expect(filled.roots[0].children.map(\.frame) == [pane.frame, Self.androidTab.frame])
+    }
+
+    @Test("a wrapper beside a hidden page keeps its place, so its listed row stays beneath the page by drawing order")
+    func androidWrapperBesidePageStays() {
+        let row = Self.android(.button, id: "row", label: "Listed Row", frame: FakeUI.frame(0, 200, 390, 56), order: 5)
+        let list = Self.android(.group, frame: FakeUI.frame(0, 100, 390, 695), order: 1, children: [row])
+        let action = Self.android(.button, id: "page-action", label: "Page Action", frame: FakeUI.frame(0, 300, 390, 44), order: 1)
+        let page = Self.android(.group, frame: FakeUI.frame(0, 100, 390, 695), order: 2, children: [action])
+        let filled = TreeGapFill.filling(Self.androidTree([row, Self.androidTab]), from: Self.androidTree([list, page, Self.androidTab]))
+
+        #expect(filled.filledFromGaps == 1)
+        #expect(filled.roots[0].children.map(\.frame) == [list.frame, page.frame, Self.androidTab.frame])
+    }
+
     @Test("a screen with nothing hidden comes back exactly as the plain read gave it")
     func androidNothingHidden() {
         let plain = Self.androidTree([Self.androidTab])

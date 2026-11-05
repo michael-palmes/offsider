@@ -38,7 +38,7 @@ extension AndroidBackend: LogReading {
             }
             return
         }
-        let opened = try await client.openService("shell,v2,raw:" + script, on: serial, timeout: .seconds(10))
+        let opened = try await client.openService("shell,v2,raw:" + script, on: serial, timeout: .seconds(10), label: "logcat")
         let shell = ShellStream(opened, serial: serial, label: "logcat")
         do {
             try await Self.follow(shell, until: duration.map { ContinuousClock.now + $0 }, serial: serial, deliver: deliver, quiet: finish)

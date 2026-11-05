@@ -817,10 +817,18 @@ run_rn_ios_tests() {
     run_rn_suites
 }
 
-# Whether scripts/e2e-devices-core.sh knows the device: "true", "false", or nothing for a name it does not manage.
-e2e_device_exists() {
+# Stops the run when scripts/e2e-devices-core.sh finds the device missing or unable to boot, naming the fix; a name it does not manage passes.
+require_e2e_device() {
+    local name="$1" kind="$2" row exists problem fix
     command -v jq >/dev/null 2>&1 || return 0
-    scripts/e2e-devices-core.sh status 2>/dev/null | jq -r --arg name "$1" '.devices[] | select(.name == $name) | .exists' || true
+    row="$(scripts/e2e-devices-core.sh status 2>/dev/null | jq -r --arg name "$name" \
+        '.devices[] | select(.name == $name) | [(.exists | tostring), (.problem // ""), (.fix // "")] | join("\u001f")')" || true
+    IFS=$'\037' read -r exists problem fix <<<"$row"
+    if [[ "$exists" == false ]]; then
+        die "There is no $name $kind yet." "scripts/e2e-devices.sh create"
+    elif [[ "$exists" == true && -n "$problem" ]]; then
+        die "$name cannot boot: $problem." "$fix"
+    fi
 }
 
 # Boots the E2E AVD through offsider boot when OFFSIDER_ANDROID_DEVICE names it; a serial is left alone, and the suites still check the AVD name.
@@ -831,9 +839,7 @@ ensure_avd_running() {
         Offsider_E2E|Offsider_E2E_Fold|Offsider_E2E_API28) ;;
         *) die "$avd is not an Offsider E2E AVD, so it is not booted." "OFFSIDER_ANDROID_E2E_AVD=Offsider_E2E $0 --android" ;;
     esac
-    if [[ "$(e2e_device_exists "$avd")" == false ]]; then
-        die "There is no $avd AVD yet." "scripts/e2e-devices.sh create"
-    fi
+    require_e2e_device "$avd" AVD
     [[ -x "$OFFSIDER_BIN_PATH" ]] || die "Offsider is not built at $OFFSIDER_BIN_PATH." "swift build"
     # offsider boot shows its own progress on stderr, so no spinner here.
     log "Starting $avd"
@@ -1044,6 +1050,7 @@ select_foldable_simulator() {
     if [[ -n "$SIMULATOR_UDID" ]]; then
         return
     fi
+    require_e2e_device "$FOLDABLE_SIMULATOR_NAME" simulator
     SIMULATOR_UDID="$(xcrun simctl list devices available -j | jq -r --arg name "$FOLDABLE_SIMULATOR_NAME" \
         '[.devices[][] | select(.name == $name)] | .[0].udid // empty')"
     if [[ -z "$SIMULATOR_UDID" ]]; then

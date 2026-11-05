@@ -85,6 +85,18 @@ struct PanelGeometryTests {
         #expect(point.x == 195 && point.y > 661.7 && point.y < 678)
         #expect(UITree.clippingApplicationFrame(in: clipped, screenWidth: 466, screenHeight: 678) == clipped)
     }
+
+    @Test("an app window still sliding in from below the display, as an Android dialog reports it, holds nothing on screen, so a selector waits rather than tapping past the edge")
+    func windowBelowDisplayIsOffScreen() {
+        let done = FakeUI.node(.button, id: "done", label: "Done", frame: FakeUI.frame(780, 945, 72, 44))
+        let roots = [FakeUI.node(.application, label: "Playground", frame: FakeUI.frame(0, 883, 852, 883), children: [done])]
+
+        let clipped = UITree.clippingApplicationFrame(in: roots, screenWidth: 852, screenHeight: 883)
+
+        #expect(clipped[0].frame == FakeUI.frame(0, 0, 852, 883))
+        #expect(throws: ElementResolutionError.self) { try AccessibilityTargetResolver.resolveTapPoint(roots: clipped, query: .id("done")) }
+        #expect(throws: Never.self) { try AccessibilityTargetResolver.resolveTapPoint(roots: roots, query: .id("done")) }
+    }
 }
 
 @Suite("Hinge control")
