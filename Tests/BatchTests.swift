@@ -201,8 +201,10 @@ struct BatchTests {
     func loginFlowWithLoadingTransition() async throws {
         try await TestHelpers.launchPlaygroundApp(to: "batch-login-flow")
 
+        try await Self.reachPassword()
+        try await Self.typeSecret("supersecret")
         try await TestHelpers.runOffsiderCommand(
-            "batch --ax-cache perStep --wait-timeout 6 --poll-interval 0.1 --step \"type 'cam@example.com'\" --step \"tap --label Continue\" --step \"type 'supersecret'\" --step \"tap --label 'Sign In'\" --step \"tap --label 'Open Settings'\" --step \"tap --label 'Toggle Preference'\"",
+            "batch --ax-cache perStep --wait-timeout 6 --poll-interval 0.1 --step \"tap --label 'Sign In'\" --step \"tap --label 'Open Settings'\" --step \"tap --label 'Toggle Preference'\"",
             simulatorUDID: defaultSimulatorUDID
         )
 
@@ -257,17 +259,17 @@ struct BatchTests {
         let shot = FileManager.default.temporaryDirectory.appendingPathComponent("offsider-mask-\(UUID().uuidString).png")
         defer { try? FileManager.default.removeItem(at: shot) }
 
+        try await Self.reachPassword()
+        let typed = try await Self.typeSecret(sentinel)
         let result = try await TestHelpers.runOffsiderCommand(
-            "batch --json --ax-cache perStep --wait-timeout 6 --step \"type 'cam@example.com'\" --step \"tap --label Continue\" --step \"wait --label 'Sign In' --timeout 5\" --step \"type \(sentinel)\" --step \"describe-ui --format json\" --step \"screenshot --output \(shot.path) --mask-secure\"",
+            "batch --json --step \"describe-ui --format json\" --step \"screenshot --output \(shot.path) --mask-secure\"",
             simulatorUDID: defaultSimulatorUDID
         )
-        #expect(!result.output.contains(sentinel))
+        #expect(!typed.contains(sentinel) && !result.output.contains(sentinel))
 
         let records = result.output.split(separator: "\n").compactMap { line in
             (try? JSONSerialization.jsonObject(with: Data(line.utf8))) as? [String: Any]
         }
-        let typeLine = records.first { ($0["line"] as? String)?.contains("8 characters") == true }
-        #expect(typeLine != nil)
 
         func find(_ node: Any?) -> [String: Any]? {
             guard let node = node as? [String: Any] else { return nil }
@@ -290,6 +292,22 @@ struct BatchTests {
         #expect(Self.rgb(image, centre.x, centre.y) == [0, 0, 0])
     }
 
+    /// Types the email and moves on to the password field, which a batch type step may not fill.
+    private static func reachPassword() async throws {
+        try await TestHelpers.runOffsiderCommand(
+            "batch --ax-cache perStep --wait-timeout 6 --poll-interval 0.1 --step \"type 'cam@example.com'\" --step \"tap --label Continue\" --step \"wait --label 'Sign In' --timeout 5\"",
+            simulatorUDID: defaultSimulatorUDID
+        )
+    }
+
+    /// The route a password takes instead of a batch step: `type --stdin`, so it stays out of argument lists.
+    @discardableResult
+    private static func typeSecret(_ secret: String) async throws -> String {
+        let udid = try TestHelpers.requireSimulatorUDID()
+        let result = try await CommandRunner.run("printf %s '\(secret)' | \(try TestHelpers.getOffsiderPath()) type --stdin --device \(udid)")
+        return result.output
+    }
+
     private static func rgb(_ image: CGImage, _ x: Int, _ y: Int) -> [UInt8] {
         var bytes = [UInt8](repeating: 0, count: 4)
         bytes.withUnsafeMutableBytes { buffer in
@@ -306,13 +324,15 @@ struct BatchTests {
     func loginFlowFailsWithoutWait() async throws {
         try await TestHelpers.launchPlaygroundApp(to: "batch-login-flow")
 
+        try await Self.reachPassword()
+        try await Self.typeSecret("supersecret")
         let result = try await TestHelpers.runOffsiderCommandAllowFailure(
-            "batch --ax-cache perStep --wait-timeout 0 --step \"type 'cam@example.com'\" --step \"tap --label Continue\" --step \"type 'supersecret'\" --step \"tap --label 'Sign In'\" --step \"tap --label 'Open Settings'\"",
+            "batch --ax-cache perStep --wait-timeout 0 --step \"tap --label 'Sign In'\" --step \"tap --label 'Open Settings'\"",
             simulatorUDID: defaultSimulatorUDID
         )
 
         #expect(result.exitCode != 0)
-        #expect(result.output.contains("Step 5 failed:"))
+        #expect(result.output.contains("Step 2 failed:"))
     }
 
     @Test("Batch enforces one input source")

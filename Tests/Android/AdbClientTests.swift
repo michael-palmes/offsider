@@ -127,6 +127,21 @@ struct AdbClientTests {
         #expect(error?.message == "`uiautomator dump` failed on emulator-5556: no answer within 20 s.")
     }
 
+    @Test("an emulator that answers no read in time is named frozen, with the restart as the fix; a phone is not", arguments: [
+        ("emulator-5556", "`uiautomator dump` failed on emulator-5556: no answer within 20 s. Offsider_E2E may be frozen; start it again: `offsider shutdown emulator-5556 && offsider boot Offsider_E2E`.", "offsider shutdown emulator-5556 && offsider boot Offsider_E2E"),
+        ("fakephone01", "`uiautomator dump` failed on fakephone01: no answer within 20 s.", nil),
+    ])
+    func frozenEmulatorRead(serial: String, message: String, hint: String?) async {
+        let server = FakeAdbServer(handler: FakeAdbServer.devices([serial]) { _, _ in FakeAdbServer.okay })
+        let client = AdbClient(endpoint: .defaultAdbServer, connector: server, avdName: { $0 == "emulator-5556" ? "Offsider_E2E" : nil })
+        let error = await #expect(throws: AndroidError.self) {
+            try await client.shell("uiautomator dump", on: serial, timeout: .seconds(20))
+        }
+        #expect(error?.message == message)
+        #expect(error?.hint == hint)
+        #expect(error?.reason == .adbCommandFailed)
+    }
+
     @Test("bytes that arrive with a service's OKAY are handed over in pending, and the stream carries on after them", arguments: [Int.max, 3])
     func earlyBytesArePending(maxReadChunk: Int) async throws {
         let early = Data("exit packet and more".utf8)

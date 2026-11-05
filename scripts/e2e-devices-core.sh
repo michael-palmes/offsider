@@ -22,7 +22,8 @@ usage() {
     cat <<EOF
 Usage: $0 status|create [--dry-run]
 
-  status   Print which E2E devices exist, as JSON.
+  status   Print which E2E devices exist and whether each can boot, as JSON: a device that cannot
+           has ready false, a problem and a fix.
   create   Create the missing ones: the AVDs ${AVD_NAME} (${AVD_PROFILE}) and ${FOLD_AVD_NAME} (${FOLD_AVD_PROFILE})
            on ${SYSTEM_IMAGE}, and the "${DUO_NAME}" simulator (${DUO_DEVICE_TYPE_NAME}, newest iOS runtime).
            Nothing is booted and no other device is touched. --dry-run prints the commands instead.
@@ -68,27 +69,102 @@ simulator_exists() {
         "$JQ" -e --arg name "$1" '[.devices[][] | select(.name == $name)] | length > 0' >/dev/null
 }
 
+# Sets PROBLEM and FIX when the AVD $1 cannot boot: no emulator, no config, or a system image that is not installed.
+avd_problem() {
+    local name="$1" dir config sysdir
+    PROBLEM="" FIX=""
+    dir="$(sed -n 's/^path=//p' "$AVD_HOME/$name.ini" 2>/dev/null | head -1)"
+    [[ -n "$dir" ]] || dir="$AVD_HOME/$name.avd"
+    config="$dir/config.ini"
+    if [[ ! -x "$SDK/emulator/emulator" ]]; then
+        PROBLEM="the Android Emulator is not installed in $SDK"
+        FIX="Install the Android Emulator in Android Studio's SDK Manager (SDK Tools), or set ANDROID_HOME"
+    elif [[ ! -f "$config" ]]; then
+        PROBLEM="its config.ini is missing"
+        FIX="rm -rf \"$dir\" \"$AVD_HOME/$name.ini\" && scripts/e2e-devices.sh create"
+    else
+        sysdir="$(sed -n 's/^image\.sysdir\.1[[:space:]]*=[[:space:]]*//p' "$config" | head -1)"
+        sysdir="${sysdir%/}"
+        if [[ -n "$sysdir" && ! -d "$SDK/$sysdir" ]]; then
+            PROBLEM="its system image $sysdir is not installed"
+            FIX="$(android_tool sdkmanager || true)"
+            FIX="\"${FIX:-sdkmanager}\" --install \"${sysdir//\//;}\""
+        fi
+    fi
+}
+
+# Sets PROBLEM and FIX when no simulator named $1 can boot: CoreSimulator calls it unavailable, or its runtime is gone from disk.
+simulator_problem() {
+    local name="$1" rows udid available error runtime root version
+    PROBLEM="" FIX=""
+    [[ -x "$XCRUN" && -n "$JQ" ]] || return 0
+    rows="$(
+        { "$XCRUN" simctl list devices -j 2>/dev/null || echo '{}'; } |
+            "$JQ" -r --arg name "$name" --slurpfile runtimes <({ "$XCRUN" simctl list runtimes -j 2>/dev/null || echo '{"runtimes":[]}'; }) '
+                ($runtimes[0].runtimes // []) as $known
+                | (.devices // {}) | to_entries[] | .key as $key | .value[] | select(.name == $name)
+                | ([$known[] | select(.identifier == $key)] | first) as $runtime
+                | [.udid, ((.isAvailable // false) and ($runtime == null or ($runtime.isAvailable // false)) | tostring),
+                   (.availabilityError // $runtime.availabilityError // ""), ($runtime.runtimeRoot // ""),
+                   ($runtime.version // ($key | sub(".*SimRuntime\\."; "")))] | join("\u001f")'
+    )" || return 0
+    [[ -n "$rows" ]] || return 0
+    while IFS=$'\037' read -r udid available error root version; do
+        if [[ "$available" == true && ( -z "$root" || -d "$root" ) ]]; then
+            PROBLEM="" FIX=""
+            return 0
+        fi
+        [[ -n "$PROBLEM" ]] && continue
+        if [[ "$available" == true ]]; then
+            PROBLEM="its iOS $version runtime is not on disk"
+        else
+            PROBLEM="${error:-its iOS $version runtime is not installed}"
+        fi
+        FIX="xcrun simctl delete $udid && scripts/e2e-devices.sh create"
+    done <<<"$rows"
+}
+
 device_json() {
-    local name="$1" kind="$2" profile="$3" exists="$4"
-    printf '{"name":"%s","kind":"%s","profile":"%s","exists":%s}' \
-        "$(json_escape "$name")" "$kind" "$(json_escape "$profile")" "$exists"
+    local name="$1" kind="$2" profile="$3" exists="$4" problem="null" fix="null"
+    [[ -n "${5:-}" ]] && problem="\"$(json_escape "$5")\""
+    [[ -n "${6:-}" ]] && fix="\"$(json_escape "$6")\""
+    printf '{"name":"%s","kind":"%s","profile":"%s","exists":%s,"ready":%s,"problem":%s,"fix":%s}' \
+        "$(json_escape "$name")" "$kind" "$(json_escape "$profile")" "$exists" \
+        "$([[ "$exists" == true && "$problem" == null ]] && echo true || echo false)" "$problem" "$fix"
+}
+
+# One device's JSON: whether it exists and, when it does, why it cannot boot.
+device_status() {
+    local name="$1" kind="$2" profile="$3" exists=false
+    PROBLEM="" FIX=""
+    if [[ "$kind" == avd ]]; then
+        avd_exists "$name" && exists=true && avd_problem "$name"
+    else
+        simulator_exists "$name" && exists=true && simulator_problem "$name"
+    fi
+    device_json "$name" "$kind" "$profile" "$exists" "$PROBLEM" "$FIX"
 }
 
 cmd_status() {
-    local e2e=false fold=false duo=false missing=()
-    avd_exists "$AVD_NAME" && e2e=true
-    avd_exists "$FOLD_AVD_NAME" && fold=true
-    simulator_exists "$DUO_NAME" && duo=true
-    [[ "$e2e" == true ]] || missing+=("\"$AVD_NAME\"")
-    [[ "$fold" == true ]] || missing+=("\"$FOLD_AVD_NAME\"")
-    [[ "$duo" == true ]] || missing+=("\"$DUO_NAME\"")
-    local joined=""
-    if [[ ${#missing[@]} -gt 0 ]]; then joined="$(IFS=,; printf '%s' "${missing[*]}")"; fi
-    printf '{"devices":[%s,%s,%s],"missing":[%s],"sdk":"%s","avdHome":"%s"}\n' \
-        "$(device_json "$AVD_NAME" avd "$AVD_PROFILE" "$e2e")" \
-        "$(device_json "$FOLD_AVD_NAME" avd "$FOLD_AVD_PROFILE" "$fold")" \
-        "$(device_json "$DUO_NAME" simulator "$DUO_DEVICE_TYPE_NAME" "$duo")" \
-        "$joined" "$(json_escape "$SDK")" "$(json_escape "$AVD_HOME")"
+    local devices=() missing=() broken=() json name
+    for name in "$AVD_NAME" "$FOLD_AVD_NAME" "$DUO_NAME"; do
+        case "$name" in
+            "$AVD_NAME") json="$(device_status "$name" avd "$AVD_PROFILE")" ;;
+            "$FOLD_AVD_NAME") json="$(device_status "$name" avd "$FOLD_AVD_PROFILE")" ;;
+            *) json="$(device_status "$name" simulator "$DUO_DEVICE_TYPE_NAME")" ;;
+        esac
+        devices+=("$json")
+        case "$json" in
+            *'"exists":false'*) missing+=("\"$(json_escape "$name")\"") ;;
+            *'"ready":false'*) broken+=("\"$(json_escape "$name")\"") ;;
+        esac
+    done
+    local d m="" b=""
+    d="$(IFS=,; printf '%s' "${devices[*]}")"
+    if [[ ${#missing[@]} -gt 0 ]]; then m="$(IFS=,; printf '%s' "${missing[*]}")"; fi
+    if [[ ${#broken[@]} -gt 0 ]]; then b="$(IFS=,; printf '%s' "${broken[*]}")"; fi
+    printf '{"devices":[%s],"missing":[%s],"broken":[%s],"sdk":"%s","avdHome":"%s"}\n' \
+        "$d" "$m" "$b" "$(json_escape "$SDK")" "$(json_escape "$AVD_HOME")"
 }
 
 DRY_RUN=0

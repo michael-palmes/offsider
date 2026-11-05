@@ -82,14 +82,20 @@ struct AndroidDeviceStateE2ETests {
         return before == "null" ? "settings delete global stay_on_while_plugged_in" : "settings put global stay_on_while_plugged_in \(before)"
     }
 
-    @Test("stay-awake on writes every power source and takes effect on the emulator's AC power, and off clears it")
+    @Test("stay-awake on writes every power source, takes effect only while one charges, and off clears it")
     func stayAwake() async throws {
         let restore = try await Self.stayOnRestore()
-        try await Self.restoring({ _ = try? await AndroidE2E.shell(restore) }) {
+        // An emulator may report any power source, or none, so the test sets its own and resets it after.
+        try await Self.restoring({ _ = try? await AndroidE2E.shell("\(restore); dumpsys battery reset") }) {
+            try await AndroidE2E.shell("dumpsys battery set ac 0; dumpsys battery set usb 0; dumpsys battery set wireless 0")
             let on = try await AndroidE2E.run("stay-awake on --json")
             #expect(on.stdout.contains(#""stayAwake":true"#))
-            #expect(on.stdout.contains(#""effective":true"#))
+            #expect(on.stdout.contains(#""charging":[],"effective":false"#), "\(on.stdout)")
             #expect(try await AndroidE2E.shell("settings get global stay_on_while_plugged_in").trimmingCharacters(in: .whitespacesAndNewlines) == "15")
+
+            try await AndroidE2E.shell("dumpsys battery set ac 1")
+            let charging = try await AndroidE2E.run("stay-awake --json")
+            #expect(charging.stdout.contains(#""charging":["ac"],"effective":true"#), "\(charging.stdout)")
 
             let off = try await AndroidE2E.run("stay-awake off")
             #expect(off.stdout.contains(": stay awake off (was on"))

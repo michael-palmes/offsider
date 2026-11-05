@@ -194,20 +194,28 @@ public enum TreeGapFill {
         guard !kept.isEmpty else { return plain }
         var filled = plain
         // The plain read's keyboard is framed by its keys; every view's spans the screen around them, and pruning would lose them.
-        let apps = everyView.roots.filter { $0.role != .keyboard }.map { pruned($0, keeping: kept, listed: listed, isRoot: true) ?? $0 }
+        let apps = everyView.roots.filter { $0.role != .keyboard }.flatMap { pruned($0, keeping: kept, listed: listed, isRoot: true).nodes }
         filled.roots = apps + plain.roots.filter { $0.role == .keyboard }
         filled.filledFromGaps = kept.count
         return filled
     }
 
-    /// `node` with only the branches that hold something listed or found.
-    private static func pruned(_ node: UINode, keeping kept: [UINode], listed: [UINode], isRoot: Bool = false) -> UINode? {
-        var copy = node
-        copy.children = node.children.compactMap { pruned($0, keeping: kept, listed: listed) }
-        guard isRoot || !copy.children.isEmpty || kept.contains(where: { $0.isSameElement(as: node) }) || listed.contains(where: { $0.isSameView(as: node) }) else {
-            return nil
+    /// `node` with only the branches that hold something listed or found, whether one holds something listed, and whether it may give way to its children.
+    private static func pruned(_ node: UINode, keeping kept: [UINode], listed: [UINode], isRoot: Bool = false) -> (nodes: [UINode], holdsListed: Bool, wrapper: Bool) {
+        var branches = node.children.map { pruned($0, keeping: kept, listed: listed) }.filter { !$0.nodes.isEmpty }
+        // A lone wrapper the plain read left out around what it listed gives way to its children: no sibling's drawing order is mixed with theirs.
+        if branches.count == 1, branches[0].wrapper {
+            branches = [(branches[0].nodes[0].children, true, false)]
         }
-        return copy
+        let holdsListed = branches.contains(where: \.holdsListed)
+        let isListed = listed.contains { $0.isSameView(as: node) }
+        var copy = node
+        copy.children = branches.flatMap(\.nodes)
+        if isRoot || isListed || kept.contains(where: { $0.isSameElement(as: node) }) {
+            return ([copy], holdsListed || isListed, false)
+        }
+        guard !copy.children.isEmpty else { return ([], false, false) }
+        return ([copy], holdsListed, holdsListed)
     }
 
     /// A text inside a found element that says the same adds nothing.
