@@ -3,6 +3,10 @@ import Foundation
 /// What a screenshot mask was asked to cover, in the order `maskedBy` lists them.
 public enum MaskKind: String, CaseIterable, Sendable {
     case secure
+    /// Keyboard text beside the keys, painted with password fields.
+    case keyboard
+    /// Android's copy preview, painted with password fields.
+    case copyPreview
     case id
     case label
     case labelContains
@@ -10,9 +14,14 @@ public enum MaskKind: String, CaseIterable, Sendable {
     case emails
     case region
 
-    /// `--mask-skip-beneath` may leave this kind unpainted beneath a page; password fields and regions are always painted.
+    /// `--mask-skip-beneath` may leave this kind unpainted beneath a page; password fields, keyboard text, the copy preview and regions are always painted.
     public var skippableBeneath: Bool {
-        self != .secure && self != .region
+        ![.secure, .keyboard, .copyPreview, .region].contains(self)
+    }
+
+    /// Painted whenever password fields are, and listed in `maskedBy` only when something was painted.
+    public var ridesWithSecure: Bool {
+        self == .keyboard || self == .copyPreview
     }
 }
 
@@ -84,7 +93,7 @@ public struct MaskPlan: Equatable, Sendable {
     public var kinds: [MaskKind] {
         MaskKind.allCases.filter { kind in
             switch kind {
-            case .secure: secure
+            case .secure, .keyboard, .copyPreview: secure
             case .id: !ids.isEmpty
             case .label: !labels.isEmpty
             case .labelContains: !labelsContaining.isEmpty

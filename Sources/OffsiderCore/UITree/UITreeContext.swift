@@ -11,8 +11,12 @@ public struct UIWindowInfo: Equatable, Sendable {
     public var focused: Bool
     public var package: String?
     public var bounds: UIFrame?
+    /// Android's copy preview, which a second read found or could not rule out.
+    public var copyPreview: Bool
 
-    public init(id: Int, kind: String, layer: Int, title: String?, active: Bool, focused: Bool, package: String?, bounds: UIFrame?) {
+    public init(
+        id: Int, kind: String, layer: Int, title: String?, active: Bool, focused: Bool, package: String?, bounds: UIFrame?, copyPreview: Bool = false
+    ) {
         self.id = id
         self.kind = kind
         self.layer = layer
@@ -21,6 +25,7 @@ public struct UIWindowInfo: Equatable, Sendable {
         self.focused = focused
         self.package = package
         self.bounds = bounds
+        self.copyPreview = copyPreview
     }
 }
 

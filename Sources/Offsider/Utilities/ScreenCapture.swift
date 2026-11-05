@@ -175,6 +175,7 @@ enum ScreenCapture {
             targets = try plan.textTargets(in: tree)
             if plan.secure {
                 targets.add(tree.roots.flatMap { $0.flattened() }.filter { $0.isSecure || revealed?.matches($0) == true }, as: .secure)
+                targets.add(KeyboardText.hiddenElements(in: tree.roots), as: .keyboard)
             }
             let selectors = plan.ids.map { (MaskKind.id, AccessibilityQuery.id($0)) } + plan.labels.map { (MaskKind.label, AccessibilityQuery.label($0)) }
                 + plan.labelsContaining.map { (MaskKind.labelContains, AccessibilityQuery.labelContains($0)) }
@@ -188,6 +189,11 @@ enum ScreenCapture {
         }
         targets.frames[.region] = plan.regions.map { UIFrame(x: $0.x, y: $0.y, width: $0.width, height: $0.height) }
         let placement = tree.map { targets.placeBeneath(in: $0, skip: plan.skipsBeneath) } ?? (painted: [:], skipped: [:])
+        if let tree, plan.secure {
+            // Windows, not elements, so no page can be beneath them.
+            targets.frames[.keyboard, default: []] += KeyboardText.unreadWindows(in: tree).map(Optional.some)
+            targets.frames[.copyPreview] = CopyPreview.frames(in: tree)
+        }
         let beneathFrames = placement.painted
         let skipped = plan.skipsBeneath ? Dictionary(uniqueKeysWithValues: plan.kinds.filter(\.skippableBeneath).map { ($0, placement.skipped[$0] ?? 0) }) : nil
 
@@ -214,6 +220,7 @@ enum ScreenCapture {
             }
         }
         beneath = beneath.filter { $0.value > 0 }
+        painted = painted.filter { !$0.key.ridesWithSecure || $0.value > 0 }
         let unproven = tree.flatMap(Self.unproven)
         guard image !== capture.image else {
             return MaskResult(capture: capture, painted: painted, beneath: beneath, skipped: skipped, unmatched: targets.unmatched, unproven: unproven)
@@ -228,6 +235,8 @@ enum ScreenCapture {
     nonisolated private static func subject(of kind: MaskKind) -> String {
         switch kind {
         case .secure: "A secure field"
+        case .keyboard: "Keyboard text"
+        case .copyPreview: "The copy preview"
         case .id: "An element --mask-id matched"
         case .label: "An element --mask-label matched"
         case .labelContains: "An element --mask-label-contains matched"

@@ -2,7 +2,7 @@ import Foundation
 import Testing
 
 /// Saved users with tags and notes, `--where`, and who Offsider last signed in, on the playground's user switch screen.
-@Suite("React Native login", .serialized, .enabled(if: RNPlatform.anyEnabled), SavedUsersScope())
+@Suite("React Native login", .serialized, .enabled(if: RNPlatform.anyEnabled), SavedUsersScope(), StylusHandwritingOff())
 struct ReactNativeLoginTests {
     typealias Users = RNLoginUsers
 

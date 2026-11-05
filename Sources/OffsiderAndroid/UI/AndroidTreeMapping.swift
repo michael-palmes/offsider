@@ -3,10 +3,11 @@ import OffsiderCore
 
 /// `uiautomator` nodes to the neutral tree, frames in dp (pixels over density / 160).
 enum AndroidTreeMapping {
-    /// The dump's first node is the app window: role `application`, so gesture presets and verify see its frame.
+    /// The dump's first node is the app window: role `application`, so gesture presets and verify see its frame; the copy preview in front shows no text.
     static func roots(from hierarchy: UIAutomatorHierarchy, scale: Double) -> [UINode] {
         guard let root = hierarchy.nodes.first else { return [] }
-        return [node(from: root, scale: scale, rootRole: .application, rootLabel: nil)]
+        let mapped = node(from: root, scale: scale, rootRole: .application, rootLabel: nil)
+        return [CopyPreview.isPreview(mapped) ? CopyPreview.hiding(mapped) : mapped]
     }
 
     /// A root takes `rootRole`, `rootLabel` and `windowLayer` (a window's); other nodes map from their attributes.

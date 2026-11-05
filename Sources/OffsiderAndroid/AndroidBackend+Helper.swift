@@ -204,6 +204,22 @@ extension AndroidBackend {
         )
     }
 
+    /// Marks windows that may be the copy preview after one read of every window on an emulator; a phone (reads kept to its app) or a failed read marks them all.
+    func markCopyPreview(in tree: inout UITree, serial: String) async {
+        guard var windows = tree.windows else { return }
+        let candidates = Set(CopyPreview.candidates(in: windows).map(\.id))
+        guard !candidates.isEmpty else { return }
+        var found = candidates
+        if phones[serial] == nil, HelperBrokerSettings.isEmulatorSerial(serial), case .helper(let session)? = try? await treeSource(for: serial),
+           let dump = try? await helperDump(serial, session: session, options: HelperDumpOptions(windows: "all", idleQuietMs: 0, idleTimeoutMs: 0)) {
+            found = Set(dump.windows.filter { window in candidates.contains(window.id) && (window.root.map(HelperTreeMapping.isCopyPreview) ?? true) }.map(\.id))
+        }
+        for index in windows.indices where found.contains(windows[index].id) {
+            windows[index].copyPreview = true
+        }
+        tree.windows = windows
+    }
+
     /// The helper's dump reply as it arrived, without its `id` and `ok`; uiautomator has no such reply.
     public func rawAccessibilitySource(for id: DeviceID) async throws -> Data {
         let serial = id.rawValue

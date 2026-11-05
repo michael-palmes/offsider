@@ -60,6 +60,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - On Android with three-button navigation, a selector tap whose point falls under the navigation or status bar taps the part of the target showing beside it, or, with less than 8 dp showing, refuses with `target_covered` (`evidence` `systemBar`) and the `swipe` that scrolls it clear, or, for something fixed there such as a tab bar, says the app needs to draw it above the bar. It used to tap the bar, which could press Home and exit 0. `wait`, `assert` and `describe-ui --on-screen` agree. Gesture navigation is unchanged, as its touches reach the app.
 - On Android a window the app draws over its own without taking focus, such as a dropdown or a text selection toolbar, is now in the tree as a `window` root, so selectors find its rows and a tap on a control beneath it refuses with `target_covered`. Other apps' windows stay out.
 - `tap --verify` on a button, link or menu item presses it once by default, as it already did a switch: a retry after an effect it could not see, such as a change beneath a panel, would submit twice. `--retries 1` allows one more. Verify lines name what was sent, one tap event or touch down and up, rather than a "simulator style" that read oddly on a phone.
+- Android: everything in an on-screen keyboard that is not a key (word suggestions, a clipboard chip, clipboard history) reads `[redacted]` in every tree, message and the tree cache, and screenshots, `batch` and evidence captures paint it, as they paint password fields; so does Android's copy preview, the popup that shows what was just copied, which on an emulator is whatever was copied on the Mac. Keys keep their labels (in Gboard only its own key ids count, so its toolbar buttons are hidden too), selectors never match the hidden text, and `describe-ui` counts it (`# redacted: 1 keyboard element`, `keyboardElements` and `copyPreviews` in JSON, `keyboard` and `copyPreview` in `maskedBy`). `record-video` and `stream-video` refuse to start while it shows. `--no-mask-secure` turns the screenshot mask off with password fields, and `describe-ui --raw-source` still shows it to a person.
 
 ### Fixed
 
@@ -161,6 +162,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - A permission dialog in front of an app on a phone names the service the app requests and lacks, as a complete `permission grant` command, instead of a `<service>` placeholder.
 - `orientation`, `appearance`, `content-size`, `posture` and `stay-awake` given a stray `--app <id>` say they take no `--app`, instead of "Unknown orientation '<id>'".
 - `rn open` on a fresh iOS install no longer reports the app loaded just before Expo's dev menu intro opens over it: it exits 5 naming `rn prepare`, as on Android.
+- Android: `type` with non-ASCII text on an emulator puts the saved clipboard back after Ctrl+C, SIGTERM, a cancelled command or a clipboard set that timed out after it landed, so the typed text no longer stays on a clipboard the emulator shares with the Mac.
 
 ## [0.15.0] - 2026-11-01
 

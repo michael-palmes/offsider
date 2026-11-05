@@ -452,11 +452,11 @@ struct ScreenshotMaskTests {
         #expect(Screenshot.masksSecure(flag: flag, batchDefault: batchDefault, environment: environment) == expected)
     }
 
-    @Test("--mask-secure and --no-mask-secure parse into the plan")
+    @Test("--mask-secure and --no-mask-secure parse into the plan, keyboard text and the copy preview riding with password fields")
     func secureFlags() throws {
-        #expect(try Screenshot.parse(["--device", "d"]).maskPlan(environment: [:]).kinds == [.secure])
+        #expect(try Screenshot.parse(["--device", "d"]).maskPlan(environment: [:]).kinds == [.secure, .keyboard, .copyPreview])
         #expect(try Screenshot.parse(["--device", "d", "--no-mask-secure"]).maskPlan(environment: [:]).isEmpty)
-        #expect(try Screenshot.parse(["--device", "d", "--mask-secure"]).maskPlan(environment: ["OFFSIDER_MASK_SECURE": "0"]).kinds == [.secure])
+        #expect(try Screenshot.parse(["--device", "d", "--mask-secure"]).maskPlan(environment: ["OFFSIDER_MASK_SECURE": "0"]).kinds == [.secure, .keyboard, .copyPreview])
         #expect(try Screenshot.parse(["--device", "d"]).maskPlan(environment: ["OFFSIDER_MASK_SECURE": "0"]).isEmpty)
     }
 
