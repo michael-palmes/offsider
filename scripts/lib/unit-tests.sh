@@ -29,7 +29,7 @@ run_swift_with_limit() {
     while kill -0 "$SWIFT_GROUP" 2>/dev/null; do
         if (( SECONDS - started >= limit )); then
             kill -TERM -- "-$SWIFT_GROUP" 2>/dev/null || true
-            sleep 5
+            for _ in 1 2 3 4 5; do kill -0 -- "-$SWIFT_GROUP" 2>/dev/null && sleep 1; done
             kill -KILL -- "-$SWIFT_GROUP" 2>/dev/null || true
             wait "$SWIFT_GROUP" 2>/dev/null || true
             SWIFT_GROUP=""
@@ -42,6 +42,28 @@ run_swift_with_limit() {
     return "$status"
 }
 
+# The first three tests a capture shows starting and never finishing, earliest first, quoted and joined.
+unfinished_tests() {
+    awk '
+        /^◇ Test ".*" started\.$/ {
+            name = substr($0, index($0, "\""))
+            sub(/ started\.$/, "", name)
+            if (!(name in begun)) { begun[name] = 1; order[++count] = name }
+            next
+        }
+        /^(✔|✘|➜) Test ".*" (with [0-9]+ test cases? )?(passed|failed|skipped)/ {
+            name = substr($0, index($0, "\""))
+            sub(/" (with [0-9]+ test cases? )?(passed|failed|skipped).*$/, "\"", name)
+            ended[name] = 1
+        }
+        END {
+            for (i = 1; i <= count && shown < 3; i++) {
+                if (!(order[i] in ended)) { printf "%s%s", (shown ? ", " : ""), order[i]; shown++ }
+            }
+        }
+    ' "$1"
+}
+
 # Every test, one at a time, replacing any row the attempt before it left.
 run_unit_tests_serially() {
     # shellcheck disable=SC2034 # test-runner.sh reads these for its results.
@@ -51,7 +73,7 @@ run_unit_tests_serially() {
 
 # A test that fails in parallel must pass alone; a stall or a failure the report cannot name runs everything serially.
 run_unit_tests_parallel() {
-    local report capture retry names count filter issues status=0 started=$SECONDS
+    local report capture retry names count filter issues stuck status=0 started=$SECONDS
     local args=(--skip-build --disable-xctest) filters=()
     [[ "$VERBOSE" == true ]] && args+=(--verbose)
     UNIT_TEMP="$(mktemp -d "${TMPDIR:-/tmp}/offsider-unit-tests.XXXXXX")"
@@ -66,9 +88,12 @@ run_unit_tests_parallel() {
     fi
 
     if [[ "$status" -eq 124 ]]; then
-        warn "The parallel run passed its ${UNIT_PARALLEL_LIMIT} s limit. Running every test, one at a time."
+        stuck="$(unfinished_tests "$capture")"
+        warn "The parallel run passed its ${UNIT_PARALLEL_LIMIT} s limit${stuck:+, still running $stuck}. Running every test, one at a time."
         if [[ "${GITHUB_ACTIONS:-}" == true ]]; then
-            printf '::warning title=Parallel run timed out::Stopped at its %s s limit, so every test ran again, one at a time.\n' "$UNIT_PARALLEL_LIMIT"
+            stuck="${stuck//%/%25}"
+            printf '::warning title=Parallel run timed out::Stopped at its %s s limit%s, so every test ran again, one at a time.\n' \
+                "$UNIT_PARALLEL_LIMIT" "${stuck:+ with $stuck still running}"
         fi
         run_unit_tests_serially
         return

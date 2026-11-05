@@ -59,7 +59,10 @@ run_selected_swift() {
         printf 'parallel\n' >> "$WORK/events"
         case "$PARALLEL" in
             pass) echo "Test run with 2 tests in 1 suite passed after 1.0 seconds." ;;
-            stall) sleep 30 ;;
+            stall)
+                printf '%s\n' '◇ Test "slow" started.' '◇ Test "quick" started.' '✔ Test "quick" passed after 0.1 seconds.'
+                sleep 30
+                ;;
             no-report) echo "the test host died"; return 1 ;;
             one-failed)
                 failed_report 1 > "$report"
@@ -108,7 +111,7 @@ scenario() {
     RESULT_NAMES=() RESULT_STATES=() RESULT_TIMES=()
     : > "$WORK/events"
     local status=0
-    run_unit_tests_parallel > /dev/null 2>&1 || status=$?
+    run_unit_tests_parallel > "$WORK/out" 2>&1 || status=$?
     cleanup_unit_tests
     printf '%s %s [%s]' "$status" "$(grep -vE '^warn' "$WORK/events" | tr '\n' ' ')" "${RESULT_STATES[*]-}"
 }
@@ -126,18 +129,12 @@ check "a host that dies with no report runs everything serially" "1 parallel ser
 check "too many failures fail without a retry" "1 parallel  [fail]" "$(scenario too-many)"
 
 UNIT_PARALLEL_LIMIT=1
-check "a stalled run is stopped and everything runs serially" "0 parallel serial  [ok]" "$(scenario stall)"
-check "a stall is named as one, not as an unclear result" "warn The parallel run passed its 1 s limit. Running every test, one at a time." \
-    "$(grep '^warn' "$WORK/events")"
-stall_notice="$(
-    GITHUB_ACTIONS=true PARALLEL=stall RETRY=pass SERIAL=pass
-    export GITHUB_ACTIONS
-    run_unit_tests_parallel > "$WORK/annotations" 2>/dev/null
-    cleanup_unit_tests
-    grep '^::warning' "$WORK/annotations"
-)"
-check "GitHub gets an annotation when the parallel run times out" \
-    "::warning title=Parallel run timed out::Stopped at its 1 s limit, so every test ran again, one at a time." "$stall_notice"
+check "a stalled run is stopped and everything runs serially" "0 parallel serial  [ok]" "$(GITHUB_ACTIONS=true scenario stall)"
+check "a stall is named as one, with the tests still running" \
+    'warn The parallel run passed its 1 s limit, still running "slow". Running every test, one at a time.' "$(grep '^warn' "$WORK/events")"
+check "GitHub gets an annotation naming the stall" \
+    '::warning title=Parallel run timed out::Stopped at its 1 s limit with "slow" still running, so every test ran again, one at a time.' \
+    "$(grep '^::warning' "$WORK/out")"
 UNIT_PARALLEL_LIMIT=360
 
 scenario one-failed pass > /dev/null
