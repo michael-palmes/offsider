@@ -3,7 +3,7 @@ import Foundation
 
 /// One iOS simulator's last capture, as digests: a swipe-up unlock can freeze its display while its tree moves on, so a picture alone looks fine.
 public struct FrozenDisplayRecord: Equatable, Sendable {
-    public static let version = 1
+    public static let version = 2
     public static let maximumBytes = 1024
 
     public var image: String
@@ -24,8 +24,9 @@ public struct FrozenDisplayRecord: Equatable, Sendable {
     }
 
     /// What the elements on screen are and where; values stay out, as they can hold what a person typed, and so does a screen beneath a page, which draws nothing.
-    public static func digest(tree: UITree) -> String {
-        let viewport = tree.viewport
+    /// Elements wholly inside the bands, in points from the top and bottom, stay out too, as the picture's digest leaves those rows out.
+    public static func digest(tree: UITree, leavingOut bands: (top: Double, bottom: Double) = (0, 0)) -> String {
+        let viewport = tree.viewport.map { UIFrame(x: $0.x, y: $0.y + bands.top, width: $0.width, height: max(0, $0.height - bands.top - bands.bottom)) }
         let lines = LiveText.withoutBeneath(tree).roots.flatMap { $0.flattened() }.compactMap { node -> String? in
             if let viewport, let frame = node.frame, !frame.isVisible(in: viewport) { return nil }
             let frame = node.frame.map { "\($0.x),\($0.y),\($0.width),\($0.height)" } ?? ""

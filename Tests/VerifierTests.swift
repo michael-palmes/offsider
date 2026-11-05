@@ -1041,7 +1041,7 @@ struct VerifierLiveTests {
         outcome.changesTruncated = 2
         outcome.phases = VerifyPhases(settle: 0.3, resolve: 0.1, dispatch: 0.1, verify: 1.2)
         #expect(VerifyOutput.verifiedLine(outcome, for: request)
-            == #"✓ Tap on id=x verified: accessibility tree changed (checked of switch id=a "false" to "true"; button "Save" added; text id=old removed; and 3 more), attempt 1 of 2, simulator style (settle 0.4 s, tap 0.1 s, verify 1.2 s)"#)
+            == #"✓ Tap on id=x verified: accessibility tree changed (checked of switch id=a "false" to "true"; button "Save" added; text id=old removed; and 3 more), attempt 1 of 2, sent as one tap event (settle 0.4 s, tap 0.1 s, verify 1.2 s)"#)
 
         var failed = Verifier.Outcome(verified: false, attempts: 1, change: .none, style: .simulator, summary: nil)
         failed.ignored = [VerifyIgnored(node: "live-ticker-heart-rate", reason: .live), VerifyIgnored(node: "live-ticker-steps", reason: .live)]

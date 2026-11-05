@@ -1,4 +1,5 @@
 import Foundation
+import OffsiderCore
 
 /// A running emulator's `pid_<pid>.ini`; undocumented, measured on emulator 36.4.9 and 37.1.11.
 struct EmulatorDiscovery: Equatable, Sendable, CustomStringConvertible {
@@ -59,5 +60,13 @@ struct EmulatorDiscovery: Equatable, Sendable, CustomStringConvertible {
     static func isEmulatorExecutable(_ path: String) -> Bool {
         let name = (path as NSString).lastPathComponent
         return name.hasPrefix("qemu-system") || name.hasPrefix("emulator")
+    }
+}
+
+extension AndroidHost {
+    /// The AVD a running emulator serves on `serial`, from its discovery file, so a frozen console is never asked; nil for a phone or an unknown port.
+    func avdName(of serial: String) -> String? {
+        guard case .androidSerial(let port) = DeviceIDClassifier.classify(serial) else { return nil }
+        return EmulatorDiscovery.live(host: self).first { $0.consolePort == port }?.avdID
     }
 }

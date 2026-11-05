@@ -997,7 +997,7 @@ struct LoginFlowTests {
 
         #expect(report.submitted)
         let tap = try #require(script.taps.last)
-        #expect(!KnownOverlays.devMenuButton(at: try #require(gear.frame), takes: tap), "\(tap)")
+        #expect(!KnownOverlays.devMenuButton(gear, takes: tap), "\(tap)")
         #expect(FakeUI.frame(16, 732, 370, 44).contains(tap))
     }
 

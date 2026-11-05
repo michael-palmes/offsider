@@ -221,7 +221,10 @@ struct SwipeTests {
 
         let release = try await TestHelpers.waitForLabel(containing: "Release:", timeout: 3) { _ in true }
         #expect(release == expected)
-        #expect(UIStateParser.findElementContainingLabel(in: try await TestHelpers.getUIState(), containing: "End:")?.label == "End: (300, 400)")
+        // The fixture truncates the last point, which idb's touch can place a fraction of a point short; the slowed last 3 points must still arrive.
+        let end = try #require(UIStateParser.findElementContainingLabel(in: try await TestHelpers.getUIState(), containing: "End:")?.label)
+        let point = end.split(whereSeparator: { !$0.isNumber }).compactMap { Int($0) }
+        #expect(point.count == 2 && (299...300).contains(point[0]) && point[1] == 400, "\(end)")
     }
 
     @Test("--screenshot-at captures the screen while the finger rests, and the swipe still lifts once, still")

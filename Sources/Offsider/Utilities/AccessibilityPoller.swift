@@ -158,10 +158,14 @@ struct AccessibilityPoller {
     ) async throws -> Polled<TapResolution> {
         let resolver: (UITree, Bool) async throws -> TapResolution = { tree, explain in
             let chosen: MatchPick? = await pick?(tree.roots) ?? nil
-            return try AccessibilityTargetResolver.resolveTap(
-                roots: tree.roots, query: query, elementType: elementType, allowOffscreen: allowOffscreen, explainFailures: explain, pick: chosen,
-                front: tree.front, logger: logger
-            )
+            do {
+                return try AccessibilityTargetResolver.resolveTap(
+                    roots: tree.roots, query: query, elementType: elementType, allowOffscreen: allowOffscreen, explainFailures: explain, pick: chosen,
+                    front: tree.front, logger: logger
+                )
+            } catch let miss as ElementResolutionError where explain {
+                throw HiddenBranchMiss.wrapping(miss, query: query, tree: tree)
+            }
         }
         let polled = try await poll(
             waitTimeout: waitTimeout,
@@ -221,7 +225,19 @@ struct AccessibilityPoller {
         }
         let tree = try await read(delay)
         do {
-            return Polled(value: try await resolve(tree, false), tree: tree, settledBy: decision)
+            var settled = Polled(value: try await resolve(tree, false), tree: tree, settledBy: decision)
+            // A window sliding in, as an Android dialog does, moves its content between reads: act once two reads agree.
+            var before = node.frame?.center
+            var reads = 0
+            let started = ContinuousClock.now
+            while let now = target(settled.value)?.frame?.center, let last = before, abs(now.x - last.x) > TransitionGuard.frameTolerance || abs(now.y - last.y) > TransitionGuard.frameTolerance,
+                  TransitionGuard.movingGap * reads < TransitionGuard.movingLimit, ContinuousClock.now - started < TransitionGuard.movingLimit {
+                before = now
+                reads += 1
+                let next = try await read(TransitionGuard.movingGap)
+                settled = Polled(value: try await resolve(next, false), tree: next, settledBy: decision)
+            }
+            return settled
         } catch is ElementResolutionError {
             logger.info().log("The target was not found again after waiting for the screen to settle; reading once more.")
         }

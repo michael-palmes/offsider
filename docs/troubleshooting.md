@@ -16,11 +16,11 @@ A simulator can fall into a crash loop after boot, with macOS showing a "quit un
 
 Simulator input goes through a warm input session ([details](input.md#simulator-input-session)). When input seems ignored after a simulator restarted or misbehaved, `offsider session stop --device <UDID>` closes it, and the next command opens a fresh one; `OFFSIDER_SIMULATOR_SESSION=off` opens one per command.
 
-A swipe-up unlock on a simulator (after `button lock`) can freeze its display while the tree keeps changing. `screenshot` warns when its picture matches the last one although the elements on screen changed, and names the way back: `offsider button lock`, then `offsider button home` twice. Unlock with Home in the first place: `button lock` says so.
+A swipe-up unlock on a simulator (after `button lock`) can freeze its display while the tree keeps changing. `screenshot` warns when its picture matches the last one although the elements on screen changed (both leave out the status bar and the bottom edge, which a frozen display still redraws), and names the way back: `offsider button lock`, then `offsider button home` twice. Unlock with Home in the first place: `button lock` says so.
 
 After an app crash and relaunch, a simulator can return an empty accessibility tree while the app is plainly on screen. When `describe-ui` still reads an empty tree after its retries, it checks the simulator's `launchctl list` and warns when an app is running, and `doctor --device <UDID>` fails `simulator.accessibility` with `<bundle> is running (pid N) but its accessibility tree is empty`. Both print the fix: relaunch the app with `offsider app launch --restart`, then, if the tree stays empty, reboot the simulator. No simulator service restart was found that reliably brings the tree back, so `doctor --fix` does not try one.
 
-When `describe-ui`, `screenshot`, `rn logbox`, or a `--verify` or selector read exits `device_unresponsive` after 30 s or more, that simulator or emulator stopped answering, even if others still do. Run `offsider doctor --device <ID>`; if a simulator is stuck, `xcrun simctl shutdown <UDID>`, then `offsider boot <UDID>`. Its app data survives.
+When `describe-ui`, `screenshot`, `rn logbox`, or a `--verify` or selector read exits `device_unresponsive` after 30 s or more, that simulator or emulator stopped answering, even if others still do. Run `offsider doctor --device <ID>`; if a simulator is stuck, `xcrun simctl shutdown <UDID>`, then `offsider boot <UDID>`. Its app data survives. A frozen emulator is stopped with `offsider shutdown <serial> && offsider boot <AVD>`, which the error names in full.
 
 ## Android devices
 

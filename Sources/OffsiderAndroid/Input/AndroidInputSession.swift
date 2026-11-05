@@ -92,6 +92,8 @@ final class AndroidInputSession: InputSession, TextInputSession {
     private let secretHelper: @MainActor () async throws -> HelperInputDriver
     /// On a phone, refuses a browser or system app in front; checked afresh before text and before every other input but buttons.
     private let requireForeground: @MainActor () async throws -> Void
+    /// The window check alone, for buttons: a system window over the app refuses them, an app in front does not.
+    private let requireButtonFocus: @MainActor () async throws -> Void
     /// Set once the command's own focus verdict has served a dispatch; later dispatches read the screen again.
     private var knownFocusUsed = false
     /// The focused field after a key replacement; nil when it cannot be read.
@@ -125,6 +127,7 @@ final class AndroidInputSession: InputSession, TextInputSession {
             throw AndroidError.secretNeedsHelper("the device", reason: "no helper was offered")
         },
         requireForeground: @escaping @MainActor () async throws -> Void = {},
+        requireButtonFocus: @escaping @MainActor () async throws -> Void = {},
         multiTouchHelper: @escaping @MainActor () async throws -> HelperInputDriver? = { nil },
         gestureHelper: @escaping @MainActor () async throws -> HelperInputDriver? = { nil },
         apiLevel: @escaping @MainActor () async -> Int?,
@@ -143,6 +146,7 @@ final class AndroidInputSession: InputSession, TextInputSession {
         self.focusedSecureField = focusedSecureField
         self.secretHelper = secretHelper
         self.requireForeground = requireForeground
+        self.requireButtonFocus = requireButtonFocus
         self.multiTouchHelper = multiTouchHelper
         self.gestureHelper = gestureHelper
         self.apiLevel = apiLevel
@@ -170,8 +174,12 @@ final class AndroidInputSession: InputSession, TextInputSession {
 
     func perform(_ event: InputEvent) async throws {
         // A finger already down was checked when it went down; refusing its move or lift would leave it held.
-        if !Self.onlyButtons(event), !touchIsDown {
-            try await checkForeground()
+        if !touchIsDown {
+            if !Self.onlyButtons(event) {
+                try await checkForeground()
+            } else if Self.pressesButton(event) {
+                try await requireButtonFocus()
+            }
         }
         try await timing.measure(.input) {
             try await dispatch(event)
@@ -275,11 +283,20 @@ final class AndroidInputSession: InputSession, TextInputSession {
         return try await gestureHelper()
     }
 
-    /// Buttons, such as Home or Back, only take a phone away from what is in front, so they skip the foreground check.
+    /// Buttons, such as Home or Back, only take a phone away from the app in front, so they skip the front-app check.
     static func onlyButtons(_ event: InputEvent) -> Bool {
         switch event {
         case .button, .shortButtonPress, .delay: return true
         case .composite(let events): return events.allSatisfy(onlyButtons)
+        default: return false
+        }
+    }
+
+    /// A wait alone presses nothing, so it reads no focus.
+    static func pressesButton(_ event: InputEvent) -> Bool {
+        switch event {
+        case .button, .shortButtonPress: return true
+        case .composite(let events): return events.contains(where: pressesButton)
         default: return false
         }
     }

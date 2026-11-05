@@ -29,6 +29,10 @@ public struct EmulatorStopper {
     static let unclearGrace: Duration = .seconds(30)
     /// adb drops a stopped emulator's row a moment after its process ends, and the next `devices` should not list it.
     static let rowGrace: Duration = .seconds(5)
+    /// How long a frozen emulator gets to end after each signal.
+    static let signalGrace: Duration = .seconds(10)
+    /// What `sendKill` returns when the console never answered: the emulator is frozen, not refusing.
+    static let noAnswer = "its console did not answer"
 
     let host: AndroidHost
     let log: AndroidLog
@@ -112,7 +116,10 @@ public struct EmulatorStopper {
         if let refusal = await sendKill(target) {
             let graceEnd = min(deadline, host.uptime() + (refusal.hasPrefix("KO") ? Self.refusedGrace : Self.unclearGrace))
             while isServing(target), host.uptime() < graceEnd { try await host.sleep(Self.poll) }
-            if isServing(target) { throw AndroidError.emulatorStopRefused(target.avd, detail: refusal) }
+            if isServing(target) {
+                guard refusal == Self.noAnswer else { throw AndroidError.emulatorStopRefused(target.avd, detail: refusal) }
+                try await endFrozen(target, deadline: deadline)
+            }
         }
         while isServing(target) {
             guard host.uptime() < deadline else { throw AndroidError.emulatorStopTimedOut(target.avd, pid: target.pid, seconds: timeout.components.seconds) }
@@ -136,9 +143,21 @@ public struct EmulatorStopper {
             let lines = (result.stdout + result.stderr).split(whereSeparator: \.isNewline)
             if let refused = lines.first(where: { $0.hasPrefix("KO") }) { return String(refused) }
             return result.status == 0 ? nil : "adb exited \(result.status)"
+        } catch is ProcessCaptureTimeoutError {
+            return Self.noAnswer
         } catch {
             log(.debug, "adb emu kill failed: \(error)")
             return "adb did not finish"
+        }
+    }
+
+    /// A frozen emulator never reads its console, so its own process, still the one found, is ended: TERM, then KILL.
+    private func endFrozen(_ target: EmulatorStopTarget, deadline: Duration) async throws {
+        for signal in [SIGTERM, SIGKILL] where isServing(target) {
+            log(.debug, "\(target.avd) did not answer its console, so sending signal \(signal) to \(target.pid)")
+            _ = host.signalProcess(target.pid, signal)
+            let end = min(deadline, host.uptime() + Self.signalGrace)
+            while isServing(target), host.uptime() < end { try await host.sleep(Self.poll) }
         }
     }
 

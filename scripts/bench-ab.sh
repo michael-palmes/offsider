@@ -91,6 +91,9 @@ done
 command -v python3 >/dev/null || die "python3 is required" 1
 
 REPO="$(cd "$(dirname "$0")/.." && pwd -P)"
+# shellcheck source=/dev/null
+. "$REPO/scripts/lib/adb.sh"
+[[ -x "$REPO/.build/debug/offsider" ]] && export ADB_FIX_OFFSIDER="$REPO/.build/debug/offsider"
 PLATFORM=""
 for scenario in ${SCENARIOS//,/ }; do
   case " $KNOWN_SCENARIOS " in
@@ -130,7 +133,7 @@ if [[ "$PHONE" == "1" ]]; then
 elif [[ "$PLATFORM" == "android" ]]; then
   [[ "$DEVICE" =~ ^emulator-[0-9]+$ ]] || die "$DEVICE is not an emulator serial (emulator-<port>); bench-ab drives only Offsider AVDs (pass --phone for a USB phone)" 2
   ADB="$(find_adb)" || die "adb not found; set ANDROID_HOME" 2
-  DEVICE_NAME="$(ADB_MDNS=0 "$ADB" -s "$DEVICE" emu avd name 2>/dev/null | head -n 1 | tr -d '\r')" || true
+  DEVICE_NAME="$(ADB_MDNS=0 ADB_QUIET=1 adb_limited 10 "$ADB" -s "$DEVICE" emu avd name | head -n 1 | tr -d '\r')" || true
   case " $ALLOWED_AVDS " in
     *" $DEVICE_NAME "*) ;;
     *) die "$DEVICE runs AVD '${DEVICE_NAME:-unknown}', not one of: $ALLOWED_AVDS" 2 ;;
@@ -149,7 +152,7 @@ for devices in json.load(sys.stdin)["devices"].values():
 fi
 
 adb_shell() {
-  ADB_MDNS=0 "$ADB" -s "$DEVICE" shell "$@" 2>/dev/null | tr -d '\r'
+  ADB_MDNS=0 ADB_QUIET=1 adb_limited 60 "$ADB" -s "$DEVICE" shell "$@" | tr -d '\r'
 }
 
 if [[ "$PHONE" == "1" ]]; then

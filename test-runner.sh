@@ -814,10 +814,18 @@ run_rn_ios_tests() {
     run_rn_suites
 }
 
-# Whether scripts/e2e-devices-core.sh knows the device: "true", "false", or nothing for a name it does not manage.
-e2e_device_exists() {
+# Stops the run when scripts/e2e-devices-core.sh finds the device missing or unable to boot, naming the fix; a name it does not manage passes.
+require_e2e_device() {
+    local name="$1" kind="$2" row exists problem fix
     command -v jq >/dev/null 2>&1 || return 0
-    scripts/e2e-devices-core.sh status 2>/dev/null | jq -r --arg name "$1" '.devices[] | select(.name == $name) | .exists' || true
+    row="$(scripts/e2e-devices-core.sh status 2>/dev/null | jq -r --arg name "$name" \
+        '.devices[] | select(.name == $name) | [(.exists | tostring), (.problem // ""), (.fix // "")] | join("\u001f")')" || true
+    IFS=$'\037' read -r exists problem fix <<<"$row"
+    if [[ "$exists" == false ]]; then
+        die "There is no $name $kind yet." "scripts/e2e-devices.sh create"
+    elif [[ "$exists" == true && -n "$problem" ]]; then
+        die "$name cannot boot: $problem." "$fix"
+    fi
 }
 
 # Boots the E2E AVD through offsider boot when OFFSIDER_ANDROID_DEVICE names it; a serial is left alone, and the suites still check the AVD name.
@@ -828,9 +836,7 @@ ensure_avd_running() {
         Offsider_E2E|Offsider_E2E_Fold|Offsider_E2E_API28) ;;
         *) die "$avd is not an Offsider E2E AVD, so it is not booted." "OFFSIDER_ANDROID_E2E_AVD=Offsider_E2E $0 --android" ;;
     esac
-    if [[ "$(e2e_device_exists "$avd")" == false ]]; then
-        die "There is no $avd AVD yet." "scripts/e2e-devices.sh create"
-    fi
+    require_e2e_device "$avd" AVD
     [[ -x "$OFFSIDER_BIN_PATH" ]] || die "Offsider is not built at $OFFSIDER_BIN_PATH." "swift build"
     # offsider boot shows its own progress on stderr, so no spinner here.
     log "Starting $avd"
@@ -934,12 +940,12 @@ require_device_allowance() {
         expiry_epoch="$(date -j -u -f "%Y-%m-%dT%H:%M:%SZ" "$expires" +%s 2>/dev/null || echo 0)"
         if (( expiry_epoch - $(date -u +%s) <= 1800 )); then
             print_error "$allow_name's allowance ends at $expires, within 30 minutes. $RENEW_YOURSELF:"
-            print_device_allow "$allow_name" "$app"
+            print_device_allow "$device" "$app"
             exit 1
         fi
     elif ! printf '%s' "$status" | plutil -extract devices.0 json -o - - 2>/dev/null | grep -q '"expires":null'; then
         print_error "Could not read $allow_name's allowance. $RUN_YOURSELF:"
-        print_device_allow "$allow_name" "$app"
+        print_device_allow "$device" "$app"
         exit 1
     fi
     if [[ -n "$app" && "$(allowance_drives_whole "$(printf '%s' "$status" | plutil -extract devices.0 json -o - - 2>/dev/null)")" != 1 ]]; then
@@ -947,7 +953,7 @@ require_device_allowance() {
         apps="$(printf '%s' "$status" | plutil -extract devices.0.apps json -o - - 2>/dev/null || echo '[]')"
         if [[ "$apps" != *"\"$app\""* ]]; then
             print_error "$allow_name's allowance does not include $app. $RUN_YOURSELF:"
-            print_device_allow "$allow_name" "$app"
+            print_device_allow "$device" "$app"
             exit 1
         fi
     fi
@@ -1025,7 +1031,7 @@ run_ios_device_tests() {
         OFFSIDER_IOS_TEAM_ID="$(allowance_team "$OFFSIDER_IOS_DEVICE")"
         if [[ -z "$OFFSIDER_IOS_TEAM_ID" ]]; then
             print_error "No team signs the runner and the playground. $RUN_YOURSELF and choose a team in its menu, or set OFFSIDER_IOS_TEAM_ID:"
-            print_person_command "$(offsider_command) devices add"
+            print_person_command "$(offsider_command) devices add --device $OFFSIDER_IOS_DEVICE --app $BUNDLE_ID"
             exit 1
         fi
         log "Using the team the device's allowance records"
@@ -1041,6 +1047,7 @@ select_foldable_simulator() {
     if [[ -n "$SIMULATOR_UDID" ]]; then
         return
     fi
+    require_e2e_device "$FOLDABLE_SIMULATOR_NAME" simulator
     SIMULATOR_UDID="$(xcrun simctl list devices available -j | jq -r --arg name "$FOLDABLE_SIMULATOR_NAME" \
         '[.devices[][] | select(.name == $name)] | .[0].udid // empty')"
     if [[ -z "$SIMULATOR_UDID" ]]; then

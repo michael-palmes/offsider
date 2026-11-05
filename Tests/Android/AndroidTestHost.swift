@@ -12,9 +12,14 @@ final class RecordingProcessRunner: HostProcessRunning, @unchecked Sendable {
     private let lock = NSLock()
     private var recorded: [Call] = []
     private let respond: @Sendable (Call) -> ProcessCaptureResult
+    private let failure: @Sendable (Call) -> (any Error)?
 
-    init(respond: @escaping @Sendable (Call) -> ProcessCaptureResult = { _ in ProcessCaptureResult(status: 0, stdout: "", stderr: "") }) {
+    init(
+        respond: @escaping @Sendable (Call) -> ProcessCaptureResult = { _ in ProcessCaptureResult(status: 0, stdout: "", stderr: "") },
+        failure: @escaping @Sendable (Call) -> (any Error)? = { _ in nil }
+    ) {
         self.respond = respond
+        self.failure = failure
     }
 
     var calls: [Call] { lock.withLock { recorded } }
@@ -22,6 +27,7 @@ final class RecordingProcessRunner: HostProcessRunning, @unchecked Sendable {
     func capture(executable: String, arguments: [String], environment: [String: String]?, timeout: TimeInterval) async throws -> ProcessCaptureResult {
         let call = Call(executable: executable, arguments: arguments, environment: environment)
         lock.withLock { recorded.append(call) }
+        if let error = failure(call) { throw error }
         return respond(call)
     }
 }

@@ -130,6 +130,12 @@ enum HelperTreeMapping {
             let mapped = AndroidTreeMapping.node(from: rawNode(root), scale: scale, rootRole: .keyboard, rootLabel: keyboard.title, windowLayer: keyboard.layer)
             trees.append((root, KeyboardText.hiding(fittedToKeys(mapped))))
         }
+        // A dialog sliding in reports the frame it starts from, below the display, so what it holds counts as off screen until it lands.
+        if let display = AndroidDisplayGeometry(display: dump.display), scale > 0 {
+            let screen = AndroidTreeMapping.dp(UIFrame(x: 0, y: 0, width: Double(display.logicalWidth), height: Double(display.logicalHeight)), scale: scale)
+            let clipped = UITree.clippingApplicationFrame(in: [trees[0].1], screenWidth: screen.width, screenHeight: screen.height)
+            trees[0].1.frame = clipped[0].frame
+        }
         var entries: [HelperTreeEntry] = []
         for (helperRoot, mappedRoot) in trees {
             index(helperRoot, mappedRoot, generation: dump.generation, into: &entries)

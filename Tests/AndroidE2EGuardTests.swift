@@ -187,7 +187,7 @@ struct E2EDeviceAllowanceTests {
     @Test("a device the CLI refuses stops the run and quotes the exact command a person runs")
     func notAllowed() {
         let message = E2EDeviceAllowance.verdict(device: Self.phone, exitCode: 7, json: "", now: Self.now)
-        #expect(message?.contains("run `offsider devices add` in their own terminal, choose R58M123ABC and allow at least 2 hours") == true)
+        #expect(message?.contains("run `offsider devices add --device R58M123ABC` in their own terminal and allow at least 2 hours") == true)
         #expect(message?.contains("Ask the user") == true)
     }
 

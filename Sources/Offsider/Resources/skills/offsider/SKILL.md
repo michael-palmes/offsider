@@ -38,7 +38,7 @@ offsider assert --id <identifier> --has-value <text> --device <DEVICE_ID>
 - `type` adds to the focused field. Tap the field (or pass `--into-id <id>`, `--nth` for twins), then `type --replace 'text'` sets it exactly (`''` clears it); a trailing newline presses Return; single quotes inline, `--stdin` or `--file` for shell-sensitive text (`guide selectors`).
 - Secure fields read as bullets, one per character: find them by `--id` or `--label` (`--value` never matches them). Secrets go through `login` or `type --stdin`, never as an argument; screenshots mask password fields, keyboard text and what `offsider.mask.json` names, by default (`guide screenshots`).
 - For a report, `run start <dir>` numbers screenshots and logs into one folder, masking password fields and emails by default (`guide evidence`).
-- Use `--retries 0` with `--verify` for submit, send or delete: a late effect plus a retry acts twice.
+- `tap --verify` on a button, link or menu item sends once: a late effect plus a retry would act twice.
 - One agent per device: input commands lock the device. Exit 8 (`device_busy`) names the holder's pid; wait, or rerun with `--wait-lock <seconds>`. Never resend in a loop or kill the holder (`guide errors`).
 - Screenshots are in pixels; taps and frames are in points (dp on Android). `screenshot --scale points` makes them match.
 - `appearance`, `content-size`, `orientation`, `permission`, `status-bar`, `biometric`, `stay-awake`, `posture` and `airplane` stay changed: read the current value first, and set it back when done (`guide device-state`).

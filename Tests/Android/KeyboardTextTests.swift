@@ -223,4 +223,16 @@ struct KeyboardTextTests {
 
         #expect(dump.windows.compactMap(\.root).map(HelperTreeMapping.isCopyPreview) == [true, false])
     }
+
+    @Test("a golden capture takes Gboard's toolbar, which trees now hide, and refuses a clipboard chip without naming it")
+    func captureGuard() throws {
+        let toolbar = try JSONSerialization.jsonObject(with: Data(contentsOf: TreeGoldens.root.appendingPathComponent("android/batch-login-flow/raw.json")))
+        #expect(throws: Never.self) { try TreeGoldenCaptureTests.requireOnlyKeys(toolbar, screen: "batch-login-flow") }
+
+        let chip = try JSONSerialization.jsonObject(with: Data(contentsOf: Self.fixtures.appendingPathComponent("gboard-clipboard-chip.json")))
+        let error = #expect(throws: DescribeUIError.self) { try TreeGoldenCaptureTests.requireOnlyKeys(["platform": "android", "source": chip], screen: "text-input") }
+        let message = String(describing: error)
+        #expect(message.contains("text-input: the keyboard holds"))
+        #expect(!message.contains(Self.clip))
+    }
 }

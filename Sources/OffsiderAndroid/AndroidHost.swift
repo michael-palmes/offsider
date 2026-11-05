@@ -86,6 +86,8 @@ public struct AndroidHost: Sendable {
     var processPath: @Sendable (Int32) -> String?
     /// When a running process started, or nil when it has gone.
     var processStartTime: @Sendable (Int32) -> Date?
+    /// Sends a signal to a process; only `shutdown` uses it, on an emulator it has matched to its discovery file.
+    var signalProcess: @Sendable (Int32, Int32) -> Bool = { kill($0, $1) == 0 }
     var sleep: @Sendable (Duration) async throws -> Void
     var launcher: any EmulatorLaunching
     /// Monotonic time for deadlines; tests advance it with their recorded sleeps.

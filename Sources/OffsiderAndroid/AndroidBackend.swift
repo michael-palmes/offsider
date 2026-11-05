@@ -64,7 +64,7 @@ public final class AndroidBackend: DeviceBackend, AccessibilityActionPerforming,
         let (sdk, client) = try await host.timing.measure(.prepare) {
             let sdk = try AndroidSDK.locate(host: host)
             let endpoint = try LoopbackEndpoint.adbServer(environment: host.environment)
-            let client = AdbClient(endpoint: endpoint, connector: host.adbConnector, timing: host.timing, adb: sdk.adb.path)
+            let client = AdbClient(endpoint: endpoint, connector: host.adbConnector, timing: host.timing, adb: sdk.adb.path, avdName: host.avdName(of:))
             log(.debug, "Android SDK at \(sdk.root.path); adb server at \(endpoint)")
             try await AdbServerLauncher(adb: sdk.adb).ensureRunning(client: client, host: host)
             return (sdk, client)
@@ -323,6 +323,7 @@ public final class AndroidBackend: DeviceBackend, AccessibilityActionPerforming,
             focusedSecureField: { await self.focusedSecureField(id) },
             secretHelper: { HelperInputDriver(session: try await self.helperForSecret(serial), uptime: self.host.uptime) },
             requireForeground: { try await self.requireDrivableForeground(serial) },
+            requireButtonFocus: { try await self.requireButtonFocus(serial) },
             multiTouchHelper: { try await self.optionalHelper(serial) },
             gestureHelper: { try await self.gestureHelper(serial) },
             apiLevel: { await self.apiLevel(of: serial) },

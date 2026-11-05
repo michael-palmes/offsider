@@ -57,8 +57,9 @@ check "a test device counts for the playground" $'00008140-000000000000ABCD\tTes
 devices '{"platform":"ios","id":"00008140-000000000000ABCD","name":"Test iPhone","apps":[],"active":true,"testDevice":true,"testDeviceOff":"managed policy does not allow test devices on this Mac"}'
 check "a test device managed policy turned off does not count" "rc=1" "$(pick ios com.mpalmes.offsider.playground | tail -1)"
 
-allow="$(OFFSIDER_BIN_PATH="$STUB" bash -c 'source "$1" >/dev/null 2>&1; print_device_allow "Test Pixel" "$2" 2>&1' _ "$ENVIRONMENT" "$RN")"
+allow="$(OFFSIDER_BIN_PATH="$STUB" bash -c 'source "$1" >/dev/null 2>&1; print_device_allow R58M123ABC "$2" 2>&1' _ "$ENVIRONMENT" "$RN")"
 check "the allow command names the tested build by its absolute path" "1" "$(grep -cF "  $WORK/my\\ build/offsider devices add" <<<"$allow")"
+check "the allow command is complete: the device and the pinned app, nothing to choose" "1" "$(grep -cF "devices add --device R58M123ABC --app $RN" <<<"$allow")"
 
 printf '%d passed, %d failed\n' "$PASSED" "$FAILED"
 [[ "$FAILED" -eq 0 ]]

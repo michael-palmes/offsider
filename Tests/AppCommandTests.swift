@@ -196,7 +196,7 @@ struct AppCommandTests {
             try AppTarget.resolve(Self.option("com.example.other"), route: Self.route(Self.phone, allowance: pinned), command: "stop", gate: Self.gate(pinned), profile: { nil })
         }
         #expect(error?.reason == .appNotAllowed)
-        #expect(error?.hint == "offsider devices add")
+        #expect(error?.hint == "offsider devices add --device \(PolicyFixtures.serial) --app com.example.pinned --app com.example.other")
     }
 
     @Test("a phone allowed for any app still refuses browsers, home screens and system apps", arguments: ["com.android.chrome", "com.android.settings", "com.google.android.apps.nexuslauncher", " com.android.chrome", "com.android.chrome ", "com.android.chrome\n"])

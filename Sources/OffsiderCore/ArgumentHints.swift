@@ -37,8 +37,15 @@ public enum ArgumentHints {
         "Put \(flag) straight after \(command), such as offsider \(command) \(flag)\(flag == "--file" ? " notes.txt" : "") --device <id>."
     }
 
+    /// Setters that change the whole device, whichever app is in front; a stray `--app <id>` would land in their argument.
+    static let deviceWide = ["appearance", "content-size", "orientation", "posture", "stay-awake"]
+
+    public static func takesNoApp(_ command: String) -> String {
+        "\(command) changes the whole device, whichever app is in front, so it takes no --app. Run it without --app."
+    }
+
     /// Per command: an option it lacks, and what to use instead.
-    static let misnamed: [String: [String: String]] = [
+    static let misnamed: [String: [String: String]] = Dictionary(uniqueKeysWithValues: deviceWide.map { ($0, ["--app": takesNoApp($0)]) }).merging([
         "wait": partialLabel("wait").merging([
             "--verify-timeout": "wait takes --timeout <seconds>, not --verify-timeout.",
         ]) { $1 },
@@ -59,7 +66,7 @@ public enum ArgumentHints {
         "login": [
             "--turnstile": "login no longer takes --turnstile: it never taps Turnstile, and stops with turnstile_required when a widget is on screen so a person can complete it.",
         ],
-    ]
+    ]) { $0.merging($1) { own, _ in own } }
 
     public static let turnstileReadOnly = "turnstile no longer taps; it reads the widget's state. A checkbox or challenge is for a person: --wait <seconds> carries on when it passes."
 
