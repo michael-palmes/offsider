@@ -127,6 +127,17 @@ check "too many failures fail without a retry" "1 parallel  [fail]" "$(scenario 
 
 UNIT_PARALLEL_LIMIT=1
 check "a stalled run is stopped and everything runs serially" "0 parallel serial  [ok]" "$(scenario stall)"
+check "a stall is named as one, not as an unclear result" "warn The parallel run passed its 1 s limit. Running every test, one at a time." \
+    "$(grep '^warn' "$WORK/events")"
+stall_notice="$(
+    GITHUB_ACTIONS=true PARALLEL=stall RETRY=pass SERIAL=pass
+    export GITHUB_ACTIONS
+    run_unit_tests_parallel > "$WORK/annotations" 2>/dev/null
+    cleanup_unit_tests
+    grep '^::warning' "$WORK/annotations"
+)"
+check "GitHub gets an annotation when the parallel run times out" \
+    "::warning title=Parallel run timed out::Stopped at its 1 s limit, so every test ran again, one at a time." "$stall_notice"
 UNIT_PARALLEL_LIMIT=360
 
 scenario one-failed pass > /dev/null
@@ -137,8 +148,9 @@ check "a run leaves no files behind" "" "$(find "$WORK" -name 'offsider-unit-tes
 github_notice="$(
     GITHUB_ACTIONS=true PARALLEL=one-failed RETRY=pass SERIAL=pass
     export GITHUB_ACTIONS
-    run_unit_tests_parallel 2>/dev/null | grep '^::warning'
+    run_unit_tests_parallel > "$WORK/annotations" 2>/dev/null
     cleanup_unit_tests
+    grep '^::warning' "$WORK/annotations"
 )"
 check "GitHub gets an annotation naming the test" "::warning title=Passed only alone::OffsiderTests.Lock/release1()" "$github_notice"
 

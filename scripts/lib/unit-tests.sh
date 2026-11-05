@@ -65,11 +65,17 @@ run_unit_tests_parallel() {
         return 0
     fi
 
-    names=""
-    if [[ "$status" -ne 124 ]]; then
-        issues="$(sed -nE 's/.*Test run with .* with ([0-9]+) issues?.*/\1/p' "$capture" | tail -1)"
-        names="$(scripts/failed-tests.sh "$report" "$issues")" || names=""
+    if [[ "$status" -eq 124 ]]; then
+        warn "The parallel run passed its ${UNIT_PARALLEL_LIMIT} s limit. Running every test, one at a time."
+        if [[ "${GITHUB_ACTIONS:-}" == true ]]; then
+            printf '::warning title=Parallel run timed out::Stopped at its %s s limit, so every test ran again, one at a time.\n' "$UNIT_PARALLEL_LIMIT"
+        fi
+        run_unit_tests_serially
+        return
     fi
+
+    issues="$(sed -nE 's/.*Test run with .* with ([0-9]+) issues?.*/\1/p' "$capture" | tail -1)"
+    names="$(scripts/failed-tests.sh "$report" "$issues")" || names=""
     if [[ -z "$names" ]]; then
         warn "The parallel run gave no clear result. Running every test, one at a time."
         run_unit_tests_serially
