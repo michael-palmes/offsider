@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.16.0] - 2026-11-05
+
 ### Added
 
 - `devices add --plan` (`--json`) prints the complete command for each connected phone, as a test device or for one app, with the teams on this Mac and any step only a person can do. It changes nothing, reaches no phone and needs no terminal, so an agent can read it and hand over one line.
@@ -1091,7 +1093,8 @@ First release of Offsider, forked from [AXe](https://github.com/cameroncooke/axe
 - Shortened HID broker socket names so they stay within the Unix socket path limit.
 - Builds now honour an explicit `OFFSIDER_VERSION` when generating the version string.
 
-[Unreleased]: https://github.com/michael-palmes/offsider/compare/v0.15.0...HEAD
+[Unreleased]: https://github.com/michael-palmes/offsider/compare/v0.16.0...HEAD
+[0.16.0]: https://github.com/michael-palmes/offsider/compare/v0.15.0...v0.16.0
 [0.15.0]: https://github.com/michael-palmes/offsider/compare/v0.14.0...v0.15.0
 [0.14.0]: https://github.com/michael-palmes/offsider/compare/v0.13.0...v0.14.0
 [0.13.0]: https://github.com/michael-palmes/offsider/compare/v0.12.0...v0.13.0
