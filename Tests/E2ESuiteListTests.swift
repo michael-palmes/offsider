@@ -11,10 +11,13 @@ struct E2ESuiteListTests {
         "TreeGoldenRefreshTests", // the same variable, offline
     ]
 
+    private static var declaration: Regex<(Substring, Substring, Substring)> {
+        #/@Suite\((.*?)\)\s*(?:@\w+\s+)*(?:(?:final|private|fileprivate|public)\s+)*(?:struct|class|enum|actor)\s+(\w+)/#.dotMatchesNewlines()
+    }
+
     /// `@Suite` declarations in the test sources, each with the text of its traits.
     private static func suites() throws -> [String: String] {
         let files = try #require(FileManager.default.enumerator(at: testsFolder, includingPropertiesForKeys: nil))
-        let declaration = #/@Suite\((.*?)\)\s*(?:@\w+\s+)*(?:(?:final|private|fileprivate|public)\s+)*(?:struct|class|enum|actor)\s+(\w+)/#.dotMatchesNewlines()
         var found: [String: String] = [:]
         for case let file as URL in files where file.pathExtension == "swift" {
             for match in try String(contentsOf: file, encoding: .utf8).matches(of: declaration) {
@@ -64,6 +67,23 @@ struct E2ESuiteListTests {
         #expect(!gated.isEmpty, "no suite is gated on \(flag)")
         let missing = gated.subtracting(try Self.list(list)).subtracting(Self.runAnotherWay)
         #expect(missing.isEmpty, "add these to \(list) in test-runner.sh: \(missing.sorted())")
+    }
+
+    @Test("every React Native suite that types on Android turns stylus handwriting off, since Gboard's tutorial can take the text")
+    func typingSuitesTurnStylusOff() throws {
+        let folder = Self.testsFolder.appendingPathComponent("ReactNativeE2E")
+        let typing = #/(?:run|offsider|runAsPerson)\("(?:type|login)\b|RNLogin\.signIn\(/#
+        var typingSuites: [String: String] = [:]
+        for file in try FileManager.default.contentsOfDirectory(at: folder, includingPropertiesForKeys: nil) where file.pathExtension == "swift" {
+            let source = try String(contentsOf: file, encoding: .utf8)
+            guard source.contains(typing) else { continue }
+            for match in source.matches(of: Self.declaration) where match.1.contains("RNPlatform.anyEnabled") {
+                typingSuites[String(match.2)] = String(match.1)
+            }
+        }
+        #expect(Set(typingSuites.keys).isSuperset(of: ["ReactNativeGapFillTests", "ReactNativeEvidenceTests", "ReactNativeDebugLoginTests"]), "the scan found too little")
+        let missing = typingSuites.filter { !$0.value.contains("StylusHandwritingOff()") }.keys
+        #expect(missing.isEmpty, "add StylusHandwritingOff() to these suites' traits: \(missing.sorted())")
     }
 
     @Test("every suite a list names exists, since a name that matches nothing passes")

@@ -48,6 +48,9 @@ struct AndroidJWTTests {
         _ = try await AndroidE2E.waitForLabel(of: "character-count") { $0 == "Characters: 5" }
         try await AndroidE2E.run("key 42", environment: jwt)
         _ = try await AndroidE2E.waitForLabel(of: "character-count") { $0 == "Characters: 4" }
+        // The paste leaves Gboard offering the clipboard, which stream-video refuses to record.
+        try await AndroidE2E.run("button back", environment: jwt)
+        try await ReactNativeFixtureSmokeTests.waitForKeyboardHidden(RNApp(.android))
 
         let serial = try await AndroidE2E.serial()
         let stream = try await CommandRunner.runSeparated(

@@ -2,7 +2,7 @@ import Foundation
 import Testing
 
 /// What an app draws but hides from accessibility: a tab panel's other tabs, a side panel, a page pushed over a listed one, and a sheet that must keep what lies beneath it out.
-@Suite("React Native elements hidden from accessibility", .serialized, .enabled(if: RNPlatform.anyEnabled))
+@Suite("React Native elements hidden from accessibility", .serialized, .enabled(if: RNPlatform.anyEnabled), StylusHandwritingOff())
 struct ReactNativeGapFillTests {
     @Test("a screen that hides nothing lists nothing as filled", arguments: RNPlatform.enabled)
     func nothingHidden(platform: RNPlatform) async throws {
@@ -45,7 +45,8 @@ struct ReactNativeGapFillTests {
 
         try await app.run("type abc --into-id gap-tabs-search-field")
         let typed = try await app.run("describe-ui --summary").stdout
-        #expect(typed.contains("value=\"abc\""), "\(typed)")
+        let field = typed.split(separator: "\n").filter { $0.contains("id=gap-tabs-search-field ") }
+        #expect(field.contains { $0.contains(#"value="abc""#) }, "the text did not land in the app's field: \(typed)")
 
         let path = NSTemporaryDirectory() + "offsider-gap-\(UUID().uuidString).png"
         defer { try? FileManager.default.removeItem(atPath: path) }

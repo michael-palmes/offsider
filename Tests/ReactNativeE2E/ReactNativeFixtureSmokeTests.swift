@@ -1,7 +1,7 @@
 import Foundation
 import Testing
 
-@Suite("React Native fixtures", .serialized, .enabled(if: RNPlatform.anyEnabled))
+@Suite("React Native fixtures", .serialized, .enabled(if: RNPlatform.anyEnabled), StylusHandwritingOff())
 struct ReactNativeFixtureSmokeTests {
     static let routes = ["parked-sheet-test", "stack-test", "page-over-test", "own-cover-test", "overlay-test", "rows-test", "environment-test", "live-ticker", "sticky-footer-test"]
 
