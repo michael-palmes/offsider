@@ -34,10 +34,14 @@ public enum DeviceAccessReport {
         let managed = policy.managed
         if managed.present {
             var parts: [String] = []
-            if managed.unreadable { parts.append("unreadable, so every physical device is refused") }
+            if managed.unreadable { parts.append("\(managed.unreadableKeys.joined(separator: ", ")) unreadable, so every physical device is refused") }
+            if !managed.unknownKeys.isEmpty {
+                parts.append("\(managed.unknownKeys.joined(separator: ", ")) unknown to this Offsider, so every physical device is refused")
+            }
             if let allow = managed.allowPhysicalDevices { parts.append(allow ? "physical devices on" : "physical devices off") }
             if let ids = managed.allowedDeviceIDs { parts.append("devices limited to \(ids.isEmpty ? "none" : ids.joined(separator: ", "))") }
             if let apps = managed.allowedBundleIDs { parts.append("apps limited to \(apps.isEmpty ? "none" : apps.joined(separator: ", "))") }
+            if let denied = managed.deniedBundleIDs { parts.append("apps denied: \(denied.isEmpty ? "none" : denied.joined(separator: ", "))") }
             if let tests = managed.allowTestDevices { parts.append(tests ? "test devices on" : "test devices off") }
             lines.append("Managed policy: \(parts.joined(separator: "; ")).")
         } else {

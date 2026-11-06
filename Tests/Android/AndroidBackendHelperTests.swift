@@ -378,7 +378,7 @@ struct AndroidBackendHelperTests {
         let (backend, _) = try Self.phoneBackend(top: "com.example.app/.MainActivity")
         backend.appScopes[Self.phone.rawValue] = AndroidAppScope(permitted: [], managedCeiling: ["com.example.managed"])
         let error = await #expect(throws: AndroidError.self) { try await backend.requireDrivableForeground(Self.phone.rawValue) }
-        #expect(error?.message.contains("managed policy on this Mac does not list it") == true)
+        #expect(error?.message.contains("your organisation does not list com.example.app (allowedBundleIDs)") == true)
         #expect(error?.hint == nil)
 
         backend.appScopes[Self.phone.rawValue] = AndroidAppScope(permitted: ["com.example.app"], managedCeiling: nil)

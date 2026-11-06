@@ -169,12 +169,12 @@ struct AndroidSystemWindowTests {
         let (denied, _) = try await Self.backend(focus: Self.focus())
         await SystemAppDenyList.$managedOverride.withValue(["android"]) {
             let error = await #expect(throws: AndroidError.self) { _ = try await read(try Self.covered(), on: denied) }
-            #expect(error?.message.contains("denied list") == true)
+            #expect(error?.message.contains("Your organisation denies android (deniedBundleIDs)") == true)
         }
 
         let (ceiling, ceilingServer) = try await Self.backend(focus: Self.focus(), scope: AndroidAppScope(permitted: [Self.app], managedCeiling: [Self.app]))
         let error = await #expect(throws: AndroidError.self) { _ = try await read(try Self.covered(), on: ceiling) }
-        #expect(error?.message.contains("managed policy") == true)
+        #expect(error?.message.contains("your organisation does not list android (allowedBundleIDs)") == true)
         #expect(Self.focusReads(ceilingServer) == 0)
 
         let (listed, _) = try await Self.backend(focus: Self.focus(), scope: AndroidAppScope(permitted: [Self.app], managedCeiling: [Self.app, "android"]))

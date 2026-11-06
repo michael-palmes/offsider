@@ -6,14 +6,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- A forced key in `com.mpalmes.offsider` that this Offsider does not know refuses every physical device with `managed_unknown_key`, naming the key, so an older build never ignores a new control. `devices status` lists such keys.
+- `devices status` shows a forced `deniedBundleIDs` list, in text and as `managed.deniedBundleIDs` in JSON, beside `managed.unknownKeys` and `managed.unreadableKeys`.
+
 ### Changed
 
+- Managed refusals name your organisation and the key, such as `Your organisation does not list this device (allowedDeviceIDs).` or `Your organisation denies com.example.bank (deniedBundleIDs).`, and still say to ask the administrator of this Mac. `devices status --json` and `doctor --json` add a `key` field beside the refusal code, and a test device's `testDeviceOff` reads the same way, such as `your organisation does not allow test devices (allowTestDevices)`.
 - `test-runner.sh --unit-tests` runs in parallel. A test that fails there reruns alone and must pass, and is flagged when it does; a stall or an unclear result reruns everything serially. CI reuses the debug build's dependencies on pull requests.
 
 ### Fixed
 
 - Every child process gets an allow-listed environment: the simulator accessibility recovery (`simctl spawn ... launchctl kickstart`) and the iPhone backend's `xcode-select -p` no longer inherit the caller's whole one. A source lint now fails on any `Process()` outside the process helpers, or a spawn handed an environment `ChildEnvironment` did not build.
 - Xcode, CoreDevice and crash report plists and the Android broker log are read through the guarded reader, so a FIFO or symlink planted in their place cannot hang or redirect a command; the read lint now covers `FileHandle(forReading...)`, `NSDictionary(contentsOf...)` and their kin.
+- A forced `deniedBundleIDs` of the wrong type refuses `login` and `credential` for every app on simulators and emulators too, naming the key, as it already refused every phone.
+- `devices status` with only `deniedBundleIDs` forced no longer prints `Managed policy: .`.
 
 ## [0.16.0] - 2026-11-05
 

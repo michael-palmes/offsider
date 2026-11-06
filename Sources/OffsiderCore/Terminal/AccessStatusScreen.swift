@@ -53,7 +53,7 @@ public enum AccessStatusScreen {
 
     /// The one warning the screen carries, or nil.
     public static func warning(_ policy: PhysicalDevicePolicy, now: Date) -> String? {
-        if policy.managed.unreadable || policy.managed.allowPhysicalDevices == false { return managedBlocksAll }
+        if policy.managed.unreadable || !policy.managed.unknownKeys.isEmpty || policy.managed.allowPhysicalDevices == false { return managedBlocksAll }
         if policy.listProblem != nil { return listUnreadable }
         if !policy.sealIntact, !policy.list.isEmpty { return listChanged }
         let blocked = policy.list.entries.contains { entry in

@@ -94,8 +94,8 @@ struct TestDeviceAllowanceTests {
         let managed = PhysicalDevicePolicy(managed: ManagedDevicePolicy(allowPhysicalDevices: true), list: DeviceAllowList(entries: [wholeEntry]))
         let json = managed.statusJSON(now: PolicyFixtures.now)
         #expect(json.contains(#""testDevice": true"#))
-        #expect(json.contains(#""testDeviceOff": "managed policy does not allow test devices on this Mac""#))
-        #expect(DeviceAccessReport.statusText(managed, now: PolicyFixtures.now, path: "p").contains("managed policy does not allow"))
+        #expect(json.contains(#""testDeviceOff": "your organisation does not allow test devices (allowTestDevices)""#))
+        #expect(DeviceAccessReport.statusText(managed, now: PolicyFixtures.now, path: "p").contains("your organisation does not allow test devices (allowTestDevices)"))
     }
 
     @Test("the driving line says it on every line, in full for an agent; off under managed policy it says nothing wider")

@@ -26,6 +26,7 @@ struct FakeManagedPreferences: ManagedPreferenceSource {
     var values: [String: ManagedPreferenceValue] = [:]
 
     func forcedValue(forKey key: String) -> ManagedPreferenceValue? { values[key] }
+    func forcedKeys() -> [String] { Array(values.keys) }
 }
 
 @Suite("Device allow-list")
@@ -208,7 +209,8 @@ struct PhysicalDevicePolicyTests {
         (ManagedDevicePolicy(allowPhysicalDevices: false), .managedOff),
         (ManagedDevicePolicy(allowedDeviceIDs: [PolicyFixtures.phone.lowercased()]), nil),
         (ManagedDevicePolicy(allowedDeviceIDs: ["00008130-0000000000000DEF"]), .managedNotListed),
-        (ManagedDevicePolicy(allowPhysicalDevices: true, unreadable: true), .managedUnreadable),
+        (ManagedDevicePolicy(allowPhysicalDevices: true, unreadableKeys: [ManagedDevicePolicy.allowedDeviceIDsKey]), .managedUnreadable(ManagedDevicePolicy.allowedDeviceIDsKey)),
+        (ManagedDevicePolicy(allowPhysicalDevices: true, unknownKeys: ["maxAllowanceDays"]), .managedUnknownKey("maxAllowanceDays")),
     ])
     func precedence(managed: ManagedDevicePolicy, refusal: DeviceRefusal?) {
         let decision = Self.decide(managed)
@@ -246,8 +248,38 @@ struct PhysicalDevicePolicyTests {
     @Test("a forced key of the wrong type refuses every physical device")
     func wrongType() {
         let managed = ManagedDevicePolicy.read(from: FakeManagedPreferences(values: [ManagedDevicePolicy.allowedDeviceIDsKey: .unreadable]))
-        #expect(managed.unreadable)
-        #expect(Self.decide(managed) == .refused(.managedUnreadable))
+        #expect(managed.unreadableKeys == [ManagedDevicePolicy.allowedDeviceIDsKey])
+        #expect(Self.decide(managed) == .refused(.managedUnreadable(ManagedDevicePolicy.allowedDeviceIDsKey)))
+    }
+
+    @Test("a forced key this build does not know refuses every physical device and is named, beside known keys or alone")
+    func unknownKey() {
+        let alone = ManagedDevicePolicy.read(from: FakeManagedPreferences(values: ["maxAllowanceDays": .unreadable]))
+        #expect(alone.unknownKeys == ["maxAllowanceDays"])
+        #expect(alone.present)
+        #expect(Self.decide(alone) == .refused(.managedUnknownKey("maxAllowanceDays")))
+        let beside = ManagedDevicePolicy.read(from: FakeManagedPreferences(values: [
+            ManagedDevicePolicy.allowPhysicalDevicesKey: .bool(true), "requireAudit": .bool(true), "auditDays": .unreadable,
+        ]))
+        #expect(beside.unknownKeys == ["auditDays", "requireAudit"])
+        #expect(Self.decide(beside) == .refused(.managedUnknownKey("auditDays")))
+        #expect(ManagedDevicePolicy.read(from: FakeManagedPreferences(values: [ManagedDevicePolicy.allowPhysicalDevicesKey: .bool(true)])).unknownKeys.isEmpty)
+    }
+
+    @Test("each managed refusal names the organisation and the key, and asks for the administrator")
+    func refusalsNameTheKey() {
+        let cases: [(DeviceRefusal, String, String)] = [
+            (.managedOff, "allowPhysicalDevices", "Your organisation turns off phones on this Mac (allowPhysicalDevices)."),
+            (.managedNotListed, "allowedDeviceIDs", "Your organisation does not list this device (allowedDeviceIDs)."),
+            (.managedUnreadable("allowedBundleIDs"), "allowedBundleIDs", "Your organisation's setting could not be read, so Offsider refuses every phone (allowedBundleIDs)."),
+            (.managedUnknownKey("auditDays"), "auditDays", "Your organisation sets a setting this Offsider does not know, so it refuses every phone (auditDays)."),
+        ]
+        for (refusal, key, sentence) in cases {
+            #expect(refusal.managedKey == key)
+            #expect(ManagedRefusalText.sentence(refusal.explanation) == sentence)
+        }
+        #expect(DeviceRefusal.notAllowed.managedKey == nil)
+        #expect(DeviceRefusal.listChanged.managedKey == nil)
     }
 
     @Test("a value written without a profile is not forced, so it is ignored")
@@ -259,8 +291,12 @@ struct PhysicalDevicePolicyTests {
             CFPreferencesSetAppValue(key, nil, domain)
             CFPreferencesAppSynchronize(domain)
         }
+        let unknown = "auditDays" as CFString
+        CFPreferencesSetAppValue(unknown, kCFBooleanTrue, domain)
+        defer { CFPreferencesSetAppValue(unknown, nil, domain) }
         let live = LiveManagedPreferences(domain: domain as String)
         #expect(live.forcedValue(forKey: ManagedDevicePolicy.allowPhysicalDevicesKey) == nil)
+        #expect(live.forcedKeys().isEmpty)
         #expect(!ManagedDevicePolicy.read(from: live).present)
     }
 
@@ -278,6 +314,29 @@ struct PhysicalDevicePolicyTests {
         let devices = try #require(object["devices"] as? [[String: Any]])
         #expect(devices.first?["id"] as? String == PolicyFixtures.phone)
         #expect(devices.first?["active"] as? Bool == true)
+        #expect(object["key"] is NSNull)
+    }
+
+    @Test("status shows the denied apps and unknown keys, and a refusal's JSON names its key")
+    func statusShowsEveryKey() throws {
+        let deniedOnly = PhysicalDevicePolicy(managed: ManagedDevicePolicy(deniedBundleIDs: ["com.example.bank", "com.example.vault."]), list: Self.allowed)
+        let text = DeviceAccessReport.statusText(deniedOnly, now: PolicyFixtures.now, path: "p")
+        #expect(text.hasPrefix("Managed policy: apps denied: com.example.bank, com.example.vault..\n"))
+        let deniedJSON = try #require(try JSONSerialization.jsonObject(with: Data(deniedOnly.statusJSON(now: PolicyFixtures.now).utf8)) as? [String: Any])
+        #expect((deniedJSON["managed"] as? [String: Any])?["deniedBundleIDs"] as? [String] == ["com.example.bank", "com.example.vault."])
+
+        let unknown = PhysicalDevicePolicy(managed: ManagedDevicePolicy(unknownKeys: ["auditDays"]), list: Self.allowed)
+        #expect(DeviceAccessReport.statusText(unknown, now: PolicyFixtures.now, path: "p").contains("auditDays unknown to this Offsider, so every physical device is refused"))
+        let refused = try #require(try JSONSerialization.jsonObject(with: Data(unknown.statusJSON(now: PolicyFixtures.now, only: (.ios, PolicyFixtures.phone)).utf8)) as? [String: Any])
+        #expect(refused["refusal"] as? String == "managed_unknown_key")
+        #expect(refused["key"] as? String == "auditDays")
+        #expect((refused["managed"] as? [String: Any])?["unknownKeys"] as? [String] == ["auditDays"])
+        #expect(AccessStatusScreen.warning(unknown, now: PolicyFixtures.now) == AccessStatusScreen.managedBlocksAll)
+
+        let off = PhysicalDevicePolicy(managed: ManagedDevicePolicy(allowPhysicalDevices: false), list: Self.allowed)
+        let offJSON = try #require(try JSONSerialization.jsonObject(with: Data(off.statusJSON(now: PolicyFixtures.now, only: (.ios, PolicyFixtures.phone)).utf8)) as? [String: Any])
+        #expect(offJSON["refusal"] as? String == "managed_off")
+        #expect(offJSON["key"] as? String == "allowPhysicalDevices")
     }
 }
 
@@ -312,6 +371,8 @@ struct DeviceAppScopeTests {
         #expect(other?.contains("Ask the user to run `offsider devices add --device R58M123ABC --app com.example.app --app com.example.bank`") == true)
         #expect(policy.appRefusal("com.android.chrome", on: entry) == "com.android.chrome is a browser, which Offsider never signs in to or drives. Nothing was read or sent.")
         let ceiling = PhysicalDevicePolicy(managed: ManagedDevicePolicy(allowedBundleIDs: ["com.example.managed"]), list: DeviceAllowList(entries: [entry]))
-        #expect(ceiling.appRefusal("com.example.app", on: entry)?.hasPrefix("Managed policy on this Mac does not list com.example.app") == true)
+        #expect(ceiling.appRefusal("com.example.app", on: entry) == "Your organisation does not list com.example.app (allowedBundleIDs). Nothing was read or sent.")
+        #expect(SystemAppDenyList.$managedOverride.withValue(["com.example.app"]) { policy.appRefusal("com.example.app", on: entry) }
+            == "Your organisation denies com.example.app (deniedBundleIDs). Nothing was read or sent.")
     }
 }

@@ -105,8 +105,10 @@ struct CLIError: LocalizedError, UserFacingError, OffsiderFailure {
         // A person gets the short form and its menus; an agent hands over the whole line.
         let command = audience == .person ? "offsider devices add" : "offsider devices add --device \(key)"
         if refusal.isManaged {
+            var update = "Ask"
+            if case .managedUnknownKey = refusal { update = "Update Offsider (`\(NewerDeviceEntry.updateCommand)`), or ask" }
             return CLIError(
-                errorDescription: "\(device) is a physical device and \(refusal.explanation). Nothing was sent to it. Ask the administrator of this Mac.",
+                errorDescription: "\(ManagedRefusalText.sentence(refusal.explanation)) Nothing was sent to \(device). \(update) the administrator of this Mac.",
                 reason: .deviceNotAllowed
             )
         }

@@ -13,6 +13,8 @@ public enum ManagedPreferenceValue: Equatable, Sendable {
 public protocol ManagedPreferenceSource: Sendable {
     /// The forced value for `key`, or nil when the key is absent or not forced.
     func forcedValue(forKey key: String) -> ManagedPreferenceValue?
+    /// Every forced key in the domain, so a key this build does not know is seen rather than ignored.
+    func forcedKeys() -> [String]
 }
 
 /// `CFPreferences` in the `com.mpalmes.offsider` domain; a value someone wrote with `defaults write` is not forced and is ignored.
@@ -37,6 +39,34 @@ public struct LiveManagedPreferences: ManagedPreferenceSource {
         }
         return .unreadable
     }
+
+    /// `CFPreferencesCopyKeyList` leaves out managed keys, so this filters the merged view; about a millisecond, read on the physical path only.
+    public func forcedKeys() -> [String] {
+        let defaults = Bundle.main.bundleIdentifier == domain ? UserDefaults.standard : UserDefaults(suiteName: domain)
+        let names = defaults?.dictionaryRepresentation().keys.filter { !ManagedDevicePolicy.knownKeys.contains($0) } ?? []
+        // A key forced for every app shows in this domain's merged view too, but is not Offsider's.
+        return names.filter { CFPreferencesAppValueIsForced($0 as CFString, domain as CFString) && !CFPreferencesAppValueIsForced($0 as CFString, kCFPreferencesAnyApplication) }.sorted()
+    }
+}
+
+/// Managed refusals name the organisation and the key it set, so a person knows whom to ask and an administrator what to change.
+public enum ManagedRefusalText {
+    public static let physicalOff = "your organisation turns off phones on this Mac (allowPhysicalDevices)"
+    public static let deviceNotListed = "your organisation does not list this device (allowedDeviceIDs)"
+    public static let testDevicesOff = "your organisation does not allow test devices (allowTestDevices)"
+
+    public static func appNotListed(_ app: String) -> String { "your organisation does not list \(app) (allowedBundleIDs)" }
+    public static func appDenied(_ app: String) -> String { "your organisation denies \(app) (deniedBundleIDs)" }
+    public static func appsLimited(_ key: String) -> String { "your organisation limits the apps on this Mac (\(key))" }
+    public static func unreadable(_ key: String) -> String { "your organisation's setting could not be read, so Offsider refuses every phone (\(key))" }
+    public static func unknown(_ key: String) -> String { "your organisation sets a setting this Offsider does not know, so it refuses every phone (\(key))" }
+    /// `deniedBundleIDs` of the wrong type, where `login` and `credential` read it for any device.
+    public static let deniedListUnreadable = "your organisation's setting could not be read, so Offsider refuses every app (deniedBundleIDs)"
+
+    /// `clause` with a capital, to open a sentence.
+    public static func capitalised(_ clause: String) -> String { clause.prefix(1).uppercased() + clause.dropFirst() }
+    /// `clause` as a sentence of its own.
+    public static func sentence(_ clause: String) -> String { capitalised(clause) + "." }
 }
 
 /// The ceiling an administrator set for physical devices. Absent keys set no limit; a key of the wrong type refuses every physical device.
@@ -54,62 +84,75 @@ public struct ManagedDevicePolicy: Equatable, Sendable {
     public let allowedBundleIDs: [String]?
     public let deniedBundleIDs: [String]?
     public let allowTestDevices: Bool?
-    /// A forced key held a value of the wrong type.
-    public let unreadable: Bool
+    /// Forced keys holding a value of the wrong type, in `knownKeys` order.
+    public let unreadableKeys: [String]
+    /// Forced keys this build does not know, perhaps set for a newer Offsider, sorted.
+    public let unknownKeys: [String]
 
     public init(
         allowPhysicalDevices: Bool? = nil, allowedDeviceIDs: [String]? = nil, allowedBundleIDs: [String]? = nil, deniedBundleIDs: [String]? = nil,
-        allowTestDevices: Bool? = nil, unreadable: Bool = false
+        allowTestDevices: Bool? = nil, unreadableKeys: [String] = [], unknownKeys: [String] = []
     ) {
         self.allowPhysicalDevices = allowPhysicalDevices
         self.allowedDeviceIDs = allowedDeviceIDs
         self.allowedBundleIDs = allowedBundleIDs
         self.deniedBundleIDs = deniedBundleIDs
         self.allowTestDevices = allowTestDevices
-        self.unreadable = unreadable
+        self.unreadableKeys = unreadableKeys
+        self.unknownKeys = unknownKeys
     }
 
     public static let none = ManagedDevicePolicy()
 
+    /// The keys this build honours.
+    public static let knownKeys = [allowPhysicalDevicesKey, allowedDeviceIDsKey, allowedBundleIDsKey, deniedBundleIDsKey, allowTestDevicesKey]
+
+    /// A forced key held a value of the wrong type.
+    public var unreadable: Bool { !unreadableKeys.isEmpty }
+
     /// True when any key is forced.
     public var present: Bool {
-        allowPhysicalDevices != nil || allowedDeviceIDs != nil || allowedBundleIDs != nil || deniedBundleIDs != nil || allowTestDevices != nil || unreadable
+        allowPhysicalDevices != nil || allowedDeviceIDs != nil || allowedBundleIDs != nil || deniedBundleIDs != nil || allowTestDevices != nil
+            || unreadable || !unknownKeys.isEmpty
     }
 
     /// Why a test device is only a plain Any app allowance on this Mac; nil when it may be driven whole.
     public var testDeviceRefusal: String? {
         guard present else { return nil }
-        if allowedBundleIDs != nil || deniedBundleIDs != nil { return "managed policy limits the apps on this Mac" }
-        return allowTestDevices == true ? nil : "managed policy does not allow test devices on this Mac"
+        if allowedBundleIDs != nil { return ManagedRefusalText.appsLimited(Self.allowedBundleIDsKey) }
+        if deniedBundleIDs != nil { return ManagedRefusalText.appsLimited(Self.deniedBundleIDsKey) }
+        return allowTestDevices == true ? nil : ManagedRefusalText.testDevicesOff
     }
 
     public static func read(from source: any ManagedPreferenceSource) -> ManagedDevicePolicy {
-        var unreadable = false
+        var unreadable: [String] = []
         func bool(_ key: String) -> Bool? {
             switch source.forcedValue(forKey: key) {
             case .bool(let value): return value
             case nil: return nil
             default:
-                unreadable = true
+                unreadable.append(key)
                 return nil
             }
         }
-        let allow = bool(allowPhysicalDevicesKey)
-        let testDevices = bool(allowTestDevicesKey)
         func strings(_ key: String) -> [String]? {
             switch source.forcedValue(forKey: key) {
             case .strings(let values): return values
             case nil: return nil
             default:
-                unreadable = true
+                unreadable.append(key)
                 return nil
             }
         }
+        let allow = bool(allowPhysicalDevicesKey)
         let devices = strings(allowedDeviceIDsKey)
         let bundles = strings(allowedBundleIDsKey)
         let denied = strings(deniedBundleIDsKey)
+        let testDevices = bool(allowTestDevicesKey)
+        let unknown = source.forcedKeys().filter { !knownKeys.contains($0) }.sorted()
         return ManagedDevicePolicy(
-            allowPhysicalDevices: allow, allowedDeviceIDs: devices, allowedBundleIDs: bundles, deniedBundleIDs: denied, allowTestDevices: testDevices, unreadable: unreadable
+            allowPhysicalDevices: allow, allowedDeviceIDs: devices, allowedBundleIDs: bundles, deniedBundleIDs: denied, allowTestDevices: testDevices,
+            unreadableKeys: unreadable, unknownKeys: unknown
         )
     }
 
