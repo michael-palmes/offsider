@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Changed
+
+- `test-runner.sh --unit-tests` runs in parallel. A test that fails there reruns alone and must pass, and is flagged when it does; a stall or an unclear result reruns everything serially. CI reuses the debug build's dependencies on pull requests.
+
 ## [0.16.0] - 2026-11-05
 
 ### Added

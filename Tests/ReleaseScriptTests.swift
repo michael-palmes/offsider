@@ -96,7 +96,7 @@ struct ReleaseScriptTests {
         try FileManager.default.createDirectory(at: repo.appendingPathComponent("scripts"), withIntermediateDirectories: true)
         try FileManager.default.copyItem(at: root.appendingPathComponent("scripts/release.sh"), to: repo.appendingPathComponent("scripts/release.sh"))
         try Data("readme\n".utf8).write(to: repo.appendingPathComponent("README"))
-        for arguments in [["init", "-q"], ["add", "."], ["-c", "user.name=t", "-c", "user.email=t@localhost", "-c", "commit.gpgsign=false", "commit", "-qm", "x"], ["tag", "v1.2.3"]] {
+        for arguments in [["init", "-q"], ["add", "."], ["-c", "user.name=t", "-c", "user.email=t@localhost", "-c", "commit.gpgsign=false", "commit", "-qm", "x"], ["-c", "tag.gpgsign=false", "tag", "v1.2.3"]] {
             let git = Process()
             git.executableURL = URL(fileURLWithPath: "/usr/bin/git")
             git.arguments = ["-C", repo.path] + arguments

@@ -17,6 +17,8 @@ fi
 source "$(dirname "${BASH_SOURCE[0]}")/scripts/e2e-environment.sh"
 # shellcheck source=/dev/null
 source "$(dirname "${BASH_SOURCE[0]}")/scripts/lib/ui.sh"
+# shellcheck source=/dev/null
+source "$(dirname "${BASH_SOURCE[0]}")/scripts/lib/unit-tests.sh"
 
 # Any adb server the suites start sends no mDNS multicast on the LAN.
 export ADB_MDNS=0
@@ -380,6 +382,7 @@ cleanup_test_runner() {
     if [[ -n "$STEP_LOG" && -f "$STEP_LOG" ]]; then
         rm "$STEP_LOG"
     fi
+    cleanup_unit_tests
     if [[ "$RN_METRO_STARTED" == true ]]; then
         scripts/rn-playground.sh metro stop || true
     fi
@@ -703,7 +706,7 @@ run_unit_tests() {
     unset OFFSIDER_WAIT_LOCK OFFSIDER_ANDROID_PHONE
 
     local status=0
-    run_swift_suite "Unit tests" "" || status=$?
+    run_unit_tests_parallel || status=$?
     if [[ "$status" -ne 0 ]]; then
         die "Unit tests failed." "" "$status"
     fi

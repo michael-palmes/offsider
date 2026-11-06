@@ -49,7 +49,7 @@ Offsider began as a fork of AXe (`cameroncooke/axe`) v1.8.0 and is developed ind
 | `make e2e` or `./test-runner.sh --simulator` | Rebuild idb (unless `OFFSIDER_REUSE_IDB=1`), build Offsider and the playground, run simulator E2E suites (needs XcodeGen) |
 | `./test-runner.sh` | On a person's terminal, a mode picker (phone and iPhone modes never the default); otherwise, and always for an agent, `--simulator`. `--help` lists modes, `--help-env` settings, suites and examples |
 | `scripts/e2e-devices.sh [status\|create]` or `make e2e-devices` | Show the E2E devices (`Offsider_E2E`, `Offsider_E2E_Fold`, the `Offsider Duo` simulator) and create the missing ones; never boots them. `scripts/e2e-devices-core.sh status\|create [--dry-run]` is its JSON core |
-| `./test-runner.sh --unit-tests` | Build dependencies, then run non-E2E tests |
+| `./test-runner.sh --unit-tests` | Build dependencies, then run non-E2E tests in parallel; a test that fails reruns alone and must pass, and a stall or an unclear result reruns everything serially |
 | `./test-runner.sh --tests-only` | Run E2E against an existing binary (`OFFSIDER_BIN_PATH`) |
 | `./test-runner.sh --android` or `make e2e-android` | Build Offsider and run the Android E2E suites on `OFFSIDER_ANDROID_DEVICE` (default `OFFSIDER_ANDROID_E2E_AVD`, booted if not running) |
 | `./test-runner.sh --foldable` or `make e2e-foldable` | Build Offsider and the playground, run `FoldableTests` on the iPhone Duo simulator `OFFSIDER_FOLDABLE_SIMULATOR_NAME` names (default `Offsider Duo`, or `SIMULATOR_UDID`) |
