@@ -678,15 +678,15 @@ struct TypeIntoTests {
         #expect(throws: (any Error).self) { try Type.parse(["--into-id", "a", "--into-label", "b", "x", "--device", "emulator-5554"]) }
     }
 
-    @Test("a batch type step focuses the field before its text")
+    @Test("a batch type step focuses the field before its text, and reads it back after")
     func batchStep() async throws {
         let context = BatchContext(
             backend: FakeDeviceBackend(platform: .android, trees: [Self.form(focused: "second-field")]), device: Self.android,
             axCachePolicy: .perBatch, typeSubmissionMode: .composite, typeChunkSize: 2
         )
         let primitives = try await Type.parse(["--into-id", "second-field", "hi", "--device", "x"]).toBatchPrimitives(context: context, logger: OffsiderLogger())
-        guard primitives.count == 2, case .run = primitives[0], case .text("hi", replace: false) = primitives[1] else {
-            Issue.record("expected focus then text, got \(primitives)")
+        guard primitives.count == 3, case .run = primitives[0], case .text("hi", replace: false) = primitives[1], case .run = primitives[2] else {
+            Issue.record("expected focus, text, then the read-back, got \(primitives)")
             return
         }
     }

@@ -61,6 +61,9 @@ struct Type: AsyncParsableCommand, VerifiableCommand {
         Android emulators: printable ASCII, newlines and tabs are typed as key events. Text with any other
         character needs the emulator's gRPC endpoint. --replace sets the text in one accessibility action
         (any Unicode, no gRPC needed); a trailing newline is then pressed as Return.
+        On Android nothing is typed while a field inside the keyboard has focus, such as Gboard's stylus
+        handwriting tutorial (exit 2, focus_mismatch). A field typed into by name is read back after the keys,
+        and text that did not reach it exits 5 (text_not_accepted). --replace works past the tutorial.
 
         With --verify, the field is read back after a change: one that does not hold the text sent, in order, exits 5
         (note text_differs) and nothing is sent again. A formatter's separators and capitals still pass.
@@ -183,7 +186,7 @@ struct Type: AsyncParsableCommand, VerifiableCommand {
         guard requireFocusID != nil || intoQuery != nil else {
             return try await Self.checkTextFocus(
                 readTree: { try await backend.accessibilityTree(for: device) }, device: device, clock: clock, warn: warn, refusingSecureTarget: secureRefusal,
-                hitTester: backend as? any PointHitTesting, unlistedField: unlistedField
+                hitTester: backend as? any PointHitTesting, unlistedField: unlistedField, replacing: replace
             )
         }
         if let requireFocusID {
@@ -201,6 +204,9 @@ struct Type: AsyncParsableCommand, VerifiableCommand {
                 )
             }
             if let secureRefusal, focused?.isSecure == true { throw secureRefusal }
+            if !replace, let keyboard = TextFocus.keyboardHoldingFocus(in: tree) {
+                throw Self.keyboardFocusRefusal(keyboard, target: namedField, device: device)
+            }
             return FocusCheck(tree: tree, untappedTree: tree, field: focused)
         }
         guard let query = intoQuery else { return FocusCheck() }
@@ -232,6 +238,9 @@ struct Type: AsyncParsableCommand, VerifiableCommand {
                 let tree = polled.tree.filledFromGaps == nil ? plain : await backend.withGapsFilled(plain, on: device)
                 last = tree
                 if Self.hasFocus(field, query: query, in: tree, keyboardOnly: simulator && !keyboardAlreadyUp) {
+                    if !replace, let keyboard = TextFocus.keyboardHoldingFocus(in: tree) {
+                        throw Self.keyboardFocusRefusal(keyboard, target: namedField, device: device)
+                    }
                     logger.info().log("\(query.selectorDescription) has focus")
                     return FocusCheck(tree: tree, field: field)
                 }
@@ -263,7 +272,8 @@ struct Type: AsyncParsableCommand, VerifiableCommand {
         refusingSecureTarget secureRefusal: CLIError?,
         keys: Bool = false,
         hitTester: (any PointHitTesting)? = nil,
-        unlistedField: Bool = false
+        unlistedField: Bool = false,
+        replacing: Bool = false
     ) async throws -> FocusCheck {
         var tree: UITree
         do {
@@ -284,6 +294,10 @@ struct Type: AsyncParsableCommand, VerifiableCommand {
         }
         let secure = swept?.isSecure ?? (tree.secureFocus == .secureFocused)
         if let secureRefusal, secure { throw secureRefusal }
+        // An accessibility set-text reaches the app's field whatever the keyboard holds.
+        if !replacing, let keyboard = TextFocus.keyboardHoldingFocus(in: tree) {
+            throw keyboardFocusRefusal(keyboard, target: nil, device: device, keys: keys)
+        }
         let focus = TextFocus.read(tree)
         guard focus.takesText || swept != nil else {
             // The field is hidden, so it may be a password field: the input session treats it as one it could not read.
@@ -361,6 +375,82 @@ struct Type: AsyncParsableCommand, VerifiableCommand {
         )
     }
 
+    /// A field inside the keyboard holds input focus, as Gboard's stylus handwriting tutorial does, so keys would never reach the app; nothing has been sent.
+    @MainActor
+    static func keyboardFocusRefusal(_ keyboard: UINode, target: String?, device: DeviceID, keys: Bool = false) -> CLIError {
+        let name = keyboard.normalizedLabel ?? "the keyboard"
+        let fix: String
+        switch (keys, device.isPhysicalAndroidDevice) {
+        case (false, false): fix = "Run it again with --replace, which sets the text without keys, or turn stylus handwriting off."
+        case (false, true): fix = "Close it on the phone, or run it again with --replace, which sets the text without keys."
+        case (true, false): fix = "Turn stylus handwriting off, then retry."
+        case (true, true): fix = "Close it on the phone, then retry."
+        }
+        return CLIError(
+            errorDescription: "A text field inside \(name), such as its stylus handwriting tutorial, has input focus, so keys would go there, not to \(target ?? "the app"). Offsider \(keys ? "pressed no keys" : "typed nothing"). \(fix)",
+            reason: .focusMismatch,
+            hint: stylusHint(device)
+        )
+    }
+
+    /// Keys into a named field left its text as it was: a field inside the keyboard took them, or the app ignored them.
+    @MainActor
+    static func textNotLandedRefusal(keyboard: UINode?, target: String, device: DeviceID) -> CLIError {
+        guard let keyboard else {
+            return CLIError(
+                errorDescription: "Typed into \(target), but its text did not change, so the keys went somewhere else or the app ignored them. Check the field, then type what it accepts.",
+                reason: .textNotAccepted,
+                hint: CommandScope.current.describeHint(device: device.rawValue)
+            )
+        }
+        let name = keyboard.normalizedLabel ?? "the keyboard"
+        let fix = device.isPhysicalAndroidDevice
+            ? "Close it on the phone, or run it again with --replace, which sets the text without keys."
+            : "Run it again with --replace, which sets the text without keys, or turn stylus handwriting off."
+        return CLIError(
+            errorDescription: "Typed into \(target), but its text did not change: a text field inside \(name), such as its stylus handwriting tutorial, took the keys. \(fix)",
+            reason: .textNotAccepted,
+            hint: stylusHint(device)
+        )
+    }
+
+    /// On an emulator, the one command that keeps Gboard's stylus tutorial away; a phone's settings stay its owner's.
+    @MainActor
+    private static func stylusHint(_ device: DeviceID) -> String {
+        device.isPhysicalAndroidDevice
+            ? CommandScope.current.describeHint(device: device.rawValue)
+            : "adb -s \(device.rawValue) shell settings put secure stylus_handwriting_enabled 0"
+    }
+
+    /// How long keys into a named field on Android may take to show in it, as a React Native field's value lags its keys.
+    static let landingTimeout: TimeInterval = 2
+    static let landingPoll: Duration = .milliseconds(100)
+
+    /// Gboard's stylus tutorial opens about a second after the tap, too late for the focus check; any change passes unless a keyboard field holds focus, as fields cut and format text.
+    @MainActor
+    static func confirmLanded(
+        _ typed: TypedExpectation, before: String?, target: String, device: DeviceID, clock: PollClock, readTree: @MainActor () async throws -> UITree
+    ) async throws {
+        // Tab alone moves focus, and a field may trim spaces.
+        guard typed.judged, typed.text.contains(where: { !$0.isWhitespace }) else { return }
+        let deadline = clock.now() + landingTimeout
+        while true {
+            guard let tree = try? await readTree(), let field = typed.locate(in: tree), !field.isSecure else { return }
+            let keyboard = TextFocus.keyboardHoldingFocus(in: tree)
+            let unchanged = (field.value ?? "") == (before ?? "")
+            let partial = keyboard != nil && TypedText.judge(sent: typed.text, before: before, after: field.value, replacing: false) != .match
+            guard unchanged || partial else { return }
+            guard clock.now() < deadline else { throw textNotLandedRefusal(keyboard: keyboard, target: target, device: device) }
+            try await clock.sleep(landingPoll)
+        }
+    }
+
+    /// The field `--into-*` or `--require-focus-id` names, as receipts write it: `id=email`.
+    var namedField: String? {
+        intoID.map { "id=\($0)" } ?? intoLabel.map { "label=\($0)" } ?? intoLabelContains.map { "label-contains=\($0)" }
+            ?? requireFocusID.map { "id=\($0)" }
+    }
+
     /// The focused editable field, else any focused element.
     static func focusedField(in tree: UITree) -> UINode? {
         let focused = tree.roots.flatMap { $0.flattened() }.filter { $0.state.focused == true }
@@ -417,8 +507,7 @@ struct Type: AsyncParsableCommand, VerifiableCommand {
 
     /// Where the text went, never the text or its length: `Typed into id=email`, `Cleared id=email`.
     var receiptHeadline: String {
-        let field = intoID.map { "id=\($0)" } ?? intoLabel.map { "label=\($0)" } ?? intoLabelContains.map { "label-contains=\($0)" }
-            ?? requireFocusID.map { "id=\($0)" }
+        let field = namedField
         guard replace else { return field.map { "Typed into \($0)" } ?? "Typed into the focused field" }
         if text?.isEmpty == true { return "Cleared " + (field ?? "the focused field") }
         return "Replaced the text in " + (field ?? "the focused field")
@@ -482,6 +571,8 @@ struct Type: AsyncParsableCommand, VerifiableCommand {
                     try await typeThroughSession(inputText, backend: backend, device: device, progress: progress, focus: focus)
                 }
             }
+            // `--verify` reads the field back itself.
+            if progress == nil { try await confirmKeysLanded(inputText, focus: focus, backend: backend, device: device) }
             return
         }
 
@@ -532,6 +623,25 @@ struct Type: AsyncParsableCommand, VerifiableCommand {
         try await VerifyOutput.perform(verifyRequest(inputText, focus: focus, backend: backend, device: device), progress: progress) { _, session in
             try await typeText(session)
         }
+    }
+
+    /// Keys into a field `--into-*` or `--require-focus-id` names on Android, read back from that field; `--replace` sets the text without keys and checks it itself.
+    func confirmKeysLanded(_ inputText: String, focus: FocusCheck, backend: any DeviceBackend, device: DeviceID, clock: PollClock = .live) async throws {
+        guard device.platform == .android, !replace, let target = namedField else { return }
+        let gaps = focus.tree?.filledFromGaps != nil
+        try await Self.confirmLanded(landingExpectation(inputText, focus: focus), before: focus.field?.value, target: target, device: device, clock: clock) {
+            let plain = try await backend.accessibilityTree(for: device)
+            return gaps ? await backend.withGapsFilled(plain, on: device) : plain
+        }
+    }
+
+    /// The named field and the text the keys should leave in it.
+    func landingExpectation(_ inputText: String, focus: FocusCheck) -> TypedExpectation {
+        TypedExpectation(
+            text: inputText, replacing: false, field: focus.field,
+            query: intoQuery ?? SelectorQuery.make(id: requireFocusID, label: nil, labelContains: nil, value: nil),
+            secure: focus.secure == .secure || focus.field?.isSecure == true, ignoringText: false
+        )
     }
 
     /// What `--verify` checks: a change near the field, then the field read back; a password field's report counts no characters.

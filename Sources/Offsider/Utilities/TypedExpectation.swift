@@ -21,7 +21,10 @@ struct TypedExpectation {
     func check(before: UITree?, after: UITree) -> TextCheck {
         guard let now = locate(in: after), !now.isSecure else { return .unknown }
         let was = before.flatMap(locate)?.value ?? field?.value
-        return TypedText.judge(sent: text, before: was, after: now.value, replacing: replacing)
+        guard after.platform == .android else { return TypedText.judge(sent: text, before: was, after: now.value, replacing: replacing) }
+        // Android reads an empty field as no value, and a field inside the keyboard holding focus, as Gboard's stylus tutorial's does, took what is missing.
+        let check = TypedText.judge(sent: text, before: was, after: now.value ?? "", replacing: replacing)
+        return check != .match && TextFocus.keyboardHoldingFocus(in: after) != nil ? .differs : check
     }
 
     /// The field in `tree`: the one `--into-*` matches, else the focused field while it is still the one typed into.
