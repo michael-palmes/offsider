@@ -43,7 +43,9 @@ public struct XcrunDevicectl: DevicectlRunning {
             path = variable
             source = "DEVELOPER_DIR"
         } else {
-            let result = try await ProcessCapture.run(executable: "/usr/bin/xcode-select", arguments: ["-p"], environment: environment, timeout: 5)
+            let result = try await ProcessCapture.run(
+                executable: "/usr/bin/xcode-select", arguments: ["-p"], environment: ChildEnvironment.make(.appleTool, from: environment), timeout: 5
+            )
             path = result.stdout.trimmingCharacters(in: .whitespacesAndNewlines)
             source = "xcode-select"
             guard result.status == 0, !path.isEmpty else {

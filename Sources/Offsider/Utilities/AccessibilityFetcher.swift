@@ -312,47 +312,17 @@ struct AccessibilityFetcher {
         return errors
     }
 
+    /// Through `ProcessCapture`, so the child gets the Apple tool allow-list of this environment, never all of it.
     static func runProcess(
         executableURL: URL,
         arguments: [String],
         timeout: TimeInterval
     ) async throws -> Int32 {
-        let process = Process()
-        process.executableURL = executableURL
-        process.arguments = arguments
-        process.standardOutput = FileHandle.nullDevice
-        process.standardError = FileHandle.nullDevice
-        try process.run()
-
-        let deadline = Date().addingTimeInterval(timeout)
-        while process.isRunning, Date() < deadline {
-            do {
-                try await Task.sleep(for: .milliseconds(10))
-            } catch {
-                terminateProcess(process)
-                throw error
-            }
-        }
-        if process.isRunning {
-            terminateProcess(process)
+        do {
+            return try await ProcessCapture.run(executable: executableURL.path, arguments: arguments, timeout: timeout).status
+        } catch is ProcessCaptureTimeoutError {
             throw CLIError(errorDescription: "Offsider timed out while restoring accessibility automation.", reason: .treeReadFailed)
         }
-        process.waitUntilExit()
-        return process.terminationStatus
-    }
-
-    private static func terminateProcess(_ process: Process) {
-        if process.isRunning {
-            process.terminate()
-            let deadline = Date().addingTimeInterval(0.5)
-            while process.isRunning, Date() < deadline {
-                Thread.sleep(forTimeInterval: 0.01)
-            }
-            if process.isRunning {
-                kill(process.processIdentifier, SIGKILL)
-            }
-        }
-        process.waitUntilExit()
     }
 
     private static func serializedAccessibilityData(from accessibilityElement: FBAccessibilityElement, keys: Set<FBAXKeys>) throws -> Data {

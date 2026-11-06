@@ -9,7 +9,7 @@ import Testing
 
 /// Each way Offsider starts a child process.
 enum ChildSpawner: String, CaseIterable {
-    case processCapture, foundationProcess, detachedProcess
+    case processCapture, detachedProcess
 }
 
 /// A child that is still running, as one a broker or command starts while it holds sockets.
@@ -24,10 +24,6 @@ struct RunningChild {
         switch spawner {
         case .processCapture:
             child = .untilCancelled { _ = try? await ProcessCapture.run(executable: "/bin/sh", arguments: arguments, timeout: 60) }
-        case .foundationProcess:
-            child = .untilCancelled {
-                _ = try? await AccessibilityFetcher.runProcess(executableURL: URL(fileURLWithPath: "/bin/sh"), arguments: arguments, timeout: 60)
-            }
         case .detachedProcess:
             let pid = try DetachedProcess().launch(
                 executable: URL(fileURLWithPath: "/bin/sh"), arguments: arguments, environment: [:], logPath: folder + "/child.log"

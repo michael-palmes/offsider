@@ -10,6 +10,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - `test-runner.sh --unit-tests` runs in parallel. A test that fails there reruns alone and must pass, and is flagged when it does; a stall or an unclear result reruns everything serially. CI reuses the debug build's dependencies on pull requests.
 
+### Fixed
+
+- Every child process gets an allow-listed environment: the simulator accessibility recovery (`simctl spawn ... launchctl kickstart`) and the iPhone backend's `xcode-select -p` no longer inherit the caller's whole one. A source lint now fails on any `Process()` outside the process helpers, or a spawn handed an environment `ChildEnvironment` did not build.
+
 ## [0.16.0] - 2026-11-05
 
 ### Added
