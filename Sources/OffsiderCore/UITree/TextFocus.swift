@@ -57,6 +57,19 @@ public enum TextFocus: Equatable, Sendable {
         return keyboard ? .unlisted : .none
     }
 
+    /// On Android, the keyboard whose own text field has focus, as Gboard's stylus handwriting tutorial does: it takes the keys while the app's field still reports focus.
+    public static func keyboardHoldingFocus(in tree: UITree) -> UINode? {
+        guard tree.platform == .android else { return nil }
+        func holdsFocus(_ node: UINode) -> Bool {
+            (node.state.focused == true && node.role.isTextInput) || node.children.contains(where: holdsFocus)
+        }
+        func search(_ node: UINode) -> UINode? {
+            if node.role == .keyboard { return holdsFocus(node) ? node : nil }
+            return node.children.lazy.compactMap(search).first
+        }
+        return tree.roots.lazy.compactMap(search).first
+    }
+
     /// A keyboard on screen, or one whose frame the tree cannot place.
     public static func hasKeyboard(_ tree: UITree) -> Bool {
         let keyboards = tree.roots.flatMap { $0.flattened() }.filter { $0.role == .keyboard }

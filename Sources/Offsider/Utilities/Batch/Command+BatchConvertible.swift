@@ -281,9 +281,11 @@ extension Type: BatchConvertible {
         let focusTree = FocusTreeBox()
         let focus = BatchPrimitive.run { session in
             if intoQuery != nil || requireFocusID != nil {
-                focusTree.tree = try await ensureFocus(backend: context.backend, device: context.device, logger: logger, refusingSecureTarget: refusal) { event in
+                let check = try await ensureFocus(backend: context.backend, device: context.device, logger: logger, refusingSecureTarget: refusal) { event in
                     try await session.perform(event)
-                }.tree
+                }
+                focusTree.tree = check.tree
+                focusTree.check = check
                 context.invalidateTree(sentInput: DispatchTracker.current.state != .no)
                 return
             }
@@ -292,14 +294,21 @@ extension Type: BatchConvertible {
             focusTree.tree = try await Type.checkTextFocus(
                 readTree: { try await context.accessibilityTree(forceRefresh: true) }, device: context.device, clock: .live,
                 warn: { Console.current.notice(.warning(InputPersonView.sentence($0), agent: $0)) }, refusingSecureTarget: refusal,
-                hitTester: context.backend as? any PointHitTesting, unlistedField: unlistedField
+                hitTester: context.backend as? any PointHitTesting, unlistedField: unlistedField, replacing: replace
             ).tree
         }
         if throughSession {
             if replace {
                 return [focus, .text(inputText, replace: true)]
             }
-            return inputText.isEmpty && intoQuery == nil && requireFocusID == nil ? [] : [focus] + (inputText.isEmpty ? [] : [.text(inputText, replace: false)])
+            let named = intoQuery != nil || requireFocusID != nil
+            if inputText.isEmpty { return named ? [focus] : [] }
+            guard named else { return [focus, .text(inputText, replace: false)] }
+            let landed = BatchPrimitive.run { _ in
+                guard let check = focusTree.check else { return }
+                try await confirmKeysLanded(inputText, focus: check, backend: context.backend, device: context.device)
+            }
+            return [focus, .text(inputText, replace: false), landed]
         }
         return [focus] + typingPrimitives(inputText, context: context, focusTree: focusTree)
     }
@@ -307,6 +316,8 @@ extension Type: BatchConvertible {
     /// The tree a step's focus check read, for the typing after it to pace a React Native app.
     final class FocusTreeBox {
         var tree: UITree?
+        /// What `--into-*` or `--require-focus-id` read, for the step's text to be read back from that field.
+        var check: FocusCheck?
     }
 
     private func typingPrimitives(_ inputText: String, context: BatchContext, focusTree: FocusTreeBox) -> [BatchPrimitive] {

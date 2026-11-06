@@ -332,6 +332,7 @@ ANDROID_SUITES=(
     "AndroidSwipeGestureTests"
     "AndroidSliderTests"
     "AndroidTypeTests"
+    "AndroidStylusTutorialTests"
     "AndroidKeyTests"
     "AndroidButtonTests"
     "AndroidScreenshotE2ETests"
