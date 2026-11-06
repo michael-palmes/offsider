@@ -42,9 +42,9 @@ offsider assert --id <identifier> --has-value <text> --device <DEVICE_ID>
 - One agent per device: input commands lock the device. Exit 8 (`device_busy`) names the holder's pid; wait, or rerun with `--wait-lock <seconds>`. Never resend in a loop or kill the holder (`guide errors`).
 - Screenshots are in pixels; taps and frames are in points (dp on Android). `screenshot --scale points` makes them match.
 - `appearance`, `content-size`, `orientation`, `permission`, `status-bar`, `biometric`, `stay-awake`, `posture` and `airplane` stay changed: read the current value first, and set it back when done (`guide device-state`).
-- A physical iPhone or iPad works over USB only, unlocked, with UI Automation on, inside one app: pass `--app` to every screen command (not on a test device). Input starts a background session: run `offsider session stop --device <UDID> --clean` when done (`guide ios-device`).
+- A physical iPhone or iPad works over USB only, unlocked, with UI Automation on, inside one app: pass `--app` to every screen command (not on a test device). Input starts a background session: `session stop --device <UDID>` after each check, `--clean` only once done with it for good (`guide ios-device`).
 - React Native debug builds: `rn open` (Metro, `--restart`), `rn logbox status|open|dismiss` (`--index n`), `rn devmenu` (also a batch step), `logs --rn --app <id>` (`guide react-native`). `logs` reads the project's app; `--all` reads every app.
-- When an error says the screen is off or locked, run `offsider wake --device <DEVICE_ID>`; exit 7 `device_locked` means a passcode or PIN: ask the user to unlock it.
+- When the screen is off or locked, run `offsider wake --device <DEVICE_ID>`; exit 7 `device_locked` means a passcode or PIN: ask the user to unlock it.
 
 ## Exit codes
 
@@ -79,6 +79,6 @@ Every input command takes `--json` (`guide verify`); a failure prints `exitCode`
 
 ## Before finishing
 
-- Every device command has `--device`; every command and flag is real.
+- Every device command has `--device`; every flag is real.
 - Outcomes that matter were checked with `assert`, `wait`, `--verify` or a region compare.
 - Any run was stopped with `run stop`; `session stop --device <DEVICE_ID>` ran before Appium or Maestro.
