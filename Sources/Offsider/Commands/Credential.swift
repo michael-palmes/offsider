@@ -328,6 +328,7 @@ struct CredentialCommand: AsyncParsableCommand {
         where filter: [LoginTag] = [],
         json: Bool,
         styled: TerminalOutput? = nil,
+        profile: OutputProfile = .gated,
         store: any LoginCredentialStoring,
         questions: (any CredentialQuestions)? = nil,
         tracker: SignInTracker? = nil,
@@ -393,11 +394,16 @@ struct CredentialCommand: AsyncParsableCommand {
                 return render(report)
             }
             if let key {
-                guard let entry = entries.first(where: { $0.key == key }), let saved = try store.load(app: canonical, key: key) else {
-                    return render(CredentialReport(action: "status", app: app, key: key, saved: false, also: shared, signedInHere: here, signedInHereStale: stale, deviceInHand: inHand))
+                let missing = CredentialReport(action: "status", app: app, key: key, saved: false, also: shared, signedInHere: here, signedInHereStale: stale, deviceInHand: inHand)
+                guard let entry = entries.first(where: { $0.key == key }) else { return render(missing) }
+                // An agent learns the login is saved from its attributes; its username is never decrypted for one.
+                var username: String?
+                if profile != .agent {
+                    guard let saved = try store.load(app: canonical, key: key) else { return render(missing) }
+                    username = saved.username
                 }
                 let report = CredentialReport(
-                    action: "status", app: app, key: key, username: saved.username, saved: true, isDefault: entry.isDefault || entries.count == 1,
+                    action: "status", app: app, key: key, username: username, usernameHidden: username == nil, saved: true, isDefault: entry.isDefault || entries.count == 1,
                     also: shared, context: entry.context, signIns: recorded, signedInHere: here, signedInHereStale: stale, deviceInHand: inHand
                 )
                 return render(report)
@@ -470,6 +476,7 @@ struct CredentialCommand: AsyncParsableCommand {
         requested: String?,
         json: Bool,
         styled: TerminalOutput? = nil,
+        profile: OutputProfile = .gated,
         store: any LoginCredentialStoring,
         chooseApp: ([LoginAppGroup]) throws -> String,
         confirmLink: (_ member: String, _ canonical: String) throws -> Bool

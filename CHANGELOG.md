@@ -16,6 +16,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - Managed refusals name your organisation and the key, such as `Your organisation does not list this device (allowedDeviceIDs).` or `Your organisation denies com.example.bank (deniedBundleIDs).`, and still say to ask the administrator of this Mac. `devices status --json` and `doctor --json` add a `key` field beside the refusal code, and a test device's `testDeviceOff` reads the same way, such as `your organisation does not allow test devices (allowTestDevices)`.
 - `record-video --unmasked` and `stream-video --unmasked` need a person when an agent runs them, as `screenshot --no-mask-secure` does: Touch ID or the password on a terminal, else exit 1 `person_required` with nothing captured. People at a terminal are not asked.
+- `credential status <name>` run by an agent shows the login's name, app and tags with `username: hidden` (`usernameHidden: true` in JSON), and decrypts nothing; a person at a terminal still sees the username.
 - The skill's evidence guide no longer offers `OFFSIDER_RUN=off` as the fix for `run_unavailable`; it says to run `offsider run start <dir>` again.
 - `test-runner.sh --unit-tests` runs in parallel. A test that fails there reruns alone and must pass, and is flagged when it does; a stall or an unclear result reruns everything serially. CI reuses the debug build's dependencies on pull requests.
 

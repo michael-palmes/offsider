@@ -55,12 +55,12 @@ struct LoginCredentialTests {
         try store.save(credential, app: "com.example.app", key: "dev", isDefault: true)
         try store.save(try #require(LoginCredential(username: "other@example.com", password: password)), app: "com.other.app", key: "dev", isDefault: true)
 
-        let text = try CredentialCommand.perform(.status, app: "com.example.app", key: "dev", json: false, store: store) { credential }
+        let text = try CredentialCommand.perform(.status, app: "com.example.app", key: "dev", json: false, profile: .person, store: store) { credential }
         #expect(text.contains(username))
         #expect(!text.contains("other@example.com"))
         #expect(!text.contains(password))
 
-        let json = try CredentialCommand.perform(.status, app: "com.example.app", key: "dev", json: true, store: store) { credential }
+        let json = try CredentialCommand.perform(.status, app: "com.example.app", key: "dev", json: true, profile: .person, store: store) { credential }
         #expect(json.contains("\"username\":\"\(username)\""))
         #expect(json.contains("\"saved\":true"))
         #expect(!json.contains("\"password\""))
@@ -69,6 +69,23 @@ struct LoginCredentialTests {
         let set = try CredentialCommand.perform(.set, app: "com.example.app", key: "qa", json: false, store: store) { credential }
         #expect(set.contains(username))
         #expect(!set.contains(password))
+    }
+
+    @Test("status with a name run by an agent shows the login's name, app and tags, never its username, and decrypts nothing")
+    func statusHidesTheUsernameFromAnAgent() throws {
+        let store = MemoryLoginCredentialStore()
+        try store.save(try #require(LoginCredential(username: username, password: password)), app: "com.example.app", key: "dev", isDefault: true)
+        #expect(try store.setContext(LoginContext(tags: [try #require(LoginTag(rawValue: "role=admin"))]), app: "com.example.app", key: "dev"))
+        let decrypts = store.decrypts
+
+        let text = try CredentialCommand.perform(.status, app: "com.example.app", key: "dev", json: false, profile: .agent, store: store) { throw CLIError(errorDescription: "never read") }
+        #expect(text == "com.example.app dev (default)\n  username: hidden\n  tags: role=admin")
+        let json = try CredentialCommand.perform(.status, app: "com.example.app", key: "dev", json: true, profile: .agent, store: store) { throw CLIError(errorDescription: "never read") }
+        #expect(json == #"{"version":2,"action":"status","app":"com.example.app","name":"dev","saved":true,"default":true,"usernameHidden":true,"tags":["role=admin"],"signedIn":[]}"#)
+        #expect(!json.contains(username) && !text.contains(username))
+        #expect(store.decrypts == decrypts)
+        let missing = try CredentialCommand.perform(.status, app: "com.example.app", key: "qa", json: true, profile: .agent, store: store) { throw CLIError(errorDescription: "never read") }
+        #expect(missing.contains(#""saved":false"#))
     }
 
     /// The key `login` would pick, from attributes only, as on a device of `platform`.
@@ -355,7 +372,7 @@ struct LoginCredentialTests {
         defer { fixture.remove() }
         fixture.tracker.record(app: "com.example.app", foreground: "com.example.app", key: "qa-admin", deviceID: "emulator-5554")
         func status(_ key: String?, json: Bool = true, app: String = "com.example.app") throws -> String {
-            try CredentialCommand.perform(.status, app: app, key: key, json: json, store: store, tracker: fixture.tracker, deviceID: "emulator-5554") {
+            try CredentialCommand.perform(.status, app: app, key: key, json: json, profile: .person, store: store, tracker: fixture.tracker, deviceID: "emulator-5554") {
                 try #require(LoginCredential(username: "x", password: "x"))
             }
         }
@@ -444,7 +461,7 @@ struct LoginCredentialTests {
             try #require(LoginCredential(username: "bea@example.com", password: password))
         }
         func run(_ action: CredentialCommand.Action, _ key: String?, edit: LoginContextEdit = LoginContextEdit()) throws -> [String: Any] {
-            let line = try CredentialCommand.perform(action, app: "com.example.app", key: key, edit: edit, json: true, store: store) {
+            let line = try CredentialCommand.perform(action, app: "com.example.app", key: key, edit: edit, json: true, profile: .person, store: store) {
                 Issue.record("\(action.rawValue) must not ask for a password")
                 return credential
             }

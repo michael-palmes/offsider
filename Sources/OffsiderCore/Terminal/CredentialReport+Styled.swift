@@ -60,7 +60,7 @@ extension CredentialReport {
                 }
                 return [style.bold("🔐 No \(named) saved for \(app)"), PromptScreen.nextStep("Add it", command: "offsider credential add \(shown) --app \(app)", style: style)].joined(separator: "\n")
             }
-            let details = (username.map { ["👤 \($0)"] } ?? []) + (isDefault && key != LoginCredential.defaultAccountKey ? ["⭐ default"] : []) + shared
+            let details = (username.map { ["👤 \($0)"] } ?? (usernameHidden ? ["👤 hidden"] : [])) + (isDefault && key != LoginCredential.defaultAccountKey ? ["⭐ default"] : []) + shared
             let rows = Self.styledDetails(context ?? .empty, signIns: key.flatMap { signIns[$0] } ?? [], indent: "   ", style: style)
             let head = filter.isEmpty
                 ? style.green(style.bold("✅ The \(named) is saved for \(app)"))
