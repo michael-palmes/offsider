@@ -63,7 +63,7 @@ public struct XcrunDevicectl: DevicectlRunning {
         } catch let error as UntrustedDeveloperDirectory {
             throw IOSDeviceError(.xcodeUntrusted, error.failureMessage, hint: error.hint)
         }
-        let plist = NSDictionary(contentsOf: URL(fileURLWithPath: trusted.resolved).deletingLastPathComponent().appendingPathComponent("version.plist"))
+        let plist = UntrustedRead.propertyList(atPath: URL(fileURLWithPath: trusted.resolved).deletingLastPathComponent().appendingPathComponent("version.plist").path)
         return XcodeLocation(
             developerDirectory: trusted.resolved,
             source: source,

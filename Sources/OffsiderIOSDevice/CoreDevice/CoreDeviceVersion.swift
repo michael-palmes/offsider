@@ -1,4 +1,5 @@
 import Foundation
+import OffsiderCore
 import XPC
 
 /// The installed CoreDevice package's version, which `createservicesocket` requests carry and HID input is gated on.
@@ -41,7 +42,7 @@ public struct CoreDeviceVersion: Comparable, CustomStringConvertible, Sendable {
 
     /// The framework's `CFBundleVersion`; nil when CoreDevice is not installed.
     public static func installed(frameworkPath: String = frameworkPath) -> CoreDeviceVersion? {
-        let plist = NSDictionary(contentsOfFile: frameworkPath + "/Resources/Info.plist")
+        let plist = UntrustedRead.propertyList(atPath: frameworkPath + "/Resources/Info.plist")
         return (plist?["CFBundleVersion"] as? String).flatMap(CoreDeviceVersion.init)
     }
 

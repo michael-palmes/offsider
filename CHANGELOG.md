@@ -13,6 +13,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ### Fixed
 
 - Every child process gets an allow-listed environment: the simulator accessibility recovery (`simctl spawn ... launchctl kickstart`) and the iPhone backend's `xcode-select -p` no longer inherit the caller's whole one. A source lint now fails on any `Process()` outside the process helpers, or a spawn handed an environment `ChildEnvironment` did not build.
+- Xcode, CoreDevice and crash report plists and the Android broker log are read through the guarded reader, so a FIFO or symlink planted in their place cannot hang or redirect a command; the read lint now covers `FileHandle(forReading...)`, `NSDictionary(contentsOf...)` and their kin.
 
 ## [0.16.0] - 2026-11-05
 

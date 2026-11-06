@@ -105,7 +105,7 @@ public struct XcodeSuggestion: Equatable, Sendable {
         return names.filter { $0.hasPrefix("Xcode") && $0.hasSuffix(".app") }.compactMap { name in
             let path = directory + "/" + name
             guard FileManager.default.fileExists(atPath: path + "/Contents/Developer") else { return nil }
-            let info = NSDictionary(contentsOfFile: path + "/Contents/Info.plist")
+            let info = UntrustedRead.propertyList(atPath: path + "/Contents/Info.plist")
             return XcodeBundle(path: path, version: info?["CFBundleShortVersionString"] as? String, appleSigned: validator(path) == nil)
         }
     }
