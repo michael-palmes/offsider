@@ -23,7 +23,7 @@ struct StreamVideo: AsyncParsableCommand {
         while the evidence run masks emails or ids. One tree read before the first frame refuses the same way when a password \
         field, keyboard text beside the keys or Android's copy preview is on screen or the tree cannot be read \
         (OFFSIDER_MASK_SECURE=0 skips it outside a run); --unmasked streams anyway, \
-        with a warning. A stop before the first frame ends it at once with nothing streamed (exit 1, video_failed); \
+        with a warning; when an agent runs it, a person confirms first (person_required without a terminal). A stop before the first frame ends it at once with nothing streamed (exit 1, video_failed); \
         bgra has no first-frame signal, so there it exits 0 with no frames. A simulator or emulator that stops answering for 30 s ends it \
         (exit 1, device_unresponsive), and a stop that a stalled reader or capture holds up ends it within 5 s (exit 1, video_failed).
         """
@@ -80,6 +80,7 @@ struct StreamVideo: AsyncParsableCommand {
         }
         defer { signalObserver.invalidate() }
 
+        try await masks.confirmUnmasked(command: "stream-video")
         let checksSecureField = try masks.requireMaskable(command: "stream-video")
         try await masks.confirmCheckOff(command: "stream-video")
         let regions = try masks.regions()
