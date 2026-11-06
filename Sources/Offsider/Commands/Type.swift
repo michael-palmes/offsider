@@ -434,11 +434,18 @@ struct Type: AsyncParsableCommand, VerifiableCommand {
         // Tab alone moves focus, and a field may trim spaces.
         guard typed.judged, typed.text.contains(where: { !$0.isWhitespace }) else { return }
         let deadline = clock.now() + landingTimeout
+        // A field that selects its text on focus ends unchanged when typed the same text.
+        let retyped = (before ?? "") == typed.text
         while true {
-            guard let tree = try? await readTree(), let field = typed.locate(in: tree), !field.isSecure else { return }
+            guard let tree = try? await readTree() else {
+                guard clock.now() < deadline else { return }
+                try await clock.sleep(landingPoll)
+                continue
+            }
+            guard let field = typed.locate(in: tree), !field.isSecure else { return }
             let keyboard = TextFocus.keyboardHoldingFocus(in: tree)
-            let unchanged = (field.value ?? "") == (before ?? "")
-            let partial = keyboard != nil && TypedText.judge(sent: typed.text, before: before, after: field.value, replacing: false) != .match
+            let unchanged = !retyped && (field.value ?? "") == (before ?? "")
+            let partial = keyboard != nil && TypedExpectation.lacksText(typed.text, before: before, after: field.value)
             guard unchanged || partial else { return }
             guard clock.now() < deadline else { throw textNotLandedRefusal(keyboard: keyboard, target: target, device: device) }
             try await clock.sleep(landingPoll)

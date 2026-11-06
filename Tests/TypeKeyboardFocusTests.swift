@@ -201,6 +201,37 @@ struct TypeKeyboardFocusTests {
         #expect(error?.reason == .textNotAccepted)
     }
 
+    @Test("a read that fails is tried again until the deadline, so a slow dump never lets keys the tutorial took pass")
+    func failedReadRetried() async throws {
+        var reads = 0
+        let typed = TypedExpectation(text: "abc", replacing: false, field: nil, query: .id("second-field"), secure: false, ignoringText: false)
+        let error = await #expect(throws: CLIError.self) {
+            try await Type.confirmLanded(typed, before: nil, target: "id=second-field", device: Self.android, clock: ScriptedClock().poll) {
+                reads += 1
+                if reads == 1 { throw CLIError(errorDescription: "slow dump", reason: .helperTimedOut) }
+                return Self.form(focused: "second-field", keyboardField: true)
+            }
+        }
+        #expect(error?.reason == .textNotAccepted)
+    }
+
+    @Test("retyping the text a field already held passes, as a field that selects its text on focus ends the same")
+    func sameTextRetyped() async throws {
+        let typed = TypedExpectation(text: "abc", replacing: false, field: nil, query: .id("second-field"), secure: false, ignoringText: false)
+        try await Type.confirmLanded(typed, before: "abc", target: "id=second-field", device: Self.android, clock: ScriptedClock().poll) {
+            Self.form(focused: "second-field", value: "abc")
+        }
+    }
+
+    @Test("a value too long to judge passes with a keyboard field focused, as the text may all be there")
+    func longValueNotJudged() async throws {
+        let long = String(repeating: "x", count: 600)
+        let typed = TypedExpectation(text: "abc", replacing: false, field: nil, query: .id("second-field"), secure: false, ignoringText: false)
+        try await Type.confirmLanded(typed, before: long, target: "id=second-field", device: Self.android, clock: ScriptedClock().poll) {
+            Self.form(focused: "second-field", value: long + "abc", keyboardField: true)
+        }
+    }
+
     @Test("a batch type step reads its field back too, and fails when the keys did not reach it")
     func batchStep() async throws {
         let backend = StagedBackend([
