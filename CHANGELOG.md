@@ -26,6 +26,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Xcode, CoreDevice and crash report plists and the Android broker log are read through the guarded reader, so a FIFO or symlink planted in their place cannot hang or redirect a command; the read lint now covers `FileHandle(forReading...)`, `NSDictionary(contentsOf...)` and their kin.
 - A forced `deniedBundleIDs` of the wrong type refuses `login` and `credential` for every app on simulators and emulators too, naming the key, as it already refused every phone.
 - `devices status` with only `deniedBundleIDs` forced no longer prints `Managed policy: .`.
+- `boot --help` names the log it writes, `logs/boot-<avd>.log` in Offsider's private directory, not a temporary path nothing writes.
 
 ## [0.16.0] - 2026-11-05
 

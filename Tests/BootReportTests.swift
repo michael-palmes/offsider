@@ -2,10 +2,19 @@ import Foundation
 import OffsiderCore
 import Testing
 @testable import Offsider
+@testable import OffsiderAndroid
 
 @Suite("boot report")
 @MainActor
 struct BootReportTests {
+    @Test("boot help names the log file boot writes, in the private logs folder, and no temporary path")
+    func helpNamesTheLog() {
+        let help = Boot.configuration.discussion.replacingOccurrences(of: "\n", with: " ")
+        #expect(help.contains("logs/boot-<avd>.log in Offsider's private directory"))
+        #expect(!help.contains("TMPDIR"))
+        #expect(EmulatorBooter.logPath(avdName: "<avd>", directory: EmulatorBooter.logsDirectoryName) == "logs/boot-<avd>.log")
+    }
+
     static let pinLocked = AwakeReading(screen: .on, lockScreen: .secure, credential: "pin", userUnlocked: false, memTotalKB: 4_000_000)
     static let unlocked = AwakeReading(screen: .on, lockScreen: .hidden, credential: "none", userUnlocked: true, memTotalKB: 6_149_664)
 
