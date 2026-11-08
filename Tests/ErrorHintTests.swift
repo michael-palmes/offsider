@@ -80,6 +80,21 @@ struct ErrorHintTests {
         #expect(lines.map { $0.split(separator: " ")[1] } == ["devices", "doctor", "init", "guide", "boot", "--help"])
     }
 
+    @Test("-v prints what --version prints, and stays unknown after a command")
+    func shortVersion() async throws {
+        let long = try await TestHelpers.runOffsiderCommandSeparated("--version")
+        let short = try await TestHelpers.runOffsiderCommandSeparated("-v")
+        #expect(short.exitCode == 0)
+        #expect(!short.stdout.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+        #expect(short.stdout == long.stdout)
+        #expect(short.stderr.isEmpty)
+        #expect(try await TestHelpers.runOffsiderCommandSeparated("-v --json").stdout == long.stdout)
+
+        let nested = try await TestHelpers.runOffsiderCommandSeparated("tap -x 1 -y 1 --device 00000000-0000-0000-0000-000000000001 -v")
+        #expect(nested.exitCode == 64)
+        #expect(nested.stderr.contains("Unknown option '-v'"))
+    }
+
     @Test("--help groups commands from Start to Sessions")
     func helpGroups() {
         let help = OffsiderCommand.helpMessage(columns: 200)

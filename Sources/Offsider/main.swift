@@ -46,7 +46,9 @@ struct OffsiderCommand: AsyncParsableCommand {
     @MainActor
     private static func runCommandLine() async {
         Timings.installTotal()
-        let arguments = Array(CommandLine.arguments.dropFirst())
+        var arguments = Array(CommandLine.arguments.dropFirst())
+        // ArgumentParser names only `--version`, so a leading `-v` stands in for it.
+        if arguments.first == "-v" { arguments[0] = "--version" }
         if arguments.isEmpty {
             Console.current.show(StartScreen.page(version: VERSION))
             Darwin.exit(0)
@@ -97,13 +99,13 @@ struct OffsiderCommand: AsyncParsableCommand {
     @MainActor
     static func parseOrPick(_ arguments: [String]) async throws -> any ParsableCommand {
         do {
-            return try parseAsRoot(nil)
+            return try parseAsRoot(arguments)
         } catch {
             guard DevicePicker.offers(arguments: arguments, terminal: DevicePicker.terminal()), let need = DevicePicker.need(for: error, arguments: arguments) else { throw error }
             if need == .device {
                 let row = try await DevicePicker.orUnanswered(error) { try await DevicePicker.pickRunning() }
                 DeviceDefault.picked = row.id
-                let command = try parseAsRoot(nil)
+                let command = try parseAsRoot(arguments)
                 Console.current.data(DevicePickerScreen.using(row, style: Console.current.err.canvas.style) + "\n", to: .err)
                 return command
             }
