@@ -103,6 +103,7 @@ class FakeDeviceBackend: DeviceBackend {
         session: RecordingInputSession? = nil,
         advanceTreeOnInput: Bool = false
     ) {
+        GuardSources.defaultToNoRules()
         self.platform = platform
         self.trees = trees
         self.screenshots = screenshots

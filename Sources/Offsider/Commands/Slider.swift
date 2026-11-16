@@ -237,6 +237,9 @@ struct Slider: AsyncParsableCommand {
         var initialTree = initialTree
         if let actions = target.backend as? any AccessibilityActionPerforming {
             try requireSlider(initialMatch.element)
+            if let frame = initialMatch.element.frame {
+                try await AppGuard.check([.press(frame.center)], inputSpace: false, backend: target.backend, device: target.device)
+            }
             var outcome = try await actions.setRangeValue(targetNormalized, of: initialMatch.element, on: target.device)
             if outcome == .stale {
                 logger.info().log("Slider \(initialMatch.selectorDescription) changed before it could be set; finding it again")

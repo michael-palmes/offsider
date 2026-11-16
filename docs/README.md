@@ -9,6 +9,7 @@
 - [Agents](agents.md): setting up an agent, what it reads and what you see, sharing devices between agents, or moving from another tool.
 - [Physical devices](device-access.md): allowing a phone, iPhone or iPad, and managed policy.
 - [Privacy and security](privacy.md): what Offsider shows, keeps and refuses.
+- [App guard](guard.md): letting an agent drive a production build, with the controls it asks you about or never taps.
 - [Device state](device-state.md): appearance, permissions, apps, status bar, orientation and foldables.
 - [Sign in](sign-in.md): saving test users, `login` and Cloudflare Turnstile.
 - [React Native](react-native.md): testing a React Native app, LogBox and debug builds.

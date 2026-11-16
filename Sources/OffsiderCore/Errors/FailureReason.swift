@@ -80,6 +80,7 @@ public enum FailureReason: String, CaseIterable, Sendable {
     case appNotResponding = "app_not_responding"
     case logBoxInspectorOpen = "logbox_inspector_open"
     case appNotAllowed = "app_not_allowed"
+    case guardedControl = "guarded_control"
     case personRequired = "person_required"
     case turnstileRequired = "turnstile_required"
     case foregroundChanged = "foreground_changed"
