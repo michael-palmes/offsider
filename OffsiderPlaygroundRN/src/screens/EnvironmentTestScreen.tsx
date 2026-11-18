@@ -16,12 +16,24 @@ import { colours, fixtureLog, Readout, Screen, Target } from '../fixtures';
 const flashDelayMs = 1000;
 const spinMs = 1500;
 
-type LogLevel = 'info' | 'warning' | 'error';
+type LogLevel = 'info' | 'warning' | 'error' | 'debug' | 'object';
+
+// Long enough that React Native prints it over several lines.
+const logObject = {
+  route: 'environment-test',
+  items: [
+    { id: 1, name: 'first fixture item' },
+    { id: 2, name: 'second fixture item' },
+  ],
+  nested: { depth: 2, flags: { visible: true, selected: false } },
+};
 
 const loggers: Record<LogLevel, (message: string) => void> = {
   info: (message) => console.log(message),
   warning: (message) => console.warn(message),
   error: (message) => console.error(message),
+  debug: (message) => console.debug(message),
+  object: (message) => console.log(message, logObject),
 };
 
 export function EnvironmentTestScreen() {
@@ -125,6 +137,8 @@ export function EnvironmentTestScreen() {
           <Target id="environment-test-log" label="Log Info" onPress={() => log('info')} />
           <Target id="environment-test-warn" label="Log Warning" onPress={() => log('warning')} />
           <Target id="environment-test-error" label="Log Error" onPress={() => log('error')} />
+          <Target id="environment-test-debug" label="Log Debug" onPress={() => log('debug')} />
+          <Target id="environment-test-object" label="Log Object" onPress={() => log('object')} />
         </View>
       </ScrollView>
     </Screen>
