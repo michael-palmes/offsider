@@ -26,10 +26,20 @@ struct RNPrepare: AsyncParsableCommand {
     )
 
     @Option(name: .customLong("bundle-id"), help: ArgumentHelp("The app's bundle ID on iOS or package on Android.", valueName: "bundle-id|package"), transform: AppID.parse)
-    var bundleID: String
+    var bundleIDOption: String?
+
+    @Option(name: .customLong("app"), help: ArgumentHelp("The same as --bundle-id.", valueName: "bundle-id|package"), transform: AppID.parse)
+    var app: String?
 
     @OptionGroup
     var deviceOption: DeviceOption
+
+    /// `--bundle-id`, or `--app` naming the same app; `validate` makes sure one is given.
+    var bundleID: String { bundleIDOption ?? app ?? "" }
+
+    func validate() throws {
+        try AppID.requireOne(bundleID: bundleIDOption, app: app)
+    }
 
     func run() async throws {
         let logger = OffsiderLogger()

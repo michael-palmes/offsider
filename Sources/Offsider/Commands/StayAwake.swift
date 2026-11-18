@@ -74,7 +74,10 @@ struct StayAwakeCommand: AsyncParsableCommand {
     static func requireAndroid(_ id: String, command: String) throws {
         switch DeviceIDClassifier.classify(id) {
         case .iosSimulator:
-            throw CLIError(errorDescription: "\(command) is Android only: iOS simulators never sleep or lock.", reason: .notSupported)
+            throw CLIError(
+                errorDescription: "\(command) is Android only: an iOS simulator never sleeps or locks by itself. After `offsider button lock`, `offsider wake --device \(id)` clears its lock screen.",
+                reason: .notSupported
+            )
         case .iosDevice:
             throw CLIError(errorDescription: "\(command) is Android only: on an iPhone or iPad, set Auto-Lock in Settings and unlock it by hand.", reason: .notSupported)
         default:

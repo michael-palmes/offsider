@@ -487,6 +487,38 @@ struct LogsCommandTests {
         #expect(Logs.appHint(for: .all, matched: 0, platform: .ios) == nil)
     }
 
+    // MARK: Debug lines a history read cannot see
+
+    static func liveNotes(_ notes: [String]) -> [String] {
+        notes.filter { $0.hasPrefix("Note: nothing matched. A simulator keeps Debug-level lines") }
+    }
+
+    @Test("an empty history read on a simulator says console.debug lines show only live, naming the same read with --duration")
+    @MainActor
+    func emptyHistoryNamesTheLiveRead() async throws {
+        let (_, notes) = try await Self.read(["--rn"], entries: [], platform: .ios)
+        #expect(Self.liveNotes(notes) == [
+            "Note: nothing matched. A simulator keeps Debug-level lines, such as console.debug, only in memory, so a history read never shows them: start `offsider logs --rn --duration 30 --device fake-device` before the action.",
+        ])
+
+        let entries = [LogEntry(tag: "javascript", message: "LOG tapped cancel")]
+        let (_, grepped) = try await Self.read(["--rn", "--app", "com.mpalmes.offsider.playground", "--last", "2m", "--grep", "tapped save", "--exclude", "noise", "--json"], entries: entries, platform: .ios)
+        #expect(Self.liveNotes(grepped).first?.contains("`offsider logs --rn --app com.mpalmes.offsider.playground --grep 'tapped save' --exclude noise --duration 120 --json --device fake-device`") == true, "\(grepped)")
+    }
+
+    @Test("the live-read note stays out of a read that matched, a live read and Android; a window past 300 s names 30 s", arguments: [
+        (["--rn"], [LogEntry(message: "LOG tapped save")], DevicePlatform.ios, false),
+        (["--rn", "--duration", "5"], [], .ios, false),
+        (["--rn"], [], .android, false),
+        (["--rn", "--last", "1h"], [], .ios, true),
+    ] as [([String], [LogEntry], DevicePlatform, Bool)])
+    @MainActor
+    func liveReadNoteOnlyWhenEmpty(arguments: [String], entries: [LogEntry], platform: DevicePlatform, noted: Bool) async throws {
+        let (_, notes) = try await Self.read(arguments, entries: entries, platform: platform)
+        #expect(Self.liveNotes(notes).count == (noted ? 1 : 0))
+        if noted { #expect(Self.liveNotes(notes).first?.contains("--duration 30 ") == true, "a window too long to collect live falls back to 30 s") }
+    }
+
     @Test("conflicting flags are named", arguments: [
         (["--rn", "--process", "x"], "--process reads one process alone: drop --rn, or drop --process. --rn and --app combine."),
         (["--rn", "--app", "com.example.x", "--process", "y"], "--process reads one process alone: drop --rn and --app, or drop --process. --rn and --app combine."),

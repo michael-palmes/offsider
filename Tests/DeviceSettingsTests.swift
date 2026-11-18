@@ -143,6 +143,81 @@ struct DeviceSettingsTests {
             == "Orientation: portrait (411.43 x 923.43 dp)")
     }
 
+    // MARK: content-size restart note
+
+    static let simulator = DeviceID(rawValue: "00000000-0000-0000-0000-000000000001", platform: .ios)
+    static let large = ContentSizeReading(category: .large, fontScale: nil)
+    static let huge = ContentSizeReading(category: .accessibilityLarge, fontScale: nil)
+
+    /// A simulator whose centre answers from `executable`'s process, as idb's point read gives it.
+    static func note(front executable: String?, previous: ContentSizeReading? = large, current: ContentSizeReading = huge) async -> Notice? {
+        let backend = ProbingFakeBackend(trees: [], screen: UIScreenInfo(width: 402, height: 874))
+        backend.probeHit = FakeUI.node(.button, frame: FakeUI.frame(0, 0, 10, 10), pid: 4242)
+        return await ContentSizeCommand.restartNote(current, previous: previous, on: DeviceRouter.Route(backend: backend, device: simulator), processPath: { _ in executable })
+    }
+
+    /// A `.app` on disk whose Info.plist names `bundleID`, and the path of its executable.
+    static func appExecutable(_ bundleID: String) throws -> String {
+        let app = FileManager.default.temporaryDirectory.appendingPathComponent("content-size-\(UUID().uuidString)/Demo.app")
+        try FileManager.default.createDirectory(at: app, withIntermediateDirectories: true)
+        let plist = try PropertyListSerialization.data(fromPropertyList: ["CFBundleIdentifier": bundleID], format: .xml, options: 0)
+        try plist.write(to: app.appendingPathComponent("Info.plist"))
+        return app.appendingPathComponent("Demo").path
+    }
+
+    @Test("a size change on a simulator with an app in front names the restart that shows it, filled in")
+    func restartNoteNamesTheApp() async throws {
+        let executable = try Self.appExecutable("com.mpalmes.offsider.playground")
+        defer { try? FileManager.default.removeItem(atPath: ((executable as NSString).deletingLastPathComponent as NSString).deletingLastPathComponent) }
+        let note = try #require(await Self.note(front: executable))
+        let restart = "offsider app launch --restart --app com.mpalmes.offsider.playground --device \(Self.simulator.rawValue)"
+        #expect(note.command == restart)
+        #expect(note.agentText?.contains("may keep some old text measurements until it restarts") == true)
+        #expect(note.agentText?.contains("`\(restart)`") == true)
+        #expect(note.agentText?.contains("rn open again with --restart") == true)
+        #expect(AgentRenderer.notice(note).hasPrefix("Note: com.mpalmes.offsider.playground may keep"))
+    }
+
+    @Test("no restart note on the home screen, for an unchanged size, or on Android, which recreates the screen")
+    func restartNoteOnlyWhenItMatters() async throws {
+        #expect(await Self.note(front: "/Library/Developer/Runtime/CoreServices/SpringBoard.app/SpringBoard") == nil)
+        #expect(await Self.note(front: "/Applications/Demo.app/Demo", previous: Self.huge) == nil)
+        let android = DeviceRouter.Route(backend: FakeDeviceBackend(platform: .android, trees: []), device: DeviceID(rawValue: "emulator-5554", platform: .android))
+        #expect(await ContentSizeCommand.restartNote(Self.huge, previous: Self.large, on: android) == nil)
+    }
+
+    @Test("when the front app cannot be read cheaply the note still prints, with a placeholder for the app")
+    func restartNoteWithoutAFrontRead() async throws {
+        let unread = try #require(await Self.note(front: nil))
+        #expect(unread.command == nil, "a Try line is a command to run, never one with a blank to fill")
+        #expect(unread.agentText?.contains("`offsider app launch --restart --app <bundle-id> --device \(Self.simulator.rawValue)`") == true)
+        #expect(unread.agentText?.hasPrefix("The app in front may keep") == true)
+        #expect(await Self.note(front: "/Applications/Demo.app/Demo", previous: nil) != nil, "an unread earlier size counts as a change")
+    }
+
+    @Test("an iPhone has no cheap front-app read, so a change always notes the restart, naming the allowance's only app")
+    func restartNoteOnAnIPhone() async throws {
+        let phone = DeviceID(rawValue: "00008130-0000000000000ABC", platform: .ios)
+        func route(_ apps: [String]) -> DeviceRouter.Route {
+            let allowance = DeviceAllowance(platform: .ios, key: phone.rawValue, name: "Test iPhone", added: Date(), expires: nil, apps: apps)
+            return DeviceRouter.Route(backend: FakeDeviceBackend(trees: []), device: phone, allowance: allowance)
+        }
+        let pinned = try #require(await ContentSizeCommand.restartNote(Self.huge, previous: Self.large, on: route(["com.mpalmes.offsider.playground"])))
+        #expect(pinned.command == "offsider app launch --restart --app com.mpalmes.offsider.playground --device \(phone.rawValue)")
+        let several = try #require(await ContentSizeCommand.restartNote(Self.huge, previous: Self.large, on: route(["com.mpalmes.offsider.playground", "com.example.two"])))
+        #expect(several.command == nil && several.agentText?.contains("--app <bundle-id>") == true)
+    }
+
+    @Test("--json stays one object on stdout, with the restart note on stderr")
+    func restartNoteKeepsJSONClean() {
+        let capture = ConsoleCapture()
+        let console = capture.console(out: .agent, err: .agent)
+        let note = ContentSizeCommand.restartNote(front: .app("com.mpalmes.offsider.playground"), device: Self.simulator)
+        DevicePersonView.emit(DeviceSettingsReport.contentSize(Self.huge, previous: Self.large), json: true, person: [], notices: note.map { [$0] } ?? [], console: console)
+        #expect(capture.out == #"{"contentSize":"accessibility-large","previous":"large","fontScale":null}"# + "\n")
+        #expect(capture.err.hasPrefix("Note: com.mpalmes.offsider.playground may keep some old text measurements"))
+    }
+
     @Test("an Android night mode of auto reads as a schedule, and setting dark still works with no previous value")
     @MainActor
     func scheduledNightMode() async throws {

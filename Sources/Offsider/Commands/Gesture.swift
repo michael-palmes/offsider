@@ -199,30 +199,26 @@ struct Gesture: AsyncParsableCommand {
         }
     }
 
-    /// The preset's input: a sized swipe, or a held press and drag between the given points.
+    /// The preset's input: a sized swipe, or a held press and drag between the given points; `watchdog` bounds the reads that size and place it.
     @MainActor
-    func presetEvent(tree: @MainActor () async throws -> UITree, backend: any DeviceBackend, device: DeviceID, logger: OffsiderLogger) async throws -> InputEvent {
+    func presetEvent(tree: @MainActor () async throws -> UITree, backend: any DeviceBackend, device: DeviceID, logger: OffsiderLogger, watchdog: DeviceWatchdog = DeviceWatchdog()) async throws -> InputEvent {
         guard preset.kind != .pinch else {
             return try await SimulatorOrientationReader.$sharedReadings.withValue(SimulatorOrientationReader.SharedReadings()) {
-                try await presetPinch(tree: tree, backend: backend, device: device)
+                try await presetPinch(tree: tree, backend: backend, device: device, watchdog: watchdog)
             }
         }
         guard preset.kind == .longPressDrag else {
             // Sizing to the screen and mapping the points then read the simulator's orientation once.
             return try await SimulatorOrientationReader.$sharedReadings.withValue(SimulatorOrientationReader.SharedReadings()) {
-                try await presetSwipe(tree: try await tree(), backend: backend, device: device, logger: logger)
+                try await presetSwipe(tree: try await tree(), backend: backend, device: device, logger: logger, watchdog: watchdog)
             }
         }
-        return try await presetDrag(backend: backend, device: device)
+        return try await presetDrag(backend: backend, device: device, watchdog: watchdog)
     }
 
     @MainActor
-    func presetDrag(backend: any DeviceBackend, device: DeviceID) async throws -> InputEvent {
-        let points = try await backend.deviceCoordinates(
-            for: [(x: startX ?? 0, y: startY ?? 0), (x: endX ?? 0, y: endY ?? 0)],
-            tree: nil,
-            on: device
-        )
+    func presetDrag(backend: any DeviceBackend, device: DeviceID, watchdog: DeviceWatchdog = DeviceWatchdog()) async throws -> InputEvent {
+        let points = try await watchdog.inputPoints([(x: startX ?? 0, y: startY ?? 0), (x: endX ?? 0, y: endY ?? 0)], backend: backend, device: device)
         return try InputEvent.compositeDrag(
             from: points[0],
             to: points[1],
@@ -235,7 +231,7 @@ struct Gesture: AsyncParsableCommand {
 
     /// Two fingers about the centre, each frame checked on screen, then mapped to the backend's input space in one call, with the tree read for the centre.
     @MainActor
-    func presetPinch(tree: @MainActor () async throws -> UITree, backend: any DeviceBackend, device: DeviceID) async throws -> InputEvent {
+    func presetPinch(tree: @MainActor () async throws -> UITree, backend: any DeviceBackend, device: DeviceID, watchdog: DeviceWatchdog = DeviceWatchdog()) async throws -> InputEvent {
         let centre: UIPoint
         var read: UITree?
         if let startX, let startY {
@@ -250,15 +246,15 @@ struct Gesture: AsyncParsableCommand {
             }
             centre = UIPoint(x: frame.x + frame.width / 2, y: frame.y + frame.height / 2)
         }
-        let screen = try await backend.screenSize(for: device)
+        let screen = try await watchdog.screenSize(backend: backend, device: device)
         for spread in [from ?? 0, to ?? 0] {
             _ = try Touch.fingerPoints(x: centre.x, y: centre.y, spread: spread, screen: screen, fix: "Move --x, or bring --from and --to closer together.")
         }
         let duration = duration ?? preset.defaultDuration
         let frames = GesturePreset.pinchFrames(centre: centre, from: from ?? 0, to: to ?? 0, moves: GesturePreset.pinchMoves(duration: duration))
         // An iPhone or iPad would judge the tree's window before refusing two fingers, a dead end a pinch never needs.
-        let mapped = try await backend.deviceCoordinates(
-            for: frames.flatMap { [(x: $0.0.x, y: $0.0.y), (x: $0.1.x, y: $0.1.y)] }, tree: device.isPhysicalIOSDevice ? nil : read, on: device
+        let mapped = try await watchdog.inputPoints(
+            frames.flatMap { [(x: $0.0.x, y: $0.0.y), (x: $0.1.x, y: $0.1.y)] }, tree: device.isPhysicalIOSDevice ? nil : read, backend: backend, device: device
         )
         let pairs = stride(from: 0, to: mapped.count - 1, by: 2).map { (first: mapped[$0], second: mapped[$0 + 1]) }
         return InputEvent.compositePinch(frames: pairs, duration: duration)
@@ -270,14 +266,21 @@ struct Gesture: AsyncParsableCommand {
 
     private func send() async throws {
         let logger = OffsiderLogger()
-        let route = try await DeviceRouter.routeForInput(deviceOption, logger: logger)
+        try await send(on: try await DeviceRouter.routeForInput(deviceOption, logger: logger), logger: logger)
+    }
+
+    /// Sends the preset on `route`; `watchdog` bounds the reads that size and place it.
+    func send(on route: DeviceRouter.Route, logger: OffsiderLogger, watchdog: DeviceWatchdog = DeviceWatchdog()) async throws {
         await appOption.apply(to: route)
         let backend = route.backend
         let device = route.device
         try await backend.prepare()
 
         logger.info().log("Performing \(preset.description)")
-        let gestureEvent = try await presetEvent(tree: { try await backend.accessibilityTree(for: device) }, backend: backend, device: device, logger: logger)
+        let gestureEvent = try await presetEvent(
+            tree: { try await watchdog.guardingInputRead(of: device) { try await backend.accessibilityTree(for: device) } },
+            backend: backend, device: device, logger: logger, watchdog: watchdog
+        )
 
         if let preDelay = preDelay, preDelay > 0 {
             logger.info().log("Pre-delay: \(preDelay)s")
@@ -309,10 +312,11 @@ struct Gesture: AsyncParsableCommand {
         tree: UITree,
         backend: any DeviceBackend,
         device: DeviceID,
-        logger: OffsiderLogger
+        logger: OffsiderLogger,
+        watchdog: DeviceWatchdog = DeviceWatchdog()
     ) async throws -> InputEvent {
         let screenSize = preset.spansScreen && (screenWidth == nil || screenHeight == nil)
-            ? await Timings.measure("screen-size") { try? await backend.screenSize(for: device) }
+            ? await Timings.measure("screen-size") { try? await watchdog.screenSize(backend: backend, device: device) }
             : nil
         guard let screen = preset.frame(screen: screenSize, viewport: tree.viewport, applicationFrame: tree.applicationFrame, width: screenWidth, height: screenHeight) else {
             throw CLIError(
@@ -328,11 +332,7 @@ struct Gesture: AsyncParsableCommand {
         logger.info().log("Coordinates: (\(start.x), \(start.y)) to (\(end.x), \(end.y))")
         logger.info().log("Duration: \(gestureDuration)s, Delta: \(gestureDelta)px")
 
-        let physicalPoints = try await backend.deviceCoordinates(
-            for: [(x: start.x, y: start.y), (x: end.x, y: end.y)],
-            tree: tree,
-            on: device
-        )
+        let physicalPoints = try await watchdog.inputPoints([(x: start.x, y: start.y), (x: end.x, y: end.y)], tree: tree, backend: backend, device: device)
         let physicalStart = physicalPoints[0]
         let physicalEnd = physicalPoints[1]
 

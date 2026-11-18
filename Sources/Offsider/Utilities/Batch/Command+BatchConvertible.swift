@@ -112,6 +112,9 @@ extension Tap: BatchConvertible {
             on: context.device
         )[0]
 
+        if let heldFor {
+            return [.hidBarrier(Self.heldTap(at: physicalPoint, seconds: heldFor, pre: preDelay, post: postDelay))]
+        }
         let style = resolvedTapStyle(for: resolution, context: context)
         switch style {
         case .physical:
