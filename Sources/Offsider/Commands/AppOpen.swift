@@ -12,8 +12,9 @@ struct AppOpenCommand: AsyncParsableCommand {
         `devicectl device process launch --payload-url`, which the app receives as an open-URL call (not the \
         NSUserActivity a tapped universal link brings). A simulator opens it with `simctl openurl`, so iOS picks the \
         app that claims the link; Offsider taps Open on an `Open in` prompt only when it names the app, and checks the app \
-        is in front afterwards. Quote the link in your \
-        shell. Refused: spaces and control characters (percent-encode them), links over 4 KiB, and the intent:, \
+        is in front afterwards. There an https link opens in Safari, not the app that claims its domain (simctl hands \
+        web links to Safari), so test a universal link with the app's own scheme or a tap on the link in a page. Quote \
+        the link in your shell. Refused: spaces and control characters (percent-encode them), links over 4 KiB, and the intent:, \
         file:, content:, javascript: and data: schemes. On Android and a simulator, a link the app has no screen for, \
         or that lands on a chooser or another app, exits 1 with link_not_handled. On an iPhone or iPad exit 0 means \
         only that the link was delivered, as iOS does not say more, so `wait` for the screen. --restart stops the app \

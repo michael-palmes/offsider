@@ -66,7 +66,7 @@ Locks are files in a private per-user directory, `offsider-<uid>/locks/` under t
 
 ### Leases
 
-`offsider lease set --device <id> --label <text>` marks a device as used by one session for `--ttl` minutes (1 to 1440, default 240), `release` ends it and `show` lists leases (`--json`). A lease is kept under the device's AVD name, phone serial or UDID, so it follows an emulator across serials, and a shut-down AVD can be leased by name. Another label's live lease exits 8 (`device_leased`) unless `--force`; the same label renews it, for the session that sets it.
+`offsider lease set --device <id> --label <text>` marks a device as used by one session for `--ttl` minutes (1 to 1440, default 240), under a label of 1 to 200 characters that is never shortened (`OFFSIDER_LEASE` must match it exactly), `release` ends it and `show` lists leases (`--json`). A lease is kept under the device's AVD name, phone serial or UDID, so it follows an emulator across serials, and a shut-down AVD can be leased by name. Another label's live lease exits 8 (`device_leased`) unless `--force`; the same label renews it, for the session that sets it.
 
 `set` records the session it runs in (the agent or terminal above its shell), so `doctor --device` passes `device.lease` for any later command of that session, even from a new shell, and warns for another session, naming it, or for one that has ended. `OFFSIDER_LEASE`, when set, decides instead (a pass only when it matches the label), so two agents in one harness can tell their leases apart. When `set` finds no session to record, it says to run later commands as `OFFSIDER_LEASE='<label>' offsider …`. `--json` adds `owner` (`{pid, name, startedAt}`).
 

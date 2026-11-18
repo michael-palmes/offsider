@@ -83,6 +83,11 @@ public enum KeyboardDismiss {
         return coverageFrames(in: tree).contains { $0.width >= 0.6 * viewport.width && $0.height >= 0.2 * viewport.height }
     }
 
+    /// Docked keys are on screen, so Back hides them and never reaches the app.
+    public static func docksKeys(in tree: UITree) -> Bool {
+        !coverageFrames(in: tree).isEmpty && showsKeys(in: tree)
+    }
+
     static func coverageFrames(in tree: UITree) -> [UIFrame] {
         let keyboards = tree.roots.flatMap { $0.flattened() }.filter { $0.role == .keyboard && ($0.frame?.height ?? 0) > 0 }
         guard let viewport = tree.viewport else { return keyboards.compactMap(\.frame) }
@@ -134,6 +139,20 @@ public enum KeyboardDismiss {
     public static func closesKeyboard(_ node: UINode) -> Bool {
         isHideControl(node) || (node.role == .button && [node.label, node.id].contains { $0?.trimmingCharacters(in: .whitespaces).lowercased() == "done" })
     }
+
+    /// The middle of the keyboard's own way out: its hide key, or a Done button in the bar that rides on top of the keys. A Done elsewhere may belong to the form.
+    public static func closingControl(in tree: UITree) -> UIPoint? {
+        let nodes = tree.roots.flatMap { $0.flattened() }
+        if let hide = nodes.first(where: isHideControl), let frame = hide.frame, frame.width > 0, frame.height > 0 { return frame.center }
+        guard let top = coverageFrames(in: tree).map(\.y).min() else { return nil }
+        return nodes.first { node in
+            guard closesKeyboard(node), let frame = node.frame, frame.width > 0, frame.height > 0 else { return false }
+            return frame.y + frame.height <= top + 1 && frame.y >= top - accessoryHeight
+        }?.frame?.center
+    }
+
+    /// How far above the keys an input accessory bar reaches.
+    static let accessoryHeight: Double = 64
 
     private static func isHideControl(_ node: UINode) -> Bool {
         guard node.role == .button || node.role == .other, node.frame != nil else { return false }

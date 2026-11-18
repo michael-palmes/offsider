@@ -174,7 +174,9 @@ struct RunTests {
         #expect(status.runs.isEmpty)
         #expect(status.ended.map(\.endedBy) == ["owner-exited"])
         #expect(try RunFolder(path: fixture.folder()).readState()?.endedBy == "owner-exited")
-        #expect(try FileManager.default.contentsOfDirectory(atPath: fixture.runsDirectory).isEmpty)
+        let left = try FileManager.default.contentsOfDirectory(atPath: fixture.runsDirectory)
+        #expect(left.count == 1 && left.allSatisfy { $0.hasSuffix(EndedRunMarker.suffix) })
+        #expect(try RunRegistry.allRecords(in: fixture.environment()).isEmpty)
     }
 
     @Test("OFFSIDER_RUN=off records nothing and OFFSIDER_RUN=<dir> records there with no session")
@@ -409,8 +411,8 @@ struct RunTests {
         #expect(fixture.manifest().isEmpty)
     }
 
-    @Test("a capture outside any run notes nothing while the run's session lives, or once run status has ended it")
-    func noEndedRunNote() async throws {
+    @Test("a capture outside any run notes nothing while the run's session lives; once the session has gone the note outlasts run status for a day, and stops when the run is started again")
+    func endedRunNoteOutlastsStatus() async throws {
         let fixture = try RunFixture()
         _ = try fixture.start()
         let backend = try Self.screenshotBackend()
@@ -419,15 +421,82 @@ struct RunTests {
         fixture.processes.add(pid: 700, name: "offsider", parent: 600)
         let output = ScreenshotMaskTests.temporaryPath()
         defer { try? FileManager.default.removeItem(atPath: output) }
-
-        let capture = ConsoleCapture()
-        try await Console.$current.withValue(capture.console(out: .agent, err: .agent)) {
-            try await fixture.command(fixture.recorder("screenshot", selfPID: 700)) { _ = try await Self.screenshot(["--output", output], on: backend) }
-            fixture.processes.remove(pid: 100)
-            _ = try RunRegistry.status(all: false, in: fixture.environment(selfPID: 700, parentPID: 600))
-            try await fixture.command(fixture.recorder("screenshot", selfPID: 700)) { _ = try await Self.screenshot(["--output", output], on: backend) }
+        func noted() async throws -> Bool {
+            let capture = ConsoleCapture()
+            try await Console.$current.withValue(capture.console(out: .agent, err: .agent)) {
+                try await fixture.command(fixture.recorder("screenshot", selfPID: 700)) { _ = try await Self.screenshot(["--output", output], on: backend) }
+            }
+            return capture.err.contains("The run in \(fixture.folder()) ended with its session")
         }
-        #expect(!capture.err.contains("ended with its session"))
+
+        #expect(try await noted() == false)
+        fixture.processes.remove(pid: 100)
+        let status = try RunRegistry.status(all: false, in: fixture.environment(selfPID: 700, parentPID: 600))
+        #expect(status.ended.map(\.dir) == [fixture.folder()])
+        #expect(try RunRegistry.status(all: true, in: fixture.environment(selfPID: 700, parentPID: 600)).ended.isEmpty)
+        #expect(try await noted())
+        fixture.now += EndedRunMarker.keptFor - 60
+        #expect(try await noted())
+        fixture.now += 120
+        #expect(try await noted() == false)
+        #expect(try FileManager.default.contentsOfDirectory(atPath: fixture.runsDirectory).isEmpty)
+    }
+
+    @Test("starting the ended run's folder again, from any session, ends its note")
+    func endedRunNoteStopsOnRestart() async throws {
+        let fixture = try RunFixture()
+        _ = try fixture.start()
+        Self.newSession(after: fixture)
+        _ = try RunRegistry.status(all: false, in: fixture.environment(selfPID: 700, parentPID: 600))
+        #expect(RunRegistry.endedWithSession(in: fixture.environment(selfPID: 700, parentPID: 600)) == fixture.folder())
+        let resumed = try RunRegistry.start(fixture.folder(), label: nil, masks: RunMasks(), in: fixture.environment(selfPID: 700, parentPID: 600))
+        #expect(resumed.continued)
+        #expect(RunRegistry.endedWithSession(in: fixture.environment(selfPID: 700, parentPID: 600)) == nil)
+    }
+
+    @Test("an ended-run marker that is not Offsider's own JSON is removed, never trusted")
+    func unreadableEndedMarker() throws {
+        let fixture = try RunFixture()
+        try OffsiderPrivateDirectory.writeAtomically(Data("{\"dir\":7}".utf8), named: "1-2\(EndedRunMarker.suffix)", in: fixture.runsDirectory)
+        #expect(RunRegistry.endedWithSession(in: fixture.environment()) == nil)
+        #expect(try FileManager.default.contentsOfDirectory(atPath: fixture.runsDirectory).isEmpty)
+    }
+
+    @Test("with no run and no --output, a capture taken in a git checkout goes to the private captures folder and says where; elsewhere it stays in the current folder")
+    func unnamedCaptureLeavesCheckout() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("offsider-checkout-\(UUID().uuidString)")
+        let nested = root.appendingPathComponent("repo/app/src")
+        let captures = root.appendingPathComponent("captures").path
+        try FileManager.default.createDirectory(at: nested, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(atPath: captures, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        #expect(GitWorkTree.root(containing: nested.path) == nil)
+        #expect(try Screenshot.folderOutsideCheckout(currentDirectory: nested.path) { captures } == nil)
+        // A linked work tree has a `.git` file, a checkout a `.git` folder.
+        try Data("gitdir: elsewhere\n".utf8).write(to: root.appendingPathComponent("repo/.git"))
+        #expect(GitWorkTree.root(containing: nested.path) == root.appendingPathComponent("repo").standardizedFileURL.path)
+        #expect(try Screenshot.folderOutsideCheckout(currentDirectory: nested.path) { captures } == captures)
+
+        let backend = try Self.screenshotBackend()
+        for plain in [true, false] {
+            let capture = ConsoleCapture()
+            let report = try await Console.$current.withValue(capture.console(out: .agent, err: .agent)) {
+                try await Screenshot.$unnamedFolder.withValue({ captures }) {
+                    let command = try Screenshot.parse(["--device", Self.device.rawValue])
+                    return try await command.take(try command.request(), on: DeviceRouter.Route(backend: backend, device: Self.device), masks: try command.maskPlan(environment: ["OFFSIDER_MASK_SECURE": "0"]), plain: plain)
+                }
+            }
+            let path = try #require(report.path)
+            #expect(path.hasPrefix(captures + "/") && FileManager.default.fileExists(atPath: path))
+            #expect(capture.err.contains("No run is recording and this folder is a git checkout, so the capture went to \(path). Pass --output to choose the file"))
+        }
+        let named = ConsoleCapture()
+        let output = ScreenshotMaskTests.temporaryPath()
+        defer { try? FileManager.default.removeItem(atPath: output) }
+        try await Console.$current.withValue(named.console(out: .agent, err: .agent)) {
+            try await Screenshot.$unnamedFolder.withValue({ captures }) { _ = try await Self.screenshot(["--output", output], on: backend) }
+        }
+        #expect(!named.err.contains("git checkout"))
     }
 
     @Test("the ended-run note's run start command quotes a folder a shell would split")

@@ -32,6 +32,18 @@ struct LeaseCommandTests {
         #expect(try LeaseCommand.perform(.release, target: Self.avd, label: nil, minutes: 0, force: false, json: false, store: store, now: Self.now, pid: 0) == "Offsider_E2E was not leased.")
     }
 
+    @Test("a label built from a long branch name is kept whole, so OFFSIDER_LEASE matches it, and the usage line states the limit")
+    func longLabel() throws {
+        let store = try Self.store()
+        let label = "device test " + String(repeating: "feature-branch-", count: 12) + "end"
+        #expect(label.count > 80 && label.count <= 200)
+        let text = try Self.set(label, store: store)
+        #expect(text.contains("'\(label)'"))
+        #expect(store.lease(platform: .android, key: Self.avd.key, now: Self.now)?.label == label)
+        #expect(LeaseCommand.helpMessage().contains("--label <1-200 characters>"))
+        #expect(Shutdown.helpMessage().contains("--label <1-200 characters>"))
+    }
+
     @Test("another label's live lease is refused with device_leased (exit 8) unless --force")
     func conflict() throws {
         let store = try Self.store()
@@ -121,13 +133,15 @@ struct LeaseCommandTests {
 
     @Test("usage errors exit 64", arguments: [
         (["lease", "set", "--device", "Pixel_9"], "lease set needs --label <text>"),
-        (["lease", "set", "--device", "Pixel_9", "--label", ""], "--label must be 1 to 80 printable characters."),
-        (["lease", "set", "--device", "Pixel_9", "--label", String(repeating: "x", count: 81)], "--label must be 1 to 80 printable characters."),
+        (["lease", "set", "--device", "Pixel_9", "--label", ""], "--label must be 1 to 200 printable characters; got 0."),
+        (["lease", "set", "--device", "Pixel_9", "--label", String(repeating: "x", count: 201)], "--label must be 1 to 200 printable characters; got 201."),
+        (["lease", "set", "--device", "Pixel_9", "--label", "a\u{7}b"], "--label must be 1 to 200 printable characters; this one holds a control character."),
+        (["shutdown", "Pixel_9", "--label", String(repeating: "x", count: 201)], "--label must be 1 to 200 printable characters; got 201."),
         (["lease", "set", "--device", "Pixel_9", "--label", "x", "--ttl", "0"], "--ttl must be from 1 to 1440 minutes; got 0."),
         (["lease", "set", "--device", "Pixel_9", "--label", "x", "--ttl", "1441"], "--ttl must be from 1 to 1440 minutes; got 1441."),
         (["lease", "show", "--label", "x"], "--label goes with set or check, not show."),
         (["lease", "check", "--device", "Pixel_9", "--ttl", "5"], "--ttl goes with set, not check."),
-        (["lease", "check", "--device", "Pixel_9", "--label", ""], "--label must be 1 to 80 printable characters."),
+        (["lease", "check", "--device", "Pixel_9", "--label", ""], "--label must be 1 to 200 printable characters; got 0."),
         (["lease", "release", "--force", "--device", "Pixel_9"], "--force goes with set, not release."),
         (["lease", "grab", "--device", "Pixel_9"], "Unknown action 'grab'. Use set, release, show or check."),
     ])

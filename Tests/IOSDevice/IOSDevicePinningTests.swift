@@ -178,6 +178,27 @@ struct IOSDevicePinningTests {
         #expect(may?.hint == "offsider describe-ui --summary --device \(IOSDeviceFixtures.phone)")
     }
 
+    @Test("input the runner sends for a named app under a prompt names, on a test device, the read and tap that answer it, and elsewhere asks a person")
+    func promptOverNamedAppForInput() async throws {
+        let transport = FakeRunnerTransport()
+        transport.foregroundApp = Self.playground
+        transport.promptOverApp = "“Playground” Would Like to Send You Notifications"
+        let whole = try Self.testDeviceBackend(transport)
+        whole.targetApp = Self.playground
+        let may = await #expect(throws: IOSDeviceError.self) { try await whole.openInputSession(for: Self.phone).perform(.tapAt(x: 10, y: 20)) }
+        #expect(may?.reason == .systemPromptInFront)
+        #expect(may?.ask == nil)
+        #expect(may?.message.contains("Would Like to Send You Notifications") == true)
+        #expect(may?.message.hasSuffix("Read it with `offsider describe-ui --summary --device \(IOSDeviceFixtures.phone)`, then answer it with `offsider tap --label <button> --device \(IOSDeviceFixtures.phone)`.") == true)
+
+        let pinned = try Self.backend(transport)
+        pinned.targetApp = Self.playground
+        let asks = await #expect(throws: IOSDeviceError.self) { try await pinned.openInputSession(for: Self.phone).perform(.tapAt(x: 10, y: 20)) }
+        #expect(asks?.reason == .systemPromptInFront)
+        #expect(asks?.ask == "Can you answer the system prompt on \(PersonAsk.devicePlaceholder)?")
+        #expect(asks?.message.contains("offsider tap") == false, "a phone in personal use never gets the commands that answer its prompts")
+    }
+
     @Test("the read a prompt's error names reaches the runner without an app, so it reads what is in front")
     func namedReadAnswersOnATestDevice() async throws {
         let transport = FakeRunnerTransport()

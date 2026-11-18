@@ -43,6 +43,8 @@ public enum OffsiderPrivateDirectory {
     public static let leasesDirectoryName = "leases"
     public static let orientationDirectoryName = "orientation"
     public static let runsDirectoryName = "runs"
+    /// Where an unnamed capture goes when the current folder is a git work tree.
+    public static let capturesDirectoryName = "captures"
     public static let signInsDirectoryName = "signins"
 
     public static func rootName(uid: uid_t) -> String {

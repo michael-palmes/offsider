@@ -317,6 +317,7 @@ SIMULATOR_SUITES=(
     "SliderTests"
     "TapTests"
     "TouchTests"
+    "TurnstileWidgetTests"
     "TypeTests"
     "VerifyTests"
     "AppExitE2ETests"

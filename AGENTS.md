@@ -105,7 +105,7 @@ Agents building in parallel use `swift build --scratch-path <dir>` and `swift te
 | `OFFSIDER_IOS_DEVICE_E2E=1` | Enables the `IOSDevice*E2ETests` suites in `swift test` (`test-runner.sh --ios-device` sets it) |
 | `OFFSIDER_IOS_DEVICE` | The exact UDID the iOS device suites drive (a physical iOS or iPadOS row in `devicectl list devices`; never a simulator); unset, `--ios-device` uses the one active iPhone or iPad allowance, only when it pins `com.mpalmes.offsider.playground` or is a test device |
 | `OFFSIDER_IOS_TEAM_ID` | The team (10 letters and digits) that signs the runner and the OffsiderPlaygroundApp for a device; used only when the allowance names no team, or the same one (another team exits 64), and `--ios-device` reads the allowance's team the same way; required when the allowance names none; Xcode's signed-in team is never picked silently |
-| `OFFSIDER_IOS_RUNNER_PREFIX` | The iPhone runner's bundle id prefix (default `com.mpalmes.offsider`; apps `<prefix>.runner` and `<prefix>.runner.uitests`; reverse-DNS, at most 100 characters, else exit 64); part of the runner cache key |
+| `OFFSIDER_IOS_RUNNER_PREFIX` | The iPhone runner's bundle id prefix (default `com.mpalmes.offsider`; apps `<prefix>.runner` and `<prefix>.runner.uitests`; reverse-DNS, at most 100 characters, else exit 64); part of the runner cache key; a prefix a person saved with `devices add --runner-prefix` wins, and another here exits 64 |
 | `OFFSIDER_ANDROID_TRANSPORT` | `adb` or `grpc` forces one Android transport (troubleshooting) |
 | `OFFSIDER_ANDROID_GRPC_AUTH` | `jwt` makes gRPC use a short-lived signing key instead of the discovery token |
 | `OFFSIDER_ANDROID_TREE` | `helper` or `uiautomator` forces one Android tree source (troubleshooting); default `auto` |
@@ -181,7 +181,7 @@ A command or option change also updates `docs/commands.md` (and the `docs/` page
 
 ## Android emulator caveats
 
-- Launch emulators only through `offsider boot`, or with neither `-port` nor a bare `-grpc`: `-port` leaves no gRPC endpoint, and a bare `-grpc` binds `[::]` with no auth. Always pass `-no-metrics`.
+- Launch emulators only through `offsider boot`, or with neither `-port` nor a bare `-grpc`: `-port` leaves no gRPC endpoint, and a bare `-grpc` binds `[::]` with no auth. Always pass `-no-metrics`, and `-no-audio` unless the user asks for sound (`boot --audio`): host audio can open the Mac's microphone.
 - `boot --emulator-arg` takes only the flags in `EmulatorArguments.allowed`, each value checked, and refuses Offsider's own flags (`ownedFlags`) and everything else. Never add a listener, port, gRPC, metrics, network or host-path flag to the allow-list, nor `webcam` to the camera values.
 - Start the adb server with `ADB_MDNS=0`, so it sends no multicast on the LAN.
 - A physical phone is often attached to this Mac and must never be targeted: agents, scripts and E2E drive only the Offsider AVDs and simulators, and a phone only when the user names it and has run `offsider devices add` and chosen it themselves. Reading its `adb devices -l` row is fine; never send it a command. Offsider sets an `adb reverse` only from `rn open` on an allowed USB phone, as `tcp:<port> tcp:<port>` for a Metro port the person chose in `devices add`, once Metro on 127.0.0.1 answers and runs as this user; `session stop` removes only the ones it recorded. Never set one on a phone yourself, and never widen the ports.

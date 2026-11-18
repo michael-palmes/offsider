@@ -70,9 +70,11 @@ struct TypeTextTests {
 @Suite("Type on an adb route")
 @MainActor
 struct TypeAdbRouteTests {
-    static let plainField = AndroidSecureTextTests.xml(
-        AndroidSecureTextTests.passwordNode(text: "", focused: true).replacingOccurrences(of: #"password="true""#, with: #"password="false""#)
-    )
+    static func plainField(text: String) -> String {
+        AndroidSecureTextTests.xml(
+            AndroidSecureTextTests.passwordNode(text: text, focused: true).replacingOccurrences(of: #"password="true""#, with: #"password="false""#)
+        )
+    }
 
     static func run(_ text: String, rig: AndroidGrpcInputTests.Rig) async throws {
         let route = DeviceRouter.Route(backend: rig.backend, device: AndroidGrpcTextTests.device)
@@ -80,13 +82,18 @@ struct TypeAdbRouteTests {
             .execute(on: route, progress: nil, logger: OffsiderLogger(), refusingSecureArgument: true)
     }
 
-    @Test("type 'x' on an adb route reads the screen once: the command's password-field check serves the session too")
+    @Test("type 'x' on an adb route reads the screen once before the keys, as the command's password-field check serves the session too, and once after to read the field back")
     func oneTreeRead() async throws {
-        let rig = try AndroidGrpcInputTests.rig(environment: ["OFFSIDER_ANDROID_TRANSPORT": "adb", "OFFSIDER_ANDROID_TREE": "uiautomator"], uiautomatorDump: Self.plainField)
+        let rig = try AndroidGrpcInputTests.rig(
+            environment: ["OFFSIDER_ANDROID_TRANSPORT": "adb", "OFFSIDER_ANDROID_TREE": "uiautomator"],
+            uiautomatorDump: Self.plainField(text: ""), typedDump: Self.plainField(text: "x")
+        )
         try await Self.run("x", rig: rig)
 
-        #expect(rig.server.services.filter { $0.contains("uiautomator dump") }.count == 1)
-        #expect(rig.adbScripts.contains { $0.hasPrefix("input text") })
+        let services = rig.server.services
+        let typedAt = try #require(services.firstIndex { $0.contains("input text") })
+        #expect(services[..<typedAt].filter { $0.contains("uiautomator dump") }.count == 1)
+        #expect(services[typedAt...].filter { $0.contains("uiautomator dump") }.count == 1)
     }
 
     @Test("type with argument text and an unreadable screen sends no input text script and says the text was not sent")

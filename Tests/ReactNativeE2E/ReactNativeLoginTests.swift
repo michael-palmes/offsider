@@ -222,6 +222,49 @@ struct ReactNativeLoginTests {
         #expect(try await app.label(of: "user-switch-test-sign-ins") == "Sign-ins: 0")
         try await RNLogin.signedOut(app)
     }
+
+    @Test("an account turned away with the form left filled exits 0 with formStillInFront true and a warning", arguments: RNPlatform.enabled)
+    func keptFormIsFlagged(platform: RNPlatform) async throws {
+        let app = RNApp(platform)
+        try await RNLogin.fresh(app)
+
+        let output = try await app.offsider("login --where state=kept --json")
+        #expect(output.exitCode == 0, "\(output.stderr)")
+        let report = try RNLogin.object(output, "login --where state=kept")
+        #expect(report["submitted"] as? Bool == true)
+        #expect(report["formStillInFront"] as? Bool == true)
+        #expect(output.stderr.contains("still in front"), "\(output.stderr)")
+        #expect(try await app.label(of: "user-switch-test-state") == "Session: Refused")
+        try await RNLogin.signedOut(app)
+    }
+
+    @Test("a sign-in that goes through reports the form gone and leaves no save-password prompt over the app", arguments: RNPlatform.enabled)
+    func signedInLeavesNoPrompt(platform: RNPlatform) async throws {
+        let app = RNApp(platform)
+        try await RNLogin.fresh(app)
+
+        let report = try await RNLogin.signIn(app, Users.admin.name)
+        #expect(report["formStillInFront"] as? Bool == false)
+        #expect([nil, "declined"].contains(report["savePrompt"] as? String), "\(report)")
+        if platform == .ios {
+            #expect(try await SavePasswordPrompt.window(on: app) == nil)
+        }
+        try await RNLogin.expectSignedIn(app, as: Users.admin, signIns: 1)
+        try await RNLogin.signOutInApp(app)
+        try await RNLogin.signedOut(app)
+    }
+
+    @Test("with submit pinned under a keyboard that taps do not close, login closes it the keyboard's own way and signs in", arguments: RNPlatform.enabled)
+    func footerSubmitUnderKeyboard(platform: RNPlatform) async throws {
+        let app = RNApp(platform)
+        try await RNLogin.fresh(app)
+        try await app.run("tap --id user-switch-test-footer")
+
+        try await RNLogin.signIn(app, Users.member.name)
+        try await RNLogin.expectSignedIn(app, as: Users.member, signIns: 1)
+        try await RNLogin.signOutInApp(app)
+        try await RNLogin.signedOut(app)
+    }
 }
 
 /// The users the login suite saves for the playground; every username and password is made up.
@@ -254,7 +297,13 @@ enum RNLoginUsers {
         about: "An account the playground refuses", avoid: "Any test that needs a signed-in user", state: "Locked"
     )
 
-    static let all = [admin, member, refused]
+    static let kept = User(
+        name: "e2e-kept", username: "kept-e2e@example.com", password: "Fixture-kept-74",
+        tags: ["state=kept"],
+        about: "An account the playground turns away with the form left filled", avoid: "Any test that needs a signed-in user", state: "Locked"
+    )
+
+    static let all = [admin, member, refused, kept]
 }
 
 /// Commands and checks for the login suite, on the user switch screen.

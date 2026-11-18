@@ -223,6 +223,43 @@ struct RunnerSessionTests {
         #expect(try RunnerSessionStore(root: root).read(udid: Self.udid) == nil)
     }
 
+    @Test("an untrusted certificate is recorded privately for doctor with the build's team, and the next start that answers clears it")
+    func untrustedRecordedThenCleared() async throws {
+        let root = RunnerTestPaths.temporaryRoot()
+        let build = URL(fileURLWithPath: RunnerTestPaths.temporaryRoot()).appendingPathComponent("build-key")
+        defer {
+            try? FileManager.default.removeItem(atPath: root)
+            try? FileManager.default.removeItem(at: build.deletingLastPathComponent())
+        }
+        try FileManager.default.createDirectory(at: build, withIntermediateDirectories: true)
+        try RunnerProducts.write(RunnerProductsRecord(udid: Self.udid, team: "ABCDE12345", prefix: "com.mpalmes.offsider", products: [:]), in: build)
+        let builder = FakeRunnerBuilder(directory: build)
+        let refusing = FakeRunnerTransport()
+        refusing.refuseConnections = true
+        let untrusted = FakeRunnerProcesses(launchLog: try IOSDeviceFixtures.data("xcodebuild-runner-certificate-untrusted.log"), exitsOnLaunch: true)
+
+        await #expect(throws: IOSDeviceError.self) {
+            _ = try await Self.manager(root: root, processes: untrusted, transport: refusing, builder: builder, startTimeout: 20).connect(.device(udid: Self.udid), deviceName: "iPhone")
+        }
+        let store = RunnerSessionStore(root: root)
+        #expect(store.failure(udid: Self.udid)?.kind == .certificateNotTrusted)
+        #expect(store.failure(udid: Self.udid)?.team == "ABCDE12345")
+        let file = "\(root)/ios-devices/\(Self.udid)/runner-failure.json"
+        #expect(try FileManager.default.attributesOfItem(atPath: file)[.posixPermissions] as? Int == 0o600)
+        #expect(try String(contentsOfFile: file, encoding: .utf8).contains(Self.udid) == false, "the device's id is in the path, not the file")
+
+        _ = try await Self.manager(root: root, processes: FakeRunnerProcesses(), transport: FakeRunnerTransport(buildKey: "key"), builder: builder).connect(.device(udid: Self.udid), deviceName: "iPhone")
+        #expect(store.failure(udid: Self.udid) == nil)
+    }
+
+    @Test("reading the start failure never creates a folder for a device this Mac has not met")
+    func failureReadCreatesNothing() {
+        let root = RunnerTestPaths.temporaryRoot()
+        defer { try? FileManager.default.removeItem(atPath: root) }
+        #expect(RunnerSessionStore(root: root).failure(udid: Self.udid) == nil)
+        #expect(!FileManager.default.fileExists(atPath: "\(root)/ios-devices/\(Self.udid)"))
+    }
+
     @Test("stop asks the runner to stop, then signals a process that lingers and removes the session and its result bundles")
     func stop() async throws {
         let root = RunnerTestPaths.temporaryRoot()
@@ -611,6 +648,29 @@ struct RunnerBuilderTests {
         #expect(try XcodeRunnerBuilder.resolvePrefix(environment: [:]) == "com.mpalmes.offsider")
         #expect(try XcodeRunnerBuilder.resolvePrefix(environment: ["OFFSIDER_IOS_RUNNER_PREFIX": "com.example-qa.offsider"]) == "com.example-qa.offsider")
         #expect(XcodeRunnerBuilder.installedBundleIDs(prefix: "com.example.qa") == ["com.example.qa.runner.uitests.xctrunner", "com.example.qa.runner"])
+    }
+
+    @Test("the allowance's prefix wins; OFFSIDER_IOS_RUNNER_PREFIX serves only when it matches or the allowance names none")
+    func prefixFromAllowance() throws {
+        #expect(try XcodeRunnerBuilder.resolvePrefix(environment: [:], allowancePrefix: "dev.offsider.abcde12345") == "dev.offsider.abcde12345")
+        #expect(try XcodeRunnerBuilder.resolvePrefix(environment: ["OFFSIDER_IOS_RUNNER_PREFIX": "dev.offsider.abcde12345"], allowancePrefix: "dev.offsider.abcde12345") == "dev.offsider.abcde12345")
+        #expect(try XcodeRunnerBuilder.resolvePrefix(environment: ["OFFSIDER_IOS_RUNNER_PREFIX": "com.example.qa"], allowancePrefix: nil) == "com.example.qa")
+    }
+
+    @Test("a variable naming another prefix than the person chose exits 64, naming both prefixes and the allow command")
+    func prefixVariableCannotOverrideAllowance() {
+        let error = #expect(throws: IOSDeviceError.self) {
+            _ = try XcodeRunnerBuilder.resolvePrefix(environment: ["OFFSIDER_IOS_RUNNER_PREFIX": "com.example.qa"], allowancePrefix: "dev.offsider.abcde12345")
+        }
+        #expect(error?.reason == .usage && error?.reason.exitCode == .usage)
+        #expect(error?.message.contains("OFFSIDER_IOS_RUNNER_PREFIX is com.example.qa, but this device's allowance names runner prefix dev.offsider.abcde12345") == true)
+        #expect(error?.hint == "offsider devices add")
+    }
+
+    @Test("Core and the builder share one prefix rule", arguments: ["com.example.offsider", "dev.offsider.abcde12345", "a.b", "com", "1com.example", "com..example", "com.ex_ample", "com.ëxample"])
+    func onePrefixRule(value: String) {
+        let builds = (try? XcodeRunnerBuilder.resolvePrefix(environment: ["OFFSIDER_IOS_RUNNER_PREFIX": value])) != nil
+        #expect(builds == DeviceAllowance.isRunnerPrefix(value))
     }
 
     @Test("a prefix that is not a reverse-DNS id of at most 100 characters is a usage error naming the variable", arguments: [

@@ -14,7 +14,10 @@ public enum IOSDeviceDoctorRules {
         checks += deviceChecks(facts)
         checks.append(DoctorCheckResult(id: .iosDeviceSession, verdict: session(facts.session, udid: facts.udid)))
         checks.append(DoctorCheckResult(id: .iosDeviceUsbmuxd, verdict: usbmuxd(facts)))
-        checks.append(DoctorCheckResult(id: .iosDeviceRunnerSigning, verdict: runnerSigning(facts.team)))
+        let signing = runnerSigning(facts.team)
+        checks.append(DoctorCheckResult(id: .iosDeviceRunnerSigning, verdict: signing))
+        checks.append(DoctorCheckResult(id: .iosDeviceRunnerBuild, verdict: runnerBuild(facts, signing: signing.status)))
+        checks.append(DoctorCheckResult(id: .iosDeviceRunnerTrust, verdict: runnerTrust(facts.runnerTrust, signing: signing.status, udid: facts.udid)))
         return checks
     }
 
@@ -266,6 +269,56 @@ public enum IOSDeviceDoctorRules {
         case .notOnUSB?:
             return (.fail, "usbmuxd does not list the device on USB, so Offsider cannot reach its runner", "Unplug and replug the cable, then retry.")
         }
+    }
+
+    /// Read from the runner cache only: doctor never builds, installs or starts the runner.
+    public static func runnerBuild(_ facts: IOSDeviceDoctorFacts, signing: CheckStatus) -> Verdict {
+        guard case .found = facts.xcode else { return (.skip, "requires \(DoctorCheckID.iosDeviceXcode.rawValue)", nil) }
+        guard signing == .pass else { return (.skip, "requires \(DoctorCheckID.iosDeviceRunnerSigning.rawValue)", nil) }
+        let build = "offsider runner build --device \(facts.udid)"
+        switch facts.runnerBuild {
+        case nil:
+            return (.skip, "not checked: the runner source is missing from this installation", "Reinstall Offsider: brew reinstall offsider")
+        case .unsettled(let message, let hint)?:
+            return (.fail, message, hint)
+        case .built(let team, let prefix)?:
+            return (.pass, "Built for team \(team) as \(prefix).runner", nil)
+        case .notBuilt(let team, let prefix, let needsPerson)?:
+            let detail = "Not built yet for team \(team) as \(prefix).runner, so the first command that reads the screen builds it (about a minute)"
+            if needsPerson { return (.warn, detail, personStep(build, why: "its first build under \(prefix) needs Touch ID")) }
+            let agent = "Run `\(build)` now. If the device is not registered with team \(team) yet, its error names the command the user runs."
+            return (.warn, detail, ErrorAudience.current == .person ? "Run \(build) to build it now." : agent)
+        case .appIDTaken(let appID, let team, let fix)?:
+            return (.fail, "The last runner build failed: another Apple team owns its App ID \(appID), so team \(team) needs a runner prefix of its own", personStep(fix, why: "it saves the prefix and builds the runner"))
+        case .notRegistered(let team)?:
+            let register = "offsider runner build --register-device --device \(facts.udid)"
+            return (.fail, "The last runner build failed: team \(team) has not registered the device, or no provisioning profile covers it", personStep(register, why: "it asks for Touch ID"))
+        case .failed(let team, let prefix, let log)?:
+            return (.warn, "The last runner build for team \(team) as \(prefix).runner failed (log: \(log))", ErrorAudience.current == .person ? "Run \(build) to see why." : "Run `\(build)` to see why.")
+        }
+    }
+
+    /// Only the runner's next start clears the record, so the fix ends with a read that starts it.
+    public static func trustHint(udid: String) -> String {
+        "On the device, open Settings > General > VPN & Device Management and trust the developer certificate, then read its screen again (`offsider describe-ui --summary --device \(udid)`): the runner's next start clears this."
+    }
+
+    /// Only a failed start records anything, so a device the runner has not yet started on is a skip.
+    public static func runnerTrust(_ fact: IOSDeviceDoctorFacts.RunnerTrustFact?, signing: CheckStatus, udid: String) -> Verdict {
+        guard signing == .pass else { return (.skip, "requires \(DoctorCheckID.iosDeviceRunnerSigning.rawValue)", nil) }
+        switch fact {
+        case nil, .unknown?:
+            return (.skip, "not known until the runner starts on it", nil)
+        case .running?:
+            return (.pass, "The runner is running on it, so it trusts the certificate", nil)
+        case .untrusted(let team)?:
+            return (.fail, "The runner's last start failed: the device does not trust team \(team)'s developer certificate", trustHint(udid: udid))
+        }
+    }
+
+    /// A step only a person can take: the command for them, or for an agent, the words to hand it over.
+    static func personStep(_ command: String, why: String) -> String {
+        ErrorAudience.current == .person ? "Run \(command); \(why)." : "Ask the user to run `\(command)` in their own terminal; \(why)."
     }
 
     public static func runnerSigning(_ fact: IOSDeviceDoctorFacts.TeamFact) -> Verdict {

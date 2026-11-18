@@ -200,6 +200,9 @@ class FakeDeviceBackend: DeviceBackend {
     }
 
     func volatileScreenBands(for id: DeviceID) async -> ScreenBands { bands }
+
+    /// In the class body so a subclass can script a read that never returns.
+    func displays(of id: DeviceID) async throws -> DisplayList { displayList }
 }
 
 extension FakeDeviceBackend: DisplayControlling, PostureControlling, HingeControlling, PostureReading, DisplayCapturing {
@@ -216,8 +219,6 @@ extension FakeDeviceBackend: DisplayControlling, PostureControlling, HingeContro
     func requestHingeAngle(_ degrees: Int, on id: DeviceID) async throws {
         requestedAngles.append(degrees)
     }
-
-    func displays(of id: DeviceID) async throws -> DisplayList { displayList }
 
     func posture(of id: DeviceID) async throws -> Posture? {
         guard !postures.isEmpty else { return displayList.posture }

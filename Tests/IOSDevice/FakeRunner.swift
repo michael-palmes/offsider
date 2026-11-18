@@ -159,12 +159,15 @@ final class FakeRunnerHTTPServer: @unchecked Sendable {
 /// Scripted builds: always the same key and xctestrun, counted.
 final class FakeRunnerBuilder: RunnerBuilding, @unchecked Sendable {
     let key: String
+    let directory: URL
     private let lock = NSLock()
     private var count = 0
     private var verified = 0
 
-    init(key: String = "key") {
+    /// `directory` holds the build's `products.json` when a test needs the team it names.
+    init(key: String = "key", directory: URL? = nil) {
         self.key = key
+        self.directory = directory ?? URL(fileURLWithPath: "/cache/\(key)")
     }
 
     var builds: Int { lock.withLock { count } }
@@ -172,7 +175,7 @@ final class FakeRunnerBuilder: RunnerBuilding, @unchecked Sendable {
 
     func build(for destination: RunnerDestination, deviceName: String) async throws -> RunnerBuild {
         lock.withLock { count += 1 }
-        return RunnerBuild(key: key, xctestrun: URL(fileURLWithPath: "/cache/\(key)/Runner.xctestrun"), directory: URL(fileURLWithPath: "/cache/\(key)"))
+        return RunnerBuild(key: key, xctestrun: URL(fileURLWithPath: "/cache/\(key)/Runner.xctestrun"), directory: directory)
     }
 
     func verifyForLaunch(_ build: RunnerBuild, for destination: RunnerDestination, deviceName: String) async throws -> RunnerBuild {

@@ -4,14 +4,16 @@ A Turnstile checkbox or challenge is for a person. Offsider never taps it, and n
 
 ## Read the state
 
-`offsider turnstile --device <DEVICE_ID>` reads the widget once and sends nothing. It prints `checkbox`, `verifying`, `passed`, `challenge`, `failed`, `absent` or `unknown` and exits 0, or 6 when several checkboxes are on screen (pass `--id` for the app's wrapper). `--json` prints `{version, state, source, frame}`; `source` is `web-view-points` when iOS left the widget out of the tree and the state came from points in the web view.
+`offsider turnstile --device <DEVICE_ID>` reads the widget once and sends nothing. It prints `checkbox`, `verifying`, `passed`, `challenge`, `failed`, `absent` or `unknown` and exits 0, or 6 when several checkboxes are on screen (pass `--id` for the app's wrapper). `--json` prints `{version, state, source, frame, since, lastPassed, changes}`; `source` is `web-view-points` when iOS left the widget out of the tree and the state came from points in the web view. On Android, when the tree shows no widget it can read, it also reads what the app hides from accessibility, as `describe-ui` does.
+
+Offsider remembers the last state it saw on each device for a day, from `turnstile` and `login`. `since` is when this state was first seen and `lastPassed` when the widget last passed (null when never), both UTC. A `checkbox`, `unknown` or `failed` read after a pass says `It passed at <time> and has reset since`: the user did tick it, and the pass expired or the screen reloaded. Ask again, saying so; never ask whether they ticked it.
 
 ## Ask the user
 
 `checkbox` or `challenge`, or `login` stopping with `turnstile_required` (exit 1): the user may be busy in another session, so ask for the step and watch for the result yourself.
 
 1. **Ask** in a plain message, using `error.ask` word for word, or "Can you tick the Turnstile checkbox on <device name>?" (`offsider devices` has the name). Say you will carry on by yourself. Never "Have you ticked it?", never hurry them, and no question dialog: it cannot close itself when the tick lands.
-2. **Watch** with `error.hint`: `offsider turnstile --wait 600 --device <DEVICE_ID>` only reads, and returns the moment the widget passes or leaves the screen. Run it in the background and end your turn when your client wakes you as it exits; otherwise run it in the foreground. On Android it holds the device's lock while it waits, so let it finish before driving that device.
+2. **Watch** with `error.hint`: `offsider turnstile --wait 600 --device <DEVICE_ID>` only reads, and returns the moment the widget passes or leaves the screen. Each new state prints on stderr as it is seen (`Turnstile: verifying since <time>`), and `--json` lists them in `changes` (`[{state, at}]`). Run it in the background and end your turn when your client wakes you as it exits; otherwise run it in the foreground. On Android it holds the device's lock while it waits, so let it finish before driving that device.
 3. **Carry on.** Exit 0: if `login` stopped before submit, run it once more straight away, as a widget can reset. Exit 5: nobody has done it yet, so say so, carry on with what needs no sign-in, and ask once more at the end.
 
 `submitted` in `login --json` says whether submit was tapped. When it is true, never run `login` again: read the screen once the widget passes. Never loop on `login`.

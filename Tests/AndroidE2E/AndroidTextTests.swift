@@ -27,6 +27,17 @@ struct AndroidTypeTests {
         #expect(try await AndroidE2E.label(of: "word-count") == "Words: 2")
     }
 
+    @Test("ASCII over 30 key events, shifted characters too, reaches the field whole and in order", arguments: [
+        "cam@example.com", "The Quick Brown Fox Jumps Over 13 Lazy Dogs!",
+    ])
+    func longASCII(text: String) async throws {
+        try await AndroidE2E.open("text-input", waitingFor: "text-input-field")
+        try await AndroidE2E.run("tap --id text-input-field")
+        try await AndroidE2E.run("type \(AndroidE2E.quote(text))")
+        _ = try await AndroidE2E.waitForFieldValue(text)
+        _ = try await AndroidE2E.waitForLabel(of: "character-count") { $0 == "Characters: \(text.count)" }
+    }
+
     @Test("non-ASCII text is pasted whole and the clipboard is restored")
     func unicodeRestoresClipboard() async throws {
         let emulator = try await AndroidE2E.emulatorClient()
@@ -117,8 +128,8 @@ struct AndroidTypeTests {
 struct AndroidStylusTutorialTests {
     static let field = "gap-tabs-search-field"
 
-    static func value() async throws -> String {
-        let node = AndroidE2E.nodes(in: try await AndroidE2E.tree()).first { $0["id"] as? String == field }
+    static func value(of id: String = field) async throws -> String {
+        let node = AndroidE2E.nodes(in: try await AndroidE2E.tree()).first { $0["id"] as? String == id }
         return node?["value"] as? String ?? ""
     }
 
@@ -129,15 +140,29 @@ struct AndroidStylusTutorialTests {
         _ = try await AndroidE2E.waitForLabel(of: "gap-tabs-pressed") { $0 == "Gap Pressed: Search Tab" }
 
         let typed = try await AndroidE2E.offsider("type abc --into-id \(Self.field) --json")
-        if typed.exitCode == 0 {
-            #expect(try await Self.value() == "abc", "type exited 0, but the field does not hold the text: \(typed.stdout)")
-        } else {
-            #expect(typed.stdout.contains(#""reason":"focus_mismatch""#) || typed.stdout.contains(#""reason":"text_not_accepted""#), "\(typed.stdout)")
-            #expect(typed.stderr.contains("stylus handwriting tutorial"), "\(typed.stderr)")
-        }
+        try await Self.expectLandedOrRefused(typed)
 
         try await AndroidE2E.run("type --replace abc --into-id \(Self.field)")
         _ = try await AndroidE2E.waitForFieldValue("abc", id: Self.field)
+    }
+
+    @Test("a batch tap then plain type or spelled keys reaches the field or refuses naming the tutorial, never passing with the text elsewhere",
+          arguments: ["type abc", "key-sequence --keycodes 4,5,6"], 1...2)
+    func batchTapThenKeysNeverPassElsewhere(keys: String, attempt: Int) async throws {
+        try await AndroidE2E.open("text-input", waitingFor: "text-input-field")
+        let steps = ["tap --id text-input-field", keys].map { "--step \(AndroidE2E.quote($0))" }.joined(separator: " ")
+        try await Self.expectLandedOrRefused(try await AndroidE2E.offsider("batch \(steps) --json"), id: "text-input-field")
+    }
+
+    /// Exit 0 only with the text in the field; otherwise a refusal before or after the keys that names the tutorial.
+    static func expectLandedOrRefused(_ typed: SeparatedCommandOutput, id: String = field) async throws {
+        let output = typed.stdout + typed.stderr
+        guard typed.exitCode != 0 else {
+            #expect(try await Self.value(of: id) == "abc", "exited 0, but the field does not hold the text: \(output)")
+            return
+        }
+        #expect(output.contains(#""reason":"focus_mismatch""#) || output.contains(#""reason":"text_not_accepted""#), "\(output)")
+        #expect(output.contains("stylus handwriting tutorial"), "\(output)")
     }
 }
 
