@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Platform, StyleSheet, useWindowDimensions, View } from 'react-native';
+import { Platform, ScrollView, StyleSheet, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import {
@@ -9,6 +9,8 @@ import {
   HeaderMarker,
   Readout,
   Screen,
+  type SlideKind,
+  SlidePage,
   Target,
   useHardwareBack,
 } from '../fixtures';
@@ -18,6 +20,7 @@ const tabs = ['Home', 'Products'] as const;
 type Tab = (typeof tabs)[number];
 const tabRowHeight = 49;
 const closeLaterMs = 800;
+const orderLines = Array.from({ length: 40 }, (_, index) => index + 1);
 
 export function StackTestScreen() {
   const { width } = useWindowDimensions();
@@ -28,6 +31,10 @@ export function StackTestScreen() {
   const [fullOffset, setFullOffset] = useState(false);
   const [tab, setTab] = useState<Tab>('Home');
   const [fullDepth, setFullDepth] = useState(0);
+  const [slideKind, setSlideKind] = useState<SlideKind>('left');
+  const [slideMounted, setSlideMounted] = useState(0);
+  const [slideOpen, setSlideOpen] = useState(0);
+  const [slideResult, setSlideResult] = useState('None');
   const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const previousOffset = -width * (fullOffset ? 1 : 0.3);
 
@@ -72,6 +79,22 @@ export function StackTestScreen() {
 
   useHardwareBack(fullDepth > 0, () => popFull(fullDepth));
 
+  const pushSlide = (page: number, kind: SlideKind = slideKind) => {
+    fixtureLog('stack-test', `slide ${kind} to page ${page}`);
+    setSlideKind(kind);
+    setSlideMounted(page);
+    setSlideOpen(page);
+  };
+
+  const popSlide = (page: number) => {
+    fixtureLog('stack-test', `slide page ${page} away`);
+    setSlideOpen(page - 1);
+  };
+
+  const slideClosed = (page: number) => setSlideMounted((current) => Math.min(current, page - 1));
+
+  useHardwareBack(slideOpen > 0, () => popSlide(slideOpen));
+
   const closeLater = () => {
     fixtureLog('stack-test', `close full page 1 in ${closeLaterMs} ms`);
     cancelCloseLater();
@@ -107,6 +130,22 @@ export function StackTestScreen() {
                 fixtureLog('stack-test', `previous offset ${fullOffset ? '30%' : '100%'}`);
                 setFullOffset((current) => !current);
               }}
+              style={styles.toggle}
+              textStyle={styles.toggleText}
+            />
+          </View>
+          <View style={styles.toggles}>
+            <Target
+              id="stack-test-slide-left"
+              label="Slide Left"
+              onPress={() => pushSlide(1, 'left')}
+              style={styles.toggle}
+              textStyle={styles.toggleText}
+            />
+            <Target
+              id="stack-test-slide-up"
+              label="Slide Up"
+              onPress={() => pushSlide(1, 'up')}
               style={styles.toggle}
               textStyle={styles.toggleText}
             />
@@ -216,6 +255,62 @@ export function StackTestScreen() {
           onBack={() => popFull(2)}
         />
       )}
+      {slideMounted >= 1 && (
+        <SlidePage kind={slideKind} open={slideOpen >= 1} top={slideOpen === 1} onClosed={() => slideClosed(1)}>
+          <FullPage
+            id="stack-test-slide-page-1"
+            backId="stack-test-slide-back-1"
+            titleId="stack-test-slide-title-1"
+            title="Order"
+            onBack={() => popSlide(1)}
+          >
+            <ScrollView testID="stack-test-slide-list" contentContainerStyle={styles.slideList}>
+              <Readout id="stack-test-slide-email" label="Email, sam.fixture@example.com" />
+              {orderLines.map((line) => (
+                <Readout key={line} id={`stack-test-slide-line-${line}`} label={`Order Line ${line}`} />
+              ))}
+            </ScrollView>
+            <View style={[styles.slideActions, { paddingBottom: insets.bottom + 8 }]}>
+              <Target id="stack-test-slide-confirm" label="Confirm Change" onPress={() => pushSlide(2)} style={styles.slideAction} />
+              <Target
+                id="stack-test-slide-hold"
+                label="Hold Order"
+                onPress={() => {
+                  fixtureLog('stack-test', 'hold order pressed');
+                  setSlideResult('Held');
+                }}
+                style={styles.slideAction}
+              />
+            </View>
+          </FullPage>
+        </SlidePage>
+      )}
+      {slideMounted >= 2 && (
+        <SlidePage kind={slideKind} open={slideOpen >= 2} top={slideOpen === 2} onClosed={() => slideClosed(2)}>
+          <FullPage
+            id="stack-test-slide-page-2"
+            backId="stack-test-slide-back-2"
+            titleId="stack-test-slide-title-2"
+            title="Confirm"
+            onBack={() => popSlide(2)}
+          >
+            <View style={styles.fullBody}>
+              <Readout id="stack-test-slide-result" label={`Slide Result: ${slideResult}`} value={slideResult} />
+            </View>
+            <View style={[styles.slideActions, { paddingBottom: insets.bottom + 8 }]}>
+              <Target
+                id="stack-test-slide-confirm-final"
+                label="Confirm Change"
+                onPress={() => {
+                  fixtureLog('stack-test', 'final confirm pressed');
+                  setSlideResult('Confirmed');
+                }}
+                style={styles.slideAction}
+              />
+            </View>
+          </FullPage>
+        </SlidePage>
+      )}
     </View>
   );
 }
@@ -262,4 +357,14 @@ const styles = StyleSheet.create({
   buyCell: { paddingLeft: 8, paddingRight: 16, paddingVertical: 2 },
   buy: { flex: 1 },
   fullBody: { flex: 1, padding: 16, gap: 16, alignItems: 'center' },
+  slideList: { padding: 16, gap: 12 },
+  slideActions: {
+    flexDirection: 'row',
+    gap: 8,
+    paddingHorizontal: 16,
+    paddingTop: 8,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colours.separator,
+  },
+  slideAction: { flex: 1 },
 });
