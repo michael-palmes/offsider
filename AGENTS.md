@@ -12,6 +12,14 @@ You are a macOS tooling engineer maintaining a small, local-only Swift CLI built
 
 Dead simple, secure by default. The focus, delivered with no effort from the developer: one command, nothing to look up or paste, a picker for every choice, a spinner over every pause, secure defaults nobody has to choose, and every dead end naming its fix in one line. Use words anyone understands and as few as possible: people do not read.
 
+Built for the agent in the middle. Developers work inside Claude Code or a similar agent: they rarely read docs or type a command, and ask the agent instead. Design every feature for that path:
+
+- **The agent finds it:** through the bundled skill, `--help`, `guide`, `doctor` or an error's hint, never through a docs page a person must read first.
+- **The agent sets it up and keeps it current:** safe defaults it can write, check and tighten on its own.
+- **Safety never rests on a person finding or writing a command.** When only a person may act, Offsider prints the complete command (a `--plan`) for the agent to hand over, and one Touch ID covers as much as it safely can.
+- **What an agent can write, it cannot loosen:** a change that weakens a guard waits for a person.
+- **Prove it:** set the feature up from a fresh clone inside an agent before the pull request, and count what the person had to type.
+
 ## Origin
 
 Offsider began as a fork of AXe (`cameroncooke/axe`) v1.8.0 and is developed independently. Nothing flows either way: no upstream remote, syncs or cherry-picks from AXe, and no PRs, issues or patches to AXe or `cameroncooke/idb`. Keep AXe's credit in `LICENSE`, `NOTICE.md` and `README.md`.
@@ -135,6 +143,7 @@ Agents building in parallel use `swift build --scratch-path <dir>` and `swift te
 | iPhone runner | `Sources/Offsider/Resources/runner/` (`project.yml` and the generated `OffsiderRunner.xcodeproj`); regenerate with `scripts/build.sh runner` |
 | Android helper (Java) | `AndroidHelper/src/`; never edit the dex or manifest in `Sources/Offsider/Resources/helper/` by hand |
 | HID broker, accessibility resolution, errors | `Sources/Offsider/Utilities/` |
+| The app guard (`offsider.guard.json`: controls an agent asks before tapping, or never taps) | Rules, verdicts and approvals in `Sources/OffsiderCore/Guard/`; the gate every input passes in `Sources/Offsider/Utilities/AppGuard.swift`, called from `TrackedInputSession`; the command in `Commands/Guard.swift` |
 | Terminal output and prompts | `Sources/OffsiderCore/Terminal/`: `Console` (the one writer), `Page`, `Table`, `PersonRenderer`, `AgentRenderer`, screens such as `DevicesScreen`, and prompts (`TerminalUI`, `PromptScreen`); goldens in `Tests/Goldens/screens/`; scripts use `scripts/lib/ui.sh` |
 | The skill `offsider init` installs | `Sources/Offsider/Resources/skills/offsider/SKILL.md` (a router under 10 KB); topics `offsider guide` prints are `references/<topic>.md` beside it, listed in `Types/GuideTopic.swift` |
 | Version string | `Plugins/VersionPlugin` (generates git-ignored `Version.swift`) |

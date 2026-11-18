@@ -194,6 +194,9 @@ struct Touch: AsyncParsableCommand {
             steps.append(.up(x: physicalPoint.x, y: physicalPoint.y))
         }
 
+        if touchDown {
+            try await AppGuard.check(.touch(direction: .down, x: physicalPoint.x, y: physicalPoint.y), backend: backend, device: device)
+        }
         do {
             try await Console.current.progress("Touching") {
                 try await DispatchTracker.current.sending { try await backend.sendDetachedTouch(steps, to: device) }

@@ -23,6 +23,7 @@ enum CommandEffect: String, Sendable {
         "turnstile": .read,
         "login": .input,
         "credential": .read,
+        "guard": .read,
         "slider": .input,
         "type": .input,
         "swipe": .input,

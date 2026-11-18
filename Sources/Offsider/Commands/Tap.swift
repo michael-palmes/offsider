@@ -239,11 +239,12 @@ struct Tap: AsyncParsableCommand, VerifiableCommand {
         details?.point = UIPoint(x: resolution.point.x, y: resolution.point.y)
         if dryRun {
             details?.dryRun = true
+            let guarded = try await AppGuard.preview(at: UIPoint(x: resolution.point.x, y: resolution.point.y), backend: backend, device: device)
             Console.current.show(InputPersonView.receipt(
                 "Would tap \(verifyTarget)",
                 aside: VerifyOutput.pointDescription(x: resolution.point.x, y: resolution.point.y),
-                details: ["Nothing was sent"],
-                agent: "✓ Dry run: a tap on \(verifyTarget) at \(VerifyOutput.pointDescription(x: resolution.point.x, y: resolution.point.y)) would reach it. Nothing was sent.\n"
+                details: ["Nothing was sent"] + (guarded.map { [$0] } ?? []),
+                agent: "✓ Dry run: a tap on \(verifyTarget) at \(VerifyOutput.pointDescription(x: resolution.point.x, y: resolution.point.y)) would reach it. \(guarded.map { $0 + " " } ?? "")Nothing was sent.\n"
             ))
             return
         }

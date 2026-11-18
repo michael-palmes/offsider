@@ -193,6 +193,7 @@ struct DevMenuDriver {
             try await perform(.tapAt(x: physical.x, y: physical.y))
             return
         }
+        try await AppGuard.check(.tapAt(x: physical.x, y: physical.y), backend: route.backend, device: route.device)
         defer { DeviceActivityLedger.current.recordInput(on: route.device) }
         try await DispatchTracker.current.sending {
             try await route.backend.sendDetachedTouch([.down(x: physical.x, y: physical.y), .hold(Self.switchHold), .up(x: physical.x, y: physical.y)], to: route.device)

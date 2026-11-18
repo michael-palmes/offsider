@@ -9,9 +9,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ### Added
 
 - `offsider -v` prints the version, as `offsider --version` does.
+- App guard: `offsider.guard.json` in an app's repository names the controls an agent asks you before tapping (`ask`, approved with Touch ID at the Mac) or never taps (`never`, exit 1 `guarded_control`), judged on the control under every tap, drag, slider and Return before anything is sent, so the rest of the app is free to drive. `offsider guard` sets it up (`status`, `init`, `check`, `show`) and a person approves it once with `guard approve`, after which an agent can tighten the rules but never loosen them; `offsider guide guard` is the agent's topic.
 
 ### Changed
 
+- The bundled skill no longer asks before every production or store build: once a person has approved an app's guard rules, `guard status` says `ready` and the agent drives the app, leaving guarded controls to the guard.
 - `test-runner.sh --unit-tests` runs in parallel. A test that fails there reruns alone and must pass, and is flagged when it does; a stall or an unclear result reruns everything serially. CI reuses the debug build's dependencies on pull requests.
 
 ## [0.16.0] - 2026-11-05
