@@ -18,6 +18,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Fixed
 
+- On an Android emulator, `type` of ASCII text needing more than 30 key events (about 15 characters, fewer with capitals or symbols such as `@`) no longer leaves the field empty while exiting 0: the guest's kernel dropped such a burst whole. Text now goes in bursts it holds, each once Android has taken the last, so long text lands whole and in order at the app's pace; an app that takes no keys for 10 s stops it with exit 5 (`text_not_accepted`).
 - On an Android emulator, `type --into-id`, `--into-label` and `--into-label-contains` no longer report success when Gboard's stylus handwriting tutorial took the text. `type` and `key-sequence` send nothing while a field inside the keyboard has focus (exit 2, `focus_mismatch`), and after keys into a named field `type` reads it back, exiting 5 (`text_not_accepted`) when the text did not reach it, batch steps too. The message names the tutorial; `type --replace` still works past it, and the hint turns stylus handwriting off.
 
 ## [0.16.0] - 2026-11-05

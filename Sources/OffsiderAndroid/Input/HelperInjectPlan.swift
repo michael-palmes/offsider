@@ -168,15 +168,8 @@ enum HelperInjectPlan {
         (phase == .press ? 2 : 1) * keyEventMilliseconds
     }
 
-    /// The virtual keyboard sends a down and an up per character, wrapped in Shift down and up for a shifted one.
     static func typingMilliseconds(of text: Substring) -> Int {
-        text.unicodeScalars.reduce(0) { total, scalar in
-            total + (isShifted(scalar) ? 4 : 2) * keyEventMilliseconds
-        }
-    }
-
-    private static func isShifted(_ scalar: Unicode.Scalar) -> Bool {
-        ("A"..."Z").contains(scalar) || #"~!@#$%^&*()_+{}|:"<>?"#.unicodeScalars.contains(scalar)
+        AndroidTextPlan.keyEvents(in: text) * keyEventMilliseconds
     }
 
     private static func touch(_ phase: String, _ point: AndroidPoint, pointer: Int) -> [String: HelperValue] {

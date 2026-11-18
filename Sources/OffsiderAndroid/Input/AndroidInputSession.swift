@@ -18,6 +18,13 @@ struct AdbDeviceShell: Sendable {
             throw AndroidError.inputFailed(serial: serial, detail: message ?? "`\(redactedLabel ?? "input")` exited \(result.status)")
         }
     }
+
+    /// A read's standard output; a non-zero status is an error.
+    func output(_ script: String, timeout: Duration = .seconds(2)) async throws -> String {
+        let result = try await client.shell(script, on: serial, timeout: timeout)
+        guard result.status == 0 else { throw AndroidError.inputFailed(serial: serial, detail: "`\(script)` exited \(result.status)") }
+        return result.stdoutText
+    }
 }
 
 enum AndroidInputExecutor: Sendable {
@@ -463,15 +470,33 @@ final class AndroidInputSession: InputSession, TextInputSession {
         throw AndroidError.textNotAccepted(device.rawValue, field: field, pasted: pasted)
     }
 
+    /// Text in bursts the guest's kernel buffer holds, each sent once the guest has taken the keys before it.
     private func type(_ chunks: [AndroidTextPlan.Chunk], on emulator: any EmulatorControlling) async throws {
-        for chunk in chunks {
-            switch chunk {
-            case .text(let run):
-                try await emulator.sendKey(.text(run))
-            case .key(let usage):
-                guard let key = AndroidKeyTable.grpcKey(for: usage, phase: .press) else { throw AndroidError.unsupportedKey(usage) }
-                try await emulator.sendKey(key)
+        let sends = try AndroidTextPlan.emulatorSends(for: chunks)
+        let total = sends.reduce(0) { $0 + $1.characters }
+        var sent = 0
+        for send in sends {
+            if send.afterDrain { try await waitForKeys(sent: sent, of: total) }
+            try await emulator.sendKey(send.event)
+            sent += send.characters
+        }
+    }
+
+    /// Until the guest's dispatcher has taken every key sent, so the next run neither overruns the kernel buffer nor waits long enough to be dropped.
+    private func waitForKeys(sent: Int, of total: Int) async throws {
+        var waited = Duration.zero
+        var last: (queued: Int, pause: Duration)?
+        while true {
+            guard let output = try? await shell.output(AndroidKeyBacklog.script), let queued = AndroidKeyBacklog.queued(in: output) else {
+                try await sleep(AndroidKeyBacklog.blindPause)
+                return
             }
+            if queued == 0 { return }
+            guard waited < AndroidKeyBacklog.limit else { throw AndroidError.keysNotTaken(device.rawValue, sent: sent, of: total) }
+            let pause = AndroidKeyBacklog.pause(queued: queued, since: last)
+            try await sleep(pause)
+            waited += pause
+            last = (queued, pause)
         }
     }
 

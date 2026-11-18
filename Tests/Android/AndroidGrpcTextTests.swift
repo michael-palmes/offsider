@@ -25,6 +25,60 @@ struct AndroidGrpcTextTests {
         #expect(rig.adbScripts.isEmpty)
     }
 
+    /// The dispatcher's inbound queue line, one reading per read, the last repeating.
+    final class Backlog: @unchecked Sendable {
+        private let lock = NSLock()
+        private var lengths: [Int]
+
+        init(_ lengths: [Int]) { self.lengths = lengths }
+
+        func reply() -> FakeAdbServer.Reply {
+            let length = lock.withLock { lengths.count > 1 ? lengths.removeFirst() : lengths[0] }
+            return FakeAdbServer.shell(stdout: length == 0 ? "  InboundQueue: <empty>\n" : "  InboundQueue: length=\(length)\n")
+        }
+    }
+
+    @Test("ASCII over 30 key events goes as several gRPC text events in order, each burst once the guest has taken the last")
+    func longTextInBursts() async throws {
+        let backlog = Backlog([0])
+        let rig = try AndroidGrpcInputTests.rig(keyBacklog: backlog.reply)
+        try await Self.session(rig).typeText("cam@example.com\n")
+
+        #expect(rig.emulator.calls == [.key(.text("cam@example.co")), .key(.text("m")), .key(.usb(0x070028, .press))])
+        #expect(rig.adbScripts == [AndroidKeyBacklog.script])
+        #expect(rig.sleeps.sleeps.isEmpty)
+    }
+
+    @Test("the next burst waits while the guest still queues keys, reading again when they should have drained")
+    func waitsForTheGuest() async throws {
+        let backlog = Backlog([30, 10, 0])
+        let rig = try AndroidGrpcInputTests.rig(keyBacklog: backlog.reply)
+        try await Self.session(rig).typeText("abcdefghijklmnop")
+
+        #expect(rig.emulator.calls == [.key(.text("abcdefghijklmno")), .key(.text("p"))])
+        #expect(rig.sleeps.sleeps == [.milliseconds(50), .milliseconds(25)])
+    }
+
+    @Test("a guest that takes no keys for 10 s stops the typing with text_not_accepted, naming how far it got")
+    func stalledGuestStops() async throws {
+        let rig = try AndroidGrpcInputTests.rig(keyBacklog: Backlog([30]).reply)
+
+        let error = await #expect(throws: AndroidError.self) { try await Self.session(rig).typeText("cam@example.com") }
+        #expect(error?.kind == .textNotAccepted)
+        #expect(error?.message.contains("stopped after 14 of 15 characters") == true, "\(error?.message ?? "")")
+        #expect(rig.emulator.calls == [.key(.text("cam@example.co"))])
+        #expect(rig.sleeps.total >= AndroidKeyBacklog.limit)
+    }
+
+    @Test("an unreadable backlog pauses once, then sends the next burst")
+    func unreadableBacklogPauses() async throws {
+        let rig = try AndroidGrpcInputTests.rig(keyBacklog: { FakeAdbServer.shell(status: 1) })
+        try await Self.session(rig).typeText("abcdefghijklmnop")
+
+        #expect(rig.emulator.calls == [.key(.text("abcdefghijklmno")), .key(.text("p"))])
+        #expect(rig.sleeps.sleeps == [AndroidKeyBacklog.blindPause])
+    }
+
     @Test("non-ASCII text is pasted: save, set, paste over adb, restore, with the settles between")
     func pasteSequence() async throws {
         let rig = try AndroidGrpcInputTests.rig(emulator: FakeEmulator(clipboard: "sentinel"), uiautomatorDump: Self.plainFocus)
