@@ -1,8 +1,11 @@
-import { type ReactNode, useEffect } from 'react';
+import { type ReactNode, useEffect, useRef, useState } from 'react';
 import {
+  AccessibilityInfo,
   type AccessibilityRole,
   type AccessibilityState,
+  Animated,
   BackHandler,
+  Easing,
   type GestureResponderEvent,
   Platform,
   Pressable,
@@ -10,6 +13,7 @@ import {
   StyleSheet,
   Text,
   type TextStyle,
+  useWindowDimensions,
   View,
   type ViewStyle,
 } from 'react-native';
@@ -29,6 +33,38 @@ export function formatPoint(point: Point): string {
 
 export function fixtureLog(id: string, detail: string) {
   console.log(`OffsiderFixture ${id}: ${detail}`);
+}
+
+/** Keeps a fixture web view on its inline page, so it never fetches anything. */
+export function isLocalPage(request: { url: string }): boolean {
+  return request.url.startsWith('about:');
+}
+
+export function hiddenFromAccessibility(hide: boolean) {
+  return { accessibilityElementsHidden: hide, importantForAccessibility: hide ? 'no-hide-descendants' : 'auto' } as const;
+}
+
+let screenReader = false;
+void AccessibilityInfo.isScreenReaderEnabled().then((enabled) => {
+  screenReader = enabled;
+});
+AccessibilityInfo.addEventListener('screenReaderChanged', (enabled) => {
+  screenReader = enabled;
+});
+
+/** What the system last reported, read without a render, as an app that checks it only inside handlers does. */
+export function screenReaderOn(): boolean {
+  return screenReader;
+}
+
+export function useScreenReader(): boolean {
+  const [enabled, setEnabled] = useState(screenReader);
+  useEffect(() => {
+    void AccessibilityInfo.isScreenReaderEnabled().then(setEnabled);
+    const subscription = AccessibilityInfo.addEventListener('screenReaderChanged', setEnabled);
+    return () => subscription.remove();
+  }, []);
+  return enabled;
 }
 
 export function iosValue(text: string | undefined): { text: string } | undefined {
@@ -198,6 +234,49 @@ export function FullPage({ id, backId, titleId, title, onBack, children }: FullP
       </View>
       {children}
     </View>
+  );
+}
+
+export type SlideKind = 'left' | 'up';
+
+type SlidePageProps = {
+  kind: SlideKind;
+  open: boolean;
+  top: boolean;
+  onClosed: () => void;
+  children: ReactNode;
+};
+
+/** A page of a JS stack: it slides in on the native driver over pages that stay mounted, and hides those only for a screen reader. */
+export function SlidePage({ kind, open, top, onClosed, children }: SlidePageProps) {
+  const { width, height } = useWindowDimensions();
+  const reader = useScreenReader();
+  const shown = useRef(new Animated.Value(0)).current;
+  const closed = useRef(onClosed);
+  closed.current = onClosed;
+
+  useEffect(() => {
+    const toValue = open ? 1 : 0;
+    const animation =
+      kind === 'up'
+        ? Animated.spring(shown, { toValue, bounciness: 4, speed: 40, useNativeDriver: true })
+        : Animated.timing(shown, { toValue, duration: 200, easing: Easing.inOut(Easing.sin), useNativeDriver: true });
+    animation.start(({ finished }) => {
+      if (finished && !open) {
+        closed.current();
+      }
+    });
+  }, [kind, open, shown]);
+
+  const transform =
+    kind === 'up'
+      ? [{ translateY: shown.interpolate({ inputRange: [0, 1], outputRange: [height + 10, 0] }) }]
+      : [{ translateX: shown.interpolate({ inputRange: [0, 1], outputRange: [width + 30, 0] }) }];
+
+  return (
+    <Animated.View {...hiddenFromAccessibility(reader && !top)} style={[StyleSheet.absoluteFill, { transform }]}>
+      {children}
+    </Animated.View>
   );
 }
 

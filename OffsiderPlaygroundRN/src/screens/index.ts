@@ -5,6 +5,7 @@ import { AlertTestScreen } from './AlertTestScreen';
 import { BatchLoginFlowScreen } from './BatchLoginFlowScreen';
 import { BatchTestScreen } from './BatchTestScreen';
 import { ButtonTestScreen } from './ButtonTestScreen';
+import { CheckWidgetTestScreen } from './CheckWidgetTestScreen';
 import { ChoiceTestScreen } from './ChoiceTestScreen';
 import { ContextMenuTestScreen } from './ContextMenuTestScreen';
 import { ControlledSearchTestScreen } from './ControlledSearchTestScreen';
@@ -36,6 +37,8 @@ import { OwnCoverTestScreen } from './OwnCoverTestScreen';
 import { PageOverTestScreen } from './PageOverTestScreen';
 import { StackTestScreen } from './StackTestScreen';
 import { StickyFooterTestScreen } from './StickyFooterTestScreen';
+import { StorageTestScreen } from './StorageTestScreen';
+import { StoryIntroTestScreen } from './StoryIntroTestScreen';
 import { SwipeTestScreen } from './SwipeTestScreen';
 import { SwitchTestScreen } from './SwitchTestScreen';
 import { TabBarTestScreen } from './TabBarTestScreen';
@@ -45,6 +48,7 @@ import { TextInputScreen } from './TextInputScreen';
 import { ToolbarPickerTestScreen } from './ToolbarPickerTestScreen';
 import { TouchControlScreen } from './TouchControlScreen';
 import { UserSwitchTestScreen } from './UserSwitchTestScreen';
+import { WebChartTestScreen } from './WebChartTestScreen';
 
 export const screens: Record<RouteId, ComponentType> = {
   'tap-test': TapTestScreen,
@@ -90,5 +94,9 @@ export const screens: Record<RouteId, ComponentType> = {
   'drawer-test': DrawerTestScreen,
   'tab-bar-test': TabBarTestScreen,
   'cover-test': CoverTestScreen,
+  'story-intro-test': StoryIntroTestScreen,
+  'web-chart-test': WebChartTestScreen,
+  'check-widget-test': CheckWidgetTestScreen,
+  'storage-test': StorageTestScreen,
   'user-switch-test': UserSwitchTestScreen,
 };
