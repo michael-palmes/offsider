@@ -4,7 +4,26 @@ import OffsiderCore
 import Testing
 @testable import Offsider
 
-@Suite("Turnstile")
+/// An Android device whose plain read leaves out what `everyView` adds, filled as the Android backend fills describe-ui's tree.
+@MainActor
+private final class EveryViewBackend: FakeDeviceBackend, TreeGapFilling {
+    let everyView: UITree
+    private(set) var fills = 0
+
+    init(plain: UITree, everyView: UITree) {
+        self.everyView = everyView
+        super.init(platform: .android, trees: [plain])
+    }
+
+    func startGapSamples(on id: DeviceID) async -> GapSamples? { nil }
+
+    func fillingGaps(in tree: UITree, on id: DeviceID, samples: GapSamples?) async -> UITree {
+        fills += 1
+        return TreeGapFill.filling(tree, from: everyView)
+    }
+}
+
+@Suite("Turnstile", .turnstileHistory)
 struct TurnstileTests {
     private let screen = UIFrame(x: 0, y: 0, width: 411, height: 923)
 
@@ -149,7 +168,7 @@ struct TurnstileTests {
         #expect(TurnstileWidget.phase(in: [view], viewport: viewport) == .noWidget)
         #expect(TurnstileStatus(phase: .noWidget, source: .tree)?.state == .unknown)
         #expect(TurnstileStatus(phase: .noWidget, source: .tree)?.textLine().hasPrefix("Turnstile: unknown. ") == true)
-        #expect(TurnstileStatus(phase: .noWidget, source: .tree)?.jsonLine() == #"{"version":1,"state":"unknown","source":"tree","frame":null}"#)
+        #expect(TurnstileStatus(phase: .noWidget, source: .tree)?.jsonLine() == #"{"version":1,"state":"unknown","source":"tree","frame":null,"since":null,"lastPassed":null,"changes":null}"#)
     }
 
     /// Cloudflare's container as Android lists it after a failed run: its words and the Stuck? link, with no checkbox.
@@ -171,7 +190,7 @@ struct TurnstileTests {
         #expect(status?.state == .failed)
         #expect(status?.state.awaitsPerson == true)
         #expect(status?.textLine().contains("tries again by itself") == true)
-        #expect(status?.jsonLine() == #"{"version":1,"state":"failed","source":"tree","frame":null}"#)
+        #expect(status?.jsonLine() == #"{"version":1,"state":"failed","source":"tree","frame":null,"since":null,"lastPassed":null,"changes":null}"#)
     }
 
     /// The widget as a physical iPhone's XCUITest tree gives it: no Cloudflare id, the box a switch, and the logo a link, inside a wrapper named for Turnstile.
@@ -362,9 +381,9 @@ struct TurnstileTests {
         let checkbox = TurnstileStatus(phase: .ready(TurnstileTarget(frame: frame)), source: .tree)
         #expect(checkbox == TurnstileStatus(state: .checkbox, source: .tree, frame: frame))
         #expect(checkbox?.textLine() == "Turnstile: checkbox at (32, 388.95) 163.81x25.14")
-        #expect(checkbox?.jsonLine() == #"{"version":1,"state":"checkbox","source":"tree","frame":{"x":32,"y":388.95,"width":163.81,"height":25.14}}"#)
+        #expect(checkbox?.jsonLine() == #"{"version":1,"state":"checkbox","source":"tree","frame":{"x":32,"y":388.95,"width":163.81,"height":25.14},"since":null,"lastPassed":null,"changes":null}"#)
         #expect(TurnstileStatus(phase: .checking, source: .webViewPoints)?.state == .verifying)
-        #expect(TurnstileStatus(phase: .passed, source: .tree)?.jsonLine() == #"{"version":1,"state":"passed","source":"tree","frame":null}"#)
+        #expect(TurnstileStatus(phase: .passed, source: .tree)?.jsonLine() == #"{"version":1,"state":"passed","source":"tree","frame":null,"since":null,"lastPassed":null,"changes":null}"#)
         #expect(TurnstileStatus(phase: .visualChallenge, source: .tree)?.state == .challenge)
         #expect(TurnstileStatus(phase: .absent, source: .tree)?.textLine() == "Turnstile: absent")
         #expect(TurnstileStatus(phase: .ambiguous(2), source: .tree) == nil)
@@ -671,6 +690,168 @@ struct TurnstileTests {
         #expect(backend.treeReads == 2)
         #expect(backend.session.calls.isEmpty)
         #expect(backend.openedSessions.isEmpty)
+    }
+
+    /// A login screen whose plain Android read lists the app's Turnstile wrapper and an empty web view, while every view holds the widget.
+    private func hiddenWidgetScreen() -> (plain: UITree, everyView: UITree) {
+        func screen(_ web: [UINode]) -> UITree {
+            let webView = node(role: .other, frame: UIFrame(x: 24, y: 368, width: 364, height: 66), children: web)
+            return UITree(platform: .android, device: "emulator-5554", roots: roots([
+                node(role: .textField, id: "email", label: "Email", frame: UIFrame(x: 24, y: 200, width: 363, height: 48)),
+                node(role: .group, id: "signin-turnstile", frame: UIFrame(x: 16, y: 360, width: 380, height: 82), children: [webView]),
+                node(role: .button, id: "submit", label: "Log in", frame: UIFrame(x: 24, y: 800, width: 363, height: 48)),
+            ]))
+        }
+        let widget = node(role: .group, label: "Widget containing a Cloudflare security challenge", frame: UIFrame(x: 24, y: 368, width: 364, height: 66), children: [
+            node(role: .checkbox, label: "Verify you are human", frame: UIFrame(x: 32, y: 388, width: 164, height: 25)),
+            node(role: .button, label: "Cloudflare, opens in a new tab", frame: UIFrame(x: 306, y: 381, width: 74, height: 31)),
+        ])
+        return (screen([]), screen([widget]))
+    }
+
+    @Test("on Android, a checkbox only the every-view read holds, which describe-ui lists, reads checkbox rather than unknown")
+    @MainActor
+    func androidReadsWhatDescribeUIReads() async throws {
+        let screen = hiddenWidgetScreen()
+        let device = DeviceID(rawValue: "emulator-5554", platform: .android)
+        let fixture = try TreeCacheFixture()
+
+        let described = try await fixture.run {
+            try await MaskConfigs.$source.withValue({ nil }) {
+                try await DescribeUI.parse(["--format", "text", "--device", device.rawValue])
+                    .describe(on: DeviceRouter.Route(backend: EveryViewBackend(plain: screen.plain, everyView: screen.everyView), device: device))
+            }
+        }
+        #expect(described.contains(#"checkbox "Verify you are human""#))
+        #expect(TurnstileWidget.phase(in: screen.plain.roots, viewport: screen.plain.viewport) == .noWidget)
+
+        let backend = EveryViewBackend(plain: screen.plain, everyView: screen.everyView)
+        let route = DeviceRouter.Route(backend: backend, device: device)
+        let status = try await fixture.run { try await Turnstile.parse(["--device", device.rawValue]).readStatus(on: route) }
+        #expect(status.state == .checkbox)
+        #expect(status.frame == UIFrame(x: 32, y: 388, width: 164, height: 25))
+        #expect(await Turnstile.phase(in: screen.plain, on: route) == .ready(TurnstileTarget(frame: UIFrame(x: 32, y: 388, width: 164, height: 25))))
+        #expect(backend.session.calls.isEmpty)
+    }
+
+    @Test("on Android, a widget the plain read already shows, or a screen with none, costs no every-view read")
+    @MainActor
+    func androidFillsOnlyOnAMiss() async throws {
+        let device = DeviceID(rawValue: "emulator-5554", platform: .android)
+        let shown = UITree(platform: .android, device: device.rawValue, roots: roots([checkboxWidget()]))
+        let none = UITree(platform: .android, device: device.rawValue, roots: roots([node(role: .button, id: "submit", label: "Log in", frame: UIFrame(x: 24, y: 800, width: 363, height: 48))]))
+        for tree in [shown, none] {
+            let backend = EveryViewBackend(plain: tree, everyView: tree)
+            _ = await Turnstile.phase(in: tree, on: DeviceRouter.Route(backend: backend, device: device))
+            #expect(backend.fills == 0)
+        }
+    }
+
+    // MARK: History
+
+    private func passedWidget() -> UINode {
+        node(role: .group, id: "cf-chl-widget-9jc94", frame: UIFrame(x: 24, y: 431, width: 365, height: 66), children: [
+            node(role: .group, label: "Success!", frame: UIFrame(x: 32, y: 448, width: 93, height: 31)),
+        ])
+    }
+
+    private func checkingWidget() -> UINode {
+        node(role: .group, id: "cf-chl-widget-wait", frame: UIFrame(x: 24, y: 369, width: 365, height: 66), children: [
+            node(role: .group, label: "Checking your Browser…", frame: UIFrame(x: 24, y: 369, width: 365, height: 66)),
+        ])
+    }
+
+    private func android(_ children: [UINode], device: String = "emulator-5554") -> UITree {
+        UITree(platform: .android, device: device, roots: roots(children))
+    }
+
+    @MainActor
+    private func route(_ trees: [UITree], device: String = "emulator-5554") -> (backend: FakeDeviceBackend, route: DeviceRouter.Route) {
+        let backend = FakeDeviceBackend(platform: .android, trees: trees)
+        return (backend, DeviceRouter.Route(backend: backend, device: DeviceID(rawValue: device, platform: .android)))
+    }
+
+    @Test("a pass login saw, then a box after it reset: the next read says when it passed, in text and JSON, and a box that never passed says nothing of it")
+    @MainActor
+    func readSaysAPassReset() async throws {
+        let fixture = TurnstileHistoryFixture()
+        defer { fixture.remove() }
+        let start = TurnstileHistoryFixture.start
+        let (_, phone) = route([android([checkboxWidget()])])
+        let (_, other) = route([android([checkboxWidget()], device: "emulator-5556")], device: "emulator-5556")
+
+        let (reset, fresh) = try await fixture.run {
+            #expect(await Turnstile.phase(in: android([passedWidget()]), on: phone) == .passed)
+            fixture.now = start + 95
+            return (
+                try await Turnstile.parse(["--device", "emulator-5554"]).readStatus(on: phone),
+                try await Turnstile.parse(["--device", "emulator-5556"]).readStatus(on: other)
+            )
+        }
+
+        #expect(reset.state == .checkbox)
+        #expect(reset.textLine() == "Turnstile: checkbox at (32, 388.95) 163.81x25.14. It passed at 2027-01-15T08:00:00Z and has reset since (the pass expired or the screen reloaded).")
+        #expect(reset.jsonLine() == #"{"version":1,"state":"checkbox","source":"tree","frame":{"x":32,"y":388.95,"width":163.81,"height":25.14},"since":"2027-01-15T08:01:35Z","lastPassed":"2027-01-15T08:00:00Z","changes":null}"#)
+        #expect(fresh.textLine() == "Turnstile: checkbox at (32, 388.95) 163.81x25.14")
+        #expect(fresh.jsonLine().hasSuffix(#""since":"2027-01-15T08:01:35Z","lastPassed":null,"changes":null}"#))
+    }
+
+    @Test("login's read of a screen with no widget leaves the history alone, while the command's own read records the widget gone")
+    @MainActor
+    func absentReads() async throws {
+        let fixture = TurnstileHistoryFixture()
+        defer { fixture.remove() }
+        let empty = android([node(role: .button, id: "submit", label: "Log in", frame: UIFrame(x: 24, y: 800, width: 363, height: 48))])
+        let (_, phone) = route([empty])
+        try await fixture.run {
+            _ = await Turnstile.phase(in: empty, on: phone)
+            #expect(!FileManager.default.fileExists(atPath: fixture.directory))
+
+            _ = await Turnstile.phase(in: android([checkboxWidget()]), on: phone)
+            _ = await Turnstile.phase(in: empty, on: phone)
+            #expect(fixture.history.record(platform: .android, device: "emulator-5554")?.state == .checkbox)
+
+            fixture.now += 10
+            let gone = try await Turnstile.parse(["--device", "emulator-5554"]).readStatus(on: phone)
+            #expect(gone.since == TurnstileHistoryFixture.start + 10)
+            #expect(fixture.history.record(platform: .android, device: "emulator-5554")?.state == .absent)
+        }
+    }
+
+    @Test("--wait prints each new state once on stderr with its time, the first read included, and JSON lists them", arguments: [false, true])
+    @MainActor
+    func waitPrintsChanges(person: Bool) async throws {
+        let fixture = TurnstileHistoryFixture()
+        defer { fixture.remove() }
+        let start = TurnstileHistoryFixture.start
+        let box = android([checkboxWidget()])
+        let (backend, phone) = route([box, box, android([checkingWidget()]), android([passedWidget()])])
+        backend.onTreeRead = { fixture.now += 1 }
+        let capture = ConsoleCapture()
+        let channel: Console.Channel = person ? .person() : .agent
+
+        let status = try await fixture.run {
+            try await Console.$current.withValue(capture.console(out: channel, err: channel)) {
+                try await Turnstile.parse(["--wait", "30", "--device", "emulator-5554"]).readStatus(on: phone, clock: ScriptedClock().poll)
+            }
+        }
+
+        #expect(status.state == .passed)
+        #expect(status.changes == [
+            TurnstileStatus.Change(state: .checkbox, at: start + 1),
+            TurnstileStatus.Change(state: .verifying, at: start + 3),
+            TurnstileStatus.Change(state: .passed, at: start + 4),
+        ])
+        #expect(status.jsonLine().hasSuffix(#""since":"2027-01-15T08:00:04Z","lastPassed":"2027-01-15T08:00:04Z","changes":[{"state":"checkbox","at":"2027-01-15T08:00:01Z"},{"state":"verifying","at":"2027-01-15T08:00:03Z"},{"state":"passed","at":"2027-01-15T08:00:04Z"}]}"#))
+        if person {
+            let lines = capture.err.split(separator: "\n").map(String.init)
+            let states = lines.compactMap { line in line.wholeMatch(of: #/Turnstile: (\w+) at \d\d:\d\d:\d\d/#).map { String($0.1) } }
+            #expect(lines.count == 3)
+            #expect(states == ["checkbox", "verifying", "passed"])
+        } else {
+            #expect(capture.err == "Turnstile: checkbox since 2027-01-15T08:00:01Z\nTurnstile: verifying since 2027-01-15T08:00:03Z\nTurnstile: passed since 2027-01-15T08:00:04Z\n")
+        }
+        #expect(backend.session.calls.isEmpty)
     }
 
     @Test("--wait on a device that nobody ticks exits 5 and sends no input")

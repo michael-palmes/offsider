@@ -60,7 +60,7 @@ What stays refused:
 - Typing a passcode, pairing, tapping Trust, driving over Wi-Fi, and registering the device with a team. Offsider never does these on any device.
 - `devices add`, `runner build --register-device`, `--no-mask-secure` and `describe-ui --raw-source` still need a person.
 - `login` and `credential` still refuse browsers and system apps, so a saved login never goes into one.
-- A saved login needs no `--devices any` and no Touch ID here, on an iPhone, iPad or Android phone: `--confirm` is not asked on a test device either. `wake --unlock` asks for no Touch ID here. On any other phone both ask each time.
+- A saved login needs no `--devices any` and no Touch ID here, on an iPhone, iPad or Android phone: `--confirm` is not asked on a test device either. A login saved with `--confirm-always` is the exception: it asks before every sign-in, here too. `wake --unlock` asks for no Touch ID here. On any other phone both ask each time.
 - `permission` on an iPhone or iPad, which iOS offers no way to do: tap the prompt instead.
 
 It shows on every command: `🔐  Driving <name> · allowed until you remove it · test device, whole device`, and in full for an agent. `devices status` marks its row with 🧪, and `--json` adds `"testDevice": true`.

@@ -286,6 +286,20 @@ struct InputPersonOutputTests {
             """)
     }
 
+    @Test("a login whose form stayed up tells a person to read the screen, and says when it declined a save-password prompt")
+    func loginStillInFront() {
+        var report = LoginReport(app: "com.example.app", key: "qa-admin", turnstile: .absent, submitLabel: "Sign in")
+        report.formStillInFront = true
+        report.savePrompt = .declined
+        #expect(Self.show(InputPersonView.login(report), person: true).out == """
+            ✅  Signed in as qa-admin
+                com.example.app: tapped Sign in
+                Form still in front: read the screen
+                Save-password prompt declined
+
+            """)
+    }
+
     @Test("turnstile keeps the agent's state line; a person reads the state and what to do while it waits on someone")
     func turnstile() {
         let status = TurnstileStatus(state: .checkbox, source: .tree, frame: FakeUI.frame(32, 388.95, 163.81, 25.14))
@@ -294,6 +308,25 @@ struct InputPersonOutputTests {
         #expect(person.hasPrefix("  Turnstile  checkbox at (32, 388.95) 163.81x25.14\n"))
         #expect(person.contains("Tick it on the device"))
         #expect(!person.contains("A person"))
+    }
+
+    @Test("after a pass that reset, a person reads when it passed in local time, with the day once it is another, and an agent the same words in UTC")
+    func turnstileReset() throws {
+        let passed = Date(timeIntervalSince1970: 1_800_000_000)
+        let utc = try #require(TimeZone(identifier: "UTC"))
+        let status = TurnstileStatus(state: .unknown, source: .tree, since: passed + 95, lastPassed: passed)
+        let flat = { (page: Page) in Self.show(page, person: true).out.split(whereSeparator: \.isWhitespace).joined(separator: " ") }
+        let person = flat(InputPersonView.turnstile(status, timeZone: utc, now: passed + 95))
+        #expect(person.contains("It passed at 08:00:00 and has reset since (the pass expired or the screen reloaded)."))
+        #expect(person.contains(TurnstileStatus.unknownNote))
+        let later = flat(InputPersonView.turnstile(status, timeZone: utc, now: passed + 20 * 3600))
+        #expect(later.contains("It passed at 15 Jan 08:00:00 and"))
+        #expect(Self.show(InputPersonView.turnstile(status, timeZone: utc), person: false).out == "Turnstile: unknown. It passed at 2027-01-15T08:00:00Z and has reset since (the pass expired or the screen reloaded). \(TurnstileStatus.unknownNote)\n")
+
+        let checking = TurnstileStatus(state: .verifying, source: .tree, since: passed + 95, lastPassed: passed)
+        #expect(!Self.show(InputPersonView.turnstile(checking, timeZone: utc), person: true).out.contains("It passed"))
+        #expect(checking.textLine() == "Turnstile: verifying")
+        #expect(InputPersonView.turnstileChange(TurnstileStatus.Change(state: .passed, at: passed + 4), timeZone: utc) == "Turnstile: passed at 08:00:04")
     }
 
     @Test("LogBox status keeps the agent's lines; a person's rows quote device text and keep it redacted")
@@ -367,6 +400,7 @@ struct InputPersonOutputTests {
                 InputPersonView.receipt("Slider id=volume set to 50%", details: ["The nearest step to 42%"]),
                 InputPersonView.login(LoginReport(app: "com.example.app", key: "qa", turnstile: nil, submitLabel: "Continue with your email address")),
                 InputPersonView.turnstile(TurnstileStatus(state: .challenge, source: .webViewPoints)),
+                InputPersonView.turnstile(TurnstileStatus(state: .unknown, source: .tree, since: ScreenFixtures.now, lastPassed: ScreenFixtures.now - 95)),
                 InputPersonView.devMenu(DevMenu.State(menu: "react-native", items: [
                     DevMenu.Entry(label: "Reload", role: .text, frame: nil),
                     DevMenu.Entry(label: String(repeating: "Toggle mock data ", count: 6), role: .text, frame: nil, custom: true),
