@@ -63,6 +63,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - On an iOS simulator, an `--id` that matches nothing while the read fills in what the app hides names the hidden text it found, and its `--label` in case that is the element: a simulator reads no id for a view hidden from accessibility.
 - A tap refused as covered by the page that holds it, as a pager's page is by the pager, now gives the tap on that page at the same point, in the message and as its hint.
 - Android's miss for a view it lists as hidden while wholly on screen, as under a system sheet, no longer says to scroll it into view.
+- On iOS, a capture behind a sheet that hides the screen beneath it from accessibility, while that screen stays drawn, no longer comes back clean with the email address showing. `screenshot` (and `batch` steps and evidence runs) reads the text drawn there on the Mac, paints the lines that hold an email address or a `--mask-text` or `offsider.mask.json` match, and reports `maskUnproven: "modal"` with a warning, as Android does for a modal window; `record-video` warns at the start. Screens with no such sheet take no extra read.
 
 ## [0.16.0] - 2026-11-05
 
