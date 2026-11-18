@@ -10,6 +10,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - `offsider -v` prints the version, as `offsider --version` does.
 - App guard: `offsider.guard.json` in an app's repository names the controls an agent asks you before tapping (`ask`, approved with Touch ID at the Mac) or never taps (`never`, exit 1 `guarded_control`), judged on the control under every tap, drag, slider and Return before anything is sent, so the rest of the app is free to drive. `offsider guard` sets it up (`status`, `init`, `check`, `show`) and a person approves it once with `guard approve`, after which an agent can tighten the rules but never loosen them; `offsider guide guard` is the agent's topic.
+- `login --wait-turnstile <seconds>`: when a Turnstile box needs a person, `login` asks for the tick, waits for it with the wait `turnstile --wait` uses, never tapping the box, then goes on to Touch ID, typing and submit in the same command. `--json` adds `waitedForTurnstile`.
+- `login` says when the app may have refused the sign-in: it reads the screen for up to 5 s after the submit tap, and `--json` adds `formStillInFront`, with a warning when the form stayed up. A slow sign-in looks the same, so it stays exit 0.
+- `login` declines a save-password prompt itself on a simulator, an emulator and a test device: one tap on Not Now, Not now or No thanks on iOS's Save Password? prompt or Android's save dialog, never Save, and through the app guard like any tap (`savePrompt: declined`). On a phone held to one app it taps nothing, asks the person by name and waits for the prompt to close; one still up exits 7 (`system_prompt_in_front`) with `submitted: true`.
+- `turnstile --wait` prints each new state on stderr as it sees it, with its time, and `--json` adds `since`, `lastPassed` and, with `--wait`, `changes`.
+- `credential add` and `describe` take `--confirm-always`: `login` asks for Touch ID or the Mac password before every sign-in with that login, test devices included. An agent may set it; `--no-confirm-always` (back to `--confirm`) and `--no-confirm` need a person at a terminal. `credential status` shows it, as `confirmAlways` in `--json`.
 - `tap --hold <ms>` presses, holds still for 100 to 10000 ms and lifts, as one long press at a point or on a selector, on simulators, Android and in `batch`; a physical iPhone or iPad holds it through its session broker. The guide gains a home screen widget recipe.
 - `wake` on an iOS simulator clears the lock screen `button lock` leaves: it presses Home at most twice, only while the lock screen is up, and checks it has gone, so no run needs the swipe up that can freeze the display. `--unlock` is refused there.
 - `boot --audio` keeps an emulator's host audio.
@@ -27,6 +32,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - The bundled skill no longer asks before every production or store build: once a person has approved an app's guard rules, `guard status` says `ready` and the agent drives the app, leaving guarded controls to the guard.
 - `test-runner.sh --unit-tests` runs in parallel. A test that fails there reruns alone and must pass, and is flagged when it does; a stall or an unclear result reruns everything serially. CI reuses the debug build's dependencies on pull requests.
+- `login` reads Turnstile once the saved login is chosen and before it asks for Touch ID or reads the password, so an unticked box stops it with no Touch ID spent.
+- `login` names every wait and its bound on stderr (`Note: Waiting up to 15 s for Turnstile to finish checking`), and a run the watchdog ends says which step it was in.
+- `turnstile` remembers the last state it saw on each device for a day, from `turnstile` and `login`, so a `checkbox`, `unknown` or `failed` read after a pass says when it passed and that it has reset since. The record under the private directory's `turnstile/` holds only the state and two times.
+- `credential --help` states the note limit beside `--about`, `--avoid` and `--state`: one line, at most 200 characters, no email address.
 - `boot` starts an emulator with `-no-audio`, since one with host audio can open the Mac's microphone and drop Bluetooth headphones to call quality; `--audio` keeps it, and `--emulator-arg -no-audio` still passes.
 - `boot` says `Started <avd> as <serial>` when it started the emulator; for one already up it names the emulator's pid and when it started, and a person's receipt reads `started` or `was already running`.
 - `lease set --label` and `shutdown --label` take 1 to 200 characters (was 80), never shortened; the usage line and the error state the limit.
@@ -38,6 +47,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Fixed
 
+- On an Android emulator, `type --into-id`, `--into-label` and `--into-label-contains` no longer report success when Gboard's stylus handwriting tutorial took the text. `type` and `key-sequence` send nothing while a field inside the keyboard has focus (exit 2, `focus_mismatch`), and after keys into a named field `type` reads it back, exiting 5 (`text_not_accepted`) when the text did not reach it, batch steps too. The message names the tutorial; `type --replace` still works past it, and the hint turns stylus handwriting off.
+- `login` closes a keyboard that taps on empty space leave up before it gives up with `target_under_keyboard`: the keyboard's own hide key or Done bar on iOS, Back over docked keys on Android, never Return.
+- On Android, `turnstile` and `login` read a Turnstile widget the app hides from accessibility, as `describe-ui` does, so a checkbox `describe-ui` lists no longer reads `unknown`.
 - A capture after a session's run ended still says so, with the `run start` that carries on its numbering, for a day after another session's `run start` or `run status` ended the run; before, that note never appeared.
 - `doctor`, `wake`, `sleep` and the `screen_off` refusal read an Android screen as off when its display is off, even while Android reads the device awake (a charging phone with Stay awake on, after its power button).
 - `displays`, `rn open`, `rn devmenu`, `rn tools off`, the focus check of plain `type` and `key-sequence`, and the reads that place a coordinate `tap`, `swipe`, `drag`, `touch` or `gesture` end with `device_unresponsive` after 30 s when a simulator or emulator stops answering, instead of hanging.

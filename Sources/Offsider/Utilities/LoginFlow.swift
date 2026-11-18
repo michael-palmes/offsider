@@ -11,8 +11,8 @@ enum LoginFlow {
         var tap: (_ point: UIPoint, _ tree: UITree) async throws -> Void
         /// Turnstile's state on the screen `tree` shows. Never taps.
         var readTurnstile: (_ tree: UITree) async throws -> TurnstilePhase
-        /// Optional extra dismiss after a tap above the keys. The login command leaves this empty: Back can leave the sign-in screen.
-        var hideKeyboard: () async throws -> Void = {}
+        /// The keyboard's own way out, tried when taps above the keys left it up: its hide key on iOS, Back on Android over docked keys. Sends nothing where neither is safe.
+        var hideKeyboard: (_ tree: UITree) async throws -> Void = { _ in }
         var clock: PollClock
         /// The app in front, from a tree already read.
         var foregroundApp: (_ tree: UITree) throws -> String
@@ -26,10 +26,48 @@ enum LoginFlow {
         var turnstileWatch: String = Turnstile.waitCommand()
         /// The device's id, for a refusal's command.
         var device = "<DEVICE_ID>"
+        /// A save-password prompt over the app on the screen `tree` shows; nil when none is up.
+        var savePrompt: (_ tree: UITree) async -> SavePrompt? = { _ in nil }
+        /// The system prompt that made a read fail, on a phone held to one app; nil when the read failed for another reason.
+        var promptBehind: (_ error: any Error) async -> SavePrompt? = { _ in nil }
+        /// False on a phone in personal use, where a system prompt is the person's to answer.
+        var declinesPrompts = true
+        /// What the login is doing now, for a run that is stopped from outside; `shown` when it is a wait worth a line.
+        var step: (_ what: String, _ shown: Bool) -> Void = { _, _ in }
+        /// Passes a request on to the person while the login waits for them.
+        var ask: (String) -> Void = { _ in }
     }
 
-    /// How long after the submit tap Turnstile is read once more.
+    /// The time `--wait-turnstile` gives a person, counted from the first wait and shared by every wait of one login.
+    final class TurnstileWait {
+        let seconds: TimeInterval
+        private(set) var deadline: TimeInterval?
+        private(set) var waited = false
+
+        init(seconds: TimeInterval) {
+            self.seconds = seconds
+        }
+
+        func remaining(now: TimeInterval) -> TimeInterval {
+            guard let deadline else { return seconds }
+            return max(0, deadline - now)
+        }
+
+        func begin(now: TimeInterval) {
+            waited = true
+            if deadline == nil { deadline = now + seconds }
+        }
+    }
+
+    /// How long after the submit tap the screen is first read, and Turnstile once more.
     static let afterSubmitRead: Duration = .milliseconds(750)
+    /// How often the screen is read after that, and for how long at most.
+    static let afterSubmitInterval: Duration = .milliseconds(500)
+    static let afterSubmitWatch: TimeInterval = 5
+    /// Reads in a row without the form before it counts as gone: a save-password prompt shows a moment after the form leaves.
+    static let formGoneReads = 3
+    /// How long a declined prompt gets to leave the screen.
+    static let promptLeaves: TimeInterval = 3
 
     /// Who Offsider last signed in to this app on the device, for the note when no form is in front.
     struct LastSignIn: Equatable {
@@ -48,6 +86,7 @@ enum LoginFlow {
         profile: LoginProfile?,
         webLogin: Bool = false,
         timeout: TimeInterval,
+        turnstileWait: TurnstileWait? = nil,
         services: Services,
         lastSignIn: () -> LastSignIn? = { nil }
     ) async throws -> LoginReport {
@@ -76,12 +115,13 @@ enum LoginFlow {
         try refuseWebForm(form, app: app, key: key, profile: profile, webLogin: webLogin)
         try requireName(form.identity, what: "email or username")
         try requireName(form.password, what: "password")
-        try await requireNoWidget(try await readingPastLoad(tree, services: services), stage: .beforeTyping, services: services)
+        try await requireNoWidget(try await readingPastLoad(tree, services: services), stage: .beforeTyping, wait: turnstileWait, services: services)
         var identityProgress = LoginFieldProgress.notFilled
         var passwordProgress = LoginFieldProgress.notFilled
         var report: LoginReport
         let tapped: UITree
         do {
+            services.step("typing the email or username", false)
             try await type(credential.username, into: form.identity, services: services)
             tree = try await readUntil({ LoginForm.match(form.identity, in: $0)?.value == credential.username }, services: services)
             guard let identity = LoginForm.match(form.identity, in: tree) else {
@@ -99,6 +139,7 @@ enum LoginFlow {
             identityProgress = .filled
             try requireForeground(app, in: tree, services: services, stopped: "the password was not typed")
             tree = try await hideKeysForFocusProof(in: tree, fields: [form.identity, form.password], services: services)
+            services.step("typing the password", false)
             try await InputSecrecy.$isSecret.withValue(true) {
                 try await type(credential.password, into: form.password, services: services)
             }
@@ -117,6 +158,7 @@ enum LoginFlow {
             }
             passwordProgress = .filled
             let submitNow = LoginForm.match(form.submit, in: tree) ?? form.submit
+            services.step("closing the keyboard", false)
             tree = try await dismissKeyboard(in: tree, submit: submitNow, shell: form.turnstileShell, fields: [form.identity, form.password], services: services)
             if (try? LoginForm.detect(in: tree, profile: profile, reachable: reachable)) == nil {
                 // A read taken while the keyboard animates away can miss the form for a moment.
@@ -129,30 +171,122 @@ enum LoginFlow {
                 await hitsNow.read(LoginForm.hiddenCandidates(in: tree, profile: profile), services: services)
             }
             let filled = try detect(in: tree, profile: profile, afterTyping: true, hits: hitsNow)
-            let step = try await settleTurnstile(in: tree, timeout: timeout, services: services)
-            (report, tapped) = try await waitUntilEnabled(filled.submit, app: app, key: key, turnstile: step, timeout: timeout, services: services)
+            let step = try await settleTurnstile(in: tree, timeout: timeout, wait: turnstileWait, services: services)
+            (report, tapped) = try await waitUntilEnabled(
+                filled.submit, app: app, key: key, turnstile: step, timeout: timeout, shell: form.turnstileShell, fields: [form.identity, form.password], services: services
+            )
         } catch {
-            throw LoginFailure(report: .stopped(app: app, key: key, identity: identityProgress, password: passwordProgress), underlying: error)
+            var stopped = LoginReport.stopped(app: app, key: key, identity: identityProgress, password: passwordProgress)
+            stopped.waitedForTurnstile = turnstileWait?.waited ?? false
+            throw LoginFailure(report: stopped, underlying: error)
         }
-        // One read after the tap; a read that fails cannot show a widget, and the submit already happened.
+        report.waitedForTurnstile = turnstileWait?.waited ?? false
+        services.step("watching the screen after submit", false)
+        return try await watchAfterSubmit(report, form: form, profile: profile, reachable: reachable, tapped: tapped, timeout: timeout, services: services)
+    }
+
+    /// The Turnstile check `login` makes before it reads the saved login, so a box nobody ticked never costs a Touch ID approval.
+    static func preflight(_ tree: UITree, wait: TurnstileWait?, services: Services) async throws {
+        try await requireNoWidget(try await readingPastLoad(tree, services: services), stage: .beforeTyping, wait: wait, services: services)
+    }
+
+    /// Reads the screen after the tap until the form has left, or `afterSubmitWatch` is over: the first read checks where the tap went and Turnstile, every read looks for a save-password prompt.
+    private static func watchAfterSubmit(
+        _ submitted: LoginReport, form: LoginForm.Found, profile: LoginProfile?, reachable: [UINode], tapped: UITree, timeout: TimeInterval, services: Services
+    ) async throws -> LoginReport {
+        var report = submitted
+        let deadline = services.clock.now() + afterSubmitWatch
+        var first = true
+        var gone = 0
         try await services.clock.sleep(afterSubmitRead)
-        let screenAfter = try? await services.readTree()
-        if let screenAfter, let stray = strayTap(before: tapped, after: screenAfter, services: services) {
-            var stopped = report
-            stopped.submitted = false
-            throw LoginFailure(report: stopped, underlying: stray)
-        }
-        let after: TurnstilePhase? = if let screenAfter { try? await services.readTurnstile(screenAfter) } else { nil }
-        if let after {
+        while true {
+            let screen: UITree
             do {
-                try await requireNoWidget(after, stage: .afterSubmit, services: services)
+                screen = try await services.readTree()
             } catch {
-                var submitted = report
-                submitted.error = ErrorReporter.payload(for: error)
-                throw LoginFailure(report: submitted, underlying: error)
+                // A phone held to one app refuses the read under a system window, which is how a save prompt shows there.
+                guard let prompt = await services.promptBehind(error) else { return report }
+                report.savePrompt = try await settle(prompt, in: nil, report: report, timeout: timeout, services: services)
+                return report
             }
+            if first {
+                first = false
+                if let stray = strayTap(before: tapped, after: screen, services: services) {
+                    report.submitted = false
+                    throw LoginFailure(report: report, underlying: stray)
+                }
+                if let after = try? await services.readTurnstile(screen) {
+                    do {
+                        try await requireNoWidget(after, stage: .afterSubmit, wait: nil, services: services)
+                    } catch {
+                        report.error = ErrorReporter.payload(for: error)
+                        throw LoginFailure(report: report, underlying: error)
+                    }
+                }
+            }
+            if let prompt = await services.savePrompt(screen) {
+                report.formStillInFront = false
+                report.savePrompt = try await settle(prompt, in: screen, report: report, timeout: timeout, services: services)
+                return report
+            }
+            let present = await formInFront(form, profile: profile, reachable: reachable, in: screen, services: services)
+            report.formStillInFront = present
+            gone = present ? 0 : gone + 1
+            if gone >= formGoneReads || services.clock.now() >= deadline { return report }
+            try await services.clock.sleep(afterSubmitInterval)
         }
-        return report
+    }
+
+    /// The form as `login` found it, still in front: where a hit-test can say, the password field must be what a touch on it reaches, as a page slid aside can stay in the tree. `reachable` holds the fields a hit-test found before typing.
+    private static func formInFront(_ form: LoginForm.Found, profile: LoginProfile?, reachable: [UINode], in tree: UITree, services: Services) async -> Bool {
+        guard let found = try? LoginForm.detect(in: tree, profile: profile, reachable: reachable), LoginForm.match(form.password, in: tree) != nil else { return false }
+        guard let centre = found.password.frame?.center, let hit = await services.hitTest(centre) else { return true }
+        return LoginForm.isHit(hit, on: found.password)
+    }
+
+    /// Declines a save-password prompt where no person's saved passwords are at stake, tapping its decline control and nothing else; on a phone in personal use it asks the person and reads until the prompt closes or `timeout` is over.
+    private static func settle(_ prompt: SavePrompt, in tree: UITree?, report: LoginReport, timeout: TimeInterval, services: Services) async throws -> SavePromptOutcome {
+        var why = prompt.savesPassword
+            ? "Offsider found no decline control on it, and never taps Save."
+            : "Offsider answers only a save-password prompt, and only by declining it."
+        if !services.declinesPrompts {
+            why = "On a phone in personal use that prompt is the person's to answer, so Offsider tapped nothing."
+            await services.noteDevice()
+            services.ask(prompt.ask)
+            services.step("Waiting up to \(seconds(timeout)) for a person to close \(prompt.summary)", true)
+            if await promptClosed(within: timeout, interval: .seconds(1), services: services) { return .closed }
+        } else if prompt.savesPassword, let point = prompt.decline, let tree {
+            do {
+                try await services.tap(point, tree)
+                if await promptClosed(within: promptLeaves, interval: afterSubmitInterval, services: services) { return .declined }
+                why = "Offsider tapped \(prompt.declineLabel ?? "its decline control") and the prompt stayed."
+            } catch {
+                why = "Offsider could not decline it: \(OffsiderCommand.message(for: error))"
+            }
+            await services.noteDevice()
+        } else {
+            await services.noteDevice()
+        }
+        var open = report
+        open.savePrompt = .open
+        let failure = CLIError(
+            errorDescription: "The submit button was tapped, and then \(prompt.summary) came up over the app. \(why) Do not run login again: the sign-in went ahead.",
+            reason: .systemPromptInFront,
+            hint: CommandScope.current.describeHint(device: services.device),
+            ask: prompt.ask
+        )
+        open.error = ErrorReporter.payload(for: failure)
+        throw LoginFailure(report: open, underlying: failure)
+    }
+
+    /// True once a read shows no prompt; a read the prompt still stops counts as open.
+    private static func promptClosed(within limit: TimeInterval, interval: Duration, services: Services) async -> Bool {
+        let deadline = services.clock.now() + limit
+        while true {
+            try? await services.clock.sleep(interval)
+            if let tree = try? await services.readTree(), await services.savePrompt(tree) == nil { return true }
+            if services.clock.now() >= deadline { return false }
+        }
     }
 
     /// The tap reached LogBox's toast or the dev menu's button, not the form: what it opened shows only after it, with that overlay there before it.
@@ -259,22 +393,61 @@ enum LoginFlow {
     }
 
     /// A checkbox, a challenge, several checkboxes or a box the tree no longer shows are for a person; absent, passed, checking and a failed run that may retry are not. Past submit, a web view with no widget says nothing new.
-    private static func requireNoWidget(_ phase: TurnstilePhase, stage: TurnstileStage, services: Services) async throws {
+    private static func requireNoWidget(_ phase: TurnstilePhase, stage: TurnstileStage, wait: TurnstileWait?, services: Services) async throws {
         switch phase {
         case .absent, .passed, .checking, .failed:
             return
         case .noWidget where stage == .afterSubmit:
             return
         case .ready, .visualChallenge, .ambiguous, .noWidget:
-            await services.noteDevice()
-            throw turnstileRequired(phase, stage: stage, watch: services.turnstileWatch)
+            try await handToPerson(phase, stage: stage, wait: wait, services: services)
         }
     }
 
-    /// After typing: absent or passed goes on; checking is read again until `timeout`; anything else hands back.
-    private static func settleTurnstile(in tree: UITree, timeout: TimeInterval, services: Services) async throws -> LoginTurnstileStep {
-        let deadline = services.clock.now() + timeout
+    /// Without `--wait-turnstile` the widget stops the login. With it, the person is asked and the widget is read, never tapped, until it passes or leaves; time that runs out stops the login as before.
+    private static func handToPerson(_ phase: TurnstilePhase, stage: TurnstileStage, wait: TurnstileWait?, services: Services) async throws {
+        await services.noteDevice()
+        let refusal = turnstileRequired(phase, stage: stage, watch: services.turnstileWatch)
+        guard stage != .afterSubmit, let wait else { throw refusal }
+        let left = wait.remaining(now: services.clock.now())
+        guard left > 0 else { throw turnstileNotDone(TurnstileStatus(phase: phase, source: .tree)?.state ?? .checkbox, stage: stage, after: wait.seconds, watch: services.turnstileWatch) }
+        wait.begin(now: services.clock.now())
+        if let ask = refusal.ask { services.ask(ask) }
+        services.step("Waiting up to \(seconds(left)) for a person to finish Turnstile", true)
+        let status = try await Turnstile.waitForPerson(seconds: left, clock: services.clock) {
+            let phase = try await services.readTurnstile(try await services.readTree())
+            guard let status = TurnstileStatus(phase: phase, source: .tree) else {
+                throw CLIError(errorDescription: "Several Turnstile checkboxes are on screen.", reason: .selectorAmbiguous)
+            }
+            return status
+        }
+        if status.state.awaitsPerson { throw turnstileNotDone(status.state, stage: stage, after: wait.seconds, watch: services.turnstileWatch) }
+    }
+
+    /// The refusal once `--wait-turnstile` ran out: what the widget showed at the end, and how long the person had.
+    static func turnstileNotDone(_ state: TurnstileStatus.State, stage: TurnstileStage, after waited: TimeInterval, watch: String, audience: ErrorAudience = .current) -> CLIError {
+        let what: String
+        let ask: String
+        switch state {
+        case .challenge: (what, ask) = ("The Cloudflare Turnstile challenge was still unsolved", PersonAsk.solveTurnstile)
+        case .verifying: (what, ask) = ("Cloudflare Turnstile was still checking", PersonAsk.finishTurnstile)
+        case .failed: (what, ask) = ("Cloudflare Turnstile still showed Verification failed", PersonAsk.finishTurnstile)
+        case .unknown: (what, ask) = ("A Turnstile web view was still up with no widget Offsider can read", PersonAsk.tickTurnstile)
+        default: (what, ask) = ("The Cloudflare Turnstile checkbox was still unticked", PersonAsk.tickTurnstile)
+        }
+        let outcome = stage == .beforeTyping ? "Nothing was typed." : "The submit button was not tapped."
+        let next = audience == .person ? "Finish it on the device, then run login again." : "Offsider never ticks Turnstile. Run login once more after it passes."
+        return CLIError(
+            errorDescription: "\(what) after \(seconds(waited)) (--wait-turnstile). \(outcome) \(next)",
+            reason: .turnstileRequired, hint: audience == .person ? nil : watch, ask: ask
+        )
+    }
+
+    /// After typing: absent or passed goes on; checking is read again until `timeout`; anything else is for a person.
+    private static func settleTurnstile(in tree: UITree, timeout: TimeInterval, wait: TurnstileWait?, services: Services) async throws -> LoginTurnstileStep {
+        var deadline = services.clock.now() + timeout
         var phase = try await readingPastLoad(tree, services: services)
+        var noted = false
         while true {
             switch phase {
             case .absent:
@@ -282,12 +455,17 @@ enum LoginFlow {
             case .passed:
                 return .passed
             case .ready, .visualChallenge, .ambiguous, .noWidget:
-                await services.noteDevice()
-                throw turnstileRequired(phase, stage: .beforeSubmit, watch: services.turnstileWatch)
+                try await handToPerson(phase, stage: .beforeSubmit, wait: wait, services: services)
+                deadline = services.clock.now() + timeout
+                phase = try await services.readTurnstile(try await services.readTree())
             case .checking, .failed:
                 if services.clock.now() >= deadline {
                     await services.noteDevice()
                     throw phase == .failed ? turnstileFailed(after: timeout, watch: services.turnstileWatch) : turnstileStillChecking(after: timeout, watch: services.turnstileWatch)
+                }
+                if !noted {
+                    noted = true
+                    services.step("Waiting up to \(seconds(timeout)) for Turnstile to finish checking", true)
                 }
                 try await services.clock.sleep(.milliseconds(250))
                 phase = try await services.readTurnstile(try await services.readTree())
@@ -481,7 +659,7 @@ enum LoginFlow {
             current = try await readUntil(gone, services: services)
         }
         if !gone(current) {
-            try await services.hideKeyboard()
+            try await services.hideKeyboard(current)
             current = try await readUntil(gone, services: services)
         }
         return current
@@ -523,9 +701,9 @@ enum LoginFlow {
             current = try await readUntil(clear, services: services)
             if clear(current) { return try await readUntilStill(submit, from: current, services: services) }
         }
-        try await services.hideKeyboard()
+        try await services.hideKeyboard(current)
         current = try await readUntil(clear, services: services)
-        if !clear(current) { throw keyboardError() }
+        if !clear(current) { throw keyboardError(services: services) }
         return try await readUntilStill(submit, from: current, services: services)
     }
 
@@ -553,10 +731,19 @@ enum LoginFlow {
         return false
     }
 
-    private static func keyboardError() -> CLIError {
-        CLIError(
-            errorDescription: "The keyboard covers the next control, so Turnstile was not checked and the submit button was not tapped.",
-            reason: .targetUnderKeyboard
+    /// With `services`, raised only after taps above the keys and the keyboard's own way out both left the keys over the control.
+    private static func keyboardError(services: Services? = nil) -> CLIError {
+        guard let services else {
+            return CLIError(
+                errorDescription: "The keyboard covers the next control, so Turnstile was not checked and the submit button was not tapped.",
+                reason: .targetUnderKeyboard
+            )
+        }
+        return CLIError(
+            errorDescription: "The keyboard covers the next control and nothing Offsider may send closed it, so Turnstile was not checked and the submit button was not tapped. "
+                + "Close the keyboard in the app, or scroll the button above it, then run login again.",
+            reason: .targetUnderKeyboard,
+            hint: CommandScope.current.describeHint(device: services.device)
         )
     }
 
@@ -566,10 +753,14 @@ enum LoginFlow {
         key: String,
         turnstile: LoginTurnstileStep,
         timeout: TimeInterval,
+        shell: UIFrame? = nil,
+        fields: [UINode] = [],
         services: Services
     ) async throws -> (report: LoginReport, tapped: UITree) {
         let deadline = services.clock.now() + timeout
         var missingUntil: TimeInterval?
+        var noted = false
+        var keysReturned = false
         while true {
             let tree = try await services.readTree()
             guard let submit = LoginForm.match(sample, in: tree), let frame = submit.frame else {
@@ -588,7 +779,16 @@ enum LoginFlow {
             missingUntil = nil
             if submit.enabled != false {
                 try requireForeground(app, in: tree, services: services, stopped: "the submit button was not tapped")
-                try await services.tap(try await submitPoint(submit, frame: frame, in: tree, services: services), tree)
+                let point: UIPoint
+                do {
+                    point = try await submitPoint(submit, frame: frame, in: tree, services: services)
+                } catch let error as CLIError where error.reason == .targetUnderKeyboard && !keysReturned {
+                    // The keys can come back while Turnstile settles; they get one more dismissal before the login gives up.
+                    keysReturned = true
+                    _ = try await dismissKeyboard(in: tree, submit: submit, shell: shell, fields: fields, services: services)
+                    continue
+                }
+                try await services.tap(point, tree)
                 let label = submit.label?.trimmingCharacters(in: .whitespacesAndNewlines)
                 let shown = (label?.isEmpty == false) ? label : nil
                 return (LoginReport(app: app, key: key, turnstile: turnstile, submitLabel: shown), tree)
@@ -598,6 +798,10 @@ enum LoginFlow {
                     errorDescription: "The submit button stayed disabled after \(seconds(timeout)). It was not tapped.",
                     reason: .conditionNotMet
                 )
+            }
+            if !noted {
+                noted = true
+                services.step("Waiting up to \(seconds(timeout)) for the submit button to enable", true)
             }
             try await services.clock.sleep(.milliseconds(250))
         }

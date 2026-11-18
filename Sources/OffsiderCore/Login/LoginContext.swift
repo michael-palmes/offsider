@@ -117,18 +117,20 @@ public struct LoginContext: Equatable, Sendable {
     public var updated: Date?
     /// Mirrors of the encrypted settings, for `status` and for asking early; the encrypted data decides.
     public var confirm: Bool
+    public var confirmAlways: Bool
     public var devices: LoginDeviceScope
 
     public init(
         about: String? = nil, avoid: String? = nil, state: String? = nil, tags: [LoginTag] = [], updated: Date? = nil,
-        confirm: Bool = false, devices: LoginDeviceScope = .virtual
+        confirm: Bool = false, confirmAlways: Bool = false, devices: LoginDeviceScope = .virtual
     ) {
         self.about = about
         self.avoid = avoid
         self.state = state
         self.tags = Set(tags).sorted()
         self.updated = updated
-        self.confirm = confirm
+        self.confirm = confirm || confirmAlways
+        self.confirmAlways = confirmAlways
         self.devices = devices
     }
 
@@ -136,8 +138,14 @@ public struct LoginContext: Equatable, Sendable {
     public func mirroring(_ stored: StoredLogin) -> LoginContext {
         var next = self
         next.confirm = stored.confirm
+        next.confirmAlways = stored.confirmAlways
         next.devices = stored.devices
         return next
+    }
+
+    /// Whether to ask before the password is read; when this says no, the encrypted data still decides.
+    public func asksFirst(wholeDevice: Bool) -> Bool {
+        confirmAlways || (confirm && !wholeDevice)
     }
 
     public var isEmpty: Bool { about == nil && avoid == nil && state == nil && tags.isEmpty }
@@ -188,6 +196,7 @@ public struct LoginContext: Equatable, Sendable {
         if !tags.isEmpty { fields.append(("tags", .array(tags.map { .string($0.rawValue) }))) }
         if let updated { fields.append(("updated", .string(ProcessStamp.timestamp(updated)))) }
         if confirm { fields.append(("confirm", .bool(true))) }
+        if confirmAlways { fields.append(("confirmAlways", .bool(true))) }
         if devices != .virtual { fields.append(("devices", .string(devices.rawValue))) }
         return Data(OrderedJSON.object(fields).rendered(compact: true).utf8)
     }
@@ -219,6 +228,11 @@ public struct LoginContext: Equatable, Sendable {
         if let value = object["confirm"] {
             guard let flag = value as? NSNumber, CFGetTypeID(flag) == CFBooleanGetTypeID() else { return .damaged }
             context.confirm = flag.boolValue
+        }
+        if let value = object["confirmAlways"] {
+            guard let flag = value as? NSNumber, CFGetTypeID(flag) == CFBooleanGetTypeID() else { return .damaged }
+            context.confirmAlways = flag.boolValue
+            if flag.boolValue { context.confirm = true }
         }
         if let value = object["devices"] {
             guard let text = value as? String, let scope = LoginDeviceScope(rawValue: text) else { return .damaged }
@@ -283,7 +297,8 @@ public struct LoginContextEdit: Equatable, Sendable {
         tags.removeAll { untag.contains($0) }
         tags += tag
         var next = LoginContext(
-            about: context.about, avoid: context.avoid, state: context.state, tags: tags, updated: context.updated, confirm: context.confirm, devices: context.devices
+            about: context.about, avoid: context.avoid, state: context.state, tags: tags, updated: context.updated, confirm: context.confirm,
+            confirmAlways: context.confirmAlways, devices: context.devices
         )
         guard next.tags.count <= LoginContext.maxTags else {
             throw LoginContextProblem("A saved login holds at most \(LoginContext.maxTags) tags, and this would give it \(next.tags.count). Remove some with --untag or --clear-tags. Nothing was saved.")

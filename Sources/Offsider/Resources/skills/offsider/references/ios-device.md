@@ -114,4 +114,4 @@ A refusal only the user's hands can clear carries `error.ask` (an `Ask:` line wi
 
 ## Signing in
 
-`login` works here: on a test device any saved user signs in with no Touch ID; on any other added device the user must be saved with `--devices any`, and each sign-in asks for Touch ID. It types only as keys through the session broker, so it never reaches `runner.log`: with no broker (Xcode 26, no desktop login) it exits 1 `not_supported`, and so does a password with a character the US keyboard lacks. Saving a user is the user's to do: give them `offsider credential add --app <bundle-id>` (`guide login`).
+`login` works here: on a test device any saved user signs in with no Touch ID, unless it was saved with `--confirm-always`; on any other added device the user must be saved with `--devices any`, and each sign-in asks for Touch ID. It types only as keys through the session broker, so it never reaches `runner.log`: with no broker (Xcode 26, no desktop login) it exits 1 `not_supported`, and so does a password with a character the US keyboard lacks. Saving a user is the user's to do: give them `offsider credential add --app <bundle-id>` (`guide login`).

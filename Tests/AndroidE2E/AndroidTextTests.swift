@@ -112,6 +112,35 @@ struct AndroidTypeTests {
     }
 }
 
+/// Gboard's "Try out your stylus" tutorial opens inside the keyboard about a second after a tap on a field, and takes keys while the app's field keeps focus.
+@Suite("Android stylus handwriting tutorial", .serialized, .enabled(if: isAndroidE2EEnabled), StylusHandwritingOn())
+struct AndroidStylusTutorialTests {
+    static let field = "gap-tabs-search-field"
+
+    static func value() async throws -> String {
+        let node = AndroidE2E.nodes(in: try await AndroidE2E.tree()).first { $0["id"] as? String == field }
+        return node?["value"] as? String ?? ""
+    }
+
+    @Test("type --into-id reaches the field or refuses naming the tutorial, never passing with the text elsewhere; --replace then sets it", arguments: 1...3)
+    func intoIDNeverPassesElsewhere(attempt: Int) async throws {
+        try await AndroidE2E.open("gap-tabs-test", waitingFor: "gap-tabs-test-screen")
+        try await AndroidE2E.run("tap --id gap-tabs-tab-search")
+        _ = try await AndroidE2E.waitForLabel(of: "gap-tabs-pressed") { $0 == "Gap Pressed: Search Tab" }
+
+        let typed = try await AndroidE2E.offsider("type abc --into-id \(Self.field) --json")
+        if typed.exitCode == 0 {
+            #expect(try await Self.value() == "abc", "type exited 0, but the field does not hold the text: \(typed.stdout)")
+        } else {
+            #expect(typed.stdout.contains(#""reason":"focus_mismatch""#) || typed.stdout.contains(#""reason":"text_not_accepted""#), "\(typed.stdout)")
+            #expect(typed.stderr.contains("stylus handwriting tutorial"), "\(typed.stderr)")
+        }
+
+        try await AndroidE2E.run("type --replace abc --into-id \(Self.field)")
+        _ = try await AndroidE2E.waitForFieldValue("abc", id: Self.field)
+    }
+}
+
 @Suite("Android batch", .serialized, .enabled(if: isAndroidE2EEnabled))
 struct AndroidBatchTests {
     @Test("the login flow runs in batches around the password, which a batch type step may not type and --stdin does")
