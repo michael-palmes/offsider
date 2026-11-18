@@ -18,6 +18,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Fixed
 
+- On iOS, a capture behind a sheet that hides the screen beneath it from accessibility, while that screen stays drawn, no longer comes back clean with the email address showing. `screenshot` (and `batch` steps and evidence runs) reads the text drawn there on the Mac, paints the lines that hold an email address or a `--mask-text` or `offsider.mask.json` match, and reports `maskUnproven: "modal"` with a warning, as Android does for a modal window; `record-video` warns at the start. Screens with no such sheet take no extra read.
 - On an Android emulator, `type --into-id`, `--into-label` and `--into-label-contains` no longer report success when Gboard's stylus handwriting tutorial took the text. `type` and `key-sequence` send nothing while a field inside the keyboard has focus (exit 2, `focus_mismatch`), and after keys into a named field `type` reads it back, exiting 5 (`text_not_accepted`) when the text did not reach it, batch steps too. The message names the tutorial; `type --replace` still works past it, and the hint turns stylus handwriting off.
 
 ## [0.16.0] - 2026-11-05

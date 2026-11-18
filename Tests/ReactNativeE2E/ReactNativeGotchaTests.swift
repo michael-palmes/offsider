@@ -278,21 +278,35 @@ struct ReactNativeGotchaTests {
         _ = try await app.waitForLabel(of: "storage-test-count") { $0 == "Stored Keys: 0" }
     }
 
-    @Test("a sheet beside the root that hides the whole screen leaves only the sheet listed, and on Android text masks still paint the rows behind it", arguments: RNPlatform.enabled)
+    @Test("a sheet beside the root that hides the whole screen leaves only the sheet listed, and the email drawn behind it is painted, on iOS with the capture reported unproven", arguments: RNPlatform.enabled)
     func rootSheetHidesScreen(platform: RNPlatform) async throws {
         let app = RNApp(platform)
         try await app.open("mask-sheet-test")
+        try await app.run("tap --id mask-sheet-test-email")
+        try await app.run("type --replace \(ReactNativeEvidenceTests.email)")
+        let field = try await app.frame(of: "mask-sheet-test-email")
         try await app.run("tap --id mask-sheet-test-open-root")
         try await app.run("wait --id mask-sheet-test-root-close --timeout 5")
         try await app.run("wait --settled --ignore-values --timeout 5")
 
         let summary = try await app.run("describe-ui --summary").stdout
         #expect(!summary.contains("mask-sheet-test-address") && !summary.contains("id=mask-sheet-test-screen"), "\(summary)")
-        if platform == .android {
-            let path = FileManager.default.temporaryDirectory.appendingPathComponent("offsider-gotcha-\(UUID().uuidString).png").path
-            defer { try? FileManager.default.removeItem(atPath: path) }
-            let report = try Self.json(try await app.run(#"screenshot --mask-text '\.\.\.' --json --output "# + path).stdout)
-            #expect((report["maskedBy"] as? [String: Int])?["text"] == 2, "\(report)")
+        try await ReactNativeEnvironmentTests.withTemporaryDirectory { directory in
+            let path = directory.appendingPathComponent("emails.png").path
+            let emails = try await app.run("screenshot --mask-emails --scale points --json --output \(AndroidE2E.quote(path))")
+            let report = try Self.json(emails.stdout)
+            #expect((report["maskedBy"] as? [String: Int])?["emails"] == 1, "\(report)")
+            #expect(try ReactNativeEvidenceTests.pixel(atPoint: (field.x + 40, field.y + field.height / 2), in: path) == [0, 0, 0], "the email behind the sheet was left unmasked")
+
+            let text = try Self.json(try await app.run(#"screenshot --mask-text '\.\.\.' --json --output "# + AndroidE2E.quote(path)).stdout)
+            if platform == .android {
+                #expect(report["maskUnproven"] == nil, "\(report)")
+                #expect((text["maskedBy"] as? [String: Int])?["text"] == 2, "\(text)")
+            } else {
+                #expect(report["maskUnproven"] as? String == "modal", "\(report)")
+                #expect(emails.stderr.contains("(maskUnproven)"), "\(emails.stderr)")
+                #expect(text["maskUnproven"] as? String == "modal", "\(text)")
+            }
         }
 
         try await app.run("tap --id mask-sheet-test-root-close")

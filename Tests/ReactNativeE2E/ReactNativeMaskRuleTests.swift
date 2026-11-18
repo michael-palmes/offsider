@@ -168,7 +168,7 @@ struct ReactNativeMaskRuleTests {
             let modalVideo = directory.appendingPathComponent("modal.mp4").path
             let modal = try await Self.recordVideo(to: modalVideo, in: directory, platform: platform)
             #expect(modal.exitCode == 0, "\(modal.stderr)")
-            #expect(modal.stderr.contains("a modal window covers the app"), "\(modal.stderr)")
+            #expect(modal.stderr.contains("a modal covers the app"), "\(modal.stderr)")
             #expect(modal.stderr.contains("maskUnproven"), "\(modal.stderr)")
             #expect(FileManager.default.fileExists(atPath: modalVideo), "a warned recording still saves")
         }
