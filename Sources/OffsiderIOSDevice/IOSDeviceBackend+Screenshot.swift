@@ -22,7 +22,7 @@ final class IOSDeviceState {
     var pinConfirmed: [String: Date] = [:]
     /// Devices sent input since their pinned app was last confirmed in front; their next check is timed as `foreground-recheck`.
     var inputSincePinCheck: Set<String> = []
-    var runnerTeam: String?
+    var runnerAllowance: DeviceAllowance?
 }
 
 extension IOSDeviceBackend {

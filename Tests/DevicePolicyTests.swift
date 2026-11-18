@@ -90,6 +90,47 @@ struct DeviceAllowListTests {
         #expect(throws: DeviceAllowListError.self) { try DeviceAllowList.parse(Data(text.utf8)) }
     }
 
+    @Test("an iPhone's runner prefix round-trips beside its team, and a list without one encodes exactly as before")
+    func runnerPrefixRoundTrip() throws {
+        let entry = DeviceAllowance(platform: .ios, key: PolicyFixtures.phone, name: "Test iPhone", added: PolicyFixtures.added, expires: nil, apps: [], team: "ABCDE12345", runnerPrefix: "dev.offsider.abcde12345")
+        let list = DeviceAllowList(entries: [entry])
+        let text = String(decoding: list.encoded(), as: UTF8.self)
+        let parsed = try DeviceAllowList.parse(list.encoded())
+        #expect(parsed == list && parsed.newer.isEmpty, "this build knows the key, so the device is not held back")
+        #expect(parsed.entries.first?.runnerPrefix == "dev.offsider.abcde12345")
+        let order = ["\"team\"", "\"runnerPrefix\""].compactMap { text.range(of: $0)?.lowerBound }
+        #expect(order.count == 2 && order == order.sorted())
+
+        let legacy = Data(#"{"version":1,"devices":[{"platform":"ios","id":"00008130-0000000000000ABC","name":"A","added":"2026-09-21T14:13:20Z","expires":null,"apps":[],"team":"ABCDE12345"}]}"#.utf8)
+        let old = try DeviceAllowList.parse(legacy)
+        #expect(old.entries.first?.runnerPrefix == nil)
+        #expect(!String(decoding: old.encoded(), as: UTF8.self).contains("runnerPrefix"))
+    }
+
+    @Test("a runner prefix that is not a reverse-DNS id, is not text, or sits on an Android entry refuses the file", arguments: [
+        #"{"version":1,"devices":[{"platform":"ios","id":"00008130-0000000000000ABC","name":"A","added":"2026-09-21T14:13:20Z","expires":null,"apps":[],"runnerPrefix":"com"}]}"#,
+        #"{"version":1,"devices":[{"platform":"ios","id":"00008130-0000000000000ABC","name":"A","added":"2026-09-21T14:13:20Z","expires":null,"apps":[],"runnerPrefix":"com.ex_ample"}]}"#,
+        #"{"version":1,"devices":[{"platform":"ios","id":"00008130-0000000000000ABC","name":"A","added":"2026-09-21T14:13:20Z","expires":null,"apps":[],"runnerPrefix":"1com.example"}]}"#,
+        #"{"version":1,"devices":[{"platform":"ios","id":"00008130-0000000000000ABC","name":"A","added":"2026-09-21T14:13:20Z","expires":null,"apps":[],"runnerPrefix":42}]}"#,
+        #"{"version":1,"devices":[{"platform":"android","id":"R58M123ABC","name":"A","added":"2026-09-21T14:13:20Z","expires":null,"apps":[],"runnerPrefix":"com.example.offsider"}]}"#,
+    ])
+    func runnerPrefixRefused(text: String) {
+        #expect(throws: DeviceAllowListError.self) { try DeviceAllowList.parse(Data(text.utf8)) }
+    }
+
+    @Test("devices status shows the runner prefix beside the team, in text and JSON")
+    func runnerPrefixInStatus() throws {
+        let entry = DeviceAllowance(platform: .ios, key: PolicyFixtures.phone, name: "Test iPhone", added: PolicyFixtures.added, expires: nil, apps: [], team: "ABCDE12345", runnerPrefix: "dev.offsider.abcde12345")
+        let policy = PhysicalDevicePolicy(managed: .none, list: DeviceAllowList(entries: [entry]))
+        #expect(DeviceAccessReport.statusText(policy, now: PolicyFixtures.now, path: "/x").contains("runner team ABCDE12345, runner prefix dev.offsider.abcde12345"))
+        let object = try #require(try JSONSerialization.jsonObject(with: Data(policy.statusJSON(now: PolicyFixtures.now).utf8)) as? [String: Any])
+        let device = try #require((object["devices"] as? [[String: Any]])?.first)
+        #expect(device["runnerPrefix"] as? String == "dev.offsider.abcde12345")
+        let change = try #require(try JSONSerialization.jsonObject(with: Data(DeviceAccessReport.changeJSON(action: "allow", platform: .ios, key: entry.key, allowance: entry).utf8)) as? [String: Any])
+        #expect((change["allowance"] as? [String: Any])?["runnerPrefix"] as? String == "dev.offsider.abcde12345")
+        #expect(AccessStatusScreen.detail(entry, now: PolicyFixtures.now, timeZone: TimeZone(identifier: "UTC")!, team: true, style: .detect(isTerminal: false)).contains("runner dev.offsider.abcde12345"))
+    }
+
     @Test("a phone's Metro ports round-trip, and a list without them encodes exactly as before")
     func metroPortsRoundTrip() throws {
         let phone = DeviceAllowance(platform: .android, key: PolicyFixtures.serial, name: "Test Pixel", added: PolicyFixtures.added, expires: nil, apps: [], metroPorts: [8081, 8742])

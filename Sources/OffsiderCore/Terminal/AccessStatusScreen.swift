@@ -14,10 +14,15 @@ public enum AccessStatusScreen {
     /// With one device, the command that withdraws it; with several, the bare command whose menu picks one.
     public static func removeCommand(_ key: String?) -> String { "offsider devices remove" + (key.map { " --device \(PromptScreen.visible($0))" } ?? "") }
 
-    /// `any app · until 22:14`, `com.example.app · until removed`, with `· team ABCDE12345` when `team` is on and the entry has one.
+    /// `any app · until 22:14`, `com.example.app · until removed`, with `· team ABCDE12345` and its runner prefix when `team` is on and the entry has them.
     public static func detail(_ entry: DeviceAllowance, now: Date, timeZone: TimeZone, team: Bool, style: TerminalStyle) -> String {
         let metro = entry.metroPorts.isEmpty ? [] : [AllowScreen.metro(entry.metroPorts)]
-        return ([apps(entry)] + metro + [until(entry, now: now, timeZone: timeZone)] + (team ? entry.team.map { ["team \(PromptScreen.visible($0))"] } ?? [] : [])).joined(separator: " \(style.dot) ")
+        return ([apps(entry)] + metro + [until(entry, now: now, timeZone: timeZone)] + (team ? signing(entry) : [])).joined(separator: " \(style.dot) ")
+    }
+
+    /// `team ABCDE12345` and `runner dev.offsider.abcde12345`, each when the entry has it.
+    static func signing(_ entry: DeviceAllowance) -> [String] {
+        [entry.team.map { "team \(PromptScreen.visible($0))" }, entry.runnerPrefix.map { "runner \(PromptScreen.visible($0))" }].compactMap { $0 }
     }
 
     static func apps(_ entry: DeviceAllowance) -> String {
@@ -80,7 +85,7 @@ public enum AccessStatusScreen {
                 Table.Cell(name(entry)),
                 appsCell(entry, policy: policy, style: style),
                 Table.Cell(until(entry, now: now, timeZone: timeZone)),
-                entry.team.map { Table.Cell("team \(PromptScreen.visible($0))") },
+                signing(entry).isEmpty ? nil : Table.Cell(signing(entry).joined(separator: ", ")),
             ], status: .on)
         }
         let table = Table(columns: [

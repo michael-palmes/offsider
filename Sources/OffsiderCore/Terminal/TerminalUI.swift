@@ -147,14 +147,18 @@ public enum TerminalUI {
             .enumerated().map { $0 == 0 ? lead + style.bold($1) : indent + style.bold($1) }
     }
 
-    /// The end of a run: the headline, dim notes, then `Label  command` lines with labels padded and commands never wrapped.
-    public static func closing(_ headline: String, notes: [String] = [], commands: [(label: String, command: String)], width: Int, style: TerminalStyle) -> [String] {
+    /// The end of a run: the headline, dim notes, `[ ] Step  where` rows still to do, then `Label  command` lines with labels padded and commands never wrapped.
+    public static func closing(
+        _ headline: String, notes: [String] = [], todo: [(title: String, detail: String)] = [], commands: [(label: String, command: String)], width: Int, style: TerminalStyle
+    ) -> [String] {
         let lead = style.mark(.done) + " "
         let indent = String(repeating: " ", count: TerminalText.width(lead))
         let head = PromptScreen.wrap(headline, width: max(width - indent.count, 10))
+        let titleWidth = todo.map { TerminalText.width($0.title) }.max() ?? 0
         return [lead + style.green(style.bold(head[0]))]
             + head.dropFirst().map { indent + style.green(style.bold($0)) }
             + notes.flatMap { PromptScreen.wrap($0, width: max(width - indent.count, 10)) }.map { indent + style.dim($0) }
+            + todo.map { indent + box(false) + " " + $0.title + String(repeating: " ", count: titleWidth - TerminalText.width($0.title)) + "  " + style.dim($0.detail) }
             + self.commands(commands, indent: indent, style: style)
     }
 

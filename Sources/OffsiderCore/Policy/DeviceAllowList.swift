@@ -15,12 +15,17 @@ public struct DeviceAllowance: Equatable, Sendable {
     public let apps: [String]
     /// The Apple development team that signs the runner for this iPhone or iPad; nil leaves it to `OFFSIDER_IOS_TEAM_ID`.
     public let team: String?
+    /// The bundle id prefix this iPhone or iPad's runner builds under; nil leaves it to `OFFSIDER_IOS_RUNNER_PREFIX`, else Offsider's own.
+    public let runnerPrefix: String?
     /// The ports `rn open` may map with `adb reverse tcp:<port> tcp:<port>` on this Android phone, ascending; empty for none.
     public let metroPorts: [Int]
     /// A person said this device is for testing, with nothing personal on it, so agents may drive all of it; managed policy can turn this off.
     public let testDevice: Bool
 
-    public init(platform: DevicePlatform, key: String, name: String, added: Date, expires: Date?, apps: [String], team: String? = nil, metroPorts: [Int] = [], testDevice: Bool = false) {
+    public init(
+        platform: DevicePlatform, key: String, name: String, added: Date, expires: Date?, apps: [String], team: String? = nil, runnerPrefix: String? = nil,
+        metroPorts: [Int] = [], testDevice: Bool = false
+    ) {
         self.platform = platform
         self.key = key
         self.name = name
@@ -28,6 +33,7 @@ public struct DeviceAllowance: Equatable, Sendable {
         self.expires = expires
         self.apps = apps
         self.team = team
+        self.runnerPrefix = runnerPrefix
         self.metroPorts = metroPorts
         self.testDevice = testDevice
     }
@@ -62,6 +68,25 @@ public struct DeviceAllowance: Equatable, Sendable {
     /// Ten ASCII letters or digits, as an Apple team ID is.
     public static func isTeamID(_ text: String) -> Bool {
         text.count == 10 && text.unicodeScalars.allSatisfy { $0.isASCII && CharacterSet.alphanumerics.contains($0) }
+    }
+
+    /// Offsider's own runner prefix: its apps are `com.mpalmes.offsider.runner` and `com.mpalmes.offsider.runner.uitests`.
+    public static let defaultRunnerPrefix = "com.mpalmes.offsider"
+    public static let maximumRunnerPrefixLength = 100
+
+    /// A reverse-DNS bundle id prefix of at most 100 ASCII characters: a letter first, then letters, digits and `-`, in two or more dot-separated parts.
+    public static func isRunnerPrefix(_ text: String) -> Bool {
+        guard text.utf8.count <= maximumRunnerPrefixLength, text.first?.isASCII == true, text.first?.isLetter == true else { return false }
+        let parts = text.split(separator: ".", omittingEmptySubsequences: false)
+        return parts.count >= 2 && parts.allSatisfy { part in
+            !part.isEmpty && part.unicodeScalars.allSatisfy { $0.isASCII && (CharacterSet.alphanumerics.contains($0) || $0 == "-") }
+        }
+    }
+
+    /// A prefix of the team's own for when another team holds Offsider's App IDs: `dev.offsider.<team in lower case>`, or a variant when that one is `avoiding`.
+    public static func suggestedRunnerPrefix(team: String, avoiding: String? = nil) -> String {
+        let prefix = "dev.offsider.\(team.lowercased())"
+        return prefix == avoiding ? "\(prefix)-2" : prefix
     }
 
     /// Letters, digits, `.`, `_` and `-`, at least one dot, as bundle ids and package names are.
@@ -100,7 +125,7 @@ public struct DeviceAllowList: Equatable, Sendable {
     public static let version = 1
     public static let maximumEntries = 64
     static let topKeys: Set<String> = ["version", "devices"]
-    static let entryKeys: Set<String> = ["platform", "id", "name", "added", "expires", "apps", "team", "metroPorts", "testDevice"]
+    static let entryKeys: Set<String> = ["platform", "id", "name", "added", "expires", "apps", "team", "runnerPrefix", "metroPorts", "testDevice"]
 
     public let entries: [DeviceAllowance]
     public let newer: [NewerDeviceEntry]
@@ -237,6 +262,12 @@ public struct DeviceAllowList: Equatable, Sendable {
         case let text as String where platform == .ios && DeviceAllowance.isTeamID(text): team = text
         default: throw DeviceAllowListError("\(at).team must be a 10-character Apple team ID on an iOS entry")
         }
+        let runnerPrefix: String?
+        switch fields["runnerPrefix"] {
+        case nil, is NSNull: runnerPrefix = nil
+        case let text as String where platform == .ios && DeviceAllowance.isRunnerPrefix(text): runnerPrefix = text
+        default: throw DeviceAllowListError("\(at).runnerPrefix must be a reverse-DNS bundle id prefix of at most \(DeviceAllowance.maximumRunnerPrefixLength) characters on an iOS entry")
+        }
         let metroPorts: [Int]
         switch fields["metroPorts"] {
         case nil: metroPorts = []
@@ -259,7 +290,9 @@ public struct DeviceAllowList: Equatable, Sendable {
             testDevice = true
         default: throw DeviceAllowListError("\(at).testDevice must be true or left out")
         }
-        return DeviceAllowance(platform: platform, key: key, name: name, added: added, expires: expires, apps: appIDs, team: team, metroPorts: metroPorts, testDevice: testDevice)
+        return DeviceAllowance(
+            platform: platform, key: key, name: name, added: added, expires: expires, apps: appIDs, team: team, runnerPrefix: runnerPrefix, metroPorts: metroPorts, testDevice: testDevice
+        )
     }
 
     private static func isBool(_ number: NSNumber) -> Bool {
@@ -290,8 +323,9 @@ public struct DeviceAllowList: Equatable, Sendable {
                 ("expires", .optional(entry.expires) { .string(ProcessStamp.timestamp($0)) }),
                 ("apps", .array(entry.apps.map { .string($0) })),
             ]
-            // Written only when set, so a list without teams, ports or test devices stays byte-identical to version 1 files.
+            // Written only when set, so a list without teams, prefixes, ports or test devices stays byte-identical to version 1 files.
             if let team = entry.team { fields.append(("team", .string(team))) }
+            if let prefix = entry.runnerPrefix { fields.append(("runnerPrefix", .string(prefix))) }
             if !entry.metroPorts.isEmpty { fields.append(("metroPorts", .array(entry.metroPorts.map { .integer($0) }))) }
             if entry.testDevice { fields.append(("testDevice", .bool(true))) }
             return .object(fields)

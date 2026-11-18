@@ -2,13 +2,21 @@ import Foundation
 import OffsiderCore
 import OffsiderIOSDevice
 
+extension IOSDeviceHost {
+    /// The live host with the runner source bundled in this build and the digests compiled into it.
+    static func cli() -> IOSDeviceHost {
+        var host = IOSDeviceHost.live()
+        host.runnerSource = Bundle.module.url(forResource: "runner", withExtension: nil)
+        host.runnerSourceDigests = BundleIntegrity.runnerFiles()
+        return host
+    }
+}
+
 extension IOSDeviceBackend {
     /// Debug and info go to the Offsider logger; notices and warnings are console notices, shown once.
     static func make(logger: OffsiderLogger) -> IOSDeviceBackend {
         let sink = IOSDeviceLogSink(logger: logger)
-        var host = IOSDeviceHost.live()
-        host.runnerSource = Bundle.module.url(forResource: "runner", withExtension: nil)
-        host.runnerSourceDigests = BundleIntegrity.runnerFiles()
+        var host = IOSDeviceHost.cli()
         host.sessionExecutable = Bundle.main.executableURL
         if Timings.isEnabled {
             let console = Console.current
