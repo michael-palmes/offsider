@@ -24,6 +24,14 @@ struct ReactNativeGotchaTests {
         let app = RNApp(platform)
         try await Self.pushBothPages(app, kind: kind)
 
+        let waited = try await app.offsider("wait --id stack-test-slide-up --timeout 1")
+        #expect(waited.exitCode == 5, "\(waited.stdout)\(waited.stderr)")
+        let asserted = try await app.offsider("assert --id stack-test-slide-up")
+        #expect(asserted.exitCode == 5, "\(asserted.stdout)\(asserted.stderr)")
+        let summary = try await app.run("describe-ui --summary").stdout
+        #expect(!summary.contains("id=stack-test-slide-up"), "\(summary)")
+        #expect(summary.components(separatedBy: "# beneath:").count - 1 == 2, "\(summary)")
+
         try await app.run("tap --label 'Confirm Change' --fail-if-covered")
         _ = try await app.waitForLabel(of: "stack-test-slide-result") { $0 == "Slide Result: Confirmed" }
 
@@ -70,14 +78,16 @@ struct ReactNativeGotchaTests {
         _ = try await app.waitForLabel(of: "drawer-test-pressed") { $0 == "Drawer Pressed: Confirm Reset" }
     }
 
-    @Test("a page pushed from a drawer row takes taps while the drawer stays open beneath it", arguments: RNPlatform.enabled)
+    @Test("a page pushed from a drawer row takes taps, a label it shares with the drawer's row included, while the drawer stays open beneath it", arguments: RNPlatform.enabled)
     func pagePushedFromDrawerRow(platform: RNPlatform) async throws {
         let app = RNApp(platform)
         try await Self.openDrawerAbove(app)
         try await app.run("tap --id drawer-test-row-reminders")
         _ = try await app.waitForNode { $0["id"] as? String == "drawer-test-row-page-title" }
 
-        try await app.run("tap --id drawer-test-row-page-reminders --fail-if-covered")
+        let summary = try await app.run("describe-ui --summary").stdout
+        #expect(!summary.contains("id=drawer-test-row-archive"), "\(summary)")
+        try await app.run("tap --label 'Drawer Reminders' --fail-if-covered")
         try await app.run("tap --label Back --fail-if-covered")
 
         try await app.run("wait --id drawer-test-row-page-title --gone --timeout 5")
@@ -278,21 +288,35 @@ struct ReactNativeGotchaTests {
         _ = try await app.waitForLabel(of: "storage-test-count") { $0 == "Stored Keys: 0" }
     }
 
-    @Test("a sheet beside the root that hides the whole screen leaves only the sheet listed, and on Android text masks still paint the rows behind it", arguments: RNPlatform.enabled)
+    @Test("a sheet beside the root that hides the whole screen leaves only the sheet listed, and the email drawn behind it is painted, on iOS with the capture reported unproven", arguments: RNPlatform.enabled)
     func rootSheetHidesScreen(platform: RNPlatform) async throws {
         let app = RNApp(platform)
         try await app.open("mask-sheet-test")
+        try await app.run("tap --id mask-sheet-test-email")
+        try await app.run("type --replace \(ReactNativeEvidenceTests.email)")
+        let field = try await app.frame(of: "mask-sheet-test-email")
         try await app.run("tap --id mask-sheet-test-open-root")
         try await app.run("wait --id mask-sheet-test-root-close --timeout 5")
         try await app.run("wait --settled --ignore-values --timeout 5")
 
         let summary = try await app.run("describe-ui --summary").stdout
         #expect(!summary.contains("mask-sheet-test-address") && !summary.contains("id=mask-sheet-test-screen"), "\(summary)")
-        if platform == .android {
-            let path = FileManager.default.temporaryDirectory.appendingPathComponent("offsider-gotcha-\(UUID().uuidString).png").path
-            defer { try? FileManager.default.removeItem(atPath: path) }
-            let report = try Self.json(try await app.run(#"screenshot --mask-text '\.\.\.' --json --output "# + path).stdout)
-            #expect((report["maskedBy"] as? [String: Int])?["text"] == 2, "\(report)")
+        try await ReactNativeEnvironmentTests.withTemporaryDirectory { directory in
+            let path = directory.appendingPathComponent("emails.png").path
+            let emails = try await app.run("screenshot --mask-emails --scale points --json --output \(AndroidE2E.quote(path))")
+            let report = try Self.json(emails.stdout)
+            #expect((report["maskedBy"] as? [String: Int])?["emails"] == 1, "\(report)")
+            #expect(try ReactNativeEvidenceTests.pixel(atPoint: (field.x + 40, field.y + field.height / 2), in: path) == [0, 0, 0], "the email behind the sheet was left unmasked")
+
+            let text = try Self.json(try await app.run(#"screenshot --mask-text '\.\.\.' --json --output "# + AndroidE2E.quote(path)).stdout)
+            if platform == .android {
+                #expect(report["maskUnproven"] == nil, "\(report)")
+                #expect((text["maskedBy"] as? [String: Int])?["text"] == 2, "\(text)")
+            } else {
+                #expect(report["maskUnproven"] as? String == "modal", "\(report)")
+                #expect(emails.stderr.contains("(maskUnproven)"), "\(emails.stderr)")
+                #expect(text["maskUnproven"] as? String == "modal", "\(text)")
+            }
         }
 
         try await app.run("tap --id mask-sheet-test-root-close")

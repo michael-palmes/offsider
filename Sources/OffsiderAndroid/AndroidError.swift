@@ -679,6 +679,13 @@ public struct AndroidError: LocalizedError, CustomStringConvertible, Equatable, 
         )
     }
 
+    static func keysNotTaken(_ serial: String, sent: Int, of total: Int) -> AndroidError {
+        AndroidError(
+            .textNotAccepted,
+            "Typing on \(serial) stopped after \(sent) of \(total) characters: the app had not taken them after 10 s, and Android drops keys that wait that long. Check the field with `offsider describe-ui --device \(serial)`, then type what is missing."
+        )
+    }
+
     static func pasteFocusMoved(_ serial: String, expected: AndroidFieldInfo, focused: AndroidFieldInfo) -> AndroidError {
         let now = focused.description.isEmpty ? "another field" : focused.description
         return AndroidError(

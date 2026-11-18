@@ -49,7 +49,8 @@ struct AndroidGrpcInputTests {
         failingScript: @escaping @Sendable (String) -> Bool = { _ in false },
         uiautomatorDump: String? = nil,
         typedDump: String? = nil,
-        avdHardware: String? = nil
+        avdHardware: String? = nil,
+        keyBacklog: (@Sendable () -> FakeAdbServer.Reply)? = nil
     ) throws -> Rig {
         let typed = TypedFlag()
         let server = FakeAdbServer(handler: FakeAdbServer.devices(
@@ -68,6 +69,7 @@ struct AndroidGrpcInputTests {
                 if let uiautomatorDump, service.contains("uiautomator dump") {
                     return FakeAdbServer.shell(stdout: typed.isMarked ? typedDump ?? uiautomatorDump : uiautomatorDump)
                 }
+                if let keyBacklog, service.hasSuffix(AndroidKeyBacklog.script) { return keyBacklog() }
                 if failingScript(String(service.dropFirst("shell,v2,raw:".count))) {
                     return FakeAdbServer.shell(stderr: "Error: injection failed\n", status: 1)
                 }
