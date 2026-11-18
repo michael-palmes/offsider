@@ -381,6 +381,8 @@ struct DeviceAccessAllow: AsyncParsableCommand {
                 let notes = removedPorts.map { "Removed \($0)" } + stuckPorts.map { "Could not remove \($0): run `\(retry)`" }
                 let setup = await finish(choice, on: prompt, context: context)
                 await offerLogin(choice, on: prompt, context: context, policy: policy)
+                let guardLines = savedNames.isEmpty ? GuardCommand.offerApproval(on: prompt) : []
+                if !guardLines.isEmpty { prompt.lines(guardLines.map { prompt.style.dim($0) }) }
                 prompt.lines(AllowScreen.allowed(name: name, key: choice.key, until: until, apps: choice.apps, metroPorts: choice.metroPorts, testDevice: choice.testDevice, notes: notes, ready: setup.ready, width: prompt.width, style: prompt.style))
                 prompt.settle()
                 reports.append(json

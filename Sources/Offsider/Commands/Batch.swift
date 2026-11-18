@@ -224,7 +224,7 @@ struct Batch: AsyncParsableCommand {
         output: BatchOutput = .console(json: false),
         logger: OffsiderLogger
     ) async throws -> [BatchStepRecord] {
-        let runner = BatchPlanRunner(session: TrackedInputSession.wrapping(session), logger: logger)
+        let runner = BatchPlanRunner(session: TrackedInputSession.wrapping(session, backend: context.backend), logger: logger)
         let clock = ContinuousClock()
         let batchStart = clock.now
         var records: [BatchStepRecord] = []

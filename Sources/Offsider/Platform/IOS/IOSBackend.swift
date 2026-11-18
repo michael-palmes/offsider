@@ -276,8 +276,9 @@ final class IOSBackend: DeviceBackend {
                 logger: logger
             )
         }
-        let frame = try await screenPointTree(for: id, point: nil, appPIDs: []).applicationFrame
-        return try await OrientationAwareCoordinates.translateBatch(points: points, applicationFrame: frame, for: id.rawValue, logger: logger)
+        let read = try await screenPointTree(for: id, point: nil, appPIDs: [])
+        AppGuard.note(read, on: id)
+        return try await OrientationAwareCoordinates.translateBatch(points: points, applicationFrame: read.applicationFrame, for: id.rawValue, logger: logger)
     }
 
     func openInputSession(for id: DeviceID) async throws -> any InputSession {
