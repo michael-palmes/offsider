@@ -22,15 +22,15 @@ struct TypedExpectation {
         guard let now = locate(in: after), !now.isSecure else { return .unknown }
         let was = before.flatMap(locate)?.value ?? field?.value
         guard after.platform == .android else { return TypedText.judge(sent: text, before: was, after: now.value, replacing: replacing) }
-        // Android reads an empty field as no value, and a field inside the keyboard holding focus, as Gboard's stylus tutorial's does, took what is missing.
+        // Android reads an empty field as no value, and keys a field inside the keyboard holding focus took are what is missing; a set-text passes it by.
         let check = TypedText.judge(sent: text, before: was, after: now.value ?? "", replacing: replacing)
-        return TextFocus.keyboardHoldingFocus(in: after) != nil && Self.lacksText(text, before: was, after: now.value, replacing: replacing) ? .differs : check
+        return !replacing && TextFocus.keyboardHoldingFocus(in: after) != nil && Self.lacksText(text, before: was, after: now.value) ? .differs : check
     }
 
     /// Short enough to judge, and not all there: what a keyboard field holding focus took.
-    static func lacksText(_ text: String, before: String?, after: String?, replacing: Bool = false) -> Bool {
+    static func lacksText(_ text: String, before: String?, after: String?) -> Bool {
         guard text.count <= TypedText.longest, (after ?? "").count <= TypedText.longest else { return false }
-        return TypedText.judge(sent: text, before: before, after: after ?? "", replacing: replacing) != .match
+        return TypedText.judge(sent: text, before: before, after: after ?? "", replacing: false) != .match
     }
 
     /// The field in `tree`: the one `--into-*` matches, else the focused field while it is still the one typed into.

@@ -244,7 +244,7 @@ extension KeySequence: BatchConvertible {
                 readTree: { try await context.accessibilityTree(forceRefresh: true) }, device: context.device, clock: .live,
                 warn: { Console.current.notice(.warning(InputPersonView.sentence($0), agent: $0)) },
                 refusingSecureTarget: KeySequence.spellsText(parsedKeycodes) ? Type.secureFieldRefusal(device: context.device, batch: true, keys: true) : nil, keys: true,
-                hitTester: context.backend as? any PointHitTesting
+                hitTester: context.backend as? any PointHitTesting, adb: Type.adbPath(of: context.backend)
             )
         }
         return [focus, .hidMergeable(InputEvent.composite(events))]
@@ -294,7 +294,7 @@ extension Type: BatchConvertible {
             focusTree.tree = try await Type.checkTextFocus(
                 readTree: { try await context.accessibilityTree(forceRefresh: true) }, device: context.device, clock: .live,
                 warn: { Console.current.notice(.warning(InputPersonView.sentence($0), agent: $0)) }, refusingSecureTarget: refusal,
-                hitTester: context.backend as? any PointHitTesting, unlistedField: unlistedField, replacing: replace
+                hitTester: context.backend as? any PointHitTesting, unlistedField: unlistedField, replacing: replace, adb: Type.adbPath(of: context.backend)
             ).tree
         }
         if throughSession {

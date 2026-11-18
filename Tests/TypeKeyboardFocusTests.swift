@@ -121,6 +121,15 @@ struct TypeKeyboardFocusTests {
         #expect(error?.userFacingDescription.contains("pressed no keys") == true)
     }
 
+    @Test("the emulator hint names the SDK's adb by its full path, quoted when it needs it, as adb may not be on PATH")
+    func hintNamesSDKPath() {
+        let keyboard = Self.form(focused: "second-field", keyboardField: true).roots.last!
+        let plain = Type.keyboardFocusRefusal(keyboard, target: nil, device: Self.android, adb: "/opt/android-sdk/platform-tools/adb")
+        #expect(plain.hint == "/opt/android-sdk/platform-tools/adb -s emulator-5554 shell settings put secure stylus_handwriting_enabled 0")
+        let spaced = Type.textNotLandedRefusal(keyboard: keyboard, target: "id=second-field", device: Self.android, adb: "/opt/android sdk/platform-tools/adb")
+        #expect(spaced.hint == "'/opt/android sdk/platform-tools/adb' -s emulator-5554 shell settings put secure stylus_handwriting_enabled 0")
+    }
+
     @Test("on a phone the fix is to close it there, and no adb command changes its settings")
     func phoneFix() async throws {
         let backend = StagedBackend([Self.form(focused: "second-field", keyboardField: true)])
@@ -161,6 +170,14 @@ struct TypeKeyboardFocusTests {
         ])
         #expect(try await TypeIntoTests.verifying(["abc", "--into-id", "second-field", "--verify", "--verify-timeout", "0.5"], backend: backend, device: Self.android))
         #expect(backend.text.calls == [.perform(.tapAt(x: 200, y: 322)), .typeText("abc")])
+    }
+
+    @Test("--replace --verify reads the same with the keyboard's field focused, as its set-text never goes through the keyboard")
+    func replaceVerifyIgnoresKeyboard() {
+        let typed = TypedExpectation(text: "123456", replacing: true, field: nil, query: .id("second-field"), secure: false, ignoringText: false)
+        let withKeyboard = typed.check(before: nil, after: Self.form(focused: "second-field", value: "2 of 6 digits", keyboardField: true))
+        #expect(withKeyboard == typed.check(before: nil, after: Self.form(focused: "second-field", value: "2 of 6 digits")))
+        #expect(withKeyboard != .differs)
     }
 
     @Test("a named field whose text did not change with no keyboard field in sight is exit 5 text_not_accepted too")

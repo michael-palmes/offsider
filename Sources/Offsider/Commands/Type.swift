@@ -1,5 +1,6 @@
 import ArgumentParser
 import Foundation
+import OffsiderAndroid
 import OffsiderCore
 
 struct Type: AsyncParsableCommand, VerifiableCommand {
@@ -186,7 +187,7 @@ struct Type: AsyncParsableCommand, VerifiableCommand {
         guard requireFocusID != nil || intoQuery != nil else {
             return try await Self.checkTextFocus(
                 readTree: { try await backend.accessibilityTree(for: device) }, device: device, clock: clock, warn: warn, refusingSecureTarget: secureRefusal,
-                hitTester: backend as? any PointHitTesting, unlistedField: unlistedField, replacing: replace
+                hitTester: backend as? any PointHitTesting, unlistedField: unlistedField, replacing: replace, adb: Self.adbPath(of: backend)
             )
         }
         if let requireFocusID {
@@ -205,7 +206,7 @@ struct Type: AsyncParsableCommand, VerifiableCommand {
             }
             if let secureRefusal, focused?.isSecure == true { throw secureRefusal }
             if !replace, let keyboard = TextFocus.keyboardHoldingFocus(in: tree) {
-                throw Self.keyboardFocusRefusal(keyboard, target: namedField, device: device)
+                throw Self.keyboardFocusRefusal(keyboard, target: namedField, device: device, adb: Self.adbPath(of: backend))
             }
             return FocusCheck(tree: tree, untappedTree: tree, field: focused)
         }
@@ -239,7 +240,7 @@ struct Type: AsyncParsableCommand, VerifiableCommand {
                 last = tree
                 if Self.hasFocus(field, query: query, in: tree, keyboardOnly: simulator && !keyboardAlreadyUp) {
                     if !replace, let keyboard = TextFocus.keyboardHoldingFocus(in: tree) {
-                        throw Self.keyboardFocusRefusal(keyboard, target: namedField, device: device)
+                        throw Self.keyboardFocusRefusal(keyboard, target: namedField, device: device, adb: Self.adbPath(of: backend))
                     }
                     logger.info().log("\(query.selectorDescription) has focus")
                     return FocusCheck(tree: tree, field: field)
@@ -273,7 +274,8 @@ struct Type: AsyncParsableCommand, VerifiableCommand {
         keys: Bool = false,
         hitTester: (any PointHitTesting)? = nil,
         unlistedField: Bool = false,
-        replacing: Bool = false
+        replacing: Bool = false,
+        adb: String? = nil
     ) async throws -> FocusCheck {
         var tree: UITree
         do {
@@ -296,7 +298,7 @@ struct Type: AsyncParsableCommand, VerifiableCommand {
         if let secureRefusal, secure { throw secureRefusal }
         // An accessibility set-text reaches the app's field whatever the keyboard holds.
         if !replacing, let keyboard = TextFocus.keyboardHoldingFocus(in: tree) {
-            throw keyboardFocusRefusal(keyboard, target: nil, device: device, keys: keys)
+            throw keyboardFocusRefusal(keyboard, target: nil, device: device, keys: keys, adb: adb)
         }
         let focus = TextFocus.read(tree)
         guard focus.takesText || swept != nil else {
@@ -377,7 +379,7 @@ struct Type: AsyncParsableCommand, VerifiableCommand {
 
     /// A field inside the keyboard holds input focus, as Gboard's stylus handwriting tutorial does, so keys would never reach the app; nothing has been sent.
     @MainActor
-    static func keyboardFocusRefusal(_ keyboard: UINode, target: String?, device: DeviceID, keys: Bool = false) -> CLIError {
+    static func keyboardFocusRefusal(_ keyboard: UINode, target: String?, device: DeviceID, keys: Bool = false, adb: String? = nil) -> CLIError {
         let name = keyboard.normalizedLabel ?? "the keyboard"
         let fix: String
         switch (keys, device.isPhysicalAndroidDevice) {
@@ -389,13 +391,13 @@ struct Type: AsyncParsableCommand, VerifiableCommand {
         return CLIError(
             errorDescription: "A text field inside \(name), such as its stylus handwriting tutorial, has input focus, so keys would go there, not to \(target ?? "the app"). Offsider \(keys ? "pressed no keys" : "typed nothing"). \(fix)",
             reason: .focusMismatch,
-            hint: stylusHint(device)
+            hint: stylusHint(device, adb: adb)
         )
     }
 
     /// Keys into a named field left its text as it was: a field inside the keyboard took them, or the app ignored them.
     @MainActor
-    static func textNotLandedRefusal(keyboard: UINode?, target: String, device: DeviceID) -> CLIError {
+    static func textNotLandedRefusal(keyboard: UINode?, target: String, device: DeviceID, adb: String? = nil) -> CLIError {
         guard let keyboard else {
             return CLIError(
                 errorDescription: "Typed into \(target), but its text did not change, so the keys went somewhere else or the app ignored them. Check the field, then type what it accepts.",
@@ -410,16 +412,22 @@ struct Type: AsyncParsableCommand, VerifiableCommand {
         return CLIError(
             errorDescription: "Typed into \(target), but its text did not change: a text field inside \(name), such as its stylus handwriting tutorial, took the keys. \(fix)",
             reason: .textNotAccepted,
-            hint: stylusHint(device)
+            hint: stylusHint(device, adb: adb)
         )
     }
 
     /// On an emulator, the one command that keeps Gboard's stylus tutorial away; a phone's settings stay its owner's.
     @MainActor
-    private static func stylusHint(_ device: DeviceID) -> String {
-        device.isPhysicalAndroidDevice
-            ? CommandScope.current.describeHint(device: device.rawValue)
-            : "adb -s \(device.rawValue) shell settings put secure stylus_handwriting_enabled 0"
+    private static func stylusHint(_ device: DeviceID, adb: String?) -> String {
+        guard !device.isPhysicalAndroidDevice else { return CommandScope.current.describeHint(device: device.rawValue) }
+        let command = adb.map { $0.allSatisfy { $0.isASCII && ($0.isLetter || $0.isNumber || "._-/".contains($0)) } ? $0 : DeviceLeaseRules.shellQuoted($0) } ?? "adb"
+        return "\(command) -s \(device.rawValue) shell settings put secure stylus_handwriting_enabled 0"
+    }
+
+    /// The SDK's adb by its full path, as it may not be on `PATH`.
+    @MainActor
+    static func adbPath(of backend: any DeviceBackend) -> String? {
+        (backend as? AndroidBackend)?.adbPath
     }
 
     /// How long keys into a named field on Android may take to show in it, as a React Native field's value lags its keys.
@@ -429,7 +437,8 @@ struct Type: AsyncParsableCommand, VerifiableCommand {
     /// Gboard's stylus tutorial opens about a second after the tap, too late for the focus check; any change passes unless a keyboard field holds focus, as fields cut and format text.
     @MainActor
     static func confirmLanded(
-        _ typed: TypedExpectation, before: String?, target: String, device: DeviceID, clock: PollClock, readTree: @MainActor () async throws -> UITree
+        _ typed: TypedExpectation, before: String?, target: String, device: DeviceID, clock: PollClock, adb: String? = nil,
+        readTree: @MainActor () async throws -> UITree
     ) async throws {
         // Tab alone moves focus, and a field may trim spaces.
         guard typed.judged, typed.text.contains(where: { !$0.isWhitespace }) else { return }
@@ -447,7 +456,7 @@ struct Type: AsyncParsableCommand, VerifiableCommand {
             let unchanged = !retyped && (field.value ?? "") == (before ?? "")
             let partial = keyboard != nil && TypedExpectation.lacksText(typed.text, before: before, after: field.value)
             guard unchanged || partial else { return }
-            guard clock.now() < deadline else { throw textNotLandedRefusal(keyboard: keyboard, target: target, device: device) }
+            guard clock.now() < deadline else { throw textNotLandedRefusal(keyboard: keyboard, target: target, device: device, adb: adb) }
             try await clock.sleep(landingPoll)
         }
     }
@@ -636,7 +645,9 @@ struct Type: AsyncParsableCommand, VerifiableCommand {
     func confirmKeysLanded(_ inputText: String, focus: FocusCheck, backend: any DeviceBackend, device: DeviceID, clock: PollClock = .live) async throws {
         guard device.platform == .android, !replace, let target = namedField else { return }
         let gaps = focus.tree?.filledFromGaps != nil
-        try await Self.confirmLanded(landingExpectation(inputText, focus: focus), before: focus.field?.value, target: target, device: device, clock: clock) {
+        try await Self.confirmLanded(
+            landingExpectation(inputText, focus: focus), before: focus.field?.value, target: target, device: device, clock: clock, adb: Self.adbPath(of: backend)
+        ) {
             let plain = try await backend.accessibilityTree(for: device)
             return gaps ? await backend.withGapsFilled(plain, on: device) : plain
         }

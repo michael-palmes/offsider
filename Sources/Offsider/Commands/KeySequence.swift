@@ -104,7 +104,7 @@ struct KeySequence: AsyncParsableCommand {
                 readTree: { try await backend.accessibilityTree(for: device) }, device: device, clock: .live,
                 warn: { Console.current.notice(.warning(InputPersonView.sentence($0), agent: $0)) },
                 refusingSecureTarget: Self.spellsText(parsedKeycodes) ? Type.secureFieldRefusal(device: device, keys: true) : nil, keys: true,
-                hitTester: backend as? any PointHitTesting
+                hitTester: backend as? any PointHitTesting, adb: Type.adbPath(of: backend)
             )
         }
 
