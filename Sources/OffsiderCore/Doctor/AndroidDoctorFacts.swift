@@ -93,6 +93,8 @@ public struct AndroidHostFacts: Equatable, Sendable {
 public enum AndroidDeviceStateFact: Equatable, Sendable {
     case booted
     case booting
+    /// Booted to full-disk encryption's PIN prompt (`BootPINPrompt`); nothing else on it is read.
+    case bootPINPrompt
     case offline
     case unauthorised
     case other(String)

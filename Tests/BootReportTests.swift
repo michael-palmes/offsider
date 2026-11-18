@@ -115,4 +115,25 @@ struct BootReportTests {
         let boundary = AwakeReading(screen: .on, lockScreen: .hidden, memTotalKB: BootReport.lowMemoryKB)
         #expect(BootReport.memoryNotice(avd: "X", reading: boundary) == nil)
     }
+
+    @Test("a process stamp reads as a pid, an age and a local time, with the date once it is over a day old")
+    func stampSummary() throws {
+        let utc = try #require(TimeZone(identifier: "UTC"))
+        let started = Date(timeIntervalSince1970: 1_790_000_000)
+        let stamp = ProcessStamp(pid: 4242, startedAt: started)
+        #expect(stamp.summary(now: started.addingTimeInterval(4), timeZone: utc) == "pid 4242, started 4 s ago at 14:13:20")
+        #expect(stamp.summary(now: started.addingTimeInterval(840), timeZone: utc) == "pid 4242, started 14 min ago at 14:13:20")
+        #expect(stamp.summary(now: started.addingTimeInterval(7_300), timeZone: utc) == "pid 4242, started 2 h ago at 14:13:20")
+        #expect(stamp.summary(now: started.addingTimeInterval(3 * 86_400), timeZone: utc) == "pid 4242, started 3 days ago at 21 Sep 14:13")
+        #expect(stamp.summary(now: started.addingTimeInterval(-5), timeZone: utc) == "pid 4242, started 0 s ago at 14:13:20")
+    }
+
+    @Test("a simulator that refuses to boot is named with its runtime, and the simctl command that may still boot it")
+    func simulatorBootFailure() {
+        let udid = "00000000-0000-0000-0000-000000000001"
+        let failure = SimulatorBootTarget.bootFailure(name: "Old Phone", udid: udid, runtime: "iOS 26.5", detail: "The operation couldn’t be completed. Invalid argument\n")
+        #expect(failure.message == "Old Phone (\(udid), iOS 26.5) did not boot: The operation couldn’t be completed. Invalid argument. Xcode's own tool can boot a runtime this path cannot: run `xcrun simctl boot \(udid)`, then `offsider boot \(udid)` to wait until it is ready.")
+        #expect(failure.hint == "xcrun simctl boot \(udid)")
+        #expect(SimulatorBootTarget.bootFailure(name: "Old Phone", udid: udid, runtime: nil, detail: "").message.hasPrefix("Old Phone (\(udid)) did not boot. "))
+    }
 }
