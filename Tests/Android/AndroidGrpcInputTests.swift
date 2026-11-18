@@ -33,15 +33,25 @@ struct AndroidGrpcInputTests {
         func touch(_ x: Int32, _ y: Int32, _ pressure: Int32) -> FakeEmulator.Call { .touch(PanelTouch(x: x, y: y, pressure: pressure)) }
     }
 
-    /// emulator-5556 with a live discovery file (token and gRPC port) and a fake endpoint that answers; `avdHardware` is its AVD's `hardware-qemu.ini`.
+    /// Set once a rig's device has run an `input text` script.
+    final class TypedFlag: @unchecked Sendable {
+        private let lock = NSLock()
+        private var marked = false
+        var isMarked: Bool { lock.withLock { marked } }
+        func mark() { lock.withLock { marked = true } }
+    }
+
+    /// emulator-5556 with a live discovery file (token and gRPC port) and a fake endpoint that answers; `avdHardware` is its AVD's `hardware-qemu.ini`; `typedDump` answers dumps after an `input text` script, as a field that took the keys.
     static func rig(
         geometry: String = AndroidBackendTests.geometryOutput,
         emulator: FakeEmulator = FakeEmulator(),
         environment: [String: String] = [:],
         failingScript: @escaping @Sendable (String) -> Bool = { _ in false },
         uiautomatorDump: String? = nil,
+        typedDump: String? = nil,
         avdHardware: String? = nil
     ) throws -> Rig {
+        let typed = TypedFlag()
         let server = FakeAdbServer(handler: FakeAdbServer.devices(
             ["emulator-5556"],
             host: { service in
@@ -52,9 +62,12 @@ struct AndroidGrpcInputTests {
                 }
             },
             device: { _, service in
+                if service.contains("input text") { typed.mark() }
                 if service.hasSuffix(AndroidDisplayGeometry.probeScript) { return FakeAdbServer.shell(stdout: geometry) }
                 if service.hasSuffix(AndroidDeviceDirectory.propertiesScript) { return FakeAdbServer.shell(stdout: "Offsider_E2E\n\n1\n16\n36\n") }
-                if let uiautomatorDump, service.contains("uiautomator dump") { return FakeAdbServer.shell(stdout: uiautomatorDump) }
+                if let uiautomatorDump, service.contains("uiautomator dump") {
+                    return FakeAdbServer.shell(stdout: typed.isMarked ? typedDump ?? uiautomatorDump : uiautomatorDump)
+                }
                 if failingScript(String(service.dropFirst("shell,v2,raw:".count))) {
                     return FakeAdbServer.shell(stderr: "Error: injection failed\n", status: 1)
                 }
