@@ -148,6 +148,7 @@ A `--verify --json` report also carries `ignored` (`{node, reason}` entries left
 | `emulator_timed_out` | 1 | The emulator did not answer a gRPC call in time | Retry when it responds |
 | `emulator_launch_failed` | 1 | The emulator could not start or exited during start-up | Read the log the message names |
 | `boot_timed_out` | 1 | The emulator did not finish booting in time | Run `offsider boot` again to keep waiting |
+| `boot_failed` | 1 | The simulator refused to boot, as an older runtime can | Run the `xcrun simctl boot <udid>` the message names, then `offsider boot <udid>` |
 | `shutdown_failed` | 1 | The simulator or emulator refused the stop | Follow the fix the message names, then retry |
 | `shutdown_timed_out` | 1 | The simulator or emulator was still running at the limit | Retry with a longer `--timeout`, or use the command the message names |
 | `hid_broker_failed` | 1 | The HID broker that sends iOS input, or an iPhone or iPad's session broker, failed | `offsider doctor --device <ID>`; on a device, `offsider session stop --device <UDID>` restarts the broker |
@@ -156,7 +157,7 @@ A `--verify --json` report also carries `ignored` (`{node, reason}` entries left
 | `init_failed` | 1 | `init` could not install or remove the skill, or `guide` could not read a bundled topic | Read `message` |
 | `device_list_failed` | 1 | Devices could not be listed | Read `message` for each platform |
 | `expo_dev_client_failed` | 1 | `rn prepare` could not prepare the Expo dev client | Read `message` |
-| `runner_build_failed` | 1 | The iPhone runner could not be built or signed, its bundled source does not match this build, its products are not signed by the team, or the device is not registered with the team | Read `message`; a person runs `offsider runner build --device <UDID> --register-device` when the hint names it |
+| `runner_build_failed` | 1 | The iPhone runner could not be built or signed, its bundled source does not match this build, its products are not signed by the team, the device is not registered with the team, or another Apple team owns the runner's App ID | Read `message`; a person runs the hint's `offsider runner build --device <UDID> --register-device`, or its `offsider devices add ... --runner-prefix <prefix>`, which gives the team a prefix of its own |
 | `runner_unavailable` | 1 | The iPhone runner did not answer; no input was sent | If the device shows a system prompt, a person answers it (on a test device, `offsider describe-ui --summary --device <UDID>` reads it); else retry, then `offsider doctor --device <UDID>` |
 | `run_active` | 1 | `run start` named another folder while this session's run is active | `offsider run stop`, then start the new run |
 | `run_unavailable` | 1 | The run folder cannot be written and it would hold the only copy, the recorded folder is no longer a private directory of yours holding its `run.json`, `OFFSIDER_RUN` names an unusable folder or is `off`, or the session cannot be found | Fix the folder, `offsider run status`, or set `OFFSIDER_RUN=<dir>` |

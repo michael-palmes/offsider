@@ -162,7 +162,7 @@ enum DeviceRouter {
             let allowance = try requireAllowed(platform: .ios, key: udid.uppercased(), rawID: rawID, gate: gate)
             let backend = scope.adopt(IOSDeviceBackend.make(logger: logger))
             IOSDevicePinning.configure(backend, allowance: allowance, policy: gate.policy())
-            backend.runnerTeam = allowance.team
+            backend.runnerAllowance = allowance
             return Route(backend: backend, device: DeviceID(rawValue: udid, platform: .ios), allowance: allowance)
         case .androidSerial(let port):
             let serial = "emulator-\(port)"

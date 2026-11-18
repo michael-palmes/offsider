@@ -6,6 +6,18 @@ enum AppID {
     static func parse(_ text: String) throws -> String {
         try ExpoDevClient.validate(appID: text)
     }
+
+    /// `rn open` and `rn prepare` take `--app` as another name for `--bundle-id`: one is needed, and both must name the same app.
+    static func requireOne(bundleID: String?, app: String?) throws {
+        switch (bundleID, app) {
+        case (nil, nil):
+            throw ValidationError("Missing expected argument '--bundle-id <bundle-id|package>' (or --app, which is the same).")
+        case let (bundleID?, app?) where bundleID != app:
+            throw ValidationError("--bundle-id \(bundleID) and --app \(app) name different apps; pass one of them.")
+        default:
+            return
+        }
+    }
 }
 
 /// A command that names one app, which routing checks against a phone's allowance before anything reaches it.
@@ -98,5 +110,5 @@ extension AppBroadcastCommand: AppNaming { var namedApp: String? { appOption.bun
 extension NotificationsCommand: AppNaming { var namedApp: String? { app } }
 extension Logs: AppNaming { var namedApp: String? { app } }
 extension PermissionCommand: AppNaming { var namedApp: String? { app } }
-extension RNPrepare: AppNaming { var namedApp: String? { bundleID } }
-extension RNOpen: AppNaming { var namedApp: String? { bundleID } }
+extension RNPrepare: AppNaming { var namedApp: String? { bundleIDOption ?? app } }
+extension RNOpen: AppNaming { var namedApp: String? { bundleIDOption ?? app } }

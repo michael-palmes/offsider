@@ -365,10 +365,12 @@ struct Screenshot: AsyncParsableCommand {
 
         var path: String?
         if output != nil || (compare == nil && token == nil) {
-            let target = try ScreenCapture.outputURL(path: output, prefix: ScreenCapture.defaultPrefix(for: booted.id), deviceName: booted.name, format: request.format)
+            let moved = output == nil ? try Self.unnamedFolder() : nil
+            let target = try ScreenCapture.outputURL(path: output ?? moved, prefix: ScreenCapture.defaultPrefix(for: booted.id), deviceName: booted.name, format: request.format)
             let url = try ScreenCapture.write(try rendered.encoded(as: request.format), to: target)
             path = url.path
             Self.saved(url.path, width: rendered.image.width, height: rendered.image.height)
+            if moved != nil { Console.current.notice(Self.outsideCheckoutNotice(url.path)) }
         }
         var runFile: String?
         if let token {
@@ -434,6 +436,25 @@ struct Screenshot: AsyncParsableCommand {
         return report
     }
 
+    /// Where a capture with no run and no `--output` goes when the current folder is a git work tree, where an untracked picture is one `git add` from a commit: the private `captures/`. Nil elsewhere, which keeps the current folder.
+    nonisolated static func folderOutsideCheckout(
+        currentDirectory: String = FileManager.default.currentDirectoryPath,
+        captures: () throws -> String = { try OffsiderPrivateDirectory.ensureSubdirectory(OffsiderPrivateDirectory.capturesDirectoryName) }
+    ) throws -> String? {
+        guard GitWorkTree.root(containing: currentDirectory) != nil else { return nil }
+        return try captures()
+    }
+
+    /// Tests bind their own, so none writes into this Mac's private directory.
+    @TaskLocal static var unnamedFolder: @Sendable () throws -> String? = { try folderOutsideCheckout() }
+
+    nonisolated static func outsideCheckoutNotice(_ path: String) -> Notice {
+        .note(
+            "Saved outside this git checkout: \(TerminalText.homePath(path))",
+            agent: "No run is recording and this folder is a git checkout, so the capture went to \(path). Pass --output to choose the file, or record every capture in one folder with `offsider run start <folder>`."
+        )
+    }
+
     /// Writes the device's PNG unchanged to `--output` or the default name, and into any run; the report carries only its path and size.
     @MainActor
     private func writePlain(
@@ -442,10 +463,12 @@ struct Screenshot: AsyncParsableCommand {
     ) throws -> ScreenshotReport {
         var path: String?
         if output != nil || token == nil {
-            let target = try ScreenCapture.outputURL(path: output, prefix: ScreenCapture.defaultPrefix(for: booted.id), deviceName: booted.name, format: .png)
+            let moved = output == nil ? try Self.unnamedFolder() : nil
+            let target = try ScreenCapture.outputURL(path: output ?? moved, prefix: ScreenCapture.defaultPrefix(for: booted.id), deviceName: booted.name, format: .png)
             let url = try ScreenCapture.write(png, to: target)
             path = url.path
             Self.saved(url.path, width: size.width, height: size.height)
+            if moved != nil { Console.current.notice(Self.outsideCheckoutNotice(url.path)) }
         }
         var runFile: String?
         if let token {

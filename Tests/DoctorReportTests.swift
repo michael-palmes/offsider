@@ -129,6 +129,8 @@ struct DoctorReportTests {
             "ios-device.session",
             "ios-device.usbmuxd",
             "ios-device.runner-signing",
+            "ios-device.runner-build",
+            "ios-device.runner-trust",
             "device.lease",
             "device.recording",
             "device.policy",
@@ -138,6 +140,7 @@ struct DoctorReportTests {
             "install.bundle",
             "install.skill",
             "install.rules",
+            "install.deny-rules",
         ])
         #expect(DoctorCheckID.allCases.filter(\.isPerSimulator).count == 8)
         #expect(DoctorCheckID.allCases.filter(\.isAndroidHost).count == 7)

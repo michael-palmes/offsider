@@ -125,7 +125,11 @@ struct Drag: AsyncParsableCommand {
 
     private func drag(_ details: InputDetails) async throws {
         let logger = OffsiderLogger()
-        let route = try await DeviceRouter.routeForInput(deviceOption, logger: logger)
+        try await drag(on: try await DeviceRouter.routeForInput(deviceOption, logger: logger), details: details, logger: logger)
+    }
+
+    /// Sends the drag on `route`; `watchdog` bounds the read that places it.
+    func drag(on route: DeviceRouter.Route, details: InputDetails, logger: OffsiderLogger, watchdog: DeviceWatchdog = DeviceWatchdog()) async throws {
         await appOption.apply(to: route)
         let backend = route.backend
         let device = route.device
@@ -139,11 +143,7 @@ struct Drag: AsyncParsableCommand {
             try await Task.sleep(for: .seconds(preDelay))
         }
 
-        let physicalPoints = try await backend.deviceCoordinates(
-            for: [(x: startX, y: startY), (x: endX, y: endY)],
-            tree: nil,
-            on: device
-        )
+        let physicalPoints = try await watchdog.inputPoints([(x: startX, y: startY), (x: endX, y: endY)], backend: backend, device: device)
 
         if holdShots.isRequested {
             let end = physicalPoints[1]

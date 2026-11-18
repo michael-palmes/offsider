@@ -66,10 +66,11 @@ struct PrefixApproval: Error {
 public struct XcodeRunnerBuilder: RunnerBuilding {
     public static let teamVariable = "OFFSIDER_IOS_TEAM_ID"
     public static let prefixVariable = "OFFSIDER_IOS_RUNNER_PREFIX"
-    public static let defaultPrefix = "com.mpalmes.offsider"
-    static let maxPrefixLength = 100
+    public static let defaultPrefix = DeviceAllowance.defaultRunnerPrefix
     static let buildTimeout: TimeInterval = 300
     static let logTailLines = 20
+    static let logName = "build.log"
+    static let maxLogBytes = 4 << 20
 
     let source: URL
     let cacheRoot: URL
@@ -77,8 +78,8 @@ public struct XcodeRunnerBuilder: RunnerBuilding {
     let environment: [String: String]
     let signedInTeams: @Sendable () -> [String]
     let notice: @Sendable (String) -> Void
-    /// The team `devices add --team` recorded for this device.
-    let allowanceTeam: String?
+    /// The device's allowance: the team and runner prefix a person chose for it in `devices add`.
+    let allowance: DeviceAllowance?
     /// The runner source's digests compiled into this binary, keyed by path below `runner/`; nil hashes the source folder instead.
     let expectedSource: [String: String]?
     /// Lets xcodebuild register the device with the team; only `runner build --register-device` sets it.
@@ -94,7 +95,7 @@ public struct XcodeRunnerBuilder: RunnerBuilding {
         environment: [String: String],
         signedInTeams: @escaping @Sendable () -> [String],
         notice: @escaping @Sendable (String) -> Void,
-        allowanceTeam: String? = nil,
+        allowance: DeviceAllowance? = nil,
         expectedSource: [String: String]? = nil,
         registerDevice: Bool = false,
         xcodebuild: @escaping XcodebuildRunning = XcodeRunnerBuilder.runXcodebuild,
@@ -106,12 +107,15 @@ public struct XcodeRunnerBuilder: RunnerBuilding {
         self.environment = environment
         self.signedInTeams = signedInTeams
         self.notice = notice
-        self.allowanceTeam = allowanceTeam
+        self.allowance = allowance
         self.expectedSource = expectedSource
         self.registerDevice = registerDevice
         self.xcodebuild = xcodebuild
         self.signatureValid = signatureValid
     }
+
+    var allowanceTeam: String? { allowance?.team }
+    var allowancePrefix: String? { allowance?.runnerPrefix }
 
     public static let runXcodebuild: XcodebuildRunning = { arguments, environment, timeout in
         try await ProcessCapture.run(executable: "/usr/bin/xcrun", arguments: ["xcodebuild"] + arguments, environment: environment, timeout: timeout)
@@ -146,21 +150,24 @@ public struct XcodeRunnerBuilder: RunnerBuilding {
         )
     }
 
-    /// `OFFSIDER_IOS_RUNNER_PREFIX`, else `com.mpalmes.offsider`; the runner's bundle ids are `<prefix>.runner` and `<prefix>.runner.uitests`.
-    public static func resolvePrefix(environment: [String: String]) throws -> String {
-        guard let value = environment[prefixVariable]?.trimmingCharacters(in: .whitespaces), !value.isEmpty else { return defaultPrefix }
-        guard isBundlePrefix(value) else {
+    /// The allowance's prefix, else `OFFSIDER_IOS_RUNNER_PREFIX`, else `com.mpalmes.offsider` (apps `<prefix>.runner` and `.runner.uitests`); a variable naming another prefix than the person chose is refused.
+    public static func resolvePrefix(environment: [String: String], allowancePrefix: String? = nil) throws -> String {
+        let chosen = allowancePrefix.flatMap { DeviceAllowance.isRunnerPrefix($0) ? $0 : nil }
+        guard let value = environment[prefixVariable]?.trimmingCharacters(in: .whitespaces), !value.isEmpty else { return chosen ?? defaultPrefix }
+        guard DeviceAllowance.isRunnerPrefix(value) else {
             throw IOSDeviceError(
                 .invalidSetting,
-                "\(prefixVariable) must be a reverse-DNS bundle id prefix of at most \(maxPrefixLength) characters, such as com.example.offsider, not \(value)."
+                "\(prefixVariable) must be a reverse-DNS bundle id prefix of at most \(DeviceAllowance.maximumRunnerPrefixLength) characters, such as com.example.offsider, not \(value)."
+            )
+        }
+        if let chosen, chosen != value {
+            throw IOSDeviceError(
+                .invalidSetting,
+                "\(prefixVariable) is \(value), but this device's allowance names runner prefix \(chosen), and the prefix a person chose wins. Unset \(prefixVariable), or give the device that prefix again in `offsider devices add`.",
+                hint: "offsider devices add"
             )
         }
         return value
-    }
-
-    static func isBundlePrefix(_ text: String) -> Bool {
-        guard text.count <= maxPrefixLength, let pattern = try? Regex("^[A-Za-z][A-Za-z0-9-]*(\\.[A-Za-z0-9-]+)+$") else { return false }
-        return text.allSatisfy(\.isASCII) && (try? pattern.wholeMatch(in: text)) != nil
     }
 
     /// The two apps a build installs: the UI test runner and its host.
@@ -270,7 +277,7 @@ public struct XcodeRunnerBuilder: RunnerBuilding {
     }
 
     func signing(for destination: RunnerDestination) throws -> Signing {
-        let prefix = try Self.resolvePrefix(environment: environment)
+        let prefix = try Self.resolvePrefix(environment: environment, allowancePrefix: allowancePrefix)
         guard case .device = destination else { return Signing(team: nil, prefix: prefix) }
         return Signing(team: try Self.resolveTeam(environment: environment, allowanceTeam: allowanceTeam, signedInTeams: signedInTeams()), prefix: prefix)
     }
@@ -313,13 +320,22 @@ public struct XcodeRunnerBuilder: RunnerBuilding {
     @TaskLocal public static var confirmNewPrefix: (@Sendable (String) async throws -> Void)?
     static let approvedPrefixesFile = "approved-prefixes"
 
-    /// Offsider's own prefix needs no approval; another is approved once and recorded beside the cached builds.
+    /// The prefixes a person approved at `runner build`, recorded beside the cached builds.
+    func approvedPrefixes() -> [String] {
+        let recorded = (try? OffsiderPrivateDirectory.readOwnedFile(named: Self.approvedPrefixesFile, in: cacheRoot.path, maxBytes: 64 * 1024)) ?? nil
+        return recorded.map { String(decoding: $0, as: UTF8.self).split(separator: "\n").map(String.init) } ?? []
+    }
+
+    /// Offsider's own prefix and the one a person sealed into the device's allowance under Touch ID need no approval; the environment's alone never counts.
+    func needsApproval(_ prefix: String) -> Bool {
+        prefix != Self.defaultPrefix && prefix != allowancePrefix && !approvedPrefixes().contains(prefix)
+    }
+
+    /// Another prefix is approved once at a terminal and recorded beside the cached builds.
     func approvePrefix(_ prefix: String, udid: String) async throws {
-        guard prefix != Self.defaultPrefix else { return }
+        guard needsApproval(prefix) else { return }
         let directory = cacheRoot.path
-        let recorded = (try? OffsiderPrivateDirectory.readOwnedFile(named: Self.approvedPrefixesFile, in: directory, maxBytes: 64 * 1024)) ?? nil
-        var approved = recorded.map { String(decoding: $0, as: UTF8.self).split(separator: "\n").map(String.init) } ?? []
-        if approved.contains(prefix) { return }
+        var approved = approvedPrefixes()
         guard let confirm = Self.confirmNewPrefix else { throw PrefixApproval(underlying: RunnerPrefixNeedsPerson(prefix: prefix, udid: udid)) }
         do {
             try await confirm(prefix)
@@ -370,7 +386,7 @@ public struct XcodeRunnerBuilder: RunnerBuilding {
         try FileManager.default.copyItem(at: source, to: project)
         try Self.scrubCopiedSource(project)
         if let expectedSource { try Self.verifyCopiedSource(project, expected: expectedSource) }
-        let log = directory.appendingPathComponent("build.log")
+        let log = directory.appendingPathComponent(Self.logName)
         let team = signing.team.map { " with team \($0)" } ?? ""
         notice("Building the Offsider runner\(team) as \(signing.prefix).runner (first time, about a minute)")
         var childEnvironment = ChildEnvironment.make(.xcodebuild, from: environment)
@@ -384,8 +400,12 @@ public struct XcodeRunnerBuilder: RunnerBuilding {
         let output = result.stdout + result.stderr
         try? Data(output.utf8).write(to: log)
         guard result.status == 0, let xctestrun = Self.xctestrun(in: directory) else {
-            if case .device(let udid) = destination, let team = signing.team, Self.needsRegistration(output) {
-                throw Self.registrationFailure(udid: udid, team: team, output: output, log: log)
+            if case .device(let udid) = destination, let team = signing.team {
+                // Another team's App ID also leaves no profile, which reads as a registration failure, so it is checked first.
+                if Self.appIDTaken(output) {
+                    throw appIDTakenFailure(udid: udid, team: team, prefix: signing.prefix, appID: Self.takenAppID(in: output, prefix: signing.prefix))
+                }
+                if Self.needsRegistration(output) { throw Self.registrationFailure(udid: udid, team: team, output: output, log: log) }
             }
             throw Self.failure(detail: "xcodebuild exited \(result.status)", output: output, log: log)
         }
@@ -439,6 +459,62 @@ public struct XcodeRunnerBuilder: RunnerBuilding {
         let products = directory.appendingPathComponent("derived/Build/Products", isDirectory: true)
         let names = (try? FileManager.default.contentsOfDirectory(atPath: products.path)) ?? []
         return names.sorted().first { $0.hasSuffix(".xctestrun") }.map { products.appendingPathComponent($0) }
+    }
+
+    /// Apple's words when one of the runner's App IDs belongs to another team: it "cannot be registered to your development team" or "is not available".
+    static func appIDTaken(_ output: String) -> Bool {
+        let text = output.lowercased()
+        return text.contains("cannot be registered to your development team") || (text.contains("app id with identifier") && text.contains("is not available"))
+    }
+
+    /// The first runner App ID xcodebuild quotes, else the host app's; never text from the log itself.
+    static func takenAppID(in output: String, prefix: String) -> String {
+        let ids = ["\(prefix).runner", "\(prefix).runner.uitests", "\(prefix).runner.uitests.xctrunner"]
+        let found = ids.compactMap { id in
+            ["\"\(id)\"", "'\(id)'", "\u{201C}\(id)\u{201D}"].compactMap { output.range(of: $0)?.lowerBound }.min().map { (id, $0) }
+        }
+        return found.min { $0.1 < $1.1 }?.0 ?? "\(prefix).runner"
+    }
+
+    /// The one command that gives the device a prefix of its own: on the allow-list, `devices add`, which also saves it, keeping the device's use and team.
+    func appIDFix(udid: String, team: String, prefix: String) -> String {
+        let fresh = DeviceAllowance.suggestedRunnerPrefix(team: team, avoiding: prefix)
+        if let allowance { return DeviceAddPlan.runnerPrefixCommand(allowance, team: team, prefix: fresh) }
+        return "\(Self.prefixVariable)=\(fresh) offsider runner build --device \(udid)"
+    }
+
+    func appIDTakenFailure(udid: String, team: String, prefix: String, appID: String) -> IOSDeviceError {
+        let fix = appIDFix(udid: udid, team: team, prefix: prefix)
+        let saves = allowance == nil ? "" : ", which saves the prefix for this device and builds the runner"
+        return IOSDeviceError(
+            .runnerBuildFailed,
+            "Building the Offsider runner app failed: another Apple team already owns its App ID \(appID), so team \(team) needs a runner prefix of its own. A person runs `\(fix)` once in their own terminal and confirms with Touch ID\(saves).",
+            hint: fix
+        )
+    }
+
+    /// What the cache holds for the device's team and prefix, read without building, asking or starting anything: doctor's view. Nil when no team is settled or the source is unreadable.
+    public func cacheStatus(udid: String) -> IOSDeviceDoctorFacts.RunnerBuildFact? {
+        let destination = RunnerDestination.device(udid: udid)
+        let signing: Signing
+        do {
+            signing = try self.signing(for: destination)
+        } catch let error as IOSDeviceError where error.kind == .invalidSetting {
+            return .unsettled(message: error.message, hint: error.hint)
+        } catch {
+            return nil
+        }
+        guard let team = signing.team, let key = try? cacheKey(for: destination, signing: signing) else { return nil }
+        let directory = cacheRoot.appendingPathComponent(key, isDirectory: true)
+        if Self.xctestrun(in: directory) != nil { return .built(team: team, prefix: signing.prefix) }
+        let log = directory.appendingPathComponent(Self.logName)
+        let output = UntrustedRead.contents(atPath: log.path, maxBytes: Self.maxLogBytes, truncate: true).map { String(decoding: $0, as: UTF8.self) } ?? ""
+        if Self.appIDTaken(output) {
+            return .appIDTaken(appID: Self.takenAppID(in: output, prefix: signing.prefix), team: team, fix: appIDFix(udid: udid, team: team, prefix: signing.prefix))
+        }
+        if Self.needsRegistration(output) { return .notRegistered(team: team) }
+        if output.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return .notBuilt(team: team, prefix: signing.prefix, needsPerson: needsApproval(signing.prefix)) }
+        return .failed(team: team, prefix: signing.prefix, log: log.path)
     }
 
     /// xcodebuild's words for a device the team has not registered, or a profile that does not cover it.

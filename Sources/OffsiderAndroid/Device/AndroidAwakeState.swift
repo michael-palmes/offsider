@@ -3,8 +3,8 @@ import OffsiderCore
 
 /// Shell scripts and parsers for the screen's power and lock state, stay awake and the lock screen code.
 enum AndroidAwakeState {
-    /// The maker, `dumpsys power`, the keyguard lines of `dumpsys window policy`, then the credential type, which some releases do not print: about 0.2 s on a phone.
-    static let readScript = "echo maker=$(getprop ro.product.manufacturer); dumpsys power | grep -E '^  m(Wakefulness|IsPowered|PlugType|StayOnWhilePluggedInSetting|ScreenOffTimeoutSetting|MaximumScreenOffTimeoutFromDeviceAdmin)='; "
+    /// The maker, `dumpsys power` with the display's own power state, the keyguard lines of `dumpsys window policy`, then the credential type, which some releases do not print: about 0.2 s on a phone.
+    static let readScript = "echo maker=$(getprop ro.product.manufacturer); dumpsys power | grep -E '^  m(Wakefulness|IsPowered|PlugType|StayOnWhilePluggedInSetting|ScreenOffTimeoutSetting|MaximumScreenOffTimeoutFromDeviceAdmin)=|^ *Display Power: state='; "
         + "dumpsys window policy | grep -E '^ +(showing|occluded|secure)='; "
         + "dumpsys lock_settings | grep -m1 -E '^ +CredentialType:'; true"
 
@@ -66,7 +66,8 @@ enum AndroidAwakeState {
                 values[key] = text[text.index(after: index)...].trimmingCharacters(in: .whitespaces)
             }
         }
-        guard let screen = values["mWakefulness"].flatMap(screenPower), let showing = values["showing"].flatMap(Bool.init) else { return nil }
+        guard let wakefulness = values["mWakefulness"].flatMap(screenPower), let showing = values["showing"].flatMap(Bool.init) else { return nil }
+        let screen = screenPower(wakefulness, display: values["Display Power: state"])
         let keyguardSecure = values["secure"].flatMap(Bool.init)
         let lockScreen: LockScreen = showing && values["occluded"] != "true" ? (keyguardSecure == true ? .secure : .swipe) : .hidden
         let powered = values["mIsPowered"] == "true"
@@ -121,6 +122,15 @@ enum AndroidAwakeState {
         case "Dozing": return .dozing
         case "Dreaming": return .dreaming
         default: return nil
+        }
+    }
+
+    /// Wakefulness can read `Awake` while the panel is dark (the power button on a charging phone with Stay awake on), so the display's `Display Power: state=` also counts; without that line, wakefulness alone decides.
+    static func screenPower(_ wakefulness: ScreenPower, display: String?) -> ScreenPower {
+        switch display?.uppercased() {
+        case "OFF": return .off
+        case "DOZE", "DOZE_SUSPEND": return wakefulness == .on ? .dozing : wakefulness
+        default: return wakefulness
         }
     }
 

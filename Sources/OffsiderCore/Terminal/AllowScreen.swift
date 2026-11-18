@@ -99,9 +99,13 @@ public enum AllowScreen {
     }
 
     /// The bold line above the Touch ID request: what is about to be allowed. `team` is the name shown, or `team <id>` when only the ID is known.
-    public static func summary(_ row: DeviceSummary, apps: [String], lifetime: TimeInterval?, team: String?, metroPorts: [Int] = [], testDevice: Bool = false, width: Int, style: TerminalStyle) -> [String] {
+    public static func summary(
+        _ row: DeviceSummary, apps: [String], lifetime: TimeInterval?, team: String?, runnerPrefix: String? = nil, metroPorts: [Int] = [], testDevice: Bool = false,
+        width: Int, style: TerminalStyle
+    ) -> [String] {
         let metro = metroPorts.isEmpty ? [] : [Self.metro(metroPorts)]
-        return TerminalUI.summary(mark(row), [name(row), Self.apps(apps, testDevice: testDevice)] + metro + [duration(lifetime)] + (team.map { [$0] } ?? []), width: width, style: style)
+        let signing = (team.map { [$0] } ?? []) + (runnerPrefix.map { ["runner \(PromptScreen.visible($0))"] } ?? [])
+        return TerminalUI.summary(mark(row), [name(row), Self.apps(apps, testDevice: testDevice)] + metro + [duration(lifetime)] + signing, width: width, style: style)
     }
 
     /// `until 22:14` today, `until 21 Oct 22:14` on a later day, or `until you remove it`.
@@ -117,12 +121,18 @@ public enum AllowScreen {
     }
 
     /// The closing block for one device: the only place the full ID shows, since the commands need it.
-    /// `ready` means Offsider proved it can drive the device, so nothing is left to run.
-    public static func allowed(name: String, key: String, until: String, apps: [String], metroPorts: [Int] = [], testDevice: Bool = false, notes: [String] = [], ready: Bool = false, width: Int, style: TerminalStyle) -> [String] {
+    /// `ready` means Offsider proved it can drive the device, so nothing is left to run; `steps` are what is still owed on it.
+    public static func allowed(
+        name: String, key: String, until: String, apps: [String], metroPorts: [Int] = [], testDevice: Bool = false, notes: [String] = [], ready: Bool = false,
+        steps: [DeviceFirstRun.Step] = [], width: Int, style: TerminalStyle
+    ) -> [String] {
         let key = PromptScreen.visible(key)
         let metro = metroPorts.isEmpty ? "" : ", \(Self.metro(metroPorts))"
         let what = "\(name) \(until), \(Self.apps(apps, testDevice: testDevice))\(metro)."
         let withdraw = ("Withdraw", "offsider devices remove --device \(key)")
-        return TerminalUI.closing(ready ? "Ready: \(what)" : "Allowed \(what)", notes: notes, commands: ready ? [withdraw] : [withdraw, ("Next", "offsider doctor --device \(key)")], width: width, style: style)
+        return TerminalUI.closing(
+            ready ? "Ready: \(what)" : "Allowed \(what)", notes: notes, todo: ready ? [] : steps.map { ($0.title, $0.detail) },
+            commands: ready ? [withdraw] : [withdraw, ("Next", "offsider doctor --device \(key)")], width: width, style: style
+        )
     }
 }

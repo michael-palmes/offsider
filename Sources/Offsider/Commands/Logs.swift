@@ -32,6 +32,9 @@ struct Logs: AsyncParsableCommand {
         React Native's log and everything the app's process logs (on Android, every process of the app's user ID, \
         so lines from before a restart are kept and the app need not be running). On a phone not allowed "Any app and all logs", \
         --rn reads only that app's own lines, never another app's React Native tags.
+
+        An iOS simulator keeps Debug-level lines, such as console.debug, only in memory, so --last and --since never \
+        show them: start a --duration or --follow read before the action. An empty history read there says so.
         """
     )
 
@@ -257,6 +260,9 @@ struct Logs: AsyncParsableCommand {
         if !follow, let hint = Self.appHint(for: query.source, matched: sink.collector.matched, grepping: grep != nil, platform: booted.id.platform) {
             note(hint)
         }
+        if let live = liveReadNote(query, matched: sink.collector.matched, device: booted.id) {
+            note(live)
+        }
         let collector = sink.collector
         recorder.update(token) { entry in
             entry.entries = follow ? collector.matched : collector.entries.count
@@ -392,6 +398,34 @@ struct Logs: AsyncParsableCommand {
         let place = platform == .ios ? "its own process" : "its own tags"
         let id = platform == .ios ? "bundle-id" : "package"
         return "Only \(matched) React Native \(matched == 1 ? "entry" : "entries"). An app's console output can log under \(place) instead; add --app <\(id)> to read both."
+    }
+
+    /// The stderr note after a history read on an iOS simulator that matched nothing: Debug lines such as `console.debug` stay in its memory, so only a live read started first shows them.
+    func liveReadNote(_ query: LogQuery, matched: Int, device: DeviceID) -> String? {
+        guard device.platform == .ios, !device.isPhysicalIOSDevice, matched == 0 else { return nil }
+        let seconds: Int
+        switch query.window {
+        case .live:
+            return nil
+        case .last(let window):
+            let asked = Int((Double(window.components.seconds) + Double(window.components.attoseconds) / 1e18).rounded(.up))
+            seconds = (1...300).contains(asked) ? asked : 30
+        case .since:
+            seconds = 30
+        }
+        var words = ["offsider", "logs"]
+        switch query.source {
+        case .all where all: words.append("--all")
+        case .all: break
+        case .reactNative(let app): words += ["--rn"] + (app.map { ["--app", VerifyOutput.shellWord($0)] } ?? [])
+        case .app(let app): words += ["--app", VerifyOutput.shellWord(app)]
+        case .process(let name): words += ["--process", VerifyOutput.shellWord(name)]
+        }
+        if let predicate = query.predicate { words += ["--predicate", VerifyOutput.shellWord(predicate)] }
+        if let grep { words += ["--grep", VerifyOutput.shellWord(grep)] }
+        for pattern in exclude { words += ["--exclude", VerifyOutput.shellWord(pattern)] }
+        words += ["--duration", String(seconds)] + (json ? ["--json"] : []) + ["--device", device.rawValue]
+        return "Note: nothing matched. A simulator keeps Debug-level lines, such as console.debug, only in memory, so a history read never shows them: start `\(words.joined(separator: " "))` before the action."
     }
 
     private static func list(_ flags: [String]) -> String {

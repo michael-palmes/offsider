@@ -237,6 +237,7 @@ struct StartPersonOutputTests {
         #expect(StartPersonView.bootLine("Pixel_9 is already starting as emulator-5554.") == .step("Pixel_9 is already starting as emulator-5554"))
         #expect(StartPersonView.bootLine("Booting iPhone 17 Pro (00000000-0000-4000-8000-000000000001).") == .step("Booting iPhone 17 Pro (00000000-0000-4000-8000-000000000001)"))
         #expect(StartPersonView.bootLine("Pixel_9 is already running as emulator-5554.") == .running)
+        #expect(StartPersonView.bootLine("Started Pixel_9 as emulator-5554 (emulator pid 4242).") == .running)
         #expect(StartPersonView.bootLine("Pixel_9 is already running as emulator-5554 without gRPC; commands will use adb.")
             == .note("Pixel_9 is already running as emulator-5554 without gRPC; commands will use adb"))
         #expect(StartPersonView.bootLine("-memory ignored: Pixel_9 is already running.") == .note("-memory ignored: Pixel_9 is already running"))
@@ -271,11 +272,14 @@ struct StartPersonOutputTests {
         #expect(agent.out == "emulator-5554\n")
         #expect(agent.err == "Warning: Pixel_9 has 1.9 GB of RAM, which is tight for a React Native debug build. Close it, then run `offsider boot Pixel_9 --memory 4096`.\n")
         let person = StartFixtures.capture(page)
-        #expect(person.out == "✅  Pixel_9 is running  emulator-5554\n")
+        #expect(person.out == "✅  Pixel_9 started  emulator-5554\n")
         #expect(person.err.contains("Try  offsider boot Pixel_9 --memory 4096"))
         #expect(person.err.hasSuffix("\nNext  offsider describe-ui --device emulator-5554\n"))
         let again = StartFixtures.capture(StartPersonView.booted(name: "iPhone 17 Pro", id: "00000000-0000-4000-8000-000000000001", alreadyRunning: true))
         #expect(again.out.hasPrefix("✅  iPhone 17 Pro was already running\n"))
+        let since = ProcessStamp(pid: 4242, startedAt: StartFixtures.now.addingTimeInterval(-90))
+        let up = StartFixtures.capture(StartPersonView.booted(name: "Pixel_9", id: "emulator-5554", alreadyRunning: true, since: since, now: StartFixtures.now))
+        #expect(up.out.contains("Pixel_9 was already running") && up.out.contains("pid 4242, started 1 min ago at "))
     }
 
     // MARK: Run

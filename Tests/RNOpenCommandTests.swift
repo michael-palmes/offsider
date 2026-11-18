@@ -1,3 +1,4 @@
+import ArgumentParser
 import Foundation
 import OffsiderCore
 import Testing
@@ -530,13 +531,47 @@ struct RNOpenCommandTests {
 
     static let settings = FakeUI.tree([FakeUI.node(.other, id: "settings-screen", label: "Settings", frame: FakeUI.frame(0, 0, 402, 874))])
 
-    @Test("a loaded screen without --wait-id ends the wait after 15 s, naming the screen's first id")
+    @Test("a loaded screen without --wait-id that holds still ends the wait after 15 s, naming the screen's first id")
     func otherScreenStopsEarly() async throws {
         let (result, seconds) = try await Self.run(["--wait-id", "home-screen", "--timeout", "600"], on: FakeDeviceBackend(trees: [Self.bundling, Self.app]))
         guard case .failure(let error) = result else { Issue.record("expected the other screen"); return }
         #expect(error.reason == .conditionNotMet && error.exitCode == .unverified)
-        #expect(error.userFacingDescription == #"com.example.app shows the screen with id="menu-title", and --wait-id home-screen is not on it: it has shown it for 15 s, so rn open stopped waiting. Pass --wait-id with an element of the screen the app opens on, or bring the app to that screen first."#)
+        #expect(error.userFacingDescription == #"com.example.app shows the screen with id="menu-title", and --wait-id home-screen is not on it: the screen has been still for 15 s, so rn open stopped waiting. Pass --wait-id with an element of the screen the app opens on, or bring the app to that screen first."#)
         #expect(seconds < 20)
+    }
+
+    /// One page of an intro carousel: the same skip button first, then the page's own text.
+    static func introPage(_ page: Int) -> UITree {
+        FakeUI.tree([
+            FakeUI.node(.button, id: "intro-skip", label: "Skip", frame: FakeUI.frame(300, 60, 80, 40)),
+            FakeUI.node(.text, label: "Page \(page) of 5", frame: FakeUI.frame(20, 400, 360, 60)),
+        ])
+    }
+
+    static let home = FakeUI.tree([FakeUI.node(.other, id: "home-screen", label: "Home", frame: FakeUI.frame(0, 0, 402, 874))])
+
+    @Test("a screen that moves on by itself past 15 s, such as an intro carousel, is waited out until the --wait-id shows")
+    func advancingScreenReachesTheID() async throws {
+        let pages = (0..<50).map { Self.introPage($0 % 5 + 1) }
+        let (result, seconds) = try await Self.run(["--wait-id", "home-screen", "--timeout", "600"], on: FakeDeviceBackend(trees: [Self.bundling] + pages + [Self.home]))
+        #expect(try result.get().waitID == "home-screen")
+        #expect(seconds > 20, "the carousel ran for over 15 s on one screen name")
+    }
+
+    @Test("the 15 s starts again at a screen's last change, so a carousel that stops short of the id ends 15 s after it stopped, naming it")
+    func screenThatStopsEndsAfterStill() async throws {
+        let pages = (0..<20).map { Self.introPage($0 % 5 + 1) }
+        let (result, seconds) = try await Self.run(["--wait-id", "home-screen", "--timeout", "600"], on: FakeDeviceBackend(trees: [Self.bundling] + pages + [Self.introPage(5)]))
+        guard case .failure(let error) = result else { Issue.record("expected a still screen"); return }
+        #expect(error.userFacingDescription.hasPrefix(#"com.example.app shows the screen with id="intro-skip", and --wait-id home-screen is not on it: the screen has been still for 15 s"#))
+        #expect(seconds >= 25 && seconds < 30, "15 s after the last change, not after the first page")
+    }
+
+    @Test("a screen still changing at --timeout names it in the timeout")
+    func advancingScreenTimesOutNamingIt() async throws {
+        let pages = (0..<80).map { Self.introPage($0 % 5 + 1) }
+        let (result, _) = try await Self.run(["--wait-id", "home-screen", "--timeout", "20"], on: FakeDeviceBackend(trees: [Self.bundling] + pages))
+        #expect(result.failure?.userFacingDescription.hasPrefix(#"com.example.app shows the screen with id="intro-skip", and --wait-id home-screen is not on it: it did not appear within 20 s."#) == true)
     }
 
     @Test("a screen that keeps changing waits for --timeout, then names the last screen instead of blaming Metro")
@@ -693,6 +728,56 @@ struct RNOpenCommandTests {
     @Test("--port and --timeout are checked", arguments: [["--port", "0"], ["--timeout", "5"], ["--scheme", "not a scheme"]])
     func validation(extra: [String]) {
         #expect(throws: (any Error).self) { try RNOpen.parse(["--port", "8742", "--bundle-id", "com.example.app"] + extra + ["--device", Self.device.rawValue]) }
+    }
+
+    // MARK: --app
+
+    @Test("rn open and rn prepare take --app as --bundle-id, given alone or naming the same app twice", arguments: [
+        ["--app", "com.example.app"], ["--bundle-id", "com.example.app", "--app", "com.example.app"],
+    ])
+    func appNamesTheBundle(names: [String]) async throws {
+        let open = try OffsiderCommand.parseAsRoot(["rn", "open", "--port", "8742"] + names + ["--device", Self.device.rawValue])
+        #expect((open as? RNOpen)?.bundleID == "com.example.app")
+        #expect((open as? any AppNaming)?.namedApp == "com.example.app", "routing checks it against a phone's allowance")
+        let prepare = try OffsiderCommand.parseAsRoot(["rn", "prepare"] + names + ["--device", Self.device.rawValue])
+        #expect((prepare as? RNPrepare)?.bundleID == "com.example.app")
+        #expect((prepare as? any AppNaming)?.namedApp == "com.example.app")
+
+        let backend = FakeDeviceBackend(trees: [Self.app])
+        let command = try RNOpen.parse(["--port", "8742"] + names + ["--wait-id", "menu-title", "--device", Self.device.rawValue])
+        let report = try await command.open(on: DeviceRouter.Route(backend: backend, device: Self.device), metro: Self.running, clock: ScriptedClock().poll)
+        #expect(report.bundleID == "com.example.app")
+        #expect(command.restartCommand(device: Self.device).contains(" --bundle-id com.example.app "), "printed commands keep --bundle-id")
+    }
+
+    @Test("--bundle-id and --app naming different apps exit 64, naming both", arguments: [["rn", "open", "--port", "8742"], ["rn", "prepare"]])
+    func differentAppsRefused(command: [String]) {
+        do {
+            _ = try OffsiderCommand.parseAsRoot(command + ["--bundle-id", "com.example.app", "--app", "com.example.other", "--device", Self.device.rawValue])
+            Issue.record("two different apps were taken")
+        } catch {
+            #expect(OffsiderCommand.exitCode(for: error).rawValue == 64)
+            #expect(OffsiderCommand.message(for: error) == "--bundle-id com.example.app and --app com.example.other name different apps; pass one of them.")
+        }
+    }
+
+    @Test("with neither --bundle-id nor --app the usage error names both", arguments: [["rn", "open", "--port", "8742"], ["rn", "prepare"]])
+    func missingAppNamesBoth(command: [String]) {
+        do {
+            _ = try OffsiderCommand.parseAsRoot(command + ["--device", Self.device.rawValue])
+            Issue.record("no app was needed")
+        } catch {
+            #expect(OffsiderCommand.exitCode(for: error).rawValue == 64)
+            let message = OffsiderCommand.message(for: error)
+            #expect(message.contains("--bundle-id <bundle-id|package>") && message.contains("--app"), "\(message)")
+        }
+    }
+
+    @Test("help keeps --bundle-id as the name and calls --app the same thing", arguments: [RNOpen.self, RNPrepare.self] as [any ParsableCommand.Type])
+    func helpNamesBoth(command: any ParsableCommand.Type) {
+        let help = command.helpMessage(columns: 200)
+        #expect(help.contains("--bundle-id <bundle-id|package>"))
+        #expect(help.contains("--app <bundle-id|package>") && help.contains("The same as --bundle-id."))
     }
 }
 

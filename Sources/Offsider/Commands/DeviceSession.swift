@@ -82,7 +82,7 @@ struct DeviceSessionServe: AsyncParsableCommand {
         guard sleepsWhenIdle(udid: udid, key: key, store: store, gate: gate), case .allowed(let allowance) = gate.decision(platform: .ios, key: key) else { return }
         let backend = IOSDeviceBackend.make(logger: OffsiderLogger())
         IOSDevicePinning.configure(backend, allowance: allowance, policy: gate.policy(), profileBundleID: { nil })
-        backend.runnerTeam = allowance.team
+        backend.runnerAllowance = allowance
         do {
             _ = try await backend.sleepScreen(DeviceID(rawValue: udid, platform: .ios))
         } catch {

@@ -56,6 +56,8 @@ public enum DoctorCheckID: String, Codable, Sendable, CaseIterable {
     case iosDeviceSession = "ios-device.session"
     case iosDeviceUsbmuxd = "ios-device.usbmuxd"
     case iosDeviceRunnerSigning = "ios-device.runner-signing"
+    case iosDeviceRunnerBuild = "ios-device.runner-build"
+    case iosDeviceRunnerTrust = "ios-device.runner-trust"
     case deviceLease = "device.lease"
     case deviceRecording = "device.recording"
     case devicePolicy = "device.policy"
@@ -65,6 +67,7 @@ public enum DoctorCheckID: String, Codable, Sendable, CaseIterable {
     case installBundle = "install.bundle"
     case installSkill = "install.skill"
     case installRules = "install.rules"
+    case installDenyRules = "install.deny-rules"
 
     public var isPerSimulator: Bool {
         rawValue.hasPrefix("simulator.")
@@ -138,6 +141,8 @@ public enum DoctorCheckID: String, Codable, Sendable, CaseIterable {
         case .iosDeviceSession: return "Session broker"
         case .iosDeviceUsbmuxd: return "usbmuxd"
         case .iosDeviceRunnerSigning: return "Runner signing"
+        case .iosDeviceRunnerBuild: return "Runner build"
+        case .iosDeviceRunnerTrust: return "Runner certificate"
         case .deviceLease: return "Lease"
         case .deviceRecording: return "Recording"
         case .devicePolicy: return "Physical device policy"
@@ -147,6 +152,7 @@ public enum DoctorCheckID: String, Codable, Sendable, CaseIterable {
         case .installBundle: return "Bundled resources"
         case .installSkill: return "Agent skill"
         case .installRules: return "Agent permission rules"
+        case .installDenyRules: return "Agent deny rules"
         }
     }
 }

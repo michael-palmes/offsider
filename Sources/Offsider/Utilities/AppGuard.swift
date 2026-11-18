@@ -155,7 +155,7 @@ enum AppGuard {
             var points = inputs
             if inputSpace, inputs.contains(where: { $0 != .activate }) {
                 let probes = GuardPointMap.probes.map { (x: $0.x, y: $0.y) }
-                let mapped = try await backend.deviceCoordinates(for: probes, tree: tree, on: device).map { UIPoint(x: $0.x, y: $0.y) }
+                let mapped = try await DeviceWatchdog.make().inputPoints(probes, tree: tree, backend: backend, device: device).map { UIPoint(x: $0.x, y: $0.y) }
                 guard let map = GuardPointMap(mapped: mapped) else {
                     throw CLIError(errorDescription: "Offsider could not place this input on the screen to check it against the guard rules for \(sets.map(\.app).joined(separator: ", ")), so it sent nothing. Tap by --id or --label instead.", reason: .commandFailed)
                 }

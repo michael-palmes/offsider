@@ -17,7 +17,12 @@ struct Wake: AsyncParsableCommand {
         is saved again. Patterns are not supported.
 
         On an allowed iPhone or iPad it presses Home at most twice, without needing an app in front, and exits 7 \
-        (device_locked) when a passcode stays up; Offsider never types one, so --unlock is refused. iOS simulators never sleep.
+        (device_locked) when a passcode stays up; Offsider never types one, so --unlock is refused.
+
+        On an iOS simulator it clears the lock screen `button lock` leaves: it reads SpringBoard's lock state and, \
+        only while the lock screen is up, presses Home at most twice (never a swipe up, which can freeze the display), \
+        then checks the lock screen has gone. `button lock` waits until the lock screen is up, so wake can follow it \
+        at once. A simulator has no passcode, so --unlock is refused there too.
 
         Examples:
           offsider wake --device DEVICE_ID
@@ -35,15 +40,27 @@ struct Wake: AsyncParsableCommand {
     var deviceOption: DeviceOption
 
     func validate() throws {
-        if unlock, case .iosDevice = DeviceIDClassifier.classify(deviceOption.id) {
+        guard unlock else { return }
+        switch DeviceIDClassifier.classify(deviceOption.id) {
+        case .iosDevice:
             throw ValidationError("--unlock is Android only: Offsider never types an iPhone or iPad passcode. Unlock it by hand.")
+        case .iosSimulator:
+            throw ValidationError("--unlock is Android only: a simulator has no passcode to type. Leave out --unlock: `offsider wake --device \(deviceOption.id)` clears its lock screen.")
+        default:
+            break
         }
     }
 
     func run() async throws {
-        if case .iosDevice = DeviceIDClassifier.classify(deviceOption.id) {
+        switch DeviceIDClassifier.classify(deviceOption.id) {
+        case .iosDevice:
             try await wakeIOSDevice()
             return
+        case .iosSimulator:
+            try await wakeSimulator()
+            return
+        default:
+            break
         }
         try StayAwakeCommand.requireAndroid(deviceOption.id, command: "wake")
         let route = try await DeviceRouter.routeForInput(deviceOption, logger: OffsiderLogger())
@@ -74,11 +91,60 @@ struct Wake: AsyncParsableCommand {
         DevicePersonView.emit(json ? view.json : view.text, json: json, person: DevicePersonView.receipt(view.person), console: console)
     }
 
+    private func wakeSimulator() async throws {
+        let route = try await DeviceRouter.routeForInput(deviceOption, logger: OffsiderLogger())
+        guard let backend = route.backend as? any SimulatorLockReading else {
+            throw CLIError(errorDescription: "wake is not available for \(route.device.rawValue).", reason: .notSupported)
+        }
+        let console = Console.current
+        let change = try await console.progress("Clearing the lock screen") {
+            try await route.backend.prepare()
+            _ = try await route.backend.requireBootedDevice(route.device)
+            return try await Self.wakeSimulator(on: backend, device: route.device)
+        }
+        let view = Self.iosView(change, device: route.device)
+        DevicePersonView.emit(json ? view.json : view.text, json: json, person: DevicePersonView.receipt(view.person), console: console)
+    }
+
+    /// Home at most twice, only while SpringBoard's lock screen is up; the same change an iPhone reports.
+    @MainActor
+    static func wakeSimulator(
+        on backend: any SimulatorLockReading,
+        device: DeviceID,
+        sleep: (Duration) async throws -> Void = { try await Task.sleep(for: $0) },
+        now: () -> TimeInterval = { ProcessInfo.processInfo.systemUptime }
+    ) async throws -> IOSDeviceScreenChange {
+        let outcome = try await SimulatorWake.run(
+            read: { try await backend.lockScreen(on: device) },
+            press: { try await backend.performTracked(.shortButtonPress(.home), on: device) },
+            sleep: sleep,
+            now: now
+        )
+        let udid = device.rawValue
+        let again = "offsider wake --device \(udid)"
+        switch outcome {
+        case .alreadyUnlocked:
+            return IOSDeviceScreenChange(wasOn: true, wasLocked: false, presses: 0)
+        case .unlocked(let before, let presses):
+            return IOSDeviceScreenChange(wasOn: !before.blanked, wasLocked: true, presses: presses)
+        case .stillLocked(_, let presses):
+            throw CLIError(
+                errorDescription: "The lock screen of simulator \(udid) is still up after \(presses) Home presses. Run `\(again)` again; if it stays, run `offsider doctor --device \(udid)`.",
+                reason: .stateNotReached, hint: again
+            )
+        case .unconfirmed(_, let presses):
+            throw CLIError(
+                errorDescription: "Offsider pressed Home \(presses) times on simulator \(udid), but could not read its lock screen afterwards. Check it with `offsider screenshot --device \(udid)`.",
+                reason: .stateNotReached, hint: "offsider screenshot --device \(udid)"
+            )
+        }
+    }
+
     static func iosView(_ change: IOSDeviceScreenChange, device: DeviceID) -> (text: String, json: String, person: String) {
         let was = change.wasOn ? (change.wasLocked ? "on, locked" : "on, unlocked") : "off"
         let json = DeviceStateReport.screen("wake", on: device, previous: was, current: "on, unlocked", sent: Array(repeating: "home", count: change.presses))
-        guard change.presses > 0 else { return ("The screen of \(device.rawValue) is already on and unlocked; nothing was sent.\n", json, "Screen already on and unlocked") }
-        return ("The screen of \(device.rawValue) is on and unlocked (was \(was)); Home pressed \(change.presses) time\(change.presses == 1 ? "" : "s").\n", json, "Screen on and unlocked")
+        guard change.presses > 0 else { return ("The screen of \(device.rawValue) is already on and unlocked; nothing was sent.", json, "Screen already on and unlocked") }
+        return ("The screen of \(device.rawValue) is on and unlocked (was \(was)); Home pressed \(change.presses) time\(change.presses == 1 ? "" : "s").", json, "Screen on and unlocked")
     }
 
     /// A phone's serial, or an emulator's AVD name; nil when the AVD name is unknown.

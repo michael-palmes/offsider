@@ -12,10 +12,11 @@ public struct IOSDeviceDoctorProbe {
 
     let host: IOSDeviceHost
     let xcodeTeams: @Sendable () -> [String]
-    /// The team the device's allowance records, if any.
-    let allowanceTeam: String?
+    /// The device's allowance, whose team and runner prefix the runner checks use.
+    let allowance: DeviceAllowance?
     let hid: HIDProbe
     let session: SessionProbe
+    let runnerRunning: @Sendable (RunnerSessionRecord) -> Bool
 
     /// Reads a device's session broker by UDID, never starting it.
     public typealias SessionProbe = @MainActor (_ udid: String) async -> IOSDeviceDoctorFacts.SessionFact
@@ -25,13 +26,39 @@ public struct IOSDeviceDoctorProbe {
         xcodeTeams: @escaping @Sendable () -> [String] = IOSDeviceDoctorProbe.signedInTeams,
         hid: @escaping HIDProbe = IOSDeviceDoctorProbe.liveHID,
         session: SessionProbe? = nil,
-        allowanceTeam: String? = nil
+        allowance: DeviceAllowance? = nil,
+        runnerRunning: @escaping @Sendable (RunnerSessionRecord) -> Bool = { XcodebuildProcesses().isRunning($0) }
     ) {
         self.host = host
         self.xcodeTeams = xcodeTeams
-        self.allowanceTeam = allowanceTeam
+        self.allowance = allowance
         self.hid = hid
         self.session = session ?? { udid in await Self.sessionFact(udid, root: host.privateRoot) }
+        self.runnerRunning = runnerRunning
+    }
+
+    var allowanceTeam: String? { allowance?.team }
+
+    /// The cached build for this device's team and prefix and its last recorded start failure; nothing is built, installed or started.
+    func runnerFacts(udid: String, xcode: XcodeLocation) -> (build: IOSDeviceDoctorFacts.RunnerBuildFact?, trust: IOSDeviceDoctorFacts.RunnerTrustFact?) {
+        let builder = host.runnerSource.map { source in
+            XcodeRunnerBuilder(
+                source: source, cacheRoot: XcodeRunnerBuilder.defaultCacheRoot(home: host.homeDirectory), xcode: xcode, environment: host.environment,
+                signedInTeams: xcodeTeams, notice: { _ in }, allowance: allowance, expectedSource: host.runnerSourceDigests
+            )
+        }
+        let build = builder?.cacheStatus(udid: udid)
+        guard let team = try? XcodeRunnerBuilder.resolveTeam(environment: host.environment, allowanceTeam: allowanceTeam, signedInTeams: xcodeTeams()) else {
+            return (build, nil)
+        }
+        let store = RunnerSessionStore(root: host.privateRoot)
+        if let failure = store.failure(udid: udid), failure.kind == .certificateNotTrusted, failure.team.caseInsensitiveCompare(team) == .orderedSame {
+            return (build, .untrusted(team: failure.team))
+        }
+        if store.knownDirectory(udid: udid) != nil, let record = try? store.read(udid: udid), record.state == .running, runnerRunning(record) {
+            return (build, .running)
+        }
+        return (build, .unknown)
     }
 
     /// The broker's record and `ping`; a broker that is not running is reported, not started.
@@ -80,6 +107,7 @@ public struct IOSDeviceDoctorProbe {
             return Result(facts: facts, xcode: nil)
         }
         facts.xcode = .found(developerDir: xcode.developerDirectory, version: xcode.version, build: xcode.build)
+        (facts.runnerBuild, facts.runnerTrust) = runnerFacts(udid: udid, xcode: xcode)
 
         let directory = IOSDeviceDirectory(host: host)
         let listed: DevicectlDevice?
