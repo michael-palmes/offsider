@@ -241,16 +241,23 @@ extension KeySequence: BatchConvertible {
         }
 
         guard KeySequence.typesText(parsedKeycodes) else { return [.hidMergeable(InputEvent.composite(events))] }
+        let focusTree = Type.FocusTreeBox()
         let focus = BatchPrimitive.run { _ in
             try await context.awaitInputDrawn()
-            try await Type.checkTextFocus(
+            focusTree.check = try await Type.checkTextFocus(
                 readTree: { try await context.accessibilityTree(forceRefresh: true) }, device: context.device, clock: .live,
                 warn: { Console.current.notice(.warning(InputPersonView.sentence($0), agent: $0)) },
                 refusingSecureTarget: KeySequence.spellsText(parsedKeycodes) ? Type.secureFieldRefusal(device: context.device, batch: true, keys: true) : nil, keys: true,
                 hitTester: context.backend as? any PointHitTesting, adb: Type.adbPath(of: context.backend)
             )
         }
-        return [focus, .hidMergeable(InputEvent.composite(events))]
+        let keys = BatchPrimitive.hidMergeable(InputEvent.composite(events))
+        guard context.device.platform == .android, KeySequence.spelledText(parsedKeycodes) != nil else { return [focus, keys] }
+        let landed = BatchPrimitive.run { _ in
+            guard let check = focusTree.check else { return }
+            try await KeySequence.confirmLanded(parsedKeycodes, focus: check, backend: context.backend, device: context.device)
+        }
+        return [focus, keys, landed]
     }
 }
 
@@ -294,19 +301,19 @@ extension Type: BatchConvertible {
             }
             guard sends else { return }
             try await context.awaitInputDrawn()
-            focusTree.tree = try await Type.checkTextFocus(
+            let check = try await Type.checkTextFocus(
                 readTree: { try await context.accessibilityTree(forceRefresh: true) }, device: context.device, clock: .live,
                 warn: { Console.current.notice(.warning(InputPersonView.sentence($0), agent: $0)) }, refusingSecureTarget: refusal,
                 hitTester: context.backend as? any PointHitTesting, unlistedField: unlistedField, replacing: replace, adb: Type.adbPath(of: context.backend)
-            ).tree
+            )
+            focusTree.tree = check.tree
+            focusTree.check = check
         }
         if throughSession {
             if replace {
                 return [focus, .text(inputText, replace: true)]
             }
-            let named = intoQuery != nil || requireFocusID != nil
-            if inputText.isEmpty { return named ? [focus] : [] }
-            guard named else { return [focus, .text(inputText, replace: false)] }
+            if inputText.isEmpty { return intoQuery != nil || requireFocusID != nil ? [focus] : [] }
             let landed = BatchPrimitive.run { _ in
                 guard let check = focusTree.check else { return }
                 try await confirmKeysLanded(inputText, focus: check, backend: context.backend, device: context.device)
@@ -319,7 +326,7 @@ extension Type: BatchConvertible {
     /// The tree a step's focus check read, for the typing after it to pace a React Native app.
     final class FocusTreeBox {
         var tree: UITree?
-        /// What `--into-*` or `--require-focus-id` read, for the step's text to be read back from that field.
+        /// What the focus check read, for the step's text to be read back from its field.
         var check: FocusCheck?
     }
 

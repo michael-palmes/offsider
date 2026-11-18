@@ -17,7 +17,8 @@ struct KeySequence: AsyncParsableCommand {
         no_focused_field), since keys that reach no field can act as app shortcuts. With a password field focused they are
         refused (exit 64, secure_field_argument), since keycodes stay in shell history; use login or type --stdin. A
         sequence holding a modifier (224 to 231), Return, Tab, arrows and other keys skip that refusal, and Return, Tab,
-        arrows and other keys skip the focus check too.
+        arrows and other keys skip the focus check too. On Android a sequence of only letters, digits, space and
+        punctuation (not the keypad's) is read back from the focused field after the keys: unchanged, it exits 5 (text_not_accepted).
         """
     )
     
@@ -99,8 +100,9 @@ struct KeySequence: AsyncParsableCommand {
         try systemKeys.check(parsedKeycodes, on: device)
         try await backend.prepare()
 
+        var focus: Type.FocusCheck?
         if Self.typesText(parsedKeycodes) {
-            try await Type.checkTextFocus(
+            focus = try await Type.checkTextFocus(
                 readTree: { try await DeviceWatchdog.make().guardingInputRead(of: device) { try await backend.accessibilityTree(for: device) } }, device: device, clock: .live,
                 warn: { Console.current.notice(.warning(InputPersonView.sentence($0), agent: $0)) },
                 refusingSecureTarget: Self.spellsText(parsedKeycodes) ? Type.secureFieldRefusal(device: device, keys: true) : nil, keys: true,
@@ -123,7 +125,36 @@ struct KeySequence: AsyncParsableCommand {
         let sequenceEvent = InputEvent.composite(events)
 
         try await backend.performTracked(sequenceEvent, on: device)
-        
+        if let focus { try await Self.confirmLanded(parsedKeycodes, focus: focus, backend: backend, device: device) }
+
         logger.info().log("Key sequence completed successfully")
+    }
+
+    /// The text keys spell on Android when each is a letter, digit, space or punctuation mark, as a US keyboard types them unshifted; nil with any other key.
+    static func spelledText(_ keycodes: [Int]) -> String? {
+        let letters = Array("abcdefghijklmnopqrstuvwxyz"), digits = Array("1234567890"), marks = Array(" -=[]\\"), more = Array(";'`,./")
+        var text = ""
+        for keycode in keycodes {
+            switch keycode {
+            case 4...29: text.append(letters[keycode - 4])
+            case 30...39: text.append(digits[keycode - 30])
+            case 44...49: text.append(marks[keycode - 44])
+            case 51...56: text.append(more[keycode - 51])
+            default: return nil
+            }
+        }
+        return text
+    }
+
+    /// Keys that spell text on Android, read back from the focused field as `type`'s are; with Return, Delete, arrows or any other key in the sequence, no text can be expected.
+    @MainActor
+    static func confirmLanded(_ keycodes: [Int], focus: Type.FocusCheck, backend: any DeviceBackend, device: DeviceID, clock: PollClock = .live) async throws {
+        guard device.platform == .android, let text = spelledText(keycodes), let target = Type.focusedTarget(focus.field) else { return }
+        let typed = TypedExpectation(
+            text: text, replacing: false, field: focus.field, query: nil, secure: focus.secure == .secure || focus.field?.isSecure == true, ignoringText: false
+        )
+        try await Type.confirmLanded(typed, before: focus.field?.value, target: target, device: device, clock: clock, adb: Type.adbPath(of: backend), keys: true) {
+            try await backend.accessibilityTree(for: device)
+        }
     }
 } 
