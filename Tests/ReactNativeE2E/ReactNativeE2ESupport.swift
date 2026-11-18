@@ -38,11 +38,16 @@ struct RNDebugSession: SuiteTrait, TestScoping {
     }
 }
 
-/// Stylus handwriting off around a suite that types, as Gboard takes an emulator's taps for a stylus and its tutorial takes the text; put back as found.
+/// Stylus handwriting off around a suite that types, as Gboard's stylus tutorial opens after an emulator's tap on a field and `type` then refuses; put back as found.
 struct StylusHandwritingOff: SuiteTrait, TestScoping {
     static let setting = "stylus_handwriting_enabled"
 
     func provideScope(for test: Test, testCase: Test.Case?, performing function: @Sendable () async throws -> Void) async throws {
+        try await Self.scoped("0", function)
+    }
+
+    /// Sets the guarded emulator's setting for `function`, then puts back what was there, deleting it when it was unset.
+    static func scoped(_ value: String, _ function: @Sendable () async throws -> Void) async throws {
         guard isAndroidE2EEnabled else {
             try await function()
             return
@@ -50,13 +55,20 @@ struct StylusHandwritingOff: SuiteTrait, TestScoping {
         let found = try await AndroidE2E.shell("settings get secure \(Self.setting)").trimmingCharacters(in: .whitespacesAndNewlines)
         let restore = found == "null" ? "settings delete secure \(Self.setting)" : "settings put secure \(Self.setting) \(AndroidE2E.quote(found))"
         do {
-            try await AndroidE2E.shell("settings put secure \(Self.setting) 0")
+            try await AndroidE2E.shell("settings put secure \(Self.setting) \(value)")
             try await function()
         } catch {
             _ = try? await AndroidE2E.shell(restore)
             throw error
         }
         try await AndroidE2E.shell(restore)
+    }
+}
+
+/// Stylus handwriting on around a suite that proves `type` with Gboard's tutorial able to open; put back as found.
+struct StylusHandwritingOn: SuiteTrait, TestScoping {
+    func provideScope(for test: Test, testCase: Test.Case?, performing function: @Sendable () async throws -> Void) async throws {
+        try await StylusHandwritingOff.scoped("1", function)
     }
 }
 
