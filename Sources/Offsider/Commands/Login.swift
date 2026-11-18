@@ -9,11 +9,14 @@ struct LoginCommand: AsyncParsableCommand {
         abstract: "Fill the sign-in form in front with a saved test credential and tap submit once.",
         discussion: """
         Types the saved login into the form in front and taps submit once; exit 0 means it tapped, not that the \
-        server accepted it. The password stays in your login Keychain and is never printed. Details: `offsider guide login`.
+        server accepted it, and formStillInFront says when the form stayed up. The password stays in your login \
+        Keychain and is never printed. Offsider never ticks Turnstile: --wait-turnstile waits for a person to. \
+        Details: `offsider guide login`.
         Examples:
           offsider login --device DEVICE_ID
           offsider login dev --device DEVICE_ID
           offsider login --where role=admin --device DEVICE_ID
+          offsider login --wait-turnstile 300 --device DEVICE_ID
         """
     )
 
@@ -25,6 +28,9 @@ struct LoginCommand: AsyncParsableCommand {
 
     @Option(name: .customLong("timeout"), help: ArgumentHelp("Give up after this many seconds, from 1 to 60 (default 15), while the submit button stays disabled.", valueName: "seconds"))
     var timeoutOption: Double?
+
+    @Option(name: .customLong("wait-turnstile"), help: ArgumentHelp("When a Turnstile box needs a person, ask for it and keep reading for up to this many seconds, from 1 to \(Wait.maximumSeconds), then carry on in this command. It never ticks the box.", valueName: "seconds"))
+    var waitTurnstile: TimeInterval?
 
     @Option(name: .customLong("project"), help: ArgumentHelp("Directory to search for offsider.login.json. Without it, the search starts at the current directory.", valueName: "path"))
     var project: String?
@@ -51,6 +57,14 @@ struct LoginCommand: AsyncParsableCommand {
         if let project, project.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             throw ValidationError("--project must not be empty.")
         }
+        if let waitTurnstile, !(waitTurnstile.isFinite && (1...Double(Wait.maximumSeconds)).contains(waitTurnstile)) {
+            throw ValidationError("--wait-turnstile must be from 1 to \(Wait.maximumSeconds) seconds.")
+        }
+    }
+
+    /// The longest a login may legitimately take once the saved login is read, before the watchdog's grace: its waits on Turnstile and the submit button, a person's time, typing, and the watch after submit.
+    static func bound(timeout: TimeInterval, waitTurnstile: TimeInterval?) -> TimeInterval {
+        timeout * 3 + 30 + LoginFlow.afterSubmitWatch + LoginFlow.promptLeaves + (waitTurnstile ?? 0)
     }
 
     func run() async throws {
@@ -62,22 +76,30 @@ struct LoginCommand: AsyncParsableCommand {
         let route = try await Self.route(deviceOption.id, profile: profile, app: appOption, logger: logger, watchdog: watchdog)
         let filter = try Self.whereTags(filters, named: key != nil)
         let console = Console.current
-        // A person's spinner asks for the prompt in place of the agent's line.
-        let notice = DispatchWorkItem {
-            if console.err.animates, console.err.profile == .person {
-                console.relabel(Self.keychainWaitLabel)
-            } else {
-                console.data(Self.keychainWaitNotice, to: .err)
-            }
-        }
+        var notice: DispatchWorkItem?
         var giveUp: DispatchWorkItem?
+        let step = LoginStep()
+        // A run the watchdog ends says which step it was in, so a hang is never silent.
+        watchdog.beforeFiring { console.data("Note: login was \(step.current) when the device stopped answering.\n", to: .err) }
         let report: LoginReport
         do {
             report = try await console.progress(Self.signingInLabel) {
-                try await watchdog.guarding(setupThen: timeout * 2 + 30, of: route.device) { ready in
+                try await watchdog.guarding(setupThen: Self.bound(timeout: timeout, waitTurnstile: waitTurnstile), of: route.device) { ready in
                     try await Self.perform(
-                        on: route, profile: profile, key: key, where: filter, timeout: timeout, logger: logger, tracker: .live(),
+                        on: route, profile: profile, key: key, where: filter, timeout: timeout, waitTurnstile: waitTurnstile, logger: logger, tracker: .live(),
                         wholeDevice: route.allowance.map { DevicePolicyGate.current.policy().drivesWhole($0) } ?? false,
+                        step: { what, shown in
+                            step.set(what)
+                            guard shown else { return }
+                            if console.err.animates, console.err.profile == .person {
+                                console.relabel(what)
+                            } else {
+                                console.notice(Notice(kind: .note, text: what, label: "Try"))
+                            }
+                        },
+                        ask: { ask in
+                            console.data(ErrorReporter.askText(PersonAsk.filled(ask, name: ErrorReporter.deviceName, id: route.device.rawValue)), to: .err)
+                        },
                         onPrepared: ready,
                         keychainWillRead: { app in
                             watchdog.disarm()
@@ -85,11 +107,20 @@ struct LoginCommand: AsyncParsableCommand {
                                 ErrorReporter.exitFromTimer(reason: .commandFailed, message: Self.keychainTimeoutMessage, hint: "offsider credential status --app \(app)")
                             }
                             giveUp = limit
-                            DispatchQueue.global().asyncAfter(deadline: .now() + 3, execute: notice)
+                            // A person's spinner asks for the prompt in place of the agent's line.
+                            let waiting = DispatchWorkItem {
+                                if console.err.animates, console.err.profile == .person {
+                                    console.relabel(Self.keychainWaitLabel)
+                                } else {
+                                    console.data(Self.keychainWaitNotice, to: .err)
+                                }
+                            }
+                            notice = waiting
+                            DispatchQueue.global().asyncAfter(deadline: .now() + 3, execute: waiting)
                             DispatchQueue.global().asyncAfter(deadline: .now() + Self.keychainWaitLimit, execute: limit)
                         },
                         keychainDidRead: {
-                            notice.cancel()
+                            notice?.cancel()
                             giveUp?.cancel()
                             console.relabel(Self.signingInLabel)
                             ready()
@@ -99,6 +130,9 @@ struct LoginCommand: AsyncParsableCommand {
             }
         } catch {
             throw await Self.failure(error, json: json)
+        }
+        if report.formStillInFront == true {
+            console.notice(.warning("Form still in front: the app may have refused it", agent: LoginReport.stillInFrontNote, try: await CommandScope.current.describeHint(device: route.device.rawValue)))
         }
         if json {
             console.data(Self.jsonText(report) + "\n")
@@ -152,7 +186,7 @@ struct LoginCommand: AsyncParsableCommand {
     static let keychainWaitLimit: TimeInterval = 300
     static let keychainTimeoutMessage = "The macOS Keychain prompt had no answer within 5 minutes, so the saved login was not read. Nothing was typed, and the device is free again."
 
-    /// One lock, already held by the caller. A macOS prompt can hold the Keychain reads, so they run between the keychain callbacks.
+    /// One lock, already held by the caller. A macOS prompt can hold the Keychain reads, so they run between the keychain callbacks, which are called twice: around choosing the login, then around Touch ID and the password.
     @MainActor
     static func perform(
         on route: DeviceRouter.Route,
@@ -160,10 +194,13 @@ struct LoginCommand: AsyncParsableCommand {
         key requestedKey: String?,
         where filter: [LoginTag] = [],
         timeout: TimeInterval,
+        waitTurnstile: TimeInterval? = nil,
         logger: OffsiderLogger,
         store: any LoginCredentialStoring = KeychainLoginCredentialStore(),
         tracker: SignInTracker? = nil,
         wholeDevice: Bool = false,
+        step: @escaping (_ what: String, _ shown: Bool) -> Void = { _, _ in },
+        ask: @escaping (String) -> Void = { _ in },
         onPrepared: @Sendable () -> Void = {},
         keychainWillRead: (_ app: String) -> Void = { _ in },
         keychainDidRead: () -> Void = {},
@@ -175,26 +212,6 @@ struct LoginCommand: AsyncParsableCommand {
         let tree = try await route.backend.accessibilityTree(for: route.device)
         let app = try ForegroundAppLookup.identifier(in: tree, forLogin: true)
         try refuseDeniedApp(app, platform: route.device.platform)
-        let canonical: String
-        let entry: LoginEntry
-        let saved: StoredLogin
-        do {
-            keychainWillRead(app)
-            defer { keychainDidRead() }
-            canonical = try store.canonical(of: app)
-            entry = try resolveLogin(requestedKey, where: filter, app: app, entries: try store.entries(app: canonical), device: route.device)
-            let reason = presenceReason(app: app, key: entry.key, device: route.device)
-            var confirmed = false
-            if entry.context.confirm, !wholeDevice {
-                try await PersonPresence.confirm(reason: reason)
-                confirmed = true
-            }
-            saved = try stored(app: canonical, key: entry.key, foreground: app, store: store)
-            if saved.confirm, !confirmed, !wholeDevice { try await PersonPresence.confirm(reason: reason) }
-        }
-        try requireConfirmedLink(saved, app: app, canonical: canonical, device: route.device)
-        try requireDeviceScope(saved, key: entry.key, app: canonical, device: route.device, wholeDevice: wholeDevice)
-        let credential = saved.credential
         let services = LoginFlow.Services(
             readTree: { try await route.backend.accessibilityTree(for: route.device) },
             typeText: { text, field in
@@ -207,6 +224,7 @@ struct LoginCommand: AsyncParsableCommand {
                 try await route.backend.performTracked(.tapAt(x: physical.x, y: physical.y), on: route.device)
             },
             readTurnstile: { tree in await Turnstile.phase(in: tree, on: route) },
+            hideKeyboard: { tree in try await Self.hideKeyboard(in: tree, on: route) },
             clock: .live,
             foregroundApp: { tree in try ForegroundAppLookup.identifier(in: tree, forLogin: true) },
             bundleForPID: ForegroundAppLookup.bundleIdentifier(pid:),
@@ -216,14 +234,48 @@ struct LoginCommand: AsyncParsableCommand {
             },
             noteDevice: { await route.noteNameForAsk() },
             turnstileWatch: Turnstile.waitCommand(app: route.allowance == nil ? nil : app),
-            device: route.device.rawValue
+            device: route.device.rawValue,
+            savePrompt: { tree in await Self.savePrompt(in: tree, app: app, on: route) },
+            promptBehind: { error in await Self.promptBehind(error, app: app, on: route) },
+            declinesPrompts: !(route.device.isPhysicalAndroidDevice || route.device.isPhysicalIOSDevice) || wholeDevice,
+            step: step,
+            ask: ask
         )
+        let canonical: String
+        let entry: LoginEntry
+        do {
+            // The login is chosen first, from its attributes alone, so nobody is asked to tick a box for a login that is not saved.
+            keychainWillRead(app)
+            defer { keychainDidRead() }
+            canonical = try store.canonical(of: app)
+            entry = try resolveLogin(requestedKey, where: filter, app: app, entries: try store.entries(app: canonical), device: route.device)
+        }
+        let turnstileWait = waitTurnstile.map(LoginFlow.TurnstileWait.init(seconds:))
+        step("reading Turnstile", false)
+        try await LoginFlow.preflight(tree, wait: turnstileWait, services: services)
+        let saved: StoredLogin
+        do {
+            keychainWillRead(app)
+            defer { keychainDidRead() }
+            let reason = presenceReason(app: app, key: entry.key, device: route.device)
+            var confirmed = false
+            if entry.context.asksFirst(wholeDevice: wholeDevice) {
+                try await PersonPresence.confirm(reason: reason)
+                confirmed = true
+            }
+            saved = try stored(app: canonical, key: entry.key, foreground: app, store: store)
+            if saved.asksFirst(wholeDevice: wholeDevice), !confirmed { try await PersonPresence.confirm(reason: reason) }
+        }
+        try requireConfirmedLink(saved, app: app, canonical: canonical, device: route.device)
+        try requireDeviceScope(saved, key: entry.key, app: canonical, device: route.device, wholeDevice: wholeDevice)
+        let credential = saved.credential
         let deviceID = route.device.rawValue
         var report: LoginReport
         do {
             report = try await InputSecrecy.$keysOnly.withValue(route.device.isPhysicalIOSDevice) {
                 try await LoginFlow.run(
-                    app: app, key: entry.key, credential: credential, profile: profile, webLogin: saved.webLogin, timeout: timeout, services: services,
+                    app: app, key: entry.key, credential: credential, profile: profile, webLogin: saved.webLogin, timeout: timeout, turnstileWait: turnstileWait,
+                    services: services,
                     lastSignIn: {
                         tracker?.last(app: canonical, deviceID: deviceID).map {
                             LoginFlow.LastSignIn(key: $0.record.key, since: $0.record.since, restarted: $0.restarted, deviceID: deviceID)
@@ -240,6 +292,52 @@ struct LoginCommand: AsyncParsableCommand {
         report.tags = entry.context.tags
         report.filter = filter
         return report
+    }
+
+    /// The keyboard's own way out. iOS: its hide key, or Done in the bar on top of the keys. Android: Back, only over docked keys, as over a toolbar Back goes to the app.
+    @MainActor
+    static func hideKeyboard(in tree: UITree, on route: DeviceRouter.Route) async throws {
+        if route.device.platform == .android {
+            // Read again just before the press: once the keys have gone, Back would go to the app.
+            guard KeyboardDismiss.docksKeys(in: tree), KeyboardDismiss.docksKeys(in: try await route.backend.accessibilityTree(for: route.device)) else { return }
+            try await route.backend.performTracked(.shortButtonPress(.back), on: route.device)
+        } else if let point = KeyboardDismiss.closingControl(in: tree) {
+            let physical = try await route.backend.deviceCoordinates(for: [(x: point.x, y: point.y)], tree: tree, on: route.device)[0]
+            try await route.backend.performTracked(.tapAt(x: physical.x, y: physical.y), on: route.device)
+        }
+    }
+
+    /// A save-password prompt over `app`. Android lists it in the tree, as an iPhone's runner may; a simulator's is another process's, found by a point read at the screen's middle, where its title sits, then rows below it for its decline control. Reading stops two rows of buttons down.
+    @MainActor
+    static func savePrompt(in tree: UITree, app: String, on route: DeviceRouter.Route) async -> SavePrompt? {
+        // A simulator's tree never lists a system prompt, so a dialog it does list with that title is the app's own.
+        if let listed = SavePrompts.android(in: tree, app: app) ?? (route.device.isPhysicalIOSDevice ? SavePrompts.ios(in: tree) : nil) { return listed }
+        guard let viewport = tree.viewport, let tester = route.backend as? any PointHitTesting, !SystemPrompt.hosts(in: tree).isEmpty,
+              let middle = try? await tester.hitTest(at: SystemPrompt.probePoint(in: viewport), on: route.device, appPIDs: SystemPrompt.pids(in: tree.roots)),
+              SystemPrompt.isForeign(middle, in: tree.roots), let title = SystemPrompt.title(of: middle), SavePrompts.isIOSTitle(title), let frame = middle.frame else { return nil }
+        var buttonRows = 0
+        for row in SavePrompts.probeRows(below: frame, in: viewport) where buttonRows < 2 {
+            var sawButton = false
+            for point in row {
+                guard let hit = try? await tester.quickHitTest(at: point, on: route.device), SystemPrompt.isForeign(hit, in: tree.roots) else { continue }
+                if SavePrompts.isDecline(hit) {
+                    return SavePrompt(title: title, declineLabel: hit.normalizedLabel, decline: hit.frame.map { $0.contains(point) ? $0.center : point } ?? point)
+                }
+                sawButton = sawButton || hit.role == .button
+            }
+            if sawButton { buttonRows += 1 }
+        }
+        return SavePrompt(title: title)
+    }
+
+    /// On a phone held to one app a read fails under a system window; a read that only looks names it, as `describe-ui` would.
+    @MainActor
+    static func promptBehind(_ error: any Error, app: String, on route: DeviceRouter.Route) async -> SavePrompt? {
+        if (error as? any OffsiderFailure)?.reason == .systemPromptInFront { return SavePrompt(savesPassword: false, title: nil) }
+        guard error.isOtherAppInFront, route.device.isPhysicalAndroidDevice,
+              let tree = try? await PhoneRead.$overSystemWindow.withValue(true, operation: { try await route.backend.accessibilityTree(for: route.device) }),
+              let window = tree.systemWindow else { return nil }
+        return SavePrompts.android(in: tree, app: app) ?? SavePrompt(savesPassword: false, title: window.title)
     }
 
     /// The parsed `--where` tags. The usage error states the tag rule, or the clash with a name.
@@ -369,5 +467,17 @@ struct LoginCommand: AsyncParsableCommand {
             reason: .deviceNotAllowed,
             hint: command
         )
+    }
+}
+
+/// What `login` is doing now, read by the watchdog's own queue when it ends a hung run.
+final class LoginStep: @unchecked Sendable {
+    private let lock = NSLock()
+    private var what = "reading the screen"
+
+    var current: String { lock.withLock { what } }
+
+    func set(_ step: String) {
+        lock.withLock { what = step.prefix(1).lowercased() + step.dropFirst() }
     }
 }

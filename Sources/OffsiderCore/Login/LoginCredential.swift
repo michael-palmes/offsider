@@ -102,16 +102,26 @@ public struct StoredLogin: Equatable, Sendable, CustomStringConvertible, CustomD
     public private(set) var links: [String]
     /// `login` asks for Touch ID or the login password before it reads or types this login.
     public var confirm: Bool
+    /// `confirm` on test devices too, which otherwise sign in without asking.
+    public var confirmAlways: Bool
     public var devices: LoginDeviceScope
     /// A person allowed typing into a web view, which also needs `webLogin` in `offsider.login.json`.
     public var webLogin: Bool
 
-    public init(credential: LoginCredential, links: [String] = [], confirm: Bool = false, devices: LoginDeviceScope = .virtual, webLogin: Bool = false) {
+    public init(
+        credential: LoginCredential, links: [String] = [], confirm: Bool = false, confirmAlways: Bool = false, devices: LoginDeviceScope = .virtual, webLogin: Bool = false
+    ) {
         self.credential = credential
         self.links = Set(links).sorted()
-        self.confirm = confirm
+        self.confirm = confirm || confirmAlways
+        self.confirmAlways = confirmAlways
         self.devices = devices
         self.webLogin = webLogin
+    }
+
+    /// Whether `login` asks a person first; `wholeDevice` is a test device, which asks only for a login marked always.
+    public func asksFirst(wholeDevice: Bool) -> Bool {
+        confirmAlways || (confirm && !wholeDevice)
     }
 
     public var description: String { "<saved login withheld>" }
@@ -126,7 +136,7 @@ public struct StoredLogin: Equatable, Sendable, CustomStringConvertible, CustomD
         links.removeAll { $0 == member }
     }
 
-    /// `{"v":2,"username","password","links","confirm","devices","webLogin"}`.
+    /// `{"v":2,"username","password","links","confirm","confirmAlways","devices","webLogin"}`.
     public func storageData() -> Data {
         let object: [String: Any] = [
             "v": Self.version,
@@ -134,13 +144,14 @@ public struct StoredLogin: Equatable, Sendable, CustomStringConvertible, CustomD
             "password": credential.password,
             "links": links,
             "confirm": confirm,
+            "confirmAlways": confirmAlways,
             "devices": devices.rawValue,
             "webLogin": webLogin,
         ]
         return (try? JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])) ?? Data()
     }
 
-    /// Version 1 (`{"username","password"}`) reads with no links, no confirmation and virtual devices only. A newer version is nil.
+    /// Version 1 (`{"username","password"}`) reads with no links, no confirmation and virtual devices only; version 2 saved before `confirmAlways` reads as not always. A newer version is nil.
     public init?(storageData: Data) {
         guard let object = try? JSONSerialization.jsonObject(with: storageData) as? [String: Any],
               let username = object["username"] as? String,
@@ -154,10 +165,11 @@ public struct StoredLogin: Equatable, Sendable, CustomStringConvertible, CustomD
         guard let number = version as? Int, number == Self.version else { return nil }
         guard let links = (object["links"] ?? [String]()) as? [String],
               let confirm = Self.flag(object["confirm"]),
+              let confirmAlways = Self.flag(object["confirmAlways"]),
               let devices = LoginDeviceScope(rawValue: object["devices"] as? String ?? LoginDeviceScope.virtual.rawValue),
               let webLogin = Self.flag(object["webLogin"])
         else { return nil }
-        self.init(credential: credential, links: links, confirm: confirm, devices: devices, webLogin: webLogin)
+        self.init(credential: credential, links: links, confirm: confirm, confirmAlways: confirmAlways, devices: devices, webLogin: webLogin)
     }
 
     private static func flag(_ value: Any?) -> Bool? {
@@ -167,37 +179,50 @@ public struct StoredLogin: Equatable, Sendable, CustomStringConvertible, CustomD
     }
 }
 
-/// `--devices`, `--confirm`/`--no-confirm` and `--web-login`/`--no-web-login` on `credential set` or `describe`.
+/// `--devices`, `--confirm`/`--no-confirm`, `--confirm-always`/`--no-confirm-always` and `--web-login`/`--no-web-login` on `credential set` or `describe`.
 public struct LoginSettingsEdit: Equatable, Sendable {
     public var devices: LoginDeviceScope?
     public var confirm: Bool?
+    public var confirmAlways: Bool?
     public var webLogin: Bool?
 
-    public init(devices: LoginDeviceScope? = nil, confirm: Bool? = nil, webLogin: Bool? = nil) {
+    public init(devices: LoginDeviceScope? = nil, confirm: Bool? = nil, confirmAlways: Bool? = nil, webLogin: Bool? = nil) {
         self.devices = devices
         self.confirm = confirm
+        self.confirmAlways = confirmAlways
         self.webLogin = webLogin
     }
 
-    public var isEmpty: Bool { devices == nil && confirm == nil && webLogin == nil }
+    public var isEmpty: Bool { devices == nil && confirm == nil && confirmAlways == nil && webLogin == nil }
 
     /// What this edit lets an agent do that it could not before, as phrases for the person confirming it. Empty when it only tightens.
     public var loosening: [String] {
         var phrases: [String] = []
         if devices == .any { phrases.append("be typed on physical devices") }
-        if confirm == false { phrases.append("be typed without asking you first") }
+        if confirm == false {
+            phrases.append("be typed without asking you first")
+        } else if confirmAlways == false {
+            phrases.append("be typed on test devices without asking you first")
+        }
         if webLogin == true { phrases.append("be typed into web views") }
         return phrases
     }
 
-    /// `--devices any` turns confirmation on unless `--no-confirm` came with it.
+    /// `--devices any` turns confirmation on unless `--no-confirm` came with it; `--confirm-always` turns it on, and `--no-confirm` clears both.
     public func applied(to stored: StoredLogin) -> StoredLogin {
         var next = stored
         if let devices {
             next.devices = devices
             if devices == .any, confirm == nil { next.confirm = true }
         }
-        if let confirm { next.confirm = confirm }
+        if let confirm {
+            next.confirm = confirm
+            if !confirm { next.confirmAlways = false }
+        }
+        if let confirmAlways {
+            next.confirmAlways = confirmAlways
+            if confirmAlways { next.confirm = true }
+        }
         if let webLogin { next.webLogin = webLogin }
         return next
     }

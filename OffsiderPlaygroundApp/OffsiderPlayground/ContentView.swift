@@ -103,6 +103,14 @@ struct ContentView: View {
             WebLoginView()
         case "widget-login":
             WidgetLoginView()
+        case "widget-login-expiry":
+            WidgetLoginView(mode: .expiry)
+        case "widget-login-error":
+            WidgetLoginView(mode: .error)
+        case "widget-login-late":
+            WidgetLoginView(mode: .late)
+        case "widget-login-ticked":
+            WidgetLoginView(mode: .ticked)
         case "live-chart":
             LiveChartView()
             
@@ -140,7 +148,11 @@ struct MainMenuView: View {
             ("key-press", "Key Press", "Detects CLI key events"),
             ("key-sequence", "Key Sequence", "Detects CLI key sequences"),
             ("web-login", "Web Login", "Sign-in form inside a web view, local HTML only"),
-            ("widget-login", "Widget Login", "Native sign-in form, web view at the centre"),
+            ("widget-login", "Widget Login", "Native sign-in form, person check at the centre"),
+            ("widget-login-expiry", "Widget Login Expiry", "The check's pass lapses after 5 s"),
+            ("widget-login-error", "Widget Login Error", "The check fails when ticked"),
+            ("widget-login-late", "Widget Login Late", "The check asks for a tick after 4 s"),
+            ("widget-login-ticked", "Widget Login Ticked", "The check ticks itself after 6 s"),
             ("live-chart", "Live Chart", "Web chart whose groups keep moving")
         ]),
         ("Hardware", [
