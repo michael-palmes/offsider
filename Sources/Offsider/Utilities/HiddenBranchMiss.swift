@@ -10,6 +10,8 @@ struct HiddenBranchMiss: LocalizedError, UserFacingError, OffsiderFailure {
     let bar: String?
     /// Wholly outside the screen, as on a sheet parked out of view.
     var offScreen = false
+    /// Wholly inside the screen, so nothing clips it and a scroll would not help.
+    var onScreen = false
 
     /// `miss` naming the hidden branch the query matches, when `tree` lists one; else `miss` as it was.
     static func wrapping(_ miss: ElementResolutionError, query: AccessibilityQuery, tree: UITree) -> any Error {
@@ -17,7 +19,8 @@ struct HiddenBranchMiss: LocalizedError, UserFacingError, OffsiderFailure {
         let over = bar(over: branch.frame, in: tree)
         let name = over?.frame.map { $0.y <= (tree.viewport?.y ?? 0) + 1 ? "the status bar" : "the navigation bar" }
         let offScreen = branch.frame.map { frame in tree.viewport.map { frame.intersection($0) == nil } ?? false } ?? false
-        return HiddenBranchMiss(miss: miss, selector: query.selectorDescription, branch: branch, bar: name, offScreen: offScreen)
+        let onScreen = branch.frame.map { frame in tree.viewport.map { $0.encloses(frame, tolerance: 1) } ?? false } ?? false
+        return HiddenBranchMiss(miss: miss, selector: query.selectorDescription, branch: branch, bar: name, offScreen: offScreen, onScreen: onScreen)
     }
 
     /// The id or label the helper named it by; never a value, which it does not send.
@@ -51,6 +54,9 @@ struct HiddenBranchMiss: LocalizedError, UserFacingError, OffsiderFailure {
         }
         if offScreen {
             return "\(lead) Android lists it as hidden\(place), off the screen, as on a sheet parked out of view. Nothing was sent. Open what holds it or scroll it into view, then retry."
+        }
+        if onScreen {
+            return "\(lead) Android lists it as hidden\(place), on screen but under another view or window, such as a sheet. Nothing was sent. Close what covers it, then retry."
         }
         return "\(lead) Android lists it as hidden\(place), as it does a view another covers or clips. Nothing was sent. Scroll it into view or close what covers it, then retry."
     }

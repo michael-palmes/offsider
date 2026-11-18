@@ -24,6 +24,14 @@ struct ReactNativeGotchaTests {
         let app = RNApp(platform)
         try await Self.pushBothPages(app, kind: kind)
 
+        let waited = try await app.offsider("wait --id stack-test-slide-up --timeout 1")
+        #expect(waited.exitCode == 5, "\(waited.stdout)\(waited.stderr)")
+        let asserted = try await app.offsider("assert --id stack-test-slide-up")
+        #expect(asserted.exitCode == 5, "\(asserted.stdout)\(asserted.stderr)")
+        let summary = try await app.run("describe-ui --summary").stdout
+        #expect(!summary.contains("id=stack-test-slide-up"), "\(summary)")
+        #expect(summary.components(separatedBy: "# beneath:").count - 1 == 2, "\(summary)")
+
         try await app.run("tap --label 'Confirm Change' --fail-if-covered")
         _ = try await app.waitForLabel(of: "stack-test-slide-result") { $0 == "Slide Result: Confirmed" }
 
@@ -70,14 +78,16 @@ struct ReactNativeGotchaTests {
         _ = try await app.waitForLabel(of: "drawer-test-pressed") { $0 == "Drawer Pressed: Confirm Reset" }
     }
 
-    @Test("a page pushed from a drawer row takes taps while the drawer stays open beneath it", arguments: RNPlatform.enabled)
+    @Test("a page pushed from a drawer row takes taps, a label it shares with the drawer's row included, while the drawer stays open beneath it", arguments: RNPlatform.enabled)
     func pagePushedFromDrawerRow(platform: RNPlatform) async throws {
         let app = RNApp(platform)
         try await Self.openDrawerAbove(app)
         try await app.run("tap --id drawer-test-row-reminders")
         _ = try await app.waitForNode { $0["id"] as? String == "drawer-test-row-page-title" }
 
-        try await app.run("tap --id drawer-test-row-page-reminders --fail-if-covered")
+        let summary = try await app.run("describe-ui --summary").stdout
+        #expect(!summary.contains("id=drawer-test-row-archive"), "\(summary)")
+        try await app.run("tap --label 'Drawer Reminders' --fail-if-covered")
         try await app.run("tap --label Back --fail-if-covered")
 
         try await app.run("wait --id drawer-test-row-page-title --gone --timeout 5")

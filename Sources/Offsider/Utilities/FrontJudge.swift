@@ -19,6 +19,7 @@ enum FrontJudge {
             let contested = Array((everyPoint ? plan.unblocked : plan.contested).prefix(hitLimit))
             let hits = await hitTests(contested.map { ($0.index, $0.judging) }, reader: reader)
             plan.record(into: &reading, hits: hits, hitTested: reader != nil, platform: judged.platform)
+            plan.settleUnordered(in: &reading)
             if let reader {
                 await readParts(of: contested, into: &reading, in: judged, shared: plan.shared, reader: reader)
             }
@@ -155,9 +156,29 @@ enum FrontJudge {
             }
         }
 
+        /// Of the elements only a page the tree cannot order may be over, this many per page are hit-tested, the first and the last; the rest follow them.
+        static let orderSamples = 2
+
         /// The judged elements something may draw over, which an iOS simulator's hit-test settles.
         var contested: [Entry] {
-            unblocked.filter { $0.judging.isContested }
+            let sampled = Set(orderGroups.values.flatMap { group in [group.first, group.last].compactMap { $0?.index } })
+            return unblocked.filter { $0.judging.isContested && (!$0.judging.isContestedByOrderAlone || sampled.contains($0.index)) }
+        }
+
+        /// Elements contested only by an unordered page, by the topmost such page's index.
+        private var orderGroups: [Int: [Entry]] {
+            Dictionary(grouping: unblocked.filter(\.judging.isContestedByOrderAlone)) { $0.judging.unorderedPages.last?.index ?? -1 }
+        }
+
+        /// An element no hit-test read follows its page's samples: beneath it when both were read and found beneath it.
+        func settleUnordered(in reading: inout FrontReading) {
+            for (_, group) in orderGroups where group.count > Self.orderSamples {
+                let samples = [group[0], group[group.count - 1]]
+                guard let page = reading.beneath[samples[0].index], samples.allSatisfy({ reading.beneath[$0.index] == page }) else { continue }
+                for entry in group where reading.beneath[entry.index] == nil && reading.judged[entry.index] == nil {
+                    reading.beneath[entry.index] = page
+                }
+            }
         }
 
         /// The judged elements the keyboard does not cover.
@@ -183,7 +204,11 @@ enum FrontJudge {
                     AccessibilityFetcher.isTransientPointFallback(hit, at: AccessibilityPoint(x: entry.judging.point.x, y: entry.judging.point.y))
                 } == true
                 reading.judged[entry.index] = FrontReading.Judged(point: entry.judging.point, verdict: verdict, ownHit: hits[entry.index].map(entry.judging.surelyReaches(hit:)), unsure: unsure)
-                if let verdict, verdict.isConfident {
+                // A hit on the page's own text names no listed element, but the cover it settles on does.
+                if !unsure, let page = hits[entry.index].flatMap(entry.judging.page(holding:))
+                    ?? verdict.flatMap({ $0.isConfident ? entry.judging.page(holding: $0.cover) : nil }) {
+                    reading.beneath[entry.index] = page.name
+                } else if let verdict, verdict.isConfident {
                     reading.covered[entry.index] = verdict
                 }
             }
