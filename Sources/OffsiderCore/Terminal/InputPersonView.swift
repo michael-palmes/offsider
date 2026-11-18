@@ -69,12 +69,14 @@ public enum InputPersonView {
 
     // MARK: Reads
 
-    /// `turnstile`: the state for a person, with what to do when it waits on one; an agent's `Turnstile: <state>` line as it was.
-    public static func turnstile(_ status: TurnstileStatus) -> Page {
+    /// `turnstile`: the state for a person, with a pass seen before it reset and what to do when it waits on one; an agent's `Turnstile: <state>` line.
+    public static func turnstile(_ status: TurnstileStatus, timeZone: TimeZone = .current, now: Date = Date()) -> Page {
         let line = status.textLine()
-        let lead = "Turnstile: \(status.state.rawValue)"
-        let place = status.frame != nil && line.hasPrefix(lead) ? String(line.dropFirst(lead.count)).trimmingCharacters(in: .whitespaces) : ""
-        var person: [Block] = [.fields([Field("Turnstile", Table.Cell(status.state.rawValue, tag: place.isEmpty ? nil : place))])]
+        let place = status.frame.map { "at (\(TurnstileStatus.format($0.x)), \(TurnstileStatus.format($0.y))) \(TurnstileStatus.format($0.width))x\(TurnstileStatus.format($0.height))" }
+        var person: [Block] = [.fields([Field("Turnstile", Table.Cell(status.state.rawValue, tag: place))])]
+        if let passed = status.passedBeforeReset {
+            person.append(.prose(TurnstileStatus.resetNote(passed: clockTime(passed, timeZone: timeZone, now: now))))
+        }
         switch status.state {
         case .checkbox: person.append(.prose("Tick it on the device; Offsider never does. Run this again once you have."))
         case .challenge: person.append(.prose("Solve the challenge on the device; Offsider never does. Run this again once you have."))
@@ -83,6 +85,22 @@ public enum InputPersonView {
         case .verifying, .passed, .absent: break
         }
         return Page([.person(person), .agent(line + "\n")])
+    }
+
+    /// `Turnstile: passed at 14:12:44`, a person's line for one state `turnstile --wait` saw first, in local time.
+    public static func turnstileChange(_ change: TurnstileStatus.Change, timeZone: TimeZone = .current) -> String {
+        "Turnstile: \(change.state.rawValue) at \(clockTime(change.at, timeZone: timeZone))"
+    }
+
+    /// `14:12:44` local time, or `17 Nov 23:58:10` on another day than `now`.
+    static func clockTime(_ date: Date, timeZone: TimeZone, now: Date? = nil) -> String {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = timeZone
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_AU_POSIX")
+        formatter.timeZone = timeZone
+        formatter.dateFormat = now.map { calendar.isDate(date, inSameDayAs: $0) } ?? true ? "HH:mm:ss" : "d MMM HH:mm:ss"
+        return formatter.string(from: date)
     }
 
     /// `rn devmenu` with no item: the menu's items for a person, an app's own tagged custom; `<menu> dev menu: a, b; custom: c` for an agent.
@@ -134,7 +152,12 @@ public enum InputPersonView {
         let button = report.submitLabel.map { "tapped \(TerminalText.field($0, profile: .person))" } ?? "tapped submit"
         var details = ["\(TerminalText.field(report.app, profile: .person)): \(button)"]
         if !report.filter.isEmpty { details.append("Chosen by --where \(report.filter.map(\.rawValue).joined(separator: " "))") }
-        details.append("Server answer not checked")
+        details.append(report.formStillInFront == true ? "Form still in front: read the screen" : "Server answer not checked")
+        switch report.savePrompt {
+        case .declined: details.append("Save-password prompt declined")
+        case .closed: details.append("Save-password prompt closed by a person")
+        case .open, nil: break
+        }
         return receipt(headline, details: details, agent: report.textLine() + "\n")
     }
 }

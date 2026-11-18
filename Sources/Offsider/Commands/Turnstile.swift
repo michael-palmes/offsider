@@ -10,15 +10,22 @@ struct Turnstile: AsyncParsableCommand {
         Prints one state: checkbox, verifying, passed, challenge, failed, absent or unknown, and exits 0 (6 when several \
         checkboxes are on screen). It finds a cf-chl-widget container, or a checkbox labelled Verify you are \
         human. On iOS the web view leaves the checkbox out of the tree, so the command reads points in the \
-        short web view. --id limits the search to one element, such as the app's wrapper around the widget. \
-        failed means the widget says Verification failed; one set to retry tries again by itself. unknown means an \
-        element named for Turnstile is on screen with no widget Offsider can read: a box nobody has ticked, one that \
-        failed to run, or one that runs invisibly.
+        short web view; on Android, when the tree shows no widget it can read, it also reads what the app hides from \
+        accessibility, as describe-ui does. --id limits the search to one element, such as the app's wrapper around \
+        the widget. failed means the widget says Verification failed; one set to retry tries again by itself. unknown \
+        means an element named for Turnstile is on screen with no widget Offsider can read: a box nobody has ticked, \
+        one that failed to run, or one that runs invisibly.
 
         Offsider never ticks Turnstile. A checkbox or a challenge is for a person: ask them, and --wait carries \
-        on the moment it passes, so nobody has to reply. It only reads, and exits 5 if the time runs out first. \
-        On a phone, another app in front or the lock screen counts as not yet done, and nothing is read from it; \
-        if it is still there when the time runs out, that failure is the answer.
+        on the moment it passes, so nobody has to reply. It only reads, prints each new state and its time on stderr \
+        as it sees it, and exits 5 if the time runs out first. On a phone, another app in front or the lock screen \
+        counts as not yet done, and nothing is read from it; if it is still there when the time runs out, that \
+        failure is the answer.
+
+        Offsider remembers the last state it saw on each device for a day, from this command and from login: a \
+        checkbox, unknown or failed after a pass it saw says when it passed, so the person did tick it and the pass \
+        expired or the screen reloaded. --json adds since (when this state was first seen), lastPassed (when it last \
+        passed, or null) and, with --wait, changes ([{state, at}]), all in UTC.
         """
     )
 
@@ -78,18 +85,28 @@ struct Turnstile: AsyncParsableCommand {
         }
     }
 
-    /// One read, or with --wait reads until a person's step is over, no input: the tree first, then on iOS points in the web view.
+    /// One read, or with --wait reads until a person's step is over, each new state on stderr as it is seen, no input: the tree first, then on iOS points in the web view.
     @MainActor
     func readStatus(on route: DeviceRouter.Route, clock: PollClock = .live, onPrepared: @Sendable () -> Void = {}) async throws -> TurnstileStatus {
         try await route.backend.prepare()
         onPrepared()
+        let history = TurnstileHistory.current
+        var changes: [TurnstileStatus.Change] = []
         let readOnce = {
+            let readAt = TurnstileRecord.second(history.now())
             let tree = try await route.backend.accessibilityTree(for: route.device)
-            return try await Self.status(in: tree, on: route, scopeID: elementID)
+            let status = try await Self.status(in: tree, on: route, scopeID: elementID)
+            if waitSeconds != nil, changes.last?.state != status.state {
+                let change = TurnstileStatus.Change(state: status.state, at: max(status.since ?? readAt, readAt))
+                changes.append(change)
+                Console.current.aside(change.textLine(), person: InputPersonView.turnstileChange(change))
+            }
+            return status
         }
         guard let waitSeconds else { return try await readOnce() }
         let device = route.device.rawValue
-        let status = try await Self.waitForPerson(seconds: waitSeconds, clock: clock, onOtherApp: { Wait.noteOtherApp(limit: waitSeconds, device: device) }, read: readOnce)
+        var status = try await Self.waitForPerson(seconds: waitSeconds, clock: clock, onOtherApp: { Wait.noteOtherApp(limit: waitSeconds, device: device) }, read: readOnce)
+        status.changes = changes
         guard status.state.awaitsPerson else { return status }
         await route.noteNameForAsk()
         throw Self.stepStillOpen(status.state, seconds: waitSeconds, app: appOption.bundleID)
@@ -165,25 +182,39 @@ struct Turnstile: AsyncParsableCommand {
         return CLIError(errorDescription: "\(what) Nothing was sent.", reason: .conditionNotMet, hint: waitCommand(app: app), ask: ask)
     }
 
-    /// The widget's state in `tree`, reading web-view points on iOS when the tree alone says absent or checking.
+    /// The widget's state in `tree`, reading web-view points on iOS when the tree alone says absent or checking, with the device's history, which it feeds.
     @MainActor
     static func status(in tree: UITree, on route: DeviceRouter.Route, scopeID: String?) async throws -> TurnstileStatus {
         let (phase, source) = await read(tree, on: route, scopeID: scopeID)
         guard let status = TurnstileStatus(phase: phase, source: source) else {
             throw ambiguous(phase, device: route.device)
         }
-        return status
+        return status.with(TurnstileHistory.current.note(status.state, platform: route.device.platform, device: route.device.rawValue))
     }
 
-    /// The widget's phase in `tree`, as `login` reads it before typing, before submit and after.
+    /// The widget's phase in `tree`, as `login` reads it before typing, before submit and after; a widget it sees feeds the device's history.
     @MainActor
     static func phase(in tree: UITree, on route: DeviceRouter.Route, scopeID: String? = nil) async -> TurnstilePhase {
-        await read(tree, on: route, scopeID: scopeID).phase
+        let phase = await read(tree, on: route, scopeID: scopeID).phase
+        // A screen with no widget, login's usual read, costs no file read.
+        if let state = TurnstileStatus(phase: phase, source: .tree)?.state, state != .absent {
+            TurnstileHistory.current.note(state, platform: route.device.platform, device: route.device.rawValue)
+        }
+        return phase
     }
 
     @MainActor
     private static func read(_ tree: UITree, on route: DeviceRouter.Route, scopeID: String?) async -> (phase: TurnstilePhase, source: TurnstileStatus.Source) {
-        let phase = TurnstileWidget.phase(in: tree.roots, viewport: tree.viewport, scopeID: scopeID)
+        var tree = tree
+        var phase = TurnstileWidget.phase(in: tree.roots, viewport: tree.viewport, scopeID: scopeID)
+        // describe-ui's read, with what the app hides from accessibility; iOS reads web-view points below instead.
+        if phase == .noWidget || phase == .checking, route.device.platform == .android {
+            let filled = await route.backend.withGapsFilled(tree, on: route.device)
+            if filled.filledFromGaps != nil {
+                tree = filled
+                phase = TurnstileWidget.phase(in: filled.roots, viewport: filled.viewport, scopeID: scopeID)
+            }
+        }
         if phase == .absent || phase == .checking || phase == .noWidget || phase == .failed {
             let shell = await shellPhase(in: tree, on: route, scopeID: scopeID)
             if shell != .absent { return (shell, .webViewPoints) }

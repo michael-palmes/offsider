@@ -162,6 +162,7 @@ extension TestHelpers {
         case "batch-test": return .identifier("batch-test-screen")
         case "batch-login-flow": return .identifier("batch-login-screen")
         case "live-chart": return .identifier("live-chart-title")
+        case "widget-login", "widget-login-expiry", "widget-login-error", "widget-login-late", "widget-login-ticked": return .identifier("widget-login-submit")
         default:
             throw TestError.unexpectedState("Unknown playground fixture '\(screen)'")
         }
