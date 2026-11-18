@@ -24,6 +24,14 @@ struct ScreenStackTests {
         #expect(Self.stack(tree).beneath.isEmpty)
     }
 
+    @Test("no golden screen without a page pushed over it has one the tree cannot order, so selectors there read no extra point", arguments: TreeGoldens.all().filter { !$0.screen.hasPrefix("stack-test@") })
+    func goldensHaveNoUnorderedPage(golden: TreeGoldens.Golden) throws {
+        let tree = try TreeGoldens.tree(of: golden)
+        let stack = Self.stack(tree)
+        let count = tree.roots.flatMap { $0.flattened() }.indices.filter { !stack.unorderedPages(over: $0).isEmpty }.count
+        #expect(count == 0)
+    }
+
     @Test("on Android a full page drawn over the mounted stack covers it, named by its title, under the page's id")
     func androidFullPage() throws {
         let tree = try Self.golden(.android, "stack-test@full")

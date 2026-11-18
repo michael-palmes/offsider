@@ -18,6 +18,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Fixed
 
+- On an iOS simulator, a page pushed over a screen of another size, such as one slid in over a mounted screen or a page opened from a side drawer's row, now counts as drawn over that screen. A simulator lists views by position, so the tree could not say which was on top: a hit-test now settles it, so `wait` and `assert` fail with `beneath "<page>"` where a tap would land on the page, a plain `tap` is refused, a label the drawer and the page share taps the page's button, and `describe-ui --summary` folds the screen under `# beneath:`, as on Android. It costs one hit-test for a selector there, and two for a whole summary however long the screen beneath.
+- On an iOS simulator, an `--id` that matches nothing while the read fills in what the app hides names the hidden text it found, and its `--label` in case that is the element: a simulator reads no id for a view hidden from accessibility.
+- A tap refused as covered by the page that holds it, as a pager's page is by the pager, now gives the tap on that page at the same point, in the message and as its hint.
+- Android's miss for a view it lists as hidden while wholly on screen, as under a system sheet, no longer says to scroll it into view.
 - On an Android emulator, `type --into-id`, `--into-label` and `--into-label-contains` no longer report success when Gboard's stylus handwriting tutorial took the text. `type` and `key-sequence` send nothing while a field inside the keyboard has focus (exit 2, `focus_mismatch`), and after keys into a named field `type` reads it back, exiting 5 (`text_not_accepted`) when the text did not reach it, batch steps too. The message names the tutorial; `type --replace` still works past it, and the hint turns stylus handwriting off.
 
 ## [0.16.0] - 2026-11-05
