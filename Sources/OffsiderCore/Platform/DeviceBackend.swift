@@ -65,7 +65,7 @@ public protocol MaskTreeReading: AnyObject {
 
 /// What a command that only looks may read on a phone, beyond what a command that can act may.
 public enum PhoneRead {
-    /// Set around `describe-ui` and `screenshot` alone: they may read a system window over the allowed app while that app holds focus. Input never sees it.
+    /// Set around reads that only look (`describe-ui`, `screenshot`, and `login` naming a prompt after its submit tap): they may read a system window over the allowed app while that app holds focus. Input never sees it.
     @TaskLocal public static var overSystemWindow = false
 }
 

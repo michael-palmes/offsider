@@ -335,14 +335,52 @@ public struct TurnstileStatus: Equatable, Sendable {
         case webViewPoints = "web-view-points"
     }
 
+    /// A state a `--wait` read saw first, and when.
+    public struct Change: Equatable, Sendable {
+        public var state: State
+        public var at: Date
+
+        public init(state: State, at: Date) {
+            self.state = state
+            self.at = at
+        }
+
+        /// `Turnstile: passed since 2026-11-18T03:12:44Z`, the stderr line an agent reads as it happens.
+        public func textLine() -> String {
+            "Turnstile: \(state.rawValue) since \(ProcessStamp.timestamp(at))"
+        }
+    }
+
     public var state: State
     public var source: Source
     public var frame: UIFrame?
+    /// When Offsider first saw this state on the device.
+    public var since: Date?
+    /// When Offsider last saw the widget turn to passed on the device, within a day.
+    public var lastPassed: Date?
+    /// With `--wait`, each state it saw first, the first read's included.
+    public var changes: [Change]?
 
-    public init(state: State, source: Source, frame: UIFrame? = nil) {
+    public init(state: State, source: Source, frame: UIFrame? = nil, since: Date? = nil, lastPassed: Date? = nil, changes: [Change]? = nil) {
         self.state = state
         self.source = source
         self.frame = frame
+        self.since = since
+        self.lastPassed = lastPassed
+        self.changes = changes
+    }
+
+    /// This read with the device's history from `record`.
+    public func with(_ record: TurnstileRecord) -> TurnstileStatus {
+        var status = self
+        status.since = record.since
+        status.lastPassed = record.lastPassed
+        return status
+    }
+
+    /// The time a pass was seen before a box that asks a person again; nil while it still passes or never did.
+    public var passedBeforeReset: Date? {
+        [.checkbox, .unknown, .failed].contains(state) ? lastPassed : nil
     }
 
     /// Nil for `ambiguous`, which the caller reports as several checkboxes.
@@ -364,17 +402,24 @@ public struct TurnstileStatus: Equatable, Sendable {
     /// What `failed` means and where to look next.
     public static let failedNote = "Cloudflare shows Verification failed. A widget set to retry tries again by itself, so wait; if it stays, reopen the screen and check the app's log for a Turnstile error."
 
-    /// `Turnstile: checkbox at (32, 388.95) 163.81x25.14`, or the state alone.
-    public func textLine() -> String {
-        guard let frame else {
-            let note = state == .unknown ? ". \(Self.unknownNote)" : state == .failed ? ". \(Self.failedNote)" : ""
-            return "Turnstile: \(state.rawValue)\(note)"
-        }
-        return "Turnstile: \(state.rawValue) at (\(Self.format(frame.x)), \(Self.format(frame.y))) \(Self.format(frame.width))x\(Self.format(frame.height))"
+    /// What a pass seen earlier means once the box asks again.
+    public static func resetNote(passed: String) -> String {
+        "It passed at \(passed) and has reset since (the pass expired or the screen reloaded)."
     }
 
+    /// `Turnstile: checkbox at (32, 388.95) 163.81x25.14`, or the state alone, with a pass seen before it reset and what `unknown` or `failed` means.
+    public func textLine() -> String {
+        let place = frame.map { " at (\(Self.format($0.x)), \(Self.format($0.y))) \(Self.format($0.width))x\(Self.format($0.height))" } ?? ""
+        var notes = passedBeforeReset.map { [Self.resetNote(passed: ProcessStamp.timestamp($0))] } ?? []
+        if frame == nil, state == .unknown { notes.append(Self.unknownNote) }
+        if frame == nil, state == .failed { notes.append(Self.failedNote) }
+        return "Turnstile: \(state.rawValue)\(place)" + (notes.isEmpty ? "" : ". " + notes.joined(separator: " "))
+    }
+
+    /// Times are UTC to the second; `changes` is null without `--wait`.
     public func jsonLine() -> String {
-        OrderedJSON.object([
+        let date: (Date?) -> OrderedJSON = { value in .optional(value) { .string(ProcessStamp.timestamp($0)) } }
+        return OrderedJSON.object([
             ("version", .integer(1)),
             ("state", .string(state.rawValue)),
             ("source", .string(source.rawValue)),
@@ -386,6 +431,11 @@ public struct TurnstileStatus: Equatable, Sendable {
                     ("height", .number(Self.rounded(frame.height))),
                 ])
             } ?? .null),
+            ("since", date(since)),
+            ("lastPassed", date(lastPassed)),
+            ("changes", .optional(changes) { changes in
+                .array(changes.map { .object([("state", .string($0.state.rawValue)), ("at", .string(ProcessStamp.timestamp($0.at)))]) })
+            }),
         ]).rendered(compact: true)
     }
 
