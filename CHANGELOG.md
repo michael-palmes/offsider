@@ -10,11 +10,41 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - `offsider -v` prints the version, as `offsider --version` does.
 - App guard: `offsider.guard.json` in an app's repository names the controls an agent asks you before tapping (`ask`, approved with Touch ID at the Mac) or never taps (`never`, exit 1 `guarded_control`), judged on the control under every tap, drag, slider and Return before anything is sent, so the rest of the app is free to drive. `offsider guard` sets it up (`status`, `init`, `check`, `show`) and a person approves it once with `guard approve`, after which an agent can tighten the rules but never loosen them; `offsider guide guard` is the agent's topic.
+- `tap --hold <ms>` presses, holds still for 100 to 10000 ms and lifts, as one long press at a point or on a selector, on simulators, Android and in `batch`; a physical iPhone or iPad holds it through its session broker. The guide gains a home screen widget recipe.
+- `wake` on an iOS simulator clears the lock screen `button lock` leaves: it presses Home at most twice, only while the lock screen is up, and checks it has gone, so no run needs the swipe up that can freeze the display. `--unlock` is refused there.
+- `boot --audio` keeps an emulator's host audio.
+- `rn open` and `rn prepare` take `--app` as another name for `--bundle-id`; two different apps exit 64.
+- `doctor` fails `android-device.state` on an emulator waiting at its encrypted-boot PIN prompt, where app installs fail for lack of space, and `boot` and `lease set` warn; each asks a person to enter the PIN, which Offsider never types.
+- `doctor` warns (`install.deny-rules`) when a Claude Code or Codex deny rule also blocks the read-only `offsider devices add --plan`, naming the file and the rule for a person to remove; it never edits the file.
+- `content-size` on iOS notes, after a change with an app in front, that a running app can keep old text measurements, and names `app launch --restart` for it.
+- `logs` on an iOS simulator says, after a history read that matched nothing, that Debug-level lines such as `console.debug` show only in a live read, and names the same read with `--duration`.
+- `devices add --runner-prefix <prefix>` saves an iPhone or iPad's runner bundle prefix with its allowance (also taken from `OFFSIDER_IOS_RUNNER_PREFIX`), as `runnerPrefix` in `allowed-devices.json`, so no later command needs the variable; `devices status` shows it beside the team and `devices add --plan` fills it in. An Offsider that does not know the key holds that one device back until updated.
+- `doctor --device <iPhone>` checks `ios-device.runner-build` (a cached build for the device's team and prefix, or why the last build failed) and `ios-device.runner-trust` (the last start stopped at an untrusted certificate), read from this Mac without building or starting the runner.
+- `devices add` lists the first-run steps still owed on an iPhone or iPad when setup stops short of ready (`firstRun` in `--json` and `--plan --json`).
+- `boot_failed` (exit 1): a simulator that refuses to boot, as one on an older runtime can with a bare "Invalid argument", is named with its runtime and `xcrun simctl boot <udid>` as the next step.
 
 ### Changed
 
 - The bundled skill no longer asks before every production or store build: once a person has approved an app's guard rules, `guard status` says `ready` and the agent drives the app, leaving guarded controls to the guard.
 - `test-runner.sh --unit-tests` runs in parallel. A test that fails there reruns alone and must pass, and is flagged when it does; a stall or an unclear result reruns everything serially. CI reuses the debug build's dependencies on pull requests.
+- `boot` starts an emulator with `-no-audio`, since one with host audio can open the Mac's microphone and drop Bluetooth headphones to call quality; `--audio` keeps it, and `--emulator-arg -no-audio` still passes.
+- `boot` says `Started <avd> as <serial>` when it started the emulator; for one already up it names the emulator's pid and when it started, and a person's receipt reads `started` or `was already running`.
+- `lease set --label` and `shutdown --label` take 1 to 200 characters (was 80), never shortened; the usage line and the error state the limit.
+- `screenshot` with no run and no `--output` in a git checkout writes to `captures/` in Offsider's private directory, not the checkout, and a note names the file.
+- `rn open --wait-id` stops early only once a screen has been still for 15 s, so a screen that moves on by itself, such as an intro carousel, is watched until `--timeout`; the message says the screen was still.
+- The runner prefix a device's allowance names wins: `OFFSIDER_IOS_RUNNER_PREFIX` naming another exits 64, and a prefix saved through `devices add` builds with no second Touch ID.
+- `button lock` on a simulator waits until the lock screen is up, so `wake` can follow it at once, and it and the `screenshot` frozen-display warning name `offsider wake` as the unlock.
+- `app open` help says an `https` link on a simulator opens in Safari, not the app that claims its domain.
+
+### Fixed
+
+- A capture after a session's run ended still says so, with the `run start` that carries on its numbering, for a day after another session's `run start` or `run status` ended the run; before, that note never appeared.
+- `doctor`, `wake`, `sleep` and the `screen_off` refusal read an Android screen as off when its display is off, even while Android reads the device awake (a charging phone with Stay awake on, after its power button).
+- `displays`, `rn open`, `rn devmenu`, `rn tools off`, the focus check of plain `type` and `key-sequence`, and the reads that place a coordinate `tap`, `swipe`, `drag`, `touch` or `gesture` end with `device_unresponsive` after 30 s when a simulator or emulator stops answering, instead of hanging.
+- Input on the iPhone Duo's inner display asks the simulator's input daemon once more before failing, and a refusal names `dtuhidd` (`input_failed`) with `doctor` and the shutdown and boot commands, instead of calling it not supported.
+- `runner build` says when another Apple team owns the runner's App ID, instead of blaming the device's registration, and names the one `devices add --runner-prefix` command that fixes it.
+- `stay-awake` and `sleep` on a simulator no longer say simulators never lock; they name `wake`.
+- `wake` on an iPhone or iPad no longer prints a blank line after its text.
 
 ## [0.16.0] - 2026-11-05
 

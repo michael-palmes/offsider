@@ -72,6 +72,18 @@ offsider gesture pinch --from 240 --to 60 --x 200 --y 400 --duration 0.8 --devic
 - An iOS simulator's main display takes it through its input session, and Android emulators through gRPC or, without gRPC, the UiAutomation helper, as Android phones do (the helper starts for the command). A physical iPhone and the iPhone Duo's inner display refuse two fingers, and `OFFSIDER_ANDROID_INPUT=input` refuses them on Android.
 - It is a `batch` step too (`--step 'gesture pinch --from 60 --to 240'`). As with other input, check the effect: a screenshot, or a value the app shows.
 
+### Long press
+
+`tap --hold <ms>` presses, holds still for 100 to 10000 ms and lifts, as one press, at a point or on a selector's element:
+
+```bash
+offsider tap -x 200 -y 400 --hold 1500 --device <DEVICE_ID>
+offsider tap --id row-3 --hold 800 --device <DEVICE_ID>
+```
+
+- It works on an iOS simulator (both displays of the iPhone Duo), an Android emulator or phone, and as a `batch` step. A physical iPhone or iPad holds it through its session broker, as it does `touch --down --up --delay`, and refuses it without one.
+- It takes no `--tap-style`, since a held press is always down, hold, up. `--pre-delay` and `--post-delay` wait around it, and `--verify` checks its effect as for any tap.
+
 ## Selectors and taps
 
 ![Four phones: a target on screen is tapped, while a target parked below the screen, one covered by a pushed page and one under the keyboard are each refused and nothing is tapped.](assets/tap-guard.png)

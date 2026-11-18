@@ -3,7 +3,7 @@
 ## Capturing
 
 - Screenshots are in pixels by default; taps and `describe-ui` frames are in points (dp on Android). Capture with `screenshot --scale points` so image coordinates are tap coordinates.
-- Without `--output`, a screenshot lands in the current folder as `Simulator Screenshot - <name> - <time>.png`, `Emulator Screenshot - …` or, from a physical iPhone, iPad or Android phone, `Screenshot - …`. In a git checkout, pass `--output` or start a run (`guide evidence`), so no capture is committed by mistake.
+- Without `--output`, a screenshot lands in the current folder as `Simulator Screenshot - <name> - <time>.png`, `Emulator Screenshot - …` or, from a physical iPhone, iPad or Android phone, `Screenshot - …`. In a git checkout with no run recording it goes to Offsider's private `captures/` folder instead, and a note names the file: read the path from stdout, or pass `--output` or start a run (`guide evidence`).
 - Crop with `--region <x,y,w,h>` (points, from `describe-ui`) instead of reading a full screen. `--scale <0.1-1>`, `--format jpeg` and `--quality` shrink the file.
 - `--json` prints `path`, `width`, `height`, `pixelsPerPoint`, `region`, `orientation`, `rotation`, `display` and `posture`, and on an iPhone or iPad, batch steps too, `capture` (`stream` or `devicectl`), with `treeReadMs` and `captureMs` saying where the time went. Landscape captures are upright.
 - `screenshot --display <id>` captures a foldable's other display (`guide foldables`).
@@ -24,6 +24,8 @@ Content the tree cannot see (charts, maps, canvases, web views) changes pixels o
 ## Home screen widgets
 
 On Android, `offsider screenshot --widget --app <package> --device <DEVICE_ID>` captures that app's own widget, cropped to its bounds on the device and masked like any capture; the launcher itself is never captured. `--widget-nth <n>` picks one of several (from 1, top to bottom, then left to right). Press home first with `button home`. Adding a widget, or turning to its page, is the user's step on a phone. Refreshing one is the app's own broadcast. No supported call reloads an iOS simulator widget.
+
+To add a widget on an iOS simulator: `button home`, hold an empty part of the home screen with `tap -x <X> -y <Y> --hold 1500` until the icons jiggle, then `tap --label Edit`, `tap --label 'Add Widget'`, search for the app and add it. In edit mode each widget's corner button (id `DeleteButton`) removes it, and `tap --label Done` leaves edit mode.
 
 ## Secure fields and personal data
 
