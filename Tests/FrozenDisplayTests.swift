@@ -32,12 +32,12 @@ struct FrozenDisplayTests {
         return capture.err
     }
 
-    @Test("the same picture over a changed tree warns, naming lock, then Home twice")
+    @Test("the same picture over a changed tree warns, naming lock, then wake")
     func frozen() async throws {
         let err = try await Self.warnings(trees: [Self.tree("Log in"), Self.tree("Home")])
         #expect(err.contains("This screenshot matches the last one, though the elements on screen changed"))
         #expect(err.contains("offsider button lock --device \(Self.simulator.rawValue)"))
-        #expect(err.contains("offsider button home --device \(Self.simulator.rawValue)` twice"))
+        #expect(err.contains("then `offsider wake --device \(Self.simulator.rawValue)`."))
     }
 
     @Test("a still screen, a new picture and the first capture stay quiet")

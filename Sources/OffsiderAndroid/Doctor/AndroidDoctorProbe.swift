@@ -4,7 +4,7 @@ import OffsiderCore
 /// Read-only Android checks, except `startAdbServerIfAbsent` for `--fix`: never kills the adb server, writes a setting or changes a reverse.
 @MainActor
 public struct AndroidDoctorProbe {
-    nonisolated static let deviceScript = "getprop ro.product.cpu.abi; settings get secure accessibility_enabled; "
+    nonisolated static let deviceScript = BootPINPrompt.script + "; getprop ro.product.cpu.abi; settings get secure accessibility_enabled; "
         + "settings get secure enabled_accessibility_services; pidof \(HelperLauncher.processName)"
     /// The API level and release first (a phone's device-list row has neither), then the emulator script, whose `pidof` may print nothing.
     nonisolated static let phoneScript = "getprop ro.build.version.sdk; getprop ro.build.version.release; " + deviceScript
@@ -175,6 +175,7 @@ public struct AndroidDoctorProbe {
         facts.release = emulator.osRelease
 
         _ = await readDeviceScript(Self.deviceScript, into: &facts, serial: serial, client: client)
+        guard facts.state == .booted else { return facts }
         facts.grpc = await grpcFact(emulator)
         return await finishDeviceFacts(facts, serial: serial, client: client)
     }
@@ -197,15 +198,17 @@ public struct AndroidDoctorProbe {
         let lines = await readDeviceScript(Self.phoneScript, into: &facts, serial: serial, client: client, skipping: 2)
         facts.apiLevel = lines.first.flatMap { Int($0) }
         facts.release = lines.count > 1 && !lines[1].isEmpty ? lines[1] : nil
+        guard facts.state == .booted else { return facts }
         var finished = await finishDeviceFacts(facts, serial: serial, client: client)
         finished.offsiderReverses = host.recordedMetroPorts(serial: serial, transportId: phone.transportId)
         return finished
     }
 
-    /// Runs the getprop and settings script; returns its trimmed lines, empty when the shell failed.
+    /// Runs the getprop and settings script; returns its trimmed lines, empty when the shell failed. A boot PIN prompt sets the state.
     private func readDeviceScript(_ script: String, into facts: inout AndroidDeviceFacts, serial: String, client: AdbClient, skipping offset: Int = 0) async -> [String] {
         guard let result = try? await client.shell(script, on: serial, timeout: .seconds(5), label: "getprop; settings get; pidof") else { return [] }
-        let lines = result.stdoutText.split(separator: "\n", omittingEmptySubsequences: false).map { $0.trimmingCharacters(in: .whitespaces) }
+        if BootPINPrompt.isShowing(result.stdoutText) { facts.state = .bootPINPrompt }
+        let lines = BootPINPrompt.withoutLine(result.stdoutText.split(separator: "\n", omittingEmptySubsequences: false).map { $0.trimmingCharacters(in: .whitespaces) })
         let line = { (index: Int) in index + offset < lines.count ? lines[index + offset] : "" }
         facts.abi = line(0).isEmpty ? nil : line(0)
         facts.uiAutomation = UiAutomationFact(

@@ -36,7 +36,14 @@ struct SimulatorBooter {
         } else {
             progress("Booting \(simulator.name) (\(simulator.udid)).")
             let future = FutureBox(simulator.boot(FBSimulatorBootConfiguration.default))
-            finished = try await DetachedWait.finishes(within: timeout) { _ = try await bridgeFBFuture(future.future) }
+            do {
+                finished = try await DetachedWait.finishes(within: timeout) { _ = try await bridgeFBFuture(future.future) }
+            } catch is CancellationError {
+                throw CancellationError()
+            } catch {
+                let failure = SimulatorBootTarget.bootFailure(name: simulator.name, udid: simulator.udid, runtime: simulator.osVersion.name.rawValue, detail: error.localizedDescription)
+                throw CLIError(errorDescription: failure.message, reason: .bootFailed, hint: failure.hint)
+            }
         }
         guard finished else {
             throw CLIError(

@@ -108,8 +108,8 @@ final class EvidenceRecorder {
     private func noteEndedRun(in environment: EvidenceRunEnvironment) {
         guard !notedEndedRun else { return }
         notedEndedRun = true
-        guard let ended = RunRegistry.endedWithSession(in: environment) else { return }
-        Console.current.notice(Self.endedRunNotice(dir: ended.dir))
+        guard let dir = RunRegistry.endedWithSession(in: environment) else { return }
+        Console.current.notice(Self.endedRunNotice(dir: dir))
     }
 
     nonisolated static func endedRunNotice(dir: String) -> Notice {

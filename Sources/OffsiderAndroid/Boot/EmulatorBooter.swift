@@ -7,22 +7,25 @@ public struct EmulatorBootRequest: Sendable {
     public let timeout: Duration
     public let memoryMB: Int?
     public let noSnapshotLoad: Bool
+    /// Keeps the emulator's host audio; off, the launch passes `-no-audio`, so it never opens the Mac's microphone.
+    public let audio: Bool
     /// Checked by `EmulatorArguments.refusal(in:)` before the request is made.
     public let extraArguments: [String]
 
-    public init(avdName: String, headless: Bool, timeout: Duration, memoryMB: Int? = nil, noSnapshotLoad: Bool = false, extraArguments: [String] = []) {
+    public init(avdName: String, headless: Bool, timeout: Duration, memoryMB: Int? = nil, noSnapshotLoad: Bool = false, audio: Bool = false, extraArguments: [String] = []) {
         self.avdName = avdName
         self.headless = headless
         self.timeout = timeout
         self.memoryMB = memoryMB
         self.noSnapshotLoad = noSnapshotLoad
+        self.audio = audio
         self.extraArguments = extraArguments
     }
 
     /// The launch options a running emulator cannot take, as the user wrote them.
     var launchOnlyOptions: [String] {
         (headless ? ["--headless"] : []) + (memoryMB != nil ? ["--memory"] : []) + (noSnapshotLoad ? ["--no-snapshot-load"] : [])
-            + (extraArguments.isEmpty ? [] : ["--emulator-arg"])
+            + (audio ? ["--audio"] : []) + (extraArguments.isEmpty ? [] : ["--emulator-arg"])
     }
 }
 
@@ -57,6 +60,7 @@ public struct EmulatorBooter {
     let log: AndroidLog
     /// The private directory's `logs/`, where each AVD's boot log lives.
     let logsDirectory: @Sendable () throws -> String
+    var now: @Sendable () -> Date = { Date() }
 
     public init(host: AndroidHost, log: @escaping AndroidLog) {
         self.init(host: host, log: log, logsDirectory: { try OffsiderPrivateDirectory.ensureSubdirectory(EmulatorBooter.logsDirectoryName) })
@@ -69,12 +73,14 @@ public struct EmulatorBooter {
     }
 
     /// Never `-port`, `-ports` or any `-grpc` flag: a plain launch serves token and JWT auth on loopback only.
+    /// `-no-audio` unless the request keeps audio: an emulator with host audio can open the Mac's microphone.
     static func launchArguments(avdName: String, headless: Bool) -> [String] {
         launchArguments(EmulatorBootRequest(avdName: avdName, headless: headless, timeout: .zero))
     }
 
     static func launchArguments(_ request: EmulatorBootRequest) -> [String] {
         ["-avd", request.avdName, "-no-metrics"]
+            + (request.audio || request.extraArguments.contains(EmulatorArguments.noAudio) ? [] : [EmulatorArguments.noAudio])
             + (request.headless ? ["-no-window"] : [])
             + (request.memoryMB.map { ["-memory", String($0)] } ?? [])
             + (request.noSnapshotLoad ? ["-no-snapshot-load"] : [])
@@ -120,10 +126,11 @@ public struct EmulatorBooter {
             let emulator = try await AndroidDeviceDirectory(client: client, host: host).runningEmulator(serial: existing.serial)
             if let emulator, emulator.state == .device, emulator.bootCompleted {
                 let hasGRPC = wait.discovery(for: existing.serial)?.grpcPort != nil
-                progress("\(name) is already running as \(existing.serial)" + (hasGRPC ? "." : " without gRPC; commands will use adb."))
+                let since = startedClause(bootedBy(serial: existing.serial) ?? stamp(instanceLockHolder(avd)))
+                progress("\(name) is already running as \(existing.serial)\(since)" + (hasGRPC ? "." : " without gRPC; commands will use adb."))
                 return EmulatorBootResult(serial: existing.serial, alreadyRunning: true, hasGRPC: hasGRPC, logPath: nil, ignored: ignored)
             }
-            progress("\(name) is already starting as \(existing.serial).")
+            progress("\(name) is already starting as \(existing.serial)\(startedClause(bootedBy(serial: existing.serial) ?? stamp(instanceLockHolder(avd)))).")
             let hasGRPC = try await wait.untilBooted(existing.serial, logPath: nil, progress: progress)
             return EmulatorBootResult(serial: existing.serial, alreadyRunning: true, hasGRPC: hasGRPC, logPath: nil, ignored: ignored)
         }
@@ -132,7 +139,8 @@ public struct EmulatorBooter {
         let knownSerials = Set(try await client.devices().map(\.serial))
         if let holder = instanceLockHolder(avd) {
             if let line = Self.ignoredLine(ignored, avdName: name, starting: true) { progress(line) }
-            progress("\(name) is already starting (pid \(holder)); waiting for it.")
+            let since = stamp(holder).map(startedClause) ?? " (pid \(holder))"
+            progress("\(name) is already starting\(since); waiting for it.")
             let serial = try await wait.serial(pid: holder, knownFiles: knownFiles, knownSerials: knownSerials, launched: nil, logPath: nil)
             let hasGRPC = try await wait.untilBooted(serial, logPath: nil, progress: progress)
             return EmulatorBootResult(serial: serial, alreadyRunning: true, hasGRPC: hasGRPC, logPath: nil, ignored: ignored)
@@ -168,10 +176,26 @@ public struct EmulatorBooter {
         do {
             let serial = try await wait.serial(pid: pid, knownFiles: knownFiles, knownSerials: knownSerials, launched: pid, logPath: logPath)
             let hasGRPC = try await wait.untilBooted(serial, logPath: logPath, progress: progress)
+            progress(Self.startedLine(name: name, serial: serial, pid: pid))
             return EmulatorBootResult(serial: serial, alreadyRunning: false, hasGRPC: hasGRPC, logPath: logPath)
         } catch let error as AndroidError where error.kind == .emulatorExited {
             throw error.namingStaleLocks(staleLocks, in: avd.directory.path)
         }
+    }
+
+    /// What `boot` says once the emulator it launched is up, so nobody looks for another session that booted it.
+    static func startedLine(name: String, serial: String, pid: Int32) -> String {
+        "Started \(name) as \(serial) (emulator pid \(pid))."
+    }
+
+    private func stamp(_ pid: Int32?) -> ProcessStamp? {
+        guard let pid, let started = host.processStartTime(pid) else { return nil }
+        return ProcessStamp(pid: pid, startedAt: started)
+    }
+
+    /// ` (emulator pid 4242, started 14 min ago at 11:52:33)`: when the emulator already up was started, which is all that is known of who started it.
+    private func startedClause(_ stamp: ProcessStamp?) -> String {
+        stamp.map { " (emulator \($0.summary(now: now())))" } ?? ""
     }
 
     /// The emulator process serving `serial`, from its discovery file; nil when it has none.

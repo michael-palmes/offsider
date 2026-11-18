@@ -48,10 +48,10 @@ extension IOSDeviceBackend {
         return client
     }
 
-    /// The team `devices add --team` recorded for the device; `OFFSIDER_IOS_TEAM_ID` wins over it.
-    public var runnerTeam: String? {
-        get { state.runnerTeam }
-        set { state.runnerTeam = newValue }
+    /// The device's allowance, whose team and runner prefix sign and name the runner; an environment variable naming another is refused.
+    public var runnerAllowance: DeviceAllowance? {
+        get { state.runnerAllowance }
+        set { state.runnerAllowance = newValue }
     }
 
     func runnerBuilder(xcode: XcodeLocation, registerDevice: Bool = false) throws -> XcodeRunnerBuilder {
@@ -66,7 +66,7 @@ extension IOSDeviceBackend {
             environment: host.environment,
             signedInTeams: IOSDeviceDoctorProbe.signedInTeams,
             notice: { log(.notice, $0) },
-            allowanceTeam: state.runnerTeam,
+            allowance: state.runnerAllowance,
             expectedSource: host.runnerSourceDigests,
             registerDevice: registerDevice
         )

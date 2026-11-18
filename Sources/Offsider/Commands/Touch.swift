@@ -133,10 +133,10 @@ struct Touch: AsyncParsableCommand {
         return points
     }
 
-    /// Both fingers down, held, then up, as one event the backend sends in one go.
-    func twoFingerEvent(backend: any DeviceBackend, device: DeviceID) async throws -> InputEvent {
-        let points = try Self.fingerPoints(x: pointX, y: pointY, spread: spread ?? Self.defaultSpread, screen: try await backend.screenSize(for: device))
-        let physical = try await backend.deviceCoordinates(for: points, tree: nil, on: device)
+    /// Both fingers down, held, then up, as one event the backend sends in one go; `watchdog` bounds the reads that place them.
+    func twoFingerEvent(backend: any DeviceBackend, device: DeviceID, watchdog: DeviceWatchdog = DeviceWatchdog()) async throws -> InputEvent {
+        let points = try Self.fingerPoints(x: pointX, y: pointY, spread: spread ?? Self.defaultSpread, screen: try await watchdog.screenSize(backend: backend, device: device))
+        let physical = try await watchdog.inputPoints(points, backend: backend, device: device)
         let (first, second) = (physical[0], physical[1])
         return .composite([
             .twoFingerTouch(direction: .down, x1: first.x, y1: first.y, x2: second.x, y2: second.y),
@@ -152,7 +152,11 @@ struct Touch: AsyncParsableCommand {
 
     private func touch() async throws {
         let logger = OffsiderLogger()
-        let route = try await DeviceRouter.routeForInput(deviceOption, logger: logger)
+        try await touch(on: try await DeviceRouter.routeForInput(deviceOption, logger: logger), logger: logger)
+    }
+
+    /// Sends the touch on `route`; `watchdog` bounds the reads that place it.
+    func touch(on route: DeviceRouter.Route, logger: OffsiderLogger, watchdog: DeviceWatchdog = DeviceWatchdog()) async throws {
         await appOption.apply(to: route)
         let backend = route.backend
         let device = route.device
@@ -160,7 +164,7 @@ struct Touch: AsyncParsableCommand {
 
         if fingers == 2 {
             logger.info().log("Two-finger touch at (\(pointX), \(pointY)) for \(hold ?? 0) ms")
-            let event = try await twoFingerEvent(backend: backend, device: device)
+            let event = try await twoFingerEvent(backend: backend, device: device, watchdog: watchdog)
             try await Console.current.progress("Touching") { try await backend.performTracked(event, on: device) }
             Console.current.show(InputPersonView.receipt(receiptHeadline, aside: receiptAside))
             return
@@ -168,7 +172,7 @@ struct Touch: AsyncParsableCommand {
 
         logger.info().log("Performing touch events at (\(pointX), \(pointY))")
 
-        let physicalPoint = try await backend.deviceCoordinates(for: [(x: pointX, y: pointY)], tree: nil, on: device)[0]
+        let physicalPoint = try await watchdog.inputPoints([(x: pointX, y: pointY)], backend: backend, device: device)[0]
 
         var steps: [DetachedTouchStep] = []
         if touchDown && touchUp {

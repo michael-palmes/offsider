@@ -1,6 +1,7 @@
 import ArgumentParser
 import Darwin
 import Foundation
+import OffsiderAndroid
 import OffsiderCore
 
 struct LeaseCommand: AsyncParsableCommand {
@@ -11,6 +12,7 @@ struct LeaseCommand: AsyncParsableCommand {
         A lease is a label and an expiry kept under the device's stable name (an AVD name, a phone serial or a UDID), \
         so it survives an emulator restart on another serial; a shut-down AVD can be leased by name. `set` fails with \
         exit 8 (device_leased) while another label holds a live lease, unless --force; the same label renews it. \
+        A label is 1 to 200 characters and is never shortened, since OFFSIDER_LEASE must match it exactly. \
         `set` records the session it runs in (the agent or terminal above its shell), so `doctor --device` passes \
         for any later command of that session and warns for any other. When OFFSIDER_LEASE is set it decides \
         instead, passing only for a matching label. `devices` shows leases. `check` is a read-only snapshot: \
@@ -36,7 +38,7 @@ struct LeaseCommand: AsyncParsableCommand {
     @Argument(help: ArgumentHelp("set, release, show or check.", valueName: "action"))
     var action: String
 
-    @Option(name: .customLong("label"), help: ArgumentHelp("With set: who holds the device, 1 to 80 characters. With check: the label that counts as this session's.", valueName: "text"))
+    @Option(name: .customLong("label"), help: ArgumentHelp("With set: who holds the device, 1 to 200 characters, kept whole. With check: the label that counts as this session's.", valueName: DeviceLease.labelValueName))
     var label: String?
 
     @Option(name: .customLong("ttl"), help: ArgumentHelp("With set: minutes until the lease lapses, from 1 to 1440 (default 240).", valueName: "minutes"))
@@ -59,11 +61,11 @@ struct LeaseCommand: AsyncParsableCommand {
             if force { throw ValidationError("--force goes with set, not \(parsed.rawValue).") }
         }
         if parsed == .check, let label, DeviceLease.validLabel(label) == nil {
-            throw ValidationError("--label must be 1 to 80 printable characters.")
+            throw ValidationError(DeviceLease.labelRefusal(label))
         }
         if parsed == .set {
             guard let label else { throw ValidationError("lease set needs --label <text>, such as --label 'PR 123 review'.") }
-            guard DeviceLease.validLabel(label) != nil else { throw ValidationError("--label must be 1 to 80 printable characters.") }
+            guard DeviceLease.validLabel(label) != nil else { throw ValidationError(DeviceLease.labelRefusal(label)) }
             if let ttl, !DeviceLease.minutes.contains(ttl) { throw ValidationError("--ttl must be from 1 to 1440 minutes; got \(ttl).") }
         }
         if parsed != .show, device == nil { throw ValidationError(DeviceDefault.missingMessage) }
@@ -96,11 +98,23 @@ struct LeaseCommand: AsyncParsableCommand {
             try parsedAction(), target: target, label: label.flatMap(DeviceLease.validLabel), minutes: ttl ?? DeviceLease.defaultMinutes,
             force: force, json: json, store: store, now: Date(), pid: getppid(), owner: ProcessAncestry.owner(from: getppid(), in: .live)
         )
+        if try parsedAction() == .set, let target, target.platform == .android, await Self.atBootPIN(target.key) {
+            console.hold(BootPINPrompt.notice(name: target.key))
+        }
         if let page = result.page {
             console.show(page)
         } else {
             console.data(result.text + "\n")
         }
+    }
+
+    /// Whether the emulator just leased waits at its encrypted-boot PIN prompt, where no app can be installed; a phone or a shut-down AVD is asked nothing.
+    @MainActor
+    static func atBootPIN(_ key: String) async -> Bool {
+        let backend = AndroidBackend.make(logger: OffsiderLogger())
+        let showing = await backend.bootPINPromptShowing(key)
+        await backend.close()
+        return showing
     }
 
     /// The device's stable key; an emulator serial is asked for its AVD name.

@@ -27,7 +27,10 @@ struct SleepCommand: AsyncParsableCommand {
 
     func run() async throws {
         if case .iosSimulator = DeviceIDClassifier.classify(deviceOption.id) {
-            throw CLIError(errorDescription: "sleep needs a phone, a tablet or an Android emulator: iOS simulators never sleep or lock.", reason: .notSupported)
+            throw CLIError(
+                errorDescription: "sleep needs a phone, a tablet or an Android emulator: an iOS simulator never sleeps by itself. `offsider button lock --device \(deviceOption.id)` shows its lock screen, and `offsider wake --device \(deviceOption.id)` clears it.",
+                reason: .notSupported
+            )
         }
         let route = try await DeviceRouter.routeForInput(deviceOption, logger: OffsiderLogger())
         let console = Console.current

@@ -50,6 +50,8 @@ struct DeviceAccessContext: Sendable {
     var credentials: (any LoginCredentialStoring)? = nil
     /// How long a prompt waits for a key.
     var promptIdle: TimeInterval = DeviceAccessAllow.promptIdle
+    /// The variables `add` reads, `OFFSIDER_IOS_RUNNER_PREFIX` among them; empty in tests unless they set it.
+    var environment: @Sendable () -> [String: String] = { [:] }
 
     static let live = DeviceAccessContext(
         store: { DevicePolicySources.store() },
@@ -84,7 +86,8 @@ struct DeviceAccessContext: Sendable {
         hasRunner: { RunnerSessions.hasRecord(udid: $0) },
         interactive: { DevicePicker.prompts(terminals: isatty(STDIN_FILENO) != 0 && isatty(STDOUT_FILENO) != 0) },
         prepare: { row in try await DeviceAccessContext.livePrepare(row) },
-        credentials: KeychainLoginCredentialStore()
+        credentials: KeychainLoginCredentialStore(),
+        environment: { ProcessInfo.processInfo.environment }
     )
 
     /// The allowance was written after this process read its policy, so the route reads the list again.
@@ -223,6 +226,9 @@ struct DeviceAccessAllow: AsyncParsableCommand {
     @Option(name: .customLong("team"), help: ArgumentHelp("For an iPhone or iPad: the Apple development team ID that signs Offsider's runner app on it; without it, choose from your Keychain's teams. OFFSIDER_IOS_TEAM_ID wins over it.", valueName: "id"))
     var team: String?
 
+    @Option(name: .customLong("runner-prefix"), help: ArgumentHelp("For an iPhone or iPad: the bundle id prefix its runner builds under, such as com.example.offsider, when another team owns Offsider's own; without it, OFFSIDER_IOS_RUNNER_PREFIX, else what it has now.", valueName: "prefix"))
+    var runnerPrefix: String?
+
     @Option(name: .customLong("metro-port"), help: ArgumentHelp("For an Android phone: a port of Metro on this Mac that rn open may map to it with adb reverse (repeatable), or none; without it, choose. Every app on the phone can reach Metro while the reverse is set.", valueName: "port|none"))
     var metroPortArguments: [String] = []
 
@@ -245,12 +251,15 @@ struct DeviceAccessAllow: AsyncParsableCommand {
 
     func validate() throws {
         try listFilters.refuse(in: Self.self)
-        if plan, device != nil || !apps.isEmpty || expires != nil || team != nil || !metroPortArguments.isEmpty || testDevice {
+        if plan, device != nil || !apps.isEmpty || expires != nil || team != nil || runnerPrefix != nil || !metroPortArguments.isEmpty || testDevice {
             throw ValidationError("--plan changes nothing, so it takes only --json.")
         }
         if let expires { _ = try DeviceAccess.expiry(expires) }
         if let team, !DeviceAllowance.isTeamID(team) {
             throw ValidationError("--team takes a 10-character Apple team ID such as ABCDE12345; '\(team)' is not one.")
+        }
+        if let runnerPrefix, !DeviceAllowance.isRunnerPrefix(runnerPrefix) {
+            throw ValidationError("--runner-prefix takes a reverse-DNS bundle id prefix of at most \(DeviceAllowance.maximumRunnerPrefixLength) characters, such as com.example.offsider; '\(runnerPrefix)' is not one.")
         }
         for app in apps where !DeviceAllowance.isAppID(app) {
             throw ValidationError("--app takes a bundle id or package name, such as com.example.app; '\(app)' is not one.")
@@ -278,6 +287,8 @@ struct DeviceAccessAllow: AsyncParsableCommand {
         /// The end a change kept, which Touch ID's wait must not push back.
         var keptExpiry: Date?
         var testDevice = false
+        /// Nil for Offsider's own prefix, so a list without one is written as before.
+        var runnerPrefix: String?
     }
 
     /// A person reading the menus may step away for Touch ID, so a key may be minutes coming.
@@ -312,9 +323,11 @@ struct DeviceAccessAllow: AsyncParsableCommand {
     func planOutput(context: DeviceAccessContext) async throws -> String {
         let rows = try await Console.current.progress("Looking for devices") { try await context.physicalDevices().rows }
         let profile = context.profile()
+        // The person runs the command in their own terminal, whose environment is not this one, so the prefix goes into the command.
+        let prefix = try XcodeRunnerBuilder.resolvePrefix(environment: context.environment())
         let built = DeviceAddPlan.make(
             rows: rows, policy: context.policy(), teams: context.signingTeams().map { DeviceAddPlan.Team(id: $0.id, name: $0.name, free: $0.free) }, now: context.now(),
-            app: { $0 == .ios ? profile?.bundleID : profile?.package }
+            runnerPrefix: prefix, app: { $0 == .ios ? profile?.bundleID : profile?.package }
         )
         return json ? built.json() : built.text()
     }
@@ -383,14 +396,21 @@ struct DeviceAccessAllow: AsyncParsableCommand {
                 await offerLogin(choice, on: prompt, context: context, policy: policy)
                 let guardLines = savedNames.isEmpty ? GuardCommand.offerApproval(on: prompt) : []
                 if !guardLines.isEmpty { prompt.lines(guardLines.map { prompt.style.dim($0) }) }
-                prompt.lines(AllowScreen.allowed(name: name, key: choice.key, until: until, apps: choice.apps, metroPorts: choice.metroPorts, testDevice: choice.testDevice, notes: notes, ready: setup.ready, width: prompt.width, style: prompt.style))
+                prompt.lines(AllowScreen.allowed(
+                    name: name, key: choice.key, until: until, apps: choice.apps, metroPorts: choice.metroPorts, testDevice: choice.testDevice, notes: notes, ready: setup.ready,
+                    steps: setup.steps, width: prompt.width, style: prompt.style
+                ))
                 prompt.settle()
                 reports.append(json
                     ? DeviceAccessReport.changeJSON(
                         action: "allow", platform: choice.row.platform, key: choice.key, allowance: entry, stopped: removedPorts,
-                        notRemoved: stuckPorts, retry: stuckPorts.isEmpty ? nil : retry, ready: setup.ready, needs: setup.needs
+                        notRemoved: stuckPorts, retry: stuckPorts.isEmpty ? nil : retry, ready: setup.ready, needs: setup.needs,
+                        firstRun: DeviceFirstRun.asks(setup.steps, name: name)
                     )
-                    : (AllowScreen.allowed(name: name, key: choice.key, until: until, apps: choice.apps, metroPorts: choice.metroPorts, testDevice: choice.testDevice, notes: notes, ready: setup.ready, width: .max, style: .detect(isTerminal: false)) + (setup.needs.map { [$0] } ?? [])).joined(separator: "\n"))
+                    : (AllowScreen.allowed(
+                        name: name, key: choice.key, until: until, apps: choice.apps, metroPorts: choice.metroPorts, testDevice: choice.testDevice, notes: notes, ready: setup.ready,
+                        steps: setup.steps, width: .max, style: .detect(isTerminal: false)
+                    ) + (setup.needs.map { [$0] } ?? [])).joined(separator: "\n"))
                 allowedNow.insert(choice.key)
                 savedNames.append(name)
                 guard named == nil, !json else { return }
@@ -441,6 +461,7 @@ struct DeviceAccessAllow: AsyncParsableCommand {
                 expires: chosen.keptExpiry ?? chosen.lifetime.map { Date(timeIntervalSince1970: now.addingTimeInterval($0).timeIntervalSince1970.rounded(.down)) },
                 apps: chosen.apps,
                 team: chosen.team,
+                runnerPrefix: chosen.runnerPrefix,
                 metroPorts: chosen.metroPorts,
                 testDevice: chosen.testDevice
             )
@@ -512,25 +533,35 @@ struct DeviceAccessAllow: AsyncParsableCommand {
         (error as? any OffsiderFailure)?.ask.map { PersonAsk.filled($0, name: AllowScreen.name(row), id: nil) }
     }
 
+    /// What `finish` ended on: proved ready, or what stopped it and the steps still owed on the phone after that.
+    struct Setup {
+        var ready: Bool
+        var needs: String?
+        var steps: [DeviceFirstRun.Step] = []
+    }
+
     /// Registers, builds and starts what the device needs, retrying while a person clears a step; the allowance stays whatever happens here.
     @MainActor
-    private func finish(_ choice: Choice, on prompt: TerminalPrompt, context: DeviceAccessContext) async -> (ready: Bool, needs: String?) {
+    private func finish(_ choice: Choice, on prompt: TerminalPrompt, context: DeviceAccessContext) async -> Setup {
         let start = prompt.mark
         var shown: String?
         let deadline = context.now().addingTimeInterval(Self.setupWait)
+        func stopped(_ error: any Error, needs: String) -> Setup {
+            Setup(ready: false, needs: needs, steps: Self.stepsOwed(choice.row, stoppedBy: error))
+        }
         while true {
             do {
                 let label = "Getting \(AllowScreen.name(choice.row)) ready"
                 let ready = try await TerminalSpinner.run(label, terminal: prompt.terminalDescriptor) { try await context.prepare(choice.row) }
                 prompt.rewind(to: start)
-                return (ready, nil)
+                return Setup(ready: ready, needs: nil)
             } catch {
                 let needs = Self.reason(error) + "."
                 let ask = Self.setupAsk(error, row: choice.row) ?? needs
                 guard Self.personCanClear(error), context.now() < deadline else {
                     prompt.rewind(to: start)
                     prompt.lines(TerminalUI.warning(ask, width: prompt.width, style: prompt.style))
-                    return (false, needs)
+                    return stopped(error, needs: needs)
                 }
                 if ask != shown {
                     prompt.rewind(to: start)
@@ -540,10 +571,18 @@ struct DeviceAccessAllow: AsyncParsableCommand {
                 if prompt.quitPressed(within: Self.finishPoll) {
                     prompt.rewind(to: start)
                     prompt.lines(TerminalUI.warning(ask, width: prompt.width, style: prompt.style))
-                    return (false, needs)
+                    return stopped(error, needs: needs)
                 }
             }
         }
+    }
+
+    /// The phone steps still owed once setup stopped on `error`, never the one its warning already asks for.
+    static func stepsOwed(_ row: DeviceSummary, stoppedBy error: any Error) -> [DeviceFirstRun.Step] {
+        DeviceFirstRun.owed(
+            platform: row.platform, ready: false, stoppedBy: (error as? any OffsiderFailure)?.reason,
+            developerModeOff: row.state == IOSDeviceReadiness.developerModeOff.stateText
+        )
     }
 
     /// Skip is chosen; a cancel or failure here never costs the device it just allowed.
@@ -599,6 +638,10 @@ struct DeviceAccessAllow: AsyncParsableCommand {
         if team != nil, row.platform != .ios {
             throw CLIError(errorDescription: "--team is for an iPhone or iPad, and \(key) is an Android phone. Nothing was saved.", reason: .usage)
         }
+        let flagPrefix = row.platform == .ios || !later ? self.runnerPrefix : nil
+        if flagPrefix != nil, row.platform != .ios {
+            throw CLIError(errorDescription: "--runner-prefix is for an iPhone or iPad, and \(key) is an Android phone. Nothing was saved.", reason: .usage)
+        }
         let metroPorts = row.platform == .android || !later ? self.metroPorts : nil
         if let metroPorts, !metroPorts.isEmpty, row.platform != .android {
             throw CLIError(errorDescription: "--metro-port is for an Android phone, and \(key) is an iPhone or iPad. Nothing was saved.", reason: .usage)
@@ -617,6 +660,7 @@ struct DeviceAccessAllow: AsyncParsableCommand {
         if testDevice, let off = policy.managed.testDeviceRefusal {
             throw CLIError(errorDescription: "\(off), so \(key) cannot be a test device. Nothing was saved.", reason: .appNotAllowed)
         }
+        let chosenPrefix = row.platform == .ios ? try Self.runnerPrefix(flag: flagPrefix, environment: context.environment(), current: current?.runnerPrefix) : nil
         var teams: [SigningTeam] = []
         if row.platform == .ios, team == nil {
             teams = try await TerminalSpinner.run("Reading your signing teams", terminal: prompt.terminalDescriptor) { context.signingTeams() }
@@ -679,14 +723,35 @@ struct DeviceAccessAllow: AsyncParsableCommand {
         }
         let name = AllowScreen.name(row)
         let start = prompt.mark
-        prompt.lines([""] + AllowScreen.summary(row, apps: chosenApps, lifetime: lifetime, team: shownTeam, metroPorts: chosenPorts, testDevice: chosenWhole, width: prompt.width, style: prompt.style))
+        prompt.lines([""] + AllowScreen.summary(
+            row, apps: chosenApps, lifetime: lifetime, team: shownTeam, runnerPrefix: chosenPrefix, metroPorts: chosenPorts, testDevice: chosenWhole, width: prompt.width, style: prompt.style
+        ))
         prompt.lines([prompt.style.dim(AllowScreen.confirm)])
         let reach = chosenPorts.isEmpty ? "" : " and let its apps reach \(AllowScreen.metro(chosenPorts))"
         let whole = chosenWhole ? " as a \(AllowScreen.wholeDevice) with nothing personal on it" : ""
         let register = row.platform == .ios && chosenTeam != nil ? " and register it with your Apple team" : ""
-        try await PersonPresence.confirm(reason: "allow Offsider to drive \(name) (\(PromptScreen.visible(key)))\(whole)\(reach)\(register)")
+        // The prefix creates App IDs in the person's team, so the Touch ID that records it names it.
+        let named = chosenPrefix.map { " and build its runner as \(PromptScreen.visible($0)).runner" } ?? ""
+        try await PersonPresence.confirm(reason: "allow Offsider to drive \(name) (\(PromptScreen.visible(key)))\(whole)\(reach)\(register)\(named)")
         prompt.rewind(to: start)
-        return Choice(row: row, key: key, team: chosenTeam, apps: chosenApps, lifetime: lifetime, metroPorts: chosenPorts, keptExpiry: keptExpiry, testDevice: chosenWhole)
+        return Choice(
+            row: row, key: key, team: chosenTeam, apps: chosenApps, lifetime: lifetime, metroPorts: chosenPorts, keptExpiry: keptExpiry, testDevice: chosenWhole,
+            runnerPrefix: chosenPrefix
+        )
+    }
+
+    /// The prefix to record: `--runner-prefix`, else `OFFSIDER_IOS_RUNNER_PREFIX`, else what the device has; nil for Offsider's own.
+    static func runnerPrefix(flag: String?, environment: [String: String], current: String?) throws -> String? {
+        let resolved = try XcodeRunnerBuilder.resolvePrefix(environment: environment)
+        let variable = environment[XcodeRunnerBuilder.prefixVariable].map { $0.trimmingCharacters(in: .whitespaces) }.flatMap { $0.isEmpty ? nil : resolved }
+        if let flag, let variable, flag != variable {
+            throw CLIError(
+                errorDescription: "--runner-prefix is \(flag), but \(XcodeRunnerBuilder.prefixVariable) is \(variable). Unset the variable, or pass the same prefix. Nothing was saved.",
+                reason: .usage
+            )
+        }
+        let chosen = flag ?? variable ?? current
+        return chosen == XcodeRunnerBuilder.defaultPrefix ? nil : chosen
     }
 
     /// The steps this run shows, in order; a flag given on the command line skips its step, and a use settled by flag skips the rest.

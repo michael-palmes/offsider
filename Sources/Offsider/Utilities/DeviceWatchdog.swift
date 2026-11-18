@@ -38,6 +38,9 @@ final class DeviceWatchdog: @unchecked Sendable {
     /// `OffsiderCommand.withCLIDefaults` runs every command under `exitProcess`.
     @TaskLocal static var defaultAction = Action.report
 
+    /// Makes the watchdog for a read whose caller passes none; a test binds one with a tiny bound and its own `fire`.
+    @TaskLocal static var make: @Sendable () -> DeviceWatchdog = { DeviceWatchdog() }
+
     /// What this watchdog does when it goes off; nil when it was made with its own `fire`.
     let action: Action?
 
@@ -144,6 +147,18 @@ final class DeviceWatchdog: @unchecked Sendable {
     /// One read of an input command, whose helper may not have started yet.
     func guardingInputRead<T>(of device: DeviceID, _ body: () async throws -> T) async rethrows -> T {
         try await guardingRead(of: device, extra: device.platform == .android ? treeStartBound : 0, body)
+    }
+
+    /// Points in the backend's input space, mapped under the input read bound: an iOS simulator reads a tree to place them. The input itself runs unbound.
+    @MainActor
+    func inputPoints(_ points: [(x: Double, y: Double)], tree: UITree? = nil, backend: any DeviceBackend, device: DeviceID) async throws -> [(x: Double, y: Double)] {
+        try await guardingInputRead(of: device) { try await backend.deviceCoordinates(for: points, tree: tree, on: device) }
+    }
+
+    /// The screen's size for a bounds check, under the input read bound; nil when the platform cannot report it.
+    @MainActor
+    func screenSize(backend: any DeviceBackend, device: DeviceID) async throws -> UISize? {
+        try await guardingInputRead(of: device) { try await backend.screenSize(for: device) }
     }
 
     static func message(seconds: TimeInterval, device: String) -> String {

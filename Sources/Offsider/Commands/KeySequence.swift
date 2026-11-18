@@ -103,7 +103,7 @@ struct KeySequence: AsyncParsableCommand {
         var focus: Type.FocusCheck?
         if Self.typesText(parsedKeycodes) {
             focus = try await Type.checkTextFocus(
-                readTree: { try await backend.accessibilityTree(for: device) }, device: device, clock: .live,
+                readTree: { try await DeviceWatchdog.make().guardingInputRead(of: device) { try await backend.accessibilityTree(for: device) } }, device: device, clock: .live,
                 warn: { Console.current.notice(.warning(InputPersonView.sentence($0), agent: $0)) },
                 refusingSecureTarget: Self.spellsText(parsedKeycodes) ? Type.secureFieldRefusal(device: device, keys: true) : nil, keys: true,
                 hitTester: backend as? any PointHitTesting, adb: Type.adbPath(of: backend)

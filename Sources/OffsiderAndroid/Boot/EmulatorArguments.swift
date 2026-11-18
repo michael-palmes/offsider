@@ -31,7 +31,7 @@ public enum EmulatorArguments {
         .integer("-cores", 1...16),
         .oneOf("-feature", ["Vulkan", "-Vulkan", "GLESDynamicVersion", "-GLESDynamicVersion"]),
         .oneOf("-gpu", ["auto", "host", "software", "lavapipe", "swiftshader", "swangle"]),
-        .bare("-no-audio"),
+        .bare(noAudio),
         .bare("-no-boot-anim"),
         .bare("-no-cache"),
         .bare("-no-snapshot"),
@@ -43,6 +43,9 @@ public enum EmulatorArguments {
         .bare("-verbose"),
         .bare("-wipe-data"),
     ]
+
+    /// `boot` passes it unless `--audio`; it stays allowed, so a script that already passes it keeps working and it is sent once.
+    public static let noAudio = "-no-audio"
 
     /// Flags Offsider sets itself, with the option to use instead.
     static let ownedFlags: [String: String] = [

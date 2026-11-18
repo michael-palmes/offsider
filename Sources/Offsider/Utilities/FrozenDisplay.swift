@@ -17,10 +17,10 @@ enum FrozenDisplay {
         try? OffsiderPrivateDirectory.writeAtomically(current.encoded(), named: name, in: directory)
         guard current.looksFrozen(after: previous) else { return }
         let lock = "offsider button lock --device \(device.rawValue)"
-        let home = "offsider button home --device \(device.rawValue)"
+        let wake = "offsider wake --device \(device.rawValue)"
         Console.current.notice(.warning(
             "The display looks frozen: same picture, new elements",
-            agent: "This screenshot matches the last one, though the elements on screen changed, so the simulator's display may be frozen. Run `\(lock)`, then `\(home)` twice.",
+            agent: "This screenshot matches the last one, though the elements on screen changed, so the simulator's display may be frozen. Run `\(lock)`, then `\(wake)`.",
             try: lock
         ))
     }

@@ -187,7 +187,7 @@ struct Type: AsyncParsableCommand, VerifiableCommand {
         let simulator = device.platform == .ios && !device.isPhysicalIOSDevice
         guard requireFocusID != nil || intoQuery != nil else {
             return try await Self.checkTextFocus(
-                readTree: { try await backend.accessibilityTree(for: device) }, device: device, clock: clock, warn: warn, refusingSecureTarget: secureRefusal,
+                readTree: { try await DeviceWatchdog.make().guardingInputRead(of: device) { try await backend.accessibilityTree(for: device) } }, device: device, clock: clock, warn: warn, refusingSecureTarget: secureRefusal,
                 hitTester: backend as? any PointHitTesting, unlistedField: unlistedField, replacing: replace, adb: Self.adbPath(of: backend)
             )
         }
