@@ -21,7 +21,16 @@ struct TypedExpectation {
     func check(before: UITree?, after: UITree) -> TextCheck {
         guard let now = locate(in: after), !now.isSecure else { return .unknown }
         let was = before.flatMap(locate)?.value ?? field?.value
-        return TypedText.judge(sent: text, before: was, after: now.value, replacing: replacing)
+        guard after.platform == .android else { return TypedText.judge(sent: text, before: was, after: now.value, replacing: replacing) }
+        // Android reads an empty field as no value, and keys a field inside the keyboard holding focus took are what is missing; a set-text passes it by.
+        let check = TypedText.judge(sent: text, before: was, after: now.value ?? "", replacing: replacing)
+        return !replacing && TextFocus.keyboardHoldingFocus(in: after) != nil && Self.lacksText(text, before: was, after: now.value) ? .differs : check
+    }
+
+    /// Short enough to judge, and not all there: what a keyboard field holding focus took.
+    static func lacksText(_ text: String, before: String?, after: String?) -> Bool {
+        guard text.count <= TypedText.longest, (after ?? "").count <= TypedText.longest else { return false }
+        return TypedText.judge(sent: text, before: before, after: after ?? "", replacing: false) != .match
     }
 
     /// The field in `tree`: the one `--into-*` matches, else the focused field while it is still the one typed into.
