@@ -2,6 +2,7 @@ package com.mpalmes.offsider.helper;
 
 import android.graphics.Rect;
 import android.os.Bundle;
+import android.os.SystemClock;
 import android.view.accessibility.AccessibilityNodeInfo;
 import java.util.ArrayDeque;
 import java.util.List;
@@ -45,18 +46,18 @@ final class HiddenBranches {
         return shown != otherShown ? shown : area > otherArea;
     }
 
-    /** Writes "hiddenBranches": each kept root, and its first labelled descendant when it has no label of its own. */
-    void write(Json json, boolean testTags) {
+    /** Writes "hiddenBranches": each kept root, and its first labelled descendant when it has no label of its own; past the deadline only what is already read. */
+    void write(Json json, boolean testTags, long deadline) {
         json.name("hiddenBranches").beginArray();
         for (int i = 0; i < count; i++) {
             AccessibilityNodeInfo root = nodes[i];
             json.beginObject();
             fields(json, root);
-            if (testTags) {
+            if (testTags && SystemClock.uptimeMillis() < deadline) {
                 json.optional("testTag", testTag(root));
             }
             if (!labelled(root)) {
-                AccessibilityNodeInfo child = firstLabelled(root);
+                AccessibilityNodeInfo child = firstLabelled(root, deadline);
                 if (child != null) {
                     json.name("children").beginArray().beginObject();
                     fields(json, child);
@@ -99,14 +100,14 @@ final class HiddenBranches {
         return text != null && text.length() > 0;
     }
 
-    /** Pre-order search that fetches each child lazily, spending at most LABEL_VISITS fetches. */
-    private static AccessibilityNodeInfo firstLabelled(AccessibilityNodeInfo root) {
+    /** Pre-order search that fetches each child lazily, spending at most LABEL_VISITS fetches and none past the deadline. */
+    private static AccessibilityNodeInfo firstLabelled(AccessibilityNodeInfo root, long deadline) {
         ArrayDeque<AccessibilityNodeInfo> path = new ArrayDeque<AccessibilityNodeInfo>();
         ArrayDeque<int[]> next = new ArrayDeque<int[]>();
         path.push(root);
         next.push(new int[] {0});
         int visits = 0;
-        while (!path.isEmpty() && visits < LABEL_VISITS) {
+        while (!path.isEmpty() && visits < LABEL_VISITS && SystemClock.uptimeMillis() < deadline) {
             AccessibilityNodeInfo parent = path.peek();
             int[] index = next.peek();
             if (index[0] >= parent.getChildCount()) {

@@ -292,7 +292,7 @@ struct RNOpen: AsyncParsableCommand {
             let now = clock.now()
             let app = watch.hasPendingMiss ? nil : watch.seen
             let found = waitID.map { Verifier.isOnScreen($0, in: tree) } ?? false
-            if !found, let cover = await Self.cover(over: tree, app: app, on: route) {
+            if !found, let cover = await watchdog.guardingRead(of: device, { await Self.cover(over: tree, app: app, on: route) }) {
                 quietSince = nil
                 previous = nil
                 shown = nil

@@ -58,6 +58,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - `runner build` says when another Apple team owns the runner's App ID, instead of blaming the device's registration, and names the one `devices add --runner-prefix` command that fixes it.
 - `stay-awake` and `sleep` on a simulator no longer say simulators never lock; they name `wake`.
 - `wake` on an iPhone or iPad no longer prints a blank line after its text.
+- On an Android emulator, a warm helper that outlived a restart of Android's framework no longer fails every read until `session stop`. The helper tells a dead connection from an empty screen, says so and exits; the command starts a fresh one and sends its request once more, about 0.3 s, once. If that fails too, the error (`helper_failed`) names `offsider session stop --device <serial>` and nothing is tried a third time.
+- An Android read of an app that has stopped answering ends after about 5 s with `app_not_responding`, where two reads used to take about 20 s and could run into the 30 s limit. One that answers slowly is cut at 6 s inside the helper: `describe-ui` shows what was read with a `Warning:` that the tree is partial, and a `screenshot` taken then carries `maskUnproven: "truncated"` with its warning. A capture whose tree cannot be read at all is still refused, never written unmasked.
+- A warm Android helper that does not answer in time is `helper_timed_out` once, whichever of the command and its broker notices first: the request was sometimes sent again to a fresh helper to wait a second 15 s. The broker now kills a helper it gave up on, so its UiAutomation slot is free for the next command.
+- On a simulator that has stopped answering, `batch` steps given coordinates (`tap -x -y`, `swipe`, `drag`, a one-finger `touch`), the point reads `rn devmenu` makes to tell the menu's item from the app's, and `rn open`'s check for a system prompt now end with `device_unresponsive` after 30 s, as the same reads elsewhere do. They used to wait for as long as the simulator stayed hung.
 
 ## [0.16.0] - 2026-11-05
 

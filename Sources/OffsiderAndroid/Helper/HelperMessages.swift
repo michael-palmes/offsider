@@ -361,6 +361,20 @@ struct HelperDump: Decodable, Equatable, Sendable {
     let skippedInvisible: Int?
     /// Up to five of those subtrees' roots, each with its first labelled descendant when it has no label; nil before helper 1.6.0.
     let hiddenBranches: [HelperNode]?
+    /// How long the helper spent reading the windows and their trees.
+    let walkMs: Int?
+
+    /// The helper gives one dump's walk this long, then stops and marks the dump truncated.
+    static let walkBudgetMs = 6000
+    /// Android waits 5 s for a window to answer one read; a walk this long that found no app tree waited on one that never did.
+    static let silentWindowMs = 4000
+
+    /// The walk ran out of time, so the tree is partial though no size limit was met. The helper cuts on whole milliseconds of another clock, so `walkMs` can read just under the budget.
+    var cutForTime: Bool { truncated && (walkMs ?? 0) >= Self.walkBudgetMs - 100 }
+    /// A listed application window took seconds to give no tree, as a stuck app's does; reading it again would only wait as long.
+    var waitedOnSilentWindow: Bool {
+        (walkMs ?? 0) >= Self.silentWindowMs && windows.contains { $0.type == "application" && $0.rootRequested && $0.root == nil }
+    }
 
     init(from decoder: any Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -373,10 +387,15 @@ struct HelperDump: Decodable, Equatable, Sendable {
         let stats = try c.decodeIfPresent(HelperDumpStats.self, forKey: .stats)
         skippedInvisible = stats?.skippedInvisible
         hiddenBranches = stats?.hiddenBranches
+        walkMs = try c.decodeIfPresent(Timings.self, forKey: .timings)?.walkMs
+    }
+
+    private struct Timings: Decodable {
+        let walkMs: Int?
     }
 
     private enum CodingKeys: String, CodingKey {
-        case generation, idle, eventSeq, display, windows, truncated, stats
+        case generation, idle, eventSeq, display, windows, truncated, stats, timings
     }
 }
 

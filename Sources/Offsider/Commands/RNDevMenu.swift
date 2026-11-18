@@ -91,7 +91,9 @@ struct DevMenuDriver {
         var tree = opened
         let unsure = DevMenu.unsureMatches(for: item, label: label, in: tree)
         if !unsure.isEmpty {
-            await FrontJudge.read(unsure, in: &tree, backend: route.backend, device: route.device, everyPoint: true)
+            await watchdog.guardingRead(of: route.device) {
+                await FrontJudge.read(unsure, in: &tree, backend: route.backend, device: route.device, everyPoint: true)
+            }
         }
         guard let (node, tapped) = DevMenu.match(for: item, label: label, in: tree), let frame = node.frame else {
             // React Native's own menu on Android is a dialog with no close control, which Back dismisses.

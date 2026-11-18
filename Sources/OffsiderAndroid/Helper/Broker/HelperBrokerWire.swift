@@ -182,6 +182,9 @@ enum HelperBrokerWire {
         }
     }
 
+    /// The `bye` reason when the helper did not answer within the command's own timeout.
+    static let timedOutReason = "timeout"
+
     enum Code {
         static let busy = "helper-busy"
         static let unavailable = "helper-unavailable"

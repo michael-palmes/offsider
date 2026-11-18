@@ -1,6 +1,7 @@
 import CryptoKit
 import Foundation
 import Testing
+@testable import OffsiderAndroid
 
 @Suite("Android helper source consistency")
 struct HelperSourceConsistencyTests {
@@ -75,5 +76,14 @@ struct HelperSourceConsistencyTests {
         let version = try #require(source.firstMatch(of: #/static final String VERSION = "([^"]+)";/#)?.1)
         #expect(Int(protocolNumber) == manifest.protocol)
         #expect(String(version) == manifest.helperVersion)
+    }
+
+    @Test("the time limits Offsider reads a dump by equal the ones TreeDumper.java walks by")
+    func walkLimitsMatch() throws {
+        let source = try String(contentsOf: Self.sources.appendingPathComponent("com/mpalmes/offsider/helper/TreeDumper.java"), encoding: .utf8)
+        let budget = try #require(source.firstMatch(of: #/static final long WALK_BUDGET_MS = (\d+);/#)?.1)
+        let silent = try #require(source.firstMatch(of: #/static final long SILENT_WINDOW_MS = (\d+);/#)?.1)
+        #expect(Int(budget) == HelperDump.walkBudgetMs)
+        #expect(Int(silent) == HelperDump.silentWindowMs)
     }
 }

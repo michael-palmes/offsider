@@ -151,7 +151,7 @@ enum ScreenCapture {
         switch reason {
         case "truncated":
             return .warning(
-                "The screen was too big to read whole; check \(subject)",
+                "The screen was not read whole; check \(subject)",
                 agent: "the device cut this accessibility tree short, so masks may miss elements past the cut; check \(subject) or add --mask-region (maskUnproven)."
             )
         case "no-windows":

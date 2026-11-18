@@ -98,7 +98,7 @@ Agents building in parallel use `swift build --scratch-path <dir>` and `swift te
 | `OFFSIDER_ANDROID_FOLD_AVD` | The fold AVD `--android-fold` drives (default `Offsider_E2E_Fold`) |
 | `OFFSIDER_SIMULATOR_NAME`, `OFFSIDER_FOLDABLE_SIMULATOR_NAME` | The simulator names `test-runner.sh` picks for the simulator and foldable suites (defaults: a stock iPhone, `Offsider Duo`); `SIMULATOR_UDID` overrides both. `test-runner.sh` loads a git-ignored `.env` first, so machine-specific names live there (see `.env.example`) |
 | `OFFSIDER_ANDROID_LANDSCAPE_E2E=1` | Adds the Android landscape suite (Settings) |
-| `OFFSIDER_ANDROID_BOOT_E2E=1` | Adds the cold `boot` test, which stops and restarts the E2E AVD |
+| `OFFSIDER_ANDROID_BOOT_E2E=1` | Adds the cold `boot` test, which stops and restarts the E2E AVD, and the helper's framework restart test, which restarts Android on it (needs an image whose shell can `su`) |
 | `OFFSIDER_FOLDABLE_E2E=1` | Enables `FoldableTests` on the iPhone Duo simulator named by `SIMULATOR_UDID` |
 | `OFFSIDER_ANDROID_FOLD_E2E=1` | Enables `AndroidFoldableTests` (needs `OFFSIDER_ANDROID_E2E_AVD` set to the fold AVD) |
 | `OFFSIDER_ANDROID_PHONE` | The exact USB serial the `AndroidPhone*Tests` suites drive (an `adb devices -l` row with `usb:` and state `device`; refused beside `OFFSIDER_ANDROID_E2E`, and unless its allowance pins `com.mpalmes.offsider.playground.rn` or is a test device); unset, `--android-phone` uses the one active Android allowance, only when it pins `com.mpalmes.offsider.playground.rn` or is a test device |
