@@ -160,7 +160,7 @@ public enum UITreeEconomy {
             others.onScreen = false
             otherFilters = others
             summarisesRuns = options.filter.onScreen && rect != nil
-            beneath = summarisesRuns ? ScreenStack.build(roots: tree.roots, viewport: tree.viewport).beneath : []
+            beneath = summarisesRuns ? ScreenStack.beneath(of: tree.roots, viewport: tree.viewport, front: tree.front) : []
             covered = Set(beneath.flatMap(\.indexes))
             unreached = summarisesRuns ? Set(tree.front.map { Array($0.covered.keys) } ?? []).subtracting(covered) : []
             pastScrollEdge = summarisesRuns ? tree.front?.clipped ?? [:] : [:]

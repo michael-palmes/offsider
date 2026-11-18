@@ -48,12 +48,18 @@ struct HiddenBranchMissTests {
         #expect(!error.userFacingDescription.contains("Did you mean"))
     }
 
-    @Test("a hidden branch away from the bars is named as hidden, with no bar blamed")
+    @Test("a hidden branch wholly on screen, as under a system sheet, is named as covered, and the fix never says scroll")
     func hiddenElsewhere() async throws {
         let behind = UITreeContext.HiddenBranch(id: "row-12", label: nil, className: nil, frame: FakeUI.frame(0, 300, 412, 56))
         let error = try #require(await Self.miss(["--id", "row-12", "--wait-timeout", "0"], hidden: behind) as? HiddenBranchMiss)
-        #expect(error.userFacingDescription.hasPrefix("No accessibility element matched --id 'row-12' on screen: Android lists it as hidden at (0, 300) 412x56, as it does a view another covers"))
-        #expect(!error.userFacingDescription.contains("navigation bar"))
+        #expect(error.userFacingDescription == "No accessibility element matched --id 'row-12' on screen: Android lists it as hidden at (0, 300) 412x56, on screen but under another view or window, such as a sheet. Nothing was sent. Close what covers it, then retry.")
+    }
+
+    @Test("a hidden branch the screen's edge cuts may be clipped, so the fix still offers a scroll")
+    func hiddenPastEdge() async throws {
+        let clipped = UITreeContext.HiddenBranch(id: "row-12", label: nil, className: nil, frame: FakeUI.frame(0, -20, 412, 56))
+        let error = try #require(await Self.miss(["--id", "row-12", "--wait-timeout", "0"], hidden: clipped) as? HiddenBranchMiss)
+        #expect(error.userFacingDescription.contains("as it does a view another covers or clips. Nothing was sent. Scroll it into view or close what covers it, then retry."), "\(error.userFacingDescription)")
     }
 
     @Test("a hidden branch wholly off the screen, as on a parked sheet, is named as off the screen")
