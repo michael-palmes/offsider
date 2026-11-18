@@ -508,6 +508,15 @@ public struct AndroidError: LocalizedError, CustomStringConvertible, Equatable, 
         )
     }
 
+    /// The helper went, and the one fresh start a command gives it did not bring the request back.
+    static func helperNotRecovered(_ serial: String, detail: String, restart: String? = nil) -> AndroidError {
+        AndroidError(
+            .helperCrashed,
+            "The UiAutomation helper on \(serial) stopped (\(detail)), and one fresh start did not bring it back\(restart.map { " (\($0))" } ?? ""). Run `offsider session stop --device \(serial)`, then retry.",
+            hint: "offsider session stop --device \(serial)"
+        )
+    }
+
     static func helperLostInput(_ serial: String, detail: String) -> AndroidError {
         AndroidError(
             .helperCrashed,
