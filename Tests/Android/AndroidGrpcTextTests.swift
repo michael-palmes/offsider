@@ -67,7 +67,7 @@ struct AndroidGrpcTextTests {
         #expect(error?.kind == .textNotAccepted)
         #expect(error?.message.contains("stopped after 14 of 15 characters") == true, "\(error?.message ?? "")")
         #expect(rig.emulator.calls == [.key(.text("cam@example.co"))])
-        #expect(rig.sleeps.total >= AndroidKeyBacklog.limit)
+        #expect(rig.adbScripts.count > 1, "it stopped without waiting")
     }
 
     @Test("an unreadable backlog pauses once, then sends the next burst")

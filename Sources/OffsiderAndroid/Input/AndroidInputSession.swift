@@ -484,6 +484,7 @@ final class AndroidInputSession: InputSession, TextInputSession {
 
     /// Until the guest's dispatcher has taken every key sent, so the next run neither overruns the kernel buffer nor waits long enough to be dropped.
     private func waitForKeys(sent: Int, of total: Int) async throws {
+        let started = ContinuousClock.now
         var waited = Duration.zero
         var last: (queued: Int, pause: Duration)?
         while true {
@@ -492,7 +493,7 @@ final class AndroidInputSession: InputSession, TextInputSession {
                 return
             }
             if queued == 0 { return }
-            guard waited < AndroidKeyBacklog.limit else { throw AndroidError.keysNotTaken(device.rawValue, sent: sent, of: total) }
+            guard waited < AndroidKeyBacklog.limit, ContinuousClock.now - started < AndroidKeyBacklog.limit else { throw AndroidError.keysNotTaken(device.rawValue, sent: sent, of: total) }
             let pause = AndroidKeyBacklog.pause(queued: queued, since: last)
             try await sleep(pause)
             waited += pause

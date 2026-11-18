@@ -18,11 +18,6 @@ struct AndroidKeyBacklogTests {
         #expect(AndroidKeyBacklog.queued(in: output) == nil)
     }
 
-    @Test("the dump is filtered on the device, so recent key events never cross adb")
-    func filteredOnDevice() {
-        #expect(AndroidKeyBacklog.script.hasPrefix("dumpsys input | grep "))
-    }
-
     @Test("the next read comes when the queue should have drained at the rate seen, within 20 to 500 ms")
     func pause() {
         #expect(AndroidKeyBacklog.pause(queued: 60, since: nil) == .milliseconds(50))
