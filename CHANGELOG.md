@@ -58,6 +58,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - `runner build` says when another Apple team owns the runner's App ID, instead of blaming the device's registration, and names the one `devices add --runner-prefix` command that fixes it.
 - `stay-awake` and `sleep` on a simulator no longer say simulators never lock; they name `wake`.
 - `wake` on an iPhone or iPad no longer prints a blank line after its text.
+- On an Android emulator, `type` of ASCII text needing more than 30 key events (about 15 characters, fewer with capitals or symbols such as `@`) no longer leaves the field empty while exiting 0: the guest's kernel dropped such a burst whole. Text now goes in bursts it holds, each once Android has taken the last, so long text lands whole and in order at the app's pace; an app that takes no keys for 10 s stops it with exit 5 (`text_not_accepted`).
 
 ## [0.16.0] - 2026-11-05
 
