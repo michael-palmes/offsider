@@ -320,6 +320,29 @@ struct Init: AsyncParsableCommand {
         return AgentPermissionRules.doctorVerdict(detected: detected, lacking: lacking, outdated: outdated)
     }
 
+    /// `doctor`'s `install.deny-rules`: reads, never edits, the agent settings a session here can load; a missing, large or malformed file is passed over.
+    static func denyRulesDoctorCheck(
+        home: String = homeDirectoryPath(), directory: String = FileManager.default.currentDirectoryPath, audience: ErrorAudience = .current
+    ) -> DoctorCheckResult {
+        var seen = Set<String>()
+        var files: [(source: PlanBlockingRules.Source, shown: String, data: Data)] = []
+        for (source, path) in PlanBlockingRules.files(home: home, directory: directory, gitEntry: gitEntry) {
+            let resolved = URL(fileURLWithPath: path).resolvingSymlinksInPath().path
+            guard seen.insert(resolved).inserted, let data = UntrustedRead.contents(atPath: resolved, maxBytes: AgentPermissionRules.maxFileBytes) else { continue }
+            files.append((source, TerminalText.homePath(path, home: home), data))
+        }
+        let initFile = TerminalText.homePath(home + "/" + AgentPermissionRules.Agent.claudeCode.rulesFile, home: home)
+        return DoctorCheckResult(id: .installDenyRules, verdict: PlanBlockingRules.verdict(PlanBlockingRules.findings(files, initFile: initFile), filesRead: files.count, audience: audience))
+    }
+
+    /// A worktree's `.git` file is read only to find its main checkout.
+    static func gitEntry(_ path: String) -> PlanBlockingRules.GitEntry? {
+        var isDirectory: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: path, isDirectory: &isDirectory) else { return nil }
+        if isDirectory.boolValue { return .directory }
+        return UntrustedRead.contents(atPath: path, maxBytes: 4096).map { .file(String(decoding: $0, as: UTF8.self)) }
+    }
+
     private func uninstallSkill(from targets: [ClientInfo]) throws {
         var removed: [InitScreen.Step] = []
 

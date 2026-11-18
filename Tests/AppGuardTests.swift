@@ -93,6 +93,45 @@ struct AppGuardTests {
         }
     }
 
+    /// A simulator whose mapping of input points never returns, as a hung orientation read leaves it.
+    private final class HungMapping: FakeDeviceBackend {
+        override func deviceCoordinates(for points: [(x: Double, y: Double)], tree: UITree?, on id: DeviceID) async throws -> [(x: Double, y: Double)] {
+            try await Task.sleep(for: .seconds(3600))
+            throw CancellationError()
+        }
+    }
+
+    private final class Fires: @unchecked Sendable {
+        private let lock = NSLock()
+        private var messages: [String] = []
+        func record(_ message: String) { lock.withLock { messages.append(message) } }
+        var all: [String] { lock.withLock { messages } }
+    }
+
+    @Test("the guard's placing of a coordinate input on screen stops waiting on a read that never returns, with nothing sent")
+    func hungMappingEndsAsHung() async throws {
+        let fires = Fires()
+        let backend = HungMapping(trees: [Self.screen])
+        let loaded = Self.rules()
+        let task = Task { @MainActor in
+            try await DeviceWatchdog.$make.withValue({ DeviceWatchdog(grace: 0.05, readBound: 0) { fires.record($0) } }) {
+                try await GuardSources.$source.withValue({ loaded }) {
+                    try await DeviceActivityLedger.$current.withValue(DeviceActivityLedger()) {
+                        try await DispatchTracker.$current.withValue(DispatchTracker()) {
+                            try await backend.performTracked(.tapAt(x: 100, y: 320), on: Self.device)
+                        }
+                    }
+                }
+            }
+        }
+        defer { task.cancel() }
+        let deadline = ContinuousClock.now + .seconds(10)
+        while fires.all.isEmpty, ContinuousClock.now < deadline { try await Task.sleep(for: .milliseconds(10)) }
+        #expect(fires.all.count == 1)
+        #expect(fires.all.first?.contains(Self.device.rawValue) == true)
+        #expect(backend.session.calls.isEmpty)
+    }
+
     @Test("a coordinate tap on a never control sends nothing and says whose tap it is")
     func neverIsRefused() async {
         let result = await send(.tapAt(x: 100, y: 720), loaded: Self.rules())

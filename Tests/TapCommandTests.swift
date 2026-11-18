@@ -535,4 +535,57 @@ struct TapCommandTests {
         }
         #expect(sent.state == .yes)
     }
+
+    // MARK: --hold
+
+    static func heldTap(x: Double, y: Double, seconds: TimeInterval) -> InputEvent {
+        .composite([.touch(direction: .down, x: x, y: y), .delay(seconds), .touch(direction: .up, x: x, y: y)])
+    }
+
+    @Test("--hold at a point is one long press there: down, held for the milliseconds given, then up", arguments: [
+        DeviceID(rawValue: "fake-device", platform: .ios), DeviceID(rawValue: "emulator-5554", platform: .android),
+    ])
+    func holdAtAPoint(device: DeviceID) async throws {
+        let backend = FakeDeviceBackend(platform: device.platform, trees: [Self.sheetScreen(applyY: 600)])
+        try await Tap.parse(["-x", "120", "-y", "300", "--hold", "1500", "--device", device.rawValue])
+            .execute(on: DeviceRouter.Route(backend: backend, device: device), progress: nil, logger: OffsiderLogger())
+        #expect(backend.session.calls == [.perform(Self.heldTap(x: 120, y: 300, seconds: 1.5))])
+    }
+
+    @Test("--hold on a selector long-presses the element's point, with the delays around the press")
+    func holdOnASelector() async throws {
+        let backend = FakeDeviceBackend(trees: [Self.sheetScreen(applyY: 600)])
+        try await Self.tap(["--id", "apply", "--hold", "800", "--pre-delay", "0.2"], on: backend)
+        #expect(backend.session.calls == [.perform(.composite([.delay(0.2), .touch(direction: .down, x: 195, y: 622), .delay(0.8), .touch(direction: .up, x: 195, y: 622)]))])
+    }
+
+    @Test("--hold takes 100 to 10000 ms and no --tap-style", arguments: [
+        (["--hold", "50"], "--hold must be from 100 to 10000 milliseconds; got 50."),
+        (["--hold", "10001"], "--hold must be from 100 to 10000 milliseconds; got 10001."),
+        (["--hold", "1000", "--tap-style", "physical"], "--hold always presses, holds and lifts; drop --tap-style."),
+    ])
+    func holdLimits(extra: [String], message: String) {
+        #expect {
+            _ = try Tap.parse(["-x", "1", "-y", "1"] + extra + ["--device", Self.device.rawValue])
+        } throws: { error in
+            Tap.message(for: error) == message
+        }
+    }
+
+    @Test("a held tap's receipt says how long it was held")
+    func holdReceipt() {
+        #expect(Tap.completionLine(selector: nil, at: (x: 120, y: 300), held: 1.5) == "✓ Tap at (120, 300), held 1.5 s, completed successfully")
+        #expect(Tap.completionLine(selector: "id=apply", at: (x: 195, y: 622)) == "✓ Tap on id=apply at (195, 622) completed successfully")
+    }
+
+    @Test("a batch tap step keeps its --hold as one long press")
+    func holdInBatch() async throws {
+        let context = BatchContext(backend: StubBackend(session: RecordingInputSession()), device: Self.device, axCachePolicy: .perBatch, typeSubmissionMode: .composite, typeChunkSize: 1)
+        let primitives = try await Tap.parse(["-x", "120", "-y", "300", "--hold", "1500", "--device", Self.device.rawValue]).toBatchPrimitives(context: context, logger: OffsiderLogger())
+        guard primitives.count == 1, case .hidBarrier(let event) = primitives[0] else {
+            Issue.record("expected one barrier, got \(primitives)")
+            return
+        }
+        #expect(event == Self.heldTap(x: 120, y: 300, seconds: 1.5))
+    }
 }

@@ -268,6 +268,127 @@ struct TypeKeyboardFocusTests {
         #expect(lines.joined().contains("text_not_accepted"), "\(lines)")
     }
 
+    @Test("plain type reads back the field that had focus: keys a tutorial opening after the check took are exit 5 text_not_accepted, never the text")
+    func plainTypeTutorialAfterCheck() async throws {
+        let backend = StagedBackend([Self.form(focused: "second-field"), Self.form(focused: "second-field", keyboardField: true)])
+        let error = await #expect(throws: CLIError.self) {
+            try await Self.type(["s3cret-ish"], on: backend)
+        }
+        #expect(error?.reason == .textNotAccepted)
+        let message = error?.userFacingDescription ?? ""
+        #expect(message.contains("Typed into id=second-field, but its text did not change") && message.contains("stylus handwriting tutorial"), "\(message)")
+        #expect(!message.contains("s3cret-ish"))
+        #expect(error?.hint == "adb -s emulator-5554 shell settings put secure stylus_handwriting_enabled 0")
+        #expect(backend.text.calls == [.typeText("s3cret-ish")])
+    }
+
+    @Test("plain type passes once the text shows in the field that had focus")
+    func plainTypeLanded() async throws {
+        let backend = StagedBackend([Self.form(focused: "second-field"), Self.form(focused: "second-field", value: "abc")])
+        try await Self.type(["abc"], on: backend)
+        #expect(backend.text.calls == [.typeText("abc")])
+    }
+
+    @Test("plain type never reads a password field back, so an unchanged one passes")
+    func plainTypePasswordNotJudged() async throws {
+        let backend = StagedBackend([Self.form(focused: "second-field", secure: true), Self.form(focused: "second-field", secure: true)])
+        try await Self.type(["abc"], on: backend)
+        #expect(backend.text.calls == [.typeText("abc")])
+    }
+
+    @Test("plain --replace is not read back, as its set-text checks itself")
+    func plainReplaceNotReadBack() async throws {
+        let backend = StagedBackend([Self.form(focused: "second-field"), Self.form(focused: "second-field")])
+        try await Self.type(["--replace", "abc"], on: backend)
+        #expect(backend.text.calls == [.replaceText("abc")])
+    }
+
+    @Test("plain type into a focused web view is not read back, as its page holds the text, not its value")
+    func webViewNotJudged() async throws {
+        let web = UINode(
+            role: .other, id: "page", frame: FakeUI.frame(0, 100, 402, 600), state: UIState(focused: true),
+            native: .android(AndroidNativeAttributes(className: "android.webkit.WebView"))
+        )
+        let tree = FakeUI.tree(platform: .android, [web])
+        try await Self.type(["abc"], on: StagedBackend([tree]))
+    }
+
+    static func batch(_ steps: [String], on backend: StagedBackend) async throws -> [String] {
+        let context = BatchContext(backend: backend, device: Self.android, axCachePolicy: .perStep, typeSubmissionMode: .chunked, typeChunkSize: 200)
+        var lines: [String] = []
+        let output = BatchOutput(json: true, write: { lines.append($0) }, writeError: { _ in })
+        do {
+            try await TypeIntoTests.quiet {
+                try await Batch.runSteps(steps, context: context, session: backend.makeSession(), continueOnError: false, output: output, logger: OffsiderLogger())
+            }
+        } catch {
+            lines.append("threw")
+        }
+        return lines
+    }
+
+    @Test("a batch tap then plain type fails with text_not_accepted when the tutorial opens after the type step's check, and passes when the text lands")
+    func batchTapThenType() async throws {
+        let lost = StagedBackend([
+            Self.form(focused: nil), Self.form(focused: "second-field"), Self.form(focused: "second-field", keyboardField: true),
+        ])
+        let failed = try await Self.batch(["tap --id second-field", "type abc"], on: lost)
+        #expect(failed.contains("threw") && failed.joined().contains("text_not_accepted"), "\(failed)")
+        #expect(lost.text.calls.last == .typeText("abc"))
+
+        let landed = StagedBackend([
+            Self.form(focused: nil), Self.form(focused: "second-field"), Self.form(focused: "second-field", value: "abc"),
+        ])
+        let passed = try await Self.batch(["tap --id second-field", "type abc"], on: landed)
+        #expect(!passed.contains("threw") && !passed.joined().contains("text_not_accepted"), "\(passed)")
+        #expect(landed.text.calls.last == .typeText("abc"))
+    }
+
+    static func keySequence(_ keycodes: String, on backend: StagedBackend) async throws {
+        try await TypeIntoTests.quiet {
+            try await KeySequence.parse(["--keycodes", keycodes, "--delay", "0", "--device", Self.android.rawValue])
+                .perform(on: DeviceRouter.Route(backend: backend, device: Self.android), logger: OffsiderLogger())
+        }
+    }
+
+    @Test("a key-sequence that spells text is read back as type is: keys the tutorial took are exit 5 text_not_accepted")
+    func keySequenceReadBack() async throws {
+        let lost = StagedBackend([Self.form(focused: "second-field"), Self.form(focused: "second-field", keyboardField: true)])
+        let error = await #expect(throws: CLIError.self) { try await Self.keySequence("11,8,15,15,18", on: lost) }
+        #expect(error?.reason == .textNotAccepted)
+        let message = error?.userFacingDescription ?? ""
+        #expect(message.contains("Pressed the keys into id=second-field") && message.contains("type --replace") && !message.contains("hello"), "\(message)")
+
+        try await Self.keySequence("11,8,15,15,18", on: StagedBackend([Self.form(focused: "second-field"), Self.form(focused: "second-field", value: "hello")]))
+    }
+
+    @Test("keys the tutorial took name the fix for where they went: stylus off on an emulator, close it on a phone, never --replace, which key-sequence lacks")
+    func keysRefusalFix() {
+        let keyboard = Self.form(focused: "second-field", keyboardField: true).roots.last!
+        let emulator = Type.textNotLandedRefusal(keyboard: keyboard, target: "id=second-field", device: Self.android, keys: true)
+        let phone = Type.textNotLandedRefusal(keyboard: keyboard, target: "id=second-field", device: Self.phone, keys: true)
+        #expect(emulator.userFacingDescription.contains("Turn stylus handwriting off") && !emulator.userFacingDescription.contains("run it again with --replace"))
+        #expect(phone.userFacingDescription.contains("Close it on the phone") && phone.hint?.contains("settings") == false)
+    }
+
+    @Test("a key-sequence with Return, Delete or arrows in it is not read back, as no text can be expected from it")
+    func keySequenceWithControlKeys() async throws {
+        let unchanged = [Self.form(focused: "second-field"), Self.form(focused: "second-field", keyboardField: true)]
+        try await Self.keySequence("4,42", on: StagedBackend(unchanged))
+        try await Self.keySequence("4,5,40", on: StagedBackend(unchanged))
+    }
+
+    @Test("keys spell text only when each is a letter, digit, space or punctuation mark")
+    func spelledText() {
+        #expect(KeySequence.spelledText([11, 8, 15, 15, 18]) == "hello")
+        #expect(KeySequence.spelledText(Array(30...39)) == "1234567890")
+        #expect(KeySequence.spelledText([44, 45, 46, 47, 48, 49, 51, 52, 53, 54, 55, 56]) == " -=[]\\;'`,./")
+        #expect(KeySequence.spelledText([4, 42]) == nil)
+        #expect(KeySequence.spelledText([225, 4]) == nil)
+        #expect(KeySequence.spelledText([50]) == nil)
+        #expect(KeySequence.spelledText([89]) == nil)
+    }
+
     @Test("an iOS simulator keeps its behaviour: a keyboard's own focused field is not read as Gboard's")
     func iosUnchanged() async throws {
         let sent = try await TypeIntoTests.focus(

@@ -202,10 +202,22 @@ struct Button: AsyncParsableCommand, VerifiableCommand {
     /// How to unlock a simulator after `button lock`; a swipe up can freeze its display while its tree moves on.
     static func unlockNote(_ button: ButtonType, device: String) -> Notice? {
         guard button == .lock, case .iosSimulator = DeviceIDClassifier.classify(device) else { return nil }
-        let home = "offsider button home --device \(device)"
+        let wake = "offsider wake --device \(device)"
         return .note(
-            "To unlock, press Home twice; a swipe up can freeze the display", agent: "To unlock this simulator, run `\(home)` twice: a swipe up can freeze its display.", see: home, label: "Try"
+            "Unlock with wake; a swipe up can freeze the display", agent: "To unlock this simulator, run `\(wake)`, which presses Home: a swipe up can freeze its display.", see: wake, label: "Try"
         )
+    }
+
+    /// After a short lock press on a simulator, waits for the lock screen to read as up, so a `wake` sent next finds it.
+    static func awaitSimulatorLock(
+        _ button: ButtonType, duration: Double?, device: String,
+        read: (DeviceID) async throws -> SimulatorLockScreen = { try await IOSBackend.lockScreen(of: $0) },
+        sleep: (Duration) async throws -> Void = { try await Task.sleep(for: $0) },
+        now: () -> TimeInterval = { ProcessInfo.processInfo.systemUptime }
+    ) async {
+        guard button == .lock, duration == nil, case .iosSimulator = DeviceIDClassifier.classify(device) else { return }
+        let id = DeviceID(rawValue: device, platform: .ios)
+        _ = await SimulatorWake.awaitLocked(read: { try await read(id) }, sleep: sleep, now: now)
     }
 
     /// A short Android `home` press checks the foreground activity instead of the tree.
@@ -224,6 +236,7 @@ struct Button: AsyncParsableCommand, VerifiableCommand {
         guard verification.verify else {
             try await InputOutput.reporting(command: "button", target: buttonType.rawValue, json: verification.json) { _ in
                 try await execute(progress: nil)
+                await Self.awaitSimulatorLock(buttonType, duration: duration, device: deviceOption.id)
                 Console.current.show(InputPersonView.receipt("Pressed \(buttonType.personName)", aside: duration.map(InputPersonView.held)))
                 if let note = Self.unlockNote(buttonType, device: deviceOption.id) { Console.current.notice(note) }
             }
@@ -231,6 +244,7 @@ struct Button: AsyncParsableCommand, VerifiableCommand {
         }
         try await VerifyOutput.reportingFailures(command: "button", target: buttonType.rawValue, options: verification) { progress in
             try await execute(progress: progress)
+            await Self.awaitSimulatorLock(buttonType, duration: duration, device: deviceOption.id)
             if let note = Self.unlockNote(buttonType, device: deviceOption.id) { Console.current.notice(note) }
         }
     }

@@ -7,11 +7,12 @@ import Testing
 @Suite("Button platforms")
 @MainActor
 struct ButtonPlatformTests {
-    @Test("lock on a simulator says to unlock with Home twice; other buttons and devices say nothing")
+    @Test("lock on a simulator names wake, which presses Home, as the unlock; other buttons and devices say nothing")
     func lockSaysHowToUnlock() throws {
         let simulator = "00000000-0000-0000-0000-000000000001"
         let note = try #require(Button.unlockNote(.lock, device: simulator))
-        #expect(note.agentText == "To unlock this simulator, run `offsider button home --device \(simulator)` twice: a swipe up can freeze its display.")
+        #expect(note.agentText == "To unlock this simulator, run `offsider wake --device \(simulator)`, which presses Home: a swipe up can freeze its display.")
+        #expect(note.command == "offsider wake --device \(simulator)")
         #expect(Button.unlockNote(.home, device: simulator) == nil)
         #expect(Button.unlockNote(.lock, device: "emulator-5554") == nil)
     }

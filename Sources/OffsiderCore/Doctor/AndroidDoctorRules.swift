@@ -123,7 +123,7 @@ public enum AndroidDoctorRules {
 
     // MARK: Device
 
-    public static func deviceState(_ facts: AndroidDeviceFacts) -> Verdict {
+    public static func deviceState(_ facts: AndroidDeviceFacts, audience: ErrorAudience = .current) -> Verdict {
         let serial = facts.serial ?? facts.id
         let label = facts.isPhysical ? DeviceName.label(maker: facts.awake?.maker, model: facts.model) : facts.avdName ?? facts.model
         let name = DeviceName.display(serial, label: label)
@@ -140,6 +140,12 @@ public enum AndroidDoctorRules {
             return (.pass, "\(name), booted", nil)
         case .booting:
             return (.warn, "\(name), still booting", "Wait for it to finish booting, then run doctor again.")
+        case .bootPINPrompt:
+            return (
+                .fail,
+                "\(name) is waiting for its boot PIN, so apps cannot be installed: its storage is a small temporary disk until the PIN is entered",
+                BootPINPrompt.hint(name: label ?? serial, isPhysical: facts.isPhysical, audience: audience)
+            )
         case .offline:
             return (.fail, "\(name) is offline", "Wait a moment; if it stays offline, restart the emulator.")
         case .unauthorised:
@@ -503,6 +509,7 @@ public enum AndroidDoctorRules {
             switch device.state {
             case .booted: state = "Booted"
             case .booting: state = "Booting"
+            case .bootPINPrompt: state = "Waiting for PIN"
             default: state = row.state
             }
             return AndroidDeviceRow(serial: row.serial, kind: row.kind, state: state, avd: device.avdName ?? row.avd, apiLevel: device.apiLevel ?? row.apiLevel)

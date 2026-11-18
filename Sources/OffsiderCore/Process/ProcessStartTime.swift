@@ -32,6 +32,22 @@ public struct ProcessStamp: Equatable, Sendable {
         Date(timeIntervalSince1970: date.timeIntervalSince1970.rounded(.down)).formatted(.iso8601)
     }
 
+    /// `pid 4242, started 14 min ago at 11:52:33`: the start as an age and a local time, with the date once it is over a day old.
+    public func summary(now: Date, timeZone: TimeZone = .current) -> String {
+        let age = max(0, Int(now.timeIntervalSince(startedAt)))
+        let ago = switch age {
+        case ..<60: "\(age) s ago"
+        case ..<3600: "\(age / 60) min ago"
+        case ..<172_800: "\(age / 3600) h ago"
+        default: "\(age / 86_400) days ago"
+        }
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = timeZone
+        formatter.dateFormat = age < 86_400 ? "HH:mm:ss" : "d MMM HH:mm"
+        return "pid \(pid), started \(ago) at \(formatter.string(from: startedAt))"
+    }
+
     /// The date an ISO 8601 timestamp names, such as one `timestamp` wrote; nil for anything else.
     public static func date(fromTimestamp text: String) -> Date? {
         try? Date(text, strategy: .iso8601)

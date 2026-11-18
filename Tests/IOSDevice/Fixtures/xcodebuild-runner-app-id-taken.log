@@ -1,0 +1,8 @@
+Command line invocation:
+    xcodebuild build-for-testing -project OffsiderRunner.xcodeproj -scheme OffsiderRunner -destination id=<UDID> -quiet
+
+error: Failed Registering Bundle Identifier: The app identifier "com.mpalmes.offsider.runner" cannot be registered to your development team because it is not available. Change your bundle identifier to a unique string to try again. (in target 'OffsiderRunnerHost' from project 'OffsiderRunner')
+error: No profiles for 'com.mpalmes.offsider.runner' were found: Xcode couldn't find any iOS App Development provisioning profiles matching 'com.mpalmes.offsider.runner'. (in target 'OffsiderRunnerHost' from project 'OffsiderRunner')
+error: Failed Registering Bundle Identifier: The app identifier "com.mpalmes.offsider.runner.uitests.xctrunner" cannot be registered to your development team because it is not available. Change your bundle identifier to a unique string to try again. (in target 'OffsiderRunnerUITests' from project 'OffsiderRunner')
+
+** TEST BUILD FAILED **

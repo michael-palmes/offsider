@@ -12,20 +12,24 @@ struct DevMenuDriver {
     let clock: PollClock
     /// Sends the menu key and taps; a batch step passes its own session so they count as the step's input.
     var send: (@MainActor (InputEvent) async throws -> Void)?
+    /// Bounds each read of the screen; the input itself runs unbound.
+    var watchdog = DeviceWatchdog()
 
     static let openWait: TimeInterval = 5
     static let closeWait: TimeInterval = 5
     static let poll: Duration = .milliseconds(300)
     static let switchHold: TimeInterval = 0.2
 
-    func read() async throws -> UITree {
-        try await route.backend.accessibilityTree(for: route.device)
+    /// `first` for a command's first read, which on Android may start the helper.
+    func read(first: Bool = false) async throws -> UITree {
+        let read = { try await route.backend.accessibilityTree(for: route.device) }
+        return first ? try await watchdog.guardingInputRead(of: route.device, read) : try await watchdog.guardingRead(of: route.device, read)
     }
 
     /// The menu, opening it first; a menu that never shows is `state_not_reached`, as in a Release build.
     /// `check` runs on the first read, which refuses an app a phone is not allowed for, and before any input.
     func open(check: ((UITree) async throws -> Void)? = nil) async throws -> (DevMenu.State, UITree) {
-        let tree = try await read()
+        let tree = try await read(first: true)
         try await check?(tree)
         if let state = DevMenu.read(tree) { return (state, tree) }
         if route.device.platform == .android {
@@ -188,7 +192,7 @@ struct DevMenuDriver {
 
     /// A switch in the iOS Expo menu ignores a quick tap, so it gets a held touch.
     private func tap(_ point: UIPoint, tree: UITree?, hold: Bool = false) async throws {
-        let physical = try await route.backend.deviceCoordinates(for: [(x: point.x, y: point.y)], tree: tree, on: route.device)[0]
+        let physical = try await watchdog.inputPoints([(x: point.x, y: point.y)], tree: tree, backend: route.backend, device: route.device)[0]
         guard hold else {
             try await perform(.tapAt(x: physical.x, y: physical.y))
             return
@@ -305,9 +309,9 @@ struct RNDevMenu: AsyncParsableCommand {
     }
 
     @MainActor
-    func perform(on route: DeviceRouter.Route, clock: PollClock, send: (@MainActor (InputEvent) async throws -> Void)? = nil) async throws -> Outcome {
+    func perform(on route: DeviceRouter.Route, clock: PollClock, send: (@MainActor (InputEvent) async throws -> Void)? = nil, watchdog: DeviceWatchdog = DeviceWatchdog()) async throws -> Outcome {
         try await route.backend.prepare()
-        let driver = DevMenuDriver(route: route, clock: clock, send: send)
+        let driver = DevMenuDriver(route: route, clock: clock, send: send, watchdog: watchdog)
         let item = self.item, label = self.label
         let perfMonitor = item == .perfMonitor || label.map(DevMenu.namesPerfMonitor) == true
         // An open menu shows whether the choice is the performance monitor; a closed one is checked before the menu key is sent.
@@ -368,12 +372,12 @@ struct RNToolsOff: AsyncParsableCommand {
     }
 
     @MainActor
-    func turnOff(on route: DeviceRouter.Route, clock: PollClock) async throws -> (inspector: String, perfMonitor: String) {
+    func turnOff(on route: DeviceRouter.Route, clock: PollClock, watchdog: DeviceWatchdog = DeviceWatchdog()) async throws -> (inspector: String, perfMonitor: String) {
         try await route.backend.prepare()
-        let driver = DevMenuDriver(route: route, clock: clock)
+        let driver = DevMenuDriver(route: route, clock: clock, watchdog: watchdog)
         let tree: UITree
         do {
-            tree = try await driver.read()
+            tree = try await driver.read(first: true)
         } catch let error as IOSDeviceError where error.reason == .usage || error.reason == .appNotAllowed {
             throw error
         } catch {

@@ -28,6 +28,12 @@ public struct LoginReport: Equatable, Sendable {
     public var submitted = true
     /// Why a login that began typing stopped; nil once submit was tapped.
     public var error: ErrorPayload?
+    /// True when the sign-in form was still in front once `login` stopped watching after submit; nil when the screen was not read then.
+    public var formStillInFront: Bool?
+    /// What became of a save-password prompt after submit; nil when none showed.
+    public var savePrompt: SavePromptOutcome?
+    /// True when `--wait-turnstile` waited for a person before the login went on.
+    public var waitedForTurnstile = false
 
     public init(app: String, key: String, turnstile: LoginTurnstileStep?, submitLabel: String?, tags: [LoginTag] = [], filter: [LoginTag] = []) {
         self.app = app
@@ -58,7 +64,23 @@ public struct LoginReport: Equatable, Sendable {
     public func textLine() -> String {
         let button = submitLabel.map { "tapped \($0)" } ?? "tapped the submit button"
         let chosen = filter.isEmpty ? "" : " (chosen by --where \(filter.map(\.rawValue).joined(separator: " ")))"
-        return "\(app) as \(LoginCredential.displayKey(key))\(chosen): filled the email or username field, filled the password field, \(button). The submit button was tapped. This does not mean the server accepted the login."
+        return "\(app) as \(LoginCredential.displayKey(key))\(chosen): filled the email or username field, filled the password field, \(button). The submit button was tapped. \(serverNote)\(savePromptNote.map { " \($0)" } ?? "")"
+    }
+
+    /// The sentence a refused sign-in is told by: the form staying up is the only sign `login` has.
+    public static let stillInFrontNote = "The sign-in form is still in front, so the app may have refused the login, or is slow. Read the screen before going on."
+
+    var serverNote: String {
+        formStillInFront == true ? Self.stillInFrontNote : "This does not mean the server accepted the login."
+    }
+
+    var savePromptNote: String? {
+        switch savePrompt {
+        case .declined: "Offsider declined the system's save-password prompt."
+        case .closed: "A person closed the system's save-password prompt."
+        case .open: "The system's save-password prompt is still up."
+        case nil: nil
+        }
     }
 
     /// Version 1: keys are only ever added.
@@ -76,6 +98,9 @@ public struct LoginReport: Equatable, Sendable {
         ]
         if !filter.isEmpty { fields.append(("where", .array(filter.map { .string($0.rawValue) }))) }
         fields.append(("turnstile", .optional(turnstile) { .string($0.rawValue) }))
+        fields.append(("formStillInFront", .optional(formStillInFront) { .bool($0) }))
+        fields.append(("savePrompt", .optional(savePrompt) { .string($0.rawValue) }))
+        fields.append(("waitedForTurnstile", .bool(waitedForTurnstile)))
         fields.append(("exitCode", .integer(Int(exitCode.rawValue))))
         fields.append(("error", .optional(error) { $0.jsonValue }))
         return OrderedJSON.object(fields).rendered(compact: true)

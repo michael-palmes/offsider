@@ -208,12 +208,14 @@ enum RunnerSessions {
 
     /// Uninstalls the runner apps, then deletes this device's cached builds, `runner.log` and the broker's log. Its sessions must be stopped first.
     @MainActor
-    static func clean(udid: String, environment: [String: String] = ProcessInfo.processInfo.environment) async -> RunnerCleanupReport {
+    static func clean(udid: String, environment: [String: String] = ProcessInfo.processInfo.environment, gate: DevicePolicyGate = DevicePolicyGate.current) async -> RunnerCleanupReport {
         let prefix = (try? XcodeRunnerBuilder.resolvePrefix(environment: environment)) ?? XcodeRunnerBuilder.defaultPrefix
+        var allowancePrefix: String?
+        if case .allowed(let allowance) = gate.decision(platform: .ios, key: udid.uppercased()) { allowancePrefix = allowance.runnerPrefix }
         let logs = [try? store.logPath(udid: udid), try? DeviceSessions.store.logPath(udid: udid)].compactMap { $0 }
         return await RunnerCleanup.clean(
             udid: udid, cacheRoot: XcodeRunnerBuilder.defaultCacheRoot(home: FileManager.default.homeDirectoryForCurrentUser),
-            environmentPrefix: prefix, devicectl: XcrunDevicectl(environment: environment), logPaths: logs
+            environmentPrefix: prefix, allowancePrefix: allowancePrefix, devicectl: XcrunDevicectl(environment: environment), logPaths: logs
         )
     }
 

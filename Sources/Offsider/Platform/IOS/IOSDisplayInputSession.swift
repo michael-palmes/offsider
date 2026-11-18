@@ -59,16 +59,52 @@ final class IOSDisplayInputSession: InputSession {
 
     private func connectedDigitizer() async throws -> SimulatorDTUHID {
         if let digitizer { return digitizer }
-        do {
-            let link = try await Timings.measure("digitizer") {
+        let simulator = simulator
+        let link = try await Timings.measure("digitizer") {
+            try await Self.connectRetrying(device: device, log: { [logger] in logger.info().log("Display digitizer: \($0)") }) {
                 try await SimulatorDTUHID.connect(to: simulator, service: DTUHIDMessage.digitizerService)
             }
-            digitizer = link
-            return link
-        } catch {
-            logger.info().log("Display digitizer: \(error)")
-            throw CLIError(errorDescription: Self.unsupported, reason: .notSupported)
         }
+        digitizer = link
+        return link
+    }
+
+    nonisolated static let retryPause: Duration = .seconds(1)
+
+    /// `connect`, once more after `pause` when it fails, as the input daemon can refuse a first connection and take the next.
+    static func connectRetrying<Link>(
+        device: DeviceID,
+        pause: Duration = retryPause,
+        sleep: (Duration) async throws -> Void = { try await Task.sleep(for: $0) },
+        log: (any Error) -> Void = { _ in },
+        _ connect: () async throws -> Link
+    ) async throws -> Link {
+        do {
+            return try await connect()
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch {
+            log(error)
+        }
+        try await sleep(pause)
+        do {
+            return try await connect()
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch {
+            log(error)
+            throw daemonRefused(device)
+        }
+    }
+
+    /// The input daemon would not connect twice running; once it has died, only a restart of the simulator brings it back.
+    static func daemonRefused(_ device: DeviceID) -> CLIError {
+        let udid = device.rawValue
+        return CLIError(
+            errorDescription: "The iPhone Duo's inner display took no input: the simulator's input daemon (dtuhidd) did not accept a connection. Check it with `offsider doctor --device \(udid)`, then restart the simulator: `offsider shutdown \(udid)`, then `offsider boot \(udid)`. Or fold it to use the cover display.",
+            reason: .inputFailed,
+            hint: "offsider doctor --device \(udid)"
+        )
     }
 
     private func idb() async throws -> HIDInteractor.Session {
@@ -79,7 +115,7 @@ final class IOSDisplayInputSession: InputSession {
     }
 
     static let twoFingersUnsupported = "Two-finger touches on the iPhone Duo's inner display are not supported; idb reaches the main display only."
-    static let unsupported = "Input on the iPhone Duo's inner display is not supported on this simulator; fold the simulator to use the cover display."
+    static let unsupported = "This input on the iPhone Duo's inner display is not supported; fold the simulator to use the cover display."
 
     /// Touches and delays only; anything else (keys, buttons) is not tied to a display and goes through idb.
     nonisolated static func isTouchOnly(_ event: FBSimulatorHIDEvent) -> Bool {

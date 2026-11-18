@@ -11,14 +11,18 @@ struct Boot: AsyncParsableCommand, JSONReportingCommand {
         A name no AVD has, or a UDID, boots the iOS simulator it names; --timeout and --json apply, the emulator \
         options do not.
 
-        The emulator runs detached with its window (use --headless to hide it) and always with -no-metrics; its output \
+        The emulator runs detached with its window (use --headless to hide it), always with -no-metrics, and with \
+        -no-audio unless --audio: an emulator with host audio can open the Mac's microphone, which drops Bluetooth \
+        headphones to call quality. Its output \
         goes to $TMPDIR/offsider-boot-<avd>.log. --memory, --no-snapshot-load and --emulator-arg add to that launch; \
         --emulator-arg takes only \(EmulatorArguments.allowedNames), each value in its own --emulator-arg, and anything \
         else exits 64 before anything starts. An AVD that is \
         already running is not started again: boot prints its serial, waiting first if it is still booting, and says \
-        which launch options it ignored. Ctrl+C stops the wait, not the emulator.
+        when its emulator process started (with its pid) and which launch options it ignored. A boot that started the \
+        emulator says "Started". Ctrl+C stops the wait, not the emulator.
 
-        After the boot it reads the lock state once: a device set up with a PIN, pattern or password that has not \
+        An emulator waiting at an encrypted-boot PIN prompt gets a warning: apps cannot be installed until a person enters \
+        the PIN, which Offsider never types. After the boot it reads the lock state once: a device set up with a PIN, pattern or password that has not \
         been unlocked since boot exits 7 (device_locked), since apps cannot start until it is unlocked.
 
         Examples:
@@ -43,6 +47,9 @@ struct Boot: AsyncParsableCommand, JSONReportingCommand {
 
     @Flag(name: .customLong("no-snapshot-load"), help: "Cold boot instead of loading the quick-boot snapshot.")
     var noSnapshotLoad = false
+
+    @Flag(name: .customLong("audio"), help: "Keep the emulator's host audio; without it boot passes -no-audio, so the emulator never opens the Mac's microphone.")
+    var audio = false
 
     @Option(
         name: .customLong("emulator-arg"),
@@ -83,12 +90,15 @@ struct Boot: AsyncParsableCommand, JSONReportingCommand {
         if let refusal = EmulatorArguments.refusal(in: emulatorArguments) {
             throw ValidationError(refusal)
         }
+        if audio, emulatorArguments.contains(EmulatorArguments.noAudio) {
+            throw ValidationError("--audio keeps the emulator's audio and --emulator-arg \(EmulatorArguments.noAudio) turns it off; pass one of them.")
+        }
     }
 
     /// A simulator UDID or a name no AVD can have takes no emulator options.
     private func refuseEmulatorOptions() throws {
-        if memory != nil || noSnapshotLoad || !emulatorArguments.isEmpty {
-            throw ValidationError("--memory, --no-snapshot-load and --emulator-arg start emulators only, and '\(avd)' is not an AVD name.")
+        if memory != nil || noSnapshotLoad || audio || !emulatorArguments.isEmpty {
+            throw ValidationError("--memory, --no-snapshot-load, --audio and --emulator-arg start emulators only, and '\(avd)' is not an AVD name.")
         }
     }
 
@@ -125,8 +135,8 @@ struct Boot: AsyncParsableCommand, JSONReportingCommand {
             if let otherwise { throw otherwise }
             throw CLIError(errorDescription: "No simulator or AVD is named \(avd).", reason: .deviceNotFound, hint: "offsider devices")
         }
-        if memory != nil || noSnapshotLoad || !emulatorArguments.isEmpty {
-            throw ValidationError("--memory, --no-snapshot-load and --emulator-arg start emulators only, and \(avd) is a simulator.")
+        if memory != nil || noSnapshotLoad || audio || !emulatorArguments.isEmpty {
+            throw ValidationError("--memory, --no-snapshot-load, --audio and --emulator-arg start emulators only, and \(avd) is a simulator.")
         }
         let console = Console.current
         let alreadyRunning = try await console.progress("Starting \(simulator.name)") {
@@ -149,24 +159,28 @@ struct Boot: AsyncParsableCommand, JSONReportingCommand {
             timeout: .milliseconds(Int((timeout * 1000).rounded())),
             memoryMB: memory,
             noSnapshotLoad: noSnapshotLoad,
+            audio: audio,
             extraArguments: emulatorArguments
         )
         let console = Console.current
-        let (result, reading) = try await console.progress("Starting \(avd)") {
+        let (result, reading, atBootPIN) = try await console.progress("Starting \(avd)") {
             let result = try await booter.boot(request) { line in
                 StartPersonView.bootProgress(line, console: console)
             }
             console.relabel("Checking \(avd) is ready")
-            return (result, await booter.settledState(serial: result.serial))
+            let reading = await booter.settledState(serial: result.serial)
+            return (result, reading, await booter.bootPINPromptShowing(serial: result.serial))
         }
         let lock = Self.lockReport(reading, key: avd, store: KeychainUnlockCodeStore(), ledger: UnlockAttemptLedger())
+        let bootedBy = booter.bootedBy(serial: result.serial)
         var report = BootReport(
             avd: avd, serial: result.serial, alreadyRunning: result.alreadyRunning, grpc: result.hasGRPC, logPath: result.logPath,
-            memoryMB: reading?.memTotalKB.map { $0 / 1024 }, ignored: result.ignored, bootedBy: booter.bootedBy(serial: result.serial), lock: lock
+            memoryMB: reading?.memTotalKB.map { $0 / 1024 }, ignored: result.ignored, bootedBy: bootedBy, lock: lock
         )
         if let notice = BootReport.memoryNotice(avd: avd, reading: reading) {
             console.hold(notice)
         }
+        if atBootPIN { console.hold(BootPINPrompt.notice(name: avd)) }
         if let failure = BootReport.firstUnlockFailure(avd: avd, serial: result.serial, alreadyRunning: result.alreadyRunning, reading: reading, lock: lock) {
             ErrorReporter.noteDeviceName(avd)
             let error = CLIError(errorDescription: failure.message, reason: .deviceLocked, hint: failure.hint, ask: failure.ask)
@@ -175,13 +189,14 @@ struct Boot: AsyncParsableCommand, JSONReportingCommand {
             console.data(report.jsonLine() + "\n")
             throw ReportedFailure(underlying: error, exitCode: report.exitCode)
         }
-        if let notice = BootReport.screenNotice(avd: avd, serial: result.serial, reading: reading) {
+        // At the boot PIN prompt a wake would do nothing, so only the prompt is named.
+        if !atBootPIN, let notice = BootReport.screenNotice(avd: avd, serial: result.serial, reading: reading) {
             console.hold(notice)
         }
         guard !json else {
             return console.data(report.jsonLine() + "\n")
         }
-        console.show(StartPersonView.booted(name: avd, id: result.serial, alreadyRunning: result.alreadyRunning))
+        console.show(StartPersonView.booted(name: avd, id: result.serial, alreadyRunning: result.alreadyRunning, since: result.alreadyRunning ? bootedBy : nil))
     }
 
     /// Asks the Keychain (attributes only, never the code) and the ledger only when the device has a credential.

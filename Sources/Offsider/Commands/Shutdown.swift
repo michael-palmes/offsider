@@ -27,7 +27,7 @@ struct Shutdown: AsyncParsableCommand, JSONReportingCommand {
     @Option(name: .customLong("timeout"), help: "Seconds to wait for the device to go (default: 120).")
     var timeout: Double = 120
 
-    @Option(name: .customLong("label"), help: ArgumentHelp("The lease label that counts as this session's (else OFFSIDER_LEASE).", valueName: "text"))
+    @Option(name: .customLong("label"), help: ArgumentHelp("The lease label that counts as this session's, 1 to 200 characters (else OFFSIDER_LEASE).", valueName: DeviceLease.labelValueName))
     var label: String?
 
     @Option(name: .customLong("wait-lock"), help: ArgumentHelp("Seconds to wait for a device another Offsider command holds (default: OFFSIDER_WAIT_LOCK, else 0).", valueName: "seconds"))
@@ -51,7 +51,7 @@ struct Shutdown: AsyncParsableCommand, JSONReportingCommand {
             throw ValidationError("--wait-lock must be from 0 to \(Int(DeviceClaims.maximumWait)) seconds.")
         }
         if let label, DeviceLease.validLabel(label) == nil {
-            throw ValidationError("--label must be 1 to 80 printable characters.")
+            throw ValidationError(DeviceLease.labelRefusal(label))
         }
     }
 

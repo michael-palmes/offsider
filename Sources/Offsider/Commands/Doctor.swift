@@ -134,9 +134,9 @@ struct Doctor: AsyncParsableCommand {
     /// Host checks for a physical iPhone or iPad; simulator and Android state cannot affect it.
     @MainActor
     private func iosDeviceReport(_ udid: String) async -> DoctorReport {
-        var team: String?
-        if case .allowed(let allowance) = DevicePolicyGate.current.decision(platform: .ios, key: udid.uppercased()) { team = allowance.team }
-        let probe = IOSDeviceDoctorProbe(allowanceTeam: team)
+        var allowance: DeviceAllowance?
+        if case .allowed(let entry) = DevicePolicyGate.current.decision(platform: .ios, key: udid.uppercased()) { allowance = entry }
+        let probe = IOSDeviceDoctorProbe(host: .cli(), allowance: allowance)
         var result = await probe.run(udid: udid)
         var fixes: [DoctorFixResult] = []
         if fix {
@@ -159,7 +159,7 @@ struct Doctor: AsyncParsableCommand {
     static func withHost(_ report: DoctorReport, _ host: HostFacts) -> DoctorReport {
         DoctorReport(
             offsiderVersion: report.offsiderVersion, udid: report.udid, device: report.device, xcode: report.xcode, booted: report.booted,
-            android: report.android, checks: report.checks + HostDoctorRules.checks(host) + [BundleIntegrity.doctorCheck(), Init.doctorCheck(), DoctorCheckResult(id: .installRules, verdict: Init.rulesDoctorVerdict())], fixes: report.fixes, host: host, policy: report.policy
+            android: report.android, checks: report.checks + HostDoctorRules.checks(host) + [BundleIntegrity.doctorCheck(), Init.doctorCheck(), DoctorCheckResult(id: .installRules, verdict: Init.rulesDoctorVerdict()), Init.denyRulesDoctorCheck()], fixes: report.fixes, host: host, policy: report.policy
         )
     }
 

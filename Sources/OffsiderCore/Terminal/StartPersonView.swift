@@ -18,6 +18,7 @@ public enum StartPersonView {
             return .step(text)
         }
         if line.contains(" is already running as "), !line.contains("without gRPC") { return .running }
+        if line.hasPrefix("Started "), line.contains(" (emulator pid ") { return .running }
         return .note(text)
     }
 
@@ -31,10 +32,12 @@ public enum StartPersonView {
     }
 
     /// `boot`'s end: a person's receipt and next step; an agent's serial or UDID alone, which scripts capture.
-    public static func booted(name: String, id: String, alreadyRunning: Bool, notices: [Notice] = []) -> Page {
+    /// `since` is the process already serving it, so "already running" says since when and nobody hunts for who booted it.
+    public static func booted(name: String, id: String, alreadyRunning: Bool, since: ProcessStamp? = nil, now: Date = Date(), notices: [Notice] = []) -> Page {
         let shown = TerminalText.field(name, profile: .person)
+        let details = alreadyRunning ? (since.map { [$0.summary(now: now)] } ?? []) : []
         return Page(
-            [.person([.outcome(.done(alreadyRunning ? "\(shown) was already running" : "\(shown) is running", aside: id))]), .agent(id + "\n")],
+            [.person([.outcome(.done(alreadyRunning ? "\(shown) was already running" : "\(shown) started", aside: id, details: details))]), .agent(id + "\n")],
             notices: notices + [.next("offsider describe-ui --device \(id)")]
         )
     }
