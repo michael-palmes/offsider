@@ -229,6 +229,16 @@ struct FlatTree {
         return false
     }
 
+    /// A hidden node of an app window that is hidden whole, as under a keyboard panel: every view there reads not visible, so the flag cannot tell one that is drawn from one that is not.
+    func isHiddenWithItsWindow(_ index: Int) -> Bool {
+        guard entries[index].node.visibleToUser == false else { return false }
+        var root = index
+        while let parent = entries[root].parent {
+            root = parent
+        }
+        return entries[root].node.role == .application && entries[root].node.visibleToUser == false
+    }
+
     /// Siblings bottom first: by drawing order on Android (nil when any lacks one), else tree order.
     func bottomFirst(_ siblings: [Int]) -> [Int]? {
         let android = siblings.contains { entries[$0].node.isAndroidNode }
@@ -288,7 +298,7 @@ struct FlatTree {
         let node = entries[index].node
         guard let frame = node.frame, let visible = frame.intersection(viewport),
               ScreenStack.share(of: visible, in: viewport) >= ScreenStack.minimumShare,
-              !node.role.isActionable, !node.role.isTextInput, node.role != .keyboard,
+              !node.role.isActionable, !node.role.isTextInput, node.role != .keyboard, !isHiddenWithItsWindow(index),
               !Self.overlayTypes.contains(where: { node.native.typeName?.lowercased().contains($0) == true }) else {
             return nil
         }

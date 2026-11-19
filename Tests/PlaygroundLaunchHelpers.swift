@@ -159,6 +159,7 @@ extension TestHelpers {
         case "text-input": return .identifier("text-input-screen")
         case "key-press": return .identifier("key-press-screen")
         case "key-sequence": return .label("Key Sequence Detection")
+        case "keyboard-bar", "keyboard-toolbar": return .identifier("keyboard-bar-screen")
         case "button-test": return .identifier("button-test-screen")
         case "batch-test": return .identifier("batch-test-screen")
         case "batch-login-flow": return .identifier("batch-login-screen")

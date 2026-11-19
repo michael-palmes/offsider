@@ -101,6 +101,10 @@ struct ContentView: View {
             KeyPressView()
         case "key-sequence":
             KeySequenceView()
+        case "keyboard-bar":
+            KeyboardBarView()
+        case "keyboard-toolbar":
+            KeyboardBarView(toolbar: true)
         case "web-login":
             WebLoginView()
         case "widget-login":
@@ -149,6 +153,8 @@ struct MainMenuView: View {
             ("text-input", "Text Input", "Text typed by CLI commands"),
             ("key-press", "Key Press", "Detects CLI key events"),
             ("key-sequence", "Key Sequence", "Detects CLI key sequences"),
+            ("keyboard-bar", "Keyboard Bar", "Fields with and without suggestions"),
+            ("keyboard-toolbar", "Keyboard Toolbar", "The app's own Done bar on the keys"),
             ("web-login", "Web Login", "Sign-in form inside a web view, local HTML only"),
             ("widget-login", "Widget Login", "Native sign-in form, person check at the centre"),
             ("widget-login-expiry", "Widget Login Expiry", "The check's pass lapses after 5 s"),

@@ -47,6 +47,7 @@ struct AccessibilityFetcher {
         guard target.state == .booted else {
             throw CLIError.deviceNotBooted(id: simulatorUDID, state: FBiOSTargetStateStringFromState(target.state).rawValue)
         }
+        await AccessibilityHold.adopt(target)
         return try await fetchAccessibilityInfoJSONData(
             from: target,
             point: point,
@@ -69,10 +70,12 @@ struct AccessibilityFetcher {
                     logger: logger,
                     dependencies: recoveryDependencies
                 ) {
-                    if let point {
-                        return try await fetchAccessibilityInfoJSONData(from: target, at: point, appPIDs: appPIDs)
+                    try await AccessibilityHold.reading(udid: target.udid) {
+                        if let point {
+                            return try await fetchAccessibilityInfoJSONData(from: target, at: point, appPIDs: appPIDs)
+                        }
+                        return try await fetchFrontmostAccessibilityInfoJSONData(from: target)
                     }
-                    return try await fetchFrontmostAccessibilityInfoJSONData(from: target)
                 }
             }
         }
@@ -83,7 +86,7 @@ struct AccessibilityFetcher {
         at point: AccessibilityPoint,
         appPIDs: Set<Int>
     ) async throws -> Data {
-        try await retryingTransientPointFallback(at: point, appPIDs: appPIDs) {
+        try await retryingTransientPointFallback(at: point, appPIDs: appPIDs, onEmpty: { AccessibilityHold.readCameBackEmpty(udid: target.udid) }) {
             let accessibilityElement = try await target.accessibilityElement(at: point.cgPoint)
             defer { accessibilityElement.close() }
             return try serializedAccessibilityData(from: accessibilityElement, keys: TraitsRequest.process.keys)
@@ -95,9 +98,13 @@ struct AccessibilityFetcher {
         try await Timings.measure("accessibility-frame") {
             try await retryingStartupFailure(simulatorUDID: target.udid, frontmost: true, logger: logger) {
                 try await retryingAfterTestManagerRecovery(simulatorUDID: target.udid, logger: logger, dependencies: .live) {
-                    let accessibilityElement = try await target.accessibilityElementForFrontmostApplication()
-                    defer { accessibilityElement.close() }
-                    return try serializedAccessibilityData(from: accessibilityElement, keys: frameKeys)
+                    try await AccessibilityHold.reading(udid: target.udid) {
+                        let accessibilityElement = try await target.accessibilityElementForFrontmostApplication()
+                        defer { accessibilityElement.close() }
+                        let data = try serializedAccessibilityData(from: accessibilityElement, keys: frameKeys)
+                        if try !containsAccessibilityDescendant(in: data) { AccessibilityHold.readCameBackEmpty(udid: target.udid) }
+                        return data
+                    }
                 }
             }
         }
@@ -131,6 +138,7 @@ struct AccessibilityFetcher {
         at point: AccessibilityPoint,
         appPIDs: Set<Int> = [],
         maximumAttempts: Int = 5,
+        onEmpty: @MainActor () -> Void = {},
         fetch: @MainActor () async throws -> Data,
         wait: @MainActor (Duration) async throws -> Void = { duration in
             try await Task.sleep(for: duration)
@@ -144,6 +152,7 @@ struct AccessibilityFetcher {
             if try !isTransientPointFallback(in: data, at: point, appPIDs: appPIDs) {
                 return data
             }
+            onEmpty()
             if attempt < maximumAttempts - 1 {
                 try await wait(.milliseconds(50 * (1 << attempt)))
             }
@@ -155,7 +164,7 @@ struct AccessibilityFetcher {
     }
 
     private static func fetchFrontmostAccessibilityInfoJSONData(from target: FBSimulator) async throws -> Data {
-        let data = try await readingFrontmostTree { keys in
+        let data = try await readingFrontmostTree(onEmpty: { AccessibilityHold.readCameBackEmpty(udid: target.udid) }) { keys in
             // IDB's former `accessibilityElements(withNestedFormat:)` API also serialized the
             // frontmost application internally. This explicit handle API preserves that scope.
             let accessibilityElement = try await target.accessibilityElementForFrontmostApplication()
@@ -183,6 +192,7 @@ struct AccessibilityFetcher {
     static func readingFrontmostTree(
         attempts: Int = 5,
         traits request: TraitsRequest? = nil,
+        onEmpty: @MainActor () -> Void = {},
         fetch: @MainActor (_ keys: Set<FBAXKeys>) async throws -> Data,
         wait: @MainActor (Duration) async throws -> Void = { duration in try await Task.sleep(for: duration) }
     ) async throws -> Data {
@@ -196,6 +206,7 @@ struct AccessibilityFetcher {
                 traits.readFull(with: keys)
                 return data
             }
+            onEmpty()
             if attempt < attempts - 1 {
                 try await wait(.milliseconds(50 * (1 << attempt)))
             }
@@ -212,23 +223,31 @@ struct AccessibilityFetcher {
         return full ? plain : latestData
     }
 
-    /// A simulator can take over 5 s to open the session a read starts with, or have no screen to answer just after a boot, and the next try works; two in a row say so, with the fix.
+    /// How long a starting simulator gets to answer, measured from the first try, however fast a try fails.
+    static let startupWindow: TimeInterval = 2
+
+    /// A simulator can take over 5 s to open the session a read starts with, or have no screen to answer just after a boot, and a later try works.
+    /// It is tried again 1 s after each failure while `startupWindow` has not passed, at least twice and at most three times; then it fails, naming the fix.
     static func retryingStartupFailure<T>(
         simulatorUDID: String,
         frontmost: Bool,
         logger: OffsiderLogger,
         sleep: @MainActor (Duration) async throws -> Void = { try await Task.sleep(for: $0) },
+        now: @MainActor () -> TimeInterval = { ProcessInfo.processInfo.systemUptime },
         operation: @MainActor () async throws -> T
     ) async throws -> T {
-        do {
-            return try await operation()
-        } catch where isStartupFailure(error, frontmost: frontmost) {
-            logger.info().log("The simulator's accessibility service did not answer; retrying once")
-            try await sleep(.seconds(1))
+        let started = now()
+        var tries = 0
+        while true {
+            tries += 1
             do {
                 return try await operation()
             } catch where isStartupFailure(error, frontmost: frontmost) {
-                throw AccessibilityStartupFailure(simulatorUDID: simulatorUDID)
+                guard tries < 3, tries < 2 || now() - started < startupWindow else { throw AccessibilityStartupFailure(simulatorUDID: simulatorUDID) }
+                // The next try sets up its own session, as one that trusted a held session may have missed the start.
+                await AccessibilityHold.readCameBackEmpty(udid: simulatorUDID)
+                logger.info().log("The simulator's accessibility service did not answer; retrying")
+                try await sleep(.seconds(1))
             }
         }
     }

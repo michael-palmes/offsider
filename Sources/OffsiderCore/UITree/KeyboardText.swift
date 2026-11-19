@@ -1,6 +1,6 @@
 import Foundation
 
-/// Keyboard text beside the keys (suggestions, a clipboard chip, clipboard history), hidden where Android trees are read and painted in screenshots.
+/// Keyboard text beside the keys (suggestions, a clipboard chip, clipboard history), hidden where trees are read and painted in screenshots: Android's by telling keys from text, iOS's by its bar (`KeyboardBar`).
 public enum KeyboardText {
     /// What a hidden element's label, value and text read.
     public static let marker = LogRedactor.marker
@@ -112,13 +112,22 @@ public enum KeyboardText {
     /// Whether `hideText` replaced something on `node`.
     static func isHidden(_ node: UINode) -> Bool {
         if node.label == marker || node.value == marker { return true }
-        guard case .android(let attributes) = node.native else { return false }
-        return attributes.text == marker || attributes.contentDescription == marker
+        switch node.native {
+        case .android(let attributes):
+            return attributes.text == marker || attributes.contentDescription == marker
+        case .ios(let attributes):
+            return attributes.title == marker || attributes.help == marker || attributes.hint == marker
+        }
+    }
+
+    /// Where keyboard text is hidden: Android's keyboard windows, and on iOS the bars beside the keys and a device's whole keyboards.
+    private static func scopes(in roots: [UINode]) -> [UINode] {
+        roots.filter { $0.role == .keyboard } + KeyboardBar.scopes(in: roots.filter { $0.role != .keyboard })
     }
 
     /// The elements of `roots`' keyboards whose text is hidden, for painting.
     public static func hiddenElements(in roots: [UINode]) -> [UINode] {
-        roots.filter { $0.role == .keyboard }.flatMap { root in root.children.flatMap { $0.flattened() } }.filter(isHidden)
+        scopes(in: roots).flatMap { scope in scope.children.flatMap { $0.flattened() } }.filter(isHidden)
     }
 
     /// How many hidden elements the keyboards show: the innermost, so a chip and the text inside it count once.
@@ -134,7 +143,7 @@ public enum KeyboardText {
             let hidden = isHidden(node)
             return (total + (hidden && !inside ? 1 : 0), inside || hidden)
         }
-        return roots.filter { $0.role == .keyboard }.reduce(0) { sum, root in sum + root.children.reduce(0) { $0 + count($1).total } }
+        return scopes(in: roots).reduce(0) { sum, scope in sum + scope.children.reduce(0) { $0 + count($1).total } }
     }
 
     /// Android's keyboard windows the tree has no keys for: their whole bounds are painted, as nothing tells their keys from their text.

@@ -105,6 +105,35 @@ struct Verifier {
     }
 
     static let pollInterval: Duration = .milliseconds(200)
+    /// The least time from the first read before the input to the second, which learns what ticks by itself, however fast the reads are.
+    static let baselineReadGap: TimeInterval = 0.6
+    /// Before-shots one input may take while what an earlier input started is still drawing.
+    static let maxBaselineShots = 4
+    /// No more before-shots once this long has passed: a device whose capture is slower than that has drawn what an earlier input started by its first.
+    static let baselineWindow: TimeInterval = 1.05
+
+    /// Shots `screenshotSpacing` apart until two in a row agree, `maxBaselineShots` are taken or `baselineWindow` has passed, so the last is taken once what an input just before drew is over, however long the reads take.
+    static func settledBaseline(screenFrame: AccessibilitySnapshot.Frame?, dependencies: Dependencies) async -> [Data] {
+        let started = dependencies.now()
+        let bands = await dependencies.bands()
+        var shots: [Data] = []
+        var previous: ImageFingerprint?
+        while shots.count < maxBaselineShots {
+            if !shots.isEmpty {
+                guard dependencies.now() - started < baselineWindow, (try? await dependencies.sleep(screenshotSpacing)) != nil else { break }
+            }
+            guard let shot = try? await dependencies.screenshot() else { break }
+            shots.append(shot)
+            let exclusion = bandPixels(pngData: shot, screenFrame: screenFrame, bands: bands)
+            let print = ImageFingerprint(
+                pngData: shot, excludingTopPixels: exclusion.top, excludingBottomPixels: exclusion.bottom,
+                excludingLeftPixels: exclusion.left, excludingRightPixels: exclusion.right, tolerance: bands.noiseTolerance
+            )
+            if let previous, let print, previous.changedTiles(comparedTo: print)?.isEmpty == true { break }
+            previous = print
+        }
+        return shots
+    }
     static let screenshotSpacing: Duration = .milliseconds(350)
     static let screenshotCount = 3
     /// After-shots one attempt may take while a transition is still moving; a lagging stream may show it only from the second.
@@ -184,9 +213,9 @@ struct Verifier {
         }
         let firstReadAt = dependencies.date()
         let capturesBaseline = !ignoringText && !(target.map { stateRoles.contains($0.role) } ?? false)
-        // With a tree to catch the change, the baseline capture runs alongside the reads before the input.
-        let capture: Task<Data?, Never>? = capturesBaseline && first.isKnown
-            ? Task { await Timings.measure("baseline-capture") { try? await dependencies.screenshot() } }
+        // With a tree to catch the change, the baseline capture runs alongside the reads before the input, on its own clock.
+        let capture: Task<[Data], Never>? = capturesBaseline && first.isKnown
+            ? Task { await Timings.measure("baseline-capture") { await settledBaseline(screenFrame: rootFrame(first), dependencies: dependencies) } }
             : nil
         defer { capture?.cancel() }
         // Without a tree to catch the change, a second before-shot lets motion the input starts count.
@@ -199,7 +228,9 @@ struct Verifier {
             let masked = tree.redacted(valueMask, scope: .cache)
             live = LiveText.learn(cached: await dependencies.cachedRecord(), first: masked, readAt: firstReadAt, detector: detector)
         }
-        try await dependencies.sleep(pollInterval)
+        let sinceFirst = dependencies.now() - start
+        let minimum = pollInterval / .seconds(1)
+        try await dependencies.sleep(.seconds(max(minimum, baselineReadGap - sinceFirst)))
         let secondRead = read(try? await dependencies.tree())
         // A failed read says nothing, so the first stands as the baseline, and the input is still watched for its whole window.
         var baselineRead = secondRead.snapshot.isKnown || !first.isKnown ? secondRead : firstRead
@@ -218,7 +249,8 @@ struct Verifier {
         let baselineStart = dependencies.now()
         var baselineShots: [Data] = []
         if let capture {
-            baselineShots = await capture.value.map { [$0] } ?? []
+            // Only the settled shot is the baseline: with a tree, motion the input starts is not evidence, as before.
+            baselineShots = Array(await capture.value.suffix(1))
         } else if capturesBaseline {
             let gap = screenshotSpacing / .seconds(1) - (dependencies.now() - firstShotTime)
             if firstShot != nil, gap > 0 {

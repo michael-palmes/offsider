@@ -40,9 +40,9 @@ public struct FrontReading: Equatable, Sendable {
     /// Pre-order indexes of every element a touch would not reach.
     public var unreached: Set<Int> { Set(beneath.keys).union(covered.keys).union(clipped.keys) }
 
-    /// True when a touch at the element at `index` lands elsewhere: a sure cover, or anything else the simulator's hit-test answered with, a backdrop included.
+    /// True when a touch at the element at `index` lands elsewhere: a sure cover, one that leaves part of it showing too, or anything else the simulator's hit-test answered with, a backdrop included.
     public func misses(at index: Int) -> Bool {
-        unreached.contains(index) || judged[index]?.ownHit == false
+        unreached.contains(index) || judged[index]?.ownHit == false || judged[index]?.verdict?.isConfident == true
     }
 
     /// Why a touch at the element at `index` would not reach it, such as `beneath "Products"` or `under button "Buy" (16, 790.0) 370x44`; nil when it would.
