@@ -2,9 +2,23 @@ import Foundation
 
 /// A SpringBoard alert over one app, as an iOS simulator's tree lists it: the alert, and beneath it the app's switcher card.
 public enum IOSPermissionAlert {
-    /// The grants `accept` may pick when the alert carries no ids, narrowest lasting one first.
-    static let acceptLabels = ["allow while using app", "allow"]
-    static let denyLabels = ["don't allow"]
+    /// What each English button of a permission alert means, narrowest lasting grant first; `other` is a broader or one-time answer only `choose` picks.
+    static let labelRoles: [(label: String, role: AppPrompt.Button.Role)] = [
+        ("Allow While Using App", .accept),
+        ("Allow", .accept),
+        ("OK", .accept),
+        ("Don’t Allow", .deny),
+        ("Ask App Not to Track", .deny),
+        ("Allow Once", .other),
+        ("Always Allow", .other),
+        ("Change to Always Allow", .other),
+        ("Keep Only While Using", .other),
+        ("Allow Full Access", .other),
+        ("Allow Access to All Photos", .other),
+        ("Limit Access…", .other),
+        ("Select Photos…", .other),
+        ("Continue", .other),
+    ]
     static let cardPrefix = "card:"
     static let cardSceneMark = ":sceneID:"
 
@@ -36,21 +50,41 @@ public enum IOSPermissionAlert {
         guard service != nil || found.count >= 2 else {
             throw AppPromptRefusal.notPermission(what: "the system alert \(shown), which asks nothing")
         }
-        let accept: Int?
-        let deny: Int?
-        if service != nil {
-            accept = found.firstIndex { $0.id?.hasSuffix("-allow-button") == true }
-            deny = found.firstIndex { $0.id?.hasSuffix("-deny-button") == true }
-        } else {
-            let folded = found.map { SelectorText.folded($0.label).lowercased() }
-            accept = acceptLabels.lazy.compactMap { folded.firstIndex(of: $0) }.first
-            deny = denyLabels.lazy.compactMap { folded.firstIndex(of: $0) }.first
-        }
+        // Only a privacy prompt's id, or a title in a permission request's shape, lets accept and deny pick a button.
+        let asks = service != nil || isPermissionRequest(title)
+        let (accept, deny) = asks ? roles(of: found, hasIDs: service != nil) : (nil, nil)
         let buttons = found.enumerated().map { index, button in
             AppPrompt.Button(label: button.label, role: index == accept ? .accept : index == deny ? .deny : .other, frame: button.frame)
         }
         let message = alert.flattened().dropFirst().first { $0.role == .text && $0.normalizedLabel != nil && $0.normalizedLabel != title }?.normalizedLabel
         return AppPrompt(app: app, title: title, message: message, buttons: buttons, frame: frame, source: "SpringBoard", token: "\(service ?? "alert") \(title)")
+    }
+
+    /// The one button `accept` picks and the one `deny` picks: the label table decides, and a privacy prompt's ids decide where the table knows no label, as in another language.
+    static func roles(of buttons: [(label: String, id: String?, frame: UIFrame)], hasIDs: Bool) -> (accept: Int?, deny: Int?) {
+        let known = buttons.map { button in labelRoles.first { fold($0.label) == fold(button.label) }?.role }
+        var accept = labelRoles.lazy.filter { $0.role == .accept }.compactMap { row in buttons.firstIndex { fold($0.label) == fold(row.label) } }.first
+        var deny = known.firstIndex(of: .deny)
+        if hasIDs {
+            deny = buttons.firstIndex { $0.id?.hasSuffix("-deny-button") == true } ?? deny
+            // An id alone grants only on a two-button prompt, where the grant cannot be the broader of two.
+            if accept == nil, buttons.count == 2, let byID = buttons.firstIndex(where: { $0.id?.hasSuffix("-allow-button") == true }), known[byID] == nil {
+                accept = byID
+            }
+        }
+        return (accept, deny)
+    }
+
+    private static func fold(_ label: String) -> String {
+        SelectorText.folded(label).lowercased()
+    }
+
+    /// True for `“App” Would Like to …` and `Allow “App” to …`, the two shapes iOS words a permission request in.
+    static func isPermissionRequest(_ title: String) -> Bool {
+        guard let quoted = firstQuoted(in: title) else { return false }
+        let before = title[..<quoted.open].trimmingCharacters(in: .whitespaces).lowercased()
+        let after = title[title.index(after: quoted.close)...].lowercased()
+        return (before.isEmpty && after.hasPrefix(" would like to ")) || (before == "allow" && after.hasPrefix(" to "))
     }
 
     /// The topmost sheet or alert that holds a button and covers the middle of the screen without filling it.
@@ -97,10 +131,13 @@ public enum IOSPermissionAlert {
 
     /// `Example` of `Allow “Example” to use your location?`: the first name the title quotes.
     static func firstQuotedName(in title: String) -> String? {
-        guard let open = title.firstIndex(where: { quotes[$0] != nil }), let close = quotes[title[open]] else { return nil }
-        let rest = title[title.index(after: open)...]
-        guard let end = rest.firstIndex(of: close) else { return nil }
-        let name = rest[..<end].trimmingCharacters(in: .whitespaces)
-        return name.isEmpty ? nil : name
+        firstQuoted(in: title)?.name
+    }
+
+    private static func firstQuoted(in title: String) -> (name: String, open: String.Index, close: String.Index)? {
+        guard let open = title.firstIndex(where: { quotes[$0] != nil }), let mark = quotes[title[open]],
+              let close = title[title.index(after: open)...].firstIndex(of: mark) else { return nil }
+        let name = title[title.index(after: open)..<close].trimmingCharacters(in: .whitespaces)
+        return name.isEmpty ? nil : (name, open, close)
     }
 }

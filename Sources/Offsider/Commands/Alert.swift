@@ -13,10 +13,12 @@ struct AlertCommand: AsyncParsableCommand {
 
         `show` prints the prompt's text and each button, with the one `accept` and `deny` would pick, and changes \
         nothing. `deny` picks the declining button. `accept` picks the granting button with the narrowest grant that \
-        lasts: While using the app on Android, never All the time, Only this time or a photo picker. `choose \
-        "<label>"` picks the one button with exactly that text. Android buttons and iOS privacy prompts are told \
-        apart by their ids, so a device language changes nothing; iOS notifications and location prompts by their \
-        English labels, so in another language use `choose`.
+        lasts: While using the app on Android, Allow While Using App or Allow on iOS; never a broader grant (All \
+        the time, Always Allow, Allow Full Access), a one-time grant or a photo picker. `choose "<label>"` picks \
+        the one button with exactly that text. Android buttons are told apart by their ids, so a device language \
+        changes nothing; iOS buttons by their English labels (a privacy prompt's ids decide in another language, \
+        between two buttons only), and on iOS `accept` and `deny` act only on a privacy prompt or a title shaped \
+        like a permission request (“App” Would Like to …, Allow “App” to …): otherwise use `choose`.
 
         It acts only when the system says the prompt belongs to --app: on Android the app that started the dialog, \
         by name and uid; on an iOS simulator a SpringBoard alert over that app alone, whose title names the app \
@@ -159,7 +161,7 @@ struct AlertCommand: AsyncParsableCommand {
         let point = try await watchdog.inputPoints([(x: button.frame.center.x, y: button.frame.center.y)], tree: read.tree, backend: route.backend, device: device)[0]
         guard try await watchdog.guardingInputRead(of: device, { try await backend.stillInFront(read.prompt, on: device) }) else {
             throw CLIError(
-                errorDescription: "The prompt for \(app) left the screen on \(device.rawValue) before Offsider answered it, so nothing was sent. Run `offsider alert show --app \(app) --device \(device.rawValue)` to see what is there now.",
+                errorDescription: "The prompt for \(app) left or changed on \(device.rawValue) before Offsider answered it, so nothing was sent. Run `offsider alert show --app \(app) --device \(device.rawValue)` to see what is there now.",
                 reason: .foregroundChanged, hint: "offsider alert show --app \(app) --device \(device.rawValue)"
             )
         }

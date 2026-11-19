@@ -34,7 +34,7 @@ offsider alert choose "Only this time" --app <id> --device <DEVICE_ID>
 ```
 
 - `show` prints the text and each button, marking what `accept` and `deny` would pick, and changes nothing. Accept only a permission the test names; ask before any other, and deny when unsure.
-- `accept` picks the narrowest grant that lasts (While using the app, Allow While Using App, else Allow), never All the time, Only this time, Allow Once or a photo picker: name one of those with `choose "<label>"`, the button's whole text as `show` prints it. Exit 6 means it cannot tell which button grants: use `choose`.
+- `accept` picks the narrowest grant that lasts (While using the app, Allow While Using App, else Allow), never a broader one (All the time, Always Allow, Allow Full Access), a one-time one (Only this time, Allow Once) or a photo picker: name one of those with `choose "<label>"`, the button's whole text as `show` prints it. Exit 6 means it cannot tell which button grants or declines (on iOS: another language, or an alert that is not worded as a permission request): read `show` and use `choose`.
 - Exit 2 `alert_not_shown`: no prompt for the app, so carry on. Exit 7 `system_prompt_in_front`: another app's prompt or some other system window, which `alert` never answers; pass on `error.ask`.
 - `accept` and `choose` obey the app's guard rules (`guide guard`); a refusal there is final. `deny` always passes.
 - A phone in personal use exits 1 `person_required` with nothing read: pass on `error.ask`. An iPhone or iPad is not reached yet: on a test device use `describe-ui --summary` and `tap --label`.

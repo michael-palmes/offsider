@@ -149,6 +149,59 @@ struct IOSPermissionAlertTests {
         #expect(try unread.button(for: .label("Erlauben")).label == "Erlauben")
     }
 
+    @Test("each English button means one thing: the grant that lasts while the app is used, a refusal, or an answer only choose picks", arguments: [
+        ("Allow While Using App", "accept"), ("Allow", "accept"), ("OK", "accept"),
+        ("Don’t Allow", "deny"), ("Ask App Not to Track", "deny"),
+        ("Allow Once", "other"), ("Always Allow", "other"), ("Change to Always Allow", "other"), ("Keep Only While Using", "other"),
+        ("Allow Full Access", "other"), ("Allow Access to All Photos", "other"), ("Limit Access…", "other"), ("Select Photos…", "other"), ("Continue", "other"),
+    ])
+    func labelTable(label: String, role: String) throws {
+        // Beside a button no table row knows, so the row under test alone decides its role.
+        let tree = AlertFixtures.iosAlert(title: "Allow “Playground” to use your location?", buttons: [label, "Zzz"], service: nil)
+        let prompt = try IOSPermissionAlert.read(tree, app: AlertFixtures.ios)
+        #expect(prompt.buttons.map(\.role.rawValue) == [role, "other"])
+    }
+
+    @Test("the table has no row the test above does not name, and a narrower lasting grant wins over a plain Allow")
+    func labelTableIsWhole() throws {
+        #expect(IOSPermissionAlert.labelRoles.count == 14)
+        let both = AlertFixtures.iosAlert(title: "Allow “Playground” to use your location?", buttons: ["Allow", "Allow While Using App", "Always Allow", "Allow Once", "Don’t Allow"], service: nil)
+        let prompt = try IOSPermissionAlert.read(both, app: AlertFixtures.ios)
+        #expect(prompt.buttons.map(\.role) == [.other, .accept, .other, .other, .deny])
+    }
+
+    @Test("accept and deny act only on a title shaped like a permission request; any other alert that names the app is for show and choose", arguments: [
+        ("“Playground” Would Like to Send You Notifications", true),
+        ("“Playground” would like to find and connect to devices on your local network", true),
+        ("Allow “Playground” to use your location?", true),
+        ("“Playground” Needs to Be Updated", false),
+        ("Turn on Location Services to allow “Playground” to determine your location", false),
+        ("Open in “Playground”?", false),
+    ])
+    func permissionShape(title: String, asks: Bool) throws {
+        let prompt = try IOSPermissionAlert.read(AlertFixtures.iosAlert(title: title, buttons: ["Don’t Allow", "Allow"], service: nil), app: AlertFixtures.ios)
+        #expect(prompt.buttons.map(\.role) == (asks ? [.deny, .accept] : [.other, .other]))
+        #expect(try prompt.button(for: .label("Allow")).label == "Allow")
+    }
+
+    @Test("a privacy prompt's ids never make a broader or one-time grant the default, and decide alone only between two buttons")
+    func idsNeverWiden() throws {
+        let photos = AlertFixtures.iosAlert(
+            title: "Allow “Playground” to access your photos?", buttons: ["Limit Access…", "Allow Full Access", "Don’t Allow"], service: "kTCCServicePhotos",
+            buttonIDs: ["kTCCServicePhotos-limited-button", "kTCCServicePhotos-allow-button", "kTCCServicePhotos-deny-button"]
+        )
+        #expect(try IOSPermissionAlert.read(photos, app: AlertFixtures.ios).buttons.map(\.role) == [.other, .other, .deny])
+
+        let broad = AlertFixtures.iosAlert(title: "Allow “Playground” to use your location?", buttons: ["Don’t Allow", "Always Allow"], service: "kTCCServiceLocation")
+        #expect(try IOSPermissionAlert.read(broad, app: AlertFixtures.ios).buttons.map(\.role) == [.deny, .other])
+
+        let threeUnknown = AlertFixtures.iosAlert(
+            title: "Autoriser « Playground » ?", buttons: ["Refuser", "Autoriser", "Toujours"], service: "kTCCServiceCamera",
+            buttonIDs: ["kTCCServiceCamera-deny-button", "kTCCServiceCamera-allow-button", nil]
+        )
+        #expect(try IOSPermissionAlert.read(threeUnknown, app: AlertFixtures.ios).buttons.map(\.role) == [.deny, .other, .other])
+    }
+
     @Test("an alert over another app, or with no app beneath it, is another app's")
     func anotherAppBeneath() {
         let other = AlertFixtures.iosAlert(card: ("com.example.other", "Playground"))

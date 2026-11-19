@@ -17,7 +17,8 @@ extension IOSBackend: AppPromptReading {
         return (try IOSPermissionAlert.read(tree, app: app), tree)
     }
 
+    /// Read whole again: the same title, buttons and frames, or the prompt changed.
     func stillInFront(_ prompt: AppPrompt, on id: DeviceID) async throws -> Bool {
-        (try? await appPrompt(for: prompt.app, on: id))?.prompt.token == prompt.token
+        (try? await appPrompt(for: prompt.app, on: id))?.prompt == prompt
     }
 }
