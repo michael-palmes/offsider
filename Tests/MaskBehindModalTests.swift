@@ -181,6 +181,10 @@ struct MaskBehindModalTests {
         #expect(HiddenScreen.showsRemembered([address], remembered: Self.receipt(), current: Self.modal(.top)))
         #expect(!HiddenScreen.showsRemembered([other], remembered: Self.receipt(), current: Self.otherScreen()))
         #expect(!HiddenScreen.showsRemembered([address], remembered: Self.receipt(), current: Self.receipt()), "text listed now is not the old screen")
+        let done = ScreenTextLine(text: "Done editing", frame: FakeUI.frame(100, 300, 200, 20))
+        var withDone = Self.receipt()
+        withDone.roots[0].children[0].children.append(FakeUI.node(.button, label: "Done", frame: FakeUI.frame(300, 47, 60, 44)))
+        #expect(!HiddenScreen.showsRemembered([done], remembered: withDone, current: Self.otherScreen()), "a short word on both screens proves nothing")
     }
 
     // MARK: - Painting what the cache remembers
@@ -274,6 +278,10 @@ struct MaskBehindModalTests {
                 try Self.remember(Self.receipt(), in: fixture)
                 return Self.modal(.tap, extra: [Self.field("Receipt email", frame: FakeUI.frame(32, 460, 326, 44))])
             }),
+            ("listed again under another label", { fixture in
+                try Self.remember(Self.receipt(), in: fixture)
+                return Self.modal(.tap, extra: [FakeUI.node(.textField, id: "mask-sheet-test-email", label: "Email (required)", value: "Receipt email", frame: FakeUI.frame(32, 460, 326, 44))])
+            }),
         ]
         for (name, setUp) in cases {
             let fixture = try TreeCacheFixture()
@@ -298,7 +306,7 @@ struct MaskBehindModalTests {
         try Self.remember(Self.receipt(), in: fixture)
         let ledger = DeviceActivityLedger(now: { fixture.now })
         let console = ConsoleCapture()
-        let backend = FakeDeviceBackend(trees: [Self.otherScreen()], screenshots: [try Self.png([("Tap anywhere to count", 100, 300)])], screen: ScreenshotMaskTests.screen)
+        let backend = FakeDeviceBackend(trees: [Self.otherScreen()], screenshots: [try Self.png([("Tap anywhere to count", 100, 300), ("help@example.com", 100, 400)])], screen: ScreenshotMaskTests.screen)
 
         let (report, image, _) = try await DeviceActivityLedger.$current.withValue(ledger) {
             try await TreeCacheEnvironment.$current.withValue(fixture.environment) {
@@ -312,6 +320,7 @@ struct MaskBehindModalTests {
         #expect(!Self.fieldPainted(image))
         #expect(report.maskUnproven == nil, "\(err)")
         #expect(!err.contains("maskUnproven"), "\(err)")
+        #expect(!err.contains("behind a modal"), "\(err)")
         #expect(ledger.activity(for: Self.device)?.beneathShown == false)
     }
 
@@ -380,6 +389,21 @@ struct MaskBehindModalTests {
         #expect(behind == nil)
         #expect(reads.count == 0)
         #expect(await ScreenCapture.hiddenText(in: capture, behind: behind, tree: Self.receipt(), plan: MaskPlan(emails: true)) == nil)
+    }
+
+    @Test("a screen whose own background could be a backdrop costs no text read, with or without a memory of itself")
+    func backgroundNoText() async throws {
+        var background = Self.receipt()
+        background.roots[0].children[0].children.insert(FakeUI.node(.group, frame: Self.full), at: 0)
+        #expect(HiddenScreen.mayHide(background, belowStatusBar: 60), "the background is a backdrop candidate")
+        for memory in [nil, background] as [UITree?] {
+            let fixture = try TreeCacheFixture()
+            if let memory { try Self.remember(memory, in: fixture) }
+            let behind = await ScreenCapture.behindModal(
+                background, plan: MaskPlan(emails: true), screen: nil, device: Self.device, backend: FakeDeviceBackend(trees: []), environment: fixture.environment
+            )
+            #expect(behind == nil, "memory: \(memory != nil)")
+        }
     }
 
     // MARK: - The tree cache keeps what a modal hides

@@ -121,7 +121,8 @@ struct VideoMaskOptions: ParsableArguments {
         // Frames are not read for text, so no text read can settle a modal told by memory alone: what the cache remembers of the file's masks refuses.
         var behind: ScreenCapture.BehindModal?
         if let plan = config?.config.plan, !plan.isEmpty {
-            behind = await ScreenCapture.behindModal(tree, plan: plan, screen: nil, device: device, backend: backend)
+            let screen = HiddenScreen.mayHide(tree, belowStatusBar: IOSBackend.statusBarHeight) ? try? await backend.screenInfo(for: device) : nil
+            behind = await ScreenCapture.behindModal(tree, plan: plan, screen: screen, device: device, backend: backend)
         }
         if let name = behind?.found.names.first {
             throw CLIError(

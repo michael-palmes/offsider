@@ -336,7 +336,7 @@ enum ScreenCapture {
             if skippedRemembered.isEmpty { recalled = found.names }
         }
         var unlistedEmails = 0
-        if plan.emails, let hidden {
+        if plan.emails, let hidden, hidden.modalShown {
             unlistedEmails = try HiddenScreen.targets(hidden.lines, plan: MaskPlan(emails: true)).frames[.emails]?.count ?? 0
         }
         let beneathFrames = placement.painted

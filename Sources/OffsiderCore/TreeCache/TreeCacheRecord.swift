@@ -250,11 +250,10 @@ extension TreeCacheRecord {
             lastInputAt: lastInputAt,
             bootMarker: bootMarker
         )
-        var carried = previous.flatMap { $0.uncovered(statusBar: statusBar) }
-        if carried?.isFresh(now: now) == false { carried = nil }
+        let carried = { previous.flatMap { $0.uncovered(statusBar: statusBar) }.flatMap { $0.isFresh(now: now) ? $0 : nil } }
         guard let role, let tree = activity.tree else {
             var record = tombstone
-            record.beneath = carried
+            record.beneath = carried()
             return record
         }
         var record = tombstone
@@ -266,7 +265,8 @@ extension TreeCacheRecord {
         record.truncated = tree.sourceTruncated
         record.roots = tree.roots
         // A modal over the same app on the same screen hides what the last read without one showed; any other read starts afresh.
-        if let previous, var carried, activity.beneathShown != false, carried.fits(tree),
+        // The backdrop check first, so a screen with none reads nothing of the earlier tree.
+        if let previous, activity.beneathShown != false, HiddenScreen.mayHide(tree, belowStatusBar: statusBar), var carried = carried(), carried.fits(tree),
            let modal = HiddenScreen.modal(in: tree, belowStatusBar: statusBar, remembered: UITree(platform: tree.platform, device: tree.device, roots: carried.roots)),
            previous.matches(appFrame: record.appFrame, screen: activity.screen) {
             if !modal.byMemory || activity.beneathShown == true { carried.confirmed = true }

@@ -136,12 +136,14 @@ public struct MaskPlan: Equatable, Sendable {
 
     /// A matching node whose descendant also matches is left to the descendant, so a row is not blacked out for one field.
     static func leafMostMatches(in nodes: [UINode], regex: NSRegularExpression) -> [UINode] {
+        leafMostMatches(in: nodes) { text in regex.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)) != nil }
+    }
+
+    static func leafMostMatches(in nodes: [UINode], where matches: (String) -> Bool) -> [UINode] {
         nodes.flatMap { node -> [UINode] in
-            let below = leafMostMatches(in: node.children, regex: regex)
+            let below = leafMostMatches(in: node.children, where: matches)
             if !below.isEmpty { return below }
-            return node.searchableText.contains { text in
-                regex.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)) != nil
-            } ? [node] : []
+            return node.searchableText.contains(where: matches) ? [node] : []
         }
     }
 }

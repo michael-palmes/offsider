@@ -31,7 +31,7 @@ public enum RememberedMasks {
         func hidden(_ nodes: [UINode]) -> [UIFrame] {
             nodes.compactMap { node in
                 guard let frame = node.frame, frame.width > 0, frame.height > 0, frame.intersection(region) != nil,
-                      !listed.contains(where: { NodeIdentity.isGuardMatch($0, node) }) else { return nil }
+                      !listed.contains(where: { node.normalizedID != nil ? $0.normalizedID == node.normalizedID : NodeIdentity.isGuardMatch($0, node) }) else { return nil }
                 return frame
             }
         }
@@ -47,25 +47,16 @@ public enum RememberedMasks {
         }
         for pattern in plan.texts {
             let regex = try MaskPlan.compile(pattern)
-            add(leafMost(remembered.roots) { matches(regex, $0) || $0.contains(LogRedactor.marker) }, as: .text, name: "--mask-text \(pattern)")
+            add(MaskPlan.leafMostMatches(in: remembered.roots) { matches(regex, $0) || $0.contains(LogRedactor.marker) }, as: .text, name: "--mask-text \(pattern)")
         }
         if plan.emails {
             let regex = try MaskPlan.compile(PersonalData.emailPattern)
-            add(leafMost(remembered.roots) { matches(regex, $0) || $0.contains(LogRedactor.emailMarker) }, as: .emails, name: "an email address")
+            add(MaskPlan.leafMostMatches(in: remembered.roots) { matches(regex, $0) || $0.contains(LogRedactor.emailMarker) }, as: .emails, name: "an email address")
         }
         return found
     }
 
     private static func matches(_ regex: NSRegularExpression, _ text: String) -> Bool {
         regex.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)) != nil
-    }
-
-    /// As a tree mask matches: a node whose descendant matches is left to the descendant.
-    private static func leafMost(_ nodes: [UINode], _ test: (String) -> Bool) -> [UINode] {
-        nodes.flatMap { node -> [UINode] in
-            let below = leafMost(node.children, test)
-            if !below.isEmpty { return below }
-            return node.searchableText.contains(where: test) ? [node] : []
-        }
     }
 }

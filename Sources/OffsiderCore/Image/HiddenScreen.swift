@@ -125,10 +125,11 @@ public enum HiddenScreen {
             String(text.lowercased().unicodeScalars.filter { CharacterSet.alphanumerics.contains($0) }.map(Character.init))
         }
         let now = Set(current.roots.flatMap { $0.flattened() }.flatMap(\.searchableText).map(folded))
-        let before = Set(remembered.roots.flatMap { $0.flattened() }.flatMap(\.searchableText).map(folded)).subtracting(now).filter { $0.count >= 4 }
+        // Eight letters or digits, so words a new screen may draw too, such as Done or Back, prove nothing.
+        let before = Set(remembered.roots.flatMap { $0.flattened() }.flatMap(\.searchableText).map(folded)).subtracting(now).filter { $0.count >= 8 }
         return lines.contains { line in
             let text = folded(line.text)
-            return text.count >= 4 && before.contains { $0.contains(text) || text.contains($0) }
+            return text.count >= 8 && before.contains { $0.contains(text) || text.contains($0) }
         }
     }
 
