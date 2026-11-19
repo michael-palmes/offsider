@@ -5,6 +5,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colours, fixtureLog, HeaderMarker, hiddenFromAccessibility, Screen, Target } from '../fixtures';
 
 type Sheet = 'None' | 'Modal' | 'Inline' | 'Hiding' | 'Root';
+// Full-screen modals that hide the screen beneath from accessibility, as a native full-screen modal does.
+type Cover = 'None' | 'Card' | 'Tap' | 'Top';
 const rootSheetTravel = 400;
 
 export function MaskSheetTestScreen() {
@@ -15,6 +17,13 @@ export function MaskSheetTestScreen() {
   const [screenHidden, setScreenHidden] = useState(false);
   const rise = useRef(new Animated.Value(0)).current;
   const rootUp = sheet === 'Root';
+  const [cover, setCover] = useState<Cover>('None');
+
+  const showCover = (next: Cover) => {
+    Keyboard.dismiss();
+    fixtureLog('mask-sheet-test', `cover ${next}`);
+    setCover(next);
+  };
 
   const show = (next: Sheet) => {
     Keyboard.dismiss();
@@ -49,7 +58,7 @@ export function MaskSheetTestScreen() {
 
   return (
     <View style={styles.root}>
-      <View style={styles.root} {...hiddenFromAccessibility(screenHidden)}>
+      <View style={styles.root} {...hiddenFromAccessibility(screenHidden || cover !== 'None')}>
         <Screen route="mask-sheet-test">
           <View
             style={styles.receipt}
@@ -73,6 +82,11 @@ export function MaskSheetTestScreen() {
             <Target id="mask-sheet-test-open-inline" label="Open Inline Sheet" onPress={() => show('Inline')} />
             <Target id="mask-sheet-test-open-hiding" label="Open Hiding Sheet" onPress={() => show('Hiding')} />
             <Target id="mask-sheet-test-open-root" label="Open Root Sheet" onPress={() => showRoot(true)} />
+            <View style={styles.coverButtons}>
+              <Target id="mask-sheet-test-open-card" label="Card" onPress={() => showCover('Card')} />
+              <Target id="mask-sheet-test-open-tap" label="Tap Cover" onPress={() => showCover('Tap')} />
+              <Target id="mask-sheet-test-open-top" label="Top Card" onPress={() => showCover('Top')} />
+            </View>
           </View>
           {sheet === 'Inline' || sheet === 'Hiding' ? (
             <View style={StyleSheet.absoluteFill}>
@@ -88,30 +102,51 @@ export function MaskSheetTestScreen() {
           </Modal>
         </Screen>
       </View>
-      <View
-        accessibilityViewIsModal={rootUp}
-        {...hiddenFromAccessibility(!rootUp)}
-        style={[StyleSheet.absoluteFill, { transform: [{ translateY: rootUp ? 0 : 10000 }] }]}
-      >
-        <Animated.View style={[styles.rootBackdrop, { opacity: rise.interpolate({ inputRange: [0, 1], outputRange: [0, 0.4] }) }]}>
-          <Pressable accessible={false} style={StyleSheet.absoluteFill} onPress={() => showRoot(false)} />
-        </Animated.View>
-        <Animated.View
-          style={[
-            styles.sheet,
-            {
-              paddingBottom: insets.bottom + 16,
-              transform: [{ translateY: rise.interpolate({ inputRange: [0, 1], outputRange: [rootSheetTravel, 0] }) }],
-            },
-          ]}
+      {cover === 'None' ? (
+        <View
+          accessibilityViewIsModal={rootUp}
+          {...hiddenFromAccessibility(!rootUp)}
+          style={[StyleSheet.absoluteFill, { transform: [{ translateY: rootUp ? 0 : 10000 }] }]}
         >
-          <View style={styles.sheetBody}>
-            <HeaderMarker id="mask-sheet-test-root-title" title="Receipt Details" style={styles.sheetHeader} />
-            <Text style={styles.sheetText}>Receipts are kept for seven years.</Text>
-            <Target id="mask-sheet-test-root-close" label="Close Root Sheet" onPress={() => showRoot(false)} />
+          <Animated.View style={[styles.rootBackdrop, { opacity: rise.interpolate({ inputRange: [0, 1], outputRange: [0, 0.4] }) }]}>
+            <Pressable accessible={false} style={StyleSheet.absoluteFill} onPress={() => showRoot(false)} />
+          </Animated.View>
+          <Animated.View
+            style={[
+              styles.sheet,
+              {
+                paddingBottom: insets.bottom + 16,
+                transform: [{ translateY: rise.interpolate({ inputRange: [0, 1], outputRange: [rootSheetTravel, 0] }) }],
+              },
+            ]}
+          >
+            <View style={styles.sheetBody}>
+              <HeaderMarker id="mask-sheet-test-root-title" title="Receipt Details" style={styles.sheetHeader} />
+              <Text style={styles.sheetText}>Receipts are kept for seven years.</Text>
+              <Target id="mask-sheet-test-root-close" label="Close Root Sheet" onPress={() => showRoot(false)} />
+            </View>
+          </Animated.View>
+        </View>
+      ) : (
+        <View accessibilityViewIsModal style={StyleSheet.absoluteFill}>
+          {cover === 'Tap' ? (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Dismiss Error"
+              style={styles.coverBackdrop}
+              onPress={() => showCover('None')}
+            />
+          ) : (
+            <Pressable accessible={false} style={styles.coverBackdrop} onPress={() => showCover('None')} />
+          )}
+          <View style={cover === 'Top' ? [styles.topCard, { top: insets.top + 8 }] : styles.centredCard}>
+            <Text testID="mask-sheet-test-cover-title" accessibilityRole="header" style={styles.coverTitle}>
+              Payment declined
+            </Text>
+            <Target id="mask-sheet-test-cover-close" label="Close Error" onPress={() => showCover('None')} />
           </View>
-        </Animated.View>
-      </View>
+        </View>
+      )}
     </View>
   );
 }
@@ -145,4 +180,30 @@ const styles = StyleSheet.create({
   sheetBody: { alignItems: 'center', gap: 16, padding: 16 },
   sheetHeader: { alignSelf: 'stretch', paddingVertical: 12 },
   sheetText: { fontSize: 15, color: colours.secondary },
+  coverButtons: { flexDirection: 'row', gap: 8 },
+  coverBackdrop: { ...StyleSheet.absoluteFill, backgroundColor: 'rgba(0, 0, 0, 0.4)' },
+  coverTitle: { fontSize: 17, fontWeight: '600', color: colours.text },
+  centredCard: {
+    position: 'absolute',
+    left: 32,
+    right: 32,
+    top: '40%',
+    alignItems: 'center',
+    gap: 12,
+    padding: 16,
+    borderRadius: 16,
+    backgroundColor: colours.panel,
+  },
+  topCard: {
+    position: 'absolute',
+    left: 16,
+    right: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingVertical: 4,
+    borderRadius: 12,
+    backgroundColor: colours.panel,
+  },
 });

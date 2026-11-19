@@ -89,6 +89,11 @@ public struct MaskPlan: Equatable, Sendable {
         secure || !ids.isEmpty || !labels.isEmpty || !labelsContaining.isEmpty || !texts.isEmpty || emails
     }
 
+    /// Masks that name elements or text, which the tree cache can remember beneath a modal.
+    public var recalls: Bool {
+        !ids.isEmpty || !labels.isEmpty || !labelsContaining.isEmpty || !texts.isEmpty || emails
+    }
+
     /// The kinds asked for, in `MaskKind` order.
     public var kinds: [MaskKind] {
         MaskKind.allCases.filter { kind in

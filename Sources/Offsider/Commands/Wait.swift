@@ -307,7 +307,7 @@ struct Wait: AsyncParsableCommand {
             var mask = OutputMasks.current.base
             mask.revealed = revealed
             activity.tree = activity.tree?.redacted(mask, scope: .cache)
-            let record = TreeCacheRecord.committing(activity, previous: nil, command: "wait", inputAtEnd: false, bootMarker: nil, now: now)
+            let record = TreeCacheRecord.committing(activity, previous: nil, command: "wait", inputAtEnd: false, bootMarker: nil, now: now, statusBar: IOSBackend.statusBarHeight)
             return SettleGate.after(record, now: now)
         }
         return SettleGate.after(await TreeCache.load(for: route.device, backend: route.backend, environment: environment), now: now)

@@ -118,8 +118,20 @@ struct VideoMaskOptions: ParsableArguments {
                 reason: .videoUnmasked
             )
         }
-        // Frames are not read for text, so a backdrop over an unlisted band is warned of on its own.
-        if let unproven = ScreenCapture.unproven(tree) ?? HiddenScreen.region(in: tree, belowStatusBar: IOSBackend.statusBarHeight).map({ _ in "modal" }) {
+        // Frames are not read for text, so no text read can settle a modal told by memory alone: what the cache remembers of the file's masks refuses.
+        var behind: ScreenCapture.BehindModal?
+        if let plan = config?.config.plan, !plan.isEmpty {
+            behind = await ScreenCapture.behindModal(tree, plan: plan, screen: nil, device: device, backend: backend)
+        }
+        if let name = behind?.found.names.first {
+            throw CLIError(
+                errorDescription: "\(command) will not start while a modal may hide \(name), which \(MaskConfig.fileName) masks: video cannot be masked reliably frame by frame. "
+                    + "Close the modal first, use `screenshot`, which masks it, or pass --unmasked to record anyway.",
+                reason: .videoUnmasked
+            )
+        }
+        let shaped = HiddenScreen.modal(in: tree, belowStatusBar: IOSBackend.statusBarHeight).map { _ in "modal" }
+        if let unproven = ScreenCapture.unproven(tree) ?? shaped {
             Console.current.notice(ScreenCapture.unprovenNotice(unproven, subject: "the video"))
         }
     }
