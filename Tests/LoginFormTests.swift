@@ -275,16 +275,17 @@ struct KeyboardDismissTests {
         #expect([link, pressable].allSatisfy { $0.frame?.contains(packed) == false })
     }
 
-    @Test("the input assistant is not a safe place to dismiss the keyboard")
-    func assistantIsNotADismissPoint() {
+    @Test("the input assistant is not a safe place to dismiss the keyboard, and the page it lists taller than the screen hides no point outside it")
+    func assistantIsNotADismissPoint() throws {
         let header = FakeUI.node(.text, label: "Welcome", frame: FakeUI.frame(0, 0, 402, 616))
-        let bogus = FakeUI.node(.group, frame: FakeUI.frame(0, 274, 402, 1220))
-        let assistant = FakeUI.node(.group, id: "SystemInputAssistantView", frame: FakeUI.frame(0, 874, 402, 44), children: [bogus])
+        let page = FakeUI.node(.group, frame: FakeUI.frame(0, -35, 402, 1244))
+        let assistant = FakeUI.node(.group, id: "SystemInputAssistantView", frame: FakeUI.frame(0, 656, 402, 44), children: [page])
         let keyboard = FakeUI.node(.keyboard, frame: FakeUI.frame(0, 700, 402, 174))
         let cover = FakeUI.node(.group, frame: FakeUI.frame(0, 0, 402, 874), children: [assistant, keyboard])
         let tree = FakeUI.tree([header, cover])
-        let point = KeyboardDismiss.point(in: tree)
-        #expect(header.frame?.contains(point!) == true)
+        let point = try #require(KeyboardDismiss.point(in: tree))
+        #expect(assistant.frame?.contains(point) == false)
+        #expect(point.y < 656)
     }
 
     @Test("on a form raised above the keys, the first try is above the topmost field and no try lands in a field's wrapper")

@@ -20,6 +20,16 @@ extension IOSDeviceBackend: RawAccessibilitySource {
         }
     }
 
+    /// The runner's focused element through the one iOS mapper.
+    func runnerFocusedElement(for id: DeviceID) async throws -> UINode? {
+        try requirePermittedPin(id)
+        let client = try await runner(for: id)
+        let app = targetApp
+        let read = try await host.timing.measure("focused") { try await client.focused(app: app) }
+        guard let read else { return nil }
+        return try Self.tree(fromSnapshot: read, device: id.rawValue).roots.first
+    }
+
     /// The runner's snapshot through the one iOS mapper; with `point`, the deepest node there as the only root.
     func runnerTree(for id: DeviceID, point: UIPoint?) async throws -> UITree {
         let startedAt = Date()

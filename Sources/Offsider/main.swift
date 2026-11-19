@@ -23,10 +23,10 @@ struct OffsiderCommand: AsyncParsableCommand {
             ]),
             CommandGroup(name: "Input", subcommands: [
                 Tap.self, Type.self, Swipe.self, Drag.self, Touch.self, Gesture.self, Key.self, KeySequence.self, KeyCombo.self,
-                Button.self, Slider.self, Shake.self, Turnstile.self, LoginCommand.self, CredentialCommand.self, GuardCommand.self, Batch.self, RN.self,
+                Button.self, Slider.self, Shake.self, Keyboard.self, Turnstile.self, LoginCommand.self, CredentialCommand.self, GuardCommand.self, Batch.self, RN.self,
             ]),
             CommandGroup(name: "Device state", subcommands: [
-                AppCommand.self, OrientationCommand.self, PostureCommand.self, AppearanceCommand.self, ContentSizeCommand.self, PermissionCommand.self,
+                AppCommand.self, OrientationCommand.self, PostureCommand.self, AppearanceCommand.self, ContentSizeCommand.self, PermissionCommand.self, AlertCommand.self,
                 StatusBarCommand.self, BiometricCommand.self, StayAwakeCommand.self, AirplaneCommand.self, Wake.self, SleepCommand.self, UnlockCodeCommand.self,
             ]),
             CommandGroup(name: "Physical devices", subcommands: [RunnerCommand.self]),

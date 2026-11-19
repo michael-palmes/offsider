@@ -86,6 +86,7 @@ extension Gesture: AppTargeting {}
 extension Touch: AppTargeting {}
 extension Slider: AppTargeting {}
 extension Key: AppTargeting {}
+extension Keyboard: AppTargeting {}
 extension KeySequence: AppTargeting {}
 extension KeyCombo: AppTargeting {}
 extension Button: AppTargeting {}
@@ -110,5 +111,6 @@ extension AppBroadcastCommand: AppNaming { var namedApp: String? { appOption.bun
 extension NotificationsCommand: AppNaming { var namedApp: String? { app } }
 extension Logs: AppNaming { var namedApp: String? { app } }
 extension PermissionCommand: AppNaming { var namedApp: String? { app } }
+extension AlertCommand: AppNaming { var namedApp: String? { app } }
 extension RNPrepare: AppNaming { var namedApp: String? { bundleIDOption ?? app } }
 extension RNOpen: AppNaming { var namedApp: String? { bundleIDOption ?? app } }

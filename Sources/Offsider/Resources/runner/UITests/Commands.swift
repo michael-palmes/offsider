@@ -3,13 +3,14 @@ import XCTest
 
 /// Every route the runner serves; called on the main thread, as XCUITest requires.
 final class RunnerCommands {
-    static let version = "3"
+    static let version = "4"
     static let inputRoutes: Set<String> = ["/tap-point", "/tap-element", "/type", "/swipe", "/home", "/lock"]
+    static let readRoutes: Set<String> = ["/snapshot", "/focused"]
 
     /// Just under how long Offsider waits for a route, whose clock starts first; later, nobody is listening and running it would only hold the main thread.
     static func queueLimit(_ path: String) -> TimeInterval? {
         if path == "/snapshot" { return 14 }
-        return inputRoutes.contains(path) ? 4 : nil
+        return inputRoutes.contains(path) || path == "/focused" ? 4 : nil
     }
 
     let buildKey: String
@@ -28,7 +29,7 @@ final class RunnerCommands {
         if request.method == "POST", request.path == "/foreground" { return foreground(body) }
         let requested = body["app"] as? String
         // An app waiting on the prompt would hold this thread for about 20 s per read, and input would reach the prompt, not the app.
-        if request.path == "/snapshot" || Self.inputRoutes.contains(request.path), let requested, let prompt = systemPrompt(over: requested) {
+        if Self.readRoutes.contains(request.path) || Self.inputRoutes.contains(request.path), let requested, let prompt = systemPrompt(over: requested) {
             return .systemPrompt(prompt)
         }
         if let requested, XCUIApplication(bundleIdentifier: requested).state != .runningForeground {
@@ -38,6 +39,7 @@ final class RunnerCommands {
         switch (request.method, request.path) {
         case ("GET", "/ping"): return ping()
         case ("POST", "/snapshot"): return snapshot(app(body))
+        case ("POST", "/focused"): return focused(app(body))
         case ("POST", "/tap-point"): return tapPoint(body)
         case ("POST", "/tap-element"): return tapElement(body)
         case ("POST", "/type"): return type(body)
@@ -133,6 +135,20 @@ final class RunnerCommands {
         }
     }
 
+    /// The element with keyboard focus, without its children. A password field comes back as one with no value, so not even its length leaves the device.
+    private func focused(_ app: XCUIApplication) -> RunnerResponse {
+        let element = keyboardFocus(in: app)
+        // `exists` looks once; a snapshot of a missing element retries for about 2 s first.
+        guard element.exists, let field = try? element.snapshot() else { return .ok(["focused": NSNull()]) }
+        var encoder = SnapshotEncoder(budget: 2)
+        var node = encoder.encode(field, children: false)
+        if Self.isSecure(field) {
+            node["AXValue"] = nil
+            node["type"] = SnapshotEncoder.typeName(.secureTextField)
+        }
+        return .ok(["focused": node])
+    }
+
     private func tapPoint(_ body: [String: Any]) -> RunnerResponse {
         guard let x = number(body["x"]), let y = number(body["y"]) else {
             return .failure(400, code: "bad_request", message: "x and y are required")
@@ -156,7 +172,7 @@ final class RunnerCommands {
     private func type(_ body: [String: Any]) -> RunnerResponse {
         guard let text = body["text"] as? String else { return .failure(400, code: "bad_request", message: "text is required") }
         let app = app(body)
-        let focused = app.descendants(matching: .any).matching(NSPredicate(format: "hasKeyboardFocus == true")).firstMatch
+        let focused = keyboardFocus(in: app)
         let field = try? focused.snapshot()
         // XCTest names the text in each typeText's activity, which runner.log and the result bundle keep.
         if let field, Self.isSecure(field) {
@@ -172,6 +188,10 @@ final class RunnerCommands {
         }
         focused.typeText(text)
         return .ok([String: Any]())
+    }
+
+    private func keyboardFocus(in app: XCUIApplication) -> XCUIElement {
+        app.descendants(matching: .any).matching(NSPredicate(format: "hasKeyboardFocus == true")).firstMatch
     }
 
     /// A secure field, or a React Native one XCTest reports as a text field whose value is only its mask's dots.

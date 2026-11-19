@@ -116,56 +116,69 @@ final class IOSDeviceInputSession: TextInputSession {
     /// US keyboard text through broker keys when it sends them; anything else through the runner.
     func typeText(_ text: String) async throws {
         try await preflight()
-        let keys: Bool
-        if TextToHIDEvents.validateText(text) { keys = (try? await touchLowering())?.brokerTouches == true } else { keys = false }
+        let keys = await typesWithKeys(text)
         if InputSecrecy.keysOnly, !keys { throw IOSDeviceError.keysOnlyRefusal(text, device: device) }
-        if keys {
-            let requests = try Self.keyRequests(typing: text)
-            for (index, steps) in requests.enumerated() {
-                do {
-                    try await session().keys(steps)
-                } catch let error as IOSDeviceError where index > 0 {
-                    throw IOSDeviceError(
-                        .sessionLost,
-                        "Offsider typed the first \(index * Self.typingChunk) of \(text.count) characters on \(device.rawValue), then: \(error.message) Check the field before typing the rest."
-                    )
-                }
-            }
-            return
-        }
-        try await requireRunnerText("Typing text").typeText(text, on: device)
+        guard keys else { return try await requireRunnerText("Typing text").typeText(text, on: device) }
+        try await send(try Self.keyRequests(typing: text), typing: text)
     }
 
-    /// Characters per `keys` request, so a long text never outgrows the broker's request limit or its reply timeout.
+    /// True when `text` goes as broker keys: US keyboard text, with a broker that sends them.
+    func typesWithKeys(_ text: String) async -> Bool {
+        guard TextToHIDEvents.validateText(text) else { return false }
+        return (try? await touchLowering())?.brokerTouches == true
+    }
+
+    private func send(_ requests: [[DeviceSessionStep]], typing text: String) async throws {
+        for (index, steps) in requests.enumerated() {
+            do {
+                try await session().keys(steps)
+            } catch let error as IOSDeviceError where index > 0 {
+                throw IOSDeviceError(
+                    .sessionLost,
+                    "Offsider typed the first \(index * Self.typingChunk) of \(text.count) characters on \(device.rawValue), then: \(error.message) Check the field before typing the rest."
+                )
+            }
+        }
+    }
+
+    /// Characters per `keys` request, so a long text never outgrows the broker's request limit, its pause budget or its reply timeout.
     static let typingChunk = 256
 
-    /// The whole text lowered before anything is sent, one request per `typingChunk` characters.
-    static func keyRequests(typing text: String) throws -> [[DeviceSessionStep]] {
+    /// The pause between characters. The broker hands keys over faster than an app that handles each on its JavaScript thread takes them, as React Native does, and such an app then drops some; a device cannot say which apps those are, so every app's keys are paced.
+    static let keyGap: TimeInterval = 0.03
+
+    /// The whole text lowered before anything is sent, one request per `typingChunk` characters, `gap` seconds between characters; `prefix` goes at the head of the first request.
+    static func keyRequests(typing text: String, gap: TimeInterval = keyGap, after prefix: [DeviceSessionStep] = []) throws -> [[DeviceSessionStep]] {
         var requests: [[DeviceSessionStep]] = []
-        var start = text.startIndex
-        while start < text.endIndex {
-            let end = text.index(start, offsetBy: typingChunk, limitedBy: text.endIndex) ?? text.endIndex
-            requests.append(try DeviceSessionLowering.keySteps(typing: String(text[start..<end])))
-            start = end
+        var steps = prefix
+        for (index, character) in text.enumerated() {
+            if index > 0, index % typingChunk == 0 {
+                requests.append(steps)
+                steps = []
+            }
+            if index > 0, gap > 0 { steps.append(.wait(gap)) }
+            steps += try DeviceSessionLowering.keySteps(typing: String(character))
         }
+        if !steps.isEmpty { requests.append(steps) }
         return requests
     }
 
+    /// US keyboard text as Command-A, Delete and paced keys through the broker, so no key waits on XCTest; anything else through the runner. Only `login` replaces a password field's text.
     func replaceText(_ text: String) async throws {
         try await preflight()
-        if InputSecrecy.keysOnly {
-            guard (try? await touchLowering())?.brokerTouches == true else { throw IOSDeviceError.keysOnlyRefusal(text, device: device) }
-            try await session().keys(Self.selectAllAndDelete)
-            try await typeText(text)
-            return
+        let keys = await typesWithKeys(text)
+        if InputSecrecy.keysOnly, !keys { throw IOSDeviceError.keysOnlyRefusal(text, device: device) }
+        if !InputSecrecy.keysOnly, InputSecrecy.knownFocus == .secure {
+            throw IOSDeviceError.secureFieldRunnerRefusal(text, replace: true, udid: device.rawValue)
         }
-        try await requireRunnerText("Replacing a field's text").replaceText(text, on: device)
+        guard keys else { return try await requireRunnerText("Replacing a field's text").replaceText(text, on: device) }
+        try await send(try Self.keyRequests(typing: text, after: try Self.clearSteps(settling: !text.isEmpty)), typing: text)
     }
 
-    /// Command-A then Delete, as a hardware keyboard would, on the focused field.
-    static let selectAllAndDelete: [DeviceSessionStep] = [
-        .key(227, down: true), .key(4, down: true), .key(4, down: false), .key(227, down: false), .key(42, down: true), .key(42, down: false),
-    ]
+    /// Command-A, a pause, then Delete on the focused field, as a hardware keyboard would send them; `settling` adds the pause a field needs before new text.
+    static func clearSteps(settling: Bool) throws -> [DeviceSessionStep] {
+        try DeviceSessionLowering.keySteps(for: InputEvent.selectAllAndDelete(modifier: InputEvent.commandKey, settle: settling ? InputEvent.iosClearSettle : 0))
+    }
 
     func close() async {
         await runnerSession?.close()

@@ -97,6 +97,7 @@ public enum FailureReason: String, CaseIterable, Sendable {
     case conditionNotMet = "condition_not_met"
 
     case widgetNotShown = "widget_not_shown"
+    case alertNotShown = "alert_not_shown"
     case selectorAmbiguous = "selector_ambiguous"
     case selectorAmbiguousSwitch = "selector_ambiguous_switch"
     case userAmbiguous = "user_ambiguous"
@@ -145,7 +146,7 @@ public enum FailureReason: String, CaseIterable, Sendable {
 
     public var exitCode: OffsiderExitCode {
         switch self {
-        case .selectorNotFound, .selectorFilteredByType, .targetOffScreen, .focusMismatch, .userNotFound, .widgetNotShown:
+        case .selectorNotFound, .selectorFilteredByType, .targetOffScreen, .focusMismatch, .userNotFound, .widgetNotShown, .alertNotShown:
             return .selectorNotFound
         case .notVerified, .conditionNotMet, .focusNotConfirmed, .textNotAccepted:
             return .unverified
