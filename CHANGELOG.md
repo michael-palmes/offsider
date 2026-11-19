@@ -30,6 +30,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Changed
 
+- Screen reads on an iOS 27 simulator skip idb's per-read automation setup while the warm input session runs: the broker holds one automation session, so `describe-ui`, `wait`, selector and coordinate taps and `type`'s read-back each save about 150 to 350 ms. A read that comes back empty, or that the session did not last through, is read again with its own setup. idb moves to the `michael-palmes/idb` fork's `offsider-idb-v0.3.0`.
 - The bundled skill no longer asks before every production or store build: once a person has approved an app's guard rules, `guard status` says `ready` and the agent drives the app, leaving guarded controls to the guard.
 - `test-runner.sh --unit-tests` runs in parallel. A test that fails there reruns alone and must pass, and is flagged when it does; a stall or an unclear result reruns everything serially. CI reuses the debug build's dependencies on pull requests.
 - `login` reads Turnstile once the saved login is chosen and before it asks for Touch ID or reads the password, so an unticked box stops it with no Touch ID spent.

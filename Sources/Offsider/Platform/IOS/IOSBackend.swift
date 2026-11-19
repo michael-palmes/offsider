@@ -432,6 +432,7 @@ final class IOSBackend: DeviceBackend {
             throw CLIError.deviceNotBooted(id: id.rawValue, state: FBiOSTargetStateStringFromState(simulator.state).rawValue)
         }
         simulators[id.rawValue] = simulator
+        await AccessibilityHold.adopt(simulator)
         return simulator
     }
 }

@@ -313,7 +313,7 @@ struct DeviceSessionRow: Equatable {
             var lines = ["\(row.device)"]
             if let input = row.input {
                 let started = formatter.string(from: Date(timeIntervalSince1970: input.startedAt))
-                lines.append("  input  \(input.state ?? "ready")  pid \(input.pid)  started \(started)  idle \(input.idleFor) s of \(input.idleSeconds) s")
+                lines.append("  input  \(input.state ?? "ready")  pid \(input.pid)  started \(started)  idle \(input.idleFor) s of \(input.idleSeconds) s\(input.accessibilityHeld == true ? "  reads warm" : "")")
             } else if let helper = row.helper {
                 let pid = helper.helperPid.map { "  device pid \($0)" } ?? ""
                 lines.append("  helper  \(helper.state)  pid \(helper.brokerPid)\(pid)  started \(formatter.string(from: helper.startedAt))  idle \(helper.idleFor) s of \(helper.idleSeconds) s")
@@ -410,6 +410,7 @@ struct DeviceSessionRow: Equatable {
             "idleSeconds": input.idleSeconds,
             "idleFor": input.idleFor,
             "attached": input.attached,
+            "accessibilityHeld": input.accessibilityHeld ?? false,
         ]
     }
 

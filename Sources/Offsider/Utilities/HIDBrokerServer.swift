@@ -195,6 +195,7 @@ final class HIDBrokerServer {
     private let endpoint: String?
     private let endpointIdentity: HIDBrokerSocketIdentity?
     private let sink: HIDBrokerSink
+    private let accessibility: BrokerAccessibilityHold?
     private let isCurrentBoot: () -> Bool
     private let admits: (Int32) -> Bool
     private let writeLog: (String) -> Void
@@ -217,6 +218,7 @@ final class HIDBrokerServer {
         listener: Int32,
         endpoint: String?,
         sink: HIDBrokerSink,
+        accessibility: BrokerAccessibilityHold? = nil,
         isCurrentBoot: @escaping () -> Bool,
         admits: @escaping (Int32) -> Bool,
         idleSeconds: Int,
@@ -228,6 +230,7 @@ final class HIDBrokerServer {
         self.endpoint = endpoint
         self.endpointIdentity = endpoint.flatMap { try? HIDBroker.socketIdentity(at: $0) }
         self.sink = sink
+        self.accessibility = accessibility
         self.isCurrentBoot = isCurrentBoot
         self.admits = admits
         self.idleSeconds = idleSeconds
@@ -277,7 +280,8 @@ final class HIDBrokerServer {
             idleSeconds: idleSeconds,
             idleFor: Int((ContinuousClock.now - lastUse).components.seconds),
             attached: max(0, connections.count - 1),
-            state: stopReason == nil ? "ready" : "stopping"
+            state: stopReason == nil ? "ready" : "stopping",
+            accessibilityHeld: accessibility.map { $0.isHeld(reopening: false) }
         )
     }
 
@@ -346,6 +350,9 @@ final class HIDBrokerServer {
                 isCommand = false
                 requestStop("asked to stop")
                 reply(HIDBrokerReply(), to: client)
+            case .accessibility:
+                let session = stopReason == nil ? accessibility?.heldToken() : nil
+                reply(HIDBrokerReply(accessibilityHeld: session != nil, accessibilitySession: session), to: client)
             case .input:
                 guard let event = request.event?.hid else {
                     reply(HIDBrokerReply(error: "The simulator input broker got a request with no input. Nothing was sent."), to: client)

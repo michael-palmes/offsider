@@ -6,7 +6,7 @@ import OSLog
 
 // Every connection receives this newline-delimited handshake before the client writes a request.
 // A false value guarantees that the broker has not read or executed any input.
-private struct HIDBrokerHandshake: Codable {
+struct HIDBrokerHandshake: Codable {
     let ready: Bool
 }
 
