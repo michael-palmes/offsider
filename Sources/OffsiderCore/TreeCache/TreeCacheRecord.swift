@@ -214,7 +214,7 @@ public struct TreeCacheRecord: Equatable, Sendable {
 }
 
 extension TreeCacheRecord {
-    /// The record one command leaves for a device, or nil to leave the file; `inputAtEnd` stamps input no event recorded.
+    /// The record one command leaves for a device, or nil to leave the file; `inputAtEnd` stamps input no event recorded; `statusBar` is iOS's, in points.
     public static func committing(
         _ activity: DeviceActivityLedger.Activity,
         previous: TreeCacheRecord?,
@@ -222,7 +222,7 @@ extension TreeCacheRecord {
         inputAtEnd: Bool,
         bootMarker: String?,
         now: Date,
-        statusBar: Double
+        statusBar: Double = 60
     ) -> TreeCacheRecord? {
         let input = activity.lastInputAt ?? (inputAtEnd ? now : nil)
         let role: TreeRole?
