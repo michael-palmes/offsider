@@ -46,6 +46,21 @@ export function CoverTestScreen() {
           <Target id="cover-test-copy-info" label="Reference Info" onPress={() => press('Reference Info')} style={styles.info} />
         </Pressable>
         <Target id="cover-test-open-details" label="Open Details" onPress={() => setPages(1)} style={styles.action} />
+        <View style={styles.cards}>
+          {/* A card whose own text is drawn at its centre. */}
+          <View testID="cover-test-own-card" collapsable={false} importantForAccessibility="yes" style={styles.card}>
+            <Text style={styles.cardText}>Own Total</Text>
+          </View>
+          {/* A card with a label drawn over its centre from beside it, not from inside it. */}
+          <View style={styles.cardSlot}>
+            <View testID="cover-test-badge-card" collapsable={false} importantForAccessibility="yes" style={[styles.card, styles.badgeCard]}>
+              <Text style={styles.cardCorner}>Badge Card</Text>
+            </View>
+            <Text testID="cover-test-badge" style={styles.badge}>
+              New
+            </Text>
+          </View>
+        </View>
         <Pressable
           testID="cover-test-amount"
           accessibilityRole="button"
@@ -135,6 +150,13 @@ const styles = StyleSheet.create({
   copyText: { fontSize: 17, color: colours.text },
   info: { width: 120, minHeight: 40 },
   action: { marginHorizontal: 16, marginTop: 16 },
+  cards: { flexDirection: 'row', gap: 16, marginHorizontal: 16, marginTop: 16 },
+  cardSlot: { flex: 1, height: 72, alignItems: 'center', justifyContent: 'center' },
+  card: { flex: 1, height: 72, alignItems: 'center', justifyContent: 'center', borderRadius: 10, backgroundColor: colours.panel },
+  badgeCard: { ...StyleSheet.absoluteFill, flex: 0, height: undefined, alignItems: 'flex-start', justifyContent: 'flex-start', padding: 8 },
+  cardText: { fontSize: 17, color: colours.text },
+  cardCorner: { fontSize: 13, color: colours.text },
+  badge: { fontSize: 13, fontWeight: '600', color: colours.text },
   amount: { flex: 1, margin: 16, alignItems: 'center', paddingTop: 48, borderRadius: 10, backgroundColor: colours.panel },
   amountText: { fontSize: 40, fontWeight: '600', color: colours.text },
   keypad: {

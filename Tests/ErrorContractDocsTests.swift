@@ -24,6 +24,14 @@ struct ErrorContractDocsTests {
         #expect(documented == OffsiderExitCode.allCases.map(\.rawValue))
     }
 
+    @Test("the docs name every kind of evidence a covered target reports")
+    func coverEvidenceList() throws {
+        let text = try String(contentsOf: Self.root.appendingPathComponent("docs/input.md"), encoding: .utf8)
+        let line = try #require(text.components(separatedBy: "\n").first { $0.contains("`evidence`: ") })
+        let missing = CoverEvidence.allCases.map(\.rawValue).filter { !line.contains("`\($0)`") }
+        #expect(missing.isEmpty, "docs/input.md leaves out \(missing)")
+    }
+
     @Test("the docs reason table lists every reason with its exit code, and nothing else")
     func reasonTable() throws {
         var documented: [String: Int32] = [:]

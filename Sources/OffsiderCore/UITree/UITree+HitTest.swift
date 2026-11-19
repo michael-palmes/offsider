@@ -131,7 +131,12 @@ extension UITree {
         guard let upper = tree.firstIndex(of: upper), let lower = tree.firstIndex(of: lower) else {
             return nil
         }
-        return zOrder(tree.indexPath(to: upper), over: tree.indexPath(to: lower), in: tree.roots)
+        return zOrder(at: upper, over: lower, in: tree)
+    }
+
+    /// `zOrder(of:over:in:)` for the nodes at two pre-order indexes.
+    public static func zOrder(at upper: Int, over lower: Int, in tree: TreeIndex) -> (isAbove: Bool, byDrawingOrder: Bool) {
+        zOrder(tree.indexPath(to: upper), over: tree.indexPath(to: lower), in: tree.roots)
     }
 
     private static func zOrder(_ upperPath: [Int], over lowerPath: [Int], in roots: [UINode]) -> (isAbove: Bool, byDrawingOrder: Bool) {
