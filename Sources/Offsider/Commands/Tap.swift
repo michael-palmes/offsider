@@ -506,17 +506,22 @@ struct Tap: AsyncParsableCommand, VerifiableCommand {
         let pointText = VerifyOutput.pointDescription(x: point.x, y: point.y)
         let back = device.platform == .android && tree.map(KeyboardDismiss.showsKeys(in:)) != false
         let hide: String
+        var hint = "offsider describe-ui --summary\(appArgument) --device \(device.rawValue)"
         if back {
             hide = "Hide the keyboard with `offsider button back` (or scroll the target above it)"
+            hint = "offsider button back\(appArgument) --device \(device.rawValue)"
         } else if device.platform == .android {
             hide = "Scroll the target clear of the keyboard's toolbar (Back would go to the app, as only the toolbar shows)"
+        } else if case .control = tree.map(KeyboardHide.step(in:)) {
+            hide = "Hide the keyboard with `offsider keyboard hide` (or scroll the target above it)"
+            hint = "offsider keyboard hide\(appArgument) --device \(device.rawValue)"
         } else {
             hide = "Dismiss the keyboard in the app (or scroll the target above it)"
         }
         return CLIError(
             errorDescription: "The keyboard covers \(selector) at \(pointText), so the \(gesture) would press a key. \(hide), then retry. Nothing was sent.",
             reason: .targetUnderKeyboard,
-            hint: back ? "offsider button back\(appArgument) --device \(device.rawValue)" : "offsider describe-ui --summary\(appArgument) --device \(device.rawValue)"
+            hint: hint
         )
     }
 

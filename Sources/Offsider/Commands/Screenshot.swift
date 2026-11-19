@@ -19,8 +19,10 @@ struct Screenshot: AsyncParsableCommand {
         is captured as it is, often dark. \
         Password fields are masked by default: the accessibility tree is read first and every password field is painted \
         opaque black before the image is written or compared; when a password field cannot be located, the image is \
-        withheld and no file is written. On Android the same mask paints keyboard text beside the keys (suggestions, \
-        a clipboard chip, clipboard history) and Android's copy preview, counted in maskedBy as keyboard and copyPreview. \
+        withheld and no file is written. The same mask paints keyboard text, counted in maskedBy as keyboard: on Android \
+        text beside the keys (suggestions, a clipboard chip, clipboard history) and Android's copy preview (copyPreview); \
+        on iOS the bar above the keys, whole, where suggestions can name a contact. An iOS keyboard whose bar the tree \
+        does not list gets a band painted where one would be, with maskUnproven keyboard and a warning. \
         --no-mask-secure (or OFFSIDER_MASK_SECURE=0) skips the tree read and the mask, \
         except during an evidence run that masks them. --mask-id, --mask-label, --mask-label-contains, --mask-text and --mask-emails paint the elements \
         they match the same way, even on a screen beneath a page (counted in maskedBeneath); --mask-region paints a rectangle \
@@ -75,7 +77,7 @@ struct Screenshot: AsyncParsableCommand {
     @Option(help: ArgumentHelp("With --compare, the outcome that passes: changed (the default) or unchanged. Exit 5 when the capture does not match it.", valueName: "changed|unchanged"))
     var expect: ScreenCompare.Outcome?
 
-    @Flag(name: .customLong("mask-secure"), inversion: .prefixedNo, help: "Paint password fields, and on Android keyboard text beside the keys and the copy preview, black before writing the image, and withhold it when one cannot be located (the default; OFFSIDER_MASK_SECURE=0 turns it off).")
+    @Flag(name: .customLong("mask-secure"), inversion: .prefixedNo, help: "Paint password fields, keyboard text (Android: beside the keys; iOS: the bar above them) and Android's copy preview black before writing the image, and withhold it when one cannot be located (the default; OFFSIDER_MASK_SECURE=0 turns it off).")
     var maskSecure: Bool?
 
     @Option(name: .customLong("mask-id"), parsing: .upToNextOption, help: ArgumentHelp("Paint every element with this id black. Repeatable.", valueName: "id"))

@@ -86,6 +86,7 @@ extension Gesture: AppTargeting {}
 extension Touch: AppTargeting {}
 extension Slider: AppTargeting {}
 extension Key: AppTargeting {}
+extension Keyboard: AppTargeting {}
 extension KeySequence: AppTargeting {}
 extension KeyCombo: AppTargeting {}
 extension Button: AppTargeting {}

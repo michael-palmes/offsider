@@ -30,6 +30,7 @@ enum CommandEffect: String, Sendable {
         "drag": .input,
         "button": .input,
         "shake": .input,
+        "keyboard": .input,
         "orientation": .input,
         "displays": .none,
         "posture": .input,

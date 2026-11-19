@@ -14,6 +14,8 @@ final class IOSBackend: DeviceBackend {
     /// From the last full read, for the hit-tests that follow it; never set on a foldable.
     private var displayZooms: [String: DisplayZoom] = [:]
     private var zoomChecked: Set<String> = []
+    /// Where the latest whole read listed the keyboard's bar, per device: a point read's answer has no parents to tell it by.
+    private var keyboardBars: [String: [UIFrame]] = [:]
     private var bootMarkers: [String: String] = [:]
     /// Kept for the command, so a resend or a turn back pays no second activation floor.
     private var vendorLinks: [String: SimulatorDTUHID] = [:]
@@ -105,7 +107,11 @@ final class IOSBackend: DeviceBackend {
     }
 
     func accessibilityTree(for id: DeviceID, point: UIPoint?) async throws -> UITree {
-        try await accessibilityTree(for: id, point: point, appPIDs: [])
+        // A point read that is shown, as `describe-ui --point` is, never goes without the whole read that tells the keyboard's bar.
+        if point != nil, keyboardBars[id.rawValue] == nil {
+            _ = try await screenPointTree(for: id, point: nil, appPIDs: [])
+        }
+        return try await accessibilityTree(for: id, point: point, appPIDs: [])
     }
 
     private func accessibilityTree(for id: DeviceID, point: UIPoint?, appPIDs: Set<Int>) async throws -> UITree {
@@ -123,6 +129,21 @@ final class IOSBackend: DeviceBackend {
     /// The tree with its frames in the screen points input and captures use.
     /// `frameOnly` reads the application root and its frames once, for placing a point: no labels, values or retries for an empty tree.
     private func screenPointTree(for id: DeviceID, point: UIPoint?, appPIDs: Set<Int>, frameOnly: Bool = false) async throws -> UITree {
+        var tree = try await readScreenPointTree(for: id, point: point, appPIDs: appPIDs, frameOnly: frameOnly)
+        if point != nil {
+            tree.roots = tree.roots.map { hidingKeyboardBarText($0, on: id) }
+        } else if !frameOnly {
+            keyboardBars[id.rawValue] = KeyboardBar.frames(in: tree.roots)
+        }
+        return tree
+    }
+
+    /// A point read's answer, its text hidden when it lies in the keyboard's bar.
+    private func hidingKeyboardBarText(_ node: UINode, on id: DeviceID) -> UINode {
+        KeyboardBar.hiding(node, inside: keyboardBars[id.rawValue] ?? [])
+    }
+
+    private func readScreenPointTree(for id: DeviceID, point: UIPoint?, appPIDs: Set<Int>, frameOnly: Bool) async throws -> UITree {
         let simulator = try await simulator(for: id)
         let foldable = displayCatalog.isFoldable(simulator)
         // `describe-ui --point` comes with no tree read before it.
@@ -451,7 +472,7 @@ extension IOSBackend: ElementWatching {
         let zoom = displayZooms[id.rawValue]
         let layoutPoint = zoom?.layoutPoint(point) ?? point
         let element = try await AccessibilityFetcher.pointElement(from: try await simulator(for: id), at: AccessibilityPoint(x: layoutPoint.x, y: layoutPoint.y))
-        return SimulatorElementWatch(element: element, zoom: zoom)
+        return SimulatorElementWatch(element: element, zoom: zoom, keyboardBars: keyboardBars[id.rawValue] ?? [])
     }
 }
 
@@ -460,16 +481,18 @@ extension IOSBackend: ElementWatching {
 final class SimulatorElementWatch: ElementWatch {
     private var element: FBAccessibilityElement?
     private let zoom: DisplayZoom?
+    private let keyboardBars: [UIFrame]
 
-    init(element: FBAccessibilityElement, zoom: DisplayZoom?) {
+    init(element: FBAccessibilityElement, zoom: DisplayZoom?, keyboardBars: [UIFrame]) {
         self.element = element
         self.zoom = zoom
+        self.keyboardBars = keyboardBars
     }
 
     func read() -> UINode? {
         guard let element, let data = try? AccessibilityFetcher.serialized(element, keys: TraitsRequest.process.keys),
               let roots = try? IOSAccessibilityMapping.roots(fromJSON: data) else { return nil }
-        return (zoom?.screenRoots(roots) ?? roots).first
+        return (zoom?.screenRoots(roots) ?? roots).first.map { KeyboardBar.hiding($0, inside: keyboardBars) }
     }
 
     func close() {
@@ -496,7 +519,7 @@ extension IOSBackend: PresentationProbing {
         if zoom == nil, Self.isSpringBoard(roots), let turn = await springBoardTurn(of: simulator) {
             roots = try await springBoardRoots(roots, turn: turn, at: point, rereading: read)
         }
-        return (zoom?.screenRoots(roots) ?? roots).first
+        return (zoom?.screenRoots(roots) ?? roots).first.map { hidingKeyboardBarText($0, on: id) }
     }
 
     func knowsDisplayZoom(on id: DeviceID) -> Bool {
@@ -572,7 +595,7 @@ extension IOSBackend: TreeGapFilling {
         let zoom = displayZooms[id.rawValue]
         func node(_ element: FBAccessibilityElement, keys: Set<FBAXKeys>) -> UINode? {
             guard let data = try? AccessibilityFetcher.serialized(element, keys: keys), let roots = try? IOSAccessibilityMapping.roots(fromJSON: data) else { return nil }
-            return (zoom?.screenRoots(roots) ?? roots).first
+            return (zoom?.screenRoots(roots) ?? roots).first.map { hidingKeyboardBarText($0, on: id) }
         }
         defer { elements.forEach { $0?.close() } }
         return zip(elements, wanted).map { element, wanted in

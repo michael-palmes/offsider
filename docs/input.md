@@ -25,7 +25,7 @@ If input seems to be ignored, or screen reads fail, run `offsider doctor --devic
 
 ### JSON results
 
-Every input command takes `--json`: `tap`, `type`, `key`, `key-sequence`, `key-combo`, `button`, `swipe`, `drag`, `touch`, `gesture`, `slider` and `shake`. Stdout then holds one line, also on a failure, and the command's own lines move to stderr:
+Every input command takes `--json`: `tap`, `type`, `key`, `key-sequence`, `key-combo`, `button`, `swipe`, `drag`, `touch`, `gesture`, `slider`, `shake` and `keyboard`. Stdout then holds one line, also on a failure, and the command's own lines move to stderr:
 
 ```json
 {"version":1,"ok":true,"command":"tap","target":"id=save","dispatched":"yes","point":{"x":201,"y":640},"elapsedMs":182,"exitCode":0,"error":null}
@@ -111,6 +111,18 @@ On Android with three-button navigation, the navigation bar and the status bar a
 Expo's floating dev menu button takes touches well beyond its 26 pt icon, the only part the tree gives: about 40 pt from the icon's centre on iOS, and 24 pt on Android. A target whose point falls in that area is refused with `evidence` `devMenuTouchArea`, and the hint is the `drag` that moves the button clear; on an iOS simulator a target showing beside the circle is tapped there instead.
 
 `slider` makes the same keyboard and cover checks where its drag would start, at the thumb, since whatever takes that touch takes the whole drag: a sheet or the keyboard over it refuses with `target_covered` or `target_under_keyboard` and nothing is sent, rather than dragging the sheet. `--wait-timeout` reads again until the cover goes, and `--allow-covered` drags anyway with a warning. It never moves the drag to a part showing beside a cover.
+
+### Hiding the keyboard
+
+`offsider keyboard hide --device <ID>` closes the on-screen keyboard and says whether it went away. It sends only the keyboard's own way out: on iOS its hide key (an iPad has one) or Done in the bar an app puts on top of the keys, on Android Back, and only while docked keys are up, since over a floating toolbar Back goes to the app. It never presses Return, which can submit a form. A button labelled Done within 64 pt above the keyboard counts as that bar, so name another way when a form keeps its own Done there. It then reads the screen for up to 1.5 s:
+
+- `hidden` (exit 0): the keyboard went away. `--json` carries it as `value`.
+- `absent` (exit 0): no keyboard was up, so nothing was sent.
+- Exit 1 `state_not_reached`: the keyboard has no way out of its own, as an iPhone's has without an app's Done bar (nothing was sent), or it stayed up.
+
+`--tap-outside` also tries up to three taps on empty space clear of the keys and of every text field, as `login` does, reading after each. Many apps close the keyboard on such a tap and many do not; leave it off over a sheet or dialog that closes when its backdrop is tapped. Every tap goes through the [app guard](guard.md). On a physical iPhone, iPad or Android phone it takes `--app`, as `tap` does.
+
+A `tap` the keyboard covers (`target_under_keyboard`) names `keyboard hide` in its hint when the iOS keyboard has a way out.
 
 ### Disabled targets
 
