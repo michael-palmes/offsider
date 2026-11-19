@@ -28,7 +28,8 @@ struct IOSPlacementFrameTests {
             guardHasRules: guardHasRules,
             frameRead: { reads.frameReads += 1; return frameRead },
             fullRead: { reads.fullReads += 1; return Self.tree(fullRead) },
-            note: { reads.noted.append($0) }
+            note: { reads.noted.append($0) },
+            wait: { _ in }
         )
         return (frame, reads)
     }
@@ -51,13 +52,29 @@ struct IOSPlacementFrameTests {
         #expect(reads.noted.first?.roots.first?.children.first?.label == "Next Page")
     }
 
-    @Test("an app that has just opened answers with an empty root and no frame, so the whole read places the point")
+    @Test("a root that never gets a frame is read a bounded number of times, then the whole read places the point")
     func emptyRootFallsBack() async throws {
         for answer in [UIFrame(x: 0, y: 0, width: 0, height: 0), nil] as [UIFrame?] {
             let (frame, reads) = try await place(guardHasRules: false, frameRead: answer, fullRead: Self.letterboxed)
             #expect(frame == Self.letterboxed)
+            #expect(reads.frameReads == IOSBackend.frameReadAttempts)
             #expect(reads.fullReads == 1)
         }
+    }
+
+    @Test("an app that has just opened answers with an empty root first, and the next frame read places the point")
+    func emptyRootThenFrame() async throws {
+        var answers: [UIFrame?] = [UIFrame(x: 0, y: 0, width: 0, height: 0), Self.letterboxed]
+        var waits: [Duration] = []
+        let frame = try await IOSBackend.placementFrame(
+            guardHasRules: false,
+            frameRead: { answers.removeFirst() },
+            fullRead: { Issue.record("no whole read expected"); return Self.tree(Self.portrait) },
+            note: { _ in },
+            wait: { waits.append($0) }
+        )
+        #expect(frame == Self.letterboxed)
+        #expect(waits == [.milliseconds(50)])
     }
 
     @Test("every coordinate reads the frame again, so a turn or another app in front between inputs is seen")
@@ -69,7 +86,8 @@ struct IOSPlacementFrameTests {
                 guardHasRules: false,
                 frameRead: { answers.removeFirst() },
                 fullRead: { Issue.record("no whole read expected"); return Self.tree(Self.portrait) },
-                note: { _ in }
+                note: { _ in },
+                wait: { _ in }
             ))
         }
         #expect(frames == [Self.portrait, Self.letterboxed])
