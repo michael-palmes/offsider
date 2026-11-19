@@ -782,6 +782,13 @@ struct AccessibilityTargetResolver {
             return Array(Set(rows[row]).union(anywhere)).sorted()
         }
 
+        /// Pre-order indexes of the nodes that may cover some point of `frame`.
+        func overlapping(_ frame: UIFrame) -> Set<Int> {
+            guard let first = Self.row(of: max(frame.y, viewport.y), in: viewport),
+                  let last = Self.row(of: min(frame.y + frame.height, viewport.y + viewport.height), in: viewport), first <= last else { return Set(all) }
+            return Set(rows[first...last].joined()).union(anywhere)
+        }
+
         /// The row of the viewport holding `y`, clamped to the rows; nil for a size or place that is not finite.
         private static func row(of y: Double, in viewport: UIFrame) -> Int? {
             let height = viewport.height / Double(rowCount)
