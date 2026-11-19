@@ -69,8 +69,9 @@ struct TextFocusTests {
         #expect(error?.userFacingDescription.contains("keyboard is up") == true)
     }
 
-    static func type(_ arguments: [String], trees: [UITree], device: DeviceID) async throws -> FakeDeviceBackend {
+    static func type(_ arguments: [String], trees: [UITree], device: DeviceID, holding: [String: String] = [:]) async throws -> FakeDeviceBackend {
         let backend = FakeDeviceBackend(platform: device.platform, trees: trees)
+        backend.valuesAfterKeys = holding
         let fixture = try TreeCacheFixture()
         try await fixture.run {
             try await Type.parse(arguments + ["--device", device.rawValue])
@@ -105,14 +106,16 @@ struct TextFocusTests {
     @Test("plain type into a focused field, or with the keyboard up, sends the text")
     func typesWithFocus() async throws {
         for tree in [FakeUI.tree([Self.field("search", focused: true)]), FakeUI.tree([Self.field("search"), Self.keyboard()])] {
-            let backend = try await Self.type(["hi"], trees: [tree], device: Self.simulator)
+            let backend = try await Self.type(["hi"], trees: [tree], device: Self.simulator, holding: ["search": "hi"])
             #expect(backend.session.calls == [.perform(.composite(try Type.iosEvents(for: "hi", replacing: false)))])
         }
     }
 
     @Test("a field a tap focused a moment ago is waited for before refusing")
     func waitsForLateFocus() async throws {
-        let backend = try await Self.type(["hi"], trees: [FakeUI.tree([Self.field("search")]), FakeUI.tree([Self.field("search", focused: true)])], device: Self.simulator)
+        let backend = try await Self.type(
+            ["hi"], trees: [FakeUI.tree([Self.field("search")]), FakeUI.tree([Self.field("search", focused: true)])], device: Self.simulator, holding: ["search": "hi"]
+        )
         #expect(backend.session.calls.count == 1)
     }
 
@@ -142,9 +145,14 @@ struct TextFocusTests {
     }
 
     /// A screen whose tree lists only `listed`, while a hit-test answers with `hits`' node inside its frame, as for a branch the tree leaves out.
-    static func sparse(listed: [UINode] = [], hits: [UINode]) -> HitTestingFakeBackend {
+    /// With `typed`, a hit field holds that text once keys have gone, as a field that took them does.
+    static func sparse(listed: [UINode] = [], hits: [UINode], typed: String? = nil) -> HitTestingFakeBackend {
         let backend = HitTestingFakeBackend(platform: .ios, trees: [FakeUI.tree(listed)])
-        backend.hits = { point in hits.first { $0.frame?.contains(point) == true } }
+        backend.hits = { [unowned backend] point in
+            guard var hit = hits.first(where: { $0.frame?.contains(point) == true }) else { return nil }
+            if let typed, backend.session.calls.contains(where: { if case .perform(.composite) = $0 { return true } else { return false } }) { hit.value = typed }
+            return hit
+        }
         return backend
     }
 
@@ -158,7 +166,7 @@ struct TextFocusTests {
 
     @Test("a focused field the tree leaves out, with no keyboard showing, still takes the text")
     func focusedFieldOutsideTheTree() async throws {
-        let backend = Self.sparse(hits: [Self.field("search", focused: true)])
+        let backend = Self.sparse(hits: [Self.field("search", focused: true)], typed: "hi")
         try await Self.send(["hi"], through: backend)
         #expect(backend.session.calls == [.perform(.composite(try Type.iosEvents(for: "hi", replacing: false)))])
     }
@@ -166,7 +174,7 @@ struct TextFocusTests {
     @Test("a narrow focused field off the screen's centre line the tree leaves out is found too")
     func narrowFieldOutsideTheTree() async throws {
         let narrow = FakeUI.node(.textField, id: "code", frame: FakeUI.frame(300, 500, 60, 30), state: UIState(focused: true))
-        let backend = Self.sparse(hits: [narrow])
+        let backend = Self.sparse(hits: [narrow], typed: "hi")
         try await Self.send(["hi"], through: backend)
         #expect(backend.session.calls.count == 1)
     }
@@ -204,7 +212,7 @@ struct TextFocusTests {
 
     @Test("--require-focus-id accepts a focused field the tree leaves out, and still refuses another")
     func requireFocusOutsideTheTree() async throws {
-        let backend = Self.sparse(hits: [Self.field("search", focused: true)])
+        let backend = Self.sparse(hits: [Self.field("search", focused: true)], typed: "hi")
         try await Self.send(["--require-focus-id", "search", "hi"], through: backend)
         #expect(backend.session.calls.count == 1)
 

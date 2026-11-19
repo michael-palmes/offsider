@@ -27,6 +27,12 @@ struct TypedExpectation {
         return !replacing && TextFocus.keyboardHoldingFocus(in: after) != nil && Self.lacksText(text, before: was, after: now.value) ? .differs : check
     }
 
+    /// `check` from one read of the field alone, an empty one reading as no text.
+    func check(was: String?, field now: UINode) -> TextCheck {
+        guard !now.isSecure else { return .unknown }
+        return TypedText.judge(sent: text, before: was, after: now.value ?? "", replacing: replacing)
+    }
+
     /// Short enough to judge, and not all there: what a keyboard field holding focus took.
     static func lacksText(_ text: String, before: String?, after: String?) -> Bool {
         guard text.count <= TypedText.longest, (after ?? "").count <= TypedText.longest else { return false }

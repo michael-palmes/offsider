@@ -341,6 +341,39 @@ struct ReactNativeGotchaTests {
         }
     }
 
+    @Test("in the slow search field, a plain replace leaves the word every time, as the read straight after it shows", arguments: RNPlatform.enabled, [false, true])
+    func slowSearchFieldHoldsTheWord(platform: RNPlatform, twoSources: Bool) async throws {
+        let app = RNApp(platform)
+        try await app.open("controlled-search-test")
+        if twoSources {
+            try await app.run("tap --id controlled-search-source")
+            _ = try await app.waitForLabel(of: "controlled-search-source") { $0 == "Value Source: State And Props" }
+        }
+
+        for round in 1...10 {
+            let typed = try await app.offsider("type --into-id controlled-search-field --replace 'code12'")
+            #expect(typed.exitCode == 0, "round \(round): \(typed.stderr)")
+            // The read straight after: the field holds every key, though its capitals may still be on their way from JavaScript.
+            let field = try await app.waitForNode { $0["id"] as? String == "controlled-search-field" }
+            #expect((field["value"] as? String)?.uppercased() == "CODE12", "round \(round)")
+            try await app.run("wait --settled --ignore-values --timeout 5")
+            #expect(try await app.label(of: "controlled-search-value") == "Query: CODE12", "round \(round)")
+        }
+    }
+
+    @Test("type returns once the field holds the text: the read straight after ten characters shows all ten", arguments: RNPlatform.enabled)
+    func typeReturnsWithTheText(platform: RNPlatform) async throws {
+        let app = RNApp(platform)
+        try await app.open("text-input")
+
+        for round in 1...5 {
+            try await app.run("type --into-id text-input-field --replace ''")
+            try await app.run("type --into-id text-input-field 'samfixture'")
+            let field = try await app.waitForNode { $0["id"] as? String == "text-input-field" }
+            #expect(field["value"] as? String == "samfixture", "round \(round)")
+        }
+    }
+
     @Test("a keypad kept mounted and parked below the screen is not on screen, and a tap on its key is not sent", arguments: RNPlatform.enabled)
     func parkedKeypad(platform: RNPlatform) async throws {
         let app = RNApp(platform)

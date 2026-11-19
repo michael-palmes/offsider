@@ -72,6 +72,7 @@ struct TypeIntoTests {
         #expect(warnings.value == ["the keyboard was already up, so the iOS simulator cannot confirm which field has focus; check with assert --has-value."])
 
         let backend = FakeDeviceBackend(platform: .ios, trees: [Self.form(focused: nil, keyboard: true, platform: .ios)])
+        backend.valuesAfterKeys = ["second-field": "hi"]
         try await Self.quiet { try await Type.parse(["--into-id", "second-field", "hi", "--device", Self.simulator.rawValue])
             .execute(on: DeviceRouter.Route(backend: backend, device: Self.simulator), progress: nil, logger: OffsiderLogger()) }
         #expect(backend.session.calls.count == 2)
