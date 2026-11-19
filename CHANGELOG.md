@@ -79,6 +79,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - `app launch` and `app open` on Android call a start cold when the app's process id after it is new, so a launch straight after `app stop` no longer reads as warm; JSON keeps Android's own `launchState` and adds `pid`.
 - `runner build` and a runner start rebuild a cached iPhone runner whose provisioning profile has expired or ends within an hour (a free team's lasts seven days), instead of installing it; when the rebuild cannot renew it, as with no Apple Account signed in to Xcode, they exit 1 with `profile_expired` and the one command a person runs. A device that refuses the runner with `0xe8008011` now fails at once with `profile_expired` and drops the cached build, not after a wait under a message about unlocking.
 - A `--has-value` miss in `assert` and `wait` on a value a run or mask file hides now says `does not match '<text>': its value is masked`, so it reads as the no match it is, not a refusal.
+- The near-match suggestions in `assert`, `wait`, `tap` and every other selector command no longer show the text of a password field a show-password toggle revealed, and a `--has-value` miss on a password field no longer shows its value.
 
 ## [0.16.0] - 2026-11-05
 

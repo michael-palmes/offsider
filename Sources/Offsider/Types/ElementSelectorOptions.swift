@@ -181,7 +181,7 @@ struct ElementSelectorOptions: ParsableArguments {
             if let hasValue {
                 let valued = pool.filter { Self.value(of: $0, equals: hasValue) }
                 guard !valued.isEmpty else {
-                    let hidden = revealed?.matches(pool[0]) == true || OutputMasks.current.mask.hidesValue(of: pool[0])
+                    let hidden = revealed?.matches(pool[0]) == true || OutputMasks.current.mask.withholdsValue(of: pool[0])
                     let labelled = pool.contains { AccessibilityQuery.label(hasValue).matches($0) }
                     let hint = labelled ? "; '\(hasValue)' is its label: use --label '\(hasValue)'" : ""
                     if hidden, pool[0].normalizedValue != nil {
