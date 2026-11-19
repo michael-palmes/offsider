@@ -54,6 +54,26 @@ export function PermissionStateTestScreen() {
           await refresh();
         }}
       />
+      <Target
+        id="permission-state-request-notifications"
+        label="Request Notifications"
+        onPress={async () => {
+          if (Platform.OS === 'android') {
+            await PermissionsAndroid.request(permissions.notifications);
+          }
+          await refresh();
+        }}
+      />
+      <Target
+        id="permission-state-request-both"
+        label="Request Both"
+        onPress={async () => {
+          if (Platform.OS === 'android') {
+            await PermissionsAndroid.requestMultiple([permissions.camera, permissions.notifications]);
+          }
+          await refresh();
+        }}
+      />
     </Screen>
   );
 }
