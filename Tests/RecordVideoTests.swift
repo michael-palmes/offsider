@@ -6,6 +6,9 @@ import Testing
 
 @Suite("Record Video Command Tests", .serialized, .enabled(if: isE2EEnabled))
 struct RecordVideoTests {
+    /// Once for the suite: video refuses to start over a keyboard's suggestions or a password field, which the suite before can leave in front.
+    private static let screenWithoutKeyboard = Task { try await TestHelpers.launchPlaygroundApp(to: "tap-test") }
+
     @Test("Record video stopped with SIGINT after its first frame writes an MP4 file with default options")
     func recordVideoDefault() async throws {
         let result = try await invokeRecordVideo(duration: 3.0, stop: .interrupt)
@@ -124,6 +127,7 @@ struct RecordVideoTests {
         outputPath: String? = nil,
         extraArguments: [String] = []
     ) async throws -> RecordingResult {
+        try await Self.screenWithoutKeyboard.value
         let udid = try TestHelpers.requireSimulatorUDID()
         let offsiderPath = try TestHelpers.getOffsiderPath()
 

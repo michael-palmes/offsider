@@ -59,7 +59,7 @@ public enum VideoMaskPolicy {
         }
     }
 
-    /// True when the tree shows keyboard text beside the keys, a keyboard it could not read, or Android's copy preview.
+    /// True when the tree shows keyboard text beside the keys, an iOS keyboard's bar, a keyboard it could not read, or Android's copy preview.
     public static func showsKeyboardText(_ tree: UITree) -> Bool {
         keyboardTextRefusal(command: "", in: tree) != nil
     }
@@ -71,7 +71,12 @@ public enum VideoMaskPolicy {
             guard let viewport, let frame = node.frame else { return true }
             return frame.isVisible(in: viewport)
         }
-        if hidden || !KeyboardText.unreadWindows(in: tree).isEmpty {
+        let bar = KeyboardBar.placement(in: tree)
+        if bar.unplaced {
+            return "\(command) will not start while a keyboard is up and its suggestions cannot be placed: video cannot be masked reliably frame by frame. "
+                + "Close the keyboard first (`offsider keyboard hide`), use `screenshot`, which paints a band over them, or pass --unmasked to record anyway."
+        }
+        if hidden || !bar.isEmpty || !KeyboardText.unreadWindows(in: tree).isEmpty {
             return "\(command) will not start while the keyboard shows suggestions or the clipboard: video cannot be masked reliably frame by frame. "
                 + "Close the keyboard first, use `screenshot`, which masks it, or pass --unmasked to record anyway."
         }

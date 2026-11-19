@@ -37,6 +37,7 @@ extension KeySequence: JSONReportingCommand { var wantsJSON: Bool { jsonOption.j
 extension KeyCombo: JSONReportingCommand { var wantsJSON: Bool { jsonOption.json } }
 extension Slider: JSONReportingCommand { var wantsJSON: Bool { jsonOption.json } }
 extension Shake: JSONReportingCommand { var wantsJSON: Bool { jsonOption.json } }
+extension Keyboard: JSONReportingCommand { var wantsJSON: Bool { jsonOption.json } }
 extension Screenshot: JSONReportingCommand { var wantsJSON: Bool { json } }
 extension Wait: JSONReportingCommand { var wantsJSON: Bool { json } }
 extension Assert: JSONReportingCommand { var wantsJSON: Bool { json } }
