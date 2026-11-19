@@ -130,7 +130,7 @@ enum ScreenCapture {
         /// Nil unless `--mask-skip-beneath` was given; then every skippable kind asked for, zeros included.
         var skipped: [MaskKind: Int]?
         var unmatched: [String]
-        /// `modal` when Android left the windows beneath a modal out of the tree, or iOS a screen behind a backdrop that shows text.
+        /// `modal` when Android left the windows beneath a modal out of the tree, or iOS a screen behind a backdrop that shows text; `keyboard` when an iOS keyboard is up and its bar is not listed, so a band was painted where one would be.
         var unproven: String? = nil
     }
 
@@ -158,6 +158,11 @@ enum ScreenCapture {
             return .warning(
                 "Masks can't tell if a modal is open; check \(subject)",
                 agent: "this read lists no windows, so a modal hiding what is behind it cannot be told and masks may miss text drawn there; check \(subject) or add --mask-region (maskUnproven)."
+            )
+        case "keyboard":
+            return .warning(
+                "Painted a band for the keyboard's suggestions; check \(subject)",
+                agent: "a keyboard is up and its suggestion bar is not in the tree, so a band was painted where one would be; check \(subject), or close the keyboard first with `offsider keyboard hide` (maskUnproven)."
             )
         default:
             return .warning(
@@ -201,7 +206,8 @@ enum ScreenCapture {
             targets = try plan.textTargets(in: tree)
             if plan.secure {
                 targets.add(tree.roots.flatMap { $0.flattened() }.filter { $0.isSecure || revealed?.matches($0) == true }, as: .secure)
-                targets.add(KeyboardText.hiddenElements(in: tree.roots), as: .keyboard)
+                // iOS paints its bar whole, below, so a suggestion that arrives after the read is covered too.
+                if tree.platform != .ios { targets.add(KeyboardText.hiddenElements(in: tree.roots), as: .keyboard) }
             }
             let selectors = plan.ids.map { (MaskKind.id, AccessibilityQuery.id($0)) } + plan.labels.map { (MaskKind.label, AccessibilityQuery.label($0)) }
                 + plan.labelsContaining.map { (MaskKind.labelContains, AccessibilityQuery.labelContains($0)) }
@@ -215,9 +221,13 @@ enum ScreenCapture {
         }
         targets.frames[.region] = plan.regions.map { UIFrame(x: $0.x, y: $0.y, width: $0.width, height: $0.height) }
         let placement = tree.map { targets.placeBeneath(in: $0, skip: plan.skipsBeneath) } ?? (painted: [:], skipped: [:])
+        var keyboardUnplaced = false
         if let tree, plan.secure {
             // Windows, not elements, so no page can be beneath them.
             targets.frames[.keyboard, default: []] += KeyboardText.unreadWindows(in: tree).map(Optional.some)
+            let bar = KeyboardBar.placement(in: tree)
+            targets.frames[.keyboard, default: []] += bar.frames
+            keyboardUnplaced = bar.unplaced
             targets.frames[.copyPreview] = CopyPreview.frames(in: tree)
         }
         if let hidden, !hidden.lines.isEmpty {
@@ -254,7 +264,7 @@ enum ScreenCapture {
         }
         beneath = beneath.filter { $0.value > 0 }
         painted = painted.filter { !$0.key.ridesWithSecure || $0.value > 0 }
-        let unproven = tree.flatMap(Self.unproven) ?? (hidden?.unproven == true ? "modal" : nil)
+        let unproven = tree.flatMap(Self.unproven) ?? (hidden?.unproven == true ? "modal" : nil) ?? (keyboardUnplaced ? "keyboard" : nil)
         guard image !== capture.image else {
             return MaskResult(capture: capture, painted: painted, beneath: beneath, skipped: skipped, unmatched: targets.unmatched, unproven: unproven)
         }
