@@ -414,22 +414,32 @@ struct KeyboardBarTests {
         #expect(!Self.frame(16, 180, 388, 34).contains(point))
     }
 
-    /// Runs `Keyboard.hide` over scripted trees: `after` is read once something was sent.
-    static func hide(before: UITree, after: UITree, tapOutside: Bool = false) async throws -> (outcome: Result<Keyboard.Outcome, Error>, sent: [String]) {
+    /// Runs `Keyboard.hide` over scripted trees: `after` is read once something was sent. Time passes only in its sleeps, and each read costs `readCost` seconds.
+    static func hide(
+        before: UITree, after: UITree, tapOutside: Bool = false, readCost: TimeInterval = 0
+    ) async throws -> (outcome: Result<Keyboard.Outcome, Error>, sent: [String], reads: Int, seconds: TimeInterval) {
         var sent: [String] = []
+        var reads = 0
+        var spent: TimeInterval = 0
+        let scripted = ScriptedClock()
+        let clock = PollClock(now: { scripted.now + spent }, sleep: scripted.poll.sleep)
         let outcome: Result<Keyboard.Outcome, Error>
         do {
             outcome = .success(try await Keyboard.hide(
                 tapOutside: tapOutside, device: "IOS-UDID",
-                read: { sent.isEmpty ? before : after },
+                read: {
+                    reads += 1
+                    spent += readCost
+                    return sent.isEmpty ? before : after
+                },
                 ownWayOut: { _ in sent.append("own") },
                 tap: { _, _ in sent.append("tap") },
-                sleep: { _ in }
+                clock: clock
             ))
         } catch {
             outcome = .failure(error)
         }
-        return (outcome, sent)
+        return (outcome, sent, reads, scripted.now + spent)
     }
 
     @Test("keyboard hide sends nothing with no keyboard, and reports hidden once its own way out worked")
@@ -469,7 +479,7 @@ struct KeyboardBarTests {
         ])
         var taps: [UIPoint] = []
         _ = try? await Keyboard.hide(
-            tapOutside: true, device: "IOS-UDID", read: { pad }, ownWayOut: { _ in }, tap: { point, _ in taps.append(point) }, sleep: { _ in }
+            tapOutside: true, device: "IOS-UDID", read: { pad }, ownWayOut: { _ in }, tap: { point, _ in taps.append(point) }, clock: ScriptedClock().poll
         )
 
         #expect(taps.count == 3)
@@ -499,6 +509,22 @@ struct KeyboardBarTests {
 
         #expect(KeyboardBar.frames(in: tree.roots) == [Self.frame(0, 500, 390, 45)])
         #expect(KeyboardBar.placement(in: tree) == KeyboardBar.Placement(frames: [Self.frame(0, 500, 390, 45)]))
+    }
+
+    @Test("the wait for the keys to go is 1.5 s by the clock, however fast or slow a read is")
+    func waitIsOnAClock() async throws {
+        let done = Self.element("Button", id: "form-done", label: "Done", (331, 523, 63, 36))
+        let up = try Self.tree(width: 420, height: 912, [done, Self.area((0, 565, 420, 347)), Self.bar((0, 565, 420, 44)), Self.keys((0, 609, 420, 245))])
+
+        let instant = try await Self.hide(before: up, after: up)
+        let slow = try await Self.hide(before: up, after: up, readCost: 0.7)
+
+        // One read to judge, then reads until the deadline: every 0.25 s when a read is free, every 0.95 s when it costs 0.7 s.
+        #expect(instant.reads == 1 + 7)
+        #expect(instant.seconds == 1.5)
+        #expect(slow.reads == 1 + 2)
+        #expect(slow.seconds < 0.7 + 1.5 + 0.7 + 0.25)
+        #expect(instant.sent == ["own"] && slow.sent == ["own"])
     }
 
     @Test("--tap-outside stops after three taps that leave the keyboard up")

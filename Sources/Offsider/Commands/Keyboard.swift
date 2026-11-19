@@ -40,8 +40,8 @@ struct Keyboard: AsyncParsableCommand {
     @OptionGroup
     var appOption: AppOption
 
-    /// How long the keys may take to slide away, and how often the screen is read meanwhile.
-    static let settle: Duration = .milliseconds(1500)
+    /// How long the keys may take to slide away, by the clock and whatever a read costs, and the pause between reads.
+    static let settle: TimeInterval = 1.5
     static let poll: Duration = .milliseconds(250)
 
     func run() async throws {
@@ -80,18 +80,17 @@ struct Keyboard: AsyncParsableCommand {
         read: () async throws -> UITree,
         ownWayOut: (UITree) async throws -> Void,
         tap: (UIPoint, UITree) async throws -> Void,
-        sleep: (Duration) async throws -> Void = { try await Task.sleep(for: $0) }
+        clock: PollClock = .live
     ) async throws -> Outcome {
         var tree = try await read()
         let step = KeyboardHide.step(in: tree)
         if step == .absent { return .absent }
         func settled() async throws -> UITree {
-            var waited: Duration = .zero
+            let deadline = clock.now() + settle
             while true {
                 let next = try await read()
-                if !KeyboardHide.isUp(next) || waited >= settle { return next }
-                try await sleep(poll)
-                waited += poll
+                if !KeyboardHide.isUp(next) || clock.now() >= deadline { return next }
+                try await clock.sleep(poll)
             }
         }
         if step != .noWayOut {

@@ -21,11 +21,12 @@ struct KeyboardBarE2ETests {
         (tree["context"] as? [String: Any])?["keyboard"] as? Bool == true
     }
 
-    /// Reads until the keyboard is up or gone, for at most 5 s.
+    /// Reads until the keyboard is up or gone, for 5 s by the clock, however long a read takes.
     static func treeOnceKeyboard(is shown: Bool) async throws -> [String: Any] {
+        let deadline = Date().addingTimeInterval(5)
         var latest = try await tree()
-        for _ in 0..<10 where keyboardShown(latest) != shown {
-            try await Task.sleep(nanoseconds: 500_000_000)
+        while keyboardShown(latest) != shown, Date() < deadline {
+            try await Task.sleep(nanoseconds: 250_000_000)
             latest = try await tree()
         }
         return latest
