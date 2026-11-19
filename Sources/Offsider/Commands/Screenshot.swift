@@ -326,7 +326,8 @@ struct Screenshot: AsyncParsableCommand {
         let systemWindow = shownWidget == nil ? Self.namedSystemWindow(on: backend, device: booted.id) : nil
         var masked: ScreenCapture.MaskResult?
         if !masks.isEmpty {
-            var result = try Timings.measure("mask") { try ScreenCapture.masking(capture, plan: masks, tree: tree, revealed: revealed) }
+            let hidden = shownWidget == nil ? await ScreenCapture.hiddenText(in: capture, tree: tree) : nil
+            var result = try Timings.measure("mask") { try ScreenCapture.masking(capture, plan: masks, tree: tree, revealed: revealed, hidden: hidden) }
             if let config {
                 // The file's selectors are standing masks, so one that matches nothing on this screen is not worth a warning.
                 let quiet = config.selectorNames.subtracting(Self.selectorNames(own))

@@ -24,6 +24,8 @@ final class Connection {
     private int refreshedWindow = -1;
     boolean dontSuppress;
 
+    static final String LOST = "its connection to UiAutomation died, as it does when Android's framework restarts";
+
     UiAutomation automation() {
         return automation;
     }
@@ -106,6 +108,15 @@ final class Connection {
             includesNotImportant = includeNotImportant;
         } catch (RuntimeException e) {
             throw HelperFailure.connect("could not configure the UiAutomation service", e);
+        }
+    }
+
+    /** True when Android no longer answers for this connection, as after its framework restarts; asked only once a request has failed or found no window. */
+    boolean lost() {
+        try {
+            return automation.getServiceInfo() == null;
+        } catch (RuntimeException e) {
+            return true;
         }
     }
 

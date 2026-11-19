@@ -169,7 +169,7 @@ extension AndroidBackend {
         }
     }
 
-    /// One dump mapped to dp; a dump with no app window is read once more after 500 ms, then `noWindow`.
+    /// One dump mapped to dp; a dump with no app window is read once more after 500 ms, unless the first already waited seconds on it, then `noWindow`.
     /// `everyView` adds views not important for accessibility, and leaves the session's node index as the last plain read set it.
     func helperRoots(_ serial: String, session: HelperSession, everyView: Bool = false) async throws -> (
         roots: [UINode], truncated: Bool, windows: [UIWindowInfo], hidden: Int?, namedHidden: [UITreeContext.HiddenBranch]?
@@ -177,6 +177,10 @@ extension AndroidBackend {
         let options = HelperDumpOptions(notImportant: everyView)
         var dump = try await helperDump(serial, session: session, options: options)
         if HelperTreeMapping.appWindow(in: dump) == nil {
+            guard !dump.waitedOnSilentWindow else {
+                log(.debug, "The app's window on \(serial) gave no tree in \(dump.walkMs ?? 0) ms, so it is not read again")
+                throw AndroidError.noWindow(serial)
+            }
             log(.debug, "The helper found no window on \(serial); reading the screen again")
             try await host.sleep(.milliseconds(500))
             dump = try await helperDump(serial, session: session, options: options)
@@ -192,7 +196,7 @@ extension AndroidBackend {
             geometry = try await self.geometry(for: serial)
         }
         if dump.truncated, warnedAboutTruncation.insert(serial).inserted {
-            log(.warning, AndroidTreeSource.truncationWarning(serial: serial))
+            log(.warning, AndroidTreeSource.truncationWarning(serial: serial, cutForTime: dump.cutForTime))
         }
         let mapped = host.timing.measure(.treeMap) {
             HelperTreeMapping.roots(from: dump, scale: geometry.scale, pid: session.ready.pid)

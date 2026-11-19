@@ -46,6 +46,8 @@ final class HelperSession {
     private var nextID: Int
     private var restartedAfterLoss = false
     private var isClosed = false
+    /// A helper a relayed request timed out on: `close()` kills it, as it may never see its start shell close.
+    private var wedgedPid: Int32?
     /// One request on the socket at a time, in the order they came, so a capture and a tree read running together never interleave frames.
     private let queue = HelperRequestQueue()
 
@@ -263,6 +265,10 @@ final class HelperSession {
                 log(.debug, "The UiAutomation helper on \(serial) left after idling (\(detail ?? "no detail")); starting it again")
                 await drop(connection)
                 try await restart()
+            case .bye(let reason, _) where reason == HelperBrokerWire.timedOutReason:
+                // The broker's clock passed the command's own first: the same timeout, so the request is not sent to a fresh helper to wait again.
+                await shutdown()
+                throw AndroidError.helperTimedOut(serial, op: request.op, seconds: Int(timeout.components.seconds))
             case .bye(let reason, let detail):
                 try await recover(connection, from: "it ended with \(reason)\(detail.map { ": \($0)" } ?? "")", resending: request)
             case .lost(let detail):
@@ -292,7 +298,10 @@ final class HelperSession {
             if let next = follow(reply) {
                 _ = try? await connection.exchange(payload: next.payload, op: next.op, id: next.id, timeout: max(minimum, .seconds(1)))
             }
-        case .bye, .lost, .timedOut: await drop(connection)
+        case .bye, .lost: await drop(connection)
+        case .timedOut:
+            wedgedPid = connection.ready.pid
+            await drop(connection)
         }
         return outcome
     }
@@ -304,14 +313,15 @@ final class HelperSession {
             throw AndroidError.helperLostInput(serial, detail: detail)
         }
         guard !restartedAfterLoss else {
-            throw AndroidError.helperCrashed(serial, detail: detail)
+            throw AndroidError.helperNotRecovered(serial, detail: detail)
         }
         restartedAfterLoss = true
         log(.debug, "The UiAutomation helper on \(serial) was lost (\(detail)); starting it again")
-        try await restart()
+        try await restart(after: detail)
     }
 
-    private func restart() async throws {
+    /// `loss` is why the helper before this one went, when a request is waiting on the fresh one.
+    private func restart(after loss: String? = nil) async throws {
         let id = nextID
         nextID += 1
         do {
@@ -324,10 +334,15 @@ final class HelperSession {
             ops = fresh.ops
             if let seq = fresh.eventSeq { eventCursor = seq }
         } catch HelperStartFailure.unavailable(let reason) {
-            throw AndroidError.helperCrashed(serial, detail: "it could not start again: \(reason)")
+            throw Self.notRestarted(serial, loss: loss, why: "\(reason)")
         } catch let error as HelperBrokerUnavailable {
-            throw AndroidError.helperCrashed(serial, detail: "it could not start again: \(error.detail)")
+            throw Self.notRestarted(serial, loss: loss, why: error.detail)
         }
+    }
+
+    private static func notRestarted(_ serial: String, loss: String?, why: String) -> AndroidError {
+        guard let loss else { return .helperCrashed(serial, detail: "it could not start again: \(why)") }
+        return .helperNotRecovered(serial, detail: loss, restart: why)
     }
 
     private func drop(_ old: HelperConnection) async {
@@ -358,6 +373,9 @@ final class HelperSession {
     func close() async {
         guard !isClosed else { return }
         isClosed = true
+        if let wedgedPid, case .launched(let launcher) = origin {
+            await kill(wedgedPid, with: launcher, because: "never answered")
+        }
         guard connection != nil else { return }
         await timing.measure(.helperClose) {
             await shutdown()
@@ -382,8 +400,12 @@ final class HelperSession {
         let status = await connection.shell?.exitStatus(deadline: ContinuousClock.now + Self.exitTimeout)
         await connection.close()
         guard status == nil else { return }
-        let pid = connection.ready.pid
-        log(.debug, "The UiAutomation helper on \(serial) (pid \(pid)) did not confirm its exit; killing it")
+        await kill(connection.ready.pid, with: launcher, because: "did not confirm its exit")
+    }
+
+    /// A helper that has gone answers "No such process", which is ignored.
+    private func kill(_ pid: Int32, with launcher: HelperLauncher, because why: String) async {
+        log(.debug, "The UiAutomation helper on \(serial) (pid \(pid)) \(why); killing it so its UiAutomation slot is free")
         _ = try? await launcher.client.shell("kill \(pid)", on: serial, timeout: Self.killTimeout)
     }
 }

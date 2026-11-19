@@ -106,10 +106,8 @@ extension Tap: BatchConvertible {
             Self.warnIfOffScreen(subject: query.selectorDescription, at: resolution.point, in: resolved.tree)
         }
 
-        let physicalPoint = try await context.backend.deviceCoordinates(
-            for: [resolution.point],
-            tree: resolvedTree,
-            on: context.device
+        let physicalPoint = try await DeviceWatchdog.make().inputPoints(
+            [resolution.point], tree: resolvedTree, backend: context.backend, device: context.device
         )[0]
 
         if let heldFor {
@@ -131,10 +129,8 @@ extension Tap: BatchConvertible {
 extension Swipe: BatchConvertible {
     func toBatchPrimitives(context: BatchContext, logger: OffsiderLogger) async throws -> [BatchPrimitive] {
         guard !holdShots.isRequested else { throw ValidationError(HoldScreenshotOptions.batchMessage) }
-        let physicalPoints = try await context.backend.deviceCoordinates(
-            for: [(x: startX, y: startY), (x: endX, y: endY)],
-            tree: nil,
-            on: context.device
+        let physicalPoints = try await DeviceWatchdog.make().inputPoints(
+            [(x: startX, y: startY), (x: endX, y: endY)], backend: context.backend, device: context.device
         )
         let event = try swipeEvent(from: physicalPoints[0], to: physicalPoints[1])
         return [.hidMergeable(InputEvent.delayed(event, pre: preDelay, post: postDelay))]
@@ -144,10 +140,8 @@ extension Swipe: BatchConvertible {
 extension Drag: BatchConvertible {
     func toBatchPrimitives(context: BatchContext, logger: OffsiderLogger) async throws -> [BatchPrimitive] {
         guard !holdShots.isRequested else { throw ValidationError(HoldScreenshotOptions.batchMessage) }
-        let physicalPoints = try await context.backend.deviceCoordinates(
-            for: [(x: startX, y: startY), (x: endX, y: endY)],
-            tree: nil,
-            on: context.device
+        let physicalPoints = try await DeviceWatchdog.make().inputPoints(
+            [(x: startX, y: startY), (x: endX, y: endY)], backend: context.backend, device: context.device
         )
         let event = try dragEvent(from: physicalPoints[0], to: physicalPoints[1])
         return [.hidMergeable(InputEvent.delayed(event, pre: preDelay, post: postDelay))]
@@ -171,11 +165,7 @@ extension Touch: BatchConvertible {
         if fingers == 2 {
             return [.hidBarrier(try await twoFingerEvent(backend: context.backend, device: context.device))]
         }
-        let physicalPoint = try await context.backend.deviceCoordinates(
-            for: [(x: pointX, y: pointY)],
-            tree: nil,
-            on: context.device
-        )[0]
+        let physicalPoint = try await DeviceWatchdog.make().inputPoints([(x: pointX, y: pointY)], backend: context.backend, device: context.device)[0]
 
         let touchDownEvent = InputEvent.touch(direction: .down, x: physicalPoint.x, y: physicalPoint.y)
         let touchUpEvent = InputEvent.touch(direction: .up, x: physicalPoint.x, y: physicalPoint.y)

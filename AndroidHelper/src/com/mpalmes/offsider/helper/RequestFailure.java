@@ -17,8 +17,10 @@ final class RequestFailure extends Exception {
         this.detail = detail;
     }
 
+    static final String BAD_REQUEST = "bad-request";
+
     static RequestFailure badRequest(String message) {
-        return new RequestFailure("bad-request", message, null);
+        return new RequestFailure(BAD_REQUEST, message, null);
     }
 
     static RequestFailure staleNode(String message) {

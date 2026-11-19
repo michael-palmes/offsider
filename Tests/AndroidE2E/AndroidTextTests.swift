@@ -27,6 +27,17 @@ struct AndroidTypeTests {
         #expect(try await AndroidE2E.label(of: "word-count") == "Words: 2")
     }
 
+    @Test("ASCII over 30 key events, shifted characters too, reaches the field whole and in order", arguments: [
+        "cam@example.com", "The Quick Brown Fox Jumps Over 13 Lazy Dogs!",
+    ])
+    func longASCII(text: String) async throws {
+        try await AndroidE2E.open("text-input", waitingFor: "text-input-field")
+        try await AndroidE2E.run("tap --id text-input-field")
+        try await AndroidE2E.run("type \(AndroidE2E.quote(text))")
+        _ = try await AndroidE2E.waitForFieldValue(text)
+        _ = try await AndroidE2E.waitForLabel(of: "character-count") { $0 == "Characters: \(text.count)" }
+    }
+
     @Test("non-ASCII text is pasted whole and the clipboard is restored")
     func unicodeRestoresClipboard() async throws {
         let emulator = try await AndroidE2E.emulatorClient()

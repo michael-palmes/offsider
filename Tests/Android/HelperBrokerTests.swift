@@ -315,6 +315,49 @@ struct HelperBrokerTests {
         }
     }
 
+    @Test("a warm helper that never answers is a timeout, never a loss to start again from, and it is killed so the UiAutomation slot is free before the socket goes")
+    func wedgedHelperIsKilled() async {
+        await #expect(processExitsWith: .success) { @MainActor in
+            await recordingErrors {
+                let device = FakeHelperDevice()
+                device.answer = { _, op, _ in op == "dump" ? .silence : nil }
+                let fixture = BrokerFixture(device: device)
+                try await fixture.start()
+                let session = try await HelperSession.attach(try fixture.client(), log: { _, _ in })
+
+                let error = await #expect(throws: AndroidError.self) {
+                    _ = try await session.request(.dump(HelperDumpOptions()), as: HelperDump.self, timeout: .seconds(1))
+                }
+                #expect(error?.kind == .helperTimedOut)
+                #expect(try await fixture.finished())
+                #expect(device.kills == [4001])
+                #expect(device.ops.filter { $0 == "dump" }.count == 1)
+                #expect(fixture.spawns == 0)
+                await session.close()
+            }
+        }
+    }
+
+    @Test("a warm helper that says its connection to Android died ends its broker, and the command's one fresh start is a new broker")
+    func deadConnectionEndsBroker() async {
+        await #expect(processExitsWith: .success) { @MainActor in
+            await recordingErrors {
+                let device = FakeHelperDevice()
+                device.answer = { _, op, _ in op == "dump" ? .bye("crash") : nil }
+                let fixture = BrokerFixture(device: device)
+                try await fixture.start()
+                let session = try await HelperSession.attach(try fixture.client(), log: { _, _ in })
+
+                let error = await #expect(throws: AndroidError.self) { _ = try await session.dump() }
+                #expect(error?.message.contains("Run `offsider session stop --device emulator-5556`, then retry.") == true)
+                #expect(try await fixture.finished())
+                #expect(fixture.spawns == 1)
+                #expect(device.kills.isEmpty)
+                await session.close()
+            }
+        }
+    }
+
     @Test("a command silent past the idle timeout is told idle before the broker stops, so it restarts without counting a loss")
     func silentClientHearsIdle() async {
         await #expect(processExitsWith: .success) { @MainActor in

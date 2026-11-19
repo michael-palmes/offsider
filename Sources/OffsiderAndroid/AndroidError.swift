@@ -508,6 +508,15 @@ public struct AndroidError: LocalizedError, CustomStringConvertible, Equatable, 
         )
     }
 
+    /// The helper went, and the one fresh start a command gives it did not bring the request back.
+    static func helperNotRecovered(_ serial: String, detail: String, restart: String? = nil) -> AndroidError {
+        AndroidError(
+            .helperCrashed,
+            "The UiAutomation helper on \(serial) stopped (\(detail)), and one fresh start did not bring it back\(restart.map { " (\($0))" } ?? ""). Run `offsider session stop --device \(serial)`, then retry.",
+            hint: "offsider session stop --device \(serial)"
+        )
+    }
+
     static func helperLostInput(_ serial: String, detail: String) -> AndroidError {
         AndroidError(
             .helperCrashed,
@@ -667,6 +676,13 @@ public struct AndroidError: LocalizedError, CustomStringConvertible, Equatable, 
         return AndroidError(
             .textNotAccepted,
             "The focused field on \(serial)\(element) \(outcome): the app filters what it accepts. Check it with describe-ui, and type what the field allows."
+        )
+    }
+
+    static func keysNotTaken(_ serial: String, sent: Int, of total: Int) -> AndroidError {
+        AndroidError(
+            .textNotAccepted,
+            "Typing on \(serial) stopped after \(sent) of \(total) characters: the app had not taken them after 10 s, and Android drops keys that wait that long. Check the field with `offsider describe-ui --device \(serial)`, then type what is missing."
         )
     }
 

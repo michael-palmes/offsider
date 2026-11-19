@@ -28,6 +28,21 @@ private final class WedgedBackend: FakeDeviceBackend {
     }
 }
 
+/// A simulator whose tree reads answer but whose point reads never return.
+@MainActor
+private final class WedgedPointBackend: FakeDeviceBackend, PointHitTesting {
+    func quickHitTest(at point: UIPoint, on id: DeviceID) async throws -> UINode? {
+        try await hitTest(at: point, on: id, appPIDs: [])
+    }
+
+    func hitTest(at point: UIPoint, on id: DeviceID, appPIDs: Set<Int>) async throws -> UINode? {
+        try await Task.sleep(for: .seconds(3600))
+        throw CancellationError()
+    }
+
+    func processName(of pid: Int, on id: DeviceID) async -> String? { nil }
+}
+
 @Suite("Reads of a hung device")
 @MainActor
 struct HungReadTests {
@@ -279,6 +294,48 @@ struct HungReadTests {
             case let gesture as Gesture: try await gesture.send(on: route, logger: logger, watchdog: watchdog)
             default: Issue.record("\(arguments[0]) is not an input command here")
             }
+        }
+        #expect(backend.session.calls.isEmpty)
+    }
+
+    @Test("batch coordinate steps stop waiting on the read that places their points", arguments: [
+        ["tap", "-x", "100", "-y", "200"],
+        ["swipe", "--start-x", "200", "--start-y", "800", "--end-x", "200", "--end-y", "400"],
+        ["drag", "--start-x", "200", "--start-y", "300", "--end-x", "200", "--end-y", "600"],
+        ["touch", "-x", "100", "-y", "200", "--down", "--up"],
+    ])
+    func batchCoordinateSteps(arguments: [String]) async throws {
+        let fired = Fired()
+        let backend = WedgedBackend(trees: [])
+        let context = BatchContext(backend: backend, device: Self.simulator, axCachePolicy: .perBatch, typeSubmissionMode: .chunked, typeChunkSize: 1)
+        let step = try #require(try OffsiderCommand.parseAsRoot(arguments + ["--device", Self.simulator.rawValue]) as? any BatchConvertible)
+        try await withTinyWatchdogs(fired) {
+            try await firesWhile(fired) { _ = try await step.toBatchPrimitives(context: context, logger: OffsiderLogger()) }
+        }
+        #expect(backend.session.calls.isEmpty)
+    }
+
+    @Test("rn open ends on a cover read that never returns rather than waiting out --timeout")
+    func rnOpenCoverRead() async throws {
+        let fired = Fired()
+        let backend = WedgedPointBackend(trees: [SystemPromptCoverTests.signedIn(prompt: true)])
+        let command = try RNOpen.parse(["--port", "8742", "--bundle-id", "com.mpalmes.offsider.playground.rn", "--wait-id", "home-screen", "--timeout", "900", "--device", Self.simulator.rawValue])
+        let metro = MetroStatus(fetch: { _, _ in (200, Data("packager-status:running".utf8)) })
+        let watchdog = watchdog(fired)
+        try await firesWhile(fired) {
+            _ = try await command.open(on: DeviceRouter.Route(backend: backend, device: Self.simulator), metro: metro, clock: ScriptedClock().poll, watchdog: watchdog)
+        }
+    }
+
+    @Test("rn devmenu stops waiting on the point reads that tell the menu's item from the app's")
+    func devMenuPointReads() async throws {
+        let fired = Fired()
+        let menu = try RNDevMenuTests.menu(withAppButton: "Close", frame: FakeUI.frame(16, 120, 370, 44))
+        let backend = WedgedPointBackend(platform: .ios, trees: [menu])
+        let command = try RNDevMenu.parse(["--label", "Close", "--device", Self.simulator.rawValue])
+        let watchdog = watchdog(fired)
+        try await firesWhile(fired) {
+            _ = try await command.perform(on: DeviceRouter.Route(backend: backend, device: Self.simulator), clock: ScriptedClock().poll, watchdog: watchdog)
         }
         #expect(backend.session.calls.isEmpty)
     }

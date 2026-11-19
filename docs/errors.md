@@ -138,8 +138,8 @@ A `--verify --json` report also carries `ignored` (`{node, reason}` entries left
 | `log_stream_failed` | 1 | The device's log could not be read | Retry |
 | `video_failed` | 1 | Recording or streaming video failed, `--output` names something other than a video file you own, the device could not be marked as recording, a stop came before the first frame, so nothing was recorded, or a stop could not finish in time, so the recording was discarded | Check the output path and the private directory, then retry |
 | `video_unmasked` | 1 | `record-video` or `stream-video` was asked for tree masks, the evidence run masks emails or ids, or a password field is on screen (or the screen could not be read) as it starts | Use `screenshot` for masked evidence, or pass `--unmasked` to record anyway |
-| `helper_failed` | 1 | The UiAutomation helper stopped or failed | Retry; the `hint` names the log to read |
-| `helper_timed_out` | 1 | The UiAutomation helper did not answer in time | Retry when the emulator responds |
+| `helper_failed` | 1 | The UiAutomation helper stopped or failed; one that stopped, as after Android's framework restarts, was already started again once | Retry; when the `hint` is `offsider session stop --device <serial>`, run it first |
+| `helper_timed_out` | 1 | The UiAutomation helper did not answer in time, so Offsider stopped it | Retry when the emulator responds; the next command starts a fresh helper |
 | `adb_command_failed` | 1 | An adb command failed on the device, or printed more than 64 MB | Read `message` |
 | `adb_protocol_error` | 1 | The adb server sent a reply Offsider could not read | Stop it with the `hint` (the SDK's `adb kill-server`), then run the command again |
 | `emulator_grpc_unavailable` | 1 | The emulator's gRPC endpoint did not answer | Check the emulator is still running |

@@ -66,7 +66,7 @@ struct MaskHiddenContentTests {
 
     @Test("each unproven reason warns in its own words, naming what to check")
     func unprovenWords() {
-        for (reason, words) in [("truncated", "cut this accessibility tree short"), ("no-windows", "lists no windows"), ("modal", "a modal window covers the app")] {
+        for (reason, words) in [("truncated", "cut this accessibility tree short"), ("no-windows", "lists no windows"), ("modal", "a modal covers the app")] {
             let notice = ScreenCapture.unprovenNotice(reason, subject: "the video")
             let agent = AgentRenderer.notice(notice)
             #expect(agent.contains(words), "\(agent)")
