@@ -87,6 +87,12 @@ export const routeInfo = {
     menuTitle: 'Keypad Test',
     subtitle: 'Price field fed by an in-app keypad',
   },
+  'code-entry-test': {
+    section: 'Input & Text',
+    title: 'Code Entry',
+    menuTitle: 'Code Entry',
+    subtitle: 'Button over a hidden one-time-code input',
+  },
   'button-test': {
     section: 'Hardware',
     title: 'Button Test',

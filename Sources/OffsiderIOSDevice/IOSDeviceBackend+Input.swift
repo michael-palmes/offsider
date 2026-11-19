@@ -104,6 +104,17 @@ extension IOSDeviceBackend {
     }
 }
 
+extension IOSDeviceBackend: FocusedElementReading {
+    public func typesWithKeys(_ text: String, on id: DeviceID) async -> Bool {
+        guard TextToHIDEvents.validateText(text), hostHasHID, sessionsAvailable else { return false }
+        return (try? await session(for: id))?.supportsTouch == true
+    }
+
+    public func focusedElement(on id: DeviceID) async throws -> UINode? {
+        try await runnerFocusedElement(for: id)
+    }
+}
+
 extension IOSDeviceBackend {
     /// A broker can be reached or started: a test connector, or this `offsider` executable to spawn.
     var sessionsAvailable: Bool { host.sessionConnector != nil || host.sessionExecutable != nil }

@@ -64,7 +64,7 @@ public enum RunnerProbe: Equatable, Sendable {
 
 /// The runner's routes, each a fresh connection through `transport`.
 public struct RunnerClient: Sendable {
-    public static let protocolVersion = "3"
+    public static let protocolVersion = "4"
     public static let timeout: TimeInterval = 5
 
     public let udid: String
@@ -124,6 +124,26 @@ public struct RunnerClient: Sendable {
         let data = try await call("POST", "/snapshot", body, timeout: 15)
         guard let data, JSONSerialization.isValidJSONObject(data) else { throw malformed("/snapshot") }
         return try JSONSerialization.data(withJSONObject: data)
+    }
+
+    /// The element with keyboard focus as idb-shaped JSON, nil when none has it. A password field carries no value: the runner leaves it out, and one that arrives anyway is dropped here.
+    public func focused(app: String?) async throws -> Data? {
+        let body: [String: Any] = app.map { ["app": $0] } ?? [:]
+        guard let data = try await call("POST", "/focused", body) as? [String: Any] else { throw malformed("/focused") }
+        guard let node = data["focused"] as? [String: Any] else { return nil }
+        let safe = Self.withoutSecureValue(node)
+        guard JSONSerialization.isValidJSONObject(safe) else { throw malformed("/focused") }
+        return try JSONSerialization.data(withJSONObject: [safe])
+    }
+
+    /// A secure field, or a text field whose value is only a mask's dots, as a secure field with no value and no children.
+    static func withoutSecureValue(_ node: [String: Any]) -> [String: Any] {
+        var node = node
+        node["children"] = [[String: Any]]()
+        guard node["type"] as? String == "SecureTextField" || SecureText.isMaskDots(node["AXValue"] as? String) else { return node }
+        node["AXValue"] = nil
+        node["type"] = "SecureTextField"
+        return node
     }
 
     public func tapPoint(x: Double, y: Double, app: String?) async throws {
