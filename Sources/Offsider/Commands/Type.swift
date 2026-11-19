@@ -565,9 +565,9 @@ struct Type: AsyncParsableCommand, VerifiableCommand {
         case (false, true): why = "A password field has focus, and keycodes given as an argument stay in shell history and process lists"
         case (false, false): why = "The field is a password field, and text given as an argument stays in shell history and process lists"
         }
-        let instead = batch ? "" : ", or pipe it in with `offsider type --stdin --device \(device.rawValue)`"
+        let fill = "offsider login --fill password --device \(device.rawValue)"
         return CLIError(
-            errorDescription: "\(why), so Offsider \(keys ? "pressed no keys" : "typed nothing"). Sign in with `\(login)`\(instead).",
+            errorDescription: "\(why), so Offsider \(keys ? "pressed no keys" : "typed nothing"). Sign in with `\(login)`; on a sign-up screen, fill the password and confirm fields with `\(fill)`.",
             reason: .secureFieldArgument,
             hint: login
         )

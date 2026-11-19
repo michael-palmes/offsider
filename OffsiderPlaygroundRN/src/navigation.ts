@@ -87,6 +87,12 @@ export const routeInfo = {
     menuTitle: 'Keypad Test',
     subtitle: 'Price field fed by an in-app keypad',
   },
+  'sign-up': {
+    section: 'Input & Text',
+    title: 'Sign Up',
+    menuTitle: 'Sign Up',
+    subtitle: 'Email, then password and confirm',
+  },
   'button-test': {
     section: 'Hardware',
     title: 'Button Test',

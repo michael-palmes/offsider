@@ -9,6 +9,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ### Added
 
 - `offsider -v` prints the version, as `offsider --version` does.
+- `login <name> --fill password` types a saved user's password into a sign-up screen's password and confirm fields, and `--fill identity` its email into the one email field, with every gate of a sign-in, and submits nothing. It types only into password fields that show bullets, at most two, in the app in front (`--app`), checking the app and any recording again before each field; a plain or revealed field exits 1 `secret_would_show`, and an Android one already holding bullets exits 1 `field_not_empty` without `--replace`. Evidence runs record each use, never the secret.
 - App guard: `offsider.guard.json` in an app's repository names the controls an agent asks you before tapping (`ask`, approved with Touch ID at the Mac) or never taps (`never`, exit 1 `guarded_control`), judged on the control under every tap, drag, slider and Return before anything is sent, so the rest of the app is free to drive. `offsider guard` sets it up (`status`, `init`, `check`, `show`) and a person approves it once with `guard approve`, after which an agent can tighten the rules but never loosen them; `offsider guide guard` is the agent's topic.
 - `login --wait-turnstile <seconds>`: when a Turnstile box needs a person, `login` asks for the tick, waits for it with the wait `turnstile --wait` uses, never tapping the box, then goes on to Touch ID, typing and submit in the same command. `--json` adds `waitedForTurnstile`.
 - `login` says when the app may have refused the sign-in: it reads the screen for up to 5 s after the submit tap, and `--json` adds `formStillInFront`, with a warning when the form stayed up. A slow sign-in looks the same, so it stays exit 0.
@@ -30,6 +31,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Changed
 
+- `type` refusing argument text aimed at a password field now names `offsider login --fill password` for a sign-up screen, in place of piping the secret in with `--stdin`.
 - The bundled skill no longer asks before every production or store build: once a person has approved an app's guard rules, `guard status` says `ready` and the agent drives the app, leaving guarded controls to the guard.
 - `test-runner.sh --unit-tests` runs in parallel. A test that fails there reruns alone and must pass, and is flagged when it does; a stall or an unclear result reruns everything serially. CI reuses the debug build's dependencies on pull requests.
 - `login` reads Turnstile once the saved login is chosen and before it asks for Touch ID or reads the password, so an unticked box stops it with no Touch ID spent.

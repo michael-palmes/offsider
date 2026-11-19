@@ -32,6 +32,7 @@ import { PermissionStateTestScreen } from './PermissionStateTestScreen';
 import { RowsTestScreen } from './RowsTestScreen';
 import { SearchableTestScreen } from './SearchableTestScreen';
 import { SheetTestScreen } from './SheetTestScreen';
+import { SignUpScreen } from './SignUpScreen';
 import { SliderValueTestScreen } from './SliderValueTestScreen';
 import { OwnCoverTestScreen } from './OwnCoverTestScreen';
 import { PageOverTestScreen } from './PageOverTestScreen';
@@ -65,6 +66,7 @@ export const screens: Record<RouteId, ComponentType> = {
   'key-sequence': KeySequenceScreen,
   'controlled-search-test': ControlledSearchTestScreen,
   'keypad-test': KeypadTestScreen,
+  'sign-up': SignUpScreen,
   'button-test': ButtonTestScreen,
   'batch-test': BatchTestScreen,
   'batch-login-flow': BatchLoginFlowScreen,
