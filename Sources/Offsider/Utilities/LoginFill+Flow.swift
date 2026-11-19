@@ -29,13 +29,18 @@ extension LoginFlow {
             for (index, sample) in fields.enumerated() {
                 let stopped = index == 0 ? "nothing was typed" : "\(fields[index...].map(LoginFill.name).joined(separator: " and ")) \(fields.count - index == 1 ? "was" : "were") not filled"
                 try services.refuseRecording()
+                // A toggle tapped after the last field was checked must not get the next one, so the screen is read again.
+                if index > 0 { tree = try await services.readTree() }
                 try requireForeground(app, in: tree, services: services, stopped: stopped)
                 if target == .password { tree = try await hideKeysForFocusProof(in: tree, fields: fields, services: services) }
                 // The screen can change between fields, so each is found and judged again just before it is typed into.
                 guard let field = LoginForm.match(sample, in: tree) else {
                     throw CLIError(errorDescription: "\(LoginFill.name(sample)) left the screen, so \(stopped).", reason: .selectorNotFound)
                 }
-                if target == .password { try refusing { try LoginFill.refuseRevealed(in: tree, revealed: revealed) } }
+                if target == .password {
+                    try refusing { try LoginFill.refuseRevealed(in: tree, revealed: revealed) }
+                    try refusing { try LoginFill.refuseFilledShown(Array(fields[..<index]), in: tree) }
+                }
                 try refusing { try LoginFill.check(field, target, in: tree, replace: replace, revealed: revealed) }
                 try refuseWebField(field, in: tree, origin: origin, app: app, key: key, profile: profile, webLogin: webLogin)
                 try requireForeground(app, in: tree, services: services, stopped: stopped)

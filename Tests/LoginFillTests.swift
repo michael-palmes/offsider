@@ -110,6 +110,17 @@ struct LoginFillFieldTests {
         #expect(try LoginFill.fields(.password, in: tree, intoID: nil, replace: true).count == 2)
     }
 
+    @Test("--replace types over bullets only: every other refusal stands")
+    func replaceNeverLoosens() {
+        let visible = FakeUI.tree([SignUp.field(.textField, id: "signup-password", label: "Password", y: 160)])
+        #expect(refusal { try LoginFill.fields(.password, in: visible, intoID: "signup-password", replace: true) }?.kind == .visible)
+        #expect(refusal { try LoginFill.fields(.password, in: SignUp.screen(toggleOn: true), intoID: nil, replace: true) }?.kind == .revealed)
+        let three = SignUp.screen(extra: [SignUp.field(id: "signup-current", label: "Current password", y: 100)])
+        #expect(refusal { try LoginFill.fields(.password, in: three, intoID: nil, replace: true) }?.kind == .tooMany)
+        let unnamed = FakeUI.tree(platform: .android, [FakeUI.node(.secureTextField, value: "••••", frame: FakeUI.frame(20, 160, 300, 44), platform: .android)])
+        #expect(refusal { try LoginFill.fields(.password, in: unnamed, intoID: nil, replace: true) }?.kind == .unnamed)
+    }
+
     @Test("a field whose kind the screen does not say, or with no id or label, types nothing")
     func unreadableOrUnnamed() {
         let other = FakeUI.tree([FakeUI.node(.text, id: "signup-password", label: "Password", frame: FakeUI.frame(20, 160, 300, 44))])
@@ -176,6 +187,13 @@ private final class FillScript {
     var recordingChecks = 0
     var prompt: SavePrompt?
     var time: TimeInterval = 0
+    /// How long after a type call its screen takes to show; until then the screen before it shows.
+    var drawLag: TimeInterval?
+    var typedAt: TimeInterval?
+    var reads = 0
+    var readsSinceType = 0
+    /// A screen to show instead, given how many reads came since the last type call; nil keeps the script's own.
+    var instead: ((_ readsSinceType: Int) -> UITree?)?
 
     init(_ trees: [UITree]) {
         self.trees = trees
@@ -183,8 +201,16 @@ private final class FillScript {
 
     var services: LoginFlow.Services {
         LoginFlow.Services(
-            readTree: { self.trees[min(self.index, self.trees.count - 1)] },
+            readTree: {
+                self.reads += 1
+                self.readsSinceType += 1
+                if let shown = self.instead?(self.readsSinceType) { return shown }
+                if let lag = self.drawLag, let typedAt = self.typedAt, self.time < typedAt + lag, self.index > 0 { return self.trees[self.index - 1] }
+                return self.trees[min(self.index, self.trees.count - 1)]
+            },
             typeText: { text, _ in
+                self.typedAt = self.time
+                self.readsSinceType = 0
                 self.typed.append(text)
                 self.secrecy.append(InputSecrecy.isSecret)
                 if self.index + 1 < self.trees.count { self.index += 1 }
@@ -259,6 +285,37 @@ struct LoginFillFlowTests {
         let stopped = try #require(await #expect(throws: LoginFillFailure.self) { try await script.fill() })
         #expect(stopped.reason == .secretWouldShow)
         #expect(script.typed.count == 1)
+    }
+
+    @Test("a field still drawing its bullets gets a clocked wait, then one verdict")
+    func stillDrawing() async throws {
+        let filled = FillScript([SignUp.screen(), SignUp.screen(password: SignUp.bullets), SignUp.screen(password: SignUp.bullets, confirm: SignUp.bullets)])
+        filled.drawLag = 1
+        _ = try await filled.fill()
+        #expect(filled.typed.count == 2)
+
+        let slow = FillScript([SignUp.screen(), SignUp.screen(password: SignUp.bullets)])
+        slow.drawLag = 5
+        let stopped = try #require(await #expect(throws: LoginFillFailure.self) { try await slow.fill() })
+        #expect(stopped.reason == .textNotAccepted)
+        #expect(slow.time >= LoginFlow.keyboardSettle && slow.time < LoginFlow.keyboardSettle + 0.5)
+        #expect(slow.typed.count == 1)
+    }
+
+    @Test("a filled field that now shows its text stops the fill before the next field")
+    func filledFieldRevealed() async throws {
+        let shown = FakeUI.tree([
+            SignUp.field(.textField, id: "signup-password", label: "Password", value: SignUp.password, y: 160),
+            SignUp.field(id: "signup-confirm", label: "Confirm password", y: 220),
+            SignUp.create,
+        ])
+        let script = FillScript([SignUp.screen(), SignUp.screen(password: SignUp.bullets)])
+        script.instead = { reads in script.typed.count == 1 && reads > 1 ? shown : nil }
+        let stopped = try #require(await #expect(throws: LoginFillFailure.self) { try await script.fill() })
+        #expect(stopped.reason == .secretWouldShow)
+        #expect(stopped.failureMessage.contains("id=signup-password, already filled, now shows its text"))
+        #expect(script.typed.count == 1)
+        #expect(stopped.report.fields.map(\.progress) == [.filled, .notFilled])
     }
 
     @Test("a field that does not show one bullet per character stops with text_not_accepted; the value is never compared")

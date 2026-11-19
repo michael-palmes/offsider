@@ -129,6 +129,21 @@ public enum LoginFill {
         }
     }
 
+    /// A field already filled that now shows as plain text, or shows text instead of bullets: one toggle often reveals both fields, so the next is not typed onto a screen showing the secret.
+    public static func refuseFilledShown(_ filled: [UINode], in tree: UITree) throws {
+        let controls = LoginForm.visibleControls(in: tree)
+        for sample in filled {
+            let now = controls.filter { node in
+                node.role.isTextInput && (sample.normalizedID.map { node.normalizedID == $0 } ?? (node.normalizedLabel == sample.normalizedLabel))
+            }
+            guard now.contains(where: { !$0.isSecure || content(of: $0, bulletsAreText: bulletsAreText(in: tree)) == .plain }) else { continue }
+            throw LoginFillRefusal(
+                kind: .revealed,
+                message: "\(name(sample)), already filled, now shows its text, so the screen is showing the password. The next field was not typed into. Hide the password first."
+            )
+        }
+    }
+
     /// A switch, checkbox or button named to show or hide a password, that is now showing it: on, checked or selected, or named Hide.
     public static func isRevealToggleOn(_ node: UINode) -> Bool {
         guard [.switch, .checkbox, .button].contains(node.role) else { return false }
