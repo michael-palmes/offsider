@@ -388,6 +388,16 @@ struct LoginFillFlowTests {
         #expect(!written.contains(SignUp.password))
     }
 
+    @Test("typing over a field clears it first, select-all then delete, so nothing is ever appended to a placeholder or an earlier fill")
+    func typesOverNeverAppends() throws {
+        let typing = try LoginCommand.typingCommand(text: SignUp.password, field: SignUp.field(id: "signup-confirm", label: "Confirm password", y: 220), deviceID: "DEVICE")
+        #expect(typing.replace)
+        #expect(typing.intoID == "signup-confirm")
+        let events = try Type.iosEvents(for: SignUp.password, replacing: typing.replace)
+        #expect(events.first == InputEvent.selectAllAndDelete(modifier: InputEvent.commandKey, settle: InputEvent.iosClearSettle))
+        #expect(events.dropFirst().allSatisfy { $0 != InputEvent.selectAllAndDelete(modifier: InputEvent.commandKey, settle: InputEvent.iosClearSettle) })
+    }
+
     @Test("repeated fills on an Android screen whose fields already hold the password type nothing more")
     func repeatedFillsDoNotSpray() async throws {
         let script = FillScript([SignUp.screen(password: SignUp.bullets, confirm: SignUp.bullets, platform: .android)])
