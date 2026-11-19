@@ -396,7 +396,7 @@ struct HelperDump: Decodable, Equatable, Sendable {
         skippedInvisible = stats?.skippedInvisible
         hiddenBranches = stats?.hiddenBranches
         walkMs = try c.decodeIfPresent(Timings.self, forKey: .timings)?.walkMs
-        toasts = try c.decodeIfPresent([HelperToast].self, forKey: .toasts)
+        toasts = try c.decodeIfPresent([Lossy<HelperToast>].self, forKey: .toasts)?.compactMap(\.value)
     }
 
     private struct Timings: Decodable {
@@ -405,6 +405,15 @@ struct HelperDump: Decodable, Equatable, Sendable {
 
     private enum CodingKeys: String, CodingKey {
         case generation, idle, eventSeq, display, windows, truncated, stats, timings, toasts
+    }
+}
+
+/// One entry that is dropped, not fatal, when it does not decode, so a bad toast never costs the tree it came with.
+struct Lossy<Value: Decodable & Sendable>: Decodable, Sendable {
+    let value: Value?
+
+    init(from decoder: any Decoder) throws {
+        value = try? Value(from: decoder)
     }
 }
 

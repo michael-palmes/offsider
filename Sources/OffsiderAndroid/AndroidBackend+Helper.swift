@@ -347,11 +347,12 @@ extension AndroidBackend {
         return try await HelperSession.start(client: client, serial: serial, dex: dex, log: log, timing: host.timing, toastPackages: heldToastPackages(serial))
     }
 
-    /// On a phone held to its apps, the only packages whose toasts a helper started for this command holds at all, so no other app's text is kept in its memory; nil elsewhere.
+    /// On a phone, the only packages whose toasts a helper started for this command holds at all, none when no app is known, so no other app's text is kept in its memory; nil (every package) on an emulator or a test device.
     func heldToastPackages(_ serial: String) -> [String]? {
-        guard DeviceID(rawValue: serial, platform: .android).isPhysicalAndroidDevice, let scope = appScopes[serial], !scope.wholeDevice else { return nil }
+        guard DeviceID(rawValue: serial, platform: .android).isPhysicalAndroidDevice, appScopes[serial]?.wholeDevice != true else { return nil }
+        guard let scope = appScopes[serial] else { return [] }
         if let target = scope.target { return [target] }
-        return scope.permitted.isEmpty ? nil : scope.permitted.sorted()
+        return scope.permitted.sorted()
     }
 
     /// Emulators keep the helper warm unless `OFFSIDER_ANDROID_SESSION` is off; a USB phone only when it is on.

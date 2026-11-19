@@ -15,7 +15,7 @@ final class Options {
     long idleTimeoutMs = 10000;
     long acceptTimeoutMs = 10000;
     DumpOptions dump = DumpOptions.fullTree();
-    /** The packages whose toasts the helper holds at all; null holds every package's. */
+    /** The packages whose toasts the helper holds at all, empty for none; null holds every package's. */
     Set<String> toastPackages;
 
     static Options parse(String[] args) throws HelperFailure {
@@ -81,6 +81,9 @@ final class Options {
 
     private static Set<String> packages(String value, String name) throws HelperFailure {
         Set<String> out = new HashSet<String>();
+        if (value.isEmpty()) {
+            return out;
+        }
         for (String part : value.split(",", -1)) {
             if (!DumpOptions.isPackageName(part)) {
                 throw HelperFailure.usage(name + " takes package names separated by commas, got '" + value + "'");

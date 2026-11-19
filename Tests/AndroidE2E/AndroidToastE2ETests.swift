@@ -34,6 +34,14 @@ struct AndroidToastE2ETests {
         #expect(!missed.stderr.contains("Draft saved") && !missed.stdout.contains("Draft saved"))
     }
 
+    @Test("in a batch, wait --toast after a tap step meets the toast the tap raised")
+    func batchWaitsForToast() async throws {
+        try await AndroidE2E.open("alert-test", waitingFor: "alert-test-show-toast")
+        let steps = ["tap --id alert-test-show-toast", "wait --toast 'Draft saved' --timeout 3"].map { "--step \(AndroidE2E.quote($0))" }.joined(separator: " ")
+        let result = try await AndroidE2E.run("batch \(steps)", timeout: 120)
+        #expect(result.stdout.contains("Batch completed successfully (2 steps)"), "stdout: \(result.stdout)")
+    }
+
     @Test("with the launcher in front the helper lists none of the app's toasts, and lists them again once the app is back")
     func otherAppSeesNone() async throws {
         try await AndroidE2E.open("alert-test", waitingFor: "alert-test-show-toast")

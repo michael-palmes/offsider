@@ -74,8 +74,9 @@ struct AndroidToastTests {
 }
 
 extension AndroidToastTests {
-    @Test("a phone's helper starts holding only its allowed apps' toasts; an emulator's and a test device's hold every package's", arguments: [
+    @Test("a phone's helper starts holding only its allowed apps' toasts, none with no app named; an emulator's and a test device's hold every package's", arguments: [
         (AndroidAppScope(permitted: [], managedCeiling: nil, needsTarget: true, target: "com.example.named"), ["com.example.named"]),
+        (AndroidAppScope(permitted: [], managedCeiling: nil, needsTarget: true), []),
         (AndroidAppScope(permitted: ["com.example.two", "com.example.one"], managedCeiling: nil), ["com.example.one", "com.example.two"]),
         (AndroidAppScope(permitted: [], managedCeiling: nil, wholeDevice: true), nil),
     ] as [(AndroidAppScope, [String]?)])
@@ -91,5 +92,16 @@ extension AndroidToastTests {
         let held = HelperLauncher.startScript(FakeHelperDevice.dex, pushedFrom: nil, toastPackages: ["com.example.two", "com.example.one"])
         #expect(held.hasSuffix(" --toast-packages 'com.example.one,com.example.two'"))
         #expect(!HelperLauncher.startScript(FakeHelperDevice.dex, pushedFrom: nil).contains("--toast-packages"))
+        #expect(HelperLauncher.startScript(FakeHelperDevice.dex, pushedFrom: nil, toastPackages: []).hasSuffix(" --toast-packages ''"))
+    }
+
+    @Test("a toast entry that does not decode is dropped and the tree still reads")
+    func badToastEntryIsDropped() throws {
+        let reply = FakeHelperDevice.tapTestDump.replacingOccurrences(
+            of: #""truncated":false"#, with: #""toasts":[{"seq":1,"text":"Draft saved"},{"seq":2,"text":"Sent","package":"com.mpalmes.offsider.playground.rn","ageMs":10}],"truncated":false"#
+        )
+        let dump = try JSONDecoder().decode(HelperDump.self, from: Data(reply.utf8))
+        #expect(dump.toasts?.map(\.text) == ["Sent"])
+        #expect(!dump.windows.isEmpty)
     }
 }
