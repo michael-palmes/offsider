@@ -34,6 +34,37 @@ public enum TypedText {
         return .differs
     }
 
+    /// How many characters at the end of `after` the keys put there, so they can be taken out again: all past `before` when `after` starts with it, all of `after` when it holds only `sent`'s characters in order (a placeholder read as `before` goes with the first key); nil when it cannot tell.
+    public static func ownLength(sent: String, before: String?, after: String) -> Int? {
+        let before = before ?? ""
+        if after.hasPrefix(before) { return after.count - before.count }
+        return isSubsequence(fold(after), of: fold(sent)) ? after.count : nil
+    }
+
+    /// True when the field gained all of `sent` with one of its characters again straight after itself, as a key iOS took as held repeats: once is enough for a letter or digit, twice for anything else, since a formatter may put one space or separator beside a typed one. Spacing counts here, as a held space repeats too.
+    public static func repeatsKey(sent: String, before: String?, after: String, replacing: Bool) -> Bool {
+        let wanted = Array(sent.lowercased())
+        let now = Array(after.lowercased())
+        let gained = replacing ? now : inserted(from: Array((before ?? "").lowercased()), to: now)
+        var next = wanted.startIndex
+        var matched: Character?
+        var run = 0
+        var repeated = false
+        for character in gained {
+            if next < wanted.endIndex, character == wanted[next] {
+                next += 1
+                matched = character
+                run = 0
+            } else if character == matched {
+                run += 1
+                if run >= (character.isLetter || character.isNumber ? 1 : 2) { repeated = true }
+            } else {
+                matched = nil
+            }
+        }
+        return repeated && next == wanted.endIndex
+    }
+
     private static func fold(_ text: String) -> [Character] {
         Array(SelectorText.folded(text).lowercased())
     }

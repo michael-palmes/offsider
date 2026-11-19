@@ -150,6 +150,20 @@ extension PointHitTesting {
     }
 }
 
+/// Optional capability: an element kept open after one hit-test, so each later read of it is one short round trip; only the iOS simulator has one.
+@MainActor
+public protocol ElementWatching: DeviceBackend {
+    /// The element a touch at `point` reaches, kept open until the caller closes it; nil when nothing answers there.
+    func watchElement(at point: UIPoint, on id: DeviceID) async throws -> (any ElementWatch)?
+}
+
+@MainActor
+public protocol ElementWatch: AnyObject {
+    /// The element as it is now; nil once it no longer answers.
+    func read() -> UINode?
+    func close()
+}
+
 /// Optional capability: one read of the element at a point, never retried, so describe-ui and a missed wait can tell what the screen shows that the tree does not; only the iOS simulator has one.
 @MainActor
 public protocol PresentationProbing: DeviceBackend {

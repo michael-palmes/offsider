@@ -410,6 +410,38 @@ extension IOSBackend: PointHitTesting {
     }
 }
 
+extension IOSBackend: ElementWatching {
+    func watchElement(at point: UIPoint, on id: DeviceID) async throws -> (any ElementWatch)? {
+        let zoom = displayZooms[id.rawValue]
+        let layoutPoint = zoom?.layoutPoint(point) ?? point
+        let element = try await AccessibilityFetcher.pointElement(from: try await simulator(for: id), at: AccessibilityPoint(x: layoutPoint.x, y: layoutPoint.y))
+        return SimulatorElementWatch(element: element, zoom: zoom)
+    }
+}
+
+/// One simulator element kept open: a read asks for its attributes again, with no second hit-test.
+@MainActor
+final class SimulatorElementWatch: ElementWatch {
+    private var element: FBAccessibilityElement?
+    private let zoom: DisplayZoom?
+
+    init(element: FBAccessibilityElement, zoom: DisplayZoom?) {
+        self.element = element
+        self.zoom = zoom
+    }
+
+    func read() -> UINode? {
+        guard let element, let data = try? AccessibilityFetcher.serialized(element, keys: TraitsRequest.process.keys),
+              let roots = try? IOSAccessibilityMapping.roots(fromJSON: data) else { return nil }
+        return (zoom?.screenRoots(roots) ?? roots).first
+    }
+
+    func close() {
+        element?.close()
+        element = nil
+    }
+}
+
 extension IOSBackend: PresentationProbing {
     func probe(at point: UIPoint, on id: DeviceID) async throws -> UINode? {
         let zoom = displayZooms[id.rawValue]
