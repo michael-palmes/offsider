@@ -273,6 +273,18 @@ struct AlertCommandTests {
         #expect(result.sent.isEmpty)
     }
 
+    @Test("a prompt that shows a moment after the first read is still read; none at all is alert_not_shown after the second read")
+    func latePrompt() async {
+        let late = Self.backend([Self.gone, .prompt(Self.prompt)])
+        let shown = await Self.run(nil, on: late)
+        #expect(shown.report?.prompt == Self.prompt)
+
+        let none = Self.backend([Self.gone])
+        let missing = await Self.run(nil, on: none)
+        #expect(missing.failure?.reason == .alertNotShown)
+        #expect(none.promptReads == 2)
+    }
+
     @Test("a prompt that leaves while it is being read is named as gone, with nothing sent")
     func leavesWhileSettling() async {
         let result = await Self.run(.accept, on: Self.backend([.prompt(Self.prompt), Self.gone]))

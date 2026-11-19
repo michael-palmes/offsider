@@ -44,6 +44,27 @@ public struct RunnerForeground: Equatable, Sendable {
     }
 }
 
+/// What `POST /alert` reports: SpringBoard's alert, if any, and the state of the app it may be over.
+public struct RunnerAlert: Sendable {
+    /// The app's process is in the foreground, as it stays beneath an alert.
+    public let appInFront: Bool
+    /// The bundle ids XCTest reports as active; nil when this Xcode offers no lookup.
+    public let active: [String]?
+    /// A prompt drawn by a process of its own, by its fixed name.
+    public let hosted: String?
+    public let locked: Bool
+    /// The alert as idb-shaped JSON, one root; nil when none is up.
+    public let alert: Data?
+
+    public init(appInFront: Bool, active: [String]?, hosted: String? = nil, locked: Bool = false, alert: Data?) {
+        self.appInFront = appInFront
+        self.active = active
+        self.hosted = hosted
+        self.locked = locked
+        self.alert = alert
+    }
+}
+
 /// What `GET /screen` reports.
 public struct RunnerScreen: Equatable, Sendable {
     public let on: Bool
@@ -64,7 +85,7 @@ public enum RunnerProbe: Equatable, Sendable {
 
 /// The runner's routes, each a fresh connection through `transport`.
 public struct RunnerClient: Sendable {
-    public static let protocolVersion = "4"
+    public static let protocolVersion = "5"
     public static let timeout: TimeInterval = 5
 
     public let udid: String
@@ -184,6 +205,26 @@ public struct RunnerClient: Sendable {
         )
     }
 
+    /// SpringBoard's alert and the state of `app`, without reading `app`, which an alert holds.
+    public func alert(app: String) async throws -> RunnerAlert {
+        guard let data = try await call("POST", "/alert", ["app": app]) as? [String: Any], let inFront = data["appInFront"] as? Bool else { throw malformed("/alert") }
+        var alert: Data?
+        if let node = data["alert"] as? [String: Any] {
+            guard JSONSerialization.isValidJSONObject([node]) else { throw malformed("/alert") }
+            alert = try JSONSerialization.data(withJSONObject: [node])
+        }
+        return RunnerAlert(appInFront: inFront, active: data["active"] as? [String], hosted: data["hosted"] as? String, locked: data["locked"] as? Bool ?? false, alert: alert)
+    }
+
+    /// Taps the alert's button `label`, which the runner first checks still has `frame` in an alert titled `title` over `app`.
+    public func tapAlert(app: String, title: String, label: String, frame: UIFrame) async throws {
+        let body: [String: Any] = [
+            "app": app, "title": title, "label": label,
+            "frame": ["x": frame.x, "y": frame.y, "width": frame.width, "height": frame.height],
+        ]
+        _ = try await call("POST", "/alert-tap", body)
+    }
+
     public func screen() async throws -> RunnerScreen {
         let data = try await call("GET", "/screen", nil) as? [String: Any]
         guard let on = data?["on"] as? Bool, let locked = data?["locked"] as? Bool else { throw malformed("/screen") }
@@ -218,10 +259,10 @@ public struct RunnerClient: Sendable {
         } catch let error as UsbmuxError {
             throw transport.error(for: error, udid: udid)
         }
-        return try Self.unwrap(response, path: path, udid: udid, testDevice: testDevice)
+        return try Self.unwrap(response, path: path, udid: udid, testDevice: testDevice, app: body?["app"] as? String)
     }
 
-    static func unwrap(_ response: UsbmuxHTTPResponse, path: String, udid: String, testDevice: Bool = false) throws -> Any? {
+    static func unwrap(_ response: UsbmuxHTTPResponse, path: String, udid: String, testDevice: Bool = false, app: String? = nil) throws -> Any? {
         if response.status == 401 {
             throw IOSDeviceError(.runnerUnavailable, "The runner on \(udid) refused Offsider's session token, so nothing was sent. Run `offsider runner stop --device \(udid)` and retry.")
         }
@@ -238,7 +279,9 @@ public struct RunnerClient: Sendable {
         case "secure_field":
             throw IOSDeviceError(.secureFieldRefused, "The field with focus on \(udid) is a password field, so nothing was typed.")
         case "system_prompt":
-            throw IOSDeviceError.systemPromptInFront(message, udid: udid, testDevice: testDevice)
+            throw IOSDeviceError.systemPromptInFront(message, udid: udid, testDevice: testDevice, app: app)
+        case "alert_changed":
+            throw IOSDeviceError(.promptChanged, "The prompt on \(udid) changed before Offsider answered it (\(TerminalText.line(message, cap: 120))), so nothing was sent.")
         case "queued_too_long":
             throw IOSDeviceError(.runnerUnavailable, "The runner on \(udid) was busy for too long, so nothing was read or sent. Retry; if it persists, run `offsider doctor --device \(udid)`.")
         case "screen_locked":

@@ -9,7 +9,7 @@ struct AlertCommand: AsyncParsableCommand {
         discussion: """
         For the prompt an app raises over itself: Android's runtime permission dialog, or an iOS alert such as \
         “App” Would Like to Send You Notifications. Only on a simulator, an emulator or a test device; on a phone \
-        in personal use the prompt is the user's, and nothing is read or sent. An iPhone or iPad is not reached yet.
+        in personal use the prompt is the user's, and nothing is read or sent.
 
         `show` prints the prompt's text and each button, with the one `accept` and `deny` would pick, and changes \
         nothing. `deny` picks the declining button. `accept` picks the granting button with the narrowest grant that \
@@ -22,7 +22,8 @@ struct AlertCommand: AsyncParsableCommand {
 
         It acts only when the system says the prompt belongs to --app: on Android the app that started the dialog, \
         by name and uid; on an iOS simulator a SpringBoard alert over that app alone, whose title names the app \
-        first. Anything else the system drew in front exits 7 \
+        first; on an iPhone or iPad, SpringBoard's alert with that app's process in front beneath it and no other \
+        app active, whose title names the app first. Anything else the system drew in front exits 7 \
         (system_prompt_in_front), naming it; no prompt exits 2 (alert_not_shown). A crash dialog, an update prompt, \
         a lock screen and a save-password sheet are never answered.
 
@@ -60,6 +61,8 @@ struct AlertCommand: AsyncParsableCommand {
     /// How long an answered prompt may take to leave the screen.
     static let leaveWait: TimeInterval = 4
     /// How long a prompt may take to stop moving after it shows, and how far apart the two reads that must agree are taken.
+    /// How long a prompt may take to show before `alert` says none is up.
+    static let lateWait: TimeInterval = 0.6
     static let settleWait: TimeInterval = 3
     static let settlePoll: Duration = .milliseconds(200)
     /// How long after the answer an app's next prompt may take to show; a prompt gone for less is not yet "none follows".
@@ -107,7 +110,10 @@ struct AlertCommand: AsyncParsableCommand {
         let device = route.device
         let text = json ? outcome.jsonLine(device: device) : outcome.textLines.joined(separator: "\n")
         var notices: [Notice] = []
-        if outcome.chosen != nil {
+        if outcome.chosen != nil, device.isPhysicalIOSDevice {
+            // `permission` cannot change an iPhone's privacy settings, and a reinstall resets only this app's.
+            notices.append(.note("Stays after this command", agent: "The answer stays after this command; change it in Settings on the device, or reinstall \(app) to make it ask again.", mark: .keep))
+        } else if outcome.chosen != nil {
             let service = device.isPhysicalAndroidDevice ? "<service>" : "all"
             let undo = "offsider permission reset \(service) --app \(app) --device \(device.rawValue)"
             notices.append(DevicePersonView.lasting("Stays after this command", undo: undo, label: "Reset", agent: "The answer stays after this command; `\(undo)` makes the app ask again."))
@@ -129,7 +135,7 @@ struct AlertCommand: AsyncParsableCommand {
         guard route.backend is any AppPromptReading else {
             let read = "offsider describe-ui --summary --device \(device)"
             throw CLIError(
-                errorDescription: "alert does not reach an iPhone or iPad yet. On this test device, read the prompt with `\(read)` and answer it with `offsider tap --label <button> --device \(device)`.",
+                errorDescription: "alert does not reach \(device). On this test device, read the prompt with `\(read)` and answer it with `offsider tap --label <button> --device \(device)`.",
                 reason: .notSupported, hint: read
             )
         }
@@ -145,7 +151,7 @@ struct AlertCommand: AsyncParsableCommand {
         try await route.backend.prepare()
         var read: (prompt: AppPrompt, tree: UITree)
         do {
-            read = try await watchdog.guardingRead(of: device, extra: DeviceClaims.current.longestWait) { try await backend.appPrompt(for: app, on: device) }
+            read = try await firstRead(app, on: backend, device: device, watchdog: watchdog, clock: clock)
             guard let choice else { return AlertReport(prompt: read.prompt) }
             read = try await settled(read, choice: choice, on: backend, device: device, watchdog: watchdog, clock: clock)
         } catch let refusal as AppPromptRefusal {
@@ -165,17 +171,34 @@ struct AlertCommand: AsyncParsableCommand {
         if choice != .deny {
             try await AppGuard.check(answering: read.prompt, with: button, in: read.tree, device: device)
         }
-        let point = try await watchdog.inputPoints([(x: button.frame.center.x, y: button.frame.center.y)], tree: read.tree, backend: route.backend, device: device)[0]
-        guard try await watchdog.guardingInputRead(of: device, { try await backend.stillInFront(read.prompt, on: device) }) else {
-            throw CLIError(
-                errorDescription: "The prompt for \(app) left or changed on \(device.rawValue) before Offsider answered it, so nothing was sent. Run `offsider alert show --app \(app) --device \(device.rawValue)` to see what is there now.",
-                reason: .foregroundChanged, hint: "offsider alert show --app \(app) --device \(device.rawValue)"
-            )
+        if let answering = backend as? any AppPromptAnswering {
+            // The answer checks the prompt again in the same step as the tap.
+            defer { DeviceActivityLedger.current.recordInput(on: device) }
+            try await DispatchTracker.current.sending { try await answering.answer(read.prompt, with: button, on: device) }
+        } else {
+            let point = try await watchdog.inputPoints([(x: button.frame.center.x, y: button.frame.center.y)], tree: read.tree, backend: route.backend, device: device)[0]
+            guard try await watchdog.guardingInputRead(of: device, { try await backend.stillInFront(read.prompt, on: device) }) else {
+                throw CLIError(
+                    errorDescription: "The prompt for \(app) left or changed on \(device.rawValue) before Offsider answered it, so nothing was sent. Run `offsider alert show --app \(app) --device \(device.rawValue)` to see what is there now.",
+                    reason: .foregroundChanged, hint: "offsider alert show --app \(app) --device \(device.rawValue)"
+                )
+            }
+            try await route.backend.performTracked(.tapAt(x: point.x, y: point.y), on: device)
         }
-        try await route.backend.performTracked(.tapAt(x: point.x, y: point.y), on: device)
         recorder.update(token) { $0.button = SelectorText.truncated(button.label, limit: 80) }
         let next = try await Self.afterAnswer(read.prompt, on: backend, device: device, watchdog: watchdog, clock: clock)
         return AlertReport(prompt: read.prompt, action: choice.word, chosen: button, next: next)
+    }
+
+    /// The prompt, read once more after `lateWait` when none was up: one can take a moment to show, as on a screen just woken.
+    @MainActor
+    static func firstRead(_ app: String, on backend: any AppPromptReading, device: DeviceID, watchdog: DeviceWatchdog, clock: PollClock) async throws -> (prompt: AppPrompt, tree: UITree) {
+        do {
+            return try await watchdog.guardingRead(of: device, extra: DeviceClaims.current.longestWait) { try await backend.appPrompt(for: app, on: device) }
+        } catch AppPromptRefusal.notShown {
+            try await clock.sleep(.milliseconds(Int(lateWait * 1000)))
+            return try await watchdog.guardingRead(of: device) { try await backend.appPrompt(for: app, on: device) }
+        }
     }
 
     /// A prompt slides in, and a button read mid-slide is one row off: answers only a prompt that two reads `settlePoll` apart give the same text and frames, within `settleWait`.

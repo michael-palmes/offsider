@@ -37,9 +37,9 @@ offsider alert choose "Only this time" --app <id> --device <DEVICE_ID>
 - `accept` picks the narrowest grant that lasts (While using the app, Allow While Using App, else Allow), never a broader one (All the time, Always Allow, Allow Full Access), a one-time one (Only this time, Allow Once) or a photo picker: name one of those with `choose "<label>"`, the button's whole text as `show` prints it. Exit 6 means it cannot tell which button grants or declines (on iOS: another language, or an alert that is not worded as a permission request): read `show` and use `choose`.
 - Exit 2 `alert_not_shown`: no prompt for the app, so carry on. Exit 7 `system_prompt_in_front`: another app's prompt or some other system window, which `alert` never answers; pass on `error.ask`.
 - `accept` and `choose` obey the app's guard rules (`guide guard`); a refusal there is final. `deny` always passes.
-- A phone in personal use exits 1 `person_required` with nothing read: pass on `error.ask`. An iPhone or iPad is not reached yet: on a test device use `describe-ui --summary` and `tap --label`.
-- The answer stays: `offsider permission reset <service> --app <id>` makes the app ask again. In a run (`guide evidence`) each answer is a timeline line.
-- On an Android test device, `screenshot --app <id>` with that app's prompt in front captures the prompt alone (`maskUnproven: "prompt"`), the rest painted.
+- A phone in personal use exits 1 `person_required` with nothing read: pass on `error.ask`. On an iPhone or iPad test device the runner reads and taps the alert itself.
+- The answer stays: `offsider permission reset <service> --app <id>` makes the app ask again (on an iPhone, Settings or a reinstall of that app). In a run (`guide evidence`) each answer is a timeline line.
+- On an Android, iPhone or iPad test device, `screenshot --app <id>` with that app's prompt in front captures the prompt alone (`maskUnproven: "prompt"`), the rest painted.
 
 ## Status bar
 

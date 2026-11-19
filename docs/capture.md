@@ -35,7 +35,7 @@ Masks are painted from one accessibility tree read before the image is written, 
 
 iOS briefly shows the last character typed into a secure field. Tree masks cover only what the accessibility tree describes: web views, canvases, images, what an Android modal window or an iOS sheet's backdrop covers, a field that appears between the tree read and the capture, and text drawn in that gap can still show, so check an image before you share it.
 
-With `--app` on an Android test device and that app's permission prompt in front, `screenshot` captures the prompt alone instead of exiting 7: everything outside the prompt's box is painted and `--json` has `maskUnproven: "prompt"`, since the app beneath a prompt cannot be read, so its masks cannot be proved. Only a prompt Android ties to `--app` is captured ([how](device-state.md#permission-prompts)); another app's stays refused.
+With `--app` on an Android, iPhone or iPad test device and that app's permission prompt in front, `screenshot` captures the prompt alone instead of exiting 7: everything outside the prompt's box is painted and `--json` has `maskUnproven: "prompt"`, since the app beneath a prompt cannot be read, so its masks cannot be proved. Only a prompt the system ties to `--app` is captured ([how](device-state.md#permission-prompts)); another app's stays refused.
 
 ### Mask file
 

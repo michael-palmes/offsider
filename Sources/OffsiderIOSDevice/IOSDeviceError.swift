@@ -70,6 +70,8 @@ public struct IOSDeviceError: LocalizedError, CustomStringConvertible, Equatable
         case systemPromptInFront
         /// The same on a test device, where an agent may answer it, so no person is asked.
         case systemPromptOnTestDevice
+        /// The system prompt changed between the read and the tap, so nothing was sent.
+        case promptChanged
         /// A physical iPhone or iPad needs a pinned app and none was named.
         case appRequired
         /// The device's allowance lapsed while a session broker ran (expired, removed or its seal broken).
@@ -214,10 +216,13 @@ extension IOSDeviceError {
     }
 
     /// A system alert or sheet the app may be waiting on, which stalls every read of it. `title` comes from the device and can hold an app's name, so it is cleaned and capped, and loses backticks, which mark the hint.
-    static func systemPromptInFront(_ title: String, udid: String, testDevice: Bool = false) -> IOSDeviceError {
+    static func systemPromptInFront(_ title: String, udid: String, testDevice: Bool = false, app: String? = nil) -> IOSDeviceError {
         let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines).replacingOccurrences(of: "`", with: "'")
         let prompt = trimmed.isEmpty ? "A system prompt" : "The system prompt \(TerminalText.quoted(SelectorText.truncated(trimmed, limit: 120)))"
         let stopped = "\(prompt) is in front on \(udid), so Offsider did not read or touch the app."
+        if testDevice, let app, (try? ExpoDevClient.validate(appID: app)) != nil {
+            return IOSDeviceError(.systemPromptOnTestDevice, "\(stopped) Read it with `offsider alert show --app \(app) --device \(udid)`, which answers it too when it is \(app)'s permission prompt; any other prompt reads with `offsider describe-ui --summary --device \(udid)` and taps with `offsider tap --label <button> --device \(udid)`.", hint: "offsider alert show --app \(app) --device \(udid)")
+        }
         if testDevice {
             return IOSDeviceError(.systemPromptOnTestDevice, "\(stopped) Read it with `offsider describe-ui --summary --device \(udid)`, then answer it with `offsider tap --label <button> --device \(udid)`.")
         }
@@ -269,6 +274,7 @@ extension IOSDeviceError: OffsiderFailure {
         case .stateNotReached: return .stateNotReached
         case .uiAutomationOff: return .uiAutomationOff
         case .systemPromptInFront, .systemPromptOnTestDevice: return .systemPromptInFront
+        case .promptChanged: return .foregroundChanged
         case .certificateNotTrusted: return .certificateNotTrusted
         case .xcodeTooOld: return .xcodeTooOld
         case .notSupported: return .notSupported

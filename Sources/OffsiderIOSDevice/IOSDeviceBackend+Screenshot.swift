@@ -20,6 +20,8 @@ final class IOSDeviceState {
     var brokerNudged: [String: Date] = [:]
     var sheetsNoticeShown = false
     var pinConfirmed: [String: Date] = [:]
+    var appNames: [String: String?] = [:]
+    var provenPrompts: [String: (at: Date, prompt: AppPrompt, alert: Data)] = [:]
     /// Devices sent input since their pinned app was last confirmed in front; their next check is timed as `foreground-recheck`.
     var inputSincePinCheck: Set<String> = []
     var runnerAllowance: DeviceAllowance?
