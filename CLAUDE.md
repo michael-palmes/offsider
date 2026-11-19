@@ -113,7 +113,7 @@ Agents building in parallel use `swift build --scratch-path <dir>` and `swift te
 | `OFFSIDER_ANDROID_SESSION_IDLE` | Seconds the warm helper stays after the last command (default 60, at most 3600); a broker stops after 12 hours at its next idle moment |
 | `OFFSIDER_ANDROID_INPUT` | `helper` or `input` forces how input reaches a device without gRPC; default `auto` (the helper when the command already runs it, or for a touch held still) |
 | `OFFSIDER_ANDROID_CAPTURE` | `screencap`, `raw` or `helper` forces how a device without gRPC is captured; `raw` and `helper` fall back to `screencap -p`; default `auto` (`screencap -p`) |
-| `OFFSIDER_SIMULATOR_SESSION` | `on` (default) keeps each simulator's input session warm between commands through its HID broker; `off` opens one per command (`touch --down` or `--up` alone still uses the broker) |
+| `OFFSIDER_SIMULATOR_SESSION` | `on` (default) keeps each simulator's input session warm between commands through its HID broker, which on iOS 27+ also holds the automation session reads would otherwise open each time; `off` opens one per command and reads set up their own (`touch --down` or `--up` alone still uses the broker) |
 | `OFFSIDER_SIMULATOR_SESSION_IDLE` | Seconds a simulator's warm input session stays after the last command (default 60, at most 3600); a broker stops after 12 hours at its next idle moment |
 | `OFFSIDER_IOS_RUNNER_IDLE` | Seconds an iPhone runner session stays up after its last request (default 300, at most 3600); a session is restarted after 12 hours |
 | `OFFSIDER_IOS_SESSION_IDLE` | Seconds an iPhone or iPad session broker stays up after its last command (default 300, at most 3600); a broker stops after 12 hours at its next idle moment |

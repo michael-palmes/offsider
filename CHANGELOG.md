@@ -31,6 +31,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Changed
 
+- Screen reads on an iOS 27 simulator skip idb's per-read automation setup while the warm input session runs: the broker holds one automation session, so `describe-ui`, `wait`, selector and coordinate taps and `type`'s read-back each save about 150 to 350 ms. A read that comes back empty, or that the session did not last through, is read again with its own setup. idb moves to the `michael-palmes/idb` fork's `offsider-idb-v0.3.0`.
 - The bundled skill no longer asks before every production or store build: once a person has approved an app's guard rules, `guard status` says `ready` and the agent drives the app, leaving guarded controls to the guard.
 - `test-runner.sh --unit-tests` runs in parallel. A test that fails there reruns alone and must pass, and is flagged when it does; a stall or an unclear result reruns everything serially. CI reuses the debug build's dependencies on pull requests.
 - `login` reads Turnstile once the saved login is chosen and before it asks for Touch ID or reads the password, so an unticked box stops it with no Touch ID spent.
@@ -49,6 +50,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Fixed
 
+- `wait --settled` on an iOS simulator, after an input that changed the tree, also waits up to 2 s for the pixels to hold still, as on Android. A sheet UIKit slides in lists its final frame in the tree at once, so a fast read passed mid-slide and the next tap was dropped.
+- A simulator whose accessibility does not answer yet, just after a boot or a launch, gets about 2 s to answer however fast a failed read is (two tries 1 s apart, a third when both failed at once), instead of two tries.
+- `button home --verify` on an iOS simulator returns once a read of the front app finds SpringBoard, not only once SpringBoard answers at the screen's centre, so a `describe-ui` straight after no longer lists the app that is leaving.
+- `--verify` learns what ticks by itself from two reads at least 0.6 s apart before the input, however fast the reads are, so a slow ticker is not taken for the input's change.
+- `--verify` takes its baseline screenshot once two in a row, 350 ms apart, agree (four at most), so what an earlier input was still drawing no longer counts as this input's change: on a fast read, a tap that changed nothing could verify.
 - On an Android emulator, `type --into-id`, `--into-label` and `--into-label-contains` no longer report success when Gboard's stylus handwriting tutorial took the text. `type` and `key-sequence` send nothing while a field inside the keyboard has focus (exit 2, `focus_mismatch`), and after keys into a named field `type` reads it back, exiting 5 (`text_not_accepted`) when the text did not reach it, batch steps too. The message names the tutorial; `type --replace` still works past it, and the hint turns stylus handwriting off.
 - `login` closes a keyboard that taps on empty space leave up before it gives up with `target_under_keyboard`: the keyboard's own hide key or Done bar on iOS, Back over docked keys on Android, never Return.
 - On Android, `turnstile` and `login` read a Turnstile widget the app hides from accessibility, as `describe-ui` does, so a checkbox `describe-ui` lists no longer reads `unknown`.
