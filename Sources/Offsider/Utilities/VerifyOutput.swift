@@ -183,6 +183,8 @@ enum VerifyOutput {
             change = "the launcher came to the front"
         case .element:
             change = outcome.summary ?? "element on screen"
+        case .toast:
+            change = outcome.summary.map { "a \($0) showed" } ?? "a toast showed"
         case .none:
             change = "no change"
         }
@@ -351,6 +353,8 @@ enum VerifyOutput {
             change = "The launcher came to the front"
         case .element:
             change = outcome.summary.map(InputPersonView.sentence) ?? "The element is on screen"
+        case .toast:
+            change = outcome.summary.map { "A \($0) showed" } ?? "A toast showed"
         case .none:
             change = "No change"
         }

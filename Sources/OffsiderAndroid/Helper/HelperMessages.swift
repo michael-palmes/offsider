@@ -9,6 +9,10 @@ struct HelperDumpOptions: Equatable, Sendable {
     var testTags = true
     var idleQuietMs = 100
     var idleTimeoutMs = 500
+    /// Whose recent toasts the reply lists: a package, or "front" for the app window the dump reads; nil asks for none.
+    var toasts: String? = nil
+
+    static let frontApp = "front"
 }
 
 /// One request; `fields` are the op's own keys beside `id` and `op`.
@@ -27,14 +31,16 @@ struct HelperRequest: Equatable, Sendable {
     static let quit = HelperRequest(op: "quit", fields: [:])
 
     static func dump(_ options: HelperDumpOptions) -> HelperRequest {
-        HelperRequest(op: "dump", fields: [
+        var fields: [String: HelperValue] = [
             "windows": .string(options.windows),
             "notImportant": .bool(options.notImportant),
             "visibleOnly": .bool(options.visibleOnly),
             "testTags": .bool(options.testTags),
             "idleQuietMs": .int(options.idleQuietMs),
             "idleTimeoutMs": .int(options.idleTimeoutMs),
-        ])
+        ]
+        fields["toasts"] = options.toasts.map(HelperValue.string)
+        return HelperRequest(op: "dump", fields: fields)
     }
 
     /// `ACTION_SET_PROGRESS` in the node's own units; `expect` is the range as dumped, so a changed range is refused as stale.
@@ -363,6 +369,8 @@ struct HelperDump: Decodable, Equatable, Sendable {
     let hiddenBranches: [HelperNode]?
     /// How long the helper spent reading the windows and their trees.
     let walkMs: Int?
+    /// The asked package's recent toasts, oldest first; nil when the request asked for none.
+    let toasts: [HelperToast]?
 
     /// The helper gives one dump's walk this long, then stops and marks the dump truncated.
     static let walkBudgetMs = 6000
@@ -388,6 +396,7 @@ struct HelperDump: Decodable, Equatable, Sendable {
         skippedInvisible = stats?.skippedInvisible
         hiddenBranches = stats?.hiddenBranches
         walkMs = try c.decodeIfPresent(Timings.self, forKey: .timings)?.walkMs
+        toasts = try c.decodeIfPresent([HelperToast].self, forKey: .toasts)
     }
 
     private struct Timings: Decodable {
@@ -395,8 +404,16 @@ struct HelperDump: Decodable, Equatable, Sendable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case generation, idle, eventSeq, display, windows, truncated, stats, timings
+        case generation, idle, eventSeq, display, windows, truncated, stats, timings, toasts
     }
+}
+
+/// One toast the helper kept, already limited to the package the dump asked for.
+struct HelperToast: Decodable, Equatable, Sendable {
+    let seq: Int64
+    let text: String
+    let package: String
+    let ageMs: Int
 }
 
 /// The counts a dump reports beside its windows; only what Offsider reads.

@@ -209,8 +209,8 @@ struct WaitCommandTests {
     }
 
     @Test("conflicting or incomplete conditions are rejected", arguments: [
-        (["--id", "a", "--settled"], "Choose only one of a selector, --settled, --region or --seconds."),
-        (["--timeout", "5"], "Choose one of a selector (--id, --label, --label-contains or --value), --settled, --region or --seconds."),
+        (["--id", "a", "--settled"], "Choose only one of a selector, --settled, --region, --toast or --seconds."),
+        (["--timeout", "5"], "Choose one of a selector (--id, --label, --label-contains or --value), --settled, --region, --toast or --seconds."),
         (["--id", "a", "--gone", "--disabled"], "--gone does not take --enabled or --disabled."),
         (["--any", "--id", "a", "--id", "b", "--enabled"], "--any does not take --enabled or --disabled."),
         (["--any", "--settled"], "--any needs --id, --label, --label-contains or --value."),

@@ -152,10 +152,12 @@ public struct UITreeContext: Equatable, Sendable {
     public var hiddenBranches: [HiddenBranch]?
     /// Elements the app draws but hides from accessibility, listed because they fill an empty part of the screen; nil when there are none.
     public var filled: Int?
+    /// Recent Android toasts of the app in scope; nil where the source cannot see them.
+    public var toasts: [UIToast]?
 
     public init(
         window: Window? = nil, keyboard: Bool = false, logBox: LogBox? = nil, presented: Presented? = nil, staleFrame: StaleFrame? = nil,
-        hidden: Int? = nil, hiddenBranches: [HiddenBranch]? = nil, filled: Int? = nil
+        hidden: Int? = nil, hiddenBranches: [HiddenBranch]? = nil, filled: Int? = nil, toasts: [UIToast]? = nil
     ) {
         self.window = window
         self.keyboard = keyboard
@@ -165,6 +167,7 @@ public struct UITreeContext: Equatable, Sendable {
         self.hidden = hidden
         self.hiddenBranches = hiddenBranches
         self.filled = filled
+        self.toasts = toasts
     }
 
     public init(tree: UITree) {
@@ -182,7 +185,8 @@ public struct UITreeContext: Equatable, Sendable {
             staleFrame: tree.staleFrame,
             hidden: tree.hiddenBranches,
             hiddenBranches: tree.namedHiddenBranches,
-            filled: tree.filledFromGaps
+            filled: tree.filledFromGaps,
+            toasts: tree.toasts
         )
     }
 
@@ -242,11 +246,14 @@ public struct UITreeContext: Equatable, Sendable {
         if let filled, filled > 0 {
             lines.append("# filled: \(filled) element\(filled == 1 ? "" : "s") the app hides from accessibility")
         }
+        for toast in toasts ?? [] {
+            lines.append("# toast: \(toast.summary)")
+        }
         return lines
     }
 
     var jsonValue: OrderedJSON {
-        .object([
+        let members: [(String, OrderedJSON)] = [
             ("window", window.map { window in
                 .object([
                     ("title", .optional(window.title, OrderedJSON.string)),
@@ -283,7 +290,9 @@ public struct UITreeContext: Equatable, Sendable {
                 })
             }),
             ("filled", .optional(filled, OrderedJSON.integer)),
-        ])
+        ]
+        guard let toasts else { return .object(members) }
+        return .object(members + [("toasts", .array(toasts.map(\.jsonValue)))])
     }
 }
 

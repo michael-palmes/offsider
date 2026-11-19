@@ -1230,3 +1230,98 @@ struct VerifierHoldTests {
         #expect(VerifyOutput.unverifiedLine(outcome, for: request) == #"✗ Tap on id=details-back was dispatched but --verify-id 'home-screen' did not come on screen within 10 s after 1 attempt: it is beneath "details-screen", and nothing on screen changed, so the input may not have landed. Check the screen with describe-ui --summary."#)
     }
 }
+
+extension VerifierTests {
+    private func toasted(_ base: UITree, _ toasts: [UIToast]) -> UITree {
+        var tree = base
+        tree.toasts = toasts
+        return tree
+    }
+
+    private static func toast(_ text: String, key: String, ageMs: Int = 100) -> UIToast {
+        UIToast(key: key, text: text, package: "com.mpalmes.offsider.playground.rn", ageMs: ageMs)
+    }
+
+    @Test("an older toast still listed in the baseline, with the input raising none, is not the input's change")
+    func olderToastInBaseline() async throws {
+        let earlier = toasted(tree(count: "0"), [Self.toast("Draft saved", key: "9-1", ageMs: 12_000)])
+        let aged = toasted(tree(count: "0"), [Self.toast("Draft saved", key: "9-1", ageMs: 13_000)])
+        let fake = FakeSimulator(trees: [earlier, earlier, aged])
+        var (actions, retries) = ([Verifier.Attempt](), [Int]())
+
+        let outcome = try await run(fake, styles: [.simulator], actions: &actions, retries: &retries)
+
+        #expect(!outcome.verified && outcome.change == .none)
+    }
+
+    @Test("a toast first listed after the input but raised before it, which the baseline reads missed, is not the input's change")
+    func toastFromBeforeTheInput() async throws {
+        let before = toasted(tree(count: "0"), [])
+        let late = toasted(tree(count: "0"), [Self.toast("Draft saved", key: "9-1", ageMs: 9_000)])
+        let fake = FakeSimulator(trees: [before, before, late])
+        var (actions, retries) = ([Verifier.Attempt](), [Int]())
+
+        let outcome = try await run(fake, styles: [.simulator], actions: &actions, retries: &retries)
+
+        #expect(!outcome.verified && outcome.change == .none)
+    }
+
+    @Test("a toast raised after the input, with nothing else changing, verifies the input as a toast, once, with no screenshot")
+    func toastVerifies() async throws {
+        let before = toasted(tree(count: "0"), [])
+        let after = toasted(tree(count: "0"), [Self.toast("Draft saved", key: "9-1")])
+        let fake = FakeSimulator(trees: [before, before, after])
+        var (actions, retries) = ([Verifier.Attempt](), [Int]())
+
+        let outcome = try await run(fake, actions: &actions, retries: &retries)
+
+        #expect(outcome.verified && outcome.change == .toast)
+        #expect(outcome.summary == #"toast "Draft saved""#)
+        #expect(outcome.changes == [VerifyChange(kind: .added, node: #"toast "Draft saved""#)])
+        #expect(actions.count == 1 && retries.isEmpty)
+        #expect(fake.screenReads <= 1)
+        let device = DeviceID(rawValue: "emulator-5554", platform: .android)
+        let request = VerifyRequest(command: "tap", subject: "Tap on id=save", target: "id=save", backend: StubBackend(session: RecordingInputSession()), device: device, options: VerificationOptions(), styles: [.simulator])
+        #expect(VerifyOutput.verifiedLine(outcome, for: request).hasPrefix(#"✓ Tap on id=save verified: a toast "Draft saved" showed, attempt 1"#))
+    }
+
+    @Test("a toast shown before the input is never its effect, so the input is sent again")
+    func earlierToastIsNotTheEffect() async throws {
+        let earlier = toasted(tree(count: "0"), [Self.toast("Draft saved", key: "9-1")])
+        let fake = FakeSimulator(trees: [earlier])
+        var (actions, retries) = ([Verifier.Attempt](), [Int]())
+
+        let outcome = try await run(fake, actions: &actions, retries: &retries)
+
+        #expect(!outcome.verified)
+        #expect(outcome.change != .toast)
+        #expect(actions.count == 2)
+    }
+
+    @Test("a toast's text in the outcome is masked as describe-ui masks it")
+    func toastSummaryIsMasked() async throws {
+        let before = toasted(tree(count: "0"), [])
+        let after = toasted(tree(count: "0"), [Self.toast("Your code is 482913", key: "9-1")])
+        let fake = FakeSimulator(trees: [before, before, after])
+        var (actions, retries) = ([Verifier.Attempt](), [Int]())
+
+        let outcome = try await run(fake, actions: &actions, retries: &retries)
+
+        #expect(outcome.change == .toast)
+        #expect(outcome.summary == #"toast "Your code is [redacted]""#)
+        #expect(!"\(outcome)".contains("482913"))
+    }
+
+    @Test("when the tree also changes, the change settles and is listed, rather than the toast")
+    func treeChangeStillSettles() async throws {
+        let before = toasted(tree(count: "0"), [])
+        let after = toasted(tree(count: "1"), [Self.toast("Saved", key: "9-1")])
+        let fake = FakeSimulator(trees: [before, before, after, after])
+        var (actions, retries) = ([Verifier.Attempt](), [Int]())
+
+        let outcome = try await run(fake, actions: &actions, retries: &retries)
+
+        #expect(outcome.verified && outcome.change == .accessibilityTree)
+        #expect(outcome.summary == #"value of tap-count changed from "0" to "1""#)
+    }
+}

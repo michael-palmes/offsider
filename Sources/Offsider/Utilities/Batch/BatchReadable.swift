@@ -74,7 +74,7 @@ extension Wait: BatchReadable {
             context.invalidateTree()
         }
         let sparse = outcome.sparse ? " (nearly empty screen; it may still be loading)" : ""
-        return try await .redacted(outcome, on: context.route, success: successLine(outcome) + sparse, failure: failureLine, checked: selector.query == nil ? nil : selector)
+        return try await .redacted(outcome, on: context.route, success: successLine(outcome) + sparse, failure: { failureLine($0, phone: context.device.isPhysicalAndroidDevice) }, checked: selector.query == nil ? nil : selector)
     }
 }
 

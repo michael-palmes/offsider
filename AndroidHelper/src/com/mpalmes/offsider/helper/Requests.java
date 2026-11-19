@@ -1,5 +1,6 @@
 package com.mpalmes.offsider.helper;
 
+import android.os.SystemClock;
 import android.util.Log;
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
@@ -63,6 +64,11 @@ final class Requests {
             if ("ping".equals(op)) {
                 seq = events.latest();
             } else if ("hello".equals(op)) {
+                long spoken = whole(request, "protocol", OffsiderHelper.PROTOCOL, 0, Integer.MAX_VALUE);
+                if (spoken != OffsiderHelper.PROTOCOL) {
+                    throw new RequestFailure("protocol-mismatch",
+                            "the helper on the device speaks protocol " + OffsiderHelper.PROTOCOL + ", Offsider speaks " + spoken, null);
+                }
                 json.field("helper", OffsiderHelper.VERSION);
                 json.field("protocol", OffsiderHelper.PROTOCOL);
                 json.name("ops").beginArray();
@@ -179,6 +185,9 @@ final class Requests {
         }
         long named = System.nanoTime();
         json.endObject();
+        if (options.toasts != null) {
+            writeToasts(json, events.toasts, DumpOptions.FRONT.equals(options.toasts) ? dumper.appPackage() : options.toasts);
+        }
         json.name("timings").beginObject();
         json.field("configureMs", ms(configured - start));
         json.field("clearMs", ms(cleared - configured));
@@ -189,6 +198,22 @@ final class Requests {
         json.field("totalMs", ms(named - start));
         json.endObject();
         return seq;
+    }
+
+    /** Only `pkg`'s toasts, newest last, each with its age on the helper's clock; no package lists none. */
+    static void writeToasts(Json json, ToastLog toasts, String pkg) {
+        long now = SystemClock.uptimeMillis();
+        json.field("toastPackage", pkg);
+        json.name("toasts").beginArray();
+        for (ToastLog.Entry entry : toasts.recent(pkg, now)) {
+            json.beginObject();
+            json.field("seq", entry.seq);
+            json.field("text", entry.text);
+            json.field("package", entry.pkg);
+            json.field("ageMs", now - entry.atMs);
+            json.endObject();
+        }
+        json.endArray();
     }
 
     private void writeEvents(Json json, JSONObject request) throws RequestFailure {

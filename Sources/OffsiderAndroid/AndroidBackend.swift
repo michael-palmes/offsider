@@ -196,10 +196,11 @@ public final class AndroidBackend: DeviceBackend, AccessibilityActionPerforming,
         var windows: [UIWindowInfo]?
         var hidden: Int?
         var namedHidden: [UITreeContext.HiddenBranch]?
+        var toasts: [UIToast]?
         switch try await treeSource(for: serial) {
         case .helper(let session):
             let read = try await helperRoots(serial, session: session, everyView: everyView)
-            (roots, truncated, windows, hidden, namedHidden) = (read.roots, read.truncated, read.windows, read.hidden, read.namedHidden)
+            (roots, truncated, windows, hidden, namedHidden, toasts) = (read.roots, read.truncated, read.windows, read.hidden, read.namedHidden, read.toasts)
         case .uiautomator:
             roots = try await uiautomatorRoots(serial, compressed: !everyView)
         }
@@ -208,6 +209,7 @@ public final class AndroidBackend: DeviceBackend, AccessibilityActionPerforming,
         tree.windows = windows
         tree.hiddenBranches = hidden
         tree.namedHiddenBranches = namedHidden
+        tree.toasts = toasts
         if checkingWindows {
             tree.systemWindow = try await requireReadableWindows(tree, on: serial)
         }

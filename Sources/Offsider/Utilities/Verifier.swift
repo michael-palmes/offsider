@@ -105,6 +105,8 @@ struct Verifier {
     }
 
     static let pollInterval: Duration = .milliseconds(200)
+    /// The helper dates a toast on the device's clock and the verifier the input on the Mac's, a few milliseconds apart.
+    static let toastClockSlackMs = 100
     static let screenshotSpacing: Duration = .milliseconds(350)
     static let screenshotCount = 3
     /// After-shots one attempt may take while a transition is still moving; a lagging stream may show it only from the second.
@@ -229,6 +231,8 @@ struct Verifier {
         phases.baseline = dependencies.now() - baselineStart
         var baselinePrints: [ImageFingerprint] = []
         var ignored: [VerifyIgnored] = []
+        /// Toasts already raised before the input, which never count as its effect.
+        let earlierToasts = Set(((firstRead.tree?.toasts ?? []) + (secondRead.tree?.toasts ?? [])).map(\.key))
 
         func finish(_ outcome: Outcome, attemptStart: TimeInterval) -> Outcome {
             var outcome = outcome
@@ -280,6 +284,25 @@ struct Verifier {
             return summary
         }
 
+        /// When the latest input went out, so a toast raised before it never counts, even one the reads before it missed.
+        var inputAt = dependencies.now()
+
+        /// The newest toast this read lists that no read before the input did, raised since the input.
+        func newToast(_ current: Read) -> UIToast? {
+            let sinceInputMs = Int(((dependencies.now() - inputAt) * 1000).rounded()) + Self.toastClockSlackMs
+            return current.tree?.toasts?.last { !earlierToasts.contains($0.key) && $0.ageMs <= sinceInputMs }
+        }
+
+        /// A toast is the input's only proof on screen when the app gives no other feedback; its text is shown masked, as `describe-ui` shows it.
+        func toastShown(_ toast: UIToast, attempt: Attempt, attemptStart: TimeInterval) -> Outcome {
+            var hidden = 0
+            let shown = toast.redacted(valueMask, count: &hidden)
+            let named = "toast " + TerminalText.quoted(shown.text, cap: 80)
+            var outcome = Outcome(verified: true, attempts: attempt.number, change: .toast, style: attempt.style, summary: named)
+            outcome.changes = [VerifyChange(kind: .added, node: named)]
+            return finish(outcome, attemptStart: attemptStart)
+        }
+
         func unverified(_ attempt: Attempt, note: VerifyNote? = nil) -> Outcome {
             var outcome = Outcome(verified: false, attempts: attempt.number, change: .none, style: attempt.style, summary: nil, note: note)
             outcome.phases = phases
@@ -296,6 +319,7 @@ struct Verifier {
             var pending: AccessibilitySnapshot?
             var lastUnchanged: Read?
             var lastRead: Read?
+            var toast: UIToast?
             if baseline.isKnown {
                 let polled: Outcome? = try await Timings.measure("verify-poll") {
                     repeat {
@@ -313,10 +337,13 @@ struct Verifier {
                             )
                         }
                         noteIgnored(currentRead)
+                        toast = newToast(currentRead) ?? toast
                         switch detector.compare(baseline, current, ignoring: volatile, live: live) {
                         case .unknown:
                             continue
                         case .unchanged:
+                            // A tree that shows nothing new leaves the toast as the effect; a changing tree still settles first.
+                            if let toast { return toastShown(toast, attempt: attempt, attemptStart: attemptStart) }
                             pending = nil
                             lastUnchanged = currentRead
                             lastRead = currentRead
@@ -336,6 +363,9 @@ struct Verifier {
             // A change that never settled counts only while the latest read still shows it.
             if seenChange, let lastRead, case .changed = detector.compare(baseline, lastRead.snapshot, ignoring: volatile, live: live) {
                 return (verified(read: lastRead, attempt: attempt, attemptStart: attemptStart), false, nil, nil)
+            }
+            if let toast {
+                return (toastShown(toast, attempt: attempt, attemptStart: attemptStart), false, nil, nil)
             }
 
             if !ignoringText, let shot = baselineShots.last {
@@ -389,6 +419,9 @@ struct Verifier {
             if case .changed = detector.compare(baseline, lateRead.snapshot, ignoring: volatile, live: live) {
                 return (verified(read: lateRead, attempt: attempt, attemptStart: attemptStart), false, nil, nil)
             }
+            if let late = newToast(lateRead) {
+                return (toastShown(late, attempt: attempt, attemptStart: attemptStart), false, nil, nil)
+            }
             if lateRead.snapshot.isKnown {
                 lastUnchanged = lateRead
             }
@@ -398,6 +431,7 @@ struct Verifier {
         for (index, style) in attempts.enumerated() {
             let attempt = Attempt(number: index + 1, style: style)
             let dispatchStart = dependencies.now()
+            inputAt = dispatchStart
             try await Timings.measure("dispatch") { try await action(attempt) }
             phases.dispatch += dependencies.now() - dispatchStart
             let attemptStart = dependencies.now()
