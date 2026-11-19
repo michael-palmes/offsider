@@ -41,23 +41,20 @@ public enum TypedText {
         return isSubsequence(fold(after), of: fold(sent)) ? after.count : nil
     }
 
-    /// True when the field gained all of `sent` with one of its characters again straight after itself, as a key iOS took as held repeats: once is enough for a letter or digit, twice for anything else, since a formatter may put one space or separator beside a typed one. Spacing counts here, as a held space repeats too.
+    /// True when the field gained all of `sent` with one of its characters again straight after itself, as a key iOS took as held repeats. A formatter's separators, zeros and masks are other characters or sit apart, so they pass. Spacing counts here, as a held space repeats too.
     public static func repeatsKey(sent: String, before: String?, after: String, replacing: Bool) -> Bool {
         let wanted = Array(sent.lowercased())
         let now = Array(after.lowercased())
         let gained = replacing ? now : inserted(from: Array((before ?? "").lowercased()), to: now)
         var next = wanted.startIndex
         var matched: Character?
-        var run = 0
         var repeated = false
         for character in gained {
             if next < wanted.endIndex, character == wanted[next] {
                 next += 1
                 matched = character
-                run = 0
             } else if character == matched {
-                run += 1
-                if run >= (character.isLetter || character.isNumber ? 1 : 2) { repeated = true }
+                repeated = true
             } else {
                 matched = nil
             }

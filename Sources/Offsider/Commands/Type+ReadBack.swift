@@ -298,7 +298,7 @@ extension Type {
     @MainActor
     static func textNotHeldRefusal(target: String, device: DeviceID, retyped: Bool) -> CLIError {
         let what = retyped
-            ? "Typed into \(target) twice, but it does not hold the text sent: the field cut or changed it, or keys were lost on the way. Read the field to see what it kept."
+            ? "Typed into \(target) twice, but it does not hold the text sent: the field cut or changed it, or keys were lost or repeated on the way. Read the field to see what it kept."
             : "Typed into \(target), but it does not hold the text sent, and what was there before could not be told from what was typed, or put back, so Offsider did not type again. Set the whole field with `offsider type --replace`."
         return CLIError(errorDescription: what, reason: .textNotAccepted, hint: CommandScope.current.describeHint(device: device.rawValue))
     }

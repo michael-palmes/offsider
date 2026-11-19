@@ -5,7 +5,7 @@ import Testing
 
 /// A simulator with one text field that takes key events as a real one does: Command-A selects, Backspace deletes, a key adds its character.
 @MainActor
-final class TypingFieldBackend: FakeDeviceBackend, ElementWatching {
+class TypingFieldBackend: FakeDeviceBackend, ElementWatching {
     static let frame = FakeUI.frame(20, 200, 360, 44)
 
     var text: String
@@ -77,7 +77,7 @@ final class TypingFieldBackend: FakeDeviceBackend, ElementWatching {
 
     private static let characters: [String: Character] = {
         var table: [String: Character] = [:]
-        for character in "abcdefghijklmnopqrstuvwxyz0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ" {
+        for character in "abcdefghijklmnopqrstuvwxyz0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ-@." {
             let events = (try? TextToHIDEvents.convertTextToHIDEvents(String(character))) ?? []
             for case .keyboard(direction: .down, keyCode: let code) in events where code != 225 {
                 table["\(code)-\(events.count > 2)"] = character
@@ -111,6 +111,19 @@ final class TypingFieldBackend: FakeDeviceBackend, ElementWatching {
             onKey(&text, character)
         }
     }
+}
+
+/// The same field on a backend whose hit-test answers with it, as a simulator's does.
+@MainActor
+final class HitTypingFieldBackend: TypingFieldBackend, PointHitTesting {
+    private(set) var hitTests = 0
+
+    func hitTest(at point: UIPoint, on id: DeviceID, appPIDs: Set<Int>) async throws -> UINode? {
+        hitTests += 1
+        return Self.frame.contains(point) ? field : nil
+    }
+
+    func processName(of pid: Int, on id: DeviceID) async -> String? { nil }
 }
 
 @Suite("Typed text read back on an iOS simulator")
@@ -438,6 +451,25 @@ struct TypeHeldTests {
         #expect(warnings.count == 1)
     }
 
+    @Test("an app that is not React Native is read by a hit-test of its own each time, and a repeated key is typed again as one paced send")
+    func nativeRetryThroughHitTests() async throws {
+        let backend = HitTypingFieldBackend()
+        var repeated = false
+        backend.onKey = { text, key in
+            text.append(key)
+            if key == "-", !repeated {
+                repeated = true
+                text.append("-")
+            }
+        }
+        backend.watches = false
+        let warnings = try await Self.type(["wait-now"], on: backend)
+        #expect(backend.text == "wait-now")
+        #expect(warnings.count == 1)
+        #expect(backend.hitTests > 0)
+        #expect(backend.session.calls.last == .perform(.composite(try Type.iosEvents(for: "wait-now", replacing: false, paced: true))))
+    }
+
     @Test("a repeat is a character of the text again straight after itself; a formatter's separators and zeros are not")
     func repeatsKey() {
         #expect(TypedText.repeatsKey(sent: "Test@123", before: nil, after: "Test@@@@123", replacing: false))
@@ -447,7 +479,8 @@ struct TypeHeldTests {
         #expect(!TypedText.repeatsKey(sent: "50", before: nil, after: "50.00", replacing: true))
         #expect(!TypedText.repeatsKey(sent: "4111111111111111", before: nil, after: "4111 1111 1111 1111", replacing: true))
         #expect(!TypedText.repeatsKey(sent: "0400000000", before: nil, after: "+61 400 000 000", replacing: true))
-        #expect(!TypedText.repeatsKey(sent: "a b", before: nil, after: "a  b", replacing: true))
+        #expect(TypedText.repeatsKey(sent: "wait--now", before: nil, after: "wait---now", replacing: false))
+        #expect(!TypedText.repeatsKey(sent: "one  two", before: nil, after: "one. two", replacing: false))
         #expect(!TypedText.repeatsKey(sent: "1234", before: nil, after: "••••", replacing: true))
     }
 
