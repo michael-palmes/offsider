@@ -28,6 +28,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - `devices add` lists the first-run steps still owed on an iPhone or iPad when setup stops short of ready (`firstRun` in `--json` and `--plan --json`).
 - `boot_failed` (exit 1): a simulator that refuses to boot, as one on an older runtime can with a bare "Invalid argument", is named with its runtime and `xcrun simctl boot <udid>` as the next step.
 
+- `swipe` and `drag` take `--scale` and `--mask-skip-beneath` with `--screenshot-at`, applied to each held screenshot as `screenshot` applies them; an evidence run's masks stay on.
 - `doctor --device <iPhone>` warns `ios-device.runner-build` when the cached runner's provisioning profile has expired or ends within an hour, naming `runner build` to renew it.
 
 ### Changed
