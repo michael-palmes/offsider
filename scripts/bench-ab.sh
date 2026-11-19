@@ -22,7 +22,7 @@ KNOWN_SCENARIOS="android-describe android-describe-first android-describe-uiauto
 android-tap-id-verify-live android-batch-describe-5 \
 android-tap-xy android-tap-xy-input android-tap-xy-helper android-tap-physical android-swipe android-type-ascii android-type-ascii-helper \
 android-screenshot android-screenshot-json android-screenshot-raw android-screenshot-helper android-batch-tap-5 android-wait-settled \
-ios-describe ios-tap-id ios-tap-id-first ios-tap-id-verify ios-tap-id-verify-live ios-tap-xy ios-tap-xy-first \
+ios-describe ios-tap-id ios-tap-id-first ios-tap-id-verify ios-tap-id-verify-live ios-tap-xy ios-tap-xy-first ios-batch-tap-no-settle \
 android-describe-summary android-describe-summary-drawer android-describe-summary-long android-describe-summary-keyboard \
 ios-describe-summary ios-describe-summary-drawer ios-describe-summary-long ios-describe-summary-keyboard"
 PLAYGROUND_RN="com.mpalmes.offsider.playground.rn"
@@ -242,7 +242,7 @@ scenario_screen() {
   case "$1" in
     *-live) echo live-ticker ;;
     *-drawer) echo drawer-test ;;
-    *-long) echo long-scroll-test ;;
+    *-long | ios-batch-tap-no-settle) echo long-scroll-test ;;
     android-type-* | *-keyboard) echo text-input ;;
     android-swipe) echo swipe-test ;;
     *) echo tap-test ;;
@@ -253,6 +253,7 @@ scenario_screen() {
 scenario_anchor() {
   case "$1" in
     android-tap-xy* | ios-tap-xy*) echo tap-test-area ;;
+    ios-batch-tap-no-settle) echo long-scroll-test-screen ;;
     android-swipe) echo swipe-test-area ;;
   esac
 }
@@ -386,6 +387,10 @@ if x and y:
     commands["android-tap-xy-helper"] = (tap, {"OFFSIDER_ANDROID_INPUT": "helper"})
     commands["ios-tap-xy"] = (tap, {})
     commands["ios-tap-xy-first"] = (tap, {})
+    # On the long list's heading, which taps change nothing: a coordinate tap, a selector tap, then a coordinate tap again.
+    commands["ios-batch-tap-no-settle"] = (
+        ["batch", "--no-settle", "--device", device, "--step", f"tap -x {x} -y {y}", "--step", "tap --id long-scroll-test-screen", "--step", f"tap -x {x} -y {y}"], {}
+    )
     commands["android-swipe"] = (
         ["swipe", "--start-x", x, "--start-y", str(int(y) + 100), "--end-x", x, "--end-y", str(int(y) - 100), "--duration", "0.3", "--device", device], {}
     )

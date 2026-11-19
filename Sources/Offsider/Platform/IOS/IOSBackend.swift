@@ -121,7 +121,8 @@ final class IOSBackend: DeviceBackend {
     }
 
     /// The tree with its frames in the screen points input and captures use.
-    private func screenPointTree(for id: DeviceID, point: UIPoint?, appPIDs: Set<Int>) async throws -> UITree {
+    /// `frameOnly` reads the application root and its frames once, for placing a point: no labels, values or retries for an empty tree.
+    private func screenPointTree(for id: DeviceID, point: UIPoint?, appPIDs: Set<Int>, frameOnly: Bool = false) async throws -> UITree {
         let simulator = try await simulator(for: id)
         let foldable = displayCatalog.isFoldable(simulator)
         // `describe-ui --point` comes with no tree read before it.
@@ -131,7 +132,9 @@ final class IOSBackend: DeviceBackend {
         let layoutPoint = point.map { displayZooms[id.rawValue]?.layoutPoint($0) ?? $0 }
         let firstRead: [UINode]
         do {
-            firstRead = try await roots(of: simulator, at: layoutPoint, appPIDs: appPIDs)
+            firstRead = frameOnly
+                ? try IOSAccessibilityMapping.roots(fromJSON: try await AccessibilityFetcher.fetchFrontmostFrameJSONData(from: simulator, logger: logger))
+                : try await roots(of: simulator, at: layoutPoint, appPIDs: appPIDs)
         } catch {
             guard let point, displayZooms[id.rawValue] == nil,
                   let answer = await springBoardAnswer(at: point, of: simulator, reading: { try await self.roots(of: simulator, at: $0, appPIDs: appPIDs) }) else { throw error }
@@ -149,10 +152,12 @@ final class IOSBackend: DeviceBackend {
             }
             return tree
         }
-        if point == nil {
+        // An app just opened answers with an empty root and no frame, which says nothing about zoom.
+        let readsZoom = point == nil && (!frameOnly || tree.applicationFrame.map { $0.width > 0 && $0.height > 0 } == true)
+        if readsZoom {
             zoomChecked.insert(id.rawValue)
         }
-        if point == nil, tree.roots.contains(where: { $0.role == .application }), let screen = simulator.screenInfo, screen.scale > 0 {
+        if readsZoom, tree.roots.contains(where: { $0.role == .application }), let screen = simulator.screenInfo, screen.scale > 0 {
             let scale = Double(screen.scale)
             displayZooms[id.rawValue] = DisplayZoom(in: tree.roots, screenWidth: Double(screen.widthPixels) / scale, screenHeight: Double(screen.heightPixels) / scale)
         }
@@ -276,10 +281,41 @@ final class IOSBackend: DeviceBackend {
                 logger: logger
             )
         }
-        let read = try await screenPointTree(for: id, point: nil, appPIDs: [])
-        AppGuard.note(read, on: id)
-        return try await OrientationAwareCoordinates.translateBatch(points: points, applicationFrame: read.applicationFrame, for: id.rawValue, logger: logger)
+        return try await OrientationAwareCoordinates.translateBatch(points: points, applicationFrame: try await applicationFrame(on: id), for: id.rawValue, logger: logger)
     }
+
+    private func applicationFrame(on id: DeviceID) async throws -> UIFrame? {
+        try await Self.placementFrame(
+            guardHasRules: !GuardSources.current().isEmpty,
+            frameRead: { try await self.screenPointTree(for: id, point: nil, appPIDs: [], frameOnly: true).applicationFrame },
+            fullRead: { try await self.screenPointTree(for: id, point: nil, appPIDs: []) },
+            note: { AppGuard.note($0, on: id) }
+        )
+    }
+
+    /// The front app's frame read fresh for placing a point, read again while an app just opened has none yet; a whole tree when the guard has rules to judge the input on, or no frame came.
+    static func placementFrame(
+        guardHasRules: Bool,
+        frameRead: () async throws -> UIFrame?,
+        fullRead: () async throws -> UITree,
+        note: (UITree) -> Void,
+        wait: (Duration) async throws -> Void = { try await Task.sleep(for: $0) }
+    ) async throws -> UIFrame? {
+        if !guardHasRules {
+            for attempt in 0..<frameReadAttempts {
+                if let frame = try await frameRead(), frame.width > 0, frame.height > 0 {
+                    return frame
+                }
+                if attempt < frameReadAttempts - 1 { try await wait(.milliseconds(50 * (1 << attempt))) }
+            }
+        }
+        let read = try await fullRead()
+        note(read)
+        return read.applicationFrame
+    }
+
+    /// Two empty roots were the most seen just after an app opened; the whole read that follows keeps its own tries.
+    static let frameReadAttempts = 3
 
     func openInputSession(for id: DeviceID) async throws -> any InputSession {
         if let session = try await displayInputSession(for: id) {

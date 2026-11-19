@@ -90,6 +90,22 @@ struct AccessibilityFetcher {
         }
     }
 
+    /// The front app's element with only what places a point on it; one read, as an empty tree still carries the app's frame.
+    static func fetchFrontmostFrameJSONData(from target: FBSimulator, logger: OffsiderLogger) async throws -> Data {
+        try await Timings.measure("accessibility-frame") {
+            try await retryingStartupFailure(simulatorUDID: target.udid, frontmost: true, logger: logger) {
+                try await retryingAfterTestManagerRecovery(simulatorUDID: target.udid, logger: logger, dependencies: .live) {
+                    let accessibilityElement = try await target.accessibilityElementForFrontmostApplication()
+                    defer { accessibilityElement.close() }
+                    return try serializedAccessibilityData(from: accessibilityElement, keys: frameKeys)
+                }
+            }
+        }
+    }
+
+    /// What names the application root, its frame and its process; each key costs one round trip per element.
+    static let frameKeys: Set<FBAXKeys> = [.frameDict, .type, .pid]
+
     /// One point read with no retry and no recovery, for describe-ui's probe, which must stay quick.
     static func probeAccessibilityJSONData(from target: FBSimulator, at point: AccessibilityPoint) async throws -> Data {
         let accessibilityElement = try await target.accessibilityElement(at: point.cgPoint)
