@@ -86,8 +86,7 @@ public struct RunManifestLine: Codable, Equatable, Sendable {
             ("expect", .optional(expect, OrderedJSON.string)),
             ("entries", .optional(entries, OrderedJSON.integer)),
             ("redacted", .optional(redacted, OrderedJSON.integer)),
-            ("fields", .optional(fields) { .array($0.map { .object([("field", .string($0.field)), ("state", .string($0.state))]) }) }),
-        ])
+        ] + (fields.map { [("fields", .array($0.map { .object([("field", .string($0.field)), ("state", .string($0.state))]) }))] } ?? []))
     }
 
     public init(jsonLine: String) throws {

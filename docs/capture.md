@@ -87,7 +87,7 @@ Video is never masked by the accessibility tree, since a tree read cannot be pro
 `manifest.ndjson` gets one line per capture, failures included:
 
 ```json
-{"n":1,"file":"001-screenshot-14.03.22.png","command":"screenshot","step":null,"line":null,"device":"emulator-5554","platform":"android","time":"2026-10-05T14:03:22.125+10:30","ms":412,"exit":0,"reason":null,"args":["--mask-emails"],"output":null,"diff":null,"masked":2,"skippedBeneath":null,"changed":null,"expect":null,"entries":null,"redacted":null,"fields":null}
+{"n":1,"file":"001-screenshot-14.03.22.png","command":"screenshot","step":null,"line":null,"device":"emulator-5554","platform":"android","time":"2026-10-05T14:03:22.125+10:30","ms":412,"exit":0,"reason":null,"args":["--mask-emails"],"output":null,"diff":null,"masked":2,"skippedBeneath":null,"changed":null,"expect":null,"entries":null,"redacted":null}
 ```
 
 A failed capture's line has `n` and `file` null, so the numbers count files. `login --fill` adds a line with no file, `command` `login`, and `fields`: each field it aimed at with `filled` or `not_filled`, never the secret. Batch steps carry `command` `batch`, `step` and the redacted `line`; `args` pass through the same redaction as `logs`. In both, `--mask-text`, `--mask-label`, `--mask-label-contains`, `--grep` and `--exclude` values read `<N characters>`, since a selector often spells the data it hides; `--mask-id` values (the app's own element ids) and `--mask-region` coordinates are kept. Files that no line names (a command killed mid-capture) are counted as unrecorded.

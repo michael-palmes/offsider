@@ -162,7 +162,7 @@ struct LoginFillFieldTests {
     }
 
     @Test("an evidence run's timeline shows each field's outcome")
-    func timelineNote() {
+    func timelineNote() throws {
         let line = RunManifestLine(command: "login", device: "fake-device", time: Date(timeIntervalSince1970: 0), ms: 900, exit: 1, reason: "foreground_changed", fields: [
             RunFieldOutcome(field: "id=signup-password", state: "filled"), RunFieldOutcome(field: "id=signup-confirm", state: "not_filled"),
         ])
@@ -170,6 +170,9 @@ struct LoginFillFieldTests {
         let text = timeline.text(now: Date(timeIntervalSince1970: 1), timeZone: TimeZone(identifier: "UTC")!)
         #expect(text.contains("login fake-device exit 1 foreground_changed (id=signup-password filled, id=signup-confirm not filled)"))
         #expect(line.jsonLine().contains(#""fields":[{"field":"id=signup-password","state":"filled"}"#))
+        let capture = RunManifestLine(n: 1, file: "001-screenshot-14.03.22.png", command: "screenshot", time: Date(timeIntervalSince1970: 0), ms: 400, exit: 0)
+        #expect(!capture.jsonLine().contains("fields"))
+        #expect(try RunManifestLine(jsonLine: capture.jsonLine()) == capture)
     }
 }
 
