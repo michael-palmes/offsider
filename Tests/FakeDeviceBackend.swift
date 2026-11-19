@@ -12,6 +12,8 @@ class FakeDeviceBackend: DeviceBackend {
     let session: RecordingInputSession
     let advanceTreeOnInput: Bool
     var bands = ScreenBands(top: 0, bottom: 0)
+    /// The text each field, by id, reads once keys have been sent, as a field that took them does.
+    var valuesAfterKeys: [String: String] = [:]
     /// Called on every tree read, before the tree is served.
     var onTreeRead: (() -> Void)?
     /// With `advanceTreeOnInput`, seconds on the tree cache clock before reads see an input's screen; screenshots then follow the trees.
@@ -140,11 +142,26 @@ class FakeDeviceBackend: DeviceBackend {
         landDraws()
         onTreeRead?()
         treeReads += 1
-        let tree = currentTree ?? UITree(platform: platform, device: id.rawValue, roots: [])
+        var tree = currentTree ?? UITree(platform: platform, device: id.rawValue, roots: [])
         if !advanceTreeOnInput {
             treeIndex = min(treeIndex + 1, max(trees.count - 1, 0))
         }
+        if !valuesAfterKeys.isEmpty, session.calls.contains(where: Self.isKeys) {
+            tree.roots = tree.roots.map(holdingTypedValues)
+        }
         return tree
+    }
+
+    private static func isKeys(_ call: RecordingInputSession.Call) -> Bool {
+        if case .perform(.composite) = call { return true }
+        return false
+    }
+
+    private func holdingTypedValues(_ node: UINode) -> UINode {
+        var node = node
+        if let value = node.id.flatMap({ valuesAfterKeys[$0] }) { node.value = value }
+        node.children = node.children.map(holdingTypedValues)
+        return node
     }
 
     func prepare() async throws {}

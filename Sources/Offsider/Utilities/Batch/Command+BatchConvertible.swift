@@ -318,6 +318,10 @@ extension Type: BatchConvertible {
         var tree: UITree?
         /// What the focus check read, for the step's text to be read back from its field.
         var check: FocusCheck?
+        /// Opened before a simulator step's keys, to read its field back after them.
+        var reader: FieldReader?
+        /// What became of the step's own clear.
+        var cleared = Cleared.none
     }
 
     private func typingPrimitives(_ inputText: String, context: BatchContext, focusTree: FocusTreeBox) -> [BatchPrimitive] {
@@ -325,21 +329,38 @@ extension Type: BatchConvertible {
         let chunked = context.typeSubmissionMode == .chunked
         let chunkSize = max(1, context.typeChunkSize)
         let replacing = replace
-        return [.run { session in
-            let events = try Type.iosEvents(for: inputText, replacing: false, paced: ReactNativeBundle.isFront(in: focusTree.tree))
-            let clear = replacing ? InputEvent.selectAllAndDelete(modifier: InputEvent.commandKey, settle: InputEvent.iosClearSettle) : nil
-            guard chunked else {
-                try await session.perform(.composite((clear.map { [$0] } ?? []) + events))
-                return
+        let typing = BatchPrimitive.run { session in
+            if let check = focusTree.check {
+                focusTree.reader = await fieldReader(for: inputText, focus: check, backend: context.backend, device: context.device)
             }
-            if let clear { try await session.perform(clear) }
-            var start = 0
-            while start < events.count {
-                let end = min(start + chunkSize, events.count)
-                try await session.perform(.composite(Array(events[start..<end])))
-                start = end
+            let paced = ReactNativeBundle.isFront(in: focusTree.tree)
+            do {
+                guard chunked else {
+                    focusTree.cleared = try await sendKeys(inputText, paced: paced, reader: focusTree.reader, clock: .live) { try await session.perform($0) }
+                    return
+                }
+                let events = try Type.iosEvents(for: inputText, replacing: false, paced: paced)
+                let clear = replacing ? InputEvent.selectAllAndDelete(modifier: InputEvent.commandKey, settle: InputEvent.iosClearSettle) : nil
+                if let clear { try await session.perform(clear) }
+                var start = 0
+                while start < events.count {
+                    let end = min(start + chunkSize, events.count)
+                    try await session.perform(.composite(Array(events[start..<end])))
+                    start = end
+                }
+            } catch {
+                focusTree.reader?.close()
+                throw error
             }
-        }]
+        }
+        guard !inputText.isEmpty else { return [typing] }
+        let landed = BatchPrimitive.run { session in
+            guard let check = focusTree.check else { return }
+            try await confirmHeld(inputText, focus: check, reader: focusTree.reader, cleared: focusTree.cleared, backend: context.backend, device: context.device, clock: .live) {
+                try await session.perform($0)
+            }
+        }
+        return [typing, landed]
     }
 }
 

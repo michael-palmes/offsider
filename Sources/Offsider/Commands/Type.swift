@@ -47,7 +47,11 @@ struct Type: AsyncParsableCommand, VerifiableCommand {
         • This is a limitation of the underlying HID keyboard protocol
         
         Note: iOS may apply smart punctuation spacing to some characters. On an iOS simulator, keys into a React Native
-        app go 30 ms apart, so a field that sets its text from each change keeps up.
+        app go 30 ms apart, so a field that sets its text from each change keeps up. After the keys the field they
+        went to is read back: text that reached it but is not all there, in order, is typed once more (in a React
+        Native app one key at a time, each waiting until the field holds it), and a field that still differs, or
+        never changed, exits 5 (text_not_accepted). A password field is never read, and text ending in Return is
+        not judged.
 
         Typing into a named field:
         • offsider type --into-id email-field --replace "a@b.c" --device DEVICE_ID taps the field, waits up to 2 s
@@ -619,9 +623,19 @@ struct Type: AsyncParsableCommand, VerifiableCommand {
         if !hidEvents.isEmpty {
             // Keep typing in one ordered session. Indigo awaits each send, while DTUHID adds its
             // own keyboard pacing; unconditional delays here would double-pace the DTUHID path.
-            try await backend.performTracked(InputEvent.composite(hidEvents), on: device)
+            let reader = await fieldReader(for: inputText, focus: focus, backend: backend, device: device)
+            let cleared: Cleared
+            do {
+                cleared = try await Self.sending(nil, backend: backend, device: device) { send in
+                    try await sendKeys(inputText, paced: paced, reader: reader, clock: .live, send: send)
+                }
+            } catch {
+                await reader?.close()
+                throw error
+            }
+            try await confirmHeld(inputText, focus: focus, reader: reader, cleared: cleared, backend: backend, device: device, clock: .live, send: nil)
         }
-        
+
         logger.info().log("Text typing completed successfully")
     }
     
@@ -653,7 +667,7 @@ struct Type: AsyncParsableCommand, VerifiableCommand {
         }
     }
 
-    /// Keys on Android, read back from the field `--into-*` or `--require-focus-id` names, else the one that had focus; `--replace` sets the text without keys and checks it itself.
+    /// Keys on Android, read back from the field `--into-*` or `--require-focus-id` names, else the one that had focus; `--replace` sets the text without keys and checks it itself. An iOS simulator's keys are read back by `confirmHeld`.
     func confirmKeysLanded(_ inputText: String, focus: FocusCheck, backend: any DeviceBackend, device: DeviceID, clock: PollClock = .live) async throws {
         guard device.platform == .android, !replace, let target = namedField ?? Self.focusedTarget(focus.field) else { return }
         let gaps = focus.tree?.filledFromGaps != nil
@@ -666,9 +680,9 @@ struct Type: AsyncParsableCommand, VerifiableCommand {
     }
 
     /// The named field and the text the keys should leave in it.
-    func landingExpectation(_ inputText: String, focus: FocusCheck) -> TypedExpectation {
+    func landingExpectation(_ inputText: String, focus: FocusCheck, replacing: Bool = false) -> TypedExpectation {
         TypedExpectation(
-            text: inputText, replacing: false, field: focus.field,
+            text: inputText, replacing: replacing, field: focus.field,
             query: intoQuery ?? SelectorQuery.make(id: requireFocusID, label: nil, labelContains: nil, value: nil),
             secure: focus.secure == .secure || focus.field?.isSecure == true, ignoringText: false
         )

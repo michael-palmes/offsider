@@ -111,13 +111,19 @@ extension DeviceBackend {
 
     /// `perform(_:on:)` with the send recorded.
     func performTracked(_ event: InputEvent, on id: DeviceID) async throws {
+        try await withTrackedSession(for: id) { try await $0.perform(event) }
+    }
+
+    /// One tracked session for `body`, closed whether it returns or throws.
+    func withTrackedSession<T>(for id: DeviceID, _ body: @MainActor (any InputSession) async throws -> T) async throws -> T {
         let session = try await openTrackedSession(for: id)
         do {
-            try await session.perform(event)
+            let result = try await body(session)
+            await session.close()
+            return result
         } catch {
             await session.close()
             throw error
         }
-        await session.close()
     }
 }
