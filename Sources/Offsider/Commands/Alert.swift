@@ -59,6 +59,11 @@ struct AlertCommand: AsyncParsableCommand {
 
     /// How long an answered prompt may take to leave the screen.
     static let leaveWait: TimeInterval = 4
+    /// How long a prompt may take to stop moving after it shows, and how far apart the two reads that must agree are taken.
+    static let settleWait: TimeInterval = 3
+    static let settlePoll: Duration = .milliseconds(200)
+    /// How long after the answer an app's next prompt may take to show; a prompt gone for less is not yet "none follows".
+    static let followWait: TimeInterval = 1
     static let leavePoll: Duration = .milliseconds(250)
 
     func validate() throws {
@@ -138,9 +143,11 @@ struct AlertCommand: AsyncParsableCommand {
             throw CLIError(errorDescription: "alert is not available for \(device.rawValue).", reason: .notSupported)
         }
         try await route.backend.prepare()
-        let read: (prompt: AppPrompt, tree: UITree)
+        var read: (prompt: AppPrompt, tree: UITree)
         do {
             read = try await watchdog.guardingRead(of: device, extra: DeviceClaims.current.longestWait) { try await backend.appPrompt(for: app, on: device) }
+            guard let choice else { return AlertReport(prompt: read.prompt) }
+            read = try await settled(read, choice: choice, on: backend, device: device, watchdog: watchdog, clock: clock)
         } catch let refusal as AppPromptRefusal {
             throw failure(refusal, app: app, device: device)
         }
@@ -171,24 +178,49 @@ struct AlertCommand: AsyncParsableCommand {
         return AlertReport(prompt: read.prompt, action: choice.word, chosen: button, next: next)
     }
 
-    /// Waits for the answered prompt to leave: nil when none follows, the next prompt when the app asks again, exit 5 when it never leaves.
+    /// A prompt slides in, and a button read mid-slide is one row off: answers only a prompt that two reads `settlePoll` apart give the same text and frames, within `settleWait`.
+    @MainActor
+    static func settled(
+        _ first: (prompt: AppPrompt, tree: UITree), choice: AppPrompt.Choice, on backend: any AppPromptReading, device: DeviceID, watchdog: DeviceWatchdog, clock: PollClock
+    ) async throws -> (prompt: AppPrompt, tree: UITree) {
+        var read = first
+        let started = clock.now()
+        while true {
+            try await clock.sleep(settlePoll)
+            let again = try await watchdog.guardingRead(of: device) { try await backend.appPrompt(for: first.prompt.app, on: device) }
+            if again.prompt == read.prompt { return again }
+            read = again
+            guard clock.now() - started < settleWait else { break }
+        }
+        throw CLIError(
+            errorDescription: "The prompt for \(first.prompt.app) on \(device.rawValue) was still moving after \(WaitLoop.seconds(settleWait)), so a tap could land on the wrong button and nothing was sent. Retry once it is still.",
+            reason: .screenNotIdle, hint: "offsider alert \(choice.word) --app \(first.prompt.app) --device \(device.rawValue)"
+        )
+    }
+
+    /// Watches the screen on a clock, never by counting reads: the next prompt when the app asks again, nil once the prompt has gone and `followWait` has passed, exit 5 when it never leaves.
     @MainActor
     static func afterAnswer(_ answered: AppPrompt, on backend: any AppPromptReading, device: DeviceID, watchdog: DeviceWatchdog = DeviceWatchdog(), clock: PollClock) async throws -> AppPrompt? {
-        let deadline = clock.now() + leaveWait
+        let tapped = clock.now()
+        var gone = false
         while true {
             try await clock.sleep(leavePoll)
             do {
                 let now = try await watchdog.guardingRead(of: device) { try await backend.appPrompt(for: answered.app, on: device).prompt }
                 if now.token != answered.token || now.title != answered.title || now.buttons.map(\.label) != answered.buttons.map(\.label) { return now }
+                gone = false
             } catch is AppPromptRefusal {
-                return nil
+                gone = true
             } catch let error where error is CancellationError {
                 throw error
             } catch {
                 // A read that fails while the prompt animates away says nothing yet; the answer was sent, so keep looking.
             }
-            guard clock.now() < deadline else { break }
+            let waited = clock.now() - tapped
+            if gone, waited >= followWait { return nil }
+            guard waited < leaveWait else { break }
         }
+        if gone { return nil }
         let show = "offsider alert show --app \(answered.app) --device \(device.rawValue)"
         throw CLIError(
             errorDescription: "Offsider tapped the button, but the prompt for \(answered.app) is still on \(device.rawValue) after \(WaitLoop.seconds(leaveWait)). Check it with `\(show)`.",

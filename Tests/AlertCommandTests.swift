@@ -5,7 +5,7 @@ import Foundation
 @testable import OffsiderCore
 import Testing
 
-/// A scripted device that answers `alert`'s reads: each read takes the next answer, and the last one repeats.
+/// A scripted device that answers `alert`'s reads: `answers` until a tap is sent, `afterTap` from then on; in each, a read takes the next answer and the last one repeats.
 @MainActor
 final class PromptBackend: FakeDeviceBackend, AppPromptReading, AppPromptCapturing {
     enum Answer {
@@ -14,13 +14,21 @@ final class PromptBackend: FakeDeviceBackend, AppPromptReading, AppPromptCapturi
     }
 
     var answers: [Answer] = []
+    var afterTap: [Answer] = [.refusal(.notShown(front: nil))]
     var stillThere = true
     /// The prompt a capture finds over the app a test device is held to.
     var overSelectedApp: AppPrompt?
     private(set) var promptReads = 0
+    private var readsAfterTap = 0
 
     func appPrompt(for app: String, on id: DeviceID) async throws -> (prompt: AppPrompt, tree: UITree) {
-        let answer = answers[min(promptReads, answers.count - 1)]
+        let answer: Answer
+        if session.calls.isEmpty {
+            answer = answers[min(promptReads, answers.count - 1)]
+        } else {
+            answer = afterTap[min(readsAfterTap, afterTap.count - 1)]
+            readsAfterTap += 1
+        }
         promptReads += 1
         switch answer {
         case .prompt(let prompt): return (prompt, try await accessibilityTree(for: id))
@@ -44,18 +52,26 @@ struct AlertCommandTests {
     static let prompt = AndroidPermissionPrompt.read(tree, app: app, token: "1a2b")!
     static let gone = PromptBackend.Answer.refusal(.notShown(front: app))
 
-    static func backend(_ answers: [PromptBackend.Answer]) -> PromptBackend {
+    /// `answers` before the tap; after it, `afterTap`, which by default is the prompt gone.
+    static func backend(_ answers: [PromptBackend.Answer], afterTap: [PromptBackend.Answer] = [gone]) -> PromptBackend {
         let backend = PromptBackend(platform: .android, trees: [tree])
         backend.answers = answers
+        backend.afterTap = afterTap
         return backend
     }
 
-    static let clock = PollClock(now: { 0 }, sleep: { _ in })
+    /// A clock that moves only when the command sleeps, so a test's time is the time the command chose to wait.
+    static func sleepingClock() -> PollClock {
+        let time = Locked<TimeInterval>(0)
+        return PollClock(now: { time.withLock { $0 } }, sleep: { duration in
+            time.withLock { $0 += Double(duration.components.seconds) + Double(duration.components.attoseconds) / 1e18 }
+        })
+    }
 
     /// Runs the command's work on `backend` with `loaded` guard rules; returns the report or the failure, and what reached the device.
     static func run(
         _ choice: AppPrompt.Choice?, on backend: PromptBackend, loaded: GuardSources.Loaded = GuardSources.Loaded(),
-        environment: AppGuard.Environment = AppGuard.Environment(confirm: { _ in }, signedIn: { _, _ in "tester" }, isTestDevice: { _ in nil }), clock: PollClock = clock
+        environment: AppGuard.Environment = AppGuard.Environment(confirm: { _ in }, signedIn: { _, _ in "tester" }, isTestDevice: { _ in nil }), clock: PollClock? = nil
     ) async -> (report: AlertReport?, failure: CLIError?, sent: [RecordingInputSession.Call]) {
         var report: AlertReport?
         var failure: CLIError?
@@ -64,7 +80,7 @@ struct AlertCommandTests {
                 await DispatchTracker.$current.withValue(DispatchTracker()) {
                     await DeviceActivityLedger.$current.withValue(DeviceActivityLedger()) {
                         do {
-                            report = try await AlertCommand.perform(choice, app: app, on: DeviceRouter.Route(backend: backend, device: device), clock: clock)
+                            report = try await AlertCommand.perform(choice, app: app, on: DeviceRouter.Route(backend: backend, device: device), clock: clock ?? sleepingClock())
                         } catch {
                             failure = error as? CLIError ?? CLIError(errorDescription: "\(error)")
                         }
@@ -161,7 +177,7 @@ struct AlertCommandTests {
         (AppPrompt.Choice.deny, "Don’t allow"), (.accept, "While using the app"), (.label("Only this time"), "Only this time"),
     ])
     func answers(choice: AppPrompt.Choice, label: String) async {
-        let result = await Self.run(choice, on: Self.backend([.prompt(Self.prompt), Self.gone]))
+        let result = await Self.run(choice, on: Self.backend([.prompt(Self.prompt)]))
         #expect(result.failure == nil)
         #expect(result.sent == [Self.centre(label)])
         #expect(result.report?.chosen?.label == label)
@@ -234,17 +250,62 @@ struct AlertCommandTests {
         #expect(failure.userFacingDescription == "No permission prompt for \(Self.app) is in front on emulator-5554. Nothing was sent.")
     }
 
+    /// The prompt with every button `rows` rows below where it comes to rest, as a read mid-slide gives it.
+    static func sliding(_ rows: Double) -> AppPrompt {
+        var moved = prompt
+        moved.buttons = moved.buttons.map { AppPrompt.Button(label: $0.label, role: $0.role, frame: UIFrame(x: $0.frame.x, y: $0.frame.y + rows * 60, width: $0.frame.width, height: $0.frame.height)) }
+        return moved
+    }
+
+    @Test("a prompt still sliding in is not tapped where a button was: the tap waits for two reads that agree and lands on the button at rest")
+    func waitsForThePromptToSettle() async {
+        // One row off is exactly where the next button down will be.
+        let result = await Self.run(.accept, on: Self.backend([.prompt(Self.sliding(1)), .prompt(Self.sliding(0.5)), .prompt(Self.prompt)]))
+        #expect(result.failure == nil)
+        #expect(result.sent == [Self.centre("While using the app")])
+    }
+
+    @Test("a prompt that never stops moving is screen_not_idle after three seconds on the clock, with nothing sent")
+    func neverSettles() async {
+        let moving = (0..<40).map { PromptBackend.Answer.prompt(Self.sliding(Double($0) / 10)) }
+        let result = await Self.run(.accept, on: Self.backend(moving))
+        #expect(result.failure?.reason == .screenNotIdle)
+        #expect(result.sent.isEmpty)
+    }
+
+    @Test("a prompt that leaves while it is being read is named as gone, with nothing sent")
+    func leavesWhileSettling() async {
+        let result = await Self.run(.accept, on: Self.backend([.prompt(Self.prompt), Self.gone]))
+        #expect(result.failure?.reason == .alertNotShown)
+        #expect(result.sent.isEmpty)
+    }
+
+    @Test("no prompt follows only once the prompt has been gone a full second on the clock, however fast the reads come back")
+    func watchesOnAClock() async {
+        let backend = Self.backend([.prompt(Self.prompt)])
+        let result = await Self.run(.deny, on: backend)
+        #expect(result.report?.next == nil && result.failure == nil)
+        // Two reads that agree before the tap, then one each 250 ms until the second is up: none of them alone ends the watch.
+        #expect(backend.promptReads == 2 + Int(AlertCommand.followWait / 0.25))
+    }
+
+    @Test("a second prompt that shows after a read saw none, within that second, is still the next prompt")
+    func nextPromptAfterAGap() async {
+        var second = Self.prompt
+        second.title = "Allow Playground to send you notifications?"
+        let result = await Self.run(.accept, on: Self.backend([.prompt(Self.prompt)], afterTap: [Self.gone, Self.gone, .prompt(second)]))
+        #expect(result.report?.next?.title == "Allow Playground to send you notifications?")
+    }
+
     @Test("a prompt still up after the tap is not_verified; the next prompt an app raises is reported")
     func afterTheTap() async {
-        var time: TimeInterval = 0
-        let ticking = PollClock(now: { time }, sleep: { _ in time += 1 })
-        let stuck = await Self.run(.deny, on: Self.backend([.prompt(Self.prompt)]), clock: ticking)
+        let stuck = await Self.run(.deny, on: Self.backend([.prompt(Self.prompt)], afterTap: [.prompt(Self.prompt)]))
         #expect(stuck.failure?.reason == .notVerified)
         #expect(stuck.sent.count == 1)
 
         var second = Self.prompt
         second.title = "Allow Playground to send you notifications?"
-        let followed = await Self.run(.accept, on: Self.backend([.prompt(Self.prompt), .prompt(second)]))
+        let followed = await Self.run(.accept, on: Self.backend([.prompt(Self.prompt)], afterTap: [.prompt(second)]))
         #expect(followed.report?.next?.title == "Allow Playground to send you notifications?")
         #expect(followed.report?.textLines.contains("Another prompt followed:") == true)
     }
@@ -256,12 +317,12 @@ struct AlertCommandTests {
 
     @Test("a never rule on the button refuses accept and choose with nothing sent, though the app has no element on screen")
     func neverRule() async {
-        let accept = await Self.run(.accept, on: Self.backend([.prompt(Self.prompt), Self.gone]), loaded: Self.rules([Self.never]))
+        let accept = await Self.run(.accept, on: Self.backend([.prompt(Self.prompt)]), loaded: Self.rules([Self.never]))
         #expect(accept.failure?.reason == .guardedControl)
         #expect(accept.failure?.userFacingDescription.contains("\"Camera access\"") == true)
         #expect(accept.sent.isEmpty)
 
-        let choose = await Self.run(.label("While using the app"), on: Self.backend([.prompt(Self.prompt), Self.gone]), loaded: Self.rules([Self.never]))
+        let choose = await Self.run(.label("While using the app"), on: Self.backend([.prompt(Self.prompt)]), loaded: Self.rules([Self.never]))
         #expect(choose.failure?.reason == .guardedControl)
         #expect(choose.sent.isEmpty)
     }
@@ -269,11 +330,11 @@ struct AlertCommandTests {
     @Test("deny passes whatever the rules say, and rules for another app do not hold this one")
     func denyPasses() async {
         let strict = GuardRule(name: "Every answer", action: .never, control: GuardMatcher(labelContains: "allow"))
-        let deny = await Self.run(.deny, on: Self.backend([.prompt(Self.prompt), Self.gone]), loaded: Self.rules([strict]))
+        let deny = await Self.run(.deny, on: Self.backend([.prompt(Self.prompt)]), loaded: Self.rules([strict]))
         #expect(deny.failure == nil)
         #expect(deny.sent == [Self.centre("Don’t allow")])
 
-        let other = await Self.run(.accept, on: Self.backend([.prompt(Self.prompt), Self.gone]), loaded: Self.rules([Self.never], for: "com.example.other"))
+        let other = await Self.run(.accept, on: Self.backend([.prompt(Self.prompt)]), loaded: Self.rules([Self.never], for: "com.example.other"))
         #expect(other.failure == nil)
         #expect(other.sent == [Self.centre("While using the app")])
     }
@@ -282,18 +343,18 @@ struct AlertCommandTests {
     func askRule() async {
         let asked = Locked<[String]>([])
         let approving = AppGuard.Environment(confirm: { reason in asked.withLock { $0.append(reason) } }, signedIn: { _, _ in "tester" }, isTestDevice: { _ in nil })
-        let approved = await Self.run(.label("Only this time"), on: Self.backend([.prompt(Self.prompt), Self.gone]), loaded: Self.rules([Self.ask]), environment: approving)
+        let approved = await Self.run(.label("Only this time"), on: Self.backend([.prompt(Self.prompt)]), loaded: Self.rules([Self.ask]), environment: approving)
         #expect(approved.failure == nil)
         #expect(approved.sent == [Self.centre("Only this time")])
         #expect(asked.withLock { $0 }.count == 1)
 
         let declining = AppGuard.Environment(confirm: { _ in throw CLIError.personRequired("declined") }, signedIn: { _, _ in "tester" }, isTestDevice: { _ in nil })
-        let declined = await Self.run(.label("Only this time"), on: Self.backend([.prompt(Self.prompt), Self.gone]), loaded: Self.rules([Self.ask]), environment: declining)
+        let declined = await Self.run(.label("Only this time"), on: Self.backend([.prompt(Self.prompt)]), loaded: Self.rules([Self.ask]), environment: declining)
         #expect(declined.failure?.reason == .personRequired)
         #expect(declined.sent.isEmpty)
 
         let signedOut = AppGuard.Environment(confirm: { _ in }, signedIn: { _, _ in nil }, isTestDevice: { _ in nil })
-        let refused = await Self.run(.label("Only this time"), on: Self.backend([.prompt(Self.prompt), Self.gone]), loaded: Self.rules([Self.ask]), environment: signedOut)
+        let refused = await Self.run(.label("Only this time"), on: Self.backend([.prompt(Self.prompt)]), loaded: Self.rules([Self.ask]), environment: signedOut)
         #expect(refused.failure?.reason == .guardedControl)
         #expect(refused.sent.isEmpty)
     }
@@ -301,12 +362,12 @@ struct AlertCommandTests {
     @Test("a rule for a screen holds accept, since the screen beneath a prompt cannot be read, and a whole-screen rule holds every grant")
     func screenRulesCountAsShowing() async {
         let scoped = GuardRule(name: "Camera on checkout", action: .never, control: GuardMatcher(label: "While using the app"), screen: GuardMatcher(id: "checkout-screen"))
-        let onScreen = await Self.run(.accept, on: Self.backend([.prompt(Self.prompt), Self.gone]), loaded: Self.rules([scoped]))
+        let onScreen = await Self.run(.accept, on: Self.backend([.prompt(Self.prompt)]), loaded: Self.rules([scoped]))
         #expect(onScreen.failure?.reason == .guardedControl)
         #expect(onScreen.sent.isEmpty)
 
         let lookOnly = GuardRule(name: "Statements", action: .never, screen: GuardMatcher(id: "statements-screen"))
-        let whole = await Self.run(.accept, on: Self.backend([.prompt(Self.prompt), Self.gone]), loaded: Self.rules([lookOnly]))
+        let whole = await Self.run(.accept, on: Self.backend([.prompt(Self.prompt)]), loaded: Self.rules([lookOnly]))
         #expect(whole.failure?.reason == .guardedControl)
         #expect(whole.sent.isEmpty)
     }
@@ -316,13 +377,13 @@ struct AlertCommandTests {
         var changed = Self.rules([Self.never])
         changed.sealIntact = false
         changed.sealedApps = [Self.app]
-        let sealed = await Self.run(.accept, on: Self.backend([.prompt(Self.prompt), Self.gone]), loaded: changed)
+        let sealed = await Self.run(.accept, on: Self.backend([.prompt(Self.prompt)]), loaded: changed)
         #expect(sealed.failure?.reason == .guardedControl)
         #expect(sealed.sent.isEmpty)
 
         var unreadable = GuardSources.Loaded()
         unreadable.problem = "Could not read offsider.guard.json: not valid JSON."
-        let broken = await Self.run(.accept, on: Self.backend([.prompt(Self.prompt), Self.gone]), loaded: unreadable)
+        let broken = await Self.run(.accept, on: Self.backend([.prompt(Self.prompt)]), loaded: unreadable)
         #expect(broken.failure?.reason == .usage)
         #expect(broken.sent.isEmpty)
     }
@@ -339,7 +400,7 @@ struct AlertCommandTests {
         #expect(fixture.manifest().isEmpty)
 
         try await fixture.command(fixture.recorder("alert", arguments: ["accept", "--app", Self.app])) {
-            _ = await Self.run(.accept, on: Self.backend([.prompt(Self.prompt), Self.gone]))
+            _ = await Self.run(.accept, on: Self.backend([.prompt(Self.prompt)]))
         }
         let line = try #require(fixture.manifest().last)
         #expect(line.command == "alert" && line.file == nil && line.exit == 0)
@@ -348,7 +409,7 @@ struct AlertCommandTests {
         #expect(line.device == "emulator-5554")
 
         try await fixture.command(fixture.recorder("alert", arguments: ["accept", "--app", Self.app])) {
-            _ = await Self.run(.accept, on: Self.backend([.prompt(Self.prompt), Self.gone]), loaded: Self.rules([Self.never]))
+            _ = await Self.run(.accept, on: Self.backend([.prompt(Self.prompt)]), loaded: Self.rules([Self.never]))
         }
         let refused = try #require(fixture.manifest().last)
         #expect(refused.prompt == Self.prompt.title && refused.button == nil)
