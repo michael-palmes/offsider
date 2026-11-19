@@ -361,6 +361,15 @@ struct ReactNativeGotchaTests {
         }
     }
 
+    @Test("a code typed into a button over a hidden input lands: the keyboard that rises stands for the focus the button never reports", arguments: RNPlatform.enabled.filter { $0 == .ios })
+    func hiddenCodeInput(platform: RNPlatform) async throws {
+        let app = RNApp(platform)
+        try await app.open("code-entry-test")
+        try await app.run("type --into-id code-entry-cells 123456")
+        // "Entered", not "Code": tree output hides six digits that follow a word for a one-time code.
+        _ = try await app.waitForLabel(of: "code-entry-value") { $0 == "Entered: 123456" }
+    }
+
     @Test("type returns once the field holds the text: the read straight after ten characters shows all ten", arguments: RNPlatform.enabled)
     func typeReturnsWithTheText(platform: RNPlatform) async throws {
         let app = RNApp(platform)

@@ -398,8 +398,8 @@ struct KeysOnlyTypingTests {
             if case .keys(let steps) = request { return steps }
             return nil
         }
-        #expect(keys.first == IOSDeviceInputSession.selectAllAndDelete)
-        #expect(keys.count == 2, "the clear, then the text")
+        #expect(keys.count == 1, "the clear and the text in one request")
+        #expect(keys.first?.starts(with: try IOSDeviceInputSession.clearSteps(settling: true)) == true)
     }
 
     @Test("without the session it refuses and types nothing, never falling back to the runner", arguments: ["pw", "pässwörd"])
@@ -439,7 +439,7 @@ struct KeysOnlyTypingTests {
     func ordinaryTypingUnchanged() async throws {
         let text = RecordingRunnerText()
         let session = Self.session(touch: true, link: FakeSessionLink.broker(udid: IOSDeviceFixtures.phone), text: text)
-        try await session.replaceText("ab")
+        try await session.replaceText("né")
         try await session.typeText("café")
         #expect(text.calls == ["replace 2", "type 4"])
     }

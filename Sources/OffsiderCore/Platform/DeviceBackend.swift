@@ -160,8 +160,17 @@ public protocol ElementWatching: DeviceBackend {
 @MainActor
 public protocol ElementWatch: AnyObject {
     /// The element as it is now; nil once it no longer answers.
-    func read() -> UINode?
+    func read() async -> UINode?
     func close()
+}
+
+/// Optional capability: the element with keyboard focus in one short read, for text that went as key presses; only a USB iPhone or iPad has one.
+@MainActor
+public protocol FocusedElementReading: DeviceBackend {
+    /// True when `text` goes to the device as key presses, which a command can send again one at a time.
+    func typesWithKeys(_ text: String, on id: DeviceID) async -> Bool
+    /// The element with keyboard focus, nil when none has it; a password field comes back without its value.
+    func focusedElement(on id: DeviceID) async throws -> UINode?
 }
 
 /// Optional capability: one read of the element at a point, never retried, so describe-ui and a missed wait can tell what the screen shows that the tree does not; only the iOS simulator has one.

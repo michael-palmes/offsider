@@ -12,6 +12,8 @@ final class DeviceDTUHID {
     private let socket: CoreDeviceServiceSocket
     private(set) var hasSent = false
     let firstMessageAt: ContinuousClock.Instant
+    /// True once the connection has reported an error, so nothing more should be sent on it.
+    var hasEnded: Bool { socket.endedAfter != nil }
 
     private init(feature: String, socket: CoreDeviceServiceSocket) {
         self.feature = feature

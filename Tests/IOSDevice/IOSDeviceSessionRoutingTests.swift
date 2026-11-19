@@ -156,7 +156,8 @@ struct IOSDeviceInputRoutingTests {
         try await session.typeText(text)
         let sent = link.requests.compactMap { if case .keys(let steps) = $0 { return steps } else { return nil } }
         #expect(sent.count > 1)
-        #expect(sent.flatMap { $0 } == whole)
+        #expect(sent.flatMap { $0 }.filter { $0.kind != .wait } == whole)
+        #expect(try sent.allSatisfy { try DeviceSessionLimits.checkBudget($0); return true })
         #expect(try sent.allSatisfy { try DeviceSessionWire.encode(.keys($0), id: 1).count <= DeviceSessionWire.maxJSONBytes })
     }
 
@@ -207,7 +208,7 @@ struct IOSDeviceInputRoutingTests {
         ])
     }
 
-    @Test("US text types through broker keys; other text and --replace go to the runner")
+    @Test("US text types through broker keys, a pause between characters; other text goes to the runner")
     func text() async throws {
         let link = FakeSessionLink.broker(udid: IOSDeviceFixtures.phone)
         let backend = try Self.backend(version: "651.13.4", connector: FakeSessionConnector(link: link), runner: RecordingRunnerSession(device: Self.phone))
@@ -216,9 +217,43 @@ struct IOSDeviceInputRoutingTests {
         let session = try #require(try await backend.openInputSession(for: Self.phone) as? any TextInputSession)
         try await session.typeText("hi")
         try await session.typeText("café")
-        try await session.replaceText("ab")
-        #expect(link.requests.last == .keys([.key(11, down: true), .key(11, down: false), .key(12, down: true), .key(12, down: false)]))
+        try await session.replaceText("né")
+        #expect(link.requests.last == .keys([
+            .key(11, down: true), .key(11, down: false), .wait(IOSDeviceInputSession.keyGap), .key(12, down: true), .key(12, down: false),
+        ]))
         #expect(runnerText.calls == ["type 4", "replace 2"])
+    }
+
+    @Test("US text with --replace is Command-A, Delete, a settle and the paced keys in one broker request; the runner types none of it")
+    func replaceThroughBroker() async throws {
+        let link = FakeSessionLink.broker(udid: IOSDeviceFixtures.phone)
+        let backend = try Self.backend(version: "651.13.4", connector: FakeSessionConnector(link: link), runner: RecordingRunnerSession(device: Self.phone))
+        let runnerText = RecordingRunnerText()
+        backend.input.runnerText = runnerText
+        let session = try #require(try await backend.openInputSession(for: Self.phone) as? any TextInputSession)
+        try await session.replaceText("hi")
+        let command: [DeviceSessionStep] = [.key(227, down: true), .key(4, down: true), .key(4, down: false), .key(227, down: false)]
+        let delete: [DeviceSessionStep] = [.key(42, down: true), .key(42, down: false)]
+        #expect(link.requests.last == .keys(command + [.wait(0.05)] + delete + [
+            .wait(InputEvent.iosClearSettle),
+            .key(11, down: true), .key(11, down: false), .wait(IOSDeviceInputSession.keyGap), .key(12, down: true), .key(12, down: false),
+        ]))
+
+        try await session.replaceText("")
+        #expect(link.requests.last == .keys(command + [.wait(0.05)] + delete), "a clear alone waits for nothing after it")
+        #expect(runnerText.calls.isEmpty)
+    }
+
+    @Test("a pause goes between characters only, and each request of the longest text stays inside the broker's step and pause budget")
+    func pacedRequests() throws {
+        let requests = try IOSDeviceInputSession.keyRequests(typing: String(repeating: "A", count: 2 * IOSDeviceInputSession.typingChunk + 1))
+        #expect(requests.count == 3)
+        #expect(requests[0].first?.kind == .keyDown, "nothing waits before the first key")
+        #expect(requests[1].first == .wait(IOSDeviceInputSession.keyGap), "a later request starts a gap after the one before it")
+        #expect(requests[2].last?.kind == .keyUp, "nothing waits after the last key")
+        #expect(requests[0].filter { $0.kind == .wait }.count == IOSDeviceInputSession.typingChunk - 1)
+        for request in requests { try DeviceSessionLimits.checkBudget(request) }
+        #expect(try IOSDeviceInputSession.keyRequests(typing: "hi", gap: 0) == [try DeviceSessionLowering.keySteps(typing: "hi")])
     }
 
     @Test("an element in a Stage Manager window cannot be tapped from its frames; a full-screen or Split View app can", arguments: [
