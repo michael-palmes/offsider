@@ -44,6 +44,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - The runner prefix a device's allowance names wins: `OFFSIDER_IOS_RUNNER_PREFIX` naming another exits 64, and a prefix saved through `devices add` builds with no second Touch ID.
 - `button lock` on a simulator waits until the lock screen is up, so `wake` can follow it at once, and it and the `screenshot` frozen-display warning name `offsider wake` as the unlock.
 - `app open` help says an `https` link on a simulator opens in Safari, not the app that claims its domain.
+- A coordinate `tap`, `swipe`, `drag`, `touch` or `gesture` on an iOS simulator reads only the front app's frame to place its point, instead of the whole screen: about 150 ms less on a screen of 200 elements. `offsider.guard.json` rules still get a whole read to judge the input on.
 
 ### Fixed
 
