@@ -2,7 +2,7 @@ import Foundation
 
 /// The bar iOS draws beside the keys (suggestions, AutoFill, a hardware keyboard's shortcuts): its text is hidden where iOS trees are mapped, and its frame painted in screenshots.
 public enum KeyboardBar {
-    /// `SystemInputAssistantView`, as simulators and the device runner both list it.
+    /// `SystemInputAssistantView`, as an iOS 27 simulator's tree and the XCUITest runner's snapshot both list it.
     public static let idPrefix = "SystemInputAssistant"
     /// The keyboard's whole area in the app's own window, bar included; an app's accessory bar sits above it.
     static let containerID = "inputView"
@@ -18,7 +18,7 @@ public enum KeyboardBar {
         return node.id?.hasPrefix(idPrefix) == true
     }
 
-    /// The device runner's Keyboard element, which spans the keys and what the keyboard draws around them; a simulator lists none.
+    /// The runner's Keyboard element, which spans the keys; a simulator's own tree lists none.
     static func isWholeKeyboard(_ node: UINode) -> Bool {
         node.native.typeName == "Keyboard" && !node.isAndroidNode
     }
@@ -66,14 +66,9 @@ public enum KeyboardBar {
         return hide(node, scope: .everything)
     }
 
-    /// The frames of every bar in `roots`, for `hiding(_:inside:)`.
+    /// The frames of every bar in `roots`, at any depth, for `hiding(_:inside:)`.
     public static func frames(in roots: [UINode]) -> [UIFrame] {
-        bars(in: roots).compactMap(\.frame).filter { $0.width > 0 && $0.height > 0 }
-    }
-
-    /// Every bar in `roots`, outermost only.
-    static func bars(in roots: [UINode]) -> [UINode] {
-        scopes(in: roots).filter(isBar)
+        roots.flatMap { $0.flattened() }.filter(isBar).compactMap(\.frame).filter { $0.width > 0 && $0.height > 0 }
     }
 
     /// Where `hiding` may have hidden text: every bar and whole keyboard in `roots`, outermost only.
@@ -105,8 +100,7 @@ public enum KeyboardBar {
         public var isEmpty: Bool { frames.isEmpty }
     }
 
-    /// The listed bars' frames. With a keyboard up and no bar listed: all of a keyboard that lists no keys; else what its own area holds above the keys, as a band,
-    /// unless that area proves there is no bar; else a band above the keys. With a text field in focus and no keyboard, a band along the bottom edge, where a hardware keyboard's bar sits.
+    /// The listed bars' frames; with none listed, a band where a keyboard that is up, or a text field in focus with no keys, could draw one.
     public static func placement(in tree: UITree) -> Placement {
         guard tree.platform == .ios else { return Placement() }
         let viewport = tree.viewport

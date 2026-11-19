@@ -108,17 +108,21 @@ struct Keyboard: AsyncParsableCommand {
                 reason: .stateNotReached, hint: hint
             )
         }
-        var tried: [UIPoint] = []
-        while tried.count < KeyboardDismiss.attempts, let point = KeyboardHide.outsidePoint(in: tree, tried: tried) {
+        // The way out already tried is the first point the search would offer.
+        var avoided: [UIPoint] = []
+        if case .control(let point) = step { avoided.append(point) }
+        var taps = 0
+        while taps < KeyboardDismiss.attempts, let point = KeyboardHide.outsidePoint(in: tree, tried: avoided) {
             try await tap(point, tree)
-            tried.append(point)
+            avoided.append(point)
+            taps += 1
             tree = try await settled()
             if !KeyboardHide.isUp(tree) { return .hidden }
         }
         throw CLIError(
-            errorDescription: tried.isEmpty
+            errorDescription: taps == 0
                 ? "The keyboard is still up: no empty space clear of the keys and fields is left to tap. Close it in the app."
-                : "The keyboard is still up after \(tried.count) tap\(tried.count == 1 ? "" : "s") on empty space. Close it in the app.",
+                : "The keyboard is still up after \(taps) tap\(taps == 1 ? "" : "s") on empty space. Close it in the app.",
             reason: .stateNotReached, hint: CommandScope.current.describeHint(device: device)
         )
     }

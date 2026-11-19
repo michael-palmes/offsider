@@ -127,7 +127,47 @@ struct KeyboardBarTests {
         #expect(KeyboardBar.hiding(cell, inside: []).label == "Avery Example")
     }
 
-    @Test("a device's keyboard element hides what it holds above its keys, and all of it when it lists no keys")
+    /// The keyboard as the XCUITest runner's snapshot lists it (read from the runner on an iOS 27.2 simulator): the bar under the same id, and a Keyboard element that starts below it.
+    static func runnerKeyboard(bar shown: Bool) -> [[String: Any]] {
+        let rows = element("Keyboard", (0, 609, 420, 245), [
+            element("Other", id: "UIKeyboardLayoutStar Preview", (0, 609, 420, 245), [
+                element("Key", label: "Padding-Left", (0, 609, 0, 0)),
+                element("Key", label: "q", (4, 616, 41, 56)),
+                element("Button", id: "shift", label: "shift", (4, 728, 53, 56)),
+                element("Button", id: "Return", label: "return", (314, 784, 103, 56)),
+            ]),
+        ])
+        let cells = element("Other", id: "SystemInputAssistantView", (0, 565, 420, 44), [
+            element("Other", label: "Typing Predictions", (0, 565, 420, 44), suggestions.enumerated().map { index, text in
+                element("Button", label: text, (Double(index) * 140, 565, 140, 44))
+            }),
+        ])
+        return [
+            element("Other", id: "inputView", shown ? (0, 565, 420, 347) : (0, 592, 420, 320)),
+            element("Other", (0, 565, 420, 347), (shown ? [cells] : []) + [rows]),
+            element("Other", (0, 609, 420, 303), [element("Button", label: "Emoji", (2, 843, 80, 68))]),
+        ]
+    }
+
+    @Test("the runner's snapshot, as a device sends it, hides the same bar, keeps keys and buttons, and paints the bar alone")
+    func runnerSnapshot() throws {
+        let tree = try Self.tree(width: 420, height: 912, [Self.field((16, 180, 388, 34))] + Self.runnerKeyboard(bar: true))
+        let labels = tree.roots[0].flattened().compactMap(\.label)
+
+        #expect(labels == ["Playground", KeyboardText.marker, KeyboardText.marker, KeyboardText.marker, KeyboardText.marker, "Padding-Left", "q", "shift", "return", "Emoji"])
+        #expect(KeyboardBar.placement(in: tree) == KeyboardBar.Placement(frames: [Self.frame(0, 565, 420, 44)]))
+        #expect(tree.redacted().redaction?.keyboard == 3)
+    }
+
+    @Test("the runner's snapshot of a keyboard with no bar paints nothing and hides nothing")
+    func runnerSnapshotNoBar() throws {
+        let tree = try Self.tree(width: 420, height: 912, [Self.field((16, 180, 388, 34))] + Self.runnerKeyboard(bar: false))
+
+        #expect(KeyboardBar.placement(in: tree).isEmpty)
+        #expect(!Self.texts(tree).contains(KeyboardText.marker))
+    }
+
+    @Test("a keyboard element that spans a bar it does not name hides what it holds above its keys, and all of it when it lists no keys")
     func wholeKeyboard() throws {
         let cells = Self.element("Other", label: "Typing Predictions", (0, 500, 390, 45), Self.suggestions.enumerated().map { index, text in
             Self.element("Other", label: text, (Double(index) * 130, 500, 130, 45))
@@ -419,6 +459,46 @@ struct KeyboardBarTests {
         let tapped = try await Self.hide(before: up, after: FakeUI.tree([]), tapOutside: true)
         #expect(try tapped.outcome.get() == .hidden)
         #expect(tapped.sent == ["tap"])
+    }
+
+    @Test("--tap-outside never spends a try on the hide key the own way out already pressed")
+    func tapOutsideSkipsTheHideKey() async throws {
+        let hideKey = FakeUI.node(.button, label: "Hide keyboard", frame: Self.frame(720, 1096, 98, 63))
+        let pad = FakeUI.tree(width: 820, height: 1180, [
+            FakeUI.node(.keyboard, id: "UIKeyboardLayoutStar Preview", frame: Self.frame(0, 898, 820, 279), children: [hideKey]),
+        ])
+        var taps: [UIPoint] = []
+        _ = try? await Keyboard.hide(
+            tapOutside: true, device: "IOS-UDID", read: { pad }, ownWayOut: { _ in }, tap: { point, _ in taps.append(point) }, sleep: { _ in }
+        )
+
+        #expect(taps.count == 3)
+        #expect(taps.allSatisfy { !Self.frame(720, 1096, 98, 63).contains($0) }, "\(taps)")
+    }
+
+    @Test("a tap the iOS keyboard covers names keyboard hide when the keyboard has a way out, and only then")
+    func tapHintNamesKeyboardHide() throws {
+        let device = DeviceID(rawValue: "IOS-UDID", platform: .ios)
+        let done = Self.element("Button", id: "form-done", label: "Done", (331, 523, 63, 36))
+        let withDone = try Self.tree(width: 420, height: 912, [done, Self.area((0, 565, 420, 347)), Self.bar((0, 565, 420, 44)), Self.keys((0, 609, 420, 245))])
+
+        let offered = Tap.keyboardCoverError(selector: "id=save", at: (x: 200, y: 700), device: device, tree: withDone)
+        let plain = Tap.keyboardCoverError(selector: "id=save", at: (x: 200, y: 700), device: device, tree: try Self.portrait())
+
+        #expect(offered.hint == "offsider keyboard hide --device IOS-UDID")
+        #expect(offered.userFacingDescription.contains("`offsider keyboard hide`"))
+        #expect(plain.hint == "offsider describe-ui --summary --device IOS-UDID")
+        #expect(!plain.userFacingDescription.contains("keyboard hide"))
+    }
+
+    @Test("a bar inside a device's keyboard element is found for point answers too")
+    func nestedBarFrames() throws {
+        let tree = try Self.tree(width: 390, height: 844, [Self.element("Keyboard", (0, 500, 390, 344), [
+            Self.bar((0, 500, 390, 45)), Self.element("Key", label: "q", (4, 552, 36, 46)),
+        ])])
+
+        #expect(KeyboardBar.frames(in: tree.roots) == [Self.frame(0, 500, 390, 45)])
+        #expect(KeyboardBar.placement(in: tree) == KeyboardBar.Placement(frames: [Self.frame(0, 500, 390, 45)]))
     }
 
     @Test("--tap-outside stops after three taps that leave the keyboard up")

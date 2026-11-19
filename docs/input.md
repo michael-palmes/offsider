@@ -112,7 +112,7 @@ Expo's floating dev menu button takes touches well beyond its 26 pt icon, the on
 
 ### Hiding the keyboard
 
-`offsider keyboard hide --device <ID>` closes the on-screen keyboard and says whether it went away. It sends only the keyboard's own way out: on iOS its hide key (an iPad has one) or Done in the bar an app puts on top of the keys, on Android Back, and only while docked keys are up, since over a floating toolbar Back goes to the app. It never presses Return, which can submit a form. It then reads the screen for up to 1.5 s:
+`offsider keyboard hide --device <ID>` closes the on-screen keyboard and says whether it went away. It sends only the keyboard's own way out: on iOS its hide key (an iPad has one) or Done in the bar an app puts on top of the keys, on Android Back, and only while docked keys are up, since over a floating toolbar Back goes to the app. It never presses Return, which can submit a form. A button labelled Done within 64 pt above the keyboard counts as that bar, so name another way when a form keeps its own Done there. It then reads the screen for up to 1.5 s:
 
 - `hidden` (exit 0): the keyboard went away. `--json` carries it as `value`.
 - `absent` (exit 0): no keyboard was up, so nothing was sent.

@@ -68,6 +68,12 @@ struct KeyboardBarE2ETests {
         let holders = roots.flatMap(Self.nodes).filter { ($0["label"] as? String)?.contains(Self.typed) == true || ($0["value"] as? String)?.contains(Self.typed) == true }
         #expect(holders.map { $0["id"] as? String } == ["keyboard-suggest-field"], "only the field itself may hold what was typed")
 
+        // A point read answers with one cell and no parents.
+        for x in [bar.frame.minX + 30, bar.frame.midX, bar.frame.maxX - 30] {
+            let point = try await TestHelpers.runOffsiderCommandSeparated("describe-ui --point \(Int(x)),\(Int(bar.frame.midY))", simulatorUDID: defaultSimulatorUDID)
+            #expect(!point.stdout.contains(Self.typed), "a point read in the bar named what was typed: \(point.stdout)")
+        }
+
         let shot = try await Self.screenshot()
         #expect((shot.report["maskedBy"] as? [String: Int])?["keyboard"] == 1)
         #expect(shot.report["maskUnproven"] == nil)
