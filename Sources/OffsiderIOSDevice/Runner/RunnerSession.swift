@@ -507,14 +507,19 @@ public final class RunnerSessionManager {
         if finding == .certificateNotTrusted, case .device(let udid) = destination, let team = ((try? RunnerProducts.read(in: build.directory)) ?? nil)?.team {
             try? store.writeFailure(RunnerStartFailure(kind: .certificateNotTrusted, team: team, at: now()), udid: udid)
         }
-        return Self.error(for: finding, deviceName: deviceName)
+        if finding == .profileNotValid {
+            // The next start or `runner build` makes a new build, which fetches a new profile.
+            try? FileManager.default.removeItem(at: build.directory)
+        }
+        return Self.error(for: finding, deviceName: deviceName, udid: destination.udid)
     }
 
-    static func error(for finding: RunnerLogWatch.Finding, deviceName: String) -> IOSDeviceError {
+    static func error(for finding: RunnerLogWatch.Finding, deviceName: String, udid: String) -> IOSDeviceError {
         switch finding {
         case .deviceLocked: return .runnerLocked(deviceName)
         case .automationNotEnabled: return .runnerAutomationBlocked(deviceName)
         case .certificateNotTrusted: return .runnerCertificateNotTrusted(deviceName)
+        case .profileNotValid: return .runnerProfileNotValid(deviceName, udid: udid)
         }
     }
 

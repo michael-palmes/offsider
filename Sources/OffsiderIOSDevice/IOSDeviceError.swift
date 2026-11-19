@@ -54,6 +54,8 @@ public struct IOSDeviceError: LocalizedError, CustomStringConvertible, Equatable
         case unsupportedButton
         case hidFailed
         case runnerBuildFailed
+        /// The runner's provisioning profile expired, or is about to, and a rebuild here could not renew it.
+        case profileExpired
         case runnerFailed
         case teamMissing
         case noFocusedField
@@ -200,6 +202,16 @@ extension IOSDeviceError {
         IOSDeviceError(.certificateNotTrusted, "\(name) does not trust the certificate that signs the Offsider runner. On it, go to Settings > General > VPN & Device Management and trust the certificate, then retry.")
     }
 
+    /// The device answered 0xe8008011: the runner's provisioning profile is no longer valid there, most often because it expired.
+    static func runnerProfileNotValid(_ name: String, udid: String) -> IOSDeviceError {
+        let command = "offsider runner build --device \(udid)"
+        return IOSDeviceError(
+            .profileExpired,
+            "\(name) would not launch the Offsider runner (0xe8008011): its provisioning profile has expired or is no longer valid. Offsider removed the cached build, so `\(command)` builds a new one with a new profile.",
+            hint: command
+        )
+    }
+
     /// A failure on the stream to the device runner, after usbmuxd connected it; nothing was sent to the app.
     public static func runner(_ error: UsbmuxError, udid: String) -> IOSDeviceError {
         switch error {
@@ -275,6 +287,7 @@ extension IOSDeviceError: OffsiderFailure {
         case .unsupportedButton: return .unsupportedButton
         case .hidFailed: return .inputFailed
         case .runnerBuildFailed: return .runnerBuildFailed
+        case .profileExpired: return .profileExpired
         case .runnerFailed: return .treeReadFailed
         case .teamMissing: return .teamMissing
         case .noFocusedField: return .noFocusedField

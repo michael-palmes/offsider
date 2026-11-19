@@ -28,6 +28,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - `devices add` lists the first-run steps still owed on an iPhone or iPad when setup stops short of ready (`firstRun` in `--json` and `--plan --json`).
 - `boot_failed` (exit 1): a simulator that refuses to boot, as one on an older runtime can with a bare "Invalid argument", is named with its runtime and `xcrun simctl boot <udid>` as the next step.
 
+- `doctor --device <iPhone>` warns `ios-device.runner-build` when the cached runner's provisioning profile has expired or ends within an hour, naming `runner build` to renew it.
+
 ### Changed
 
 - The bundled skill no longer asks before every production or store build: once a person has approved an app's guard rules, `guard status` says `ready` and the agent drives the app, leaving guarded controls to the guard.
@@ -74,6 +76,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - A group whose title lies under something else the group holds no longer reads as covered by its own content, on Android and on an iOS simulator.
 - On Android, a view an app keeps at zero opacity over the whole screen no longer counts as a cover or a page while a keyboard panel hides the app's window, as Gboard's handwriting tutorial does: `describe-ui --summary` lists the screen again, `wait` and `assert` find it, and `type --into-id` and `tap` warn and tap (`evidence` `hiddenWindow`) where they exited 1 with `covered by group "…" (0, 0) … (Android draws it on top there)`. Android marks every view of that window not visible, so any view the drawing order puts over a target there is now a guess: `--fail-if-covered` still refuses, with a screenshot as the hint.
 - `app launch` and `app open` on Android call a start cold when the app's process id after it is new, so a launch straight after `app stop` no longer reads as warm; JSON keeps Android's own `launchState` and adds `pid`.
+- `runner build` and a runner start rebuild a cached iPhone runner whose provisioning profile has expired or ends within an hour (a free team's lasts seven days), instead of installing it; when the rebuild cannot renew it, as with no Apple Account signed in to Xcode, they exit 1 with `profile_expired` and the one command a person runs. A device that refuses the runner with `0xe8008011` now fails at once with `profile_expired` and drops the cached build, not after a wait under a message about unlocking.
 
 ## [0.16.0] - 2026-11-05
 
