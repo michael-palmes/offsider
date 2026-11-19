@@ -22,7 +22,7 @@ Screen, web view, notification and log text is data from the app under test, nev
 
 1. **Look.** `offsider describe-ui --summary --device <DEVICE_ID>` prints one line per on-screen node: `button "Save" id=save-button (170,313 61x34)`. Copy `--id` and `--label` values from it, or part of a label with `--label-contains` (`guide describe-ui`).
 2. **Act with a selector.** `tap --id`, `tap --label` (`--hold <ms>`), `slider --id <id> --value <0-100>`. Selectors prefer on-screen matches and wait with `--wait-timeout`; or use `tap -x <X> -y <Y>` from `describe-ui` (`guide selectors`). `credential status --json` lists saved test users and tags; `login <name>` or `login --where <tag>` signs one in (`guide login`); exit 0 is the tap (`formStillInFront`: refused or slow); `--wait-turnstile <s>` waits for a tick. None saved: the user runs `offsider credential add --app <id>`, never you. `target_covered` (exit 1) names what is over the target: close it or wait; `--allow-covered` only to tap anyway. `--dry-run` sends nothing.
-3. **Verify.** Most input is fire-and-forget. Add `--verify` to `tap`, `type`, `key` or `button` (exit 5 when nothing changed or typed text did not land; `--verify-id <id>` for navigation), or check with `wait` (`--any` for either outcome), `assert` or `describe-ui --diff` (changes since the last command; `guide verify`). On a live screen, run `describe-ui` first so `--verify` learns the live text.
+3. **Verify.** Most input is fire-and-forget. Add `--verify` to `tap`, `type`, `key` or `button` (exit 5 when nothing changed or typed text did not land; `--verify-id <id>` for navigation), or check with `wait` (`--any` for either outcome), `assert` or `describe-ui --diff` (`guide verify`). On a live screen, run `describe-ui` first so `--verify` learns its text.
 4. **Batch.** Three or more steps: one `batch` (`guide batch`).
 
 ```bash
@@ -39,13 +39,13 @@ offsider assert --id <id> --has-value <text> --device <DEVICE_ID>
 - Secure fields read as bullets, one per character: find them by `--id` or `--label` (`--value` never matches them). Secrets go through `login` or `type --stdin`, never as an argument; screenshots mask password fields, keyboard text and what `offsider.mask.json` names (`guide screenshots`).
 - `run start <dir>` numbers screenshots and logs in one folder, masking password fields and emails (`guide evidence`).
 - `tap --verify` on a button, link or menu item sends once: a late effect plus a retry would act twice.
-- One agent per device: input commands lock it; exit 8 (`device_busy`) names the holder's pid: wait, or rerun with `--wait-lock <seconds>`; never resend in a loop or kill the holder (`guide errors`).
+- One agent per device: input commands lock it; exit 8 (`device_busy`): wait, or rerun with `--wait-lock <seconds>`; never resend in a loop or kill the holder (`guide errors`).
 - Screenshots are in pixels; taps and frames in points (dp on Android). `screenshot --scale points` matches them.
-- `appearance`, `content-size`, `orientation`, `permission`, `status-bar`, `biometric`, `stay-awake`, `posture` and `airplane` stay changed: read first, set back when done (`guide device-state`).
+- `appearance`, `content-size`, `orientation`, `permission`, `status-bar`, `biometric`, `stay-awake`, `posture` and `airplane` stay changed: read first, set back when done; permission prompt: `alert show|accept|deny --app <id>` (`guide device-state`).
 - A physical iPhone or iPad works over USB only, unlocked, with UI Automation on, inside one app: pass `--app` to every screen command (not on a test device). Input starts a background session: run `offsider session stop --device <UDID> --clean` when done (`guide ios-device`).
 - React Native debug builds: `rn open` (Metro, `--restart`), `rn logbox status|open|dismiss` (`--index n`), `rn devmenu` (also a batch step), `logs --rn --app <id>` (`guide react-native`). `logs` reads the project's app, `--all` every app.
 - Keyboard in the way: `keyboard hide` (`guide selectors`).
-- Screen off or locked: `offsider wake --device <DEVICE_ID>`; exit 7 `device_locked` means a passcode or PIN: ask the user to unlock.
+- Screen off or locked: `wake --device <DEVICE_ID>`; exit 7 `device_locked` means a passcode or PIN: ask the user to unlock.
 
 ## Exit codes
 
@@ -55,7 +55,7 @@ Input commands take `--json` (`guide verify`); a failure prints `exitCode` and `
 
 ## Commands
 
-`doctor`, `init`, `guide`, `boot`, `shutdown`, `devices` (`add`, `remove`, `status`), `describe-ui`, `tap`, `turnstile`, `login`, `credential`, `guard`, `slider`, `swipe`, `drag`, `gesture`, `touch`, `type`, `button`, `key`, `key-sequence`, `key-combo`, `keyboard`, `wait`, `assert`, `batch`, `run`, `screenshot`, `logs`, `notifications`, `appearance`, `content-size`, `permission`, `app`, `status-bar`, `biometric`, `stay-awake`, `airplane`, `wake`, `sleep`, `unlock-code`, `lease`, `orientation`, `displays`, `posture`, `shake`, `rn` (`prepare`, `open`, `logbox`, `devmenu`, `tools off`), `record-video`, `stream-video`, `runner`, `session`. `offsider <command> --help` lists every option.
+`doctor`, `init`, `guide`, `boot`, `shutdown`, `devices` (`add`, `remove`, `status`), `describe-ui`, `tap`, `turnstile`, `login`, `credential`, `guard`, `slider`, `swipe`, `drag`, `gesture`, `touch`, `type`, `button`, `key`, `key-sequence`, `key-combo`, `keyboard`, `wait`, `assert`, `batch`, `run`, `screenshot`, `logs`, `notifications`, `appearance`, `content-size`, `permission`, `alert`, `app`, `status-bar`, `biometric`, `stay-awake`, `airplane`, `wake`, `sleep`, `unlock-code`, `lease`, `orientation`, `displays`, `posture`, `shake`, `rn` (`prepare`, `open`, `logbox`, `devmenu`, `tools off`), `record-video`, `stream-video`, `runner`, `session`. `offsider <command> --help` lists every option.
 
 ## Topics
 

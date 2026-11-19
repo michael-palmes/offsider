@@ -96,6 +96,7 @@ extension PermissionCommand: LockingCommand {
     var waitLock: Double? { lock.waitLock }
 }
 
+extension AlertCommand: DeviceOptionCommand {}
 extension AppearanceCommand: DeviceOptionCommand {}
 extension AppLaunchCommand: DeviceOptionCommand {}
 extension AppOpenCommand: DeviceOptionCommand {}
