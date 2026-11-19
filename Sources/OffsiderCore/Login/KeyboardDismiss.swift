@@ -25,7 +25,7 @@ public enum KeyboardDismiss {
         let keys = coverageFrames(in: tree)
         if let top = keys.map(\.y).min(), let viewport = tree.viewport {
             // The bar above the keys, which a wrapper listed after it can hide from the chain.
-            let bar = nodes.filter { $0.id?.hasPrefix("SystemInputAssistant") == true }.compactMap(\.frame)
+            let bar = nodes.filter { $0.id?.hasPrefix(KeyboardBar.idPrefix) == true }.compactMap(\.frame)
             let avoid = keys + bar + fields.map { $0.outset(by: fieldMargin) }
             let aboveForm = fields.map(\.y).min().map { scan(tree, from: $0 - fieldMargin - 8, viewport: viewport, avoiding: avoid) } ?? []
             let nearKeys = scan(tree, from: top - 24, viewport: viewport, avoiding: avoid)
@@ -114,6 +114,8 @@ public enum KeyboardDismiss {
     }
 
     private static func chain(from node: UINode, at point: UIPoint, viewport: UIFrame) -> [UINode]? {
+        // The bar clips what scrolls inside it, which iOS 27 lists taller than the screen.
+        if KeyboardBar.isBar(node), node.frame?.contains(point) != true { return nil }
         for child in node.children.reversed() {
             if isBackdropKeyboard(child, in: viewport) { continue }
             if let found = chain(from: child, at: point, viewport: viewport) {
@@ -144,7 +146,10 @@ public enum KeyboardDismiss {
     public static func closingControl(in tree: UITree) -> UIPoint? {
         let nodes = tree.roots.flatMap { $0.flattened() }
         if let hide = nodes.first(where: isHideControl), let frame = hide.frame, frame.width > 0, frame.height > 0 { return frame.center }
-        guard let top = coverageFrames(in: tree).map(\.y).min() else { return nil }
+        guard let keys = coverageFrames(in: tree).map(\.y).min() else { return nil }
+        // An app's bar rides on the keyboard's whole area, which starts above the keys: at the suggestions, or at a margin iOS 27 leaves.
+        let area = nodes.filter { KeyboardBar.isBar($0) || $0.id == KeyboardBar.containerID }.compactMap(\.frame).filter { $0.height > 0 && $0.y < keys }
+        let top = area.map(\.y).min() ?? keys
         return nodes.first { node in
             guard closesKeyboard(node), let frame = node.frame, frame.width > 0, frame.height > 0 else { return false }
             return frame.y + frame.height <= top + 1 && frame.y >= top - accessoryHeight

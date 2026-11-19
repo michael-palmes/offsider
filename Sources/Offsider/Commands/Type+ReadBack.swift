@@ -20,7 +20,7 @@ final class FieldReader {
     var live: Bool { watch != nil }
 
     func read() async -> UINode? {
-        if let node = watch?.read() {
+        if let node = await watch?.read() {
             if node.value != initial { moved = true }
             return node
         }
@@ -31,7 +31,7 @@ final class FieldReader {
     /// The field from a read of its own, which a kept element that went stale cannot contradict; the element is dropped when they disagree.
     func fresh() async -> UINode? {
         let node = await tree()
-        if let watch, watch.read()?.value != node?.value { close() }
+        if let watch, await watch.read()?.value != node?.value { close() }
         return node
     }
 
@@ -39,6 +39,27 @@ final class FieldReader {
         watch?.close()
         watch = nil
     }
+}
+
+/// The element with keyboard focus on a USB iPhone or iPad, while it is still the field the keys went to.
+@MainActor
+final class FocusedFieldWatch: ElementWatch {
+    private let backend: any FocusedElementReading
+    private let device: DeviceID
+    private let field: UINode
+
+    init(backend: any FocusedElementReading, device: DeviceID, field: UINode) {
+        self.backend = backend
+        self.device = device
+        self.field = field
+    }
+
+    func read() async -> UINode? {
+        guard let focused = try? await backend.focusedElement(on: device), TypedExpectation.isSameField(focused, field) else { return nil }
+        return focused
+    }
+
+    func close() {}
 }
 
 extension Type {
@@ -78,6 +99,26 @@ extension Type {
         let typed = landingExpectation(inputText, focus: focus, replacing: replace)
         let watching = watching ?? ReactNativeBundle.isFront(in: focus.tree)
         return await Timings.measure("type-read-back") { await Self.fieldReader(typed, focus: focus, backend: backend, device: device, watching: watching) }
+    }
+
+    /// Keys on a USB iPhone or iPad, read back as `confirmHeld` reads a simulator's, through the runner's read of the one element with keyboard focus. Nothing is read when the text went through the runner, when the field is not a text field the focus check listed, or when it may be a password field.
+    @MainActor
+    func confirmHeldOnDevice(
+        _ inputText: String, focus: FocusCheck, backend: any DeviceBackend, device: DeviceID, clock: PollClock = .live,
+        warn: @MainActor (String) -> Void = { Console.current.notice(.warning(InputPersonView.sentence($0), agent: $0)) },
+        send: (@MainActor (InputEvent) async throws -> Void)?
+    ) async throws {
+        guard device.isPhysicalIOSDevice, focus.secure != .unknown, readBackTarget(inputText, focus: focus) != nil,
+              let field = focus.field, field.role.isTextInput, !field.isSecure,
+              let reading = backend as? any FocusedElementReading, await reading.typesWithKeys(inputText, on: device) else { return }
+        let typed = landingExpectation(inputText, focus: focus, replacing: replace)
+        let reader = FieldReader(watch: FocusedFieldWatch(backend: reading, device: device, field: field), initial: field.value) {
+            guard let tree = try? await backend.accessibilityTree(for: device) else { return nil }
+            return typed.locate(in: tree)
+        }
+        try await Timings.measure("type-read-back") {
+            try await confirmHeld(inputText, focus: focus, reader: reader, backend: backend, device: device, clock: clock, warn: warn, send: send)
+        }
     }
 
     /// The field a read-back names, when its text can be judged: never a password, text ending in Return, text too long to read whole, or the text the field already held.
@@ -176,7 +217,7 @@ extension Type {
         }
         guard watching, let watcher = backend as? any ElementWatching, let field = focus.field, field.role.isTextInput, let centre = field.frame?.center,
               let watch = try? await watcher.watchElement(at: centre, on: device) else { return FieldReader(watch: nil, tree: tree) }
-        guard let first = watch.read(), TypedExpectation.isSameField(first, field) else {
+        guard let first = await watch.read(), TypedExpectation.isSameField(first, field) else {
             watch.close()
             return FieldReader(watch: nil, tree: tree)
         }

@@ -54,6 +54,112 @@ struct AndroidDeviceStateE2ETests {
         }
     }
 
+    /// Polls `alert show --json` until the app's permission dialog is up; the parsed report.
+    static func waitForPrompt(timeout: TimeInterval = 15) async throws -> [String: Any] {
+        let deadline = Date().addingTimeInterval(timeout)
+        var last = ""
+        while Date() < deadline {
+            let shown = try await AndroidE2E.offsider("alert show \(app) --json")
+            if shown.exitCode == 0, let report = try JSONSerialization.jsonObject(with: Data(shown.stdout.utf8)) as? [String: Any] { return report }
+            last = shown.stderr
+            try await Task.sleep(for: .milliseconds(400))
+        }
+        throw AndroidE2EError(description: "No permission dialog for the playground showed within \(Int(timeout)) s: \(last)")
+    }
+
+    static func roles(_ report: [String: Any]) -> [String] {
+        let prompt = report["prompt"] as? [String: Any]
+        return (prompt?["buttons"] as? [[String: Any]] ?? []).compactMap { $0["role"] as? String }
+    }
+
+    @Test("alert reads the camera dialog the playground raised, refuses it to another app, denies it, then accepts it with the grant that lasts, and reset makes the app ask again")
+    func alertAnswersTheCameraDialog() async throws {
+        try await AndroidE2E.ensurePlaygroundInstalled()
+        try await AndroidE2E.run("permission reset camera \(Self.app)")
+        try await Self.restoring({ _ = try? await AndroidE2E.offsider("permission reset camera \(Self.app)") }) {
+            try await AndroidE2E.open("permission-state", waitingFor: "permission-state-request-camera")
+            let none = try await AndroidE2E.offsider("alert show \(Self.app) --json")
+            #expect(none.exitCode == 2, "\(none.stderr)")
+            #expect(none.stdout.contains(#""reason":"alert_not_shown""#))
+
+            try await AndroidE2E.run("tap --id permission-state-request-camera")
+            let shown = try await Self.waitForPrompt()
+            #expect(Self.roles(shown).filter { $0 == "accept" }.count == 1)
+            #expect(Self.roles(shown).filter { $0 == "deny" }.count == 1)
+            #expect(shown["app"] as? String == AndroidE2E.package)
+
+            let other = try await AndroidE2E.offsider("alert accept --app com.example.other --json")
+            #expect(other.exitCode == 7, "\(other.stderr)")
+            #expect(other.stdout.contains(#""reason":"system_prompt_in_front""#))
+            #expect(other.stdout.contains(#""dispatched":"no""#) || !other.stdout.contains(#""dispatched":"yes""#))
+            #expect(try await Self.runtimeState("CAMERA").contains("granted=false"))
+
+            try await AndroidE2E.run("alert deny \(Self.app)")
+            #expect(try await AndroidE2E.waitForLabel(of: "permission-state-camera") { $0 == "Camera: denied" } == "Camera: denied")
+            #expect(try await Self.runtimeState("CAMERA").contains("granted=false"))
+
+            // Android asks once more after one refusal.
+            try await AndroidE2E.run("tap --id permission-state-request-camera")
+            _ = try await Self.waitForPrompt()
+            let accepted = try await AndroidE2E.run("alert accept \(Self.app) --json")
+            #expect(accepted.stdout.contains(#""action":"accept""#))
+            #expect(try await AndroidE2E.waitForLabel(of: "permission-state-camera") { $0 == "Camera: granted" } == "Camera: granted")
+            let granted = try await Self.runtimeState("CAMERA")
+            #expect(granted.contains("granted=true"))
+            // A one-time grant carries this flag; the lasting one accept picks does not.
+            #expect(!granted.contains("ONE_TIME"))
+
+            let reset = try await AndroidE2E.run("permission reset camera \(Self.app)")
+            #expect(reset.stdout.contains("it asks again on next use"))
+            #expect(try await Self.runtimeState("CAMERA").contains("granted=false"))
+        }
+    }
+
+    @Test("choose picks the one-time grant by its text, and a text no button has sends nothing")
+    func alertChoosesByLabel() async throws {
+        try await AndroidE2E.ensurePlaygroundInstalled()
+        // The one-time button came with Android 11.
+        guard try await AndroidE2E.apiLevel() >= 30 else { return }
+        try await AndroidE2E.run("permission reset camera \(Self.app)")
+        try await Self.restoring({ _ = try? await AndroidE2E.offsider("permission reset camera \(Self.app)") }) {
+            try await AndroidE2E.open("permission-state", waitingFor: "permission-state-request-camera")
+            try await AndroidE2E.run("tap --id permission-state-request-camera")
+            let shown = try await Self.waitForPrompt()
+            let buttons = ((shown["prompt"] as? [String: Any])?["buttons"] as? [[String: Any]]) ?? []
+            let oneTime = try #require(buttons.first { $0["role"] as? String == "other" }?["label"] as? String)
+
+            let unknown = try await AndroidE2E.offsider("alert choose \(AndroidE2E.quote("No such button")) \(Self.app) --json")
+            #expect(unknown.exitCode == 2, "\(unknown.stderr)")
+            #expect(try await Self.runtimeState("CAMERA").contains("granted=false"))
+
+            try await AndroidE2E.run("alert choose \(AndroidE2E.quote(oneTime)) \(Self.app)")
+            #expect(try await AndroidE2E.waitForLabel(of: "permission-state-camera") { $0 == "Camera: granted" } == "Camera: granted")
+            #expect(try await Self.runtimeState("CAMERA").contains("ONE_TIME"))
+        }
+    }
+
+    @Test("an app that asks for two permissions shows them in turn, and each answer names the prompt that follows")
+    func alertFollowsToTheNextPrompt() async throws {
+        try await AndroidE2E.ensurePlaygroundInstalled()
+        // POST_NOTIFICATIONS is a runtime permission only from Android 13 (API 33).
+        guard try await AndroidE2E.apiLevel() >= 33 else { return }
+        try await AndroidE2E.run("permission reset camera notifications \(Self.app)")
+        try await Self.restoring({ _ = try? await AndroidE2E.offsider("permission reset camera notifications \(Self.app)") }) {
+            try await AndroidE2E.open("permission-state", waitingFor: "permission-state-request-both")
+            try await AndroidE2E.run("tap --id permission-state-request-both")
+            _ = try await Self.waitForPrompt()
+            let first = try await AndroidE2E.run("alert accept \(Self.app) --json")
+            let report = try #require(try JSONSerialization.jsonObject(with: Data(first.stdout.utf8)) as? [String: Any])
+            let next = try #require(report["next"] as? [String: Any], "the second permission's prompt did not follow: \(first.stdout)")
+            #expect((next["buttons"] as? [[String: Any]])?.isEmpty == false)
+
+            try await AndroidE2E.run("alert deny \(Self.app)")
+            #expect(try await AndroidE2E.waitForLabel(of: "permission-state-camera") { $0 == "Camera: granted" } == "Camera: granted")
+            #expect(try await AndroidE2E.waitForLabel(of: "permission-state-notifications") { $0 == "Notifications: denied" } == "Notifications: denied")
+            #expect(try await Self.runtimeState("POST_NOTIFICATIONS").contains("granted=false"))
+        }
+    }
+
     @Test("a service the app does not request fails naming the manifest entry")
     func unrequestedService() async throws {
         try await AndroidE2E.ensurePlaygroundInstalled()

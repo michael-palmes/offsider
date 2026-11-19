@@ -284,7 +284,8 @@ struct BatchTests {
         #expect(!value.isEmpty && value.allSatisfy { $0 == "•" })
 
         let screenshot = try #require(records.first { $0["kind"] as? String == "screenshot" })
-        #expect(screenshot["masked"] as? Int == 1)
+        // The keyboard a password field brings up can add a mask of its own for its bar.
+        #expect((screenshot["maskedBy"] as? [String: Int])?["secure"] == 1)
         let frame = try #require(field["frame"] as? [String: Double])
         let scale = try #require(screenshot["pixelsPerPoint"] as? Double)
         let image = try ScreenImage.decode(try Data(contentsOf: shot))

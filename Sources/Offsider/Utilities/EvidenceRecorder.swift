@@ -29,6 +29,8 @@ final class EvidenceRecorder {
         var expect: String?
         var entries: Int?
         var redacted: Int?
+        var prompt: String?
+        var button: String?
         var fields: [RunFieldOutcome]?
     }
 
@@ -52,7 +54,7 @@ final class EvidenceRecorder {
     }
 
     /// The commands that take a capture, each looking for a run only when it does; video only reads its masks, to refuse them. `login` records only `--fill`.
-    static let recordingCommands = ["screenshot", "logs", "batch", "record-video", "stream-video", "swipe", "drag", "app prefs", "login"]
+    static let recordingCommands = ["screenshot", "logs", "batch", "record-video", "stream-video", "swipe", "drag", "app prefs", "alert", "login"]
 
     static func records(_ command: String) -> Bool {
         recordingCommands.contains(command) || command.hasPrefix("run ")
@@ -160,7 +162,8 @@ final class EvidenceRecorder {
             n: entry.number, file: entry.file, command: command, step: step, line: line, device: entry.device, platform: entry.platform,
             time: entry.reservedAt ?? entry.start, ms: Int((now.timeIntervalSince(entry.start) * 1000).rounded()), exit: Int(exit), reason: reason,
             args: step == nil ? SelectorRedaction.redacted(arguments).map { LogRedactor.redact($0).text } : nil,
-            output: entry.output, diff: entry.diff, masked: entry.masked, skippedBeneath: entry.skippedBeneath, changed: entry.changed, expect: entry.expect, entries: entry.entries, redacted: entry.redacted, fields: entry.fields
+            output: entry.output, diff: entry.diff, masked: entry.masked, skippedBeneath: entry.skippedBeneath, changed: entry.changed, expect: entry.expect, entries: entry.entries, redacted: entry.redacted,
+            prompt: entry.prompt, button: entry.button, fields: entry.fields
         )
         do {
             try run.folder.append(manifestLine)

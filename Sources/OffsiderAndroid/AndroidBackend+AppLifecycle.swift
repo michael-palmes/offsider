@@ -20,9 +20,10 @@ extension AndroidBackend: AppLifecycleControlling {
             throw AppLifecycleError(.noLauncher, "\(package) on \(id.rawValue) has no launcher activity, so it cannot be launched by itself. Open it with `offsider app open <link> --app \(package)`.")
         }
         let reply = try requireStarted(AndroidAppPackage.startReply(output), package: package, on: id, what: "launch")
+        let started = AndroidAppPackage.start(in: output, launchState: reply.launchState, wasRunning: running, restarted: restart)
         return AppLaunch(
-            app: package, start: AndroidAppPackage.start(launchState: reply.launchState, wasRunning: running, restarted: restart),
-            restarted: restart, milliseconds: reply.totalTime, waitMilliseconds: reply.waitTime, launchState: reply.launchState
+            app: package, start: started.start, restarted: restart, milliseconds: reply.totalTime, waitMilliseconds: reply.waitTime,
+            launchState: reply.launchState, pid: started.pid
         )
     }
 
@@ -50,9 +51,10 @@ extension AndroidBackend: AppLifecycleControlling {
                 throw AppLifecycleError(.linkNotHandled, "Android opened the link in \(TerminalText.quoted(TerminalText.line(activity, cap: 200))), not \(package), on \(id.rawValue). Send a link only \(package) takes, such as its own scheme.")
             }
             let started = try requireStarted(reply, package: package, on: id, what: "open the link in")
+            let launch = AndroidAppPackage.start(in: output, launchState: started.launchState, wasRunning: running, restarted: restart)
             return AppLaunch(
-                app: package, start: AndroidAppPackage.start(launchState: started.launchState, wasRunning: running, restarted: restart),
-                restarted: restart, milliseconds: started.totalTime, linkHandled: true
+                app: package, start: launch.start, restarted: restart, milliseconds: started.totalTime,
+                launchState: started.launchState, pid: launch.pid, linkHandled: true
             )
         } catch let error as AppLifecycleError {
             throw error.noting(stopped: restart && running, app: package)

@@ -300,14 +300,15 @@ extension Type: BatchConvertible {
             focusTree.check = check
         }
         if throughSession {
-            if replace {
-                return [focus, .text(inputText, replace: true)]
-            }
-            if inputText.isEmpty { return intoQuery != nil || requireFocusID != nil ? [focus] : [] }
-            let landed = BatchPrimitive.run { _ in
+            let landed = BatchPrimitive.run { session in
                 guard let check = focusTree.check else { return }
                 try await confirmKeysLanded(inputText, focus: check, backend: context.backend, device: context.device)
+                try await confirmHeldOnDevice(inputText, focus: check, backend: context.backend, device: context.device) { try await session.perform($0) }
             }
+            if replace {
+                return [focus, .text(inputText, replace: true)] + (inputText.isEmpty || !context.device.isPhysicalIOSDevice ? [] : [landed])
+            }
+            if inputText.isEmpty { return intoQuery != nil || requireFocusID != nil ? [focus] : [] }
             return [focus, .text(inputText, replace: false), landed]
         }
         return [focus] + typingPrimitives(inputText, context: context, focusTree: focusTree)

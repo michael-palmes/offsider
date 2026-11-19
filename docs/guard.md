@@ -33,7 +33,8 @@ Offsider looks for `offsider.guard.json` from the working directory up to the re
 Offsider judges the control an input would land on, not the command's text, reading the screen before it sends anything:
 
 - a tap (by selector or coordinates), long press or touch on a guarded control, a drag or swipe that starts on one, and a `slider` set on one, alone or as a `batch` step;
-- Return or Enter (`key`, `key-sequence`, or a newline in `type` text) while a guarded control, or a look-only screen, is up.
+- Return or Enter (`key`, `key-sequence`, or a newline in `type` text) while a guarded control, or a look-only screen, is up;
+- `alert accept` and `alert choose` on a [permission prompt](device-state.md#permission-prompts) for the app: the prompt's button is judged against that app's rules, loaded by the app `--app` names, since the app itself has no element on screen. A rule's `screen` counts as showing, as the screen beneath a prompt cannot be read, so a prompt never loosens a rule. `alert deny` is free.
 
 Rules apply to the app in front; when Offsider cannot name it, every guarded app's rules apply. Hardware buttons, plain typing and scrolling are free. When the tree shows nothing under a tap on a screen where a rule with both a `screen` and a control applies, Offsider reads the words around the point from a screenshot it never saves, with the Mac's own text recognition: words matching a rule's label apply that rule, no words lets the tap through, and when it cannot tell, it asks as an `ask` rule would.
 

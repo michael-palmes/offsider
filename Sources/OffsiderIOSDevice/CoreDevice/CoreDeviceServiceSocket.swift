@@ -19,13 +19,24 @@ final class CoreDeviceServiceSocket: @unchecked Sendable {
     private let connection: UnsafeMutableRawPointer
     private let queue: DispatchQueue
     private let symbols: RemoteXPC
+    private let traffic: ConnectionTraffic
 
-    private init(feature: String, connection: UnsafeMutableRawPointer, queue: DispatchQueue, symbols: RemoteXPC) {
+    private init(feature: String, connection: UnsafeMutableRawPointer, queue: DispatchQueue, symbols: RemoteXPC, traffic: ConnectionTraffic) {
         self.feature = feature
         self.connection = connection
         self.queue = queue
         self.symbols = symbols
+        self.traffic = traffic
     }
+
+    /// Messages handed to the connection so far.
+    var sentCount: Int { traffic.sentCount }
+
+    /// How many messages had been handed over when the connection's first error was noticed; nil while it has had none.
+    var endedAfter: Int? { traffic.endedAfter }
+
+    /// How many messages had been handed over when the connection was invalidated, after which it carries nothing; nil until then.
+    var invalidatedAfter: Int? { traffic.invalidatedAfter }
 
     static let openTimeoutSeconds: Double = 10
 
@@ -57,9 +68,13 @@ final class CoreDeviceServiceSocket: @unchecked Sendable {
             close(descriptor)
             throw Failure.connectionFailed
         }
-        symbols.setEventHandler(connection) { _ in }
+        let traffic = ConnectionTraffic()
+        // The only events a feature socket sends unasked are XPC errors; only an invalidation is known to carry nothing after it.
+        symbols.setEventHandler(connection) { event in
+            if xpc_get_type(event) == XPC_TYPE_ERROR { traffic.noteError(invalidated: xpc_equal(event, XPC_ERROR_CONNECTION_INVALID)) }
+        }
         symbols.activate(connection)
-        return CoreDeviceServiceSocket(feature: feature, connection: connection, queue: queue, symbols: symbols)
+        return CoreDeviceServiceSocket(feature: feature, connection: connection, queue: queue, symbols: symbols, traffic: traffic)
     }
 
     /// The `CoreDevice.*` action envelope that CoreDeviceService and the device's feature services both decode.
@@ -83,16 +98,40 @@ final class CoreDeviceServiceSocket: @unchecked Sendable {
     }
 
     func send(_ message: xpc_object_t) {
+        traffic.noteSend()
         symbols.send(connection, message)
     }
 
     /// `handler` runs once on the socket's queue, with an XPC error if the connection dies first.
     func send(_ message: xpc_object_t, reply handler: @escaping @Sendable (xpc_object_t) -> Void) {
+        traffic.noteSend()
         symbols.sendWithReply(connection, message, Unmanaged.passUnretained(queue).toOpaque()) { reply in handler(reply) }
     }
 
     func cancel() {
         symbols.cancel(connection)
+    }
+}
+
+/// Counts the messages handed to one connection and marks where its first error and its invalidation were noticed, so a caller can tell that a message was handed over only after the connection had gone.
+final class ConnectionTraffic: @unchecked Sendable {
+    private let lock = NSLock()
+    private var sent = 0
+    private var ended: Int?
+    private var invalidated: Int?
+
+    var sentCount: Int { lock.withLock { sent } }
+    var endedAfter: Int? { lock.withLock { ended } }
+    var invalidatedAfter: Int? { lock.withLock { invalidated } }
+
+    /// Counted before the message is handed over, so an error noticed at the same count came first.
+    func noteSend() { lock.withLock { sent += 1 } }
+
+    func noteError(invalidated isInvalidated: Bool) {
+        lock.withLock {
+            if ended == nil { ended = sent }
+            if isInvalidated, invalidated == nil { invalidated = sent }
+        }
     }
 }
 
