@@ -178,7 +178,7 @@ A `--verify --json` report also carries `ignored` (`{node, reason}` entries left
 | `turnstile_required` | 1 | `login` found a Cloudflare Turnstile widget on screen, which only a person may tick; the message says whether the form was submitted | Pass on `ask` and run the `hint`, which waits for the tick; never tap the widget, and run `login` again only if `submitted` is false |
 | `foreground_changed` | 1 | `login` saw a different app in front just before typing the password or tapping submit, or before a `--fill` field, or `--fill` named another `--app`; nothing further was typed | Bring the app under test back to the front, then run `login` again |
 | `secret_would_show` | 1 | `login --fill` was aimed at a field where the saved password would show: a plain text field, a show-password switch that is on, a field that shows its text, or one whose kind the screen does not say; nothing was typed there | Turn the show-password switch off, or name the password field with `--into-id` |
-| `field_not_empty` | 1 | On Android, `login --fill password` found bullets already in a password field it would type into, as after an earlier fill; nothing was typed | Read the screen; `--replace` types the saved password over it |
+| `field_not_empty` | 1 | On Android or a physical iPhone or iPad, `login --fill password` found bullets already in a password field it would type into, as after an earlier fill; nothing was typed | Read the screen; `--replace` types the saved password over it |
 | `install_damaged` | 1 | A file bundled with Offsider does not match this build | Reinstall Offsider: `brew reinstall offsider` |
 
 </details>

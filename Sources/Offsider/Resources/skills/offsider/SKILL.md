@@ -36,7 +36,7 @@ offsider assert --id <id> --has-value <text> --device <DEVICE_ID>
 
 - Wait on a condition: `wait --id`, `--gone` (`--stable-for`), `--has-value`, `--settled` (`--ignore-values` for ticking text, `--ignore-id` or `--ignore-region` for a live chart). Never tap to pass time.
 - `type` adds to the focused field. Tap the field (or pass `--into-id <id>`, `--nth` for twins), then `type --replace 'text'` sets it exactly (`''` clears it); a trailing newline presses Return; single quotes inline, `--stdin` or `--file` for shell-sensitive text (`guide selectors`).
-- Secure fields read as bullets, one per character: find them by `--id` or `--label` (`--value` never matches them). Secrets go through `login` or `type --stdin`, never as an argument; screenshots mask password fields, keyboard text and what `offsider.mask.json` names (`guide screenshots`).
+- Secure fields read as bullets, one per character: find them by `--id` or `--label`, not `--value`. Secrets use `login` (sign-up: `--fill password`) or `type --stdin`, never arguments; screenshots mask password fields, keyboard text and what `offsider.mask.json` names (`guide screenshots`).
 - `run start <dir>` numbers screenshots and logs in one folder, masking password fields and emails (`guide evidence`).
 - `tap --verify` on a button, link or menu item sends once: a late effect plus a retry would act twice.
 - One agent per device: input commands lock it; exit 8 (`device_busy`) names the holder's pid: wait, or rerun with `--wait-lock <seconds>`; never resend in a loop or kill the holder (`guide errors`).

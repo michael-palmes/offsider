@@ -100,6 +100,9 @@ struct LoginFillFieldTests {
     func holdsText() throws {
         let simulator = FakeUI.tree([SignUp.field(id: "signup-password", label: "Password", value: "••••••••", y: 160)])
         #expect(try LoginFill.fields(.password, in: simulator, intoID: nil, replace: false).count == 1)
+        var runner = SignUp.screen(password: SignUp.bullets)
+        runner.roots[0].native = .ios(IOSNativeAttributes(bundleID: "com.example.app"))
+        #expect(refusal { try LoginFill.fields(.password, in: runner, intoID: nil, replace: false) }?.kind == .holdsText)
         let tree = SignUp.screen(password: SignUp.bullets, platform: .android)
         let refused = refusal { try LoginFill.fields(.password, in: tree, intoID: nil, replace: false) }
         #expect(refused?.kind == .holdsText)
@@ -314,6 +317,18 @@ struct LoginFillFlowTests {
         #expect(script.secrecy == [false])
         #expect(script.taps.isEmpty)
         #expect(report.filled.map(\.name) == ["id=signup-email"])
+    }
+
+    @Test("a stopped fill's JSON names its screen-quoting message as untrusted and says which field was filled")
+    func failureJSON() async throws {
+        let script = FillScript([SignUp.screen(), SignUp.screen(password: SignUp.bullets)])
+        script.foregrounds = ["com.example.app", "com.example.app", "com.example.other"]
+        let stopped = try #require(await #expect(throws: LoginFillFailure.self) { try await script.fill() })
+        var written = ""
+        _ = await LoginCommand.failure(stopped, json: true, scope: CommandScope(), write: { written = $0 })
+        #expect(written.contains(#""fields":[{"field":"id=signup-password","state":"filled"},{"field":"id=signup-confirm","state":"not_filled"}]"#))
+        #expect(written.contains(#""untrusted":["error.message"]"#))
+        #expect(!written.contains(SignUp.password))
     }
 
     @Test("repeated fills on an Android screen whose fields already hold the password type nothing more")

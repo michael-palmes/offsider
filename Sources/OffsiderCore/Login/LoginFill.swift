@@ -63,7 +63,7 @@ public enum LoginFill {
         } else {
             chosen = try detected(target, in: controls, front: front)
         }
-        for field in chosen { try check(field, target, replace: replace, revealed: revealed) }
+        for field in chosen { try check(field, target, in: tree, replace: replace, revealed: revealed) }
         return chosen.sorted { ($0.frame?.y ?? 0, $0.frame?.x ?? 0) < ($1.frame?.y ?? 0, $1.frame?.x ?? 0) }
     }
 
@@ -79,7 +79,7 @@ public enum LoginFill {
     }
 
     /// The rules a field passes before it is typed into, read again on the screen just before each field.
-    public static func check(_ field: UINode, _ target: LoginFillTarget, replace: Bool, revealed: RevealedSecrets? = nil) throws {
+    public static func check(_ field: UINode, _ target: LoginFillTarget, in tree: UITree, replace: Bool, revealed: RevealedSecrets? = nil) throws {
         let name = describe(field)
         switch target {
         case .password:
@@ -98,7 +98,7 @@ public enum LoginFill {
         }
         // The email or username is no secret and always replaces what the field holds, which a simulator cannot tell from its placeholder.
         guard target == .password else { return }
-        switch content(of: field) {
+        switch content(of: field, bulletsAreText: bulletsAreText(in: tree)) {
         case .empty:
             return
         case .plain:
@@ -153,15 +153,20 @@ public enum LoginFill {
         case plain
     }
 
-    /// A password field's text as the tree shows it. An iOS simulator shows an empty field's placeholder as bullets too, so there the field reads as empty and is typed over; Android shows bullets only for text, and plain text once a toggle reveals it.
-    static func content(of field: UINode) -> Content {
+    /// Android and the iPhone runner, which drops a placeholder, show bullets only for text; an iOS simulator shows an empty field's placeholder as bullets too.
+    static func bulletsAreText(in tree: UITree) -> Bool {
+        guard tree.platform == .ios else { return true }
+        guard case .ios(let native)? = tree.roots.first?.native else { return false }
+        return native.bundleID != nil
+    }
+
+    /// A password field's text as the tree shows it. Where bullets may be the placeholder the field reads as empty and is typed over; iOS never shows a password field's text, so plain text there is the placeholder too.
+    static func content(of field: UINode, bulletsAreText: Bool) -> Content {
         guard let value = field.value, !value.isEmpty else { return .empty }
+        if SecureText.isMaskDots(value) { return bulletsAreText ? .bullets : .empty }
         switch field.native {
-        case .ios:
-            return .empty
-        case .android(let native):
-            if SecureText.isMaskDots(value) { return .bullets }
-            return value == native.hint ? .empty : .plain
+        case .ios: return .empty
+        case .android(let native): return value == native.hint ? .empty : .plain
         }
     }
 

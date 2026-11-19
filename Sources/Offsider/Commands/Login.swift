@@ -179,7 +179,7 @@ struct LoginCommand: AsyncParsableCommand {
     ) async throws {
         let console = Console.current
         let recorder = EvidenceRecorder.current
-        let token = try? recorder.begin(device: route.device, kind: "fill")
+        let token = try recorder.begin(device: route.device, kind: "fill")
         let report: LoginFillReport
         do {
             report = try await console.progress(Self.fillingLabel) {
@@ -250,7 +250,7 @@ struct LoginCommand: AsyncParsableCommand {
             let annotated = await scope.screenHint(for: stopped)
             var report = stopped.report
             report.error = ErrorReporter.payload(for: annotated)
-            write(report.jsonLine())
+            write(UntrustedPaths.appending(report.error?.untrustedPaths() ?? [], to: report.jsonLine()))
             return ReportedFailure(underlying: annotated, exitCode: report.exitCode)
         }
         guard json, let stopped = error as? LoginFailure else { return error }

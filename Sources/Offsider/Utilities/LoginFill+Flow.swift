@@ -36,7 +36,7 @@ extension LoginFlow {
                     throw CLIError(errorDescription: "\(LoginFill.name(sample)) left the screen, so \(stopped).", reason: .selectorNotFound)
                 }
                 if target == .password { try refusing { try LoginFill.refuseRevealed(in: tree, revealed: revealed) } }
-                try refusing { try LoginFill.check(field, target, replace: replace, revealed: revealed) }
+                try refusing { try LoginFill.check(field, target, in: tree, replace: replace, revealed: revealed) }
                 try refuseWebField(field, in: tree, origin: origin, app: app, key: key, profile: profile, webLogin: webLogin)
                 try requireForeground(app, in: tree, services: services, stopped: stopped)
                 services.step("typing the \(target.fieldName) \(LoginFill.name(field))", false)
