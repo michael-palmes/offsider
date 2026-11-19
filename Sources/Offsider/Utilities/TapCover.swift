@@ -362,14 +362,21 @@ struct TapCover {
 
     /// The tap moved to the middle of each part of the target that a cover at `coverFrame` leaves showing, best first; empty when none is 8 pt across. A wide switch toggles only at its knob, so its tap keeps the knob's x, and a part without it does not count.
     static func clearParts(of resolution: TapResolution, beside coverFrame: UIFrame, in tree: UITree, index: TreeIndex? = nil) -> [TapResolution] {
+        guard let viewport = tree.viewport else { return [] }
+        return partPoints(of: resolution, beside: coverFrame, in: tree).map { point in
+            AccessibilityTargetResolver.resolution(of: resolution, at: point, in: index ?? TreeIndex(roots: tree.roots), viewport: viewport)
+        }
+    }
+
+    /// The middle of each part `clearParts` moves the tap to, best first.
+    static func partPoints(of resolution: TapResolution, beside coverFrame: UIFrame, in tree: UITree) -> [UIPoint] {
         guard let target = resolution.target, let frame = target.frame, let viewport = tree.viewport,
               let visible = AccessibilityTargetResolver.visibleRegion(of: target, frame: frame, viewport: viewport, roots: tree.roots),
               let overlap = visible.intersection(coverFrame) else { return [] }
         let knob = AccessibilityTargetResolver.isWideSwitch(target, frame: frame) ? resolution.point.x : nil
         return parts(of: visible, outside: overlap, minimum: frame).compactMap { part in
             if let knob, knob < part.x || knob > part.x + part.width { return nil }
-            let point = UIPoint(x: knob ?? part.center.x, y: part.center.y)
-            return AccessibilityTargetResolver.resolution(of: resolution, at: point, in: index ?? TreeIndex(roots: tree.roots), viewport: viewport)
+            return UIPoint(x: knob ?? part.center.x, y: part.center.y)
         }
     }
 
@@ -433,10 +440,14 @@ struct TapCover {
             )
         }
         let unseen = unread ? " Its text does not show in a screenshot." : ""
-        let message = "\(selector) at \(pointText) may be covered by \(cover); the \(gesture) may land on it.\(unseen)"
+        // Back is no fix: under a panel such as Gboard's handwriting tutorial it goes to the app and can leave the screen.
+        let hidden = verdict.evidence == .hiddenWindow
+        let unsure = hidden ? " The app's window reads hidden, as under a keyboard panel, so Android cannot say whether that view is drawn." : ""
+        let message = "\(selector) at \(pointText) may be covered by \(cover); the \(gesture) may land on it.\(unseen)\(unsure)"
         if failIfCovered {
-            let fix = holder.map { " To tap the page instead: `\($0)`." } ?? ""
-            throw CLIError(errorDescription: "\(message) Nothing was sent.\(fix)", reason: .targetCovered, hint: holder ?? CommandScope.current.describeHint(device: device.rawValue), coveredBy: CoverReport(verdict))
+            let fix = holder.map { " To tap the page instead: `\($0)`." } ?? (hidden ? " Close the panel, or check a screenshot and \(gesture) without --fail-if-covered." : "")
+            let look = hidden ? "offsider screenshot\(CommandScope.current.appArgument(device: device.rawValue)) --device \(device.rawValue)" : CommandScope.current.describeHint(device: device.rawValue)
+            throw CLIError(errorDescription: "\(message) Nothing was sent.\(fix)", reason: .targetCovered, hint: holder ?? look, coveredBy: CoverReport(verdict))
         }
         notices.say(.warning(
             "\(selector) may be covered by \(cover); the \(gesture) may land on it",
@@ -542,6 +553,7 @@ struct TapCover {
         case .otherProcess: return "a hit-test at the point found another process's view"
         case .devMenuTouchArea: return "its touch area reaches past its icon there"
         case .systemBar: return "Android's system bar takes touches there"
+        case .hiddenWindow: return "Android draws it on top there, if it draws it at all"
         }
     }
 
