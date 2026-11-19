@@ -212,23 +212,29 @@ struct AccessibilityFetcher {
         return full ? plain : latestData
     }
 
-    /// A simulator can take over 5 s to open the session a read starts with, or have no screen to answer just after a boot, and the next try works; two in a row say so, with the fix.
+    /// How long a starting simulator gets to answer, measured from the first try, however fast a try fails.
+    static let startupWindow: TimeInterval = 2
+
+    /// A simulator can take over 5 s to open the session a read starts with, or have no screen to answer just after a boot, and a later try works.
+    /// It is tried again 1 s after each failure while `startupWindow` has not passed, at least twice and at most three times; then it fails, naming the fix.
     static func retryingStartupFailure<T>(
         simulatorUDID: String,
         frontmost: Bool,
         logger: OffsiderLogger,
         sleep: @MainActor (Duration) async throws -> Void = { try await Task.sleep(for: $0) },
+        now: @MainActor () -> TimeInterval = { ProcessInfo.processInfo.systemUptime },
         operation: @MainActor () async throws -> T
     ) async throws -> T {
-        do {
-            return try await operation()
-        } catch where isStartupFailure(error, frontmost: frontmost) {
-            logger.info().log("The simulator's accessibility service did not answer; retrying once")
-            try await sleep(.seconds(1))
+        let started = now()
+        var tries = 0
+        while true {
+            tries += 1
             do {
                 return try await operation()
             } catch where isStartupFailure(error, frontmost: frontmost) {
-                throw AccessibilityStartupFailure(simulatorUDID: simulatorUDID)
+                guard tries < 3, tries < 2 || now() - started < startupWindow else { throw AccessibilityStartupFailure(simulatorUDID: simulatorUDID) }
+                logger.info().log("The simulator's accessibility service did not answer; retrying")
+                try await sleep(.seconds(1))
             }
         }
     }

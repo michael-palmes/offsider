@@ -14,7 +14,11 @@ struct AccessibilityFetcherTests {
 
     private func read(frontmost: Bool = true, failing error: any Error, times: Int) async throws -> (result: String, reads: Int) {
         var reads = 0
-        let result = try await AccessibilityFetcher.retryingStartupFailure(simulatorUDID: "TEST-UDID", frontmost: frontmost, logger: OffsiderLogger(), sleep: { _ in }) {
+        var clock: TimeInterval = 0
+        let result = try await AccessibilityFetcher.retryingStartupFailure(
+            simulatorUDID: "TEST-UDID", frontmost: frontmost, logger: OffsiderLogger(), sleep: { _ in clock += 1 }, now: { clock }
+        ) {
+            clock += 1.2
             reads += 1
             if reads <= times { throw error }
             return "tree"
@@ -29,6 +33,23 @@ struct AccessibilityFetcherTests {
             #expect(result == "tree")
             #expect(reads == 2)
         }
+    }
+
+    @Test("a starting simulator gets about 2 s to answer however fast a failed read is: three tries when they fail at once, two when each takes main's 0.7 s", arguments: [(0.0, 3), (0.7, 2)])
+    func startupWindowIsTime(readTime: TimeInterval, tries: Int) async {
+        var clock: TimeInterval = 0
+        var reads = 0
+        await #expect(throws: AccessibilityStartupFailure.self) {
+            _ = try await AccessibilityFetcher.retryingStartupFailure(
+                simulatorUDID: "TEST-UDID", frontmost: true, logger: OffsiderLogger(),
+                sleep: { clock += Double($0.components.seconds) }, now: { clock }
+            ) { () async throws -> String in
+                reads += 1
+                clock += readTime
+                throw FBAccessibilityError.noTranslationObject
+            }
+        }
+        #expect(reads == tries)
     }
 
     @Test("Two startup failures fail once, naming the fix")

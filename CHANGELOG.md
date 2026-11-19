@@ -49,6 +49,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ### Fixed
 
 - `wait --settled` on an iOS simulator, after an input that changed the tree, also waits up to 2 s for the pixels to hold still, as on Android. A sheet UIKit slides in lists its final frame in the tree at once, so a fast read passed mid-slide and the next tap was dropped.
+- A simulator whose accessibility does not answer yet, just after a boot or a launch, gets about 2 s to answer however fast a failed read is (two tries 1 s apart, a third when both failed at once), instead of two tries.
 - `button home --verify` on an iOS simulator returns once a read of the front app finds SpringBoard, not only once SpringBoard answers at the screen's centre, so a `describe-ui` straight after no longer lists the app that is leaving.
 - `--verify` learns what ticks by itself from two reads at least 0.6 s apart before the input, however fast the reads are, so a slow ticker is not taken for the input's change.
 - `--verify` takes its baseline screenshot once two in a row, 350 ms apart, agree (four at most), so what an earlier input was still drawing no longer counts as this input's change: on a fast read, a tap that changed nothing could verify.
