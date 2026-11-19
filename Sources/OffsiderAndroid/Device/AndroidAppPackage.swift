@@ -28,8 +28,27 @@ enum AndroidAppPackage {
         c=$(cmd package resolve-activity --brief -a android.intent.action.MAIN -c android.intent.category.LAUNCHER "$p" 2>/dev/null | tail -n 1)
         case "$c" in "$p"/*) ;; *) echo '\(marker) no-launcher'; exit 0 ;; esac
         \(restart ? "am force-stop \"$p\"" : ":")
+        \(pidLine(before: true))
         am start -W -f 0x10200000 -a android.intent.action.MAIN -c android.intent.category.LAUNCHER -n "$c"
+        \(pidLine(before: false))
         """
+    }
+
+    static let pidsBeforeMarker = "offsider: pids-before"
+    static let pidsAfterMarker = "offsider: pids-after"
+
+    /// The app's process ids just before and just after `am start`, so a new process reads as cold whatever Android's `LaunchState` says.
+    static func pidLine(before: Bool) -> String {
+        "echo \"\(before ? pidsBeforeMarker : pidsAfterMarker) $(pidof \"$p\" 2>/dev/null)\""
+    }
+
+    /// The ids a pid line printed; nil when the line is missing, as when the script stopped early.
+    static func pids(in output: String, before: Bool) -> Set<Int>? {
+        let marker = before ? pidsBeforeMarker : pidsAfterMarker
+        for line in output.split(whereSeparator: \.isNewline).map({ $0.trimmingCharacters(in: .whitespaces) }) where line == marker || line.hasPrefix(marker + " ") {
+            return Set(line.dropFirst(marker.count).split(separator: " ").compactMap { Int($0) })
+        }
+        return nil
     }
 
     static func stopScript(package: String) -> String {
@@ -47,7 +66,9 @@ enum AndroidAppPackage {
         """ : ""
         return preamble(ExpoDevClient.shellQuote(package), stop: false) + stop + """
 
+        \(pidLine(before: true))
         am start -W -a android.intent.action.VIEW -d \(link) "$p"
+        \(pidLine(before: false))
         """
     }
 
@@ -137,14 +158,24 @@ enum AndroidAppPackage {
         return reply
     }
 
-    /// `LaunchState` when Android named one (`UNKNOWN` when the app was already in front), else whether the process was running before.
-    static func start(launchState: String?, wasRunning: Bool, restarted: Bool) -> AppStart {
+    /// A process id after the start that was not there before is a cold start; without both lists, `LaunchState` when Android named one (`UNKNOWN` when the app was already in front), else whether the process was running before.
+    static func start(launchState: String?, wasRunning: Bool, restarted: Bool, pidsBefore: Set<Int>? = nil, pidsAfter: Set<Int>? = nil) -> AppStart {
         if restarted { return .cold }
+        if let pidsBefore, let pidsAfter, !pidsAfter.isEmpty {
+            return pidsAfter.isSubset(of: pidsBefore) ? .warm : .cold
+        }
         switch launchState?.uppercased() {
         case "COLD": return .cold
         case "WARM", "HOT", "RELAUNCH": return .warm
         default: return wasRunning ? .warm : .cold
         }
+    }
+
+    /// The start and, when one process is listed after it, that process's id, from a launch or open script's output.
+    static func start(in output: String, launchState: String?, wasRunning: Bool, restarted: Bool) -> (start: AppStart, pid: Int?) {
+        let after = pids(in: output, before: false)
+        let start = start(launchState: launchState, wasRunning: wasRunning, restarted: restarted, pidsBefore: pids(in: output, before: true), pidsAfter: after)
+        return (start, after.flatMap { $0.count == 1 ? $0.first : nil })
     }
 
     private static func value(after prefix: String, in line: String) -> String? {

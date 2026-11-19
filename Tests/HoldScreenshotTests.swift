@@ -83,6 +83,21 @@ struct HoldScreenshotTests {
         #expect(error.map { Swipe.message(for: $0).contains("--output applies to --screenshot-at only.") } == true)
     }
 
+    @Test("--scale or --mask-skip-beneath without --screenshot-at is a usage error, and a bad --scale is refused before anything is sent", arguments: ["swipe", "drag"])
+    func captureOptionsNeedScreenshotAt(command: String) {
+        func parse(_ arguments: [String]) throws {
+            if command == "swipe" { _ = try Self.swipe(arguments) } else { _ = try Self.drag(arguments) }
+        }
+        for (arguments, message) in [
+            (["--scale", "points"], "--scale applies to --screenshot-at only."),
+            (["--mask-skip-beneath"], "--mask-skip-beneath applies to --screenshot-at only."),
+            (["--screenshot-at", "0", "--scale", "2"], "--scale takes points or a factor from 0.1 to 1"),
+        ] {
+            let error = #expect(throws: (any Error).self) { try parse(arguments) }
+            #expect(error.map { Swipe.message(for: $0).contains(message) } == true, "\(arguments)")
+        }
+    }
+
     @Test("without --hold-end the finger rests until the last screenshot; drag never rests less than its default")
     func holdStretches() throws {
         #expect(try Self.drag(["--screenshot-at", "800", "--screenshot-at", "300"]).finalHoldMilliseconds == 800)
@@ -318,6 +333,50 @@ struct HoldScreenshotTests {
         for command in holding {
             #expect(EvidenceRecorder.records(command), "\(command) takes --screenshot-at but looks for no run")
         }
+    }
+
+    @Test("--scale points makes each held screenshot one pixel per point", arguments: ["swipe", "drag"])
+    func scaledHoldShots(command: String) async throws {
+        let device = DeviceID(rawValue: "fake-device", platform: .ios)
+        let backend = FakeDeviceBackend(trees: [FakeUI.tree(width: 390, height: 844, [])], screenshots: [try ScreenshotMaskTests.whitePNG()], screen: ScreenshotMaskTests.screen)
+        let path = ScreenshotMaskTests.temporaryPath()
+        defer { try? FileManager.default.removeItem(atPath: path) }
+        let arguments = Self.start + ["--screenshot-at", "0", "--scale", "points", "--output", path, "--device", device.rawValue]
+        let shots = command == "swipe" ? try Swipe.parse(arguments).holdShots : try Drag.parse(arguments).holdShots
+        let details = InputDetails()
+
+        try await shots.perform(press: Self.press, lift: Self.lift, holdEnd: 0, on: DeviceRouter.Route(backend: backend, device: device), details: details)
+
+        let image = try ScreenImage.decode(try Data(contentsOf: URL(fileURLWithPath: path)))
+        #expect(image.width == 390 && image.height == 844)
+        #expect(details.screenshots.first?.report.pixelsPerPoint == 1)
+    }
+
+    @Test("--mask-skip-beneath leaves a run's email beneath a page unpainted in a held screenshot, and without it the email is painted", arguments: [true, false])
+    func skipBeneathHoldShots(skip: Bool) async throws {
+        let fixture = try RunFixture()
+        _ = try fixture.start(masks: RunMasks(emails: true))
+        let tree = try ScreenshotMaskTests.stackTree { node in
+            var copy = node
+            if node.id == "stack-test-depth" { copy.label = "me@example.com" }
+            return copy
+        }
+        let backend = try ScreenshotMaskTests.stackBackend(tree)
+        let frame = try #require(tree.roots.flatMap { $0.flattened() }.first { $0.id == "stack-test-depth" }?.frame)
+        let path = ScreenshotMaskTests.temporaryPath()
+        defer { try? FileManager.default.removeItem(atPath: path) }
+        let arguments = Self.start + ["--screenshot-at", "0", "--output", path, "--device", ScreenshotMaskTests.stackDevice.rawValue] + (skip ? ["--mask-skip-beneath"] : [])
+        let shots = try Swipe.parse(arguments).holdShots
+        let details = InputDetails()
+
+        try await fixture.command(fixture.recorder("swipe")) {
+            try await shots.perform(press: Self.press, lift: Self.lift, holdEnd: 0, on: DeviceRouter.Route(backend: backend, device: ScreenshotMaskTests.stackDevice), details: details)
+        }
+
+        let image = try ScreenImage.decode(try Data(contentsOf: URL(fileURLWithPath: path)))
+        let report = try #require(details.screenshots.first?.report)
+        #expect(ScreenshotMaskTests.point(image, frame.x + 2, frame.y + 2) == (skip ? ScreenshotMaskTests.white : ScreenshotMaskTests.black))
+        #expect((report.skippedBeneath ?? [:]).isEmpty == !skip)
     }
 
     @Test("a hold's screenshot in a run masks the run's emails and adds its manifest line", arguments: ["swipe", "drag"])

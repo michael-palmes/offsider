@@ -66,6 +66,7 @@ public enum FailureReason: String, CaseIterable, Sendable {
     case deviceListFailed = "device_list_failed"
     case expoDevClientFailed = "expo_dev_client_failed"
     case runnerBuildFailed = "runner_build_failed"
+    case profileExpired = "profile_expired"
     case runnerUnavailable = "runner_unavailable"
     case runActive = "run_active"
     case runUnavailable = "run_unavailable"
