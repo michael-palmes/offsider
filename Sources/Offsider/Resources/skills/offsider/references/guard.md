@@ -20,6 +20,8 @@ Before a production or store build, or when the repository has an `offsider.guar
 3. `offsider guard check` validates the file. Then open each guarded screen and prove its rules with `offsider guard check --device <DEVICE_ID> --app <id> --json`: `onScreen` is true where the control shows.
 4. Give the user, on its own line, `offsider guard approve`. It takes Touch ID, once.
 
+`alert accept` and `alert choose` on a permission prompt are judged against the rules of the app `--app` names, with every rule's `screen` taken as showing; `alert deny` is free.
+
 A rule matches by `id` (exact), `idPrefix`, `label` or `labelContains` (case, quotes and spacing ignored), all given; `screen` limits it to while a matching element is up. A rule with only `screen` makes that screen look-only: swipes, Back, Close, Cancel, Dismiss, Navigate up, Not now and its `except` controls still work. `askUsers` names the saved logins an `ask` may be offered for.
 
 ## Keep it current

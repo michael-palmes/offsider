@@ -163,12 +163,7 @@ enum AppGuard {
             }
             var found: [(GuardHit, GuardSet)] = []
             for set in sets {
-                if set.state == .changed {
-                    throw CLIError(
-                        errorDescription: "The approved guard rules for \(set.app) were changed outside Offsider, so Offsider sent nothing. A person approves them again with `\(approveCommand(set.app))` in their own terminal.",
-                        reason: .guardedControl, hint: approveCommand(set.app), ask: "Can you run `\(approveCommand(set.app))` in your terminal?"
-                    )
-                }
+                if set.state == .changed { throw rulesChanged(set.app) }
                 for input in points {
                     guard var hit = GuardJudge.verdict(rules: set.rules, tree: tree, input: input) else { continue }
                     if hit.unsure, case .press(let point) = input, let texts = await textNear(point, tree: tree, backend: backend, device: device) {
@@ -180,6 +175,32 @@ enum AppGuard {
             }
             return found
         }
+    }
+
+    /// Judges a prompt's answer against the rules of the app it is for, loaded by name; every rule's screen counts as showing, since the app beneath cannot be read.
+    static func check(answering prompt: AppPrompt, with button: AppPrompt.Button, in tree: UITree, device: DeviceID) async throws {
+        let loaded = GuardSources.current()
+        guard !loaded.isEmpty else { return }
+        if let problem = loaded.problem {
+            throw CLIError(errorDescription: "\(problem) Offsider sent nothing. Fix the file, or move it aside.", reason: .usage)
+        }
+        let set = loaded.set(for: prompt.app)
+        guard set.state != .missing else { return }
+        if set.state == .changed { throw rulesChanged(set.app) }
+        let rules = set.rules.map { rule -> GuardRule in
+            var open = rule
+            open.screen = nil
+            return open
+        }
+        guard let hit = GuardJudge.verdict(rules: rules, tree: tree, input: .press(button.frame.center)) else { return }
+        try await settle(hit, set: set, device: device)
+    }
+
+    private static func rulesChanged(_ app: String) -> CLIError {
+        CLIError(
+            errorDescription: "The approved guard rules for \(app) were changed outside Offsider, so Offsider sent nothing. A person approves them again with `\(approveCommand(app))` in their own terminal.",
+            reason: .guardedControl, hint: approveCommand(app), ask: "Can you run `\(approveCommand(app))` in your terminal?"
+        )
     }
 
     static func approveCommand(_ app: String) -> String {

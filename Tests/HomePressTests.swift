@@ -232,7 +232,7 @@ struct SimulatorHomePressTests {
         }
     }
 
-    private static func press(_ answers: [Int?], arguments: [String] = ["--verify", "--json"]) async throws -> (out: [String], err: [String], exit: Int32?, keys: Int, seconds: TimeInterval) {
+    private static func press(_ answers: [Int?], arguments: [String] = ["--verify", "--json"], front: [Bool?]? = nil) async throws -> (out: [String], err: [String], exit: Int32?, keys: Int, seconds: TimeInterval) {
         let backend = Prober(trees: [])
         backend.answers = answers
         var out: [String] = []
@@ -243,6 +243,10 @@ struct SimulatorHomePressTests {
             try await Button.pressSimulatorHome(
                 on: backend, device: simulator, centre: UIPoint(x: 200, y: 400), verification: try VerificationOptions.parse(arguments),
                 sleep: { _ in clock += 0.6 }, now: { clock }, processPath: isSpringBoardProcess,
+                frontIsHome: front.map { answers in
+                    var left = answers
+                    return { left.count > 1 ? left.removeFirst() : left.first ?? nil }
+                },
                 writeOutput: { out.append($0) }, writeError: { err.append($0) }
             )
         } catch let code as ExitCode {
@@ -260,6 +264,18 @@ struct SimulatorHomePressTests {
         let json = result.out.joined()
         #expect(json.contains(#""verified": true"#))
         #expect(json.contains("activity"))
+    }
+
+    @Test("SpringBoard at the centre waits until the front app reads as SpringBoard too, so the read after shows the home screen; a front read that fails leaves the centre to decide")
+    func waitsForTheFrontApp() async throws {
+        let waited = try await Self.press([Self.springBoardPID], front: [false, false, true])
+        #expect(waited.exit == nil)
+        #expect(waited.keys == 1)
+        #expect(abs(waited.seconds - 1.2) < 0.001, "two polls while the app still read in front")
+
+        let unreadable = try await Self.press([Self.springBoardPID], front: [nil])
+        #expect(unreadable.exit == nil)
+        #expect(unreadable.seconds == 0)
     }
 
     @Test("on the home screen SpringBoard's answer is enough, with one press and no tree compared")

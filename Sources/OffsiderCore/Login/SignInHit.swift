@@ -98,7 +98,7 @@ enum SignInHit {
     static func isChrome(_ node: UINode) -> Bool {
         if node.role == .keyboard { return true }
         guard let id = node.id else { return false }
-        return id.hasPrefix(IOSAccessibilityMapping.keyboardLayoutPrefix) || id.hasPrefix("SystemInputAssistant")
+        return id.hasPrefix(IOSAccessibilityMapping.keyboardLayoutPrefix) || id.hasPrefix(KeyboardBar.idPrefix)
     }
 
     private static func isStructural(_ role: UIRole) -> Bool {

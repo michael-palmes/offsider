@@ -259,7 +259,8 @@ struct Button: AsyncParsableCommand, VerifiableCommand {
         return tree
     }
 
-    /// Prints the verify report: exit 0 once SpringBoard answers at the screen's centre, exit 5 when it never does.
+    /// Prints the verify report: exit 0 once SpringBoard answers at the screen's centre and, with `frontIsHome`, is the app in front, exit 5 when it never does.
+    /// The centre answers mid-way through the app's exit while reads still show the app, so a read straight after would still see it.
     /// Lines go to `writeOutput` and `writeError` as an agent reads them; without them, through `Console`, which shows a person their own view.
     @MainActor
     static func pressSimulatorHome(
@@ -270,6 +271,7 @@ struct Button: AsyncParsableCommand, VerifiableCommand {
         sleep: (Duration) async throws -> Void = { try await Task.sleep(for: $0) },
         now: () -> TimeInterval = { ProcessInfo.processInfo.systemUptime },
         processPath: (Int) -> String? = { Int32(exactly: $0).flatMap(ProcessPath.of(pid:)) },
+        frontIsHome: (() async -> Bool?)? = nil,
         writeOutput: ((String) -> Void)? = nil,
         writeError: ((String) -> Void)? = nil
     ) async throws {
@@ -277,7 +279,9 @@ struct Button: AsyncParsableCommand, VerifiableCommand {
             isHome: {
                 guard let hit = try? await backend.probe(at: centre, on: device), case .ios(let native) = hit.native,
                       let pid = native.pid, let path = processPath(pid) else { return nil }
-                return SimulatorHomePress.isSpringBoard(path: path)
+                guard SimulatorHomePress.isSpringBoard(path: path) else { return false }
+                // A front read that fails leaves the centre to decide, as before.
+                return await frontIsHome?() ?? true
             },
             press: { try await backend.performTracked(.shortButtonPress(.home), on: device) },
             sleep: sleep,
@@ -467,7 +471,8 @@ struct Button: AsyncParsableCommand, VerifiableCommand {
                     try await watchdog.guardingRead(of: device, extra: DeviceWatchdog.setupBound + Double(presses) * window) {
                         // iPhone's home screen is upright, so a sideways screen's centre can lie past its edge once the press lands.
                         let watched = size.width > size.height ? UIPoint(x: size.height / 2, y: size.height / 2) : centre
-                        try await Self.pressSimulatorHome(on: prober, device: device, centre: watched, verification: verification, processPath: processPath)
+                        let front = (backend as? IOSBackend).map { ios in { await ios.frontIsSpringBoard(on: device) } }
+                        try await Self.pressSimulatorHome(on: prober, device: device, centre: watched, verification: verification, processPath: processPath, frontIsHome: front)
                     }
                     return
                 }

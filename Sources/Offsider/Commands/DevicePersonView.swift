@@ -247,7 +247,9 @@ enum DevicePersonView {
                 table.append(Table.Row([Table.Cell(row.device, person: first ? nil : ""), Table.Cell(kind), Table.Cell(detail)], status: status))
                 first = false
             }
-            if let input = row.input { add("input", warm(input.state ?? "ready"), idle(input.idleFor, of: input.idleSeconds, state: input.state ?? "ready")) }
+            if let input = row.input {
+                add("input", warm(input.state ?? "ready"), idle(input.idleFor, of: input.idleSeconds, state: input.state ?? "ready") + (input.accessibilityHeld == true ? ", reads warm" : ""))
+            }
             if let helper = row.helper { add("helper", warm(helper.state), idle(helper.idleFor, of: helper.idleSeconds, state: helper.state)) }
             if let runner = row.runner { add("runner", runnerStatus(runner), runnerDetail(runner, now: now)) }
             if let broker = row.broker { add("broker", brokerStatus(broker), brokerDetail(broker)) }

@@ -17,6 +17,9 @@ private final class ProcessIdentifierBox: @unchecked Sendable {
 
 @Suite("Stream Video Command Tests", .serialized, .enabled(if: isE2EEnabled))
 struct StreamVideoTests {
+    /// Once for the suite: video refuses to start over a keyboard's suggestions or a password field, which the suite before can leave in front.
+    private static let screenWithoutKeyboard = Task { try await TestHelpers.launchPlaygroundApp(to: "tap-test") }
+
     @Test("Stream video outputs MJPEG data with HTTP headers")
     func streamVideoMJPEG() async throws {
         let result = try await streamVideoForDuration(format: "mjpeg", duration: 3.0)
@@ -128,6 +131,7 @@ struct StreamVideoTests {
         duration: TimeInterval = 2.0,
         onStart: @escaping @Sendable (pid_t) -> Void = { _ in }
     ) async throws -> (output: String, data: Data, dataString: String, dataSize: Int, exitCode: Int32) {
+        try await Self.screenWithoutKeyboard.value
         let udid = try TestHelpers.requireSimulatorUDID()
 
         let offsiderPath = try TestHelpers.getOffsiderPath()

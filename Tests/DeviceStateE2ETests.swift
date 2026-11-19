@@ -65,6 +65,99 @@ struct DeviceStateE2ETests {
         }
     }
 
+    /// Polls `alert show --json` until the playground's prompt is up; the parsed report.
+    static func waitForPrompt(timeout: TimeInterval = 15) async throws -> [String: Any] {
+        let deadline = Date().addingTimeInterval(timeout)
+        var last = ""
+        while Date() < deadline {
+            let shown = try await TestHelpers.runOffsiderCommandSeparated("alert show \(app) --json", simulatorUDID: udid)
+            if shown.exitCode == 0, let report = try JSONSerialization.jsonObject(with: Data(shown.stdout.utf8)) as? [String: Any] { return report }
+            last = shown.stderr
+            try await Task.sleep(for: .milliseconds(400))
+        }
+        throw TestError.unexpectedState("No permission prompt for the playground showed within \(Int(timeout)) s: \(last)")
+    }
+
+    static func buttons(_ report: [String: Any]) -> [(label: String, role: String)] {
+        let prompt = report["prompt"] as? [String: Any]
+        return (prompt?["buttons"] as? [[String: Any]] ?? []).compactMap { button in
+            guard let label = button["label"] as? String, let role = button["role"] as? String else { return nil }
+            return (label, role)
+        }
+    }
+
+    /// Opens the prompt screen with `service` reset, and raises its prompt.
+    static func raise(_ service: String, reset: String) async throws {
+        try await offsider("permission reset \(reset) \(app)")
+        try await TestHelpers.launchPlaygroundApp(to: "permission-prompt", simulatorUDID: udid)
+        try await offsider("tap --id permission-prompt-ask-\(service)")
+    }
+
+    @Test("alert reads the location prompt over the playground, refuses it to another app, denies it, then accepts it while the app is used, and reset makes the app ask again")
+    func alertAnswersTheLocationPrompt() async throws {
+        try await Self.restoring({ _ = try? await Self.offsider("permission reset location \(Self.app)") }) {
+            try await Self.offsider("permission reset location \(Self.app)")
+            try await TestHelpers.launchPlaygroundApp(to: "permission-prompt", simulatorUDID: Self.udid)
+            #expect(try await Self.label("Location:") { $0 == "Location: not-determined" } == "Location: not-determined")
+            let none = try await TestHelpers.runOffsiderCommandSeparated("alert show \(Self.app) --json", simulatorUDID: Self.udid)
+            #expect(none.exitCode == 2, "\(none.stderr)")
+
+            try await Self.offsider("tap --id permission-prompt-ask-location")
+            let shown = try await Self.waitForPrompt()
+            #expect(Self.buttons(shown).filter { $0.role == "accept" }.map(\.label) == ["Allow While Using App"])
+            #expect(Self.buttons(shown).filter { $0.role == "deny" }.count == 1)
+
+            let other = try await TestHelpers.runOffsiderCommandSeparated("alert accept --app com.example.other --json", simulatorUDID: Self.udid)
+            #expect(other.exitCode == 7, "\(other.stderr)")
+            #expect(other.stdout.contains(#""reason":"system_prompt_in_front""#))
+
+            try await Self.offsider("alert deny \(Self.app)")
+            #expect(try await Self.label("Location:") { $0 == "Location: denied" } == "Location: denied")
+
+            try await Self.raise("location", reset: "location")
+            _ = try await Self.waitForPrompt()
+            let accepted = try await Self.offsider("alert accept \(Self.app) --json")
+            #expect(accepted.stdout.contains(#""button":"Allow While Using App""#))
+            #expect(try await Self.label("Location:") { $0 == "Location: when-in-use" } == "Location: when-in-use")
+
+            try await Self.raise("location", reset: "location")
+            _ = try await Self.waitForPrompt()
+            try await Self.offsider("alert choose \"Allow Once\" \(Self.app)")
+            #expect(try await Self.label("Location:") { $0 == "Location: when-in-use" } == "Location: when-in-use")
+        }
+    }
+
+    @Test("a privacy prompt is answered by its button ids: the camera prompt accepts to authorised and denies to denied")
+    func alertAnswersTheCameraPrompt() async throws {
+        try await Self.restoring({ _ = try? await Self.offsider("permission reset all \(Self.app)") }) {
+            try await Self.raise("camera", reset: "all")
+            let shown = try await Self.waitForPrompt()
+            #expect(Self.buttons(shown).map(\.role).sorted() == ["accept", "deny"])
+            try await Self.offsider("alert accept \(Self.app)")
+            #expect(try await Self.label("Camera:") { $0 == "Camera: authorised" } == "Camera: authorised")
+
+            try await Self.raise("camera", reset: "all")
+            _ = try await Self.waitForPrompt()
+            try await Self.offsider("alert deny \(Self.app)")
+            #expect(try await Self.label("Camera:") { $0 == "Camera: denied" } == "Camera: denied")
+        }
+    }
+
+    @Test("two prompts in turn: accepting the camera names the location prompt that follows, which deny then answers")
+    func alertFollowsToTheNextPrompt() async throws {
+        try await Self.restoring({ _ = try? await Self.offsider("permission reset all \(Self.app)") }) {
+            try await Self.raise("both", reset: "all")
+            _ = try await Self.waitForPrompt()
+            let first = try await Self.offsider("alert accept \(Self.app) --json")
+            let report = try #require(try JSONSerialization.jsonObject(with: Data(first.stdout.utf8)) as? [String: Any])
+            let next = try #require(report["next"] as? [String: Any], "the location prompt did not follow: \(first.stdout)")
+            #expect((next["title"] as? String)?.contains("location") == true)
+            try await Self.offsider("alert deny \(Self.app)")
+            #expect(try await Self.label("Location:") { $0 == "Location: denied" } == "Location: denied")
+            #expect(try await Self.label("Camera:") { $0 == "Camera: authorised" } == "Camera: authorised")
+        }
+    }
+
     @Test("with Face ID enrolled, match authenticates the app, no-match keeps it asking, and unenrol leaves it unavailable")
     func faceID() async throws {
         let before = try await Self.offsider("biometric status").stdout

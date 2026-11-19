@@ -1,7 +1,7 @@
 import Foundation
 
 /// How a cover check knew what is drawn over a tap target.
-public enum CoverEvidence: String, Sendable {
+public enum CoverEvidence: String, Sendable, CaseIterable {
     /// The iOS simulator's own hit-test at the tap point.
     case hitTest
     /// Android's drawing order and window layers, walked down to the tap point.
@@ -16,6 +16,8 @@ public enum CoverEvidence: String, Sendable {
     case devMenuTouchArea
     /// Android's status or navigation bar, a window of its own over an app drawn behind it, which takes every touch in its frame.
     case systemBar
+    /// Android's drawing order inside an app window that is hidden whole, as under a keyboard panel, where every view reads not visible, drawn or not: only a guess.
+    case hiddenWindow
 }
 
 /// What a selector tap would land on instead of its target.
@@ -39,6 +41,13 @@ public struct CoverVerdict: Equatable, Sendable {
     /// True when the tap may still go to a part of the target beside the cover, once a hit-test there finds the target.
     public var leavesPartShowing: Bool {
         isConfident && (evidence == .hitTest || evidence == .devMenuTouchArea)
+    }
+
+    /// True when Android draws a plain label on `target`, inside its frame and holding nothing to press, such as a badge on a card; anything else may be a page's or a dialog's, whose background the tree leaves out.
+    public func isLabelDrawn(on target: UINode) -> Bool {
+        guard isConfident, evidence == .drawingOrder, cover.normalizedLabel != nil, !cover.contains(where: { $0.role.isActionable || $0.role.isTextInput }),
+              let frame = cover.frame, let targetFrame = target.frame else { return false }
+        return targetFrame.encloses(frame, tolerance: TransitionGuard.frameTolerance)
     }
 
     /// Where the cover takes touches.
@@ -121,7 +130,12 @@ public enum CoverJudge {
         } else if context.target.isAndroidNode, let judgement = context.drawnJudgement() {
             switch judgement {
             case .clear: return nil
-            case .cover(let node, let confident): return context.verdict(node, .drawingOrder, confident: confident)
+            case .cover(let node, let confident):
+                // With its whole window hidden a view Android never draws, such as one at zero opacity, reads like any other.
+                if confident, context.isHiddenWithItsWindow(node) {
+                    return context.verdict(node, .hiddenWindow, confident: false)
+                }
+                return context.verdict(node, .drawingOrder, confident: confident)
             case .guess(let node): return context.verdict(node, .treeOrder, confident: false)
             case .undecided: break
             }
@@ -143,7 +157,7 @@ public enum CoverJudge {
     public static func drawnCover(of target: UINode, at point: UIPoint, roots: [UINode], viewport: UIFrame, stack: ScreenStack) -> UINode? {
         guard target.isAndroidNode else { return nil }
         let context = Context(target: target, matched: target, point: point, candidates: [], ground: CoverGround(roots: roots, viewport: viewport, stack: stack))
-        guard case .cover(let node, confident: true)? = context.drawnJudgement() else { return nil }
+        guard case .cover(let node, confident: true)? = context.drawnJudgement(), !context.isHiddenWithItsWindow(node) else { return nil }
         return node
     }
 
@@ -154,6 +168,13 @@ public enum CoverJudge {
         let context = Context(target: target, matched: target, point: point, candidates: [], ground: CoverGround(tree: roots, viewport: viewport, stack: ScreenStack.build(roots, viewport: viewport)))
         guard case .clear? = context.drawnJudgement() else { return false }
         return true
+    }
+
+    /// True when Android's drawing order puts `target`, or something it holds, on top at `point` with nothing else listed there, not even a view that would pass a touch on; false when the order cannot tell.
+    public static func isDrawnOnTop(_ target: UINode, at point: UIPoint, on ground: CoverGround) -> Bool {
+        guard target.isAndroidNode, let path = drawnPath(at: point, in: ground.tree, skipping: []) else { return false }
+        let top = ground.tree.index(at: path)
+        return ground.tree.indexes(of: target).contains { ground.tree.subtree($0).contains(top) }
     }
 
     /// The hit path, with `skipping` taken as gone, when Android's drawing order or window layers order every set of siblings it passes; nil otherwise.
@@ -308,6 +329,11 @@ public enum CoverJudge {
         /// The judgement of what Android's drawing order puts on top at the point; nil when the order cannot tell.
         func drawnJudgement() -> HitJudgement? {
             CoverJudge.drawnTop(at: point, in: ground.tree, holding: [target, matched], viewport: viewport, stack: stack).map(judge(hit:))
+        }
+
+        /// `node` is hidden along with its whole app window, as a keyboard panel over an app leaves it.
+        func isHiddenWithItsWindow(_ node: UINode) -> Bool {
+            ground.tree.firstIndex(of: node).map(ground.tree.flat.isHiddenWithItsWindow) ?? false
         }
 
         func verdict(_ node: UINode, _ evidence: CoverEvidence, confident: Bool) -> CoverVerdict {
