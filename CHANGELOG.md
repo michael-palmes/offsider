@@ -48,6 +48,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Fixed
 
+- `wait --settled` on an iOS simulator, after an input that changed the tree, also waits up to 2 s for the pixels to hold still, as on Android. A sheet UIKit slides in lists its final frame in the tree at once, so a fast read passed mid-slide and the next tap was dropped.
 - On an Android emulator, `type --into-id`, `--into-label` and `--into-label-contains` no longer report success when Gboard's stylus handwriting tutorial took the text. `type` and `key-sequence` send nothing while a field inside the keyboard has focus (exit 2, `focus_mismatch`), and after keys into a named field `type` reads it back, exiting 5 (`text_not_accepted`) when the text did not reach it, batch steps too. The message names the tutorial; `type --replace` still works past it, and the hint turns stylus handwriting off.
 - `login` closes a keyboard that taps on empty space leave up before it gives up with `target_under_keyboard`: the keyboard's own hide key or Done bar on iOS, Back over docked keys on Android, never Return.
 - On Android, `turnstile` and `login` read a Turnstile widget the app hides from accessibility, as `describe-ui` does, so a checkbox `describe-ui` lists no longer reads `unknown`.
