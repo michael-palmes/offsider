@@ -973,13 +973,14 @@ struct AccessibilityTargetResolver {
         return .notFound(kind: query.kind, value: query.rawValue, suggestions: near.map(\.match), candidates: near.compactMap(\.summary))
     }
 
-    /// The field a near miss may name: a label as tree output shows it, and no value of an element a mask hides.
-    private static func shownField(of node: UINode, query: AccessibilityQuery) -> String? {
+    /// The field a near miss may name: a label as tree output shows it, and no value of a password field, a revealed one or an element a mask hides.
+    static func shownField(of node: UINode, query: AccessibilityQuery) -> String? {
         guard let field = query.field(of: node) else { return nil }
         let mask = OutputMasks.current.mask
         switch query.kind {
         case "--id": return field
-        case "--value": return mask.hides(id: node.normalizedID, label: node.normalizedLabel) ? nil : LogRedactor.redactValue(field).text
+        case "--value":
+            return mask.withholdsValue(of: node) ? nil : LogRedactor.redactValue(field).text
         default: return mask.shownLabel(field, id: node.normalizedID)
         }
     }

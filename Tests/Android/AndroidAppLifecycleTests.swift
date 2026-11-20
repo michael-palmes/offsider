@@ -159,6 +159,63 @@ struct AndroidAppLifecycleTests {
         #expect(AndroidAppPackage.start(launchState: nil, wasRunning: true, restarted: true) == .cold)
     }
 
+    @Test("a new process id after the start is cold, even when Android says WARM and the app read as running before")
+    func launchNewProcessIsCold() async throws {
+        let (backend, server) = try Self.setUp { _ in
+            FakeAdbServer.shell(stdout: """
+            offsider: running
+            offsider: pids-before 4120
+            Status: ok
+            LaunchState: WARM
+            Activity: com.mpalmes.offsider.playground.rn/.MainActivity
+            TotalTime: 380
+            offsider: pids-after 4388
+            Complete
+            """)
+        }
+        let launch = try await backend.launchApp(Self.package, restart: false, on: Self.device)
+        #expect(launch.start == .cold)
+        #expect(launch.launchState == "WARM")
+        #expect(launch.pid == 4388)
+        let script = try #require(Self.shellCommands(server).last)
+        let before = try #require(script.range(of: "offsider: pids-before"))
+        let start = try #require(script.range(of: "am start -W"))
+        let after = try #require(script.range(of: "offsider: pids-after"))
+        #expect(before.upperBound <= start.lowerBound && start.upperBound <= after.lowerBound)
+    }
+
+    @Test("the same process id before and after is warm, even when Android says COLD")
+    func launchSameProcessIsWarm() async throws {
+        let (backend, _) = try Self.setUp { _ in
+            FakeAdbServer.shell(stdout: "offsider: running\noffsider: pids-before 4120\nStatus: ok\nLaunchState: COLD\nTotalTime: 200\noffsider: pids-after 4120\n")
+        }
+        let launch = try await backend.launchApp(Self.package, restart: false, on: Self.device)
+        #expect(launch.start == .warm)
+        #expect(launch.launchState == "COLD")
+    }
+
+    @Test("no process before and one after is cold; no process after leaves Android's launch state to decide")
+    func launchPidFallbacks() async throws {
+        let (backend, _) = try Self.setUp { _ in
+            FakeAdbServer.shell(stdout: "offsider: stopped\noffsider: pids-before\nStatus: ok\nLaunchState: WARM\noffsider: pids-after 77\n")
+        }
+        #expect(try await backend.launchApp(Self.package, restart: false, on: Self.device).start == .cold)
+        #expect(AndroidAppPackage.start(launchState: "WARM", wasRunning: true, restarted: false, pidsBefore: [12], pidsAfter: []) == .warm)
+        #expect(AndroidAppPackage.start(launchState: nil, wasRunning: true, restarted: false, pidsBefore: [12], pidsAfter: []) == .warm)
+        #expect(AndroidAppPackage.start(launchState: "WARM", wasRunning: true, restarted: false, pidsBefore: [12], pidsAfter: [12, 40]) == .cold)
+    }
+
+    @Test("a link that starts a new process is cold and keeps Android's launch state")
+    func openNewProcessIsCold() async throws {
+        let (backend, server) = try Self.setUp { _ in
+            FakeAdbServer.shell(stdout: "offsider: running\noffsider: pids-before 900\nStatus: ok\nLaunchState: WARM\noffsider: pids-after 901\n")
+        }
+        let launch = try await backend.openLink("offsiderplayground://settings", in: Self.package, restart: false, on: Self.device)
+        #expect(launch.start == .cold && launch.launchState == "WARM" && launch.pid == 901)
+        let script = try #require(Self.shellCommands(server).last)
+        #expect(script.contains("offsider: pids-before") && script.contains("offsider: pids-after"))
+    }
+
     @Test("an app already in front reports a warm start and no launch time, as Android starts nothing")
     func launchAlreadyInFront() async throws {
         let (backend, _) = try Self.setUp { _ in

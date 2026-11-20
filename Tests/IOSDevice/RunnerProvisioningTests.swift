@@ -10,6 +10,8 @@ final class FakeXcodebuild: @unchecked Sendable {
     private var recorded: [[String]] = []
     var status: Int32 = 0
     var output = ""
+    /// Written into each app as `embedded.mobileprovision`, as a device build embeds its profile.
+    var profile: Data?
 
     var calls: [[String]] { lock.withLock { recorded } }
 
@@ -29,6 +31,11 @@ final class FakeXcodebuild: @unchecked Sendable {
         for file in files {
             try FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
             try Data("built \(file.lastPathComponent)".utf8).write(to: file)
+        }
+        if let profile {
+            for app in ["OffsiderRunnerHost.app", "OffsiderRunnerUITests-Runner.app"] {
+                try profile.write(to: config.appendingPathComponent(app).appendingPathComponent("embedded.mobileprovision"))
+            }
         }
         return ProcessCaptureResult(status: 0, stdout: "", stderr: "")
     }
@@ -70,7 +77,7 @@ struct RunnerProvisioningTests {
 
         func builder(
             environment: [String: String] = ["OFFSIDER_IOS_TEAM_ID": RunnerProvisioningTests.team], allowance: DeviceAllowance? = nil, expected: [String: String]? = nil,
-            registerDevice: Bool = false
+            registerDevice: Bool = false, now: Date = Date()
         ) -> XcodeRunnerBuilder {
             let xcodebuild = xcodebuild
             let signatures = signatures
@@ -78,7 +85,7 @@ struct RunnerProvisioningTests {
                 source: source, cacheRoot: cache, xcode: XcodeLocation(developerDirectory: "/Xcode.app/Contents/Developer", source: "test", version: "27.0", build: "27A266a"),
                 environment: environment, signedInTeams: { ["AAAAA11111"] }, notice: notices.append, allowance: allowance,
                 expectedSource: expected, registerDevice: registerDevice,
-                xcodebuild: { try xcodebuild.run($0, $1, $2) }, signatureValid: { signatures.check($0, $1) }
+                xcodebuild: { try xcodebuild.run($0, $1, $2) }, signatureValid: { signatures.check($0, $1) }, now: { now }
             )
         }
 
