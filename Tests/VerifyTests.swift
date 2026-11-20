@@ -191,22 +191,22 @@ struct AppExitE2ETests {
         (try report(stdout)["error"] as? [String: Any])?["reason"] as? String
     }
 
-    @Test("a tap that crashes the app to the home screen is not verified: it exits 1 app_crashed or app_stopped, sent once")
-    func crashingTapNotVerified() async throws {
-        try await TestHelpers.launchPlaygroundApp(to: "crash-test")
+    @Test("a tap that ends the app to the home screen is not verified: it exits 1 app_stopped, not app_crashed, sent once")
+    func appEndingTapNotVerified() async throws {
+        try await TestHelpers.launchPlaygroundApp(to: "quit-test")
 
-        let result = try await TestHelpers.runOffsiderCommandSeparated("tap --id crash-now --verify --json", simulatorUDID: defaultSimulatorUDID)
+        let result = try await TestHelpers.runOffsiderCommandSeparated("tap --id quit-now --verify --json", simulatorUDID: defaultSimulatorUDID)
         let json = try report(result.stdout)
 
         #expect(result.exitCode == 1)
-        #expect(["app_crashed", "app_stopped"].contains(try reason(result.stdout)))
+        #expect(try reason(result.stdout) == "app_stopped", "a clean quit writes no crash report, so it is never called a crash")
         #expect(json["dispatched"] as? String == "yes")
         #expect(json["attempts"] as? Int == 1)
     }
 
     @Test("wait --id and wait --gone that see the app quit mid-wait exit 1 app_stopped, not a timeout or a pass", arguments: ["--id never-on-screen --timeout 8", "--id quit-now --gone --timeout 8"])
     func waitSeesTheAppQuit(condition: String) async throws {
-        try await TestHelpers.launchPlaygroundApp(to: "crash-test")
+        try await TestHelpers.launchPlaygroundApp(to: "quit-test")
 
         async let waited = TestHelpers.runOffsiderCommandSeparated("wait \(condition) --json", simulatorUDID: defaultSimulatorUDID)
         try await Task.sleep(for: .seconds(2))

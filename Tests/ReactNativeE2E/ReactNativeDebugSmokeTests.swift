@@ -401,7 +401,7 @@ struct ReactNativeDebugSmokeTests {
         throw DescribeUIError(description: "the playground's process never appeared on \(platform.rawValue)")
     }
 
-    @Test("rn open fails fast with app_crashed when the app's process dies while it waits", arguments: RNPlatform.enabled)
+    @Test("rn open fails fast with app_crashed when the app's process stops while it waits", arguments: RNPlatform.enabled)
     func rnOpenDetectsCrash(platform: RNPlatform) async throws {
         let app = RNApp(platform)
         try await app.open("overlay-test")
@@ -412,9 +412,9 @@ struct ReactNativeDebugSmokeTests {
         switch platform {
         case .ios:
             #expect(try await Self.appPID(platform) == pid, "the pid to signal must still be the playground's")
-            _ = try await CommandRunner.runSeparated("/bin/kill -SEGV \(pid)", timeout: 10)
+            _ = try await CommandRunner.runSeparated("/bin/kill -TERM \(pid)", timeout: 10)
         case .android:
-            try await AndroidE2E.shell("am crash \(AndroidE2E.package)")
+            try await AndroidE2E.shell("am force-stop \(AndroidE2E.package)")
         }
         let result = try await opened
         #expect(result.exitCode == 1, "\(result.stderr)")
@@ -422,9 +422,9 @@ struct ReactNativeDebugSmokeTests {
         #expect(Date().timeIntervalSince(started) < 60, "crash detection should not wait out --timeout")
         switch platform {
         case .ios:
-            #expect(result.stderr.contains("Crash report: ") || result.stderr.contains("crash report is not written yet"), "\(result.stderr)")
+            #expect(result.stderr.contains("crash report is not written yet"), "a stop writes no crash report: \(result.stderr)")
         case .android:
-            #expect(result.stderr.contains("It stopped with "), "\(result.stderr)")
+            #expect(!result.stderr.contains("It stopped with "), "a stop logs no exception: \(result.stderr)")
         }
         try await app.open("overlay-test")
     }
