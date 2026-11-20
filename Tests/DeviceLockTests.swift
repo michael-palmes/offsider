@@ -29,22 +29,32 @@ private func reap(_ pid: pid_t) {
     waitpid(pid, &status, 0)
 }
 
+/// Every descriptor `pid` holds, read through libproc into a buffer sized from its own count, read again larger while the list fills it.
+private func descriptors(of pid: pid_t) -> [proc_fdinfo] {
+    let stride = MemoryLayout<proc_fdinfo>.stride
+    var capacity = max(0, Int(proc_pidinfo(pid, PROC_PIDLISTFDS, 0, nil, 0))) / stride + 64
+    while capacity <= 1 << 20 {
+        var list = [proc_fdinfo](repeating: proc_fdinfo(), count: capacity)
+        let count = max(0, Int(proc_pidinfo(pid, PROC_PIDLISTFDS, 0, &list, Int32(capacity * stride)))) / stride
+        if count < capacity { return Array(list.prefix(count)) }
+        capacity *= 2
+    }
+    return []
+}
+
 /// The descriptor this process holds open on `path`, matched by device and inode.
 private func openDescriptor(for path: String) -> Int32? {
     var target = stat()
     guard stat(path, &target) == 0 else { return nil }
     var info = stat()
-    return (0..<getdtablesize()).first { fstat($0, &info) == 0 && info.st_dev == target.st_dev && info.st_ino == target.st_ino }
+    return descriptors(of: getpid()).lazy.map(\.proc_fd).first { fstat($0, &info) == 0 && info.st_dev == target.st_dev && info.st_ino == target.st_ino }
 }
 
 /// Whether `pid` holds a descriptor open on `path`, read through libproc.
 private func process(_ pid: pid_t, holds path: String) -> Bool {
     var target = stat()
     guard stat(path, &target) == 0 else { return false }
-    let stride = MemoryLayout<proc_fdinfo>.stride
-    var descriptors = [proc_fdinfo](repeating: proc_fdinfo(), count: 256)
-    let bytes = proc_pidinfo(pid, PROC_PIDLISTFDS, 0, &descriptors, Int32(descriptors.count * stride))
-    return descriptors.prefix(max(0, Int(bytes)) / stride).contains { descriptor in
+    return descriptors(of: pid).contains { descriptor in
         guard descriptor.proc_fdtype == UInt32(PROX_FDTYPE_VNODE) else { return false }
         var info = vnode_fdinfowithpath()
         let size = Int32(MemoryLayout<vnode_fdinfowithpath>.size)
@@ -66,7 +76,7 @@ private func eventually(within limit: Duration = .seconds(2), _ condition: () ->
 
 /// How many descriptors `pid` lists, as libproc reports them; a child inherits at least its standard ones.
 private func descriptorCount(of pid: pid_t) -> Int {
-    max(0, Int(proc_pidinfo(pid, PROC_PIDLISTFDS, 0, nil, 0))) / MemoryLayout<proc_fdinfo>.stride
+    descriptors(of: pid).count
 }
 
 /// The executable `pid` runs, as libproc reports it.
@@ -278,6 +288,32 @@ struct DeviceLockTests {
         lock.release()
         let again = try await DeviceLock.acquire(key, command: "swipe", wait: nil, root: root)
         again.release()
+    }
+
+    @Test("a lock descriptor numbered after a few hundred inheritable ones is still seen, here and in a child")
+    func manyInheritedDescriptors() async throws {
+        var limit = rlimit()
+        try #require(getrlimit(RLIMIT_NOFILE, &limit) == 0)
+        let saved = limit
+        limit.rlim_cur = min(limit.rlim_max, 2048)
+        try #require(setrlimit(RLIMIT_NOFILE, &limit) == 0)
+        defer { var restored = saved; setrlimit(RLIMIT_NOFILE, &restored) }
+        // Left open without close-on-exec, as earlier tests in a long serial run leave them, so the child inherits every one.
+        let fillers = (0..<400).map { _ in open("/dev/null", O_RDONLY) }
+        defer { fillers.filter { $0 >= 0 }.forEach { close($0) } }
+        try #require(fillers.allSatisfy { $0 >= 0 })
+
+        let root = try makePrivateLockRoot()
+        defer { try? FileManager.default.removeItem(atPath: root) }
+        let lock = try await DeviceLock.acquire(key, command: "tap", wait: nil, root: root)
+        defer { lock.release() }
+        let shared = try #require(openDescriptor(for: lock.path))
+        #expect(shared > 400)
+        #expect(process(getpid(), holds: lock.path))
+
+        let pid = try spawnSleep(inheriting: shared)
+        defer { reap(pid) }
+        #expect(await eventually { process(pid, holds: lock.path) })
     }
 
     @Test("a lock file the holder has not written yet still refuses, naming no pid")
