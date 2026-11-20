@@ -160,4 +160,14 @@ public enum InputPersonView {
         }
         return receipt(headline, details: details, agent: report.textLine() + "\n")
     }
+
+    public static func loginFill(_ report: LoginFillReport) -> Page {
+        let what = report.target == .password ? "password" : "email or username"
+        let headline = "Typed the saved \(what)"
+        var details = ["\(TerminalText.field(report.app, profile: .person)) as \(LoginCredential.displayKey(report.key)): \(report.filled.map(\.name).joined(separator: ", "))"]
+        if !report.filter.isEmpty { details.append("Chosen by --where \(report.filter.map(\.rawValue).joined(separator: " "))") }
+        details.append("Nothing submitted")
+        if report.savePrompt == .declined { details.append("Save-password prompt declined") }
+        return receipt(headline, details: details, agent: report.textLine() + "\n")
+    }
 }

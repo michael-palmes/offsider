@@ -59,6 +59,7 @@ public struct RunTimeline: Equatable, Sendable {
             let title = TerminalText.quoted(SelectorText.truncated(TerminalText.line(prompt, cap: 200), limit: 80))
             notes.append(entry.button.map { "\(TerminalText.quoted(TerminalText.line($0, cap: 80))) on \(title)" } ?? "left \(title)")
         }
+        if let fields = entry.fields, !fields.isEmpty { notes.append(fields.map { "\($0.field) \($0.state == "filled" ? "filled" : "not filled")" }.joined(separator: ", ")) }
         return notes
     }
 
