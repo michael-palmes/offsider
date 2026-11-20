@@ -30,6 +30,7 @@ struct HiddenBranchMiss: LocalizedError, UserFacingError, OffsiderFailure {
             let wanted = id.trimmingCharacters(in: .whitespacesAndNewlines)
             return branch.id == wanted || branch.id?.hasSuffix(":id/" + wanted) == true
         case .label, .labelContains:
+            if let label = branch.label, OutputMasks.current.mask.hidesLabel(label, id: branch.id) { return false }
             return query.matches(UINode(role: .other, label: branch.label, frame: branch.frame, native: .android(AndroidNativeAttributes())))
         case .value:
             return false

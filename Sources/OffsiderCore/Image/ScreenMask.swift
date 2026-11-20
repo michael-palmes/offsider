@@ -12,6 +12,8 @@ public enum MaskKind: String, CaseIterable, Sendable {
     case labelContains
     case text
     case emails
+    /// Every element an id, label, text or email mask hides, and any element that copies hidden text, counted once whichever rule matched.
+    case rules
     case region
 
     /// `--mask-skip-beneath` may leave this kind unpainted beneath a page; password fields, keyboard text, the copy preview and regions are always painted.
@@ -22,6 +24,11 @@ public enum MaskKind: String, CaseIterable, Sendable {
     /// Painted whenever password fields are, and listed in `maskedBy` only when something was painted.
     public var ridesWithSecure: Bool {
         self == .keyboard || self == .copyPreview
+    }
+
+    /// Kinds that read the tree's text, reported together as `rules` so no count tells which rule matched.
+    public var foldsIntoRules: Bool {
+        [.id, .label, .labelContains, .text, .emails].contains(self)
     }
 }
 
@@ -84,6 +91,11 @@ public struct MaskPlan: Equatable, Sendable {
 
     public var isEmpty: Bool { kinds.isEmpty }
 
+    /// Whether any mask here reads the tree's text: ids, labels, patterns or emails.
+    public var readsText: Bool {
+        !ids.isEmpty || !labels.isEmpty || !labelsContaining.isEmpty || !texts.isEmpty || emails
+    }
+
     /// Only regions can be painted without reading the accessibility tree.
     public var needsTree: Bool {
         secure || !ids.isEmpty || !labels.isEmpty || !labelsContaining.isEmpty || !texts.isEmpty || emails
@@ -104,6 +116,7 @@ public struct MaskPlan: Equatable, Sendable {
             case .labelContains: !labelsContaining.isEmpty
             case .text: !texts.isEmpty
             case .emails: emails
+            case .rules: false
             case .region: !regions.isEmpty
             }
         }
@@ -119,30 +132,33 @@ public struct MaskPlan: Equatable, Sendable {
     }
 
     /// Frames for `--mask-text` and `--mask-emails`: the leaf-most nodes whose readable text matches.
-    public func textTargets(in tree: UITree) throws -> MaskTargets {
+    /// `hidden` elements match no pattern, so a match never depends on text another mask hides.
+    public func textTargets(in tree: UITree, hidden: (UINode) -> Bool = { _ in false }) throws -> MaskTargets {
         var targets = MaskTargets()
         for pattern in texts {
-            let nodes = Self.leafMostMatches(in: tree.roots, regex: try Self.compile(pattern))
+            let nodes = Self.leafMostMatches(in: tree.roots, regex: try Self.compile(pattern), hidden: hidden)
             targets.add(nodes, as: .text)
             if nodes.isEmpty {
                 targets.unmatched.append("--mask-text \(pattern)")
             }
         }
         if emails {
-            targets.add(Self.leafMostMatches(in: tree.roots, regex: try Self.compile(PersonalData.emailPattern)), as: .emails)
+            targets.add(Self.leafMostMatches(in: tree.roots, regex: try Self.compile(PersonalData.emailPattern), hidden: hidden), as: .emails)
         }
         return targets
     }
 
     /// A matching node whose descendant also matches is left to the descendant, so a row is not blacked out for one field.
-    static func leafMostMatches(in nodes: [UINode], regex: NSRegularExpression) -> [UINode] {
-        leafMostMatches(in: nodes) { text in regex.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)) != nil }
+    static func leafMostMatches(in nodes: [UINode], regex: NSRegularExpression, hidden: (UINode) -> Bool = { _ in false }) -> [UINode] {
+        leafMostMatches(in: nodes, hidden: hidden) { text in regex.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)) != nil }
     }
 
-    static func leafMostMatches(in nodes: [UINode], where matches: (String) -> Bool) -> [UINode] {
+    /// `hidden` elements match nothing, so a match never depends on text another mask hides.
+    static func leafMostMatches(in nodes: [UINode], hidden: (UINode) -> Bool = { _ in false }, where matches: (String) -> Bool) -> [UINode] {
         nodes.flatMap { node -> [UINode] in
-            let below = leafMostMatches(in: node.children, where: matches)
+            let below = leafMostMatches(in: node.children, hidden: hidden, where: matches)
             if !below.isEmpty { return below }
+            if hidden(node) { return [] }
             return node.searchableText.contains(where: matches) ? [node] : []
         }
     }
@@ -175,6 +191,28 @@ public struct MaskTargets: Equatable, Sendable {
     public mutating func add(_ matches: [UINode], as kind: MaskKind) {
         frames[kind, default: []] += matches.map(\.frame)
         groups.append(MaskGroup(kind: kind, nodes: matches))
+    }
+
+    /// Moves every text-reading kind into `rules`, each element once, so the counts tell nothing of which rule matched it.
+    /// Identical copies stay apart: an element is kept as many times as the group listing it most often lists it.
+    public mutating func foldIntoRules() {
+        var nodes: [UINode] = []
+        for group in groups where group.kind.foldsIntoRules || group.kind == .rules {
+            var used = Set<Int>()
+            for node in group.nodes {
+                if let index = nodes.indices.first(where: { !used.contains($0) && nodes[$0].isSameElement(as: node) }) {
+                    used.insert(index)
+                } else {
+                    used.insert(nodes.count)
+                    nodes.append(node)
+                }
+            }
+        }
+        groups.removeAll { $0.kind.foldsIntoRules || $0.kind == .rules }
+        for kind in MaskKind.allCases where kind.foldsIntoRules || kind == .rules {
+            frames[kind] = nil
+        }
+        if !nodes.isEmpty { add(nodes, as: .rules) }
     }
 
     /// Places matches by tree position: frames painted beneath a page, and with `skip` the skippable ones left out of `frames`; an unplaceable group is painted whole, and a match standing for several identical copies is beneath only when all are.

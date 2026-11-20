@@ -100,7 +100,7 @@ struct ScreenshotWidgetTests {
         let label = FakeUI.node(.text, label: "Balance 120", frame: FakeUI.frame(60, 150, 100, 30))
         let backend = try WidgetBackend(reads: [[Self.widget]], tree: FakeUI.tree(platform: .android, width: 390, height: 844, [label]))
         let (report, image, _) = try await Self.capture(["--mask-text", "Balance"], on: backend)
-        #expect(report.maskedBy?[.text] == 1)
+        #expect(report.maskedBy?[.rules] == 1)
         #expect(ScreenshotMaskTests.pixel(image, (100 - 31) * 3, (160 - 101) * 3) == ScreenshotMaskTests.black)
         #expect(ScreenshotMaskTests.pixel(image, 3, 3) == ScreenshotMaskTests.white)
     }

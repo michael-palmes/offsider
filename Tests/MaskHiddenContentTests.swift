@@ -43,7 +43,7 @@ struct MaskHiddenContentTests {
             try await ScreenshotMaskTests.capture(["--mask-text", #"\.\.\."#], on: backend, environment: [:])
         }
 
-        #expect(report.maskedBy?[.text] == 1)
+        #expect(report.maskedBy?[.rules] == 1)
         #expect(report.maskUnmatched.isEmpty)
         #expect(ScreenshotMaskTests.point(image, 170, 115) == ScreenshotMaskTests.black)
         #expect(backend.maskReads == 1 && backend.treeReads == 0)

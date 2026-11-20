@@ -54,9 +54,9 @@ struct UIToastTests {
         #expect(decoded.context.toasts?.first?.ageMs == 1500)
     }
 
-    @Test("toast text is masked as element text is: a label part, a value pattern, a one-time code, and in the cache too", arguments: [
-        (TreeValueMask(labelContains: ["code"]), "Your login code 4821 is ready", "[redacted] code [redacted]"),
-        (TreeValueMask(patterns: [try! NSRegularExpression(pattern: "acct-[0-9]+")]), "Moved to acct-99812", "Moved to [redacted]"),
+    @Test("toast text is masked as element text is: whole for a label rule or a value pattern, a one-time code alone, and in the cache too", arguments: [
+        (TreeValueMask(labelContains: ["code"]), "Your login code 4821 is ready", "[redacted]"),
+        (TreeValueMask(patterns: [try! NSRegularExpression(pattern: "acct-[0-9]+")]), "Moved to acct-99812", "[redacted]"),
         (TreeValueMask.none, "Your code is 482913", "Your code is [redacted]"),
     ])
     func masked(mask: TreeValueMask, text: String, shown: String) {
