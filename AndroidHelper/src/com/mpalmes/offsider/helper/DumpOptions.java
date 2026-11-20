@@ -13,6 +13,11 @@ final class DumpOptions {
     boolean idle = true;
     long idleQuietMs = 100;
     long idleTimeoutMs = 500;
+    /** The package whose recent toasts the reply lists, FRONT for the app window's own; null lists none. */
+    String toasts;
+
+    static final String FRONT = "front";
+    static final int MAX_PACKAGE = 255;
 
     /** The one-shot dump mode's default: every window and every node, for checks by hand. */
     static DumpOptions fullTree() {
@@ -21,6 +26,19 @@ final class DumpOptions {
         o.includeNotImportant = true;
         o.visibleOnly = false;
         return o;
+    }
+
+    static boolean isPackageName(String name) {
+        if (name.isEmpty() || name.length() > MAX_PACKAGE || name.startsWith(".") || name.endsWith(".")) {
+            return false;
+        }
+        for (int i = 0; i < name.length(); i++) {
+            char c = name.charAt(i);
+            if (!(c == '.' || c == '_' || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9'))) {
+                return false;
+            }
+        }
+        return true;
     }
 
     static DumpOptions from(JSONObject request) throws RequestFailure {
@@ -42,6 +60,10 @@ final class DumpOptions {
             throw RequestFailure.badRequest("idleQuietMs must not exceed idleTimeoutMs");
         }
         o.idle = o.idleTimeoutMs > 0;
+        o.toasts = Requests.string(request, "toasts", false);
+        if (o.toasts != null && !FRONT.equals(o.toasts) && !isPackageName(o.toasts)) {
+            throw RequestFailure.badRequest("toasts must be front or a package name");
+        }
         return o;
     }
 }

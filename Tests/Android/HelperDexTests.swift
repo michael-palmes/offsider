@@ -33,10 +33,10 @@ struct HelperDexTests {
         #expect(detail.contains("its manifest says 0000"))
     }
 
-    @Test("a manifest for another protocol is a protocol mismatch")
-    func otherProtocol() {
-        #expect(throws: HelperDexError.protocolMismatch(found: 3, expected: 2)) {
-            try HelperDex(bytes: Self.bytes, manifestJSON: FakeHelperDevice.manifest(for: Self.bytes, protocol: 3))
+    @Test("a bundled helper for the protocol before toasts, or a later one, is a protocol mismatch", arguments: [2, 4])
+    func otherProtocol(number: Int) {
+        #expect(throws: HelperDexError.protocolMismatch(found: number, expected: 3)) {
+            try HelperDex(bytes: Self.bytes, manifestJSON: FakeHelperDevice.manifest(for: Self.bytes, protocol: number))
         }
     }
 
@@ -58,6 +58,6 @@ struct HelperDexTests {
     func reasons() {
         #expect(HelperUnavailableReason(.notBundled("x")).description == "Offsider's resource bundle has no helper; reinstall Offsider")
         #expect(HelperUnavailableReason(.damaged("x")).description == "the helper in Offsider's resource bundle does not match its manifest; reinstall Offsider")
-        #expect(HelperUnavailableReason(.protocolMismatch(found: 3, expected: 2)).description == HelperUnavailableReason.damaged("").description)
+        #expect(HelperUnavailableReason(.protocolMismatch(found: 2, expected: 3)).description == HelperUnavailableReason.damaged("").description)
     }
 }

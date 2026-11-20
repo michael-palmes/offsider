@@ -7,6 +7,8 @@ public enum ChangeKind: String, Codable, Sendable {
     case activity
     /// The `--verify-id` element came on screen.
     case element
+    /// An Android toast from the app in scope was raised after the input.
+    case toast
     case none
 }
 
