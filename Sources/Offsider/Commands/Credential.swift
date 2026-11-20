@@ -504,7 +504,6 @@ struct CredentialCommand: AsyncParsableCommand {
         requested: String?,
         json: Bool,
         styled: TerminalOutput? = nil,
-        profile: OutputProfile = .gated,
         store: any LoginCredentialStoring,
         chooseApp: ([LoginAppGroup]) throws -> String,
         confirmLink: (_ member: String, _ canonical: String) throws -> Bool
