@@ -96,6 +96,7 @@ Agents building in parallel use `swift build --scratch-path <dir>` and `swift te
 | `OFFSIDER_ANDROID_APK` | The React Native playground's release APK the Android suites install |
 | `OFFSIDER_ANDROID_E2E_AVD` | The only AVD Android E2E may drive (default `Offsider_E2E`) |
 | `OFFSIDER_ANDROID_FOLD_AVD` | The fold AVD `--android-fold` drives (default `Offsider_E2E_Fold`) |
+| `OFFSIDER_E2E_KEEP_BOOTED=1` | `test-runner.sh` leaves a simulator or AVD it booted running at the end, as `--keep-booted` does; one already running is always left as it was |
 | `OFFSIDER_SIMULATOR_NAME`, `OFFSIDER_FOLDABLE_SIMULATOR_NAME` | The simulator names `test-runner.sh` picks for the simulator and foldable suites (defaults: a stock iPhone, `Offsider Duo`); `SIMULATOR_UDID` overrides both. `test-runner.sh` loads a git-ignored `.env` first, so machine-specific names live there (see `.env.example`) |
 | `OFFSIDER_ANDROID_LANDSCAPE_E2E=1` | Adds the Android landscape suite (Settings) |
 | `OFFSIDER_ANDROID_BOOT_E2E=1` | Adds the cold `boot` test, which stops and restarts the E2E AVD, and the helper's framework restart test, which restarts Android on it (needs an image whose shell can `su`) |
@@ -166,6 +167,9 @@ A command or option change also updates `docs/commands.md` (and the `docs/` page
 - Most HID commands are fire-and-forget: they confirm dispatch, not effect. Verify with `--verify` on `tap`, `type`, `key` and `button` (exit 5 when nothing changes), or with `describe-ui` or `screenshot`; `slider` always checks its own result. When input seems ignored, run `offsider doctor --device <DEVICE_ID>` to check Device Hub, Resize Mode and dtuhidd.
 - The HID broker serves a per-user Unix socket under `$TMPDIR/offsider-hid-<uid>`, rejects peers running as another user or from another Offsider build (code signature), and keeps a simulator's input session warm until 60 s after the last command. After simulator E2E or a manual check, `offsider session stop --device <UDID>` closes it.
 - A private API break is fixed by moving the idb pin, never by patching `idb_checkout/`.
+- No test or fixture crashes an app or a system process on purpose (`NoDeliberateCrashTests` fails on one): each crash raises a dialog on the Mac. End an app with the playground's `quit-now`, `kill -TERM` or `am force-stop`, and test crash handling with the made-up report in `Tests/Fixtures/crash-reports`.
+- An agent never erases a simulator to get past a crash loop: shut it down, wait for a quiet Mac, then boot it once. Only a person erases one that loops again on a quiet Mac; `doctor` and `test-runner.sh` print that command for them.
+- `test-runner.sh` boots a simulator or AVD only when the 1-minute load is at most twice the cores (it waits up to 10 minutes, then stops), shuts down what it booted when the run ends (`--keep-booted` keeps it; one already running is left alone), and ends a simulator run with the crash reports it wrote, failing on SpringBoard, PosterBoard or a playground app.
 - An iPhone Duo simulator, named by `OFFSIDER_FOLDABLE_SIMULATOR_NAME` (default `Offsider Duo`), is the foldable fixture; `offsider posture` folds and unfolds it through the hinge service, so `FoldableTests` runs unattended. `offsider orientation` turns it, folded or unfolded, through Device Hub's orientation picker.
 
 ## Physical iPhone caveats

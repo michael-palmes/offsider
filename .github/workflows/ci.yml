@@ -39,7 +39,7 @@ jobs:
       - name: bash -n
         run: |
           set -euo pipefail
-          for f in scripts/*.sh test-runner.sh; do bash -n "$f"; done
+          for f in scripts/*.sh scripts/lib/*.sh test-runner.sh; do bash -n "$f"; done
 
       - name: CI script tests
         run: |
@@ -49,6 +49,7 @@ jobs:
           bash scripts/e2e-devices-core.test.sh
           bash scripts/failed-tests.test.sh
           bash scripts/lib/adb.test.sh
+          bash scripts/lib/e2e-host.test.sh
           bash scripts/lib/unit-tests.test.sh
 
       - name: Every CI job gates merges
@@ -59,7 +60,7 @@ jobs:
         run: |
           set -euo pipefail
           shellcheck scripts/release.sh
-          shellcheck --severity=error scripts/*.sh test-runner.sh
+          shellcheck --severity=error scripts/*.sh scripts/lib/*.sh test-runner.sh
 
       - name: actionlint
         env:
