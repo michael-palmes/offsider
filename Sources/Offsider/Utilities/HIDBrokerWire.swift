@@ -8,6 +8,8 @@ struct HIDBrokerRequest: Codable, Equatable {
         case input
         case status
         case stop
+        /// Whether the broker holds an automation session for this boot, so the command's reads may skip idb's bootstrap.
+        case accessibility
     }
 
     let op: Op
@@ -25,6 +27,10 @@ struct HIDBrokerReply: Codable, Equatable {
     var status: HIDBrokerStatus?
     /// The broker refused before sending anything, so the input may go another way.
     var notSent: Bool?
+    /// The `accessibility` reply: an automation session is open for this boot of the simulator.
+    var accessibilityHeld: Bool?
+    /// The open session's name, which changes whenever the broker opens another.
+    var accessibilitySession: String?
 }
 
 /// The `status` reply, read without counting as use.
@@ -40,6 +46,8 @@ struct HIDBrokerStatus: Codable, Equatable {
     let attached: Int
     /// `ready`, or `stopping` while it finishes.
     var state: String? = nil
+    /// An automation session is open, so reads skip idb's per-request bootstrap.
+    var accessibilityHeld: Bool? = nil
 }
 
 /// An `FBSimulatorHIDEvent` of the kinds input commands send, as compact arrays: `["t", true, x, y]` is a touch down.

@@ -96,6 +96,7 @@ extension PermissionCommand: LockingCommand {
     var waitLock: Double? { lock.waitLock }
 }
 
+extension AlertCommand: DeviceOptionCommand {}
 extension AppearanceCommand: DeviceOptionCommand {}
 extension AppLaunchCommand: DeviceOptionCommand {}
 extension AppOpenCommand: DeviceOptionCommand {}
@@ -126,6 +127,7 @@ extension RNLogBoxDismiss: DeviceOptionCommand {}
 extension RNLogBoxOpen: DeviceOptionCommand {}
 extension Screenshot: DeviceOptionCommand {}
 extension Shake: DeviceOptionCommand {}
+extension Keyboard: DeviceOptionCommand {}
 extension Slider: DeviceOptionCommand {}
 extension StatusBarCommand: DeviceOptionCommand {}
 extension StayAwakeCommand: DeviceOptionCommand {}

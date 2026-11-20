@@ -106,6 +106,7 @@ struct IOSDeviceDoctorTests {
         (.appIDTaken(appID: "com.mpalmes.offsider.runner", team: "ABCDE12345", fix: "offsider devices add --device X --test-device --team ABCDE12345 --runner-prefix dev.offsider.abcde12345"), .fail, "`offsider devices add --device X --test-device --team ABCDE12345 --runner-prefix dev.offsider.abcde12345`"),
         (.notRegistered(team: "ABCDE12345"), .fail, "offsider runner build --register-device --device \(IOSDeviceFixtures.phone)"),
         (.failed(team: "ABCDE12345", prefix: "com.mpalmes.offsider", log: "/tmp/build.log"), .warn, "offsider runner build --device"),
+        (.profileExpiring(team: "ABCDE12345", prefix: "com.mpalmes.offsider", expires: Date(timeIntervalSince1970: 1_794_441_600), expired: true), .warn, "Run `offsider runner build --device \(IOSDeviceFixtures.phone)` now to renew it"),
         (.unsettled(message: "OFFSIDER_IOS_RUNNER_PREFIX is com.example.qa, but this device's allowance names runner prefix dev.offsider.abcde12345", hint: "offsider devices add"), .fail, "offsider devices add"),
     ])
     func runnerBuildVerdicts(fact: IOSDeviceDoctorFacts.RunnerBuildFact, status: CheckStatus, hint: String?) {

@@ -43,8 +43,10 @@ public final class CoreDeviceSessionHardware: DeviceSessionHardware {
     private var lastAttempt = ContinuousClock.now
     private var lastPresence = ContinuousClock.now
     private var closed = false
-    private var hid: UniversalHIDService?
-    private var hidOpening: Task<UniversalHIDService, Error>?
+    private var hid: (any UniversalHIDLink)?
+    private var hidOpening: Task<any UniversalHIDLink, Error>?
+    /// Opens the UniversalHID link and lists its surfaces; tests put a fake here.
+    var connectHID: HIDConnector = CoreDeviceSessionHardware.liveHID
     private var buttonsOpening: Task<DeviceDTUHID, Error>?
     private var hidFailure: IOSDeviceError?
     private var hidFailedAt = ContinuousClock.now
@@ -254,13 +256,35 @@ public final class CoreDeviceSessionHardware: DeviceSessionHardware {
         }
     }
 
-    /// Sends each report on a clock started at the first, so short pauses keep the total time, then confirms; a client that leaves has its input released.
+    /// A link invalidated before an input's first report carried none of it, so the input goes once more on a new link; one that failed any later is never resent, as part of the input may have landed.
     private func play(_ reports: [DeviceSessionReport], abandoned: @Sendable () -> Bool) async throws {
+        do {
+            try await playOnce(reports, abandoned: abandoned)
+        } catch is EndedBeforeInput {
+            log(.info, "UniversalHID was invalidated before this input's first report; sending it on a new link")
+            do {
+                try await playOnce(reports, abandoned: abandoned)
+            } catch let again as EndedBeforeInput {
+                throw again.failure
+            }
+        }
+    }
+
+    /// The link's failure, when it was invalidated before the input's first report was handed over.
+    private struct EndedBeforeInput: Error {
+        let failure: Error
+    }
+
+    /// Sends each report on a clock started at the first, so short pauses keep the total time, then confirms; a client that leaves has its input released.
+    private func playOnce(_ reports: [DeviceSessionReport], abandoned: @Sendable () -> Bool) async throws {
         let service = try await hidService()
+        let mark = service.sentCount
         let start = ContinuousClock.now
         var elapsed = 0.0
         var completed = true
         for report in reports {
+            // Nothing more reaches a link that has ended, so its holds are not waited out.
+            if service.endedAfter != nil { break }
             switch report {
             case let .touch(x, y, state):
                 service.send(UniversalHIDReport.touchscreen(x: x, y: y, state: state, timestamp: UniversalHIDReport.timestamp()), to: surfaces.touchscreen)
@@ -280,13 +304,14 @@ public final class CoreDeviceSessionHardware: DeviceSessionHardware {
         } catch {
             hid = nil
             service.close()
+            if completed, let invalidated = service.invalidatedAfter, invalidated <= mark { throw EndedBeforeInput(failure: error) }
             throw error
         }
         if !completed { throw Self.clientLeft }
     }
 
     /// Lifts a contact and releases keys an interrupted request left down.
-    private func releaseHeldInput(_ service: UniversalHIDService) {
+    private func releaseHeldInput(_ service: any UniversalHIDLink) {
         if let contact = heldContact {
             service.send(UniversalHIDReport.touchscreen(x: contact.x, y: contact.y, state: .release, timestamp: UniversalHIDReport.timestamp()), to: surfaces.touchscreen)
             heldContact = nil
@@ -297,9 +322,14 @@ public final class CoreDeviceSessionHardware: DeviceSessionHardware {
         }
     }
 
-    /// The UniversalHID service, kept open after its one activation wait; after a failed open, input fails with that failure until a retry is due.
-    private func hidService() async throws -> UniversalHIDService {
-        if let hid { return hid }
+    /// The UniversalHID service, kept open after its one activation wait; one whose connection ended while idle is opened again before anything is sent. After a failed open, input fails with that failure until a retry is due.
+    private func hidService() async throws -> any UniversalHIDLink {
+        if let hid {
+            guard hid.endedAfter != nil else { return hid }
+            log(.info, "UniversalHID closed while idle; opening it again")
+            hid.close()
+            self.hid = nil
+        }
         if let hidOpening { return try await hidOpening.value }
         if let gone { throw gone }
         if let hidFailure, !hidRetryDue { throw hidFailure }
@@ -309,14 +339,13 @@ public final class CoreDeviceSessionHardware: DeviceSessionHardware {
         return try await task.value
     }
 
-    private func openHID() async throws -> UniversalHIDService {
+    private func openHID() async throws -> any UniversalHIDLink {
         do {
             let reopening = hidTried
             hidTried = true
             let device = try await openTarget(reopening: reopening)
             guard let version, version.supportsHID else { throw IOSDeviceError.xcodeTooOld(device.name, version: version) }
-            let service = try await UniversalHIDService.connect(deviceIdentifier: device.identifier, version: version, name: device.name, udid: udid)
-            let listed = try await service.connectedServices()
+            let (service, listed) = try await connectHID(device.identifier, version, device.name, udid)
             surfaces = (listed.first(.touchscreen)?.id ?? Self.touchscreenFallback, listed.first(.keyboard)?.id ?? Self.keyboardFallback)
             hid = service
             hidFailure = nil
@@ -325,6 +354,18 @@ public final class CoreDeviceSessionHardware: DeviceSessionHardware {
         } catch {
             hidFailure = (error as? IOSDeviceError) ?? IOSDeviceError.hidFailed(target?.name ?? udid, udid: udid, detail: error.localizedDescription, sent: false)
             hidFailedAt = .now
+            throw error
+        }
+    }
+
+    typealias HIDConnector = @MainActor (_ deviceIdentifier: String, _ version: CoreDeviceVersion, _ name: String, _ udid: String) async throws -> (link: any UniversalHIDLink, surfaces: [UniversalHIDSurface])
+
+    nonisolated static let liveHID: HIDConnector = { identifier, version, name, udid in
+        let service = try await UniversalHIDService.connect(deviceIdentifier: identifier, version: version, name: name, udid: udid)
+        do {
+            return (service, try await service.connectedServices())
+        } catch {
+            service.close()
             throw error
         }
     }
@@ -397,7 +438,12 @@ public final class CoreDeviceSessionHardware: DeviceSessionHardware {
 
     /// The button socket, kept open; a fresh one waits out the activation floor so its first press is not dropped.
     private func buttonLink() async throws -> DeviceDTUHID {
-        if let buttons { return buttons }
+        if let buttons {
+            guard buttons.hasEnded else { return buttons }
+            log(.info, "The button socket closed while idle; opening it again")
+            self.buttons = nil
+            await buttons.close()
+        }
         if let buttonsOpening { return try await buttonsOpening.value }
         if let gone { throw gone }
         let task = Task { try await self.openButtons() }

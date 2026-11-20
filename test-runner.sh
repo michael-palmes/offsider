@@ -303,6 +303,7 @@ SIMULATOR_SUITES=(
     "KeyComboTests"
     "KeySequenceTests"
     "KeyTests"
+    "KeyboardBarE2ETests"
     "ListDevicesTests"
     "LogsTests"
     "ParkedSheetTests"

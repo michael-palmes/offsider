@@ -55,6 +55,11 @@ public struct RunTimeline: Equatable, Sendable {
         if let entries = entry.entries { notes.append(Self.count(entries, "entry", plural: "entries")) }
         if let redacted = entry.redacted, redacted > 0 { notes.append("redacted \(redacted)") }
         if let diff = entry.diff { notes.append("diff \(diff)") }
+        if let prompt = entry.prompt {
+            let title = TerminalText.quoted(SelectorText.truncated(TerminalText.line(prompt, cap: 200), limit: 80))
+            notes.append(entry.button.map { "\(TerminalText.quoted(TerminalText.line($0, cap: 80))) on \(title)" } ?? "left \(title)")
+        }
+        if let fields = entry.fields, !fields.isEmpty { notes.append(fields.map { "\($0.field) \($0.state == "filled" ? "filled" : "not filled")" }.joined(separator: ", ")) }
         return notes
     }
 

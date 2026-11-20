@@ -91,6 +91,8 @@ struct ContentView: View {
             EnvironmentTestView()
         case "device-state":
             DeviceStateTestView()
+        case "permission-prompt":
+            PermissionPromptTestView()
             
         // Input & Text
         case "text-input":
@@ -99,8 +101,14 @@ struct ContentView: View {
             KeyPressView()
         case "key-sequence":
             KeySequenceView()
+        case "keyboard-bar":
+            KeyboardBarView()
+        case "keyboard-toolbar":
+            KeyboardBarView(toolbar: true)
         case "web-login":
             WebLoginView()
+        case "sign-up":
+            SignUpView()
         case "widget-login":
             WidgetLoginView()
         case "widget-login-expiry":
@@ -147,12 +155,15 @@ struct MainMenuView: View {
             ("text-input", "Text Input", "Text typed by CLI commands"),
             ("key-press", "Key Press", "Detects CLI key events"),
             ("key-sequence", "Key Sequence", "Detects CLI key sequences"),
+            ("keyboard-bar", "Keyboard Bar", "Fields with and without suggestions"),
+            ("keyboard-toolbar", "Keyboard Toolbar", "The app's own Done bar on the keys"),
             ("web-login", "Web Login", "Sign-in form inside a web view, local HTML only"),
             ("widget-login", "Widget Login", "Native sign-in form, person check at the centre"),
             ("widget-login-expiry", "Widget Login Expiry", "The check's pass lapses after 5 s"),
             ("widget-login-error", "Widget Login Error", "The check fails when ticked"),
             ("widget-login-late", "Widget Login Late", "The check asks for a tick after 4 s"),
             ("widget-login-ticked", "Widget Login Ticked", "The check ticks itself after 6 s"),
+            ("sign-up", "Sign Up", "Email, then password and confirm"),
             ("live-chart", "Live Chart", "Web chart whose groups keep moving")
         ]),
         ("Hardware", [
@@ -167,7 +178,8 @@ struct MainMenuView: View {
             ("searchable-test", "Searchable Test", "Navigation search field targeting"),
             ("toolbar-picker-test", "Toolbar Picker Test", "Toolbar segmented picker targeting"),
             ("environment-test", "Environment Test", "Colour scheme, content size and orientation"),
-            ("device-state", "Device State Test", "Permissions and biometric authentication")
+            ("device-state", "Device State Test", "Permissions and biometric authentication"),
+            ("permission-prompt", "Permission Prompt Test", "System prompts for notifications, camera, location and tracking")
         ]),
         ("Presentation", [
             ("alert-test", "Alert Test", "Alert presentation and button targeting"),

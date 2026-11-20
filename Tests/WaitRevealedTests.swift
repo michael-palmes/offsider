@@ -98,7 +98,7 @@ struct WaitRevealedTests {
 
         #expect(met.met)
         #expect(!missed.met)
-        #expect(missed.reason == "has a masked value, expected 'nope'")
+        #expect(missed.reason == "does not match 'nope': its value is masked, so it is not shown")
         #expect(!shown.contains("hunter"), "\(shown)")
     }
 

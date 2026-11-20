@@ -13,7 +13,8 @@ struct SnapshotEncoder {
         deadline = Date().addingTimeInterval(budget)
     }
 
-    mutating func encode(_ snapshot: XCUIElementSnapshot, depth: Int = 0) -> [String: Any] {
+    /// `children: false` encodes the element alone.
+    mutating func encode(_ snapshot: XCUIElementSnapshot, depth: Int = 0, children wanted: Bool = true) -> [String: Any] {
         count += 1
         let frame = snapshot.frame
         let parts = [frame.origin.x, frame.origin.y, frame.size.width, frame.size.height]
@@ -36,6 +37,10 @@ struct SnapshotEncoder {
         if let placeholder = snapshot.placeholderValue, !placeholder.isEmpty { node["placeholder"] = placeholder }
         if Self.hasKeyboardFocus(snapshot) { node["focused"] = true }
         var children: [[String: Any]] = []
+        if !wanted {
+            node["children"] = children
+            return node
+        }
         if depth < Self.maximumDepth {
             for child in snapshot.children {
                 guard count < Self.maximumNodes, Date() < deadline else {

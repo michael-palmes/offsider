@@ -785,6 +785,43 @@ struct RunnerClientTests {
         return (backend, connector)
     }
 
+    static let field: [String: Any] = ["type": "TextField", "AXUniqueId": "email", "AXValue": "a@b.c", "focused": true, "frame": ["x": 16, "y": 360, "width": 398, "height": 44]]
+
+    @Test("the focused element comes back as one node with its value, and as nothing when no element has keyboard focus")
+    func focusedElement() async throws {
+        let transport = FakeRunnerTransport()
+        let (backend, _) = try Self.backend(transport)
+        #expect(try await backend.focusedElement(on: Self.phone) == nil)
+
+        transport.focused = Self.field
+        let node = try #require(try await backend.focusedElement(on: Self.phone))
+        #expect(node.role == .textField)
+        #expect(node.id == "email")
+        #expect(node.value == "a@b.c")
+        #expect(node.state.focused == true)
+    }
+
+    @Test("a password field's value never comes back from the focused element, not even as bullets, whatever the runner sent", arguments: [
+        ["type": "SecureTextField", "AXValue": "hunter2"], ["type": "SecureTextField", "AXValue": "•••••••"], ["type": "TextField", "AXValue": "•••••••"],
+    ])
+    func focusedSecureValueDropped(sent: [String: String]) async throws {
+        let transport = FakeRunnerTransport()
+        transport.focused = Self.field.merging(sent) { _, new in new }
+        let (backend, _) = try Self.backend(transport)
+        let node = try #require(try await backend.focusedElement(on: Self.phone))
+        #expect(node.isSecure)
+        #expect(node.value == nil)
+    }
+
+    @Test("the bundled runner serves the protocol version the client asks for")
+    func runnerVersionMatches() throws {
+        let source = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("Sources/Offsider/Resources/runner/UITests/Commands.swift")
+        let text = try String(contentsOf: source, encoding: .utf8)
+        #expect(text.contains(#"static let version = "\#(RunnerClient.protocolVersion)""#))
+        #expect(text.contains(#"case ("POST", "/focused")"#))
+    }
+
     @Test("the client sends the session token, and a runner that refuses it is runner_unavailable")
     func tokenRequired() async throws {
         let server = try FakeRunnerHTTPServer(token: "right") { _ in

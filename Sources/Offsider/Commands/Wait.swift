@@ -14,8 +14,8 @@ struct Wait: AsyncParsableCommand {
         --allow-offscreen. --region watches pixels in points as describe-ui prints them, for content the accessibility tree cannot \
         see such as charts or web views. Within 2 s of an input, --settled also waits for that input's effect to show (a read that \
         differs from the screen before it, else 2 s after it, or 1 s when no read from before it was kept), so a delayed push is not \
-        missed; an input checked with --verify needs no such wait. After an input that changed the tree on Android, it also waits up \
-        to 2 s for the pixels to hold still, so the next capture shows the new screen; --settle-by tree skips that. Exits 0 when the \
+        missed; an input checked with --verify needs no such wait. After an input that changed the tree on Android or an iOS simulator, it also \
+        waits up to 2 s for the pixels to hold still, so the next capture shows the new screen; --settle-by tree skips that. Exits 0 when the \
         condition is met and 5 when --timeout passes first, naming the nearest element when a selector found nothing, or the flag \
         that leaves out what kept moving for --settled; --settled exits 1 when the accessibility tree was never readable, where \
         --settle-by screen still works, and 64 at once when --ignore-region or --ignore-id leaves out the whole screen. --gone never \
@@ -95,7 +95,7 @@ struct Wait: AsyncParsableCommand {
 
     static let defaultQuietMs = 500
     static let maximumSeconds = 900
-    /// How long after the tree last changed the pixels still hold up a wait that follows an input on Android.
+    /// How long after the tree last changed the pixels still hold up a wait that follows an input, on Android and on an iOS simulator.
     static let drawHold: TimeInterval = 2
 
     func validate() throws {
@@ -268,7 +268,7 @@ struct Wait: AsyncParsableCommand {
         onPrepared()
         let revealed = settled || selector.hasValue != nil ? await TreeCache.revealedSecrets(for: route.device, backend: route.backend) : nil
         let gate = settled ? await Self.settleGate(for: route, revealed: revealed) : nil
-        let condition = condition(gate: gate, platform: route.device.platform, revealed: revealed)
+        let condition = condition(gate: gate, platform: route.device.platform, drawsAfterTree: !route.device.isPhysicalIOSDevice, revealed: revealed)
         var sources = try await liveSources(on: route, condition: condition, tree: tree, clock: clock)
         // A simulator's fill slows each poll by about a second, so two reads could both land in a brief flicker and call it gone.
         let fills = !gone || route.device.platform != .ios
@@ -341,8 +341,8 @@ struct Wait: AsyncParsableCommand {
 
     var condition: WaitCondition { condition(gate: nil, platform: .ios) }
 
-    /// `platform` picks the draw hold: Android's tree can change well before its pixels, and an explicit `--settle-by` says what to watch; `revealed` keeps a `--has-value` miss from printing one's text.
-    func condition(gate: SettleGate?, platform: DevicePlatform, revealed: RevealedSecrets? = nil) -> WaitCondition {
+    /// `drawsAfterTree` holds a settle after an input until the pixels agree: Android's tree can change well before its pixels, and a UIKit slide shows its final frame in the tree at once; an explicit `--settle-by` says what to watch. `revealed` keeps a `--has-value` miss from printing one's text.
+    func condition(gate: SettleGate?, platform: DevicePlatform, drawsAfterTree: Bool = false, revealed: RevealedSecrets? = nil) -> WaitCondition {
         if waitsForAny {
             let queries = selector.queries
             let selectors = queries.enumerated().map { index, query in
@@ -355,7 +355,7 @@ struct Wait: AsyncParsableCommand {
         }
         if let toast { return .toast(text: toast) }
         if settled {
-            let holdsDraw = gate != nil && settleBy == nil && platform == .android
+            let holdsDraw = gate != nil && settleBy == nil && (platform == .android || drawsAfterTree)
             // validate() has parsed the regions.
             return .settled(
                 by: settleBy ?? .tree, quiet: quiet, ignoreValues: ignoreValues, gate: gate,

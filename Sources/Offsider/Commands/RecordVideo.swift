@@ -14,7 +14,7 @@ struct RecordVideo: AsyncParsableCommand {
         Video cannot be masked by the accessibility tree: --mask-secure, --mask-id, --mask-label, \
         --mask-label-contains, --mask-text and --mask-emails exit 1 with video_unmasked and write nothing, as does \
         a recording while the evidence run masks emails or ids. One tree read before the first frame refuses the same way \
-        when a password field, keyboard text beside the keys or Android's copy preview is on screen or the tree cannot be read \
+        when a password field, keyboard text beside the keys, an iOS keyboard's bar or Android's copy preview is on screen or the tree cannot be read \
         (OFFSIDER_MASK_SECURE=0 skips it outside a run); \
         --unmasked records anyway, with a warning. For masked evidence use \
         `screenshot` or screenshot steps in a batch. Only that read holds the device (--wait-lock waits for it on Android), so other commands can read and \

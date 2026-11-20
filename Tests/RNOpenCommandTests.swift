@@ -625,7 +625,8 @@ struct RNOpenCommandTests {
         guard case .failure(let error) = result else { Issue.record("expected person_required"); return }
         #expect(error.reason == .personRequired)
         #expect(error.ask == "Can you answer the system prompt on \(PersonAsk.devicePlaceholder)?")
-        #expect(error.userFacingDescription == #"com.example.app is behind the system prompt "“Playground” Would Like to Send You Notifications" from SpringBoard ("Don’t Allow", "Allow"), so rn open stopped waiting. It never answers a system prompt: ask the user which to choose, answer it, then run rn open again."#)
+        #expect(error.userFacingDescription == #"com.example.app is behind the system prompt "“Playground” Would Like to Send You Notifications" from SpringBoard ("Don’t Allow", "Allow"), so rn open stopped waiting. It never answers a system prompt: read it with `offsider alert show --app com.example.app --device \#(Self.device.rawValue)`, answer it with alert's accept, deny or choose when it is com.example.app's, then run rn open again."#)
+        #expect(error.hint == "offsider alert show --app com.example.app --device \(Self.device.rawValue)")
         #expect(backend.session.calls.isEmpty)
         #expect(seconds < 5)
     }

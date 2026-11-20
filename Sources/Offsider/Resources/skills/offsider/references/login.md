@@ -82,6 +82,21 @@ Once login reaches the email field, a failure still prints that object, with `ok
 - **Save-password prompt.** On a simulator, an emulator or a test device `login` declines it itself (`savePrompt: declined`): one tap on Not Now, Not now or No thanks, never Save. Never tap Save or Allow yourself unless the user asked for it in words.
 - **On a phone held to one app** the prompt is the person's. `login` taps nothing and waits up to `--timeout` for it to close (`savePrompt: closed`). Still up, it exits 7 (`system_prompt_in_front`) with `submitted: true`: pass on `error.ask` ("Can you tap Not now on the \"Save password?\" prompt on <device name>?") and never run `login` again for it, as the sign-in went ahead.
 
+## Sign-up forms
+
+A sign-up flow puts the email and the password on separate screens and asks for the password twice. `--fill` types one saved secret and submits nothing, so you never handle it:
+
+```bash
+offsider login dev --fill identity --app com.example.app --device <DEVICE_ID>   # the email step: the one email or username field
+offsider tap --id signup-next --device <DEVICE_ID>
+offsider login dev --fill password --app com.example.app --device <DEVICE_ID>   # password and confirm
+offsider tap --id signup-create --device <DEVICE_ID>
+```
+
+- Every gate of a sign-in applies, the user's saved device scope and confirm setting included, and `--app` must be the app in front. It types only into a password field that shows bullets, at most two on the screen (password and confirm); a third, or one field of several, needs `--into-id <id>`. It never taps a button or presses Return, and declines a save-password prompt as above.
+- It refuses, typing nothing: a plain text field (`secret_would_show`), a show-password switch that is on or a field that shows its text (`secret_would_show`: turn it off first), a field whose kind the screen does not say, a web view without both opt-ins (`app_not_allowed`), and, on Android or an iPhone, a password field that already holds bullets (`field_not_empty`; `--replace` types over it, as after a half-done fill; an iOS simulator cannot tell bullets from a placeholder, so it always types over). `--fill identity` replaces what its field holds. It reads the screen again before the second field and stops if anything there shows a password, the field just filled included; it checks the app in front and any recording again before each field, and after typing that the field shows one bullet per character; it never reads the password back.
+- `--json` prints `fill`, `fields` (each `field` and `filled` or `not_filled`), `submitted: false`, `savePrompt`, `exitCode` and `error`; a stop after the first field says which were filled. An evidence run records each use with the login's name and each field's outcome, never the secret or its length.
+
 ## An app can pin its fields
 
 `offsider.login.json`, found like `OFFSIDER.md` (`--project <path>` names where to search; a missing file is not an error), overrides detection for one app. It names the app with `bundleId`, `package` or both, and one must be the app in front, or nothing is typed. On a phone allowed for any app, its `package` is the app `login` drives; `--app <package>` names it too, and an `--app` the file does not name exits 64. A pinned control is still hit-tested: covered is a refusal. `"webLogin": true` (default false) is half of the web view opt-in above; a `turnstile` key is ignored with a warning.
@@ -107,13 +122,13 @@ Exit 0 means the submit button was tapped, not that the server accepted the logi
 | `app_not_allowed` | A browser or system app is in front, or the password field is inside a web view | Bring the app under test to the front; web sign-in needs the user's opt-in |
 | `person_required` | Touch ID or the password was cancelled or unavailable (plain ssh), or a link no person confirmed | Hand back; the message names the command for the user |
 | `device_not_allowed` | A physical phone not allowed, or a user saved without `--devices any` | Ask the user; never loosen it yourself |
-| `device_busy` (exit 8) | `record-video` or `stream-video` is running on the device; nothing was typed | Run the `hint`, `kill -INT <pid>`, which saves it, then retry |
+| `device_busy` (exit 8) | `record-video` or `stream-video` is running on the device; nothing was typed, or with `--fill` nothing more | Run the `hint`, `kill -INT <pid>`, which saves it, then retry |
 
 On an iOS simulator, iOS can offer to save the password a second or more after a sign-in. `describe-ui` then shows `# window: Save Password? (system)` without its buttons, and a selector `tap` under it refuses with `target_covered` (`evidence` `otherProcess`) rather than spend the tap dismissing it. Take a screenshot and tap Not Now by its coordinates (`tap -x <X> -y <Y>`), or tap its backdrop as the refusal says, then wait until the header has gone. Never tap Save.
 
 ## Where it refuses
 
-A test device takes any saved user with no Touch ID, except one saved with `--confirm-always`. Any other added phone or tablet needs the user saved with `--devices any`, and Touch ID at each sign-in, so the user must be at the Mac. On an iPhone or iPad it types through the session broker only (`guide ios-device`). For other secrets, such as a one-time code, use `type --stdin`: argument text into a password field exits 64 (`secure_field_argument`). `login` does not take `--app`. `credential` is refused on a physical iPhone or iPad when it would read the device: pass `--app` to save or describe a user without reading one.
+A test device takes any saved user with no Touch ID, except one saved with `--confirm-always`. Any other added phone or tablet needs the user saved with `--devices any`, and Touch ID at each sign-in, so the user must be at the Mac. On an iPhone or iPad it types through the session broker only (`guide ios-device`). For other secrets, such as a one-time code, use `type --stdin`: argument text into a password field exits 64 (`secure_field_argument`). With `--fill`, `--app` must be the app in front. `credential` is refused on a physical iPhone or iPad when it would read the device: pass `--app` to save or describe a user without reading one.
 
 ```bash
 offsider credential status --app com.example.app --json

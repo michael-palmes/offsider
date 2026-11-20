@@ -2,9 +2,23 @@ import Foundation
 import OffsiderCore
 import XPC
 
+/// What the broker needs of a device's UniversalHID connection; `UniversalHIDService` on a device, a fake in tests.
+@MainActor
+protocol UniversalHIDLink: AnyObject {
+    /// Messages handed to the connection so far.
+    var sentCount: Int { get }
+    /// How many messages had been handed over when the connection's first error was noticed; nil while it has had none.
+    var endedAfter: Int? { get }
+    /// How many messages had been handed over when the connection was invalidated, after which it carries nothing; nil until then.
+    var invalidatedAfter: Int? { get }
+    func send(_ report: Data, to serviceID: UInt64)
+    func confirm() async throws
+    func close()
+}
+
 /// A device's UniversalHID service over one CoreDevice feature socket: lists its HID surfaces and sends them raw reports.
 @MainActor
-public final class UniversalHIDService {
+public final class UniversalHIDService: UniversalHIDLink {
     public enum Outcome: Equatable, Sendable {
         case reply(UniversalHIDValue)
         case refused(CoreDeviceErrorInfo)
@@ -20,6 +34,10 @@ public final class UniversalHIDService {
     private let name: String
     private let udid: String
     public private(set) var hasSent = false
+
+    var sentCount: Int { socket.sentCount }
+    var endedAfter: Int? { socket.endedAfter }
+    var invalidatedAfter: Int? { socket.invalidatedAfter }
 
     private init(socket: CoreDeviceServiceSocket, name: String, udid: String) {
         self.socket = socket

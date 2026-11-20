@@ -60,7 +60,8 @@ public enum IOSAccessibilityMapping {
         } else {
             throw MappingError.notAnAccessibilityTree
         }
-        return (dictionaries.map { node(from: $0) }, dictionaries.contains { $0["truncated"] as? Bool == true })
+        // Hidden here, so no output, cache or check downstream ever holds what the keyboard suggested.
+        return (KeyboardBar.hiding(dictionaries.map { node(from: $0) }), dictionaries.contains { $0["truncated"] as? Bool == true })
     }
 
     public static func node(from dictionary: [String: Any]) -> UINode {

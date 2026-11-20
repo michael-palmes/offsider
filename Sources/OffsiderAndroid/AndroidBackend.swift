@@ -48,6 +48,8 @@ public final class AndroidBackend: DeviceBackend, AccessibilityActionPerforming,
     var foregroundChecks: [String: (at: ContinuousClock.Instant, package: String?)] = [:]
     /// Each phone's latest read of the windows in front, and the system window it may have gone ahead under.
     var systemWindowChecks: [String: (at: ContinuousClock.Instant, window: UITreeContext.Window?)] = [:]
+    var promptReads: [String: (at: ContinuousClock.Instant, package: String, window: UITreeContext.Window)] = [:]
+    var appUIDs: [String: Int] = [:]
     /// Per phone serial, the apps its allowance and managed policy permit; a serial with no entry may run any app the deny-list allows.
     public var appScopes: [String: AndroidAppScope] = [:]
 
@@ -838,6 +840,8 @@ public final class AndroidBackend: DeviceBackend, AccessibilityActionPerforming,
         warnedAboutTruncation = []
         foregroundChecks = [:]
         systemWindowChecks = [:]
+        promptReads = [:]
+        appUIDs = [:]
         transports = [:]
         geometries = [:]
         activeUniqueIds = [:]

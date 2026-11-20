@@ -133,15 +133,19 @@ enum HIDBroker {
             await HIDInteractor.closeSession(session)
             throw error
         }
-        let log: (String) -> Void = { line in
+        let log: @Sendable (String) -> Void = { line in
             let stamp = ISO8601DateFormatter().string(from: Date())
             FileHandle.standardOutput.write(Data("\(stamp) \(line)\n".utf8))
+        }
+        let accessibility = (try? await cachedSimulator(udid: simulatorUDID, logger: logger))?.flatMap {
+            BrokerAccessibilityHold.live(simulator: $0, logger: logger, log: log)
         }
         let server = HIDBrokerServer(
             udid: simulatorUDID,
             listener: listener,
             endpoint: endpoint,
             sink: .live(session, logger: logger),
+            accessibility: accessibility,
             isCurrentBoot: { bootIdentity(processIdentifier: boot.processIdentifier) == boot },
             admits: { admitsPeer($0, requirement: requirement, log: log) },
             idleSeconds: SimulatorSessionSettings.idleSeconds(ProcessInfo.processInfo.environment),
@@ -158,7 +162,9 @@ enum HIDBroker {
         }
         defer { signals.forEach { $0.cancel() } }
         server.log("Serving \(simulatorUDID) on \(endpoint)")
+        accessibility?.start()
         let reason = await server.run()
+        accessibility?.close()
         server.log("Stopped: \(reason)")
         await HIDInteractor.closeSession(session)
     }

@@ -91,7 +91,9 @@ struct DescribeUI: AsyncParsableCommand {
             try await Self.requireActive(displayOption, on: route, deviceName: deviceOption.id)
             if rawSource { return try Self.rawSourceText(try await Self.rawCapture(on: route)) + "\n" }
             return try await PhoneRead.$overSystemWindow.withValue(true) {
-                try await AccessibilityFetcher.$warnsWhenEmpty.withValue(true) { try await describe(on: route) }
+                // A test device held to one app reads that app's permission prompt, and nothing else over it.
+                _ = try await (route.backend as? any AppPromptCapturing)?.promptOverSelectedApp(on: route.device)
+                return try await AccessibilityFetcher.$warnsWhenEmpty.withValue(true) { try await describe(on: route) }
             }
         }
     }
