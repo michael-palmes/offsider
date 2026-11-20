@@ -95,7 +95,7 @@ struct SimulatorCrashLoopTests {
         #expect(SimulatorCrashReports.recent(crashes, now: Self.now).map(\.process) == ["routined"])
     }
 
-    @Test("no crashes or one passes, two to four warns, five or more fails with the erase command")
+    @Test("no crashes or one passes, two to four warns, five or more fails with a quiet boot as the fix")
     func thresholds() {
         #expect(DoctorRules.crashLoop([], udid: Self.udid).status == .pass)
         #expect(DoctorRules.crashLoop(Self.crashes("PosterBoard", 9, udid: Self.other), udid: Self.udid).status == .pass)
@@ -113,8 +113,19 @@ struct SimulatorCrashLoopTests {
         let fail = DoctorRules.crashLoop(Self.crashes("PosterBoard", 25) + Self.crashes("routined", 1), udid: Self.udid)
         #expect(fail.status == .fail)
         #expect(fail.detail == "PosterBoard crashed 25 times in the last 10 minutes; routined crashed 1 time in the last 10 minutes")
-        #expect(fail.hint?.contains("xcrun simctl shutdown \(Self.udid) && xcrun simctl erase \(Self.udid)") == true)
-        #expect(fail.hint?.contains("removes its apps and settings") == true)
+        #expect(fail.hint?.hasPrefix("Shut it down with offsider shutdown \(Self.udid), wait until the Mac is quiet, then boot it once.") == true)
+    }
+
+    @Test("a crash loop's fix never has an agent erase the simulator: only a person may, after a quiet boot loops again")
+    func eraseIsForAPerson() throws {
+        let crashes = Self.crashes("SpringBoard", 13)
+        let agent = try #require(DoctorRules.crashLoop(crashes, udid: Self.udid, audience: .agent).hint)
+        #expect(agent.contains("Never erase it"))
+        #expect(agent.contains("ask the user to run `xcrun simctl erase \(Self.udid)` in their own terminal"))
+        #expect(!agent.contains("&& xcrun simctl erase"))
+        let person = try #require(DoctorRules.crashLoop(crashes, udid: Self.udid, audience: .person).hint)
+        #expect(person.hasSuffix("Only if it loops again on a quiet Mac, erase it (this removes its apps and settings): xcrun simctl erase \(Self.udid)"))
+        #expect(DoctorRules.crashLoops(crashes, names: [:]).hint?.contains("erase") == false)
     }
 
     @Test("the host check names each looping simulator and ignores ones below five crashes")
@@ -153,5 +164,63 @@ struct SimulatorCrashLoopTests {
 
         let fresh = SimulatorCrashReports.parse(Self.report(process: "PosterBoard", coalition: coalition, timestamp: "bad"), modified: now)
         #expect(fresh?.timestamp == now, "an unreadable header timestamp falls back to the file's modification time")
+    }
+}
+
+/// The made-up playground report (pid 4100) in `Tests/Fixtures/crash-reports`; a real one holds device and path details.
+enum CrashReportFixture {
+    static let udid = "00000000-0000-0000-0000-000000000001"
+    static let name = "OffsiderPlayground-2026-11-20-090000.ips"
+
+    static func emptyFolder() throws -> URL {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("offsider-crash-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        return folder
+    }
+
+    /// Writes the report into `folder`, as simulator `udid` and modified at `modified`.
+    @discardableResult
+    static func write(into folder: URL, udid: String = udid, modified: Date = Date()) throws -> URL {
+        let fixture = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("Fixtures/crash-reports/playground-app.ips")
+        let text = try String(contentsOf: fixture, encoding: .utf8).replacingOccurrences(of: Self.udid, with: udid)
+        let report = folder.appendingPathComponent(name)
+        try text.write(to: report, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.modificationDate: modified], ofItemAtPath: report.path)
+        return report
+    }
+}
+
+@Suite("Waiting for an app's crash report")
+struct AppCrashReportWaitTests {
+    private static let app = "com.mpalmes.offsider.playground"
+
+    private static func wait(in folder: URL, pid: Int = 4100, since: Date = Date(timeIntervalSinceNow: -60)) async -> AppCrashReport {
+        await SimulatorCrashReports.awaitReport(for: app, pid: pid, udid: CrashReportFixture.udid, since: since, directory: folder.path, attempts: 3, sleep: { _ in })
+    }
+
+    @Test("the simulator's report for the app, written since the command began, is named by its file")
+    func findsTheReport() async throws {
+        let folder = try CrashReportFixture.emptyFolder()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        try CrashReportFixture.write(into: folder)
+
+        guard case .file(let path) = await Self.wait(in: folder) else {
+            Issue.record("the fixture report was not found")
+            return
+        }
+        #expect((path as NSString).lastPathComponent == CrashReportFixture.name)
+    }
+
+    @Test("no report, one from another simulator, or one older than the command leaves the folder to look in", arguments: ["none", "other simulator", "older"])
+    func noReportNamesTheFolder(case name: String) async throws {
+        let folder = try CrashReportFixture.emptyFolder()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        switch name {
+        case "other simulator": try CrashReportFixture.write(into: folder, udid: "11111111-2222-3333-4444-555555555555")
+        case "older": try CrashReportFixture.write(into: folder, modified: Date(timeIntervalSinceNow: -600))
+        default: break
+        }
+
+        #expect(await Self.wait(in: folder) == .pending(directory: folder.path))
     }
 }

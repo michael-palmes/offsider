@@ -853,3 +853,46 @@ struct WaitLoopBlindReadTests {
         #expect(WaitReport(full).jsonLine().hasSuffix(#""sparse":false}"#))
     }
 }
+
+extension WaitLoopTests {
+    private static func toasted(_ texts: [String], ageMs: Int = 100) -> UITree {
+        var tree = screen()
+        tree.toasts = texts.enumerated().map { UIToast(key: "1-\($0.offset)", text: $0.element, package: "com.mpalmes.offsider.playground.rn", ageMs: ageMs) }
+        return tree
+    }
+
+    @Test("--toast never passes on a toast that left the screen before the wait began, and does on one a long toast's 3.5 s could still show", arguments: [
+        (20_000, false), (3_600, false), (3_400, true), (0, true),
+    ])
+    func toastWaitAge(ageMs: Int, met: Bool) async throws {
+        let script = Script()
+        script.trees = [.success(Self.toasted(["Draft saved"], ageMs: ageMs))]
+        let outcome = try await WaitLoop.run(.toast(text: "Draft saved"), timeout: 0, interval: 0.25, sources: script.sources)
+        #expect(outcome.met == met)
+        if !met { #expect(outcome.reason == "the matching toast is \(ageMs / 1000) s old, from before the wait began") }
+    }
+
+    @Test("a toast raised during the wait passes however long the wait has run")
+    func toastRaisedDuringWait() async throws {
+        let script = Script()
+        script.trees = Array(repeating: .success(Self.toasted([])), count: 20) + [.success(Self.toasted(["Draft saved"], ageMs: 200))]
+        let outcome = try await WaitLoop.run(.toast(text: "Draft saved"), timeout: 10, interval: 0.25, sources: script.sources)
+        #expect(outcome.met && outcome.elapsed == 5)
+    }
+
+    @Test("--toast is met by the first read that lists the toast, and its misses name counts, never another toast's text")
+    func toastWait() async throws {
+        let script = Script()
+        script.trees = [.success(Self.toasted([])), .success(Self.toasted(["Sent"])), .success(Self.toasted(["Sent", "Draft saved"]))]
+        let met = try await WaitLoop.run(.toast(text: "Draft saved"), timeout: 5, interval: 0.25, sources: script.sources)
+        #expect(met.met && met.reason == "toast shown")
+        #expect(script.treeReads == 3)
+        #expect(met.elapsed == 0.5)
+
+        let missed = Script()
+        missed.trees = [.success(Self.toasted(["Your code is 482913"]))]
+        let outcome = try await WaitLoop.run(.toast(text: "Draft saved"), timeout: 1, interval: 0.25, sources: missed.sources)
+        #expect(!outcome.met && outcome.elapsed >= 1)
+        #expect(outcome.reason == "1 other toast, none matching")
+    }
+}

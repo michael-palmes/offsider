@@ -94,6 +94,8 @@ class FakeDeviceBackend: DeviceBackend {
     var livenessReadings: [AppLiveness] = []
     private(set) var livenessReads: [(seen: AppProcess?, mayList: Bool)] = []
     var crashReportAnswer: AppCrashReport?
+    /// A folder of crash reports, read once the way an iOS simulator's are, in place of `crashReportAnswer`.
+    var crashReportFolder: String?
     private(set) var crashReportRequests: [AppProcess] = []
 
     /// With `advanceTreeOnInput` the tree moves on after each performed event; otherwise after each read. A nil `session` makes a new one.
@@ -485,6 +487,9 @@ extension FakeDeviceBackend: AppLivenessReading {
 
     func crashReport(_ appID: String, process: AppProcess, since: Date, on id: DeviceID) async -> AppCrashReport? {
         crashReportRequests.append(process)
+        if let crashReportFolder {
+            return await SimulatorCrashReports.awaitReport(for: appID, pid: process.pid, udid: id.rawValue, since: since, directory: crashReportFolder, attempts: 1)
+        }
         return crashReportAnswer
     }
 }

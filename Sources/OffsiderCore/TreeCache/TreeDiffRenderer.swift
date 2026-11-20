@@ -4,7 +4,8 @@ import Foundation
 public enum TreeDiffRenderer {
     /// `base` is the usable cached record, if any; `options` is a text view, whose filter both trees share.
     public static func render(_ tree: UITree, base: TreeCacheRecord?, options: UITreeRenderOptions, now: Date) -> String {
-        let header = UITreeRenderer.header(tree) + "\n"
+        // A toast is in no tree, so the cache cannot hold it: each one the read lists is printed as new.
+        let header = ([UITreeRenderer.header(tree)] + (tree.toasts ?? []).map { "# toast: " + $0.summary }).joined(separator: "\n") + "\n"
         guard let base, let old = base.tree else {
             return header + "# no earlier tree for this device; full output follows\n" + fullBody(tree, options)
         }

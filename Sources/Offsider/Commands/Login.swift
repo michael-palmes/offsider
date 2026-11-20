@@ -17,6 +17,9 @@ struct LoginCommand: AsyncParsableCommand {
           offsider login dev --device DEVICE_ID
           offsider login --where role=admin --device DEVICE_ID
           offsider login --wait-turnstile 300 --device DEVICE_ID
+          offsider login dev --fill password --app com.example.app --device DEVICE_ID
+        --fill password types the saved password into the password and confirm fields of a sign-up screen in front, \
+        and --fill identity the email or username into its one field; neither taps a button or presses Return.
         """
     )
 
@@ -34,6 +37,15 @@ struct LoginCommand: AsyncParsableCommand {
 
     @Option(name: .customLong("project"), help: ArgumentHelp("Directory to search for offsider.login.json. Without it, the search starts at the current directory.", valueName: "path"))
     var project: String?
+
+    @Option(name: .customLong("fill"), help: ArgumentHelp("Type only the saved password into at most two empty password fields (password and confirm), or only the email or username into one text field, and submit nothing.", valueName: "password|identity"))
+    var fill: LoginFillTarget?
+
+    @Option(name: .customLong("into-id"), help: ArgumentHelp("With --fill, the one field to type into, by id.", valueName: "id"))
+    var intoID: String?
+
+    @Flag(name: .customLong("replace"), help: "With --fill password, type over a password field that already holds bullets.")
+    var replace = false
 
     @Flag(name: .customLong("json"), help: "Print one JSON object to stdout, also on a failure after typing began. identity and password are filled or not_filled, never the secret.")
     var json = false
@@ -57,6 +69,9 @@ struct LoginCommand: AsyncParsableCommand {
         if let project, project.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             throw ValidationError("--project must not be empty.")
         }
+        if fill == nil, intoID != nil || replace { throw ValidationError("--into-id and --replace need --fill.") }
+        if fill != nil, timeoutOption != nil { throw ValidationError("--timeout is the wait for the submit button, and --fill taps none. Leave it out.") }
+        if let intoID, intoID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { throw ValidationError("--into-id must not be empty.") }
         if let waitTurnstile, !(waitTurnstile.isFinite && (1...Double(Wait.maximumSeconds)).contains(waitTurnstile)) {
             throw ValidationError("--wait-turnstile must be from 1 to \(Wait.maximumSeconds) seconds.")
         }
@@ -81,48 +96,62 @@ struct LoginCommand: AsyncParsableCommand {
         let step = LoginStep()
         // A run the watchdog ends says which step it was in, so a hang is never silent.
         watchdog.beforeFiring { console.data("Note: login was \(step.current) when the device stopped answering.\n", to: .err) }
+        let label = fill == nil ? Self.signingInLabel : Self.fillingLabel
+        let showStep: (String, Bool) -> Void = { what, shown in
+            step.set(what)
+            guard shown else { return }
+            if console.err.animates, console.err.profile == .person {
+                console.relabel(what)
+            } else {
+                console.notice(Notice(kind: .note, text: what, label: "Try"))
+            }
+        }
+        let askPerson: (String) -> Void = { ask in
+            console.data(ErrorReporter.askText(PersonAsk.filled(ask, name: ErrorReporter.deviceName, id: route.device.rawValue)), to: .err)
+        }
+        let willRead: (String) -> Void = { app in
+            watchdog.disarm()
+            let limit = DispatchWorkItem {
+                ErrorReporter.exitFromTimer(reason: .commandFailed, message: Self.keychainTimeoutMessage, hint: "offsider credential status --app \(app)")
+            }
+            giveUp = limit
+            // A person's spinner asks for the prompt in place of the agent's line.
+            let waiting = DispatchWorkItem {
+                if console.err.animates, console.err.profile == .person {
+                    console.relabel(Self.keychainWaitLabel)
+                } else {
+                    console.data(Self.keychainWaitNotice, to: .err)
+                }
+            }
+            notice = waiting
+            DispatchQueue.global().asyncAfter(deadline: .now() + 3, execute: waiting)
+            DispatchQueue.global().asyncAfter(deadline: .now() + Self.keychainWaitLimit, execute: limit)
+        }
+        let wholeDevice = route.allowance.map { DevicePolicyGate.current.policy().drivesWhole($0) } ?? false
+        if let fill {
+            try await runFill(
+                LoginFillRequest(target: fill, intoID: intoID, replace: replace, app: appOption.bundleID), route: route, profile: profile, filter: filter,
+                logger: logger, watchdog: watchdog, wholeDevice: wholeDevice, step: showStep, ask: askPerson, willRead: willRead,
+                didRead: { ready in
+                    notice?.cancel()
+                    giveUp?.cancel()
+                    console.relabel(label)
+                    ready()
+                }
+            )
+            return
+        }
         let report: LoginReport
         do {
-            report = try await console.progress(Self.signingInLabel) {
+            report = try await console.progress(label) {
                 try await watchdog.guarding(setupThen: Self.bound(timeout: timeout, waitTurnstile: waitTurnstile), of: route.device) { ready in
                     try await Self.perform(
                         on: route, profile: profile, key: key, where: filter, timeout: timeout, waitTurnstile: waitTurnstile, logger: logger, tracker: .live(),
-                        wholeDevice: route.allowance.map { DevicePolicyGate.current.policy().drivesWhole($0) } ?? false,
-                        step: { what, shown in
-                            step.set(what)
-                            guard shown else { return }
-                            if console.err.animates, console.err.profile == .person {
-                                console.relabel(what)
-                            } else {
-                                console.notice(Notice(kind: .note, text: what, label: "Try"))
-                            }
-                        },
-                        ask: { ask in
-                            console.data(ErrorReporter.askText(PersonAsk.filled(ask, name: ErrorReporter.deviceName, id: route.device.rawValue)), to: .err)
-                        },
-                        onPrepared: ready,
-                        keychainWillRead: { app in
-                            watchdog.disarm()
-                            let limit = DispatchWorkItem {
-                                ErrorReporter.exitFromTimer(reason: .commandFailed, message: Self.keychainTimeoutMessage, hint: "offsider credential status --app \(app)")
-                            }
-                            giveUp = limit
-                            // A person's spinner asks for the prompt in place of the agent's line.
-                            let waiting = DispatchWorkItem {
-                                if console.err.animates, console.err.profile == .person {
-                                    console.relabel(Self.keychainWaitLabel)
-                                } else {
-                                    console.data(Self.keychainWaitNotice, to: .err)
-                                }
-                            }
-                            notice = waiting
-                            DispatchQueue.global().asyncAfter(deadline: .now() + 3, execute: waiting)
-                            DispatchQueue.global().asyncAfter(deadline: .now() + Self.keychainWaitLimit, execute: limit)
-                        },
+                        wholeDevice: wholeDevice, step: showStep, ask: askPerson, onPrepared: ready, keychainWillRead: willRead,
                         keychainDidRead: {
                             notice?.cancel()
                             giveUp?.cancel()
-                            console.relabel(Self.signingInLabel)
+                            console.relabel(label)
                             ready()
                         }
                     )
@@ -139,6 +168,49 @@ struct LoginCommand: AsyncParsableCommand {
         } else {
             console.show(InputPersonView.login(report))
         }
+    }
+
+    /// `--fill`: one manifest line in an evidence run, naming the login and each field's outcome, never the secret.
+    @MainActor
+    private func runFill(
+        _ request: LoginFillRequest, route: DeviceRouter.Route, profile: LoginProfile?, filter: [LoginTag], logger: OffsiderLogger, watchdog: DeviceWatchdog,
+        wholeDevice: Bool, step: @escaping (String, Bool) -> Void, ask: @escaping (String) -> Void, willRead: @escaping (String) -> Void,
+        didRead: @escaping (@Sendable () -> Void) -> Void
+    ) async throws {
+        let console = Console.current
+        let recorder = EvidenceRecorder.current
+        let token = try recorder.begin(device: route.device, kind: "fill")
+        let report: LoginFillReport
+        do {
+            report = try await console.progress(Self.fillingLabel) {
+                try await watchdog.guarding(setupThen: Self.fillBound(waitTurnstile: waitTurnstile), of: route.device) { ready in
+                    try await Self.performFill(
+                        request, on: route, profile: profile, key: key, where: filter, waitTurnstile: waitTurnstile, logger: logger, wholeDevice: wholeDevice,
+                        step: step, ask: ask, onPrepared: ready, keychainWillRead: willRead, keychainDidRead: { didRead(ready) }
+                    )
+                }
+            }
+        } catch {
+            if let stopped = error as? LoginFillFailure { recorder.update(token) { $0.fields = Self.runFields(stopped.report) } }
+            throw await Self.failure(error, json: json)
+        }
+        recorder.update(token) { $0.fields = Self.runFields(report) }
+        if json {
+            console.data(report.jsonLine() + "\n")
+        } else {
+            console.show(InputPersonView.loginFill(report))
+        }
+    }
+
+    static func runFields(_ report: LoginFillReport) -> [RunFieldOutcome] {
+        report.fields.map { RunFieldOutcome(field: $0.name, state: $0.progress.rawValue) }
+    }
+
+    static let fillingLabel = "Filling"
+
+    /// A fill's longest legitimate run once the saved login is read: a person's Turnstile time, then typing two fields and declining a prompt.
+    static func fillBound(waitTurnstile: TimeInterval?) -> TimeInterval {
+        60 + LoginFlow.promptLeaves + (waitTurnstile ?? 0)
     }
 
     /// Routes and locks the device; a phone allowed for any app drives `--app`, else the package of the `offsider.login.json` login read.
@@ -174,6 +246,13 @@ struct LoginCommand: AsyncParsableCommand {
     /// Under --json, a login that began typing prints its own report of how far it got; an earlier failure keeps the error envelope.
     @MainActor
     static func failure(_ error: any Error, json: Bool, scope: CommandScope = .current, write: (String) -> Void = { Console.current.data($0 + "\n") }) async -> any Error {
+        if json, let stopped = error as? LoginFillFailure {
+            let annotated = await scope.screenHint(for: stopped)
+            var report = stopped.report
+            report.error = ErrorReporter.payload(for: annotated)
+            write(UntrustedPaths.appending(report.error?.untrustedPaths() ?? [], to: report.jsonLine()))
+            return ReportedFailure(underlying: annotated, exitCode: report.exitCode)
+        }
         guard json, let stopped = error as? LoginFailure else { return error }
         let annotated = await scope.screenHint(for: stopped)
         var report = stopped.report
@@ -185,6 +264,16 @@ struct LoginCommand: AsyncParsableCommand {
     static let keychainWaitNotice = "Waiting for macOS to let offsider read the saved login. Answer the Keychain prompt.\n"
     static let keychainWaitLimit: TimeInterval = 300
     static let keychainTimeoutMessage = "The macOS Keychain prompt had no answer within 5 minutes, so the saved login was not read. Nothing was typed, and the device is free again."
+
+    /// The login a command chose and every gate it passed before typing: the screen it read, the app in front, the saved login and the services that type there.
+    struct Gated {
+        let app: String
+        let canonical: String
+        let entry: LoginEntry
+        let saved: StoredLogin
+        let services: LoginFlow.Services
+        let turnstileWait: LoginFlow.TurnstileWait?
+    }
 
     /// One lock, already held by the caller. A macOS prompt can hold the Keychain reads, so they run between the keychain callbacks, which are called twice: around choosing the login, then around Touch ID and the password.
     @MainActor
@@ -204,14 +293,112 @@ struct LoginCommand: AsyncParsableCommand {
         onPrepared: @Sendable () -> Void = {},
         keychainWillRead: (_ app: String) -> Void = { _ in },
         keychainDidRead: () -> Void = {},
-        recordingLive: (DeviceLockKey) -> Bool = { RecordingMarker.isLive($0) }
+        recordingLive: @escaping (DeviceLockKey) -> Bool = { RecordingMarker.isLive($0) }
     ) async throws -> LoginReport {
+        let gated = try await gate(
+            on: route, profile: profile, key: requestedKey, where: filter, waitTurnstile: waitTurnstile, logger: logger, store: store, wholeDevice: wholeDevice,
+            step: step, ask: ask, onPrepared: onPrepared, keychainWillRead: keychainWillRead, keychainDidRead: keychainDidRead, recordingLive: recordingLive
+        )
+        let deviceID = route.device.rawValue
+        let canonical = gated.canonical
+        var report: LoginReport
+        do {
+            report = try await InputSecrecy.$keysOnly.withValue(route.device.isPhysicalIOSDevice) {
+                try await LoginFlow.run(
+                    app: gated.app, key: gated.entry.key, credential: gated.saved.credential, profile: profile, webLogin: gated.saved.webLogin, timeout: timeout,
+                    turnstileWait: gated.turnstileWait, services: gated.services,
+                    lastSignIn: {
+                        tracker?.last(app: canonical, deviceID: deviceID).map {
+                            LoginFlow.LastSignIn(key: $0.record.key, since: $0.record.since, restarted: $0.restarted, deviceID: deviceID)
+                        }
+                    }
+                )
+            }
+        } catch var failure as LoginFailure {
+            failure.report.tags = gated.entry.context.tags
+            failure.report.filter = filter
+            throw failure
+        }
+        tracker?.record(app: canonical, foreground: gated.app, key: gated.entry.key, deviceID: deviceID)
+        report.tags = gated.entry.context.tags
+        report.filter = filter
+        return report
+    }
+
+    /// `login --fill`: the same gates as a sign-in, then the saved secret typed into the fields `LoginFill` allows, with nothing submitted.
+    @MainActor
+    static func performFill(
+        _ fill: LoginFillRequest,
+        on route: DeviceRouter.Route,
+        profile: LoginProfile?,
+        key requestedKey: String?,
+        where filter: [LoginTag] = [],
+        waitTurnstile: TimeInterval? = nil,
+        logger: OffsiderLogger,
+        store: any LoginCredentialStoring = KeychainLoginCredentialStore(),
+        wholeDevice: Bool = false,
+        step: @escaping (_ what: String, _ shown: Bool) -> Void = { _, _ in },
+        ask: @escaping (String) -> Void = { _ in },
+        onPrepared: @Sendable () -> Void = {},
+        keychainWillRead: (_ app: String) -> Void = { _ in },
+        keychainDidRead: () -> Void = {},
+        recordingLive: @escaping (DeviceLockKey) -> Bool = { RecordingMarker.isLive($0) }
+    ) async throws -> LoginFillReport {
+        let gated = try await gate(
+            on: route, profile: profile, key: requestedKey, where: filter, waitTurnstile: waitTurnstile, logger: logger, store: store, wholeDevice: wholeDevice,
+            requiredApp: fill.app, step: step, ask: ask, onPrepared: onPrepared, keychainWillRead: keychainWillRead, keychainDidRead: keychainDidRead, recordingLive: recordingLive,
+            preflight: { tree, services in _ = try await LoginFlow.fillTargets(fill.target, intoID: fill.intoID, replace: fill.replace, in: tree, services: services) }
+        )
+        do {
+            var report = try await InputSecrecy.$keysOnly.withValue(route.device.isPhysicalIOSDevice) {
+                try await LoginFlow.fill(
+                    fill.target, app: gated.app, key: gated.entry.key, credential: gated.saved.credential, profile: profile, webLogin: gated.saved.webLogin,
+                    intoID: fill.intoID, replace: fill.replace, services: gated.services
+                )
+            }
+            report.tags = gated.entry.context.tags
+            report.filter = filter
+            return report
+        } catch var failure as LoginFillFailure {
+            failure.report.tags = gated.entry.context.tags
+            failure.report.filter = filter
+            throw failure
+        }
+    }
+
+    /// Every check `login` makes before it types, in order: no recording, the app in front and the deny list, `preflight` on the screen, the saved login, Turnstile, Touch ID, the confirmed join and the device scope. `requiredApp` must be the app in front.
+    @MainActor
+    static func gate(
+        on route: DeviceRouter.Route,
+        profile: LoginProfile?,
+        key requestedKey: String?,
+        where filter: [LoginTag],
+        waitTurnstile: TimeInterval?,
+        logger: OffsiderLogger,
+        store: any LoginCredentialStoring,
+        wholeDevice: Bool,
+        requiredApp: String? = nil,
+        step: @escaping (_ what: String, _ shown: Bool) -> Void,
+        ask: @escaping (String) -> Void,
+        onPrepared: @Sendable () -> Void,
+        keychainWillRead: (_ app: String) -> Void,
+        keychainDidRead: () -> Void,
+        recordingLive: @escaping (DeviceLockKey) -> Bool,
+        preflight: (UITree, LoginFlow.Services) async throws -> Void = { _, _ in }
+    ) async throws -> Gated {
         try RecordingMarker.refuseTyping("a password", command: "login", on: route.device, recordingLive: recordingLive)
         try await route.backend.prepare()
         onPrepared()
         let tree = try await route.backend.accessibilityTree(for: route.device)
         let app = try ForegroundAppLookup.identifier(in: tree, forLogin: true)
         try refuseDeniedApp(app, platform: route.device.platform)
+        if let requiredApp, requiredApp != app {
+            throw CLIError(
+                errorDescription: "\(app) is in front, not \(requiredApp) (--app), so nothing was typed. Bring \(requiredApp) to the front, then run login again.",
+                reason: .foregroundChanged
+            )
+        }
+        let device = route.device
         let services = LoginFlow.Services(
             readTree: { try await route.backend.accessibilityTree(for: route.device) },
             typeText: { text, field in
@@ -239,8 +426,11 @@ struct LoginCommand: AsyncParsableCommand {
             promptBehind: { error in await Self.promptBehind(error, app: app, on: route) },
             declinesPrompts: !(route.device.isPhysicalAndroidDevice || route.device.isPhysicalIOSDevice) || wholeDevice,
             step: step,
-            ask: ask
+            ask: ask,
+            refuseRecording: { try RecordingMarker.refuseTyping("a password", command: "login", on: device, recordingLive: recordingLive) },
+            revealedSecrets: { await TreeCache.revealedSecrets(for: device, backend: route.backend) }
         )
+        try await preflight(tree, services)
         let canonical: String
         let entry: LoginEntry
         do {
@@ -268,30 +458,7 @@ struct LoginCommand: AsyncParsableCommand {
         }
         try requireConfirmedLink(saved, app: app, canonical: canonical, device: route.device)
         try requireDeviceScope(saved, key: entry.key, app: canonical, device: route.device, wholeDevice: wholeDevice)
-        let credential = saved.credential
-        let deviceID = route.device.rawValue
-        var report: LoginReport
-        do {
-            report = try await InputSecrecy.$keysOnly.withValue(route.device.isPhysicalIOSDevice) {
-                try await LoginFlow.run(
-                    app: app, key: entry.key, credential: credential, profile: profile, webLogin: saved.webLogin, timeout: timeout, turnstileWait: turnstileWait,
-                    services: services,
-                    lastSignIn: {
-                        tracker?.last(app: canonical, deviceID: deviceID).map {
-                            LoginFlow.LastSignIn(key: $0.record.key, since: $0.record.since, restarted: $0.restarted, deviceID: deviceID)
-                        }
-                    }
-                )
-            }
-        } catch var failure as LoginFailure {
-            failure.report.tags = entry.context.tags
-            failure.report.filter = filter
-            throw failure
-        }
-        tracker?.record(app: canonical, foreground: app, key: entry.key, deviceID: deviceID)
-        report.tags = entry.context.tags
-        report.filter = filter
-        return report
+        return Gated(app: app, canonical: canonical, entry: entry, saved: saved, services: services, turnstileWait: turnstileWait)
     }
 
     /// The keyboard's own way out. iOS: its hide key, or Done in the bar on top of the keys. Android: Back, only over docked keys, as over a toolbar Back goes to the app.
@@ -469,6 +636,16 @@ struct LoginCommand: AsyncParsableCommand {
         )
     }
 }
+
+/// What `--fill` asks for: which secret, the one field when named, whether to type over text, and the app that must be in front.
+struct LoginFillRequest {
+    var target: LoginFillTarget
+    var intoID: String?
+    var replace = false
+    var app: String?
+}
+
+extension LoginFillTarget: ExpressibleByArgument {}
 
 /// What `login` is doing now, read by the watchdog's own queue when it ends a hung run.
 final class LoginStep: @unchecked Sendable {

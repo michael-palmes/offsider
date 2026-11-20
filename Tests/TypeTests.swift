@@ -342,13 +342,13 @@ struct TypeSecureFieldTests {
         return (error, backend)
     }
 
-    @Test("argument text aimed at a password field by --into-id exits 64 with nothing sent, pointing at login and --stdin", arguments: [android, simulator])
+    @Test("argument text aimed at a password field by --into-id exits 64 with nothing sent, pointing at login and login --fill", arguments: [android, simulator])
     func intoPassword(device: DeviceID) async throws {
         let (error, backend) = try await Self.refusal(["--into-id", "password", "hunter2"], on: device, trees: [Self.form(platform: device.platform)])
 
         #expect(error?.reason == .secureFieldArgument)
         #expect(error?.exitCode.rawValue == 64)
-        #expect(error?.userFacingDescription == "The field is a password field, and text given as an argument stays in shell history and process lists, so Offsider typed nothing. Sign in with `offsider login --device \(device.rawValue)`, or pipe it in with `offsider type --stdin --device \(device.rawValue)`.")
+        #expect(error?.userFacingDescription == "The field is a password field, and text given as an argument stays in shell history and process lists, so Offsider typed nothing. Sign in with `offsider login --device \(device.rawValue)`; on a sign-up screen, fill the password and confirm fields with `offsider login --fill password --device \(device.rawValue)`.")
         #expect(error?.hint == "offsider login --device \(device.rawValue)")
         #expect(backend.session.calls.isEmpty)
     }

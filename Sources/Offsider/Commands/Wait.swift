@@ -10,7 +10,7 @@ struct Wait: AsyncParsableCommand {
         abstract: "Wait until an element is on screen or gone, the screen settles, a region changes or stays still, or a fixed time passes",
         discussion: """
         Choose one condition: a selector (--id, --label, --label-contains or --value, with --gone to wait for it to leave), --settled, \
-        --region with --changed or --stable, or --seconds, which needs no device. Selectors count only on-screen matches unless \
+        --region with --changed or --stable, --toast for an Android toast, or --seconds, which needs no device. Selectors count only on-screen matches unless \
         --allow-offscreen. --region watches pixels in points as describe-ui prints them, for content the accessibility tree cannot \
         see such as charts or web views. Within 2 s of an input, --settled also waits for that input's effect to show (a read that \
         differs from the screen before it, else 2 s after it, or 1 s when no read from before it was kept), so a delayed push is not \
@@ -38,6 +38,9 @@ struct Wait: AsyncParsableCommand {
 
     /// `--any` over two or more selectors; with one it is a plain wait, so a list built at run time can hold a single label.
     var waitsForAny: Bool { any && selector.queries.count > 1 }
+
+    @Option(name: .customLong("toast"), help: ArgumentHelp("On Android, wait until the app in front (or --app's on a phone) raises a toast with this whole text, matched as --label matches a label, raised after the wait began or at most 3.5 s before it (a long toast's time on screen). A phone sees only toasts raised during this wait.", valueName: "text"))
+    var toast: String?
 
     @Flag(name: .customLong("settled"), help: "Wait until nothing has changed for --quiet-ms.")
     var settled = false
@@ -108,12 +111,15 @@ struct Wait: AsyncParsableCommand {
         if (changed || stable) && region == nil {
             throw ValidationError("--changed and --stable need --region.")
         }
-        let families = [selector.query != nil, settled, region != nil, seconds != nil].filter { $0 }.count
+        let families = [selector.query != nil, settled, region != nil, seconds != nil, toast != nil].filter { $0 }.count
         if families == 0 {
-            throw ValidationError("Choose one of a selector (--id, --label, --label-contains or --value), --settled, --region or --seconds.")
+            throw ValidationError("Choose one of a selector (--id, --label, --label-contains or --value), --settled, --region, --toast or --seconds.")
         }
         if families > 1 {
-            throw ValidationError("Choose only one of a selector, --settled, --region or --seconds.")
+            throw ValidationError("Choose only one of a selector, --settled, --region, --toast or --seconds.")
+        }
+        if let toast, toast.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            throw ValidationError("--toast needs the toast's text.")
         }
         if any && selector.query == nil {
             throw ValidationError("--any needs --id, --label, --label-contains or --value.")
@@ -225,13 +231,14 @@ struct Wait: AsyncParsableCommand {
     func show(_ outcome: WaitOutcome, on route: DeviceRouter.Route, console: Console = .current) async throws {
         let mask = try await AmbientMasks.shownMask(on: route)
         try Self.report(
-            outcome, success: successLine(outcome), failure: failureLine(Self.shown(outcome, mask: mask)), json: json, checked: selector, mask: mask, person: personOutcome,
+            outcome, success: successLine(outcome), failure: failureLine(Self.shown(outcome, mask: mask), phone: route.device.isPhysicalAndroidDevice), json: json, checked: selector, mask: mask,
+            person: { personOutcome($0, note: $1, phone: route.device.isPhysicalAndroidDevice) },
             console: console
         )
     }
 
     var readsTree: Bool {
-        selector.query != nil || (settled && settleBy != .screen)
+        selector.query != nil || (settled && settleBy != .screen) || toast != nil
     }
 
     /// The longest this wait may legitimately take before the watchdog's grace.
@@ -276,6 +283,14 @@ struct Wait: AsyncParsableCommand {
         if probesOnMiss {
             sources.probe = Self.presentationProbe(on: route)
         }
+        if toast != nil {
+            let (read, device) = (sources.tree, route.device)
+            sources.tree = {
+                let tree = try await read()
+                guard tree.toasts != nil else { throw Self.toastsUnseen(on: device) }
+                return tree
+            }
+        }
         sources.appExit = Self.appExit(on: route, clock: clock)
         if notesOtherApp {
             let (limit, device) = (timeout, route.device.rawValue)
@@ -283,6 +298,17 @@ struct Wait: AsyncParsableCommand {
         }
         logger.info().log("Waiting for \(target)")
         return try await WaitLoop.run(condition, timeout: timeout, interval: pollInterval, sources: sources)
+    }
+
+    /// Toasts reach Offsider only through its Android helper, so iOS and a read that fell back to uiautomator cannot see them.
+    static func toastsUnseen(on device: DeviceID) -> CLIError {
+        guard device.platform == .android else {
+            return CLIError(errorDescription: "--toast is for Android: iOS has no toasts. Wait for the element the app shows instead.", reason: .notSupported)
+        }
+        return CLIError(
+            errorDescription: "\(device.rawValue) was read with uiautomator, which cannot see toasts. Run `offsider doctor --device \(device.rawValue)` to see why Offsider's helper could not start.",
+            reason: .notSupported, hint: "offsider doctor --device \(device.rawValue)"
+        )
     }
 
     /// The crash check for a backend that can tell whether an app runs: iOS simulators and Android, not an iPhone.
@@ -307,7 +333,7 @@ struct Wait: AsyncParsableCommand {
             var mask = OutputMasks.current.base
             mask.revealed = revealed
             activity.tree = activity.tree?.redacted(mask, scope: .cache)
-            let record = TreeCacheRecord.committing(activity, previous: nil, command: "wait", inputAtEnd: false, bootMarker: nil, now: now)
+            let record = TreeCacheRecord.committing(activity, previous: nil, command: "wait", inputAtEnd: false, bootMarker: nil, now: now, statusBar: IOSBackend.statusBarHeight)
             return SettleGate.after(record, now: now)
         }
         return SettleGate.after(await TreeCache.load(for: route.device, backend: route.backend, environment: environment), now: now)
@@ -327,6 +353,7 @@ struct Wait: AsyncParsableCommand {
         if let query = selector.query {
             return .element(probe: selector.probe(for: query, revealed: revealed), gone: gone, stableFor: stableFor, explain: SelectorQuery.explain(query))
         }
+        if let toast { return .toast(text: toast) }
         if settled {
             let holdsDraw = gate != nil && settleBy == nil && (platform == .android || drawsAfterTree)
             // validate() has parsed the regions.
@@ -359,6 +386,7 @@ struct Wait: AsyncParsableCommand {
             }
             return ("\(query.selectorDescription) is \(gone ? "gone" : selector.presentState)", after, nil)
         }
+        if let toast { return ("Toast \(TerminalText.quoted(toast)) shown", after, nil) }
         if settled { return ("Screen settled", after, nil) }
         if region != nil { return (stable ? "Region stable" : "Region changed", after, nil) }
         return ("Waited \(WaitLoop.seconds(outcome.elapsed))", nil, nil)
@@ -366,8 +394,13 @@ struct Wait: AsyncParsableCommand {
 
     /// A person's ✅ with the time, or ❌ with the last reason and the nearest element; `shown` is already redacted.
     func personOutcome(_ shown: WaitOutcome, note: String?) -> Outcome {
+        personOutcome(shown, note: note, phone: false)
+    }
+
+    func personOutcome(_ shown: WaitOutcome, note: String?, phone: Bool) -> Outcome {
         guard shown.met else {
             var details = ["Last     \(shown.reason)"]
+            if toast != nil, phone { details.append(Self.phoneToastHint) }
             if let nearest = shown.nearMiss { details.append("Nearest  \(nearest.summary)") }
             if settled, !ignoreValues, shown.onlyTextMoved { details.append("Only text kept changing; --ignore-values lets it settle") }
             if let moving = shown.movingPart { details.append("Part of it keeps moving; \(moving.flag) leaves it out") }
@@ -379,6 +412,9 @@ struct Wait: AsyncParsableCommand {
         let timing = [parts.after, parts.selectors].compactMap { $0 }.joined(separator: " · ")
         return .done(parts.headline, aside: timing.isEmpty ? nil : timing, details: note.map { [$0] } ?? [])
     }
+
+    /// A phone's helper lives for one command, so its toasts start empty with each one.
+    static let phoneToastHint = "A phone sees only toasts raised during the wait; `tap --verify` sees the one a tap raises"
 
     /// After a `--gone` wait whose reads were cut short before they reached the element.
     static let cutHint = "The element may be further down than the read reached: scroll to it, then wait again."
@@ -392,9 +428,11 @@ struct Wait: AsyncParsableCommand {
     }
 
     /// `✗ Timed out after 10 s waiting for --id 'save' (last: off screen at (20, 10700) 350x44).`
-    func failureLine(_ outcome: WaitOutcome) -> String {
+    func failureLine(_ outcome: WaitOutcome, phone: Bool = false) -> String {
         let hint: String
-        if settled, !ignoreValues, outcome.onlyTextMoved {
+        if toast != nil, phone {
+            hint = " \(Self.phoneToastHint)."
+        } else if settled, !ignoreValues, outcome.onlyTextMoved {
             hint = " Only text kept changing, as a live price or clock does; add --ignore-values to let it settle."
         } else if let moving = outcome.movingPart {
             hint = " Part of the screen keeps moving; add \(moving.flag) to leave it out."
@@ -430,6 +468,7 @@ struct Wait: AsyncParsableCommand {
             if let wanted = selector.requiredEnabled { return "\(query.selectorDescription) to be \(wanted ? "enabled" : "disabled")" }
             return selector.hasValue.map { "\(query.selectorDescription) with value '\($0)'" } ?? query.selectorDescription
         }
+        if let toast { return "a toast \(TerminalText.quoted(toast))" }
         if settled { return "the screen to settle" }
         if region != nil { return stable ? "the region to stay still" : "the region to change" }
         return WaitLoop.seconds(seconds ?? 0)
