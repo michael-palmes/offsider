@@ -105,14 +105,23 @@ enum RunRegistry {
             }
             return ActiveRun(folder: folder, masks: (try? folder.readState())??.masks ?? .defaults, record: nil)
         case .none:
-            guard let found = try record(of: environment) else { return nil }
-            let folder: RunFolder
+            let found: RunRecord?
             do {
-                folder = try RunFolder.validateRecorded(found)
+                found = try record(of: environment)
             } catch {
-                throw unavailable("This session's run folder cannot be trusted: \(OffsiderCommand.message(for: error)). Run `offsider run stop`, then start a new run.")
+                throw unavailable("Could not check for this session's evidence run: \(OffsiderCommand.message(for: error)) Make that folder yours alone (`chmod 700`), or remove it so Offsider makes it again.")
             }
-            return ActiveRun(folder: folder, masks: found.masks, record: found)
+            guard let found else { return nil }
+            return ActiveRun(folder: try trusted(found), masks: found.masks, record: found)
+        }
+    }
+
+    /// The record's folder once `validateRecorded` passes; else `run_unavailable` naming the fix.
+    static func trusted(_ record: RunRecord) throws -> RunFolder {
+        do {
+            return try RunFolder.validateRecorded(record)
+        } catch {
+            throw unavailable("This session's run folder cannot be trusted: \(OffsiderCommand.message(for: error)). Run `offsider run stop`, then start a new run.")
         }
     }
 
@@ -216,7 +225,7 @@ enum RunRegistry {
 
     /// `run start` on the session's active folder adds new masks to its record and `run.json` under the folder lock, and never removes one.
     static func addMasks(_ masks: RunMasks, to existing: RunRecord, in environment: EvidenceRunEnvironment) throws -> Started {
-        let folder = RunFolder(path: existing.dir)
+        let folder = try trusted(existing)
         guard existing.masks.union(masks) != existing.masks else {
             var state = try folder.readState() ?? RunState(label: existing.label, startedAt: existing.startedAt, masks: existing.masks)
             state.masks = existing.masks
@@ -252,7 +261,12 @@ enum RunRegistry {
         case .none:
             guard let record = try record(of: environment) else { return nil }
             OffsiderPrivateDirectory.removeFile(named: RunRecord.fileName(for: record.owner), in: try environment.runsDirectory())
-            folder = RunFolder(path: record.dir)
+            // An untrusted folder is left untouched: stopping only forgets the run, so a new `run start` can begin.
+            guard let trusted = try? trusted(record) else {
+                let state = RunState(label: record.label, startedAt: record.startedAt, stoppedAt: environment.now(), endedBy: "run-stop", masks: record.masks)
+                return RunTimeline(dir: record.dir, state: state, entries: [], unrecorded: [])
+            }
+            folder = trusted
         }
         let state = try end(folder, by: "run-stop", at: environment.now())
         let lines = folder.manifest()
@@ -284,7 +298,7 @@ enum RunRegistry {
             }
             OffsiderPrivateDirectory.removeFile(named: RunRecord.fileName(for: record.owner), in: directory)
             let folder = RunFolder(path: record.dir)
-            try? end(folder, by: "owner-exited", at: environment.now())
+            if (try? trusted(record)) != nil { try? end(folder, by: "owner-exited", at: environment.now()) }
             ended.append(RunStatusEntry(dir: record.dir, label: record.label, startedAt: record.startedAt, owner: record.owner, files: files(in: folder), endedBy: "owner-exited"))
         }
         return ended
@@ -317,7 +331,7 @@ enum RunRegistry {
     /// A run started again in `dir` is recording, so nothing there is left to resume.
     static func forgetEnded(_ dir: String, in environment: EvidenceRunEnvironment) {
         guard let directory = try? environment.runsDirectory() else { return }
-        for ended in endedMarkers(in: environment) where ended.marker.dir == dir {
+        for ended in endedMarkers(in: environment) where RunFolder.resolvingParents(ended.marker.dir) == dir {
             OffsiderPrivateDirectory.removeFile(named: ended.name, in: directory)
         }
     }

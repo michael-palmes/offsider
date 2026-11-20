@@ -59,8 +59,7 @@ final class EvidenceRecorder {
         recordingCommands.contains(command) || command.hasPrefix("run ")
     }
 
-    /// The caller's run, found once. A run this session started whose folder or record cannot be used is an error, never no run,
-    /// so a capture refuses rather than going out without the run's masks.
+    /// The caller's run, found once; a run that cannot be read is an error, never no run, so no capture drops its masks.
     func run() throws -> ActiveRun? {
         guard let environment else { return nil }
         let result = lookup ?? Result { try RunRegistry.active(in: environment) }

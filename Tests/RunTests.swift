@@ -185,16 +185,32 @@ struct RunTests {
         #expect(fixture.manifest(evidence).map(\.n) == [1])
     }
 
-    @Test("a run folder that is itself a link is refused at start, wherever it points")
-    func linkAsRunFolderRefused() throws {
+    @Test("a run folder that is itself a link is refused at start, wherever it points and however it is spelt", arguments: ["", "/", "/.", "/../linked"])
+    func linkAsRunFolderRefused(suffix: String) throws {
         let fixture = try RunFixture()
         let real = fixture.folder("real")
         try FileManager.default.createDirectory(atPath: real, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
         try FileManager.default.createSymbolicLink(atPath: fixture.folder("linked"), withDestinationPath: real)
 
-        let error = #expect(throws: CLIError.self) { try fixture.start(fixture.folder("linked")) }
+        let error = #expect(throws: CLIError.self) { try fixture.start(fixture.folder("linked") + suffix) }
         #expect(error?.reason == .runUnavailable)
         #expect(try RunRegistry.active(in: fixture.environment()) == nil)
+    }
+
+    @Test("run start and run stop never write into a run folder swapped for a link, and after the stop a new run starts")
+    func untrustedFolderUntouchedByStartAndStop() throws {
+        let fixture = try RunFixture()
+        _ = try fixture.start(label: "mine")
+        let moved = fixture.folder("moved")
+        try FileManager.default.moveItem(atPath: fixture.folder(), toPath: moved)
+        try FileManager.default.createSymbolicLink(atPath: fixture.folder(), withDestinationPath: moved)
+        let before = try Data(contentsOf: URL(fileURLWithPath: RunFolder(path: moved).file(RunFolder.stateName)))
+
+        let error = #expect(throws: CLIError.self) { try fixture.start(masks: RunMasks(ids: ["card"])) }
+        #expect(error?.reason == .runUnavailable)
+        #expect(try RunRegistry.stop(in: fixture.environment()) != nil)
+        #expect(try Data(contentsOf: URL(fileURLWithPath: RunFolder(path: moved).file(RunFolder.stateName))) == before)
+        #expect(!(try fixture.start(fixture.folder("fresh")).unchanged))
     }
 
     @Test("a capture whose run folder can no longer be trusted refuses with run_unavailable and its fix, with or without --output, and writes nothing", arguments: ["link", "group-writable", "no-state"])
