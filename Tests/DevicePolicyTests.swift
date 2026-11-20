@@ -307,6 +307,16 @@ struct PhysicalDevicePolicyTests {
         #expect(ManagedDevicePolicy.read(from: FakeManagedPreferences(values: [ManagedDevicePolicy.allowPhysicalDevicesKey: .bool(true)])).unknownKeys.isEmpty)
     }
 
+    @Test("profile metadata an MDM tool leaves beside the settings is not an unknown key, so phones stay allowed")
+    func profileMetadataIsNotAKey() {
+        let managed = ManagedDevicePolicy.read(from: FakeManagedPreferences(values: [
+            ManagedDevicePolicy.allowPhysicalDevicesKey: .bool(true), "PayloadUUID": .unreadable, "PayloadDisplayName": .unreadable, "PayloadVersion": .unreadable,
+        ]))
+        #expect(managed.unknownKeys.isEmpty)
+        guard case .allowed = Self.decide(managed) else { Issue.record("profile metadata refused the device"); return }
+        #expect(managed.unreadableKeys.isEmpty)
+    }
+
     @Test("each managed refusal names the organisation and the key, and asks for the administrator")
     func refusalsNameTheKey() {
         let cases: [(DeviceRefusal, String, String)] = [

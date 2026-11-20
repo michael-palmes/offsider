@@ -107,6 +107,9 @@ public struct ManagedDevicePolicy: Equatable, Sendable {
     /// The keys this build honours.
     public static let knownKeys = [allowPhysicalDevicesKey, allowedDeviceIDsKey, allowedBundleIDsKey, deniedBundleIDsKey, allowTestDevicesKey]
 
+    /// `PayloadUUID` and its kin, which some MDM tools leave beside the settings; never an Offsider key.
+    static func isProfileMetadata(_ key: String) -> Bool { key.hasPrefix("Payload") }
+
     /// A forced key held a value of the wrong type.
     public var unreadable: Bool { !unreadableKeys.isEmpty }
 
@@ -149,7 +152,7 @@ public struct ManagedDevicePolicy: Equatable, Sendable {
         let bundles = strings(allowedBundleIDsKey)
         let denied = strings(deniedBundleIDsKey)
         let testDevices = bool(allowTestDevicesKey)
-        let unknown = source.forcedKeys().filter { !knownKeys.contains($0) }.sorted()
+        let unknown = source.forcedKeys().filter { !knownKeys.contains($0) && !isProfileMetadata($0) }.sorted()
         return ManagedDevicePolicy(
             allowPhysicalDevices: allow, allowedDeviceIDs: devices, allowedBundleIDs: bundles, deniedBundleIDs: denied, allowTestDevices: testDevices,
             unreadableKeys: unreadable, unknownKeys: unknown
