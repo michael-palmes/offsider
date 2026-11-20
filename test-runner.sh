@@ -19,6 +19,8 @@ source "$(dirname "${BASH_SOURCE[0]}")/scripts/e2e-environment.sh"
 source "$(dirname "${BASH_SOURCE[0]}")/scripts/lib/ui.sh"
 # shellcheck source=/dev/null
 source "$(dirname "${BASH_SOURCE[0]}")/scripts/lib/unit-tests.sh"
+# shellcheck source=/dev/null
+source "$(dirname "${BASH_SOURCE[0]}")/scripts/lib/e2e-host.sh"
 
 # Any adb server the suites start sends no mDNS multicast on the LAN.
 export ADB_MDNS=0
@@ -44,6 +46,17 @@ else
     RUN_YOURSELF="Run this yourself"
     RENEW_YOURSELF="Renew it yourself"
 fi
+
+# The command as typed, for a run that stops before it starts to say how to try again.
+RUNNER_COMMAND="$0"
+[[ $# -eq 0 ]] || RUNNER_COMMAND+="$(printf ' %q' "$@")"
+# What this run booted, shut down when it ends: a simulator by UDID, an AVD by name, as a restart can change its serial.
+RUNNER_BOOTED_SIMULATOR=""
+RUNNER_BOOTED_AVD=""
+# The simulator whose crash reports the run counts, and a file made as it began, before any boot.
+CRASH_UDID=""
+CRASH_MARKER=""
+CRASHES_REPORTED=false
 
 # The suites this run means to run and how each one ended, for the results at the end.
 SUITES_PLANNED=" "
@@ -169,7 +182,8 @@ Modes (run $0 on a terminal with none to pick one):
       --android-fold   Foldable suite on the Offsider_E2E_Fold AVD, booted if it is not running
       --android-phone  Phone suites on a USB phone you allowed (.build/debug/offsider devices add)
       --ios-device     Device suites on an iPhone or iPad you allowed
-Options: -t tests only, -b build only, -c clean build, -v verbose, --rn-debug (with --rn-ios or --android)
+Options: -t tests only, -b build only, -c clean build, -v verbose, --rn-debug (with --rn-ios or --android),
+         --keep-booted (leave a simulator or AVD this run booted running at the end)
 
 Missing a simulator or AVD? scripts/e2e-devices.sh creates them.
 Settings, suite names and examples: $0 --help-env
@@ -186,6 +200,9 @@ All modes:
   OFFSIDER_REUSE_IDB=1      Reuse a build_products that matches the idb pin and this Xcode, here or in
                             another checkout of this repository, instead of rebuilding idb
   -s, --sequential          Run suites one by one (always on)
+  OFFSIDER_E2E_KEEP_BOOTED=1  Leave a simulator or AVD this run booted running at the end (as --keep-booted);
+                            one already running is always left as it was. A boot first waits up to 10 minutes
+                            for the 1-minute load to fall to twice the cores
 
 Simulator (--simulator, --rn-ios):
   OFFSIDER_SIMULATOR_NAME   Exact name of the simulator to test on (default: a stock iPhone on the Xcode's iOS major, booted first)
@@ -288,6 +305,10 @@ CLEAN_BUILD=false
 SEQUENTIAL=true
 VERBOSE=false
 TEST_FILTER=""
+KEEP_BOOTED=false
+case "$(printf '%s' "${OFFSIDER_E2E_KEEP_BOOTED:-}" | tr '[:upper:]' '[:lower:]')" in
+    1|true|yes|on) KEEP_BOOTED=true ;;
+esac
 
 # Every E2E suite is in one of these lists or another mode's; E2ESuiteListTests fails on one that is in none.
 SIMULATOR_SUITES=(
@@ -382,6 +403,58 @@ RN_DEBUG_SUITES=(
     "ReactNativeDebugLoginTests"
 )
 
+# Counts the crash reports the simulator writes from here on, so a crash during the run is never missed.
+start_crash_watch() {
+    CRASH_UDID="$1"
+    CRASH_MARKER="$(mktemp "${TMPDIR:-/tmp}/offsider-run-start.XXXXXX")" || CRASH_MARKER=""
+}
+
+# With "fail", a SpringBoard, PosterBoard or playground crash on a simulator this run booted fails it: nothing crashes on purpose.
+report_run_crashes() {
+    [[ -n "$CRASH_UDID" && "$CRASHES_REPORTED" != true ]] || return 0
+    CRASHES_REPORTED=true
+    e2e_run_crashes "$HOME/Library/Logs/DiagnosticReports" "$CRASH_UDID" "$CRASH_MARKER" "$BUNDLE_ID"
+    local name="${SIMULATOR_NAME:-$CRASH_UDID}" label="$E2E_CRASHES_TOTAL crash reports"
+    [[ "$E2E_CRASHES_TOTAL" == 1 ]] && label="1 crash report"
+    if [[ "$E2E_CRASHES_TOTAL" == 0 ]]; then
+        ui_row ok "$label" "from $name during the run"
+    elif [[ -z "$E2E_CRASHES_FATAL" ]]; then
+        ui_row warn "$label" "from $name during the run: $E2E_CRASHES_DETAIL"
+    else
+        ui_row fail "$label" "from $name during the run: $E2E_CRASHES_DETAIL"
+        if [[ "$RUNNER_BOOTED_SIMULATOR" != "$CRASH_UDID" ]]; then
+            warn "$name was already running, so another session may have caused these; check it." "$(offsider_command) doctor --device $CRASH_UDID"
+        elif [[ "${1:-}" == fail ]]; then
+            die "$E2E_CRASHES_FATAL crashed on $name during the run, so it fails: no suite crashes anything on purpose." "$(offsider_command) doctor --device $CRASH_UDID"
+        fi
+    fi
+}
+
+# Stops its sessions and shuts it down through Offsider; simctl only without a build, so a refused lease is never forced.
+shutdown_runner_device() {
+    local kind="$1" id="$2" name="$3" why="" status=0
+    [[ -n "$id" ]] || return 0
+    if [[ "$KEEP_BOOTED" == true ]]; then
+        ui_row ok "$name stays booted" "offsider shutdown $id when done"
+        return 0
+    fi
+    spinner_start "Shutting down $name"
+    if [[ -x "${OFFSIDER_BIN_PATH:-}" ]]; then
+        why="$("$OFFSIDER_BIN_PATH" shutdown "$id" 2>&1 >/dev/null)" || status=$?
+    elif [[ "$kind" == simulator ]]; then
+        why="$(xcrun simctl shutdown "$id" 2>&1 >/dev/null)" || status=$?
+    else
+        why="Offsider is not built" status=1
+    fi
+    spinner_stop
+    if (( status == 0 )); then
+        ui_row ok "Shut down $name" "this run booted it"
+    else
+        why="$(printf '%s\n' "$why" | grep -v '^$' | head -1)"
+        warn "Could not shut down $name, which this run booted: ${why:-exit $status}" "$(offsider_command) shutdown $id"
+    fi
+}
+
 cleanup_test_runner() {
     ui_cleanup
     if [[ -n "$STEP_LOG" && -f "$STEP_LOG" ]]; then
@@ -390,6 +463,14 @@ cleanup_test_runner() {
     cleanup_unit_tests
     if [[ "$RN_METRO_STARTED" == true ]]; then
         scripts/rn-playground.sh metro stop || true
+    fi
+    if [[ "$CRASHES_REPORTED" != true ]]; then
+        report_run_crashes || true
+    fi
+    shutdown_runner_device simulator "$RUNNER_BOOTED_SIMULATOR" "${SIMULATOR_NAME:-$RUNNER_BOOTED_SIMULATOR}" || true
+    shutdown_runner_device avd "$RUNNER_BOOTED_AVD" "$RUNNER_BOOTED_AVD" || true
+    if [[ -n "$CRASH_MARKER" ]]; then
+        rm -f "$CRASH_MARKER"
     fi
 }
 
@@ -465,6 +546,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         -v|--verbose)
             VERBOSE=true
+            shift
+            ;;
+        --keep-booted)
+            KEEP_BOOTED=true
             shift
             ;;
         *Tests)
@@ -583,27 +668,6 @@ check_prerequisites() {
     ui_row ok "Tools ready" "Xcode $SELECTED_XCODE_VERSION ($(e2e_xcode_build "$SELECTED_DEVELOPER_DIR"))"
 }
 
-# Refuses a simulator in a crash loop, the same rule as doctor's simulator.crash-loop; a direct scan because Offsider is not built yet.
-check_simulator_crash_loop() {
-    local udid="$1"
-    local reports="$HOME/Library/Logs/DiagnosticReports"
-    [[ -d "$reports" ]] || return 0
-    local looping
-    # Only each report's first 16 KB, as doctor reads.
-    looping=$(find "$reports" -maxdepth 1 -type f -name '*.ips' -mmin -10 -print0 2>/dev/null \
-        | while IFS= read -r -d '' report; do
-            prefix=$(head -c 16384 "$report")
-            [[ "$prefix" == *"com.apple.CoreSimulator.SimDevice.$udid\""* ]] || continue
-            printf '%s\n' "$prefix" | grep -o -m 1 '"procName" : "[^"]*"' | sed 's/.*: "\(.*\)"/\1/'
-        done | sort | uniq -c | awk '{ n = $1; sub(/^ *[0-9]+ /, ""); if (n >= 5) printf "%s crashed %d times in the last 10 minutes\n", $0, n }') || true
-    if [[ -n "$looping" ]]; then
-        print_error "Simulator $udid is in a crash loop. Erase it (this removes its apps and settings), then run again."
-        while IFS= read -r line; do log "    $line"; done <<<"$looping"
-        ui_try "xcrun simctl shutdown $udid && xcrun simctl erase $udid"
-        exit 1
-    fi
-}
-
 # Function to boot simulator
 boot_simulator() {
     if ! select_e2e_simulator; then
@@ -619,9 +683,13 @@ boot_simulator() {
         exit 1
     fi
 
-    check_simulator_crash_loop "$SIMULATOR_UDID"
+    # A direct scan, as Offsider is not built yet.
+    e2e_refuse_crash_loop "$HOME/Library/Logs/DiagnosticReports" "$SIMULATOR_UDID" "$SIMULATOR_NAME" "$SIMULATOR_STATUS" || exit 1
+    start_crash_watch "$SIMULATOR_UDID"
 
     if [[ "$SIMULATOR_STATUS" != "Booted" ]]; then
+        e2e_wait_for_quiet_mac "$SIMULATOR_NAME" || die "$E2E_BUSY_MESSAGE" "$RUNNER_COMMAND"
+        RUNNER_BOOTED_SIMULATOR="$SIMULATOR_UDID"
         run_step "Booting $SIMULATOR_NAME" xcrun simctl bootstatus "$SIMULATOR_UDID" -b ||
             die "$SIMULATOR_NAME did not boot." "xcrun simctl bootstatus $SIMULATOR_UDID -b"
     else
@@ -838,7 +906,7 @@ require_e2e_device() {
 
 # Boots the E2E AVD through offsider boot when OFFSIDER_ANDROID_DEVICE names it; a serial is left alone, and the suites still check the AVD name.
 ensure_avd_running() {
-    local avd="$1" output serial
+    local avd="$1" output serial already
     [[ "$OFFSIDER_ANDROID_DEVICE" == "$avd" ]] || return 0
     case "$avd" in
         Offsider_E2E|Offsider_E2E_Fold|Offsider_E2E_API28) ;;
@@ -846,11 +914,16 @@ ensure_avd_running() {
     esac
     require_e2e_device "$avd" AVD
     [[ -x "$OFFSIDER_BIN_PATH" ]] || die "Offsider is not built at $OFFSIDER_BIN_PATH." "swift build"
+    if ! e2e_mac_is_quiet && ! "$OFFSIDER_BIN_PATH" devices --platform android --booted --json 2>/dev/null | tr -d ' \n' | grep -qF "\"avd\":\"$avd\""; then
+        e2e_wait_for_quiet_mac "$avd" || die "$E2E_BUSY_MESSAGE" "$RUNNER_COMMAND"
+    fi
     # offsider boot shows its own progress on stderr, so no spinner here.
     log "Starting $avd"
-    output="$("$OFFSIDER_BIN_PATH" boot "$avd")" || die "offsider boot $avd failed." "\"$OFFSIDER_BIN_PATH\" boot $avd"
-    serial="$(printf '%s\n' "$output" | tail -1 | tr -d '\r')"
+    output="$("$OFFSIDER_BIN_PATH" boot "$avd" --json)" || die "offsider boot $avd failed." "\"$OFFSIDER_BIN_PATH\" boot $avd"
+    serial="$(printf '%s' "$output" | plutil -extract serial raw -o - - 2>/dev/null)" || serial=""
+    already="$(printf '%s' "$output" | plutil -extract alreadyRunning raw -o - - 2>/dev/null)" || already=""
     [[ "$serial" =~ ^emulator-[0-9]+$ ]] || die "offsider boot $avd printed no emulator serial." "\"$OFFSIDER_BIN_PATH\" boot $avd"
+    [[ "$already" == true ]] || RUNNER_BOOTED_AVD="$avd"
     ui_row ok "$avd" "running $UI_DOT $serial"
 }
 
@@ -1195,10 +1268,12 @@ show_summary() {
         built="Offsider at $(ui_path "$(run_selected_swift build --show-bin-path)/offsider")"
     fi
     if [[ "$BUILD_ONLY" == true ]]; then
+        report_run_crashes fail
         ui_receipt "Built and installed" "$took" "$built" "Playground on $SIMULATOR_NAME"
         return 0
     fi
     show_results
+    report_run_crashes fail
     for state in ${RESULT_STATES[@]+"${RESULT_STATES[@]}"}; do
         if [[ "$state" == ok ]]; then passed=$(( passed + 1 )); fi
     done
