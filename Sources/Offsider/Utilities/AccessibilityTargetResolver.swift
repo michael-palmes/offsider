@@ -50,6 +50,33 @@ indirect enum AccessibilityQuery {
         }
     }
 
+    /// Whether this compares a label; an id, which no mask hides, never does.
+    var readsLabel: Bool {
+        switch self {
+        case .label, .labelContains: return true
+        case .id, .value: return false
+        case .all(let primary, let refinements): return primary.readsLabel || refinements.contains(where: \.readsLabel)
+        }
+    }
+
+    var readsValue: Bool {
+        switch self {
+        case .value: return true
+        case .id, .label, .labelContains: return false
+        case .all(let primary, let refinements): return primary.readsValue || refinements.contains(where: \.readsValue)
+        }
+    }
+
+    /// Whether this compares a field `masked` says is hidden; an id never is.
+    func readsHidden(_ masked: (label: Bool, value: Bool)) -> Bool {
+        switch self {
+        case .label, .labelContains: return masked.label
+        case .value: return masked.value
+        case .id: return false
+        case .all(let primary, let refinements): return primary.readsHidden(masked) || refinements.contains { $0.readsHidden(masked) }
+        }
+    }
+
     var selectorDescription: String {
         guard case .all(let primary, let refinements) = self else {
             return "\(kind) '\(rawValue)'"
@@ -200,7 +227,8 @@ enum NearMissPhrase {
 
 enum ElementResolutionError: LocalizedError, UserFacingError, OffsiderFailure {
     /// `candidates` are the elements behind `suggestions`.
-    case notFound(kind: String, value: String, suggestions: [SelectorText.NearMatch] = [], candidates: [MatchSummary] = [])
+    /// `maskHidesField`: a mask hides the field this selector reads on some element here, so those were never compared.
+    case notFound(kind: String, value: String, suggestions: [SelectorText.NearMatch] = [], candidates: [MatchSummary] = [], maskHidesField: Bool = false)
     case filteredByElementType(kind: String, value: String, elementType: String, roles: [UIRole], candidates: [MatchSummary] = [])
     case offScreen(selector: String, frames: [UIFrame], viewport: UIFrame)
     /// On screen, but past an edge of the scroll view or list around it, where something outside it may take the tap.
@@ -216,15 +244,20 @@ enum ElementResolutionError: LocalizedError, UserFacingError, OffsiderFailure {
 
     static let maxListed = 5
 
+    static func maskedFieldNote(kind: String) -> String {
+        ElementProbe.maskedFieldNote(kind: kind) + "."
+    }
+
     var errorDescription: String? {
         let tip = AccessibilityTargetResolver.describeUITip
         switch self {
-        case .notFound(let kind, let value, let suggestions, _):
+        case .notFound(let kind, let value, let suggestions, _, let maskHidesField):
+            let masked = maskHidesField ? " \(ElementResolutionError.maskedFieldNote(kind: kind))" : ""
             guard !suggestions.isEmpty else {
-                return "No accessibility element matched \(kind) '\(value)'. \(tip)"
+                return "No accessibility element matched \(kind) '\(value)'.\(masked) \(tip)"
             }
             let quoted = suggestions.map { TerminalText.quoted(SelectorText.truncated($0.text)) + NearMissPhrase.annotation($0, kind: kind, query: value) }
-            return "No accessibility element matched \(kind) '\(value)'. Did you mean \(Self.alternatives(quoted))? \(tip)"
+            return "No accessibility element matched \(kind) '\(value)'.\(masked) Did you mean \(Self.alternatives(quoted))? \(tip)"
         case .filteredByElementType(let kind, let value, let elementType, let roles, _):
             let field = kind.hasPrefix("--") ? String(kind.dropFirst(2)) : kind
             let counted = roles.count == 1 ? "1 element has" : "\(roles.count) elements have"
@@ -311,7 +344,7 @@ enum ElementResolutionError: LocalizedError, UserFacingError, OffsiderFailure {
 
     var candidates: [FailureCandidate] {
         switch self {
-        case .notFound(_, _, _, let candidates), .filteredByElementType(_, _, _, _, let candidates),
+        case .notFound(_, _, _, let candidates, _), .filteredByElementType(_, _, _, _, let candidates),
              .multipleMatches(_, _, _, _, let candidates, _, _), .refinedOut(_, let candidates):
             return candidates.prefix(Self.maxListed).map(\.failureCandidate)
         case .offScreen, .beyondScrollView, .invalidFrame, .multipleSwitchDescendants, .nthOutOfRange, .inLogBoxToast:
@@ -356,6 +389,8 @@ struct SelectorCandidates {
     let viewport: UIFrame?
     /// True when only the folded comparison (quotes, spaces, invisible marks) found the matches.
     let folded: Bool
+    /// The masks hide the field this selector reads on some element, so those were never compared; says nothing of their text.
+    var maskHidesField = false
 }
 
 struct AccessibilityTargetResolver {
@@ -373,17 +408,33 @@ struct AccessibilityTargetResolver {
         try resolveTap(roots: roots, query: query, elementType: elementType, allowOffscreen: allowOffscreen).point
     }
 
+    /// `masks` are the output masks a label or value selector must not see past; nil, as for a screenshot's own masks, compares the real text.
     static func candidates(
         roots: [UINode],
         query: AccessibilityQuery,
-        elementType: String?
+        elementType: String?,
+        masks: TreeValueMask? = OutputMasks.current.mask
     ) -> SelectorCandidates {
-        if case .all(let primary, let refinements) = query {
-            let found = candidates(roots: roots, query: primary, elementType: elementType)
-            let refine = { (nodes: [UINode]) in nodes.filter { node in refinements.allSatisfy { $0.matches(node) } } }
-            return SelectorCandidates(matches: refine(found.matches), onScreen: refine(found.onScreen), viewport: found.viewport, folded: false)
-        }
+        let masked = (query.readsLabel || query.readsValue) ? masks.flatMap { MaskedFields.of(roots, mask: $0) } : nil
+        return candidates(roots: roots, query: query, elementType: elementType, masked: masked)
+    }
+
+    private static func candidates(roots: [UINode], query: AccessibilityQuery, elementType: String?, masked: MaskedFields?) -> SelectorCandidates {
         var elements = roots.flatMap { $0.flattened() }
+        var hidden = false
+        if let masked, masked.labels.count == elements.count {
+            let kept = elements.indices.filter { !query.readsHidden((masked.labels[$0], masked.values[$0])) }
+            hidden = kept.count < elements.count
+            elements = kept.map { elements[$0] }
+        }
+        if case .all(let primary, let refinements) = query {
+            let found = candidates(roots: roots, query: primary, elementType: elementType, masked: nil)
+            let allowed = { (node: UINode) in elements.contains { $0.isSameElement(as: node) } }
+            let refine = { (nodes: [UINode]) in nodes.filter { node in allowed(node) && refinements.allSatisfy { $0.matches(node) } } }
+            var refined = SelectorCandidates(matches: refine(found.matches), onScreen: refine(found.onScreen), viewport: found.viewport, folded: false)
+            refined.maskHidesField = hidden
+            return refined
+        }
         if let elementType {
             elements = elements.filter { $0.matches(elementType: elementType) }
         }
@@ -402,7 +453,9 @@ struct AccessibilityTargetResolver {
 
         let viewport = UITree.viewport(in: roots)
         let onScreen = viewport.map { viewport in matches.filter { $0.frame?.isVisible(in: viewport) == true } } ?? matches
-        return SelectorCandidates(matches: matches, onScreen: onScreen, viewport: viewport, folded: folded)
+        var found = SelectorCandidates(matches: matches, onScreen: onScreen, viewport: viewport, folded: folded)
+        found.maskHidesField = hidden
+        return found
     }
 
     static func resolveElement(
@@ -420,7 +473,7 @@ struct AccessibilityTargetResolver {
             guard explainFailures else {
                 throw ElementResolutionError.notFound(kind: query.kind, value: query.rawValue)
             }
-            throw notFoundError(roots: roots, query: query, elementType: elementType, viewport: found.viewport)
+            throw notFoundError(roots: roots, query: query, elementType: elementType, viewport: found.viewport, maskHidesField: found.maskHidesField)
         }
 
         let pool: [UINode]
@@ -941,7 +994,8 @@ struct AccessibilityTargetResolver {
         roots: [UINode],
         query: AccessibilityQuery,
         elementType: String?,
-        viewport: UIFrame?
+        viewport: UIFrame?,
+        maskHidesField: Bool? = nil
     ) -> ElementResolutionError {
         if case .all(let primary, _) = query {
             let unrefined = candidates(roots: roots, query: primary, elementType: elementType).matches
@@ -970,7 +1024,8 @@ struct AccessibilityTargetResolver {
             return .inLogBoxToast(kind: query.kind, value: query.rawValue, toast: toast.index)
         }
         let near = nearMatches(roots: roots, query: query, viewport: viewport)
-        return .notFound(kind: query.kind, value: query.rawValue, suggestions: near.map(\.match), candidates: near.compactMap(\.summary))
+        let hidden = maskHidesField ?? candidates(roots: roots, query: query, elementType: nil).maskHidesField
+        return .notFound(kind: query.kind, value: query.rawValue, suggestions: near.map(\.match), candidates: near.compactMap(\.summary), maskHidesField: hidden)
     }
 
     /// The field a near miss may name: a label as tree output shows it, and no value of a password field, a revealed one or an element a mask hides.
@@ -987,7 +1042,10 @@ struct AccessibilityTargetResolver {
 
     /// The fields closest to the query's text, on-screen elements first, each with the first element showing it.
     private static func nearMatches(roots: [UINode], query: AccessibilityQuery, viewport: UIFrame?) -> [(match: SelectorText.NearMatch, summary: MatchSummary?)] {
-        let elements = roots.flatMap { $0.flattened() }
+        var elements = roots.flatMap { $0.flattened() }
+        if query.readsLabel || query.readsValue, let masked = MaskedFields.of(roots, mask: OutputMasks.current.mask), masked.labels.count == elements.count {
+            elements = elements.indices.filter { !query.readsHidden((masked.labels[$0], masked.values[$0])) }.map { elements[$0] }
+        }
         let onScreen = elements.filter { node in viewport.map { node.frame?.isVisible(in: $0) == true } ?? true }
         let offScreen = elements.filter { node in viewport.map { node.frame?.isVisible(in: $0) != true } ?? false }
         let ordered = onScreen + offScreen

@@ -39,14 +39,15 @@ struct MaskFileLabelTests {
         }
     }
 
-    @Test("a labelContains match keeps only the text the file names, an exact label stays whole, an id match hides the label")
+    @Test("a masked label is hidden whole: no rule keeps any part of it; only an exact labels entry, alone, keeps it whole")
     func labelRule() throws {
         let mask = try TreeValueMask(plan: MaskConfig(ids: ["row"], labels: ["Account number"], labelContains: ["Referral code. "]).plan)
 
-        #expect(mask.maskedLabel("Referral code. rc-5521. Tap to copy") == "Referral code. [redacted]")
-        #expect(mask.maskedLabel("Copy Referral code. rc-5521") == "[redacted] Referral code. [redacted]")
-        #expect(mask.maskedLabel("Account number") == "Account number")
-        #expect(mask.maskedLabel("Device key. dk-3307") == "[redacted]")
+        #expect(mask.maskedLabel("Referral code. rc-5521. Tap to copy", id: nil) == "[redacted]")
+        #expect(mask.maskedLabel("Copy Referral code. rc-5521", id: nil) == "[redacted]")
+        #expect(mask.maskedLabel("Account number", id: nil) == "Account number")
+        #expect(mask.maskedLabel("Account number", id: "row") == "[redacted]")
+        #expect(mask.maskedLabel("Device key. dk-3307", id: nil) == "[redacted]")
         #expect(mask.shownLabel("Device key. dk-3307", id: "row") == "[redacted]")
         #expect(mask.shownLabel("Back", id: "back") == "Back")
     }
@@ -58,7 +59,7 @@ struct MaskFileLabelTests {
         let text = try await fixture.run { try await DescribeUIRedactionTests.describe(["--format", "text"], on: backend, config: Self.config) }
         let json = try await fixture.run { try await DescribeUIRedactionTests.describe([], on: backend, config: Self.config) }
 
-        #expect(text.contains(#"button "Referral code. [redacted]""#))
+        #expect(text.contains(#"button "[redacted]""#))
         #expect(text.contains(#"button "[redacted]" id=device-key"#))
         #expect(text.contains(#"button "Back" id=back"#))
         #expect(text.hasSuffix("# redacted: 3 values\n"))
@@ -81,8 +82,8 @@ struct MaskFileLabelTests {
             Issue.record("expected Android attributes")
             return
         }
-        #expect(shown.label == "Referral code. [redacted]")
-        #expect(attributes.contentDescription == "Referral code. [redacted]" && attributes.text == "Referral code. [redacted]")
+        #expect(shown.label == "[redacted]")
+        #expect(attributes.contentDescription == "[redacted]" && attributes.text == "[redacted]")
         #expect(attributes.hint == "[redacted]" && attributes.stateDescription == "[redacted]")
     }
 
@@ -152,9 +153,9 @@ struct MaskFileLabelTests {
     func contextLabels() throws {
         let mask = TreeValueMask(patterns: [try MaskPlan.compile(#"rc-\d{4}"#)])
         try OutputMasks.$current.withValue(OutputMasks { mask }) {
-            #expect(PresentationProbe.shownLabel(of: FakeUI.node(.other, label: "Offer rc-5521")) == "Offer [redacted]")
+            #expect(PresentationProbe.shownLabel(of: FakeUI.node(.other, label: "Offer rc-5521")) == "[redacted]")
             let branch = UITreeContext.HiddenBranch.shown(id: nil, label: "Offer rc-5521", className: nil, frame: nil)
-            #expect(branch.label == "Offer [redacted]")
+            #expect(branch.label == "[redacted]")
             #expect(mask.contextLabel("Signed in as me@example.com", id: nil).contains("me@example.com") == false)
             #expect(mask.contextLabel("Your code 482913", id: nil).contains("482913") == false)
         }
@@ -194,16 +195,16 @@ struct MaskFileLabelTests {
         }
     }
 
-    @Test("tap misses name matched rows as describe-ui shows them, in candidate lists and suggestions")
+    @Test("a label selector never matches a masked row's hidden text, nor suggests the row, and the miss names --id")
     func resolverMessages() {
         let roots = Self.rows().roots
-        let several = Self.named { Self.failure { _ = try AccessibilityTargetResolver.resolveTap(roots: roots, query: .labelContains("Tap to copy")) } }
+        let hidden = Self.named { Self.failure { _ = try AccessibilityTargetResolver.resolveTap(roots: roots, query: .labelContains("Tap to copy")) } }
         let near = Self.named { Self.failure { _ = try AccessibilityTargetResolver.resolveTap(roots: roots, query: .label("Referral code")) } }
 
-        #expect(several.hasPrefix("Multiple (2) accessibility elements matched"))
-        #expect(several.contains(#"label="Referral code. [redacted]""#))
-        #expect(near.contains(#""Referral code. [redacted]""#))
-        #expect(!Self.leaks(several) && !Self.leaks(near))
+        #expect(hidden.hasPrefix("No accessibility element matched --label-contains 'Tap to copy'."), "\(hidden)")
+        #expect(hidden.contains("select those by --id") && near.contains("select those by --id"))
+        #expect(!near.contains("Did you mean"), "\(near)")
+        #expect(!Self.leaks(hidden) && !Self.leaks(near))
     }
 
     @Test("a --has-value miss on a matched element does not print its value")

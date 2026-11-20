@@ -650,7 +650,7 @@ struct RunTests {
         try await fixture.command(fixture.recorder("screenshot")) { reports.append(try await Self.screenshot(["--mask-id", "name"], on: backend)) }
         try await fixture.command(fixture.recorder("screenshot")) { reports.append(try await Self.screenshot(["--mask-secure"], on: backend)) }
 
-        #expect(reports.map(\.maskedBy) == [[.emails: 1], [.id: 1, .emails: 1], [.secure: 1, .emails: 1]])
+        #expect(reports.map(\.maskedBy) == [[.rules: 1], [.rules: 2], [.secure: 1, .rules: 1]])
         #expect(fixture.manifest().map(\.masked) == [1, 2, 2])
     }
 
@@ -681,8 +681,8 @@ struct RunTests {
         let images = try reports.map { try ScreenImage.decode(try Data(contentsOf: URL(fileURLWithPath: try #require($0.path)))) }
         let lines = fixture.manifest()
 
-        #expect(reports.map(\.skippedBeneath) == [[.id: 1], nil])
-        #expect(reports.map(\.maskedBy) == [[.secure: 1, .id: 0], [.secure: 1, .id: 1]])
+        #expect(reports.map(\.skippedBeneath) == [[.rules: 1], nil])
+        #expect(reports.map(\.maskedBy) == [[.secure: 1, .rules: 0], [.secure: 1, .rules: 1]])
         #expect(reports.allSatisfy { $0.maskUnmatched.isEmpty })
         #expect(images.map { ScreenshotMaskTests.pixel($0, 60, 330) } == [ScreenshotMaskTests.black, ScreenshotMaskTests.black])
         #expect(images.map { ScreenshotMaskTests.pixel($0, 79, 433) } == [ScreenshotMaskTests.white, ScreenshotMaskTests.black])
@@ -720,7 +720,7 @@ struct RunTests {
             if case .screenshot(let report) = record.detail { return report }
             return nil
         }
-        #expect(reports.map(\.maskedBy) == [[.secure: 1, .id: 1, .emails: 1], [.secure: 1, .id: 1, .emails: 1]])
+        #expect(reports.map(\.maskedBy) == [[.secure: 1, .rules: 2], [.secure: 1, .rules: 2]])
         #expect(fixture.manifest().map(\.masked) == [3, 3])
     }
 

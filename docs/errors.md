@@ -91,7 +91,7 @@ A `--verify --json` report also carries `ignored` (`{node, reason}` entries left
 | `unsupported_key` | 64 | The key has no equivalent on the device | Use a supported key |
 | `unknown_display` | 64 | `--display` names no display on the device | `offsider displays --device <ID>` |
 | `legacy_argument` | 64 | A renamed option or command, such as `--udid` | Use the new name in the message |
-| `secure_field_argument` | 64 | `type`, `key-sequence` or a batch step of either aimed text from the command line at a password field | Sign in with `login` and a saved test user, fill a sign-up form with `login --fill password`, or pass the text with `--stdin` |
+| `secure_field_argument` | 64 | `type`, `key-sequence` or a batch step of either aimed text from the command line at a password field, or `--has-value` in `wait`, `assert` or a batch step named one, shown or revealed, whose text Offsider never compares | Sign in with `login` and a saved test user, fill a sign-up form with `login --fill password`, or pass the text with `--stdin`; check what a sign-in leads to rather than the field |
 | `input_file_refused` | 64 | `type --file` or `batch --file` named a file Offsider will not read: not a regular file, over 64 KiB, or under a credentials folder such as `~/.ssh` | Pass a regular text file; `--allow-path` reads a refused location once a person confirms it |
 | `not_verified` | 5 | `--verify` saw no change after the input (reports only) | Check the screen before sending again |
 | `condition_not_met` | 5 | A `wait`, `assert`, `login`, `notifications --wait`, `turnstile --wait` or `screenshot --compare` condition was not met | Read the message. For `login`, the submit button stayed disabled |

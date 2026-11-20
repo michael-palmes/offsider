@@ -228,7 +228,7 @@ struct AppGuardTests {
         let result = await OutputMasks.$current.withValue(masks) { await send(.tapAt(x: 100, y: 720), loaded: Self.rules()) }
         #expect(result.failure?.reason == .guardedControl)
         #expect(result.failure?.userFacingDescription.contains("Change password") == false)
-        #expect(result.failure?.userFacingDescription.contains("password") == true)
+        #expect(result.failure?.userFacingDescription.contains("[redacted]") == true)
     }
 
     @Test("every input path that skips the tracked session checks the guard itself")
