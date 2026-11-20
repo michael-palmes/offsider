@@ -42,8 +42,7 @@ final class EvidenceRecorder {
     /// The arguments after the command path, before redaction.
     let arguments: [String]
 
-    private var resolved = false
-    private var cachedRun: ActiveRun?
+    private var lookup: Result<ActiveRun?, any Error>?
     private var notedEndedRun = false
     private var pending: [Int: Entry] = [:]
     private var nextID = 0
@@ -61,23 +60,17 @@ final class EvidenceRecorder {
         recordingCommands.contains(command) || command.hasPrefix("run ")
     }
 
-    /// The caller's run, found once; a run that cannot be found is no run, but an `OFFSIDER_RUN` folder that cannot be used is an error.
+    /// The caller's run, found once; a run that cannot be read is an error, never no run, so no capture drops its masks.
     func run() throws -> ActiveRun? {
         guard let environment else { return nil }
-        if !resolved {
-            resolved = true
-            if case .folder = environment.override {
-                cachedRun = try RunRegistry.active(in: environment)
-            } else {
-                cachedRun = try? RunRegistry.active(in: environment)
-            }
-        }
-        return cachedRun
+        let result = lookup ?? Result { try RunRegistry.active(in: environment) }
+        lookup = result
+        return try result.get()
     }
 
-    /// The run's masks, added to every capture's own.
-    var defaultMasks: MaskPlan? {
-        guard let masks = (try? run())??.masks, !masks.isEmpty else { return nil }
+    /// The run's masks, added to every capture's own; throws when the run cannot be read.
+    func defaultMasks() throws -> MaskPlan? {
+        guard let masks = try run()?.masks, !masks.isEmpty else { return nil }
         return masks.plan
     }
 
