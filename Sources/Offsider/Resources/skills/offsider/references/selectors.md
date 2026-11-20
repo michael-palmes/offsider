@@ -3,6 +3,7 @@
 ## Selectors
 
 - Prefer selectors (`tap --id`, `tap --label`, `slider --id`, `slider --label`) over raw coordinates: they are resilient to layout changes, work across device sizes and wait for elements with `--wait-timeout`.
+- A label or value a mask hides (it reads `[redacted]` in `describe-ui`) matches no `--label`, `--label-contains` or `--value`: select that element by `--id`.
 - `--id`, `--label` and `--value` match a node's `id`, `label` and `value` from `describe-ui`. In React Native apps, `testID` appears as `id`.
 - `--element-type` narrows matches by `role` in any case (`button`, `switch`, `slider`) or by the exact native type (`RadioButton`, `TextEditor`).
 - On `tap`, `wait` and `assert`, `--id` with `--label` (or `--label-contains`), `--value` or both matches only an element that has all of them, such as `tap --id size-btn --label M` among buttons sharing one id. When the id matches but no match has that label or value, it fails as not found and lists them. `wait --any` still takes each selector on its own.

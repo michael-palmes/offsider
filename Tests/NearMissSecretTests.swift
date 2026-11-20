@@ -85,11 +85,12 @@ struct NearMissSecretTests {
         #expect(Self.hidesEverySecret(shown), "\(shown)")
     }
 
-    @Test("a --has-value miss on a password field says it is masked, never its text")
-    func secureHasValueMiss() async throws {
+    @Test("--has-value on a password field is refused, never its text")
+    func secureHasValueRefused() async throws {
         let command = try Assert.parse(["--id", "pin-field", "--has-value", "nope", "--device", Self.device.rawValue])
-        let outcome = try await Self.masked { try await command.evaluate(on: Self.route, logger: OffsiderLogger()) }
-        #expect(outcome.reason == "does not match 'nope': its value is masked, so it is not shown")
+        let refusal = await #expect(throws: SelectorRefusal.self) { try await Self.masked { _ = try await command.evaluate(on: Self.route, logger: OffsiderLogger()) } }
+        #expect(refusal?.reason == .secureFieldArgument)
+        #expect(Self.hidesEverySecret(refusal?.failureMessage ?? ""))
     }
 
     @Test("a route learns the device's revealed fields from the tree cache, so a near miss on it hides their text")

@@ -39,6 +39,22 @@ public enum ElementProbe: Equatable, Sendable {
     case absent(reason: String)
     /// Nothing matched while the LogBox inspector hides the app, so nothing can until it closes.
     case blocked(LogBoxBlock)
+    /// The check would compare text Offsider never compares, such as a password field's, so it is refused whatever the text.
+    case refused(SelectorRefusal)
+}
+
+/// A selector check refused before any compare, so it answers neither match nor no match.
+public struct SelectorRefusal: OffsiderFailure, LocalizedError, Equatable, Sendable {
+    public let failureMessage: String
+    public let hint: String?
+
+    public init(_ message: String, hint: String? = nil) {
+        failureMessage = message
+        self.hint = hint
+    }
+
+    public var reason: FailureReason { .secureFieldArgument }
+    public var errorDescription: String? { failureMessage }
 }
 
 public enum SettleSource: String, CaseIterable, Sendable {
@@ -66,6 +82,19 @@ public struct WaitNearMiss: Equatable, Sendable {
 extension ElementProbe {
     /// The reason a probe gives when nothing matched the selector at all.
     public static let notFound = "not found"
+
+    private static let hiddenTextClause = "selectors never match hidden text"
+
+    /// Said whenever a mask hides the field a selector reads on any element, matched or not, so it tells nothing of the hidden text.
+    public static func maskedFieldNote(kind: String) -> String {
+        let field = kind == "--value" ? "values" : "labels"
+        return "A mask hides some \(field) here, and \(hiddenTextClause): select those by --id"
+    }
+
+    /// A miss that may be a masked element still on screen, so it proves nothing gone.
+    static func missedHiddenField(_ reason: String) -> Bool {
+        reason.contains(hiddenTextClause)
+    }
 
     /// How a probe ends the reason for a match a touch would not reach.
     public static let notReached = ", so a tap would not reach it"
@@ -476,11 +505,13 @@ public enum WaitLoop {
                 step = Step(met: false, reason: ElementProbe.readCut)
                 state.goneBecause = nil
             case .absent(let reason):
-                step = Step(met: gone, reason: reason)
+                step = Step(met: gone && !ElementProbe.missedHiddenField(reason), reason: reason)
                 state.missed = ElementProbe.foundNothing(reason)
                 state.goneBecause = gone && reason.hasSuffix(ElementProbe.notReached) ? String(reason.dropLast(ElementProbe.notReached.count)) : nil
             case .blocked(let block):
                 step = Step(met: false, reason: LogBoxBlock.reason, block: block)
+            case .refused(let refusal):
+                throw refusal
             }
             return dwell(step, stableFor: stableFor, gone: gone, state: &state, sources: sources)
 
@@ -504,6 +535,8 @@ public enum WaitLoop {
                     blocks.append(block)
                     reasons.append("--\(selector.selector.by) '\(selector.selector.text)' \(LogBoxBlock.reason)")
                     continue
+                case .refused(let refusal):
+                    throw refusal
                 }
                 break
             }

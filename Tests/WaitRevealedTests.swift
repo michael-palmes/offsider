@@ -83,23 +83,29 @@ struct WaitRevealedTests {
         #expect(!shown.contains("hunter"), "\(shown)")
     }
 
-    @Test("--has-value still compares the real text, and a miss prints no revealed text in its reason or line")
-    func hasValueMissHidesRevealed() async throws {
+    @Test("--has-value on a revealed password field is refused alike for the right and a wrong text, and prints neither")
+    func hasValueRefusedOnRevealed() async throws {
         let fixture = try TreeCacheFixture()
         _ = try Self.revealed(fixture)
-        let right = try Assert.parse(["--id", "password-field", "--has-value", "hunter22", "--device", Self.device.rawValue])
-        let wrong = try Assert.parse(["--id", "password-field", "--has-value", "nope", "--json", "--device", Self.device.rawValue])
-
-        let (met, missed, shown) = try await fixture.run {
-            let met = try await right.evaluate(on: Self.route, logger: OffsiderLogger())
-            let missed = try await wrong.evaluate(on: Self.route, logger: OffsiderLogger())
-            return (met, missed, await Self.printed { try await wrong.show(missed, on: Self.route, console: $0) })
+        var messages: [String] = []
+        for text in ["hunter22", "nope"] {
+            for command in ["assert", "wait"] {
+                let arguments = ["--id", "password-field", "--has-value", text, "--device", Self.device.rawValue]
+                let refusal = await #expect(throws: SelectorRefusal.self) {
+                    try await fixture.run {
+                        if command == "assert" {
+                            _ = try await Assert.parse(arguments).evaluate(on: Self.route, logger: OffsiderLogger())
+                        } else {
+                            _ = try await Wait.parse(arguments + ["--timeout", "1"]).evaluate(on: Self.route, logger: OffsiderLogger(), clock: ScriptedClock().poll)
+                        }
+                    }
+                }
+                #expect(refusal?.reason == .secureFieldArgument)
+                messages.append(refusal?.failureMessage ?? "")
+            }
         }
-
-        #expect(met.met)
-        #expect(!missed.met)
-        #expect(missed.reason == "does not match 'nope': its value is masked, so it is not shown")
-        #expect(!shown.contains("hunter"), "\(shown)")
+        #expect(Set(messages).count == 1, "\(messages)")
+        #expect(!messages.joined().contains("hunter"))
     }
 
     @Test("a batch's assert and wait steps never print a revealed password field's text")

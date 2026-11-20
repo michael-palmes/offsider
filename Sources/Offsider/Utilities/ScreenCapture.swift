@@ -212,7 +212,7 @@ enum ScreenCapture {
             let selectors = plan.ids.map { (MaskKind.id, AccessibilityQuery.id($0)) } + plan.labels.map { (MaskKind.label, AccessibilityQuery.label($0)) }
                 + plan.labelsContaining.map { (MaskKind.labelContains, AccessibilityQuery.labelContains($0)) }
             for (kind, query) in selectors {
-                let matches = AccessibilityTargetResolver.candidates(roots: tree.roots, query: query, elementType: nil).matches
+                let matches = AccessibilityTargetResolver.candidates(roots: tree.roots, query: query, elementType: nil, masks: nil).matches
                 targets.add(matches, as: kind)
                 if matches.isEmpty {
                     targets.unmatched.append("--mask-\(query.kind.dropFirst(2)) \(query.rawValue)")

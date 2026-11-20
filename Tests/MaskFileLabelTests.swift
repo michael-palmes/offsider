@@ -194,16 +194,16 @@ struct MaskFileLabelTests {
         }
     }
 
-    @Test("tap misses name matched rows as describe-ui shows them, in candidate lists and suggestions")
+    @Test("a label selector never matches a masked row's hidden text, nor suggests the row, and the miss names --id")
     func resolverMessages() {
         let roots = Self.rows().roots
-        let several = Self.named { Self.failure { _ = try AccessibilityTargetResolver.resolveTap(roots: roots, query: .labelContains("Tap to copy")) } }
+        let hidden = Self.named { Self.failure { _ = try AccessibilityTargetResolver.resolveTap(roots: roots, query: .labelContains("Tap to copy")) } }
         let near = Self.named { Self.failure { _ = try AccessibilityTargetResolver.resolveTap(roots: roots, query: .label("Referral code")) } }
 
-        #expect(several.hasPrefix("Multiple (2) accessibility elements matched"))
-        #expect(several.contains(#"label="Referral code. [redacted]""#))
-        #expect(near.contains(#""Referral code. [redacted]""#))
-        #expect(!Self.leaks(several) && !Self.leaks(near))
+        #expect(hidden.hasPrefix("No accessibility element matched --label-contains 'Tap to copy'."), "\(hidden)")
+        #expect(hidden.contains("select those by --id") && near.contains("select those by --id"))
+        #expect(!near.contains("Did you mean"), "\(near)")
+        #expect(!Self.leaks(hidden) && !Self.leaks(near))
     }
 
     @Test("a --has-value miss on a matched element does not print its value")
