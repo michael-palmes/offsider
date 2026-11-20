@@ -181,7 +181,7 @@ struct RunTests {
         try await fixture.command(fixture.recorder("screenshot")) { report = try await Self.screenshot([], on: try Self.emailBackend()) }
 
         #expect(report?.path?.hasPrefix(evidence + "/001-screenshot-") == true, "\(report?.path ?? "no path")")
-        #expect(report?.maskedBy == [.emails: 1])
+        #expect(report?.maskedBy == [.rules: 1], "the run's email mask painted the address")
         #expect(fixture.manifest(evidence).map(\.n) == [1])
     }
 
