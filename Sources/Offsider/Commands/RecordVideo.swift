@@ -16,7 +16,7 @@ struct RecordVideo: AsyncParsableCommand {
         a recording while the evidence run masks emails or ids. One tree read before the first frame refuses the same way \
         when a password field, keyboard text beside the keys, an iOS keyboard's bar or Android's copy preview is on screen or the tree cannot be read \
         (OFFSIDER_MASK_SECURE=0 skips it outside a run); \
-        --unmasked records anyway, with a warning. For masked evidence use \
+        --unmasked records anyway, with a warning; when an agent runs it, a person confirms first (person_required without a terminal). For masked evidence use \
         `screenshot` or screenshot steps in a batch. Only that read holds the device (--wait-lock waits for it on Android), so other commands can read and \
         drive it while it records; a recording sends no input. It records until --duration runs out (10 minutes without it) or \
         it gets Ctrl+C, SIGINT, SIGTERM or SIGHUP, then saves every captured frame at the times they were taken and leaves \
@@ -108,6 +108,7 @@ struct RecordVideo: AsyncParsableCommand {
         let signalObserver = SignalObserver(signals: Self.stopSignals, queue: Self.signalQueue) { stop.request() }
         defer { signalObserver.invalidate() }
 
+        try await masks.confirmUnmasked(command: "record-video")
         let checksSecureField = try masks.requireMaskable(command: "record-video")
         try await masks.confirmCheckOff(command: "record-video")
         let regions = try masks.regions()

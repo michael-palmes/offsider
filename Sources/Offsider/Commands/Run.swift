@@ -14,7 +14,7 @@ struct RunCommand: AsyncParsableCommand {
         every capture unless started with --no-mask-secure or --no-mask-emails; its masks apply on top of the capture's own, \
         and a capture's --no-mask-secure never drops the run's. `run start` again on the active folder adds the masks its \
         flags name and never removes one. A folder `run start` creates gets a .gitignore of `*`. The one exception: `screenshot --mask-skip-beneath` leaves the run's email and id matches unpainted on a \
-        screen beneath a page; password fields always stay masked. OFFSIDER_RUN=off records nothing; OFFSIDER_RUN=<dir> \
+        screen beneath a page; password fields always stay masked. OFFSIDER_RUN=off records nothing, and says so once beside a run; OFFSIDER_RUN=<dir> \
         records into <dir> whatever the session, with the default masks unless `run start` set others there.
         """,
         subcommands: [RunStart.self, RunStop.self, RunStatus.self]

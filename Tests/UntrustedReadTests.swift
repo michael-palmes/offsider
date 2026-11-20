@@ -66,4 +66,19 @@ struct UntrustedReadTests {
         #expect(throws: UntrustedRead.Failure.missing) { try UntrustedRead.data(atPath: "/nonexistent-\(UUID().uuidString)") }
         #expect(UntrustedRead.contents(atPath: "/nonexistent-\(UUID().uuidString)") == nil)
     }
+
+    @Test("an Info.plist reads as a dictionary, and a FIFO in its place gives nil at once")
+    func propertyList() throws {
+        let folder = try Self.folder()
+        defer { try? FileManager.default.removeItem(atPath: folder) }
+        let plist = folder + "/Info.plist"
+        let data = try PropertyListSerialization.data(fromPropertyList: ["CFBundleShortVersionString": "27.2"], format: .xml, options: 0)
+        try data.write(to: URL(fileURLWithPath: plist))
+        #expect(UntrustedRead.propertyList(atPath: plist)?["CFBundleShortVersionString"] as? String == "27.2")
+        let planted = folder + "/version.plist"
+        #expect(mkfifo(planted, 0o600) == 0)
+        let started = ContinuousClock.now
+        #expect(UntrustedRead.propertyList(atPath: planted) == nil)
+        #expect(ContinuousClock.now - started < .seconds(1))
+    }
 }

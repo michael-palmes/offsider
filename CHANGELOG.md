@@ -34,6 +34,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - `keyboard hide` closes the on-screen keyboard and says whether it went away. It sends only the keyboard's own way out, the step `login` has: on iOS the hide key or Done in the bar an app puts on top of the keys, on Android Back while docked keys are up, never Return. It reports `hidden`, or `absent` when no keyboard was up, and exits 1 (`state_not_reached`) with nothing sent when the keyboard has no way out of its own, as an iPhone's has without a Done bar, or when it stays up. `--tap-outside` also tries up to three taps on empty space clear of the keys and fields. `--json` carries the outcome as `value`, and a `tap` the iOS keyboard covers names the command in its hint when the keyboard has a way out.
 - `swipe` and `drag` take `--scale` and `--mask-skip-beneath` with `--screenshot-at`, applied to each held screenshot as `screenshot` applies them; an evidence run's masks stay on.
 - `doctor --device <iPhone>` warns `ios-device.runner-build` when the cached runner's provisioning profile has expired or ends within an hour, naming `runner build` to renew it.
+- A forced key in `com.mpalmes.offsider` that this Offsider does not know refuses every physical device with `managed_unknown_key`, naming the key, so an older build never ignores a new control; `Payload*` metadata some MDM tools leave beside the settings is skipped. `devices status` lists such keys.
+- `devices status` shows a forced `deniedBundleIDs` list, in text and as `managed.deniedBundleIDs` in JSON, beside `managed.unknownKeys` and `managed.unreadableKeys`.
+- `OFFSIDER_RUN=off` beside this session's evidence run prints one stderr note per command, `Note: OFFSIDER_RUN=off: not recording into <dir>, nor applying its masks`.
 
 ### Changed
 
@@ -61,6 +64,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - `button lock` on a simulator waits until the lock screen is up, so `wake` can follow it at once, and it and the `screenshot` frozen-display warning name `offsider wake` as the unlock.
 - `app open` help says an `https` link on a simulator opens in Safari, not the app that claims its domain.
 - A coordinate `tap`, `swipe`, `drag`, `touch` or `gesture` on an iOS simulator reads only the front app's frame to place its point, instead of the whole screen: about 150 ms less on a screen of 200 elements. `offsider.guard.json` rules still get a whole read to judge the input on.
+- Managed refusals name your organisation and the key, such as `Your organisation does not list this device (allowedDeviceIDs).` or `Your organisation denies com.example.bank (deniedBundleIDs).`, and still say to ask the administrator of this Mac. `devices status --json` and `doctor --json` add a `key` field beside the refusal code, and a test device's `testDeviceOff` reads the same way, such as `your organisation does not allow test devices (allowTestDevices)`. `alert` and an `offsider.guard.json` ask rule on a test device that policy keeps from being driven whole name the key too, not personal use.
+- `record-video --unmasked` and `stream-video --unmasked` need a person when an agent runs them, as `screenshot --no-mask-secure` does: Touch ID or the password on a terminal, else exit 1 `person_required` with nothing captured. People at a terminal are not asked.
+- `credential status <name>` run by an agent shows the login's name, app and tags with `username: hidden` (`usernameHidden: true` in JSON), and decrypts nothing; a person at a terminal still sees the username.
+- The skill says to run `session stop --device <UDID>` after each iPhone or iPad check, and `--clean` only when done with the device for good, since the next session then rebuilds the runner.
+- The skill's evidence guide no longer offers `OFFSIDER_RUN=off` as the fix for `run_unavailable`; it says to run `offsider run start <dir>` again.
 
 ### Fixed
 
@@ -108,6 +116,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - On iOS, an email field beneath a full-screen modal no longer slips into a capture when the modal has a tappable backdrop or a card near the top, as a native full-screen modal on an iPhone does: `screenshot`, `batch` steps and evidence runs paint where the tree cache last saw what `--mask-id`, `--mask-label`, `--mask-label-contains`, `--mask-text` and the email masks name (`maskUnproven: "remembered"`, one warning), and read the text drawn behind every such modal on the Mac, warning once more for an address no element holds. Evidence run manifests record `maskUnproven`. `record-video` refuses while the cache remembers an `offsider.mask.json` element behind a modal. A screen with no such backdrop takes no extra read.
 - Selectors no longer confirm guesses about hidden text. A label or value a mask hides matches no label or value selector in any command (select it by `--id`, which a miss now names), and `--has-value` on a password field, revealed by a show-password toggle or not, is refused (exit 64, `secure_field_argument`) whatever the text. An exact `--has-value` on another masked value still confirms it.
 - A mask rule no longer confirms a guess about text another mask hides: a capture's `--mask-label`, `--mask-label-contains` and `--mask-text`, or a rule added to `offsider.mask.json`, read, count and paint the same whether or not the guess was right, and video's refusal no longer names the rule that matched.
+- Every child process gets an allow-listed environment: the simulator accessibility recovery (`simctl spawn ... launchctl kickstart`) and the iPhone backend's `xcode-select -p` no longer inherit the caller's whole one. A source lint now fails on any `Process()` outside the process helpers, or a spawn handed an environment `ChildEnvironment` did not build.
+- Xcode, CoreDevice and crash report plists and the Android broker log are read through the guarded reader, so a FIFO or symlink planted in their place cannot hang or redirect a command; the read lint now covers `FileHandle(forReading...)`, `NSDictionary(contentsOf...)` and their kin.
+- A forced `deniedBundleIDs` of the wrong type refuses `login` and `credential` for every app on simulators and emulators too, naming the key, as it already refused every phone.
+- `devices status` with only `deniedBundleIDs` forced no longer prints `Managed policy: .`.
+- `boot --help` names the log it writes, `logs/boot-<avd>.log` in Offsider's private directory, not a temporary path nothing writes.
 
 ## [0.16.0] - 2026-11-05
 

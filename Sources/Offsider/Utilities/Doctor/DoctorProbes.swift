@@ -41,7 +41,7 @@ enum DoctorProbes {
         let plistPath = URL(fileURLWithPath: developerDirectory)
             .deletingLastPathComponent()
             .appendingPathComponent("version.plist")
-        guard let plist = NSDictionary(contentsOf: plistPath) else { return (nil, nil) }
+        guard let plist = UntrustedRead.propertyList(atPath: plistPath.path) else { return (nil, nil) }
         return (plist["CFBundleShortVersionString"] as? String, plist["ProductBuildVersion"] as? String)
     }
 

@@ -45,11 +45,12 @@ struct AppGuardTests {
 
     /// Sends `event` through a tracked session over `screen`; returns what reached the device, how often the tree was read and the failure.
     private func send(
-        _ event: InputEvent, loaded: GuardSources.Loaded, asks: Asks = Asks(approves: true), signedIn: String? = "tester", testDevice: Bool? = nil
+        _ event: InputEvent, loaded: GuardSources.Loaded, asks: Asks = Asks(approves: true), signedIn: String? = "tester", testDevice: Bool? = nil,
+        testDeviceOff: String? = nil
     ) async -> (sent: [RecordingInputSession.Call], reads: Int, dispatched: DispatchState, failure: CLIError?) {
         let backend = FakeDeviceBackend(trees: [Self.screen])
         let tracker = DispatchTracker()
-        let environment = AppGuard.Environment(confirm: { try asks.ask($0) }, signedIn: { _, _ in signedIn }, isTestDevice: { _ in testDevice })
+        let environment = AppGuard.Environment(confirm: { try asks.ask($0) }, signedIn: { _, _ in signedIn }, isTestDevice: { _ in testDevice }, testDeviceOff: { _ in testDeviceOff })
         var failure: CLIError?
         await GuardSources.$source.withValue({ loaded }) {
             await AppGuard.$environment.withValue(environment) {
@@ -183,6 +184,21 @@ struct AppGuardTests {
         }
         let allowed = await send(.tapAt(x: 100, y: 620), loaded: Self.rules(askUsers: ["tester"]), testDevice: true)
         #expect(allowed.sent.count == 1)
+    }
+
+    @Test("a test device managed policy keeps from being driven whole names the key, not personal use")
+    func managedTestDeviceNamesTheKey() async {
+        let asks = Asks(approves: true)
+        let result = await send(
+            .tapAt(x: 100, y: 620), loaded: Self.rules(askUsers: ["tester"]), asks: asks, testDevice: false, testDeviceOff: ManagedRefusalText.testDevicesOff
+        )
+        #expect(result.sent.isEmpty)
+        #expect(asks.reasons.isEmpty)
+        #expect(result.failure?.reason == .guardedControl)
+        let message = result.failure?.userFacingDescription ?? ""
+        #expect(message.contains("your organisation does not allow test devices (allowTestDevices)"))
+        #expect(message.contains("administrator of this Mac"))
+        #expect(!message.contains("not a test device"))
     }
 
     @Test("a drag from a guarded control, and Return while one is on screen, are caught too")

@@ -77,7 +77,7 @@ struct SystemAppDenyListTests {
             #expect(SystemAppDenyList.category(of: "COM.EXAMPLE.BANK", platform: .ios) == .managed)
             #expect(!SystemAppDenyList.isDenied("com.example.bankapp", platform: .android))
             #expect(!SystemAppDenyList.isDenied("com.example.app", platform: .android))
-            #expect(SystemAppDenyList.refusal("com.example.bank", platform: .android) == "com.example.bank is on your organisation's denied list, which Offsider never signs in to or drives")
+            #expect(SystemAppDenyList.refusal("com.example.bank", platform: .android) == "Your organisation denies com.example.bank (deniedBundleIDs)")
         }
         #expect(!SystemAppDenyList.isDenied("com.example.bank", platform: .android))
     }
@@ -92,6 +92,47 @@ struct SystemAppDenyListTests {
         let wrong = ManagedDevicePolicy.read(from: FakeManagedPreferences(values: [ManagedDevicePolicy.deniedBundleIDsKey: .bool(true)]))
         #expect(wrong.unreadable)
         let decision = PhysicalDevicePolicy(managed: wrong, list: PhysicalDevicePolicyTests.allowed).decision(platform: .ios, key: PolicyFixtures.phone, now: PolicyFixtures.now)
-        #expect(decision == .refused(.managedUnreadable))
+        #expect(decision == .refused(.managedUnreadable(ManagedDevicePolicy.deniedBundleIDsKey)))
+    }
+
+    @Test("a deniedBundleIDs of the wrong type refuses every app for login and credential on any device, naming the key")
+    func managedListUnreadable() throws {
+        #expect(SystemAppDenyList.ManagedList.read(from: FakeManagedPreferences(values: [ManagedDevicePolicy.deniedBundleIDsKey: .bool(true)])) == .unreadable)
+        #expect(SystemAppDenyList.ManagedList.read(from: FakeManagedPreferences(values: [ManagedDevicePolicy.deniedBundleIDsKey: .unreadable])) == .unreadable)
+        #expect(SystemAppDenyList.ManagedList.read(from: FakeManagedPreferences()) == .entries([]))
+        try SystemAppDenyList.$managedOverride.withValue(.unreadable) {
+            for platform in DevicePlatform.allCases {
+                #expect(SystemAppDenyList.category(of: "com.mpalmes.offsider.playground", platform: platform) == .managedUnreadable)
+                let refusal = try #require(SystemAppDenyList.refusal("com.mpalmes.offsider.playground", platform: platform))
+                #expect(refusal.hasSuffix("(deniedBundleIDs)"), "\(refusal)")
+            }
+            #expect(SystemAppDenyList.category(of: "com.apple.mobilesafari", platform: .ios) == .browser)
+        }
+    }
+
+    @Test("the deny-list reads only its own key, so login on a simulator never lists the managed keys")
+    func denyListReadsOneKey() {
+        let source = CountingManagedPreferences(values: [ManagedDevicePolicy.deniedBundleIDsKey: .strings(["com.example.bank"])])
+        #expect(SystemAppDenyList.ManagedList.read(from: source) == ["com.example.bank"])
+        #expect(source.asked == [ManagedDevicePolicy.deniedBundleIDsKey])
+        #expect(source.listedKeys == 0)
+    }
+}
+
+final class CountingManagedPreferences: ManagedPreferenceSource, @unchecked Sendable {
+    let values: [String: ManagedPreferenceValue]
+    private(set) var asked: [String] = []
+    private(set) var listedKeys = 0
+
+    init(values: [String: ManagedPreferenceValue]) { self.values = values }
+
+    func forcedValue(forKey key: String) -> ManagedPreferenceValue? {
+        asked.append(key)
+        return values[key]
+    }
+
+    func forcedKeys() -> [String] {
+        listedKeys += 1
+        return Array(values.keys)
     }
 }

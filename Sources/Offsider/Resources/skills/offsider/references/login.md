@@ -20,7 +20,7 @@ A saved user is a test username and password for one app, in the login Keychain,
 
 ## Check the user
 
-Exit 0 means `login` tapped submit, not that the app accepted the user. `--json`'s `formStillInFront: true` (and a `Warning:` line) says the form was still in front 5 s after the tap: the app refused the user, or is slow. Either way trust the screen: `wait --any` for the signed-in screen or an error, then read which account it shows. `credential status <name>` reads that one Keychain item and adds its `username` to compare (macOS may ask first).
+Exit 0 means `login` tapped submit, not that the app accepted the user. `--json`'s `formStillInFront: true` (and a `Warning:` line) says the form was still in front 5 s after the tap: the app refused the user, or is slow. Either way trust the screen: `wait --any` for the signed-in screen or an error, then read which account it shows. `credential status <name>` confirms that user is saved and shows its tags, with `username: hidden` (`usernameHidden: true` in JSON) when an agent runs it; only a person at a terminal sees the username. Compare by the user's name and tags instead.
 
 ## Switch users
 

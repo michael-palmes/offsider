@@ -28,7 +28,7 @@ When `devices status --device <UDID> --json` says `"testDevice": true` with no `
 - On an Xcode 27 host (CoreDevice 636 or later), the first screenshot or input on a device starts a session broker in the background, about 3 s. It holds the device's screen stream, its UniversalHID touchscreen and keyboard, and its hardware button socket, one broker per device.
 - With it running: `tap` about 140 ms, `type` about 80 ms plus 30 ms a character and one read of the field, `button home` about 160 ms, a 0.3 s `swipe` about 370 ms and `screenshot` about 230 ms.
 - The device shows its screen-sharing indicator while the broker runs. It stops after `OFFSIDER_IOS_SESSION_IDLE` seconds without a command (default 300, at most 3600), after 12 hours at its next idle moment, within 30 s of the device's allowance expiring or being removed (then `device_not_allowed`), or when the device goes. It serves only the Offsider build it runs from, so after an upgrade or rebuild the next command replaces it.
-- `offsider session status --device <UDID> --json` shows the broker and the runner without starting either. When you are done with the device, run `offsider session stop --device <UDID>`: it stops both, clears the indicator and deletes `runner.log`. `--clean`, which still works after the allowance expired or was removed, also uninstalls the runner apps from the device and deletes this device's runner builds and logs, and prints what only the Apple developer site removes (the provisioning profile, App IDs and the device's registration). `runner status` and `runner stop` (also `--clean`) cover the runner alone.
+- `offsider session status --device <UDID> --json` shows the broker and the runner without starting either. After each check, run `offsider session stop --device <UDID>`: it stops both, clears the indicator and deletes `runner.log`. Add `--clean` only when you are done with the device for good, since the next session then rebuilds the runner: it still works after the allowance expired or was removed, and also uninstalls the runner apps from the device and deletes this device's runner builds and logs, and prints what only the Apple developer site removes (the provisioning profile, App IDs and the device's registration). `runner status` and `runner stop` (also `--clean`) cover the runner alone.
 - The broker needs a logged-in desktop session on the Mac, not plain `ssh`, with its display awake (`caffeinate -d` for a long run). Without one, screenshots use `devicectl` (about 2.3 s, with a notice) and input falls back to the runner. `screenshot --json` says which took a shot (`capture`); a `devicectl` shot has a staged status bar (9:41), so never judge the status bar from one.
 - Exit 1 `hid_broker_failed` means the broker failed and nothing was sent: retry once, then run `offsider session stop --device <UDID>` and retry. `input_outcome_unknown` means the broker stopped after the input was sent: check the screen before resending.
 
@@ -71,7 +71,7 @@ offsider describe-ui --summary --app <BUNDLE_ID> --device <UDID>
 offsider tap --id <identifier> --app <BUNDLE_ID> --verify --device <UDID>
 offsider type --into-id <identifier> "text" --app <BUNDLE_ID> --device <UDID>
 offsider session status --device <UDID> --json
-offsider session stop --device <UDID> --clean
+offsider session stop --device <UDID>
 ```
 
 ## Screenshots and settings
