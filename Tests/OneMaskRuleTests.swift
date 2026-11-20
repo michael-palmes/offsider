@@ -160,7 +160,8 @@ struct OneMaskRuleTests {
         for message in messages {
             Self.expectClean(message)
         }
-        #expect(messages[0].contains("Balance [redacted] Details"), "\(messages[0])")
+        #expect(messages[0].hasPrefix("Multiple (3)") && !messages[0].contains("[redacted]"), "masked rows are never candidates: \(messages[0])")
+        #expect(messages[1].contains("select those by --id") && messages[2].contains("select those by --id"))
     }
 
     @Test("what a cover, a presented view and a page name goes through the same rule")

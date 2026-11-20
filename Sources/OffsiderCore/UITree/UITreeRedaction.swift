@@ -77,6 +77,18 @@ public struct TreeValueMask: @unchecked Sendable {
 
     var hidesElements: Bool { !ids.isEmpty || !labels.isEmpty || !labelContains.isEmpty }
 
+    /// Whether this hides any text at all, so a selector must look at what it hides.
+    public var hidesText: Bool { hidesElements || !patterns.isEmpty || emails || revealed != nil }
+
+    /// Whether output shows less than this whole label: a mask names the element and keeps only part of it, a parent copies a masked child's text, or a pattern or email mask hits it.
+    public func hidesLabel(_ label: String, id: String?) -> Bool {
+        if let masked = masked(label, id: id) { return masked != label }
+        if rewritten(label) != nil { return true }
+        var count = 0
+        _ = maskText(label, count: &count)
+        return count > 0
+    }
+
     public func hidesValue(of node: UINode) -> Bool {
         guard hidesElements else { return false }
         return hides(id: node.normalizedID, label: node.normalizedLabel)
@@ -191,6 +203,29 @@ public struct TreeValueMask: @unchecked Sendable {
         guard matches > 0 else { return text }
         count += matches
         return regex.stringByReplacingMatches(in: text, range: range, withTemplate: NSRegularExpression.escapedTemplate(for: marker))
+    }
+}
+
+/// Which elements' labels and values the masks hide, in `UINode.flattened()` order across the roots, so a selector never matches hidden text.
+public struct MaskedFields: Sendable {
+    public let labels: [Bool]
+    public let values: [Bool]
+
+    /// Nil when `mask` hides nothing; else each element's label and value as the tree cache would keep them, against the raw read.
+    public static func of(_ roots: [UINode], mask: TreeValueMask) -> MaskedFields? {
+        guard mask.hidesText else { return nil }
+        let raw = roots.flatMap { $0.flattened() }
+        let kept = UITree.redactedRoots(roots, mask: mask, scope: .cache).flatMap { $0.flattened() }
+        guard raw.count == kept.count else { return nil }
+        var labels: [Bool] = []
+        var values: [Bool] = []
+        labels.reserveCapacity(raw.count)
+        values.reserveCapacity(raw.count)
+        for (node, shown) in zip(raw, kept) {
+            labels.append(node.label != shown.label || node.label.map { mask.hidesLabel($0, id: node.normalizedID) } == true)
+            values.append(node.value != shown.value)
+        }
+        return MaskedFields(labels: labels, values: values)
     }
 }
 
@@ -315,6 +350,18 @@ extension UITree {
             counts.keyboard = KeyboardText.hiddenCount(in: copy.roots)
             counts.copyPreview = CopyPreview.shownCount(in: copy.roots)
             copy.redaction = counts
+        }
+        return copy
+    }
+
+    /// `roots` redacted as `redacted(_:scope:)` redacts a tree, without the counts.
+    public static func redactedRoots(_ roots: [UINode], mask: TreeValueMask, scope: TreeRedactionScope) -> [UINode] {
+        var copy = roots
+        var counts = UITreeRedactionCounts()
+        var hiddenBelow: [(text: String, shown: String)] = []
+        for index in copy.indices {
+            hiddenBelow.removeAll(keepingCapacity: true)
+            redact(&copy[index], mask: mask, scope: scope, inherited: false, hiddenBelow: &hiddenBelow, counts: &counts)
         }
         return copy
     }

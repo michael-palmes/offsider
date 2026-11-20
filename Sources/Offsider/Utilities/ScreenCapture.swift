@@ -232,7 +232,7 @@ enum ScreenCapture {
         var behind = BehindModal(modal: modal, remembered: remembered, cacheOff: !environment.cacheOn && plan.recalls)
         if let remembered {
             let selected = selectors(of: plan).map { kind, query in
-                (kind: kind, name: selectorName(query), nodes: AccessibilityTargetResolver.candidates(roots: remembered.roots, query: query, elementType: nil).matches)
+                (kind: kind, name: selectorName(query), nodes: AccessibilityTargetResolver.candidates(roots: remembered.roots, query: query, elementType: nil, masks: nil).matches)
             }
             behind.found = (try? RememberedMasks.targets(plan: plan, selected: selected, remembered: remembered, current: tree, region: modal.region)) ?? RememberedMasks.Found()
         }
@@ -297,7 +297,7 @@ enum ScreenCapture {
                 if tree.platform != .ios { targets.add(KeyboardText.hiddenElements(in: tree.roots), as: .keyboard) }
             }
             for (kind, query) in selectors(of: plan) {
-                let matches = AccessibilityTargetResolver.candidates(roots: tree.roots, query: query, elementType: nil).matches
+                let matches = AccessibilityTargetResolver.candidates(roots: tree.roots, query: query, elementType: nil, masks: nil).matches
                 targets.add(matches, as: kind)
                 if matches.isEmpty {
                     targets.unmatched.append(selectorName(query))

@@ -146,7 +146,7 @@ struct VideoMaskOptions: ParsableArguments {
         }
         let selectors = config.ids.map { ("--mask-id \($0)", AccessibilityQuery.id($0)) } + config.labels.map { ("--mask-label \($0)", AccessibilityQuery.label($0)) }
             + config.labelContains.map { ("--mask-label-contains \($0)", AccessibilityQuery.labelContains($0)) }
-        for (name, query) in selectors where AccessibilityTargetResolver.candidates(roots: tree.roots, query: query, elementType: nil).matches.contains(where: onScreen) {
+        for (name, query) in selectors where AccessibilityTargetResolver.candidates(roots: tree.roots, query: query, elementType: nil, masks: nil).matches.contains(where: onScreen) {
             return name
         }
         let texts = try MaskConfig(valuePatterns: config.valuePatterns, emails: config.emails).plan.textTargets(in: tree)
