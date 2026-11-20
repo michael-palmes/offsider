@@ -3,14 +3,16 @@ import XCTest
 
 /// Every route the runner serves; called on the main thread, as XCUITest requires.
 final class RunnerCommands {
-    static let version = "4"
+    static let version = "5"
     static let inputRoutes: Set<String> = ["/tap-point", "/tap-element", "/type", "/swipe", "/home", "/lock"]
     static let readRoutes: Set<String> = ["/snapshot", "/focused"]
+    /// Routes that read or answer SpringBoard's alert itself, so a prompt over the app never refuses them.
+    static let alertRoutes: Set<String> = ["/alert", "/alert-tap"]
 
     /// Just under how long Offsider waits for a route, whose clock starts first; later, nobody is listening and running it would only hold the main thread.
     static func queueLimit(_ path: String) -> TimeInterval? {
         if path == "/snapshot" { return 14 }
-        return inputRoutes.contains(path) || path == "/focused" ? 4 : nil
+        return inputRoutes.contains(path) || alertRoutes.contains(path) || path == "/focused" ? 4 : nil
     }
 
     let buildKey: String
@@ -27,6 +29,8 @@ final class RunnerCommands {
         let body = (try? JSONSerialization.jsonObject(with: request.body.isEmpty ? Data("{}".utf8) : request.body)) as? [String: Any]
         guard let body else { return .failure(400, code: "bad_request", message: "the body is not a JSON object") }
         if request.method == "POST", request.path == "/foreground" { return foreground(body) }
+        if request.method == "POST", request.path == "/alert" { return alert(body) }
+        if request.method == "POST", request.path == "/alert-tap" { return alertTap(body) }
         let requested = body["app"] as? String
         // An app waiting on the prompt would hold this thread for about 20 s per read, and input would reach the prompt, not the app.
         if Self.readRoutes.contains(request.path) || Self.inputRoutes.contains(request.path), let requested, let prompt = systemPrompt(over: requested) {
@@ -67,9 +71,56 @@ final class RunnerCommands {
 
     /// SpringBoard's alert or sheet. The active list comes first, as it costs about 10 ms and looking for one about 70 ms; with no list, it looks.
     private func springBoardPrompt(active: [String]?) -> String? {
+        springBoardAlert(active: active)?.label
+    }
+
+    private func springBoardAlert(active: [String]?) -> XCUIElement? {
         guard active?.contains(ActiveApplication.springBoard) != false else { return nil }
         let springBoard = XCUIApplication(bundleIdentifier: ActiveApplication.springBoard)
-        return [springBoard.alerts.firstMatch, springBoard.sheets.firstMatch].first(where: \.exists)?.label
+        return [springBoard.alerts.firstMatch, springBoard.sheets.firstMatch].first(where: \.exists)
+    }
+
+    /// SpringBoard's alert and the state of the app it may be over; never a read of that app, which an alert holds for about 20 s.
+    private func alert(_ body: [String: Any]) -> RunnerResponse {
+        guard let app = body["app"] as? String, !app.isEmpty, app != ActiveApplication.springBoard else {
+            return .failure(400, code: "bad_request", message: "app is required, and is not SpringBoard")
+        }
+        let active = ActiveApplication.activeBundleIDs()
+        var reply: [String: Any] = [
+            "appInFront": XCUIApplication(bundleIdentifier: app).state == .runningForeground,
+            "active": active as Any? ?? NSNull(),
+            "hosted": ActiveApplication.hostedPrompt() as Any? ?? NSNull(),
+            "locked": ScreenState.isLocked == true || ScreenState.isOn == false,
+            "alert": NSNull(),
+        ]
+        if let element = springBoardAlert(active: active), let snapshot = try? element.snapshot() {
+            var encoder = SnapshotEncoder(budget: 2)
+            reply["alert"] = encoder.encode(snapshot)
+        }
+        return .ok(reply)
+    }
+
+    /// Taps one button of SpringBoard's alert by its label, only while the alert has the title Offsider read and the button the frame it read.
+    private func alertTap(_ body: [String: Any]) -> RunnerResponse {
+        guard let app = body["app"] as? String, let title = body["title"] as? String, let label = body["label"] as? String,
+              let frame = body["frame"] as? [String: Any], let x = number(frame["x"]), let y = number(frame["y"]),
+              let width = number(frame["width"]), let height = number(frame["height"]) else {
+            return .failure(400, code: "bad_request", message: "app, title, label and frame are required")
+        }
+        guard XCUIApplication(bundleIdentifier: app).state == .runningForeground else {
+            return .failure(409, code: "alert_changed", message: "\(app) is no longer beneath the alert")
+        }
+        guard let element = springBoardAlert(active: ActiveApplication.activeBundleIDs()), element.label == title else {
+            return .failure(409, code: "alert_changed", message: "the alert in front is not the one read")
+        }
+        let button = element.buttons.matching(NSPredicate(format: "label == %@", label)).firstMatch
+        let read = CGRect(x: x, y: y, width: width, height: height)
+        guard button.exists, abs(button.frame.minX - read.minX) < 1, abs(button.frame.minY - read.minY) < 1,
+              abs(button.frame.width - read.width) < 1, abs(button.frame.height - read.height) < 1 else {
+            return .failure(409, code: "alert_changed", message: "the button is not where it was read")
+        }
+        button.tap()
+        return .ok([String: Any]())
     }
 
     private func app(_ body: [String: Any]) -> XCUIApplication {

@@ -34,6 +34,11 @@ final class FakeRunnerTransport: RunnerTransport, @unchecked Sendable {
     var screenOn = true
     var screenLocked = false
     var passcode = false
+    /// SpringBoard's alert `/alert` reports, in the runner's snapshot JSON; nil reports none.
+    var alert: [String: Any]?
+    var alertAppInFront = true
+    var alertActive: [String]? = ["com.apple.springboard"]
+    var alertHosted: String?
     var homePresses = 0
     var lockPresses = 0
     /// Lock presses that only close a sheet before one darkens the screen.
@@ -58,7 +63,7 @@ final class FakeRunnerTransport: RunnerTransport, @unchecked Sendable {
             waits[path] = timeout
         }
         if timesOut == path { throw UsbmuxError.timedOut }
-        if let promptOverApp, object["app"] != nil, path != "/foreground" {
+        if let promptOverApp, object["app"] != nil, !["/foreground", "/alert", "/alert-tap"].contains(path) {
             return Self.response(409, ["ok": false, "error": ["code": "system_prompt", "message": promptOverApp]])
         }
         if let failure, failure.path == path {
@@ -88,6 +93,11 @@ final class FakeRunnerTransport: RunnerTransport, @unchecked Sendable {
         case "/snapshot":
             let data = (try? JSONSerialization.jsonObject(with: snapshot)) ?? []
             return Self.response(200, ["ok": true, "data": data])
+        case "/alert":
+            return Self.response(200, ["ok": true, "data": [
+                "appInFront": alertAppInFront, "active": alertActive as Any? ?? NSNull(), "hosted": alertHosted as Any? ?? NSNull(),
+                "locked": screenLocked, "alert": alert as Any? ?? NSNull(),
+            ]])
         case "/focused":
             return Self.response(200, ["ok": true, "data": ["focused": focused as Any? ?? NSNull()]])
         default:

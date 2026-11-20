@@ -98,7 +98,7 @@ A refusal only the user's hands can clear carries `error.ask` (an `Ask:` line wi
 | `developer_mode_off` | 7 | Ask the user to turn on Developer Mode and restart |
 | `device_preparing` | 7 | Wait for Xcode, then retry |
 | `device_locked` | 7 | Run `offsider wake --device <UDID>`; if a passcode stays up, ask the user to unlock the device |
-| `system_prompt_in_front` | 7 | A system prompt such as Allow Paste is over the app. Nothing was read or sent. Ask the user to answer it on the device; on a test device run the two commands the message names, which read and tap it with no `--app`. There a tap by coordinates, a swipe or keys are not checked and reach the prompt |
+| `system_prompt_in_front` | 7 | A system prompt such as Allow Paste is over the app. Nothing was read or sent. Ask the user to answer it on the device; on a test device run the command the message names: `alert show --app <id>` for the app's permission prompt, else `describe-ui` and `tap --label` with no `--app`. There a tap by coordinates, a swipe or keys are not checked and reach the prompt |
 | `ui_automation_off` | 7 | Ask the user to enter the passcode if the device shows `Enter Passcode for "XCTest"`, else to turn on Settings > Developer > UI Automation |
 | `certificate_not_trusted` | 7 | Pass on `error.ask`: the user trusts the certificate in Settings > General > VPN & Device Management |
 | `xcode_too_old` | 9 | The command needs Xcode 27; use a runner command or ask the user |

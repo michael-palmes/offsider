@@ -9,6 +9,12 @@ public protocol AppPromptReading: DeviceBackend {
     func stillInFront(_ prompt: AppPrompt, on id: DeviceID) async throws -> Bool
 }
 
+/// A backend that answers a prompt by its button in one step that checks the prompt is still the one read.
+@MainActor
+public protocol AppPromptAnswering: AppPromptReading {
+    func answer(_ prompt: AppPrompt, with button: AppPrompt.Button, on id: DeviceID) async throws
+}
+
 /// A backend that holds a device's reads to one named app, and can prove a permission prompt in front belongs to that app.
 @MainActor
 public protocol AppPromptCapturing: AnyObject {

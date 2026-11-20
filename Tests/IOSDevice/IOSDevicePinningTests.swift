@@ -153,7 +153,7 @@ struct IOSDevicePinningTests {
         return whole
     }
 
-    @Test("a read under a system prompt gives a test device's agent the commands that answer it, and any other device's only a request to a person")
+    @Test("a read under a system prompt gives a test device's agent the alert command that answers it, and any other device's only a request to a person")
     func promptAdviceFollowsTheAllowance() async throws {
         let transport = FakeRunnerTransport()
         transport.foregroundApp = Self.playground
@@ -174,11 +174,11 @@ struct IOSDevicePinningTests {
         #expect(may?.isOtherAppInFront == false, "a wait fails at once, as nobody else will answer it")
         #expect(may?.message.contains("Allow?") == true)
         #expect(may?.message.contains("Retry") == false)
-        #expect(may?.message.contains("offsider tap --label <button> --device \(IOSDeviceFixtures.phone)") == true)
-        #expect(may?.hint == "offsider describe-ui --summary --device \(IOSDeviceFixtures.phone)")
+        #expect(may?.message.contains("`offsider alert show --app \(Self.playground) --device \(IOSDeviceFixtures.phone)`, which answers it too") == true)
+        #expect(may?.hint == "offsider alert show --app \(Self.playground) --device \(IOSDeviceFixtures.phone)")
     }
 
-    @Test("input the runner sends for a named app under a prompt names, on a test device, the read and tap that answer it, and elsewhere asks a person")
+    @Test("input the runner sends for a named app under a prompt names, on a test device, the alert command that answers it, and elsewhere asks a person")
     func promptOverNamedAppForInput() async throws {
         let transport = FakeRunnerTransport()
         transport.foregroundApp = Self.playground
@@ -189,7 +189,8 @@ struct IOSDevicePinningTests {
         #expect(may?.reason == .systemPromptInFront)
         #expect(may?.ask == nil)
         #expect(may?.message.contains("Would Like to Send You Notifications") == true)
-        #expect(may?.message.hasSuffix("Read it with `offsider describe-ui --summary --device \(IOSDeviceFixtures.phone)`, then answer it with `offsider tap --label <button> --device \(IOSDeviceFixtures.phone)`.") == true)
+        #expect(may?.message.contains("Read it with `offsider alert show --app \(Self.playground) --device \(IOSDeviceFixtures.phone)`, which answers it too when it is \(Self.playground)'s permission prompt") == true)
+        #expect(may?.message.hasSuffix("taps with `offsider tap --label <button> --device \(IOSDeviceFixtures.phone)`.") == true)
 
         let pinned = try Self.backend(transport)
         pinned.targetApp = Self.playground

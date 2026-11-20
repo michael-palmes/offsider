@@ -5,6 +5,7 @@ extension IOSDeviceBackend: RawAccessibilitySource {
     /// The runner's snapshot JSON before mapping.
     public func rawAccessibilitySource(for id: DeviceID) async throws -> Data {
         try requirePermittedPin(id)
+        if let proven = provenPrompt(id) { return try Self.promptSnapshot(proven.alert) }
         if state.drivesWhole { try await prepareWholeDevice(id) }
         let client = try await runner(for: id)
         let app = targetApp
@@ -33,7 +34,8 @@ extension IOSDeviceBackend: RawAccessibilitySource {
     /// The runner's snapshot through the one iOS mapper; with `point`, the deepest node there as the only root.
     func runnerTree(for id: DeviceID, point: UIPoint?) async throws -> UITree {
         let startedAt = Date()
-        let tree = try Self.tree(fromSnapshot: try await rawAccessibilitySource(for: id), device: id.rawValue)
+        var tree = try Self.tree(fromSnapshot: try await rawAccessibilitySource(for: id), device: id.rawValue)
+        tree.systemWindow = provenPrompt(id)?.prompt.window
         guard let point else {
             DeviceActivityLedger.current.recordTreeRead(tree, on: id, startedAt: startedAt)
             return tree

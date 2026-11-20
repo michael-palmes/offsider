@@ -39,10 +39,24 @@ public enum IOSPermissionAlert {
         guard card.bundle == app else {
             throw AppPromptRefusal.otherApp(requester: card.bundle, why: "the alert \(shown) is over \(card.bundle)")
         }
+        return try prompt(alert, title: title, frame: frame, app: app, appName: card.name)
+    }
+
+    /// SpringBoard's alert over `app` on an iPhone or iPad, which the runner reads alone: whether the app is beneath it is the runner's to say, the rest is the simulator's rule.
+    public static func read(alert: UINode, app: String, appName: String?) throws -> AppPrompt {
+        guard let title = alert.normalizedLabel, let frame = alert.frame else {
+            throw AppPromptRefusal.unreadable(why: "the alert has no title or no frame")
+        }
+        return try prompt(alert, title: title, frame: frame, app: app, appName: appName)
+    }
+
+    /// The alert as a prompt for `app` when its title names `appName` first and it asks something; throws what it is otherwise.
+    static func prompt(_ alert: UINode, title: String, frame: UIFrame, app: String, appName: String?) throws -> AppPrompt {
+        let shown = TerminalText.quoted(SelectorText.truncated(title, limit: 120))
         guard let named = firstQuotedName(in: title) else {
             throw AppPromptRefusal.notPermission(what: "the system alert \(shown), which names no app")
         }
-        guard let name = card.name, named == name else {
+        guard let name = appName, named == name else {
             throw AppPromptRefusal.otherApp(requester: nil, why: "the alert \(shown) names another app first")
         }
         let found = buttons(in: alert)
