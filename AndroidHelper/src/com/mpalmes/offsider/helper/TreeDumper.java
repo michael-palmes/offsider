@@ -138,6 +138,15 @@ final class TreeDumper {
         return root != null && TextUtils.equals(root.getPackageName(), appRoot.getPackageName()) ? root : null;
     }
 
+    /** The package of the application window the dump took as the app's; null when it read none, or a system window is in front. */
+    String appPackage() {
+        if (app == null || appRoot == null || app.getType() != AccessibilityWindowInfo.TYPE_APPLICATION) {
+            return null;
+        }
+        CharSequence pkg = appRoot.getPackageName();
+        return pkg == null ? null : pkg.toString();
+    }
+
     /** The app window and its root, each read once. */
     private void findApp(UiAutomation automation, List<AccessibilityWindowInfo> list) {
         app = list == null || list.isEmpty() ? null : appWindow(automation, list);

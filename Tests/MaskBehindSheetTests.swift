@@ -48,6 +48,11 @@ struct MaskBehindSheetTests {
         return try ScreenImage.encode(try #require(context.makeImage()), as: .png)
     }
 
+    /// The modal a capture of `tree` finds with no tree cache to remember from.
+    nonisolated static func behind(_ tree: UITree) -> ScreenCapture.BehindModal? {
+        HiddenScreen.modal(in: tree, belowStatusBar: 60).map { ScreenCapture.BehindModal(modal: $0, remembered: nil, cacheOff: false) }
+    }
+
     static func backend(_ tree: UITree) throws -> FakeDeviceBackend {
         FakeDeviceBackend(trees: [tree], screenshots: [try sheetPNG()], screen: ScreenshotMaskTests.screen)
     }
@@ -138,7 +143,8 @@ struct MaskBehindSheetTests {
         #expect(report.jsonLine().contains(#""maskUnproven":"modal""#))
         #expect(ScreenshotMaskTests.point(image, 100, 126) == ScreenshotMaskTests.black)
         #expect(ScreenshotMaskTests.point(image, 200, 590) != ScreenshotMaskTests.black, "the sheet's own title was painted")
-        #expect(err.contains("a modal covers the app") && err.contains("check the image") && err.contains("(maskUnproven)"), "\(err)")
+        #expect(err.contains("an email address shows behind a modal that no element in the tree holds") && err.contains("check the image") && err.contains("(maskUnproven)"), "\(err)")
+        #expect(!err.contains("a modal covers the app"), "one warning names the address, not two: \(err)")
         #expect(!err.contains(Self.email))
     }
 
@@ -158,8 +164,9 @@ struct MaskBehindSheetTests {
         let capture = try ScreenCapture.make(png: try Self.sheetPNG(), platform: .ios, screen: ScreenshotMaskTests.screen)
         let result = try ScreenCapture.masking(capture, plan: MaskPlan(emails: true), tree: Self.rootSheet(), hidden: ScreenCapture.HiddenText(unread: true))
         #expect(result.unproven == "modal")
-        #expect(await ScreenCapture.hiddenText(in: capture, tree: Self.openScreen()) == nil)
-        #expect(await ScreenCapture.hiddenText(in: capture, tree: Self.rootSheet())?.lines.map(\.text).contains(Self.email) == true)
+        let plan = MaskPlan(emails: true)
+        #expect(await ScreenCapture.hiddenText(in: capture, behind: Self.behind(Self.openScreen()), tree: Self.openScreen(), plan: plan) == nil)
+        #expect(await ScreenCapture.hiddenText(in: capture, behind: Self.behind(Self.rootSheet()), tree: Self.rootSheet(), plan: plan)?.lines.map(\.text).contains(Self.email) == true)
     }
 
     @Test("password masks alone still report the hidden screen unproven, painting nothing")
@@ -190,7 +197,7 @@ struct MaskBehindSheetTests {
         _ = try await Console.$current.withValue(capture.console(out: .person(), err: .person())) {
             try await ScreenshotMaskTests.capture(["--mask-emails"], on: backend)
         }
-        #expect(capture.err.contains("Masks can't see behind this modal; check the image"), "\(capture.err)")
+        #expect(capture.err.contains("An email address shows that the tree does not list; check the image"), "\(capture.err)")
         #expect(!capture.err.contains("maskUnproven"))
     }
 

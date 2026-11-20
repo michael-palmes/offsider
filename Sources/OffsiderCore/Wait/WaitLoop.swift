@@ -114,7 +114,7 @@ extension WaitCondition {
     var looksForElements: Bool {
         switch self {
         case .element, .anyElement: true
-        case .settled, .region, .duration: false
+        case .settled, .region, .duration, .toast: false
         }
     }
 
@@ -127,7 +127,7 @@ extension WaitCondition {
     var explain: ((UITree) -> WaitNearMiss?)? {
         switch self {
         case .element(_, _, _, let explain), .anyElement(_, _, let explain): explain
-        case .settled, .region, .duration: nil
+        case .settled, .region, .duration, .toast: nil
         }
     }
 }
@@ -142,6 +142,8 @@ public enum WaitCondition {
     case settled(by: SettleSource, quiet: TimeInterval, ignoreValues: Bool = false, gate: SettleGate? = nil, leaveOut: SettleLeaveOut = .none, drawHold: TimeInterval? = nil)
     case region(mode: RegionMode, quiet: TimeInterval, threshold: Double)
     case duration(TimeInterval)
+    /// Met when a read lists an Android toast whose whole text is `text`, as `--label` matches a label.
+    case toast(text: String)
 }
 
 /// One selector of a `wait --any`, as the report names it: `by` is `id`, `label` or `value`.
@@ -484,6 +486,21 @@ public enum WaitLoop {
 
     private static func evaluate(_ condition: WaitCondition, state: inout State, sources: WaitSources) async throws -> Step {
         switch condition {
+        case .toast(let text):
+            let tree = try await sources.tree()
+            state.lastTree = tree
+            state.noteApp(tree, sources: sources)
+            let toasts = tree.toasts ?? []
+            // A toast counts when raised after the wait began, or so shortly before that it could still be on screen.
+            let waitedMs = Int(((sources.now() - state.start) * 1000).rounded())
+            let matching = toasts.filter { $0.matches(text) }
+            if matching.contains(where: { $0.ageMs - waitedMs <= UIToast.onScreenMs }) { return Step(met: true, reason: "toast shown") }
+            if let old = matching.last {
+                return Step(met: false, reason: "the matching toast is \(old.ageMs / 1000) s old, from before the wait began")
+            }
+            // Counts only: another toast's text is never quoted here, so no mask is needed for the reason.
+            return Step(met: false, reason: toasts.isEmpty ? "no toast yet" : "\(toasts.count) other toast\(toasts.count == 1 ? "" : "s"), none matching")
+
         case .element(let probe, let gone, let stableFor, _):
             let step: Step
             let tree = try await sources.tree()

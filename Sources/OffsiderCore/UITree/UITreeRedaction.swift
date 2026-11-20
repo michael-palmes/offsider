@@ -396,6 +396,7 @@ extension UITree {
             hiddenBelow.removeAll(keepingCapacity: true)
             Self.redact(&copy.roots[index], mask: mask, scope: scope, inherited: false, hiddenBelow: &hiddenBelow, counts: &counts)
         }
+        copy.toasts = toasts?.map { $0.redacted(mask, count: &counts.redacted) }
         if scope == .output {
             counts.keyboard = KeyboardText.hiddenCount(in: copy.roots)
             counts.copyPreview = CopyPreview.shownCount(in: copy.roots)

@@ -86,6 +86,8 @@ public enum FailureReason: String, CaseIterable, Sendable {
     case personRequired = "person_required"
     case turnstileRequired = "turnstile_required"
     case foregroundChanged = "foreground_changed"
+    case secretWouldShow = "secret_would_show"
+    case fieldNotEmpty = "field_not_empty"
     case installDamaged = "install_damaged"
 
     case selectorNotFound = "selector_not_found"

@@ -101,6 +101,11 @@ public struct MaskPlan: Equatable, Sendable {
         secure || !ids.isEmpty || !labels.isEmpty || !labelsContaining.isEmpty || !texts.isEmpty || emails
     }
 
+    /// Masks that name elements or text, which the tree cache can remember beneath a modal.
+    public var recalls: Bool {
+        !ids.isEmpty || !labels.isEmpty || !labelsContaining.isEmpty || !texts.isEmpty || emails
+    }
+
     /// The kinds asked for, in `MaskKind` order.
     public var kinds: [MaskKind] {
         MaskKind.allCases.filter { kind in
@@ -145,13 +150,16 @@ public struct MaskPlan: Equatable, Sendable {
 
     /// A matching node whose descendant also matches is left to the descendant, so a row is not blacked out for one field.
     static func leafMostMatches(in nodes: [UINode], regex: NSRegularExpression, hidden: (UINode) -> Bool = { _ in false }) -> [UINode] {
+        leafMostMatches(in: nodes, hidden: hidden) { text in regex.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)) != nil }
+    }
+
+    /// `hidden` elements match nothing, so a match never depends on text another mask hides.
+    static func leafMostMatches(in nodes: [UINode], hidden: (UINode) -> Bool = { _ in false }, where matches: (String) -> Bool) -> [UINode] {
         nodes.flatMap { node -> [UINode] in
-            let below = leafMostMatches(in: node.children, regex: regex, hidden: hidden)
+            let below = leafMostMatches(in: node.children, hidden: hidden, where: matches)
             if !below.isEmpty { return below }
             if hidden(node) { return [] }
-            return node.searchableText.contains { text in
-                regex.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)) != nil
-            } ? [node] : []
+            return node.searchableText.contains(where: matches) ? [node] : []
         }
     }
 }

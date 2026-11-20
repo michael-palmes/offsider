@@ -433,7 +433,7 @@ struct HelperBrokerTests {
                 #expect(await HelperBrokerClient.status(at: fixture.socket)?.attached == 1)
                 await session.close()
                 let idle = try await fixture.status(showing: "no command attached") { $0.attached == 0 }
-                #expect(idle.protocol == 2 && idle.sdkInt == 36 && idle.helper == "1.0.0")
+                #expect(idle.protocol == HelperDex.protocolVersion && idle.sdkInt == 36 && idle.helper == "1.0.0")
                 try await fixture.stop()
             }
         }
