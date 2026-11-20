@@ -39,14 +39,15 @@ struct MaskFileLabelTests {
         }
     }
 
-    @Test("a labelContains match keeps only the text the file names, an exact label stays whole, an id match hides the label")
+    @Test("a masked label is hidden whole: no rule keeps any part of it; only an exact labels entry, alone, keeps it whole")
     func labelRule() throws {
         let mask = try TreeValueMask(plan: MaskConfig(ids: ["row"], labels: ["Account number"], labelContains: ["Referral code. "]).plan)
 
-        #expect(mask.maskedLabel("Referral code. rc-5521. Tap to copy") == "Referral code. [redacted]")
-        #expect(mask.maskedLabel("Copy Referral code. rc-5521") == "[redacted] Referral code. [redacted]")
-        #expect(mask.maskedLabel("Account number") == "Account number")
-        #expect(mask.maskedLabel("Device key. dk-3307") == "[redacted]")
+        #expect(mask.maskedLabel("Referral code. rc-5521. Tap to copy", id: nil) == "[redacted]")
+        #expect(mask.maskedLabel("Copy Referral code. rc-5521", id: nil) == "[redacted]")
+        #expect(mask.maskedLabel("Account number", id: nil) == "Account number")
+        #expect(mask.maskedLabel("Account number", id: "row") == "[redacted]")
+        #expect(mask.maskedLabel("Device key. dk-3307", id: nil) == "[redacted]")
         #expect(mask.shownLabel("Device key. dk-3307", id: "row") == "[redacted]")
         #expect(mask.shownLabel("Back", id: "back") == "Back")
     }
@@ -58,7 +59,7 @@ struct MaskFileLabelTests {
         let text = try await fixture.run { try await DescribeUIRedactionTests.describe(["--format", "text"], on: backend, config: Self.config) }
         let json = try await fixture.run { try await DescribeUIRedactionTests.describe([], on: backend, config: Self.config) }
 
-        #expect(text.contains(#"button "Referral code. [redacted]""#))
+        #expect(text.contains(#"button "[redacted]""#))
         #expect(text.contains(#"button "[redacted]" id=device-key"#))
         #expect(text.contains(#"button "Back" id=back"#))
         #expect(text.hasSuffix("# redacted: 3 values\n"))
@@ -81,8 +82,8 @@ struct MaskFileLabelTests {
             Issue.record("expected Android attributes")
             return
         }
-        #expect(shown.label == "Referral code. [redacted]")
-        #expect(attributes.contentDescription == "Referral code. [redacted]" && attributes.text == "Referral code. [redacted]")
+        #expect(shown.label == "[redacted]")
+        #expect(attributes.contentDescription == "[redacted]" && attributes.text == "[redacted]")
         #expect(attributes.hint == "[redacted]" && attributes.stateDescription == "[redacted]")
     }
 
@@ -152,9 +153,9 @@ struct MaskFileLabelTests {
     func contextLabels() throws {
         let mask = TreeValueMask(patterns: [try MaskPlan.compile(#"rc-\d{4}"#)])
         try OutputMasks.$current.withValue(OutputMasks { mask }) {
-            #expect(PresentationProbe.shownLabel(of: FakeUI.node(.other, label: "Offer rc-5521")) == "Offer [redacted]")
+            #expect(PresentationProbe.shownLabel(of: FakeUI.node(.other, label: "Offer rc-5521")) == "[redacted]")
             let branch = UITreeContext.HiddenBranch.shown(id: nil, label: "Offer rc-5521", className: nil, frame: nil)
-            #expect(branch.label == "Offer [redacted]")
+            #expect(branch.label == "[redacted]")
             #expect(mask.contextLabel("Signed in as me@example.com", id: nil).contains("me@example.com") == false)
             #expect(mask.contextLabel("Your code 482913", id: nil).contains("482913") == false)
         }

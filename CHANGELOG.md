@@ -35,6 +35,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Changed
 
+- A label or value `offsider.mask.json` or a run's masks touch is hidden whole: `describe-ui`, messages and the tree cache show `[redacted]` with no kept words (a `labelContains` match no longer shows its own text), a label a value pattern or the email mask hits anywhere is hidden whole, and a screenshot paints whole any element holding hidden text and any row that copies it. Screenshot `--json` reports id, label, text and email masks together as `maskedBy.rules`, each element once.
+- `maskedBy`'s per-rule counts (`id`, `label`, `labelContains`, `text`, `emails`) are folded into `maskedBy.rules`, so a script that read the old keys must change.
+- An evidence run now paints a whole field where it used to keep a matched word, as its email and id masks hide the field whole.
 - Screen reads on an iOS 27 simulator skip idb's per-read automation setup while the warm input session runs: the broker holds one automation session, so `describe-ui`, `wait`, selector and coordinate taps and `type`'s read-back each save about 150 to 350 ms. A read that comes back empty, or that the session did not last through, is read again with its own setup. idb moves to the `michael-palmes/idb` fork's `offsider-idb-v0.3.0`.
 - A test device held to an app with `--app` that meets Android's permission dialog now names `offsider alert show --app <id> --device <serial>` in the refusal, and `rn open` stopped by an iOS simulator's system alert names the same command.
 - The bundled skill no longer asks before every production or store build: once a person has approved an app's guard rules, `guard status` says `ready` and the agent drives the app, leaving guarded controls to the guard.
@@ -95,6 +98,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - A `--has-value` miss in `assert` and `wait` on a value a run or mask file hides now says `does not match '<text>': its value is masked`, so it reads as the no match it is, not a refusal.
 - The near-match suggestions in `assert`, `wait`, `tap` and every other selector command no longer show the text of a password field a show-password toggle revealed, and a `--has-value` miss on a password field no longer shows its value.
 - Selectors no longer confirm guesses about hidden text. A label or value a mask hides matches no label or value selector in any command (select it by `--id`, which a miss now names), and `--has-value` on a password field, revealed by a show-password toggle or not, is refused (exit 64, `secure_field_argument`) whatever the text. An exact `--has-value` on another masked value still confirms it.
+- A mask rule no longer confirms a guess about text another mask hides: a capture's `--mask-label`, `--mask-label-contains` and `--mask-text`, or a rule added to `offsider.mask.json`, read, count and paint the same whether or not the guess was right, and video's refusal no longer names the rule that matched.
 
 ## [0.16.0] - 2026-11-05
 

@@ -133,7 +133,7 @@ struct MaskBehindSheetTests {
     func emailsBehindSheet() async throws {
         let (report, image, err) = try await Self.agentCapture(["--mask-emails"])
 
-        #expect(report.maskedBy?[.emails] == 1)
+        #expect(report.maskedBy?[.rules] == 1)
         #expect(report.maskUnproven == "modal")
         #expect(report.jsonLine().contains(#""maskUnproven":"modal""#))
         #expect(ScreenshotMaskTests.point(image, 100, 126) == ScreenshotMaskTests.black)
@@ -146,7 +146,7 @@ struct MaskBehindSheetTests {
     func textBehindSheet() async throws {
         let (report, image, err) = try await Self.agentCapture(["--mask-text", "bc1q"])
 
-        #expect(report.maskedBy?[.text] == 1)
+        #expect(report.maskedBy?[.rules] == 1)
         #expect(report.maskUnmatched.isEmpty)
         #expect(report.maskUnproven == "modal")
         #expect(ScreenshotMaskTests.point(image, 200, 175) == ScreenshotMaskTests.black)
@@ -178,7 +178,7 @@ struct MaskBehindSheetTests {
             try await Self.agentCapture([])
         }
 
-        #expect(report.maskedBy?[.text] == 1)
+        #expect(report.maskedBy?[.rules] == 1)
         #expect(report.maskUnproven == "modal")
         #expect(ScreenshotMaskTests.point(image, 200, 175) == ScreenshotMaskTests.black)
     }
@@ -198,7 +198,7 @@ struct MaskBehindSheetTests {
     func openScreenProven() async throws {
         let (report, image, err) = try await Self.agentCapture(["--mask-emails"], tree: Self.openScreen())
 
-        #expect(report.maskedBy?[.emails] == 1)
+        #expect(report.maskedBy?[.rules] == 1)
         #expect(report.maskUnproven == nil)
         #expect(ScreenshotMaskTests.point(image, 100, 126) == ScreenshotMaskTests.black)
         #expect(!err.contains("maskUnproven"), "\(err)")

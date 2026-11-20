@@ -202,8 +202,16 @@ enum ScreenCapture {
         _ capture: CapturedScreen, plan: MaskPlan, tree: UITree?, revealed: RevealedSecrets? = nil, hidden: HiddenText? = nil
     ) throws -> MaskResult {
         var targets = MaskTargets()
+        var hiddenNodes: [UINode] = []
         if let tree {
-            targets = try plan.textTargets(in: tree)
+            // The standing masks hide some text: every element holding it is painted whole, and no rule's match may depend on it, so none tells whether a guess at it was right.
+            var standing = AmbientMasks.outputMask()
+            standing.revealed = plan.secure ? revealed : nil
+            let hidden = plan.readsText || standing.revealed != nil ? MaskedFields.of(tree.roots, mask: standing) : nil
+            // Password fields, shown or revealed, are painted as password fields; only what copies their text counts here.
+            hiddenNodes = (hidden?.hiddenNodes(in: tree.roots) ?? []).filter { !$0.isSecure && standing.revealed?.matches($0) != true }
+            let isHidden = { (node: UINode) in hiddenNodes.contains { $0.isSameElement(as: node) } }
+            targets = try plan.textTargets(in: tree, hidden: isHidden)
             if plan.secure {
                 targets.add(tree.roots.flatMap { $0.flattened() }.filter { $0.isSecure || revealed?.matches($0) == true }, as: .secure)
                 // iOS paints its bar whole, below, so a suggestion that arrives after the read is covered too.
@@ -212,12 +220,14 @@ enum ScreenCapture {
             let selectors = plan.ids.map { (MaskKind.id, AccessibilityQuery.id($0)) } + plan.labels.map { (MaskKind.label, AccessibilityQuery.label($0)) }
                 + plan.labelsContaining.map { (MaskKind.labelContains, AccessibilityQuery.labelContains($0)) }
             for (kind, query) in selectors {
-                let matches = AccessibilityTargetResolver.candidates(roots: tree.roots, query: query, elementType: nil, masks: nil).matches
+                let matches = AccessibilityTargetResolver.candidates(roots: tree.roots, query: query, elementType: nil, masks: standing).matches
                 targets.add(matches, as: kind)
                 if matches.isEmpty {
                     targets.unmatched.append("--mask-\(query.kind.dropFirst(2)) \(query.rawValue)")
                 }
             }
+            targets.add(hiddenNodes, as: .rules)
+            targets.foldIntoRules()
         }
         targets.frames[.region] = plan.regions.map { UIFrame(x: $0.x, y: $0.y, width: $0.width, height: $0.height) }
         let placement = tree.map { targets.placeBeneath(in: $0, skip: plan.skipsBeneath) } ?? (painted: [:], skipped: [:])
@@ -233,17 +243,18 @@ enum ScreenCapture {
         if let hidden, !hidden.lines.isEmpty {
             let found = try HiddenScreen.targets(hidden.lines, plan: plan)
             for (kind, frames) in found.frames {
-                targets.frames[kind, default: []] += frames.map { Optional(UIFrame(x: $0.x - 2, y: $0.y - 2, width: $0.width + 4, height: $0.height + 4)) }
+                targets.frames[kind.foldsIntoRules ? .rules : kind, default: []] += frames.map { Optional(UIFrame(x: $0.x - 2, y: $0.y - 2, width: $0.width + 4, height: $0.height + 4)) }
             }
             targets.unmatched.removeAll { name in found.matched.contains { name == "--mask-text \($0)" } }
         }
         let beneathFrames = placement.painted
-        let skipped = plan.skipsBeneath ? Dictionary(uniqueKeysWithValues: plan.kinds.filter(\.skippableBeneath).map { ($0, placement.skipped[$0] ?? 0) }) : nil
+        let kinds = plan.kinds.filter { !$0.foldsIntoRules } + (plan.readsText || !hiddenNodes.isEmpty || targets.frames[.rules]?.isEmpty == false ? [.rules] : [])
+        let skipped = plan.skipsBeneath ? Dictionary(uniqueKeysWithValues: kinds.filter(\.skippableBeneath).map { ($0, placement.skipped[$0] ?? 0) }) : nil
 
         var image = capture.image
         var painted: [MaskKind: Int] = [:]
         var beneath: [MaskKind: Int] = [:]
-        for kind in plan.kinds {
+        for kind in MaskKind.allCases where kinds.contains(kind) {
             let rects = { (frames: [UIFrame?]) in
                 try SecureMask.pixelRects(
                     frames: frames,
@@ -285,6 +296,7 @@ enum ScreenCapture {
         case .labelContains: "An element --mask-label-contains matched"
         case .text: "An element --mask-text matched"
         case .emails: "An email address"
+        case .rules: "An element a mask hides"
         case .region: "A --mask-region"
         }
     }
