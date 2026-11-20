@@ -56,9 +56,9 @@ enum MaskConfigs {
 @MainActor
 enum AmbientMasks {
     /// The run's masks: the recorder's when this command records, else the caller's run found from its process ancestry.
-    static func runPlan(recorder: EvidenceRecorder? = nil) -> MaskPlan? {
+    static func runPlan(recorder: EvidenceRecorder? = nil) throws -> MaskPlan? {
         let recorder = recorder ?? .current
-        if recorder.environment != nil { return recorder.defaultMasks }
+        if recorder.environment != nil { return try recorder.defaultMasks() }
         guard let masks = EvidenceRecorder.ambientMasks(), !masks.isEmpty else { return nil }
         return masks.plan
     }
@@ -80,7 +80,7 @@ enum AmbientMasks {
     /// The config's and the run's masks for the values a tree shows, with the device's revealed password fields.
     static func treeMask(revealed: RevealedSecrets? = nil) throws -> TreeValueMask {
         var plan = try MaskConfigs.current()?.config.plan ?? .none
-        if let run = runPlan() { plan = plan.union(run) }
+        if let run = try runPlan() { plan = plan.union(run) }
         do {
             return try TreeValueMask(plan: plan, revealed: revealed)
         } catch let error as MaskPatternError {
