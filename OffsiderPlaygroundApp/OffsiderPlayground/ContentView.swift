@@ -61,8 +61,8 @@ struct ContentView: View {
             TabViewTestView()
         case "motion-test":
             MotionTestView()
-        case "crash-test":
-            CrashTestView()
+        case "quit-test":
+            QuitTestView()
         case "slider-value-test":
             SliderValueTestView()
         case "searchable-test":
@@ -147,7 +147,7 @@ struct MainMenuView: View {
             ("switch-test", "Switch Test", "SwiftUI and UIKit switch controls"),
             ("tab-view-test", "TabView Test", "Standard SwiftUI tab switching"),
             ("motion-test", "Motion Test", "Motion only screenshots can see"),
-            ("crash-test", "Crash Test", "Buttons that crash or quit the app")
+            ("quit-test", "Quit Test", "A button that quits the app")
         ]),
         ("Input & Text", [
             ("text-input", "Text Input", "Text typed by CLI commands"),
