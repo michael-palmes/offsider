@@ -12,21 +12,32 @@ E2E_LOAD_POLL=15
 # Set when a wait gives up, for the caller's error.
 E2E_BUSY_MESSAGE=""
 
-# The 1-minute load average, such as 12.34.
+# The host's readings, such as "{ 12.34 9.00 8.00 }" and "18"; tests replace these two functions.
+e2e_read_loadavg() { sysctl -n vm.loadavg 2>/dev/null; }
+e2e_read_cores() { sysctl -n hw.logicalcpu 2>/dev/null; }
+
+# The 1-minute load average, such as 12.34, or nothing when it cannot be read.
 e2e_load_now() {
-    sysctl -n vm.loadavg 2>/dev/null | tr -d '{}' | awk '{ print $1 }'
+    local first load
+    read -r first load _ <<<"$(e2e_read_loadavg)"
+    [[ "$first" == "{" ]] || load="$first"
+    load="${load//,/.}"
+    [[ "$load" =~ ^[0-9]+(\.[0-9]+)?$ ]] && printf '%s\n' "$load"
+    return 0
 }
 
 e2e_cores() {
     local cores
-    cores="$(sysctl -n hw.logicalcpu 2>/dev/null)" || cores=""
+    cores="$(e2e_read_cores)" || cores=""
     [[ "$cores" =~ ^[1-9][0-9]*$ ]] || cores=8
     printf '%s\n' "$cores"
 }
 
-# Succeeds when <load> is at or under <ceiling>.
+# Succeeds when <load> (such as 36.00) is at or under the whole number <ceiling>, in bash alone, as awks differ.
 e2e_load_ok() {
-    awk -v load="$1" -v ceiling="$2" 'BEGIN { exit !(load + 0 <= ceiling + 0) }'
+    local whole="${1%%.*}" fraction=""
+    [[ "$1" == *.* ]] && fraction="${1#*.}"
+    (( 10#$whole < $2 )) || { (( 10#$whole == $2 )) && [[ -z "${fraction//0/}" ]]; }
 }
 
 # Succeeds when the 1-minute load is at most twice the cores, or cannot be read.

@@ -24,24 +24,31 @@ source "$REPO/scripts/e2e-environment.sh"
 # shellcheck source=/dev/null
 source "$REPO/scripts/lib/e2e-host.sh"
 
+# A host with no sysctl, as CI's Linux runner is: no load, 8 cores, and a boot is never held.
+mkdir -p "$WORK/no-tools"
+# shellcheck disable=SC2123 # an empty PATH is the host under test
+host="$(PATH="$WORK/no-tools"; printf '%s|%s|' "$(e2e_load_now)" "$(e2e_cores)"; if e2e_mac_is_quiet; then printf quiet; else printf busy; fi)"
+check "a host with no sysctl reads no load and 8 cores, and holds no boot" "|8|quiet" "$host"
+
 # A Mac with CORES cores whose 1-minute load reads each of LOADS in turn, holding the last; sleep only counts.
 # The reads run in command substitutions, so their count lives in a file.
 CORES=18
 LOADS=()
 SLEPT=0
-sysctl() {
-    case "$2" in
-        hw.logicalcpu) printf '%s\n' "$CORES" ;;
-        vm.loadavg)
-            local reads i
-            reads="$(cat "$WORK/reads")"
-            i=$(( reads < ${#LOADS[@]} ? reads : ${#LOADS[@]} - 1 ))
-            printf '%s' $(( reads + 1 )) > "$WORK/reads"
-            printf '{ %s 9.00 8.00 }\n' "${LOADS[$i]}"
-            ;;
-    esac
+e2e_read_cores() { printf '%s\n' "$CORES"; }
+e2e_read_loadavg() {
+    local reads i
+    reads="$(cat "$WORK/reads")"
+    i=$(( reads < ${#LOADS[@]} ? reads : ${#LOADS[@]} - 1 ))
+    printf '%s' $(( reads + 1 )) > "$WORK/reads"
+    printf '{ %s 9.00 8.00 }\n' "${LOADS[$i]}"
 }
 sleep() { SLEPT=$(( SLEPT + $1 )); }
+
+for case in "36.00 36 ok" "36 36 ok" "36.01 36 busy" "35.99 36 ok" "08.50 9 ok" "100.00 36 busy" "0.00 16 ok"; do
+    read -r load ceiling want <<<"$case"
+    check "load $load against $ceiling" "$want" "$(e2e_load_ok "$load" "$ceiling" && echo ok || echo busy)"
+done
 
 wait_for() {
     LOADS=("$@") SLEPT=0 E2E_BUSY_MESSAGE=""
