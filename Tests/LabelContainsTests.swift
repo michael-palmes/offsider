@@ -231,9 +231,9 @@ struct LabelContainsTests {
         let result = try await ScreenshotMaskTests.capture(["--mask-label-contains", "mail:", "--mask-label-contains", "Fax"], on: backend)
         defer { try? FileManager.default.removeItem(atPath: result.path) }
 
-        #expect(result.report.maskedBy == [.labelContains: 2])
+        #expect(result.report.maskedBy == [.rules: 2])
         #expect(result.report.maskUnmatched == ["--mask-label-contains Fax"])
-        #expect(result.report.jsonLine().contains(#""maskedBy":{"labelContains":2}"#))
+        #expect(result.report.jsonLine().contains(#""maskedBy":{"rules":2}"#))
         #expect(ScreenshotMaskTests.point(result.image, 100, 115) == ScreenshotMaskTests.black)
         #expect(ScreenshotMaskTests.point(result.image, 100, 215) == ScreenshotMaskTests.black)
         #expect(ScreenshotMaskTests.point(result.image, 100, 315) == ScreenshotMaskTests.white)

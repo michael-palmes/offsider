@@ -161,7 +161,7 @@ struct ElementSelectorOptions: ParsableArguments {
                 if let block = LogBoxBlock.hiding(tree, inspector: inspector(), subject: query.selectorDescription) {
                     return .blocked(block)
                 }
-                return absent("not found")
+                return absent(found.maskHidesField ? "not found; \(ElementProbe.maskedFieldNote(kind: query.kind))" : "not found")
             }
             var pool = allowOffscreen || found.viewport == nil ? found.matches : found.onScreen
             guard !pool.isEmpty else {
@@ -179,10 +179,16 @@ struct ElementSelectorOptions: ParsableArguments {
                 pool = reached
             }
             if let hasValue {
+                let mask = OutputMasks.current.mask
+                if pool.contains(where: { $0.isSecure || revealed?.matches($0) == true || mask.revealed?.matches($0) == true }) {
+                    return .refused(Self.passwordRefusal(query))
+                }
                 let valued = pool.filter { Self.value(of: $0, equals: hasValue) }
                 guard !valued.isEmpty else {
-                    let hidden = revealed?.matches(pool[0]) == true || OutputMasks.current.mask.withholdsValue(of: pool[0])
-                    let labelled = pool.contains { AccessibilityQuery.label(hasValue).matches($0) }
+                    let hidden = revealed?.matches(pool[0]) == true || mask.withholdsValue(of: pool[0])
+                    let labelled = pool.contains { node in
+                        AccessibilityQuery.label(hasValue).matches(node) && !(node.label.map { mask.hidesLabel($0, id: node.normalizedID) } ?? false)
+                    }
                     let hint = labelled ? "; '\(hasValue)' is its label: use --label '\(hasValue)'" : ""
                     if hidden, pool[0].normalizedValue != nil {
                         return absent("does not match '\(hasValue)': its value is masked, so it is not shown\(hint)")
@@ -203,6 +209,14 @@ struct ElementSelectorOptions: ParsableArguments {
             }
             return .present(pool.count == 1 ? pool[0] : nil)
         }
+    }
+
+    /// The same for every password field, shown or revealed, and every text, so it tells nothing of what the field holds.
+    static func passwordRefusal(_ query: AccessibilityQuery) -> SelectorRefusal {
+        SelectorRefusal(
+            "\(query.selectorDescription) is a password field, so --has-value cannot check it: Offsider never compares a password field's text, shown or hidden. Check what it leads to instead, such as the next screen.",
+            hint: "offsider describe-ui --summary --device <DEVICE_ID>"
+        )
     }
 
     /// The control among several matches, as a tap chooses: an actionable match over plain text, then of those nested in each other the deepest, which a touch reaches; with no control, the outermost.

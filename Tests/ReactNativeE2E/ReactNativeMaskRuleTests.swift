@@ -54,8 +54,9 @@ struct ReactNativeMaskRuleTests {
         #expect(try await !app.run("describe-ui").stdout.contains(Self.password))
 
         let miss = try await app.offsider("assert --id mask-rule-test-password --has-value nope")
-        #expect(miss.exitCode != 0)
-        #expect(miss.stderr.contains("its value is masked"), "\(miss.stderr)")
+        let right = try await app.offsider("assert --id mask-rule-test-password --has-value \(Self.password)")
+        #expect(miss.exitCode == 64 && right.exitCode == 64)
+        #expect(miss.stderr.contains("is a password field, so --has-value cannot check it"), "\(miss.stderr)")
         #expect(!(miss.stdout + miss.stderr).contains(Self.password))
         try Self.expectTreeCacheHolds(none: [Self.password])
 
@@ -120,7 +121,7 @@ struct ReactNativeMaskRuleTests {
             )
 
             let summary = try await Self.runIn(directory, "describe-ui --summary", platform: platform).stdout
-            #expect(summary.contains("Balance [redacted] Details"), "\(summary)")
+            #expect(summary.contains(#""[redacted]" id=mask-rule-test-balance-row"#), "the row that copies the amount is hidden whole: \(summary)")
             #expect(!summary.contains(Self.amount), "\(summary)")
             #expect(!summary.contains(Self.holder), "\(summary)")
 
@@ -131,7 +132,8 @@ struct ReactNativeMaskRuleTests {
             let shot = directory.appendingPathComponent("nested.png").path
             let capture = try await Self.runIn(directory, "screenshot --scale points --json --output \(AndroidE2E.quote(shot))", platform: platform)
             let report = try JSONDecoder().decode(ReactNativeEvidenceTests.Shot.self, from: Data(capture.stdout.utf8))
-            #expect(report.maskedBy?["id"] == 2, "\(capture.stdout)")
+            #expect((report.maskedBy?["rules"] ?? 0) >= 2 && report.maskedBy?["id"] == nil, "\(capture.stdout)")
+            #expect(try Self.isBlack(at: try await app.frame(of: "mask-rule-test-balance-row"), in: shot), "the row that copies the amount was left unpainted")
             #expect(try Self.isBlack(at: try await app.frame(of: "mask-rule-test-balance-amount"), in: shot), "the nested amount was left unmasked")
             #expect(try Self.isBlack(at: try await app.frame(of: "mask-rule-test-card-holder"), in: shot), "text nested in the masked card was left unmasked")
         }
@@ -148,7 +150,7 @@ struct ReactNativeMaskRuleTests {
             let recording = try await Self.recordVideo(to: video, in: directory, platform: platform)
 
             #expect(recording.exitCode == 1, "\(recording.stderr)")
-            #expect(recording.stderr.contains("which offsider.mask.json masks"), "\(recording.stderr)")
+            #expect(recording.stderr.contains("something offsider.mask.json masks"), "\(recording.stderr)")
             #expect(!FileManager.default.fileExists(atPath: video), "a refused recording wrote a file")
         }
     }

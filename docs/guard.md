@@ -85,5 +85,6 @@ Each takes `--json`, and `--project <dir>` to look somewhere other than the work
 - A rule by label misses a button whose copy changes, so prefer ids. `guard check --device` on each guarded screen shows a rule that no longer matches.
 - Return and Enter are judged; Space on a control that holds keyboard focus is not, as Space is also plain typing. Guard such a control's screen with a whole-screen rule if keyboard focus can reach it.
 - The approvals are sealed against edits, as the device allow-list is. Anything that can run commands as you can delete both the file and its Keychain seal, which leaves the app `unapproved` or `missing`, never quietly looser rules under `ready`.
+- A rule matches a control's real label, even one a mask hides, so a masked control stays guarded; as an agent may add a rule, a refused tap can confirm a guess about a masked label.
 - A guard governs Offsider's input only. Raw `adb` or `devicectl` input goes around it, and `offsider init`'s permission rules make an agent ask before running either.
 - With rules in force, each input reads the screen before it is sent, reusing a tree the same command read in the last 1.5 s. With no rules, nothing more is read from the device.
