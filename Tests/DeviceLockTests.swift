@@ -54,6 +54,28 @@ private func process(_ pid: pid_t, holds path: String) -> Bool {
     }
 }
 
+/// True once `condition` holds, read every 5 ms for up to `limit`: a child just spawned can take a moment to show its descriptors and its image.
+private func eventually(within limit: Duration = .seconds(2), _ condition: () -> Bool) async -> Bool {
+    let deadline = ContinuousClock.now + limit
+    while !condition() {
+        guard ContinuousClock.now < deadline else { return false }
+        try? await Task.sleep(for: .milliseconds(5))
+    }
+    return true
+}
+
+/// How many descriptors `pid` lists, as libproc reports them; a child inherits at least its standard ones.
+private func descriptorCount(of pid: pid_t) -> Int {
+    max(0, Int(proc_pidinfo(pid, PROC_PIDLISTFDS, 0, nil, 0))) / MemoryLayout<proc_fdinfo>.stride
+}
+
+/// The executable `pid` runs, as libproc reports it.
+private func executable(of pid: pid_t) -> String? {
+    var buffer = [CChar](repeating: 0, count: Int(MAXPATHLEN))
+    guard proc_pidpath(pid, &buffer, UInt32(buffer.count)) > 0 else { return nil }
+    return String(cString: buffer)
+}
+
 private final class FakeLockClock: @unchecked Sendable {
     private let lock = NSLock()
     private let start = ContinuousClock.now
@@ -236,7 +258,8 @@ struct DeviceLockTests {
 
         let pid = try spawnSleep()
         defer { reap(pid) }
-        #expect(kill(pid, 0) == 0)
+        // A read before the child runs /bin/sleep and lists its descriptors proves nothing, so the check waits for both.
+        try #require(await eventually { executable(of: pid) == "/bin/sleep" && descriptorCount(of: pid) > 0 })
         #expect(!process(pid, holds: lock.path))
     }
 
@@ -250,7 +273,7 @@ struct DeviceLockTests {
         // As a child mid-posix_spawn on another thread shares it until its exec; this one shares it for its life.
         let pid = try spawnSleep(inheriting: shared)
         defer { reap(pid) }
-        #expect(process(pid, holds: lock.path))
+        try #require(await eventually { process(pid, holds: lock.path) })
 
         lock.release()
         let again = try await DeviceLock.acquire(key, command: "swipe", wait: nil, root: root)
