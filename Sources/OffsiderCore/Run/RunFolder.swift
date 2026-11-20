@@ -55,12 +55,42 @@ public struct RunFolder: Equatable, Sendable {
         public var errorDescription: String? { "\(path) \(detail)" }
     }
 
-    /// The folder a run record names, only while it is an absolute, standardised path to a real directory this user owns that no one else
-    /// can write, holding a private `run.json` for the same run (same label, started no later than the record).
+    /// `path` (absolute) with the links above its last component resolved; a link at the last component stays for `lstat` to refuse.
+    public static func resolvingParents(_ path: String) -> String {
+        let name = (path as NSString).lastPathComponent
+        let parent = (path as NSString).deletingLastPathComponent
+        guard parent != path else { return path }
+        switch name {
+        case ".":
+            return resolvingParents(parent)
+        case "..":
+            return resolvingParents((canonical(parent) as NSString).deletingLastPathComponent)
+        default:
+            return (canonical(parent) as NSString).appendingPathComponent(name)
+        }
+    }
+
+    /// Every link resolved by `realpath`, never Foundation, which drops `/private` only once a path exists; missing components stay as written.
+    public static func canonical(_ path: String) -> String {
+        if let real = DeveloperDirectoryTrust.realPath(path) { return real }
+        let parent = (path as NSString).deletingLastPathComponent
+        guard parent != path else { return path }
+        let base = canonical(parent)
+        switch (path as NSString).lastPathComponent {
+        case ".", "":
+            return base
+        case "..":
+            return (base as NSString).deletingLastPathComponent
+        case let name:
+            return (base as NSString).appendingPathComponent(name)
+        }
+    }
+
+    /// The recorded folder while it has no link or `..` in its path, is this user's alone and holds this run's private `run.json`.
     public static func validateRecorded(_ record: RunRecord, uid: uid_t = getuid()) throws -> RunFolder {
         let path = record.dir
-        guard path.hasPrefix("/"), URL(fileURLWithPath: path).standardizedFileURL.path == path else {
-            throw RecordedFolderError(path: path, detail: "is not an absolute, standardised path")
+        guard path.hasPrefix("/"), resolvingParents(path) == path else {
+            throw RecordedFolderError(path: path, detail: "passes through a link or a `..`, so it may not be the folder the run started in")
         }
         var info = stat()
         guard unsafe lstat(path, &info) == 0 else {

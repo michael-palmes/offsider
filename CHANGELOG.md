@@ -72,6 +72,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Fixed
 
+- An evidence run started in a folder reached through a link, such as `/tmp`, `/private/tmp` or the user temp folder, now records. Before, every capture skipped that run without a word and lost its email and id masks; the same happened after its folder was replaced, opened to other users or emptied of `run.json`. Now every command that records into the run (`screenshot`, `logs`, `batch`, `alert`, `login --fill`, `app prefs`, a swipe's screenshots) and every video start refuses with `run_unavailable` and the fix in one line, `run stop` still ends such a run without touching its folder, and `run start` refuses a folder other users can write. Present since 0.12.0.
+- After upgrading, stop and start again any evidence run an earlier Offsider started under `/tmp` or the user temp folder (`offsider run stop`, then `offsider run start <dir>`): until then its captures refuse.
 - `wait --settled` on an iOS simulator, after an input that changed the tree, also waits up to 2 s for the pixels to hold still, as on Android. A sheet UIKit slides in lists its final frame in the tree at once, so a fast read passed mid-slide and the next tap was dropped.
 - A simulator whose accessibility does not answer yet, just after a boot or a launch, gets about 2 s to answer however fast a failed read is (two tries 1 s apart, a third when both failed at once), instead of two tries.
 - `button home --verify` on an iOS simulator returns once a read of the front app finds SpringBoard, not only once SpringBoard answers at the screen's centre, so a `describe-ui` straight after no longer lists the app that is leaving.

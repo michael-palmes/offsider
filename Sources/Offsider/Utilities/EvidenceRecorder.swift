@@ -42,8 +42,7 @@ final class EvidenceRecorder {
     /// The arguments after the command path, before redaction.
     let arguments: [String]
 
-    private var resolved = false
-    private var cachedRun: ActiveRun?
+    private var lookup: Result<ActiveRun?, any Error>?
     private var notedEndedRun = false
     private var pending: [Int: Entry] = [:]
     private var nextID = 0
@@ -61,18 +60,13 @@ final class EvidenceRecorder {
         recordingCommands.contains(command) || command.hasPrefix("run ")
     }
 
-    /// The caller's run, found once; a run that cannot be found is no run, but an `OFFSIDER_RUN` folder that cannot be used is an error.
+    /// The caller's run, found once; a run that cannot be read is an error, never no run, so no capture drops its masks.
     func run() throws -> ActiveRun? {
         guard let environment else { return nil }
-        if !resolved {
-            resolved = true
-            switch environment.override {
-            case .folder: cachedRun = try RunRegistry.active(in: environment)
-            case .off: noteRunOff(in: environment)
-            case .none: cachedRun = try? RunRegistry.active(in: environment)
-            }
-        }
-        return cachedRun
+        if lookup == nil, case .off = environment.override { noteRunOff(in: environment) }
+        let result = lookup ?? Result { try RunRegistry.active(in: environment) }
+        lookup = result
+        return try result.get()
     }
 
     /// Once per process, so `OFFSIDER_RUN=off` never drops a capture from a run without a word; reads the records only when there are any.
@@ -93,9 +87,9 @@ final class EvidenceRecorder {
         )
     }
 
-    /// The run's masks, added to every capture's own.
-    var defaultMasks: MaskPlan? {
-        guard let masks = (try? run())??.masks, !masks.isEmpty else { return nil }
+    /// The run's masks, added to every capture's own; throws when the run cannot be read.
+    func defaultMasks() throws -> MaskPlan? {
+        guard let masks = try run()?.masks, !masks.isEmpty else { return nil }
         return masks.plan
     }
 

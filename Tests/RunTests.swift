@@ -40,8 +40,9 @@ final class RunFixture {
     }
     static let timeZone = TimeZone(secondsFromGMT: 34_200)!
 
+    /// Under the user temp directory as a run records it, links resolved (`/private/var/...`), so `folder()` reads as the run's own path.
     init() throws {
-        root = (NSTemporaryDirectory() as NSString).appendingPathComponent("offsider-run-test-\(UUID().uuidString)")
+        root = (RunFolder.canonical(NSTemporaryDirectory()) as NSString).appendingPathComponent("offsider-run-test-\(UUID().uuidString)")
         runsDirectory = try OffsiderPrivateDirectory.ensureSubdirectory("runs", root: root)
     }
 
@@ -92,7 +93,7 @@ struct RunTests {
 
     static func screenshot(_ arguments: [String], on backend: FakeDeviceBackend) async throws -> ScreenshotReport {
         let command = try Screenshot.parse(arguments + ["--device", device.rawValue])
-        let masks = command.masksWithRunDefaults(try command.maskPlan(environment: ["OFFSIDER_MASK_SECURE": "0"]))
+        let masks = try command.masksWithRunDefaults(try command.maskPlan(environment: ["OFFSIDER_MASK_SECURE": "0"]))
         return try await command.take(try command.request(), on: DeviceRouter.Route(backend: backend, device: device), masks: masks)
     }
 
@@ -154,6 +155,117 @@ struct RunTests {
         let error = #expect(throws: CLIError.self) { _ = try RunRegistry.active(in: fixture.environment()) }
         #expect(error?.reason == .runUnavailable)
         #expect(error?.errorDescription?.contains("offsider run stop") == true)
+    }
+
+    // MARK: - Folder spellings and failing closed
+
+    static func emailBackend() throws -> FakeDeviceBackend {
+        try screenshotBackend([FakeUI.node(.text, id: "profile-email", label: "e2e@example.com", frame: FakeUI.frame(16, 100, 200, 40))])
+    }
+
+    @Test("a run records and masks whichever spelling started it: /private written out, a link above it, or a folder inside a linked one", arguments: ["private", "var", "linked-folder"])
+    func folderSpellingsRecord(spelling: String) async throws {
+        let fixture = try RunFixture()
+        #expect(fixture.root.hasPrefix("/private/var/"), "the user temp directory sits behind the /var link")
+        let real = fixture.folder("real")
+        try FileManager.default.createDirectory(atPath: real, withIntermediateDirectories: true)
+        try FileManager.default.createSymbolicLink(atPath: fixture.folder("linked"), withDestinationPath: real)
+        let evidence = real + "/evidence"
+        let throughVar = String(evidence.dropFirst("/private".count))
+        let spellings = ["private": (evidence, throughVar), "var": (throughVar, evidence), "linked-folder": (fixture.folder("linked") + "/evidence", evidence)]
+        let (first, second) = try #require(spellings[spelling])
+
+        _ = try fixture.start(first, masks: RunMasks(emails: true))
+        #expect(try fixture.start(second).unchanged, "another spelling of the same folder is the same run, not run_active")
+        var report: ScreenshotReport?
+        try await fixture.command(fixture.recorder("screenshot")) { report = try await Self.screenshot([], on: try Self.emailBackend()) }
+
+        #expect(report?.path?.hasPrefix(evidence + "/001-screenshot-") == true, "\(report?.path ?? "no path")")
+        #expect(report?.maskedBy == [.rules: 1], "the run's email mask painted the address")
+        #expect(fixture.manifest(evidence).map(\.n) == [1])
+    }
+
+    @Test("a run folder that is itself a link is refused at start, wherever it points and however it is spelt", arguments: ["", "/", "/.", "/../linked"])
+    func linkAsRunFolderRefused(suffix: String) throws {
+        let fixture = try RunFixture()
+        let real = fixture.folder("real")
+        try FileManager.default.createDirectory(atPath: real, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+        try FileManager.default.createSymbolicLink(atPath: fixture.folder("linked"), withDestinationPath: real)
+
+        let error = #expect(throws: CLIError.self) { try fixture.start(fixture.folder("linked") + suffix) }
+        #expect(error?.reason == .runUnavailable)
+        #expect(try RunRegistry.active(in: fixture.environment()) == nil)
+    }
+
+    @Test("run start and run stop never write into a run folder swapped for a link, and after the stop a new run starts")
+    func untrustedFolderUntouchedByStartAndStop() throws {
+        let fixture = try RunFixture()
+        _ = try fixture.start(label: "mine")
+        let moved = fixture.folder("moved")
+        try FileManager.default.moveItem(atPath: fixture.folder(), toPath: moved)
+        try FileManager.default.createSymbolicLink(atPath: fixture.folder(), withDestinationPath: moved)
+        let before = try Data(contentsOf: URL(fileURLWithPath: RunFolder(path: moved).file(RunFolder.stateName)))
+
+        let error = #expect(throws: CLIError.self) { try fixture.start(masks: RunMasks(ids: ["card"])) }
+        #expect(error?.reason == .runUnavailable)
+        #expect(try RunRegistry.stop(in: fixture.environment()) != nil)
+        #expect(try Data(contentsOf: URL(fileURLWithPath: RunFolder(path: moved).file(RunFolder.stateName))) == before)
+        #expect(!(try fixture.start(fixture.folder("fresh")).unchanged))
+    }
+
+    @Test("a capture whose run folder can no longer be trusted refuses with run_unavailable and its fix, with or without --output, and writes nothing", arguments: ["link", "group-writable", "no-state"])
+    func untrustedRunFailsClosed(change: String) async throws {
+        let fixture = try RunFixture()
+        _ = try fixture.start(label: "mine", masks: RunMasks(emails: true))
+        let folder = fixture.folder()
+        switch change {
+        case "link":
+            let moved = fixture.folder("moved")
+            try FileManager.default.moveItem(atPath: folder, toPath: moved)
+            try FileManager.default.createSymbolicLink(atPath: folder, withDestinationPath: moved)
+        case "group-writable":
+            chmod(folder, 0o770)
+        default:
+            unlink(RunFolder(path: folder).file(RunFolder.stateName))
+        }
+        let output = ScreenshotMaskTests.temporaryPath()
+        defer { try? FileManager.default.removeItem(atPath: output) }
+
+        for arguments in [[], ["--output", output]] {
+            let error = await #expect(throws: CLIError.self, "\(arguments)") {
+                try await fixture.command(fixture.recorder("screenshot")) { _ = try await Self.screenshot(arguments, on: try Self.emailBackend()) }
+            }
+            #expect(error?.reason == .runUnavailable)
+            #expect(error?.errorDescription?.contains("offsider run stop") == true, "\(error?.errorDescription ?? "")")
+        }
+        #expect(!FileManager.default.fileExists(atPath: output), "nothing may be written without the run's masks")
+    }
+
+    @Test("video refuses while this session's run cannot be read, instead of recording without its email mask")
+    func untrustedRunRefusesVideo() async throws {
+        let fixture = try RunFixture()
+        _ = try fixture.start(masks: RunMasks(emails: true))
+        chmod(fixture.folder(), 0o770)
+        let options = try VideoMaskOptions.parse([])
+
+        let error = await #expect(throws: CLIError.self) {
+            try await fixture.command(fixture.recorder("record-video")) { _ = try options.requireMaskable(command: "record-video", environment: [:]) }
+        }
+        #expect(error?.reason == .runUnavailable)
+    }
+
+    @Test("a session's run refuses at start a folder other users can write, naming chmod, while OFFSIDER_RUN still only flags it")
+    func sharedFolderRefusedAtStart() throws {
+        let fixture = try RunFixture()
+        let shared = fixture.folder("shared")
+        try FileManager.default.createDirectory(atPath: shared, withIntermediateDirectories: true)
+        chmod(shared, 0o777)
+
+        let error = #expect(throws: CLIError.self) { try fixture.start(shared) }
+        #expect(error?.reason == .runUnavailable)
+        #expect(error?.errorDescription?.contains("chmod go-w") == true, "\(error?.errorDescription ?? "")")
+        #expect(try RunRegistry.active(in: fixture.environment()) == nil)
+        #expect(try fixture.start(shared, variables: ["OFFSIDER_RUN": shared]).writableByOthers)
     }
 
     @Test("a pid reused by another process is not the run's owner")
@@ -674,7 +786,7 @@ struct RunTests {
         for arguments in [["--mask-skip-beneath"], []] {
             try await fixture.command(fixture.recorder("screenshot", arguments: arguments)) {
                 let command = try Screenshot.parse(arguments + ["--device", device.rawValue])
-                let masks = command.masksWithRunDefaults(try command.maskPlan(environment: [:]))
+                let masks = try command.masksWithRunDefaults(try command.maskPlan(environment: [:]))
                 reports.append(try await command.take(try command.request(), on: DeviceRouter.Route(backend: backend, device: device), masks: masks))
             }
         }
