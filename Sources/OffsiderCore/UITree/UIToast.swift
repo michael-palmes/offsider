@@ -21,15 +21,15 @@ public struct UIToast: Equatable, Sendable {
         self.ageMs = ageMs
     }
 
-    /// As output shows it: a masked label hidden, else secrets and `mask`'s patterns redacted; `count` adds one per value hidden.
+    /// As output shows it: a masked label hidden, a text `mask`'s patterns touch hidden whole, else secrets redacted; `count` adds one per value hidden.
     public func redacted(_ mask: TreeValueMask, count: inout Int) -> UIToast {
         var copy = self
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         if mask.hides(id: nil, label: trimmed) {
-            copy.text = mask.maskedLabel(text)
+            copy.text = mask.maskedLabel(text, id: nil)
             if copy.text != text { count += 1 }
         } else {
-            copy.text = UITree.redactText(text, mask: mask, count: &count)
+            copy.text = UITree.redactText(text, mask: mask, count: &count, whole: true)
         }
         return copy
     }

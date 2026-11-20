@@ -335,7 +335,8 @@ enum ScreenCapture {
         var recalled: [String] = []
         var skippedRemembered: [MaskKind: Int] = [:]
         if case .found(let found) = remembered {
-            for (kind, frames) in found.frames {
+            for (found, frames) in found.frames {
+                let kind = found.foldsIntoRules ? MaskKind.rules : found
                 // A remembered element sits on the screen the modal covers, so --mask-skip-beneath leaves it as it leaves one beneath a page.
                 if plan.skipsBeneath, kind.skippableBeneath {
                     skippedRemembered[kind, default: 0] += frames.count
