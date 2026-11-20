@@ -265,6 +265,8 @@ public struct DoctorPolicy: Codable, Equatable, Sendable {
     public let allowed: Bool
     /// `not_allowed`, `expired`, `managed_off` and the other `DeviceRefusal` codes; nil when allowed.
     public let refusal: String?
+    /// The managed key behind a managed refusal, such as `allowedDeviceIDs`; nil otherwise.
+    public let key: String?
     public let expires: String?
     public let apps: [String]
     public let managed: Bool
@@ -277,11 +279,13 @@ public struct DoctorPolicy: Codable, Equatable, Sendable {
         case .allowed(let entry):
             allowed = true
             refusal = nil
+            self.key = nil
             expires = entry.expires.map(ProcessStamp.timestamp)
             apps = entry.apps
         case .refused(let why):
             allowed = false
             refusal = why.code
+            self.key = why.managedKey
             expires = nil
             apps = []
         }
@@ -293,6 +297,7 @@ public struct DoctorPolicy: Codable, Equatable, Sendable {
         try container.encode(id, forKey: .id)
         try container.encode(allowed, forKey: .allowed)
         try container.encode(refusal, forKey: .refusal)
+        try container.encode(key, forKey: .key)
         try container.encode(expires, forKey: .expires)
         try container.encode(apps, forKey: .apps)
         try container.encode(managed, forKey: .managed)
@@ -304,7 +309,8 @@ public struct DoctorPolicy: Codable, Equatable, Sendable {
             return DoctorCheckResult(id: .devicePolicy, status: .pass, detail: "\(id) is allowed\(expires.map { " until \($0)" } ?? " until removed")\(apps.isEmpty ? "" : " for \(apps.joined(separator: ", "))")")
         }
         if refusal?.hasPrefix("managed") == true {
-            return DoctorCheckResult(id: .devicePolicy, status: .fail, detail: "\(id) is blocked by managed policy on this Mac; the allow-list cannot override it", hint: "Ask the administrator of this Mac.")
+            let reason = refusal.flatMap { DeviceRefusal.managed(code: $0, key: key) }?.explanation ?? "your organisation's policy blocks it"
+            return DoctorCheckResult(id: .devicePolicy, status: .fail, detail: "\(id) is blocked: \(reason); the allow-list cannot override it", hint: "Ask the administrator of this Mac.")
         }
         if refusal == "newer_entry" {
             return DoctorCheckResult(

@@ -102,6 +102,8 @@ enum AppGuard {
         var signedIn: @MainActor @Sendable (_ app: String, _ device: String) -> String?
         /// Whether a person chose this physical device as a test device; simulators and emulators never ask it.
         var isTestDevice: @MainActor @Sendable (DeviceID) -> Bool?
+        /// Why managed policy keeps a test device a person chose from being driven whole, naming the key; nil otherwise.
+        var testDeviceOff: @MainActor @Sendable (DeviceID) -> String? = { _ in nil }
 
         static let live = Environment(
             confirm: { try await PersonPresence.confirm(reason: $0) },
@@ -109,6 +111,10 @@ enum AppGuard {
             isTestDevice: { device in
                 guard let allowance = CommandScope.current.routes.last(where: { $0.device == device })?.allowance else { return nil }
                 return DevicePolicyGate.current.policy().drivesWhole(allowance)
+            },
+            testDeviceOff: { device in
+                guard let allowance = CommandScope.current.routes.last(where: { $0.device == device })?.allowance else { return nil }
+                return DevicePolicyGate.current.policy().testDeviceOff(allowance)
             }
         )
     }
@@ -276,8 +282,9 @@ enum AppGuard {
             )
         }
         if environment.isTestDevice(device) == false {
+            let why = environment.testDeviceOff(device).map { "\($0), so on this phone the tap is theirs. Offsider sent nothing. Ask the administrator of this Mac to change it." }
             throw CLIError(
-                errorDescription: "\(what), which asks a person first, and on a phone that is not a test device the tap is theirs. Offsider sent nothing.",
+                errorDescription: "\(what), which asks a person first, and \(why ?? "on a phone that is not a test device the tap is theirs. Offsider sent nothing.")",
                 reason: .guardedControl, ask: yours
             )
         }

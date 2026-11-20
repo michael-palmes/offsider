@@ -42,7 +42,7 @@ offsider assert --id <id> --has-value <text> --device <DEVICE_ID>
 - One agent per device: input commands lock it; exit 8 (`device_busy`): wait, or rerun with `--wait-lock <seconds>`; never resend in a loop or kill the holder (`guide errors`).
 - Screenshots are in pixels; taps and frames in points (dp on Android). `screenshot --scale points` matches them.
 - `appearance`, `content-size`, `orientation`, `permission`, `status-bar`, `biometric`, `stay-awake`, `posture` and `airplane` stay changed: read first, set back when done; permission prompt: `alert show|accept|deny --app <id>` (`guide device-state`).
-- A physical iPhone or iPad works over USB only, unlocked, with UI Automation on, inside one app: pass `--app` to every screen command (not on a test device). Input starts a background session: run `offsider session stop --device <UDID> --clean` when done (`guide ios-device`).
+- A physical iPhone or iPad works over USB only, unlocked, with UI Automation on, inside one app: pass `--app` to every screen command (not on a test device). Input starts a session: `session stop --device <UDID>` after each check, `--clean` when done for good (`guide ios-device`).
 - React Native debug builds: `rn open` (Metro, `--restart`), `rn logbox status|open|dismiss` (`--index n`), `rn devmenu` (also a batch step), `logs --rn --app <id>` (`guide react-native`). `logs` reads the project's app, `--all` every app.
 - Keyboard in the way: `keyboard hide` (`guide selectors`).
 - Screen off or locked: `wake --device <DEVICE_ID>`; exit 7 `device_locked` means a passcode or PIN: ask the user to unlock.

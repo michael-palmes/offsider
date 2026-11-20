@@ -658,7 +658,7 @@ struct DeviceAccessAllow: AsyncParsableCommand {
         var current: DeviceAllowance?
         if case .allowed(let entry) = policy.decision(platform: row.platform, key: key, now: context.now()) { current = entry }
         if testDevice, let off = policy.managed.testDeviceRefusal {
-            throw CLIError(errorDescription: "\(off), so \(key) cannot be a test device. Nothing was saved.", reason: .appNotAllowed)
+            throw CLIError(errorDescription: "\(ManagedRefusalText.sentence(off)) \(key) cannot be a test device, so nothing was saved.", reason: .appNotAllowed)
         }
         let chosenPrefix = row.platform == .ios ? try Self.runnerPrefix(flag: flagPrefix, environment: context.environment(), current: current?.runnerPrefix) : nil
         var teams: [SigningTeam] = []
@@ -1057,7 +1057,7 @@ struct DeviceAccessAllow: AsyncParsableCommand {
             return "\(why)."
         }
         if let ceiling = policy.managed.allowedBundleIDs, !ceiling.contains(app) {
-            return "Managed policy on this Mac does not list \(app), and the allow-list cannot override it."
+            return ManagedRefusalText.sentence(ManagedRefusalText.appNotListed(app))
         }
         return nil
     }

@@ -197,6 +197,40 @@ struct OutputProfileTests {
 
 @Suite("Unmasked capture consent", .serialized)
 struct UnmaskedConsentTests {
+    @Test("--unmasked on a video needs a person for an agent, refused without a terminal; a person at a terminal is not asked")
+    func videoUnmaskedNeedsPerson() async throws {
+        defer { UnmaskedConsent.confirmed = false }
+        for command in ["record-video", "stream-video"] {
+            UnmaskedConsent.confirmed = false
+            let unmasked = try VideoMaskOptions.parse(["--unmasked"])
+            let nobody = FakePresence()
+            let refused = await #expect(throws: CLIError.self) {
+                try await PersonPresence.$terminal.withValue({ false }) {
+                    try await PersonPresence.$current.withValue(nobody) { try await unmasked.confirmUnmasked(command: command, profile: .agent) }
+                }
+            }
+            #expect(refused?.reason == .personRequired)
+            #expect(refused?.failureMessage.hasPrefix("\(command) --unmasked can show password fields, so it needs a person") == true)
+            #expect(nobody.reasons.isEmpty)
+
+            let person = FakePresence()
+            try await PersonPresence.$terminal.withValue({ true }) {
+                try await PersonPresence.$current.withValue(person) { try await unmasked.confirmUnmasked(command: command, profile: .agent) }
+            }
+            #expect(person.reasons == ["\(command) with password fields unmasked"])
+
+            UnmaskedConsent.confirmed = false
+            let unasked = FakePresence()
+            try await PersonPresence.$terminal.withValue({ false }) {
+                try await PersonPresence.$current.withValue(unasked) {
+                    try await unmasked.confirmUnmasked(command: command, profile: .person)
+                    try await VideoMaskOptions.parse([]).confirmUnmasked(command: command, profile: .agent)
+                }
+            }
+            #expect(unasked.reasons.isEmpty)
+        }
+    }
+
     @Test("an agent's --no-mask-secure is refused without a terminal, asks a person on one, and a person at a terminal is never asked")
     func consent() async throws {
         UnmaskedConsent.confirmed = false

@@ -1,6 +1,6 @@
 import Foundation
 
-/// What `credential` prints. Only `set` and `status <name>` show a username. The password never is, and the JSON has no password field.
+/// What `credential` prints. Only `set` and `status <name>` for a person show a username. The password never is, and the JSON has no password field.
 public struct CredentialReport: Equatable, Sendable {
     public static let version = 2
 
@@ -8,6 +8,8 @@ public struct CredentialReport: Equatable, Sendable {
     public var app: String
     public var key: String?
     public var username: String?
+    /// `status <name>` run by an agent: the login is saved, and its username is not shown or decrypted.
+    public var usernameHidden: Bool
     /// Whether a credential is saved after the command. A remove leaves this false.
     public var saved: Bool
     /// True when `remove` deleted an item. The password is not involved.
@@ -47,6 +49,7 @@ public struct CredentialReport: Equatable, Sendable {
         app: String,
         key: String? = nil,
         username: String? = nil,
+        usernameHidden: Bool = false,
         saved: Bool,
         removed: Bool = false,
         listed: [LoginEntry] = [],
@@ -69,6 +72,7 @@ public struct CredentialReport: Equatable, Sendable {
         self.app = app
         self.key = key
         self.username = username
+        self.usernameHidden = usernameHidden
         self.saved = saved
         self.removed = removed
         self.listed = listed
@@ -140,6 +144,8 @@ public struct CredentialReport: Equatable, Sendable {
             let first: String
             if !filter.isEmpty {
                 first = "\(heading) \(shown)\(isDefault ? " (default)" : "") matches --where \(filter.map(\.rawValue).joined(separator: " "))"
+            } else if usernameHidden {
+                first = "\(heading) \(shown)\(isDefault && key != LoginCredential.defaultAccountKey ? " (default)" : "")\n  username: hidden"
             } else if key == LoginCredential.defaultAccountKey {
                 first = "\(heading) default: \(username ?? "")"
             } else {
@@ -201,6 +207,7 @@ public struct CredentialReport: Equatable, Sendable {
         guard saved else { return OrderedJSON.object(fields).rendered(compact: true) }
         fields.append(("default", .bool(isDefault)))
         if let username { fields.append(("username", .string(username))) }
+        if usernameHidden { fields.append(("usernameHidden", .bool(true))) }
         if let context { fields += Self.contextFields(context) }
         if action == "status" {
             fields.append(("signedIn", Self.signInsJSON(key.flatMap { signIns[$0] } ?? [])))

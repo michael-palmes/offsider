@@ -610,7 +610,8 @@ struct LoginCommand: AsyncParsableCommand {
     /// Browsers and system apps are never signed in to.
     static func refuseDeniedApp(_ app: String, platform: DevicePlatform) throws {
         guard let refusal = SystemAppDenyList.refusal(app, platform: platform) else { return }
-        throw CLIError(errorDescription: "\(refusal). Nothing was typed. Bring the app under test to the front.", reason: .appNotAllowed)
+        let next = SystemAppDenyList.category(of: app, platform: platform) == .managedUnreadable ? "Ask the administrator of this Mac." : "Bring the app under test to the front."
+        throw CLIError(errorDescription: "\(refusal). Nothing was typed. \(next)", reason: .appNotAllowed)
     }
 
     /// A joined app id types a login only once a person confirmed the link, which `join` writes into the encrypted data.

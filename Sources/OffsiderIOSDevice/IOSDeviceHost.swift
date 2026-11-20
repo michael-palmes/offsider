@@ -43,7 +43,9 @@ public struct XcrunDevicectl: DevicectlRunning {
             path = variable
             source = "DEVELOPER_DIR"
         } else {
-            let result = try await ProcessCapture.run(executable: "/usr/bin/xcode-select", arguments: ["-p"], environment: environment, timeout: 5)
+            let result = try await ProcessCapture.run(
+                executable: "/usr/bin/xcode-select", arguments: ["-p"], environment: ChildEnvironment.make(.appleTool, from: environment), timeout: 5
+            )
             path = result.stdout.trimmingCharacters(in: .whitespacesAndNewlines)
             source = "xcode-select"
             guard result.status == 0, !path.isEmpty else {
@@ -61,7 +63,7 @@ public struct XcrunDevicectl: DevicectlRunning {
         } catch let error as UntrustedDeveloperDirectory {
             throw IOSDeviceError(.xcodeUntrusted, error.failureMessage, hint: error.hint)
         }
-        let plist = NSDictionary(contentsOf: URL(fileURLWithPath: trusted.resolved).deletingLastPathComponent().appendingPathComponent("version.plist"))
+        let plist = UntrustedRead.propertyList(atPath: URL(fileURLWithPath: trusted.resolved).deletingLastPathComponent().appendingPathComponent("version.plist").path)
         return XcodeLocation(
             developerDirectory: trusted.resolved,
             source: source,

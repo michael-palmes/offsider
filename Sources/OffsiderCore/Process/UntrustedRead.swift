@@ -57,4 +57,10 @@ public enum UntrustedRead {
     public static func contents(atPath path: String, maxBytes: Int = defaultMaxBytes, truncate: Bool = false) -> Data? {
         try? data(atPath: path, maxBytes: maxBytes, truncate: truncate)
     }
+
+    /// A property list whose root is a dictionary, such as an app's `Info.plist`; nil when it is refused, missing or not a dictionary.
+    public static func propertyList(atPath path: String, maxBytes: Int = defaultMaxBytes) -> [String: Any]? {
+        guard let data = contents(atPath: path, maxBytes: maxBytes) else { return nil }
+        return unsafe (try? PropertyListSerialization.propertyList(from: data, format: nil)) as? [String: Any]
+    }
 }

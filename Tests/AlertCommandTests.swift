@@ -149,6 +149,9 @@ struct AlertCommandTests {
             try AlertCommand.requireDevice(route, gate: DevicePolicyGate.fixed(PhysicalDevicePolicy(managed: managed, list: DeviceAllowList(entries: [entry]))))
         }
         #expect(error?.reason == .personRequired)
+        #expect(error?.userFacingDescription.contains("your organisation does not allow test devices (allowTestDevices)") == true)
+        #expect(error?.userFacingDescription.contains("administrator of this Mac") == true)
+        #expect(error?.userFacingDescription.contains("personal use") == false)
     }
 
     @Test("a simulator and an emulator pass; a test iPhone is not reached yet, and says what to use")
