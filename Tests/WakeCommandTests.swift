@@ -2,6 +2,7 @@ import ArgumentParser
 import Foundation
 import OffsiderAndroid
 import OffsiderCore
+import OffsiderIOSDevice
 import Testing
 @testable import Offsider
 
@@ -103,14 +104,160 @@ struct WakeCommandTests {
         #expect(output == #"{"version":1,"action":"on","device":"ZY22FAKE01","platform":"android","stayAwake":true,"previous":false,"sources":["ac","usb","wireless","dock"],"charging":["ac"],"effective":true,"timeoutCappedByPolicy":false,"screenTimeoutMs":null,"current":{"screen":"on","lockScreen":"hidden","credential":"pin"}}"#)
     }
 
-    @Test("stay-awake, wake and unlock-code refuse an iOS simulator as not supported")
+    @Test("stay-awake and unlock-code refuse an iOS simulator as not supported, and stay-awake names the wake that clears a lock screen")
     func iosRefused() throws {
         let udid = "ABCDEF00-0000-4000-8000-00000000ABCD"
-        for command in ["stay-awake", "wake"] {
-            let error = try #require(throws: CLIError.self) { try StayAwakeCommand.requireAndroid(udid, command: command) }
-            #expect(error.reason == .notSupported)
-        }
+        let error = try #require(throws: CLIError.self) { try StayAwakeCommand.requireAndroid(udid, command: "stay-awake") }
+        #expect(error.reason == .notSupported)
+        #expect(error.userFacingDescription == "stay-awake is Android only: an iOS simulator never sleeps or locks by itself. After `offsider button lock`, `offsider wake --device \(udid)` clears its lock screen.")
         #expect((try #require(throws: CLIError.self) { try UnlockCodeCommand.deviceKey(udid) }).reason == .notSupported)
+    }
+
+    // MARK: wake on an iOS simulator
+
+    static let simulator = DeviceID(rawValue: "00000000-0000-0000-0000-000000000001", platform: .ios)
+    static let dark = SimulatorLockScreen(locked: true, blanked: true)
+    static let lockScreen = SimulatorLockScreen(locked: true, blanked: false)
+    static let unlocked = SimulatorLockScreen(locked: false, blanked: false)
+
+    /// A simulator whose lock screen each Home press moves to the next of `afterPresses`; a press past the list changes nothing.
+    final class SimulatorLockFake: FakeDeviceBackend, SimulatorLockReading {
+        var lock = WakeCommandTests.unlocked
+        var afterPresses: [SimulatorLockScreen] = []
+        var readError: (any Error)?
+        /// Every read after the first press fails, as a notifyutil that stops answering would.
+        var failsAfterPress = false
+        private(set) var pressedAt: [TimeInterval] = []
+
+        func lockScreen(on id: DeviceID) async throws -> SimulatorLockScreen {
+            if let readError { throw readError }
+            if failsAfterPress, !pressedAt.isEmpty { throw CLIError(errorDescription: "no answer", reason: .commandFailed) }
+            return lock
+        }
+
+        func pressed(at time: TimeInterval) {
+            pressedAt.append(time)
+            if !afterPresses.isEmpty { lock = afterPresses.removeFirst() }
+        }
+    }
+
+    @Test("button lock on a simulator waits until the lock screen reads as up, so a wake sent next finds it; a long press, another button or an Android device waits for nothing")
+    func lockPressWaitsForTheLockScreen() async {
+        var clock: TimeInterval = 0
+        var reads = 0
+        let sleep: (Duration) async throws -> Void = { clock += Double($0.components.seconds) + Double($0.components.attoseconds) / 1e18 }
+        // SpringBoard raises the lock state a moment after the press.
+        let rising: (DeviceID) async throws -> SimulatorLockScreen = { _ in
+            reads += 1
+            return clock >= 0.6 ? Self.lockScreen : Self.unlocked
+        }
+        await Button.awaitSimulatorLock(.lock, duration: nil, device: Self.simulator.rawValue, read: rising, sleep: sleep, now: { clock })
+        #expect(clock >= 0.6 && clock < SimulatorWake.lockRise)
+
+        (clock, reads) = (0, 0)
+        await Button.awaitSimulatorLock(.lock, duration: nil, device: Self.simulator.rawValue, read: { _ in reads += 1; return Self.unlocked }, sleep: sleep, now: { clock })
+        #expect(clock >= SimulatorWake.lockRise && clock < SimulatorWake.lockRise + 0.5, "a lock screen that never comes up is waited for once, then left")
+
+        reads = 0
+        await Button.awaitSimulatorLock(.lock, duration: 2, device: Self.simulator.rawValue, read: rising, sleep: sleep, now: { clock })
+        await Button.awaitSimulatorLock(.home, duration: nil, device: Self.simulator.rawValue, read: rising, sleep: sleep, now: { clock })
+        await Button.awaitSimulatorLock(.lock, duration: nil, device: "emulator-5554", read: rising, sleep: sleep, now: { clock })
+        #expect(reads == 0)
+    }
+
+    /// Runs the simulator wake on a scripted clock; each sleep moves it on, and each press is stamped with it.
+    static func wakeSimulator(_ backend: SimulatorLockFake) async throws -> IOSDeviceScreenChange {
+        var clock: TimeInterval = 0
+        backend.session.onPerform = { [unowned backend] _ in backend.pressed(at: clock) }
+        return try await Wake.wakeSimulator(on: backend, device: simulator, sleep: { duration in
+            clock += Double(duration.components.seconds) + Double(duration.components.attoseconds) / 1e18
+        }, now: { clock })
+    }
+
+    static func homePresses(_ backend: FakeDeviceBackend) -> Int {
+        backend.session.calls.filter { $0 == .perform(.shortButtonPress(.home)) }.count
+    }
+
+    @Test("a dark lock screen gets Home twice, the second only once a double press is ruled out, and says what was sent")
+    func simulatorDarkLockScreen() async throws {
+        let backend = SimulatorLockFake(trees: [])
+        backend.lock = Self.dark
+        backend.afterPresses = [Self.lockScreen, Self.unlocked]
+        let change = try await Self.wakeSimulator(backend)
+        #expect(Self.homePresses(backend) == 2)
+        #expect(backend.pressedAt.count == 2 && backend.pressedAt[1] - backend.pressedAt[0] >= SimulatorWake.gap)
+        let view = Wake.iosView(change, device: Self.simulator)
+        #expect(view.text == "The screen of \(Self.simulator.rawValue) is on and unlocked (was off); Home pressed 2 times.")
+        #expect(view.json == #"{"version":1,"action":"wake","device":"00000000-0000-0000-0000-000000000001","platform":"ios","previous":"off","current":"on, unlocked","sent":["home","home"]}"#)
+        #expect(view.person == "Screen on and unlocked")
+    }
+
+    @Test("an unlocked simulator gets nothing, as Home would send its app to the home screen")
+    func simulatorAlreadyUnlocked() async throws {
+        let backend = SimulatorLockFake(trees: [])
+        let change = try await Self.wakeSimulator(backend)
+        #expect(Self.homePresses(backend) == 0)
+        let view = Wake.iosView(change, device: Self.simulator)
+        #expect(view.text == "The screen of \(Self.simulator.rawValue) is already on and unlocked; nothing was sent.")
+        #expect(view.json.hasSuffix(#""previous":"on, unlocked","current":"on, unlocked","sent":[]}"#))
+    }
+
+    @Test("a lit lock screen that one Home clears gets no second press, which would leave the app")
+    func simulatorLitLockScreen() async throws {
+        let backend = SimulatorLockFake(trees: [])
+        backend.lock = Self.lockScreen
+        backend.afterPresses = [Self.unlocked]
+        let change = try await Self.wakeSimulator(backend)
+        #expect(Self.homePresses(backend) == 1)
+        #expect(Wake.iosView(change, device: Self.simulator).json.hasSuffix(#""previous":"on, locked","current":"on, unlocked","sent":["home"]}"#))
+    }
+
+    @Test("a lock screen still up after two presses is state_not_reached, naming wake again")
+    func simulatorStillLocked() async throws {
+        let backend = SimulatorLockFake(trees: [])
+        backend.lock = Self.dark
+        backend.afterPresses = [Self.lockScreen, Self.lockScreen]
+        let error = await #expect(throws: CLIError.self) { _ = try await Self.wakeSimulator(backend) }
+        #expect(error?.reason == .stateNotReached)
+        #expect(error?.hint == "offsider wake --device \(Self.simulator.rawValue)")
+        #expect(error?.userFacingDescription.hasPrefix("The lock screen of simulator \(Self.simulator.rawValue) is still up after 2 Home presses.") == true)
+        #expect(Self.homePresses(backend) == SimulatorWake.maximumPresses)
+    }
+
+    @Test("a lock state that cannot be read presses nothing; one lost after the presses is never reported as unlocked")
+    func simulatorUnreadable() async throws {
+        let unread = SimulatorLockFake(trees: [])
+        unread.readError = CLIError(errorDescription: "Offsider could not read the lock screen", reason: .commandFailed)
+        await #expect(throws: CLIError.self) { _ = try await Self.wakeSimulator(unread) }
+        #expect(Self.homePresses(unread) == 0)
+
+        let lost = SimulatorLockFake(trees: [])
+        lost.lock = Self.dark
+        lost.afterPresses = [Self.lockScreen, Self.unlocked]
+        lost.failsAfterPress = true
+        let error = await #expect(throws: CLIError.self) { _ = try await Self.wakeSimulator(lost) }
+        #expect(error?.reason == .stateNotReached)
+        #expect(error?.hint == "offsider screenshot --device \(Self.simulator.rawValue)")
+    }
+
+    @Test("notifyutil's two flags read as the lock screen; anything less reads as nothing")
+    func simulatorLockParse() {
+        #expect(SimulatorLockScreen.readArguments(udid: "U") == ["simctl", "spawn", "U", "notifyutil", "-g", "com.apple.springboard.lockstate", "-g", "com.apple.springboard.hasBlankedScreen"])
+        #expect(SimulatorLockScreen.parse("com.apple.springboard.lockstate 1\ncom.apple.springboard.hasBlankedScreen 0\n") == Self.lockScreen)
+        #expect(SimulatorLockScreen.parse("com.apple.springboard.lockstate 0\ncom.apple.springboard.hasBlankedScreen 0") == Self.unlocked)
+        #expect(SimulatorLockScreen.parse("com.apple.springboard.lockstate 1\n") == nil)
+        #expect(SimulatorLockScreen.parse("notifyutil: error") == nil)
+    }
+
+    @Test("--unlock is refused on a simulator, which has no passcode, and names plain wake")
+    func simulatorUnlockRefused() {
+        do {
+            _ = try Wake.parse(["--unlock", "--device", Self.simulator.rawValue])
+            Issue.record("expected a usage error")
+        } catch {
+            #expect(OffsiderCommand.exitCode(for: error) == .validationFailure)
+            #expect(OffsiderCommand.message(for: error).contains("a simulator has no passcode to type. Leave out --unlock: `offsider wake --device \(Self.simulator.rawValue)`"))
+        }
     }
 
     // MARK: wake

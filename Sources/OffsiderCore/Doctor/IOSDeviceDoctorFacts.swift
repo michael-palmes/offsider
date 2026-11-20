@@ -65,6 +65,33 @@ public struct IOSDeviceDoctorFacts: Equatable, Sendable {
         case unanswered
     }
 
+    /// The runner's cached build for this device's team and prefix, read from this Mac without building anything.
+    public enum RunnerBuildFact: Equatable, Sendable {
+        /// The team or prefix cannot be used as set; `message` says why and what to do.
+        case unsettled(message: String, hint: String?)
+        case built(team: String, prefix: String)
+        /// Built, but an installed app's provisioning profile has expired or ends within an hour, so the next start rebuilds it.
+        case profileExpiring(team: String, prefix: String, expires: Date, expired: Bool)
+        /// `needsPerson` when the prefix is new to this Mac, so its first build waits on Touch ID.
+        case notBuilt(team: String, prefix: String, needsPerson: Bool)
+        /// The last build failed because another Apple team owns one of the runner's App IDs; `fix` gives the device a prefix of its own.
+        case appIDTaken(appID: String, team: String, fix: String)
+        /// The last build failed because the team has not registered the device, or no profile covers it.
+        case notRegistered(team: String)
+        /// The last build failed for another reason; its log is at `log`.
+        case failed(team: String, prefix: String, log: String)
+    }
+
+    /// Whether the device trusts the certificate that signs the runner, as the last runner start on it showed.
+    public enum RunnerTrustFact: Equatable, Sendable {
+        /// The last start failed because the device does not trust this team's developer certificate.
+        case untrusted(team: String)
+        /// A runner is running on it now.
+        case running
+        /// No start has failed on it and none is running, so it is not known yet.
+        case unknown
+    }
+
     public var udid: String
     public var xcode: XcodeFact
     /// From the `devicectl` reply's `info.version`; nil when `devicectl` did not answer.
@@ -81,6 +108,10 @@ public struct IOSDeviceDoctorFacts: Equatable, Sendable {
     public var team: TeamFact
     /// Nil when it was not checked.
     public var session: SessionFact?
+    /// Nil when no team is settled for the runner or its source is missing.
+    public var runnerBuild: RunnerBuildFact?
+    /// Nil when no team is settled for the runner.
+    public var runnerTrust: RunnerTrustFact?
 
     public init(
         udid: String,

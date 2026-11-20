@@ -273,6 +273,59 @@ struct DTUHIDMessageTests {
     }
 }
 
+@Suite("Inner display digitizer connect")
+@MainActor
+struct DigitizerConnectTests {
+    static let duo = DeviceID(rawValue: "00000000-0000-0000-0000-000000000001", platform: .ios)
+    struct Refused: Error {}
+
+    @Test("a first connect the input daemon refuses is tried once more after a short pause, and the touch goes")
+    func secondConnectWins() async throws {
+        var attempts = 0
+        var pauses: [Duration] = []
+        let link = try await IOSDisplayInputSession.connectRetrying(device: Self.duo, sleep: { pauses.append($0) }) {
+            attempts += 1
+            if attempts == 1 { throw Refused() }
+            return "digitizer"
+        }
+        #expect(link == "digitizer")
+        #expect(attempts == 2)
+        #expect(pauses == [IOSDisplayInputSession.retryPause])
+    }
+
+    @Test("two refused connects name the input daemon, the check and the restart that brings it back")
+    func bothRefused() async throws {
+        var attempts = 0
+        let error = await #expect(throws: CLIError.self) {
+            _ = try await IOSDisplayInputSession.connectRetrying(device: Self.duo, sleep: { _ in }) { () -> String in
+                attempts += 1
+                throw Refused()
+            }
+        }
+        #expect(attempts == 2)
+        let udid = Self.duo.rawValue
+        let message = error?.userFacingDescription ?? ""
+        #expect(message.contains("the simulator's input daemon (dtuhidd) did not accept a connection"), "\(message)")
+        #expect(message.contains("`offsider doctor --device \(udid)`"))
+        #expect(message.contains("`offsider shutdown \(udid)`, then `offsider boot \(udid)`"))
+        #expect(!message.contains("not supported"), "a dead daemon is no missing feature")
+        #expect(error?.reason == .inputFailed && error?.exitCode == .failure)
+        #expect(error?.hint == "offsider doctor --device \(udid)")
+    }
+
+    @Test("a cancelled connect is not tried again")
+    func cancelStops() async {
+        var attempts = 0
+        await #expect(throws: CancellationError.self) {
+            _ = try await IOSDisplayInputSession.connectRetrying(device: Self.duo, sleep: { _ in }) { () -> String in
+                attempts += 1
+                throw CancellationError()
+            }
+        }
+        #expect(attempts == 1)
+    }
+}
+
 @Suite("Orientation picker")
 struct OrientationPickerTests {
     @Test("the payload is IOKit XML that IOCFUnserialize reads back as Device Hub's picker value, in locationd's names", arguments: [

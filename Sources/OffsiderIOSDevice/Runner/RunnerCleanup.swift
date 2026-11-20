@@ -26,12 +26,14 @@ public struct RunnerCleanupReport: Equatable, Sendable {
 public enum RunnerCleanup {
     static let uninstallTimeout: TimeInterval = 60
 
+    /// `allowancePrefix` is the prefix the device's allowance names, uninstalled too when it differs from the environment's.
     public static func clean(
-        udid: String, cacheRoot: URL, environmentPrefix: String, devicectl: any DevicectlRunning, logPaths: [String]
+        udid: String, cacheRoot: URL, environmentPrefix: String, allowancePrefix: String? = nil, devicectl: any DevicectlRunning, logPaths: [String]
     ) async -> RunnerCleanupReport {
         var report = RunnerCleanupReport(udid: udid)
         let keys = buildDirectories(for: udid, cacheRoot: cacheRoot)
         var prefixes = [environmentPrefix]
+        if let allowancePrefix, !prefixes.contains(allowancePrefix) { prefixes.append(allowancePrefix) }
         for key in keys {
             if let prefix = (try? RunnerProducts.read(in: key))??.prefix, !prefixes.contains(prefix) { prefixes.append(prefix) }
         }

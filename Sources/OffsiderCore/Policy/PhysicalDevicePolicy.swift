@@ -174,6 +174,7 @@ public struct PhysicalDevicePolicy: Equatable, Sendable {
                 ("apps", .array(entry.apps.map { .string($0) })),
             ]
             if let team = entry.team { fields.append(("team", .string(team))) }
+            if let prefix = entry.runnerPrefix { fields.append(("runnerPrefix", .string(prefix))) }
             if !entry.metroPorts.isEmpty { fields.append(("metroPorts", .array(entry.metroPorts.map { .integer($0) }))) }
             if entry.testDevice {
                 fields.append(("testDevice", .bool(true)))

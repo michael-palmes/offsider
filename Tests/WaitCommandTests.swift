@@ -209,8 +209,8 @@ struct WaitCommandTests {
     }
 
     @Test("conflicting or incomplete conditions are rejected", arguments: [
-        (["--id", "a", "--settled"], "Choose only one of a selector, --settled, --region or --seconds."),
-        (["--timeout", "5"], "Choose one of a selector (--id, --label, --label-contains or --value), --settled, --region or --seconds."),
+        (["--id", "a", "--settled"], "Choose only one of a selector, --settled, --region, --toast or --seconds."),
+        (["--timeout", "5"], "Choose one of a selector (--id, --label, --label-contains or --value), --settled, --region, --toast or --seconds."),
         (["--id", "a", "--gone", "--disabled"], "--gone does not take --enabled or --disabled."),
         (["--any", "--id", "a", "--id", "b", "--enabled"], "--any does not take --enabled or --disabled."),
         (["--any", "--settled"], "--any needs --id, --label, --label-contains or --value."),
@@ -355,21 +355,49 @@ struct WaitCommandTests {
         #expect(try await Self.evaluate(try Self.command(["--settled", "--settle-by", "both", "--ignore-id", "chart", "--timeout", "1"]), on: byID).met)
     }
 
-    @Test("the draw hold is for Android after an input, and an explicit --settle-by turns it off", arguments: [
-        (DevicePlatform.android, ["--settled"], true, true),
-        (.android, ["--settled"], false, false),
-        (.ios, ["--settled"], true, false),
-        (.android, ["--settled", "--settle-by", "tree"], true, false),
-        (.android, ["--settled", "--settle-by", "both"], true, false),
+    @Test("the draw hold is for Android and iOS simulators after an input, not a physical iPhone, and an explicit --settle-by turns it off", arguments: [
+        (DevicePlatform.android, false, ["--settled"], true, true),
+        (.android, false, ["--settled"], false, false),
+        (.ios, true, ["--settled"], true, true),
+        (.ios, true, ["--settled"], false, false),
+        (.ios, false, ["--settled"], true, false),
+        (.ios, true, ["--settled", "--settle-by", "tree"], true, false),
+        (.android, false, ["--settled", "--settle-by", "tree"], true, false),
+        (.android, false, ["--settled", "--settle-by", "both"], true, false),
     ])
-    func drawHoldScope(platform: DevicePlatform, arguments: [String], afterInput: Bool, holds: Bool) throws {
+    func drawHoldScope(platform: DevicePlatform, simulator: Bool, arguments: [String], afterInput: Bool, holds: Bool) throws {
         let gate = afterInput ? SettleGate(sinceInput: 0.1, before: nil) : nil
-        let condition = try Self.command(arguments).condition(gate: gate, platform: platform)
+        let condition = try Self.command(arguments).condition(gate: gate, platform: platform, drawsAfterTree: simulator)
         guard case .settled(_, _, _, _, _, let drawHold) = condition else {
             Issue.record("not a settled condition")
             return
         }
         #expect((drawHold != nil) == holds)
+    }
+
+    @Test("after an input that changed the tree, an iOS simulator's settle waits out a slide its tree already shows at the end, at any read speed", arguments: [0.0, 0.7])
+    func slideHoldsSimulatorSettle(readTime: TimeInterval) async throws {
+        let before = FakeUI.tree([FakeUI.node(.button, id: "open", label: "Open", frame: FakeUI.frame(20, 600, 350, 44))])
+        let sheet = FakeUI.tree([FakeUI.node(.button, id: "apply", label: "Apply", frame: FakeUI.frame(20, 400, 350, 44))])
+        let gate = try #require(SettleGate(sinceInput: 0.1, before: before))
+        let condition = try Self.command(["--settled"]).condition(gate: gate, platform: .ios, drawsAfterTree: true)
+        let slideEnds: TimeInterval = 1.5
+        var clock: TimeInterval = 0
+        let sources = WaitSources(
+            tree: {
+                clock += readTime
+                return sheet
+            },
+            fingerprint: {
+                let marked = clock < slideEnds ? [(x: min(15, Int(clock * 10)), y: 2)] : []
+                return ImageFingerprint(image: TestImages.make(width: 16, height: 16, marked: marked), columns: 4, rows: 4)!
+            },
+            sleep: { clock += Double($0.components.seconds) + Double($0.components.attoseconds) / 1e18 },
+            now: { clock }
+        )
+        let outcome = try await WaitLoop.run(condition, timeout: 5, interval: 0.25, sources: sources)
+        #expect(outcome.met)
+        #expect(outcome.elapsed + 1e-9 >= slideEnds + 0.5, "the pixels stop at 1.5 s, then a full quiet window")
     }
 
     @Test("--timeout and --seconds accept up to 900 seconds, for cold bundles that take minutes", arguments: [

@@ -19,8 +19,11 @@ enum FrontJudge {
             let contested = Array((everyPoint ? plan.unblocked : plan.contested).prefix(hitLimit))
             let hits = await hitTests(contested.map { ($0.index, $0.judging) }, reader: reader)
             plan.record(into: &reading, hits: hits, hitTested: reader != nil, platform: judged.platform)
+            plan.settleUnordered(in: &reading)
             if let reader {
                 await readParts(of: contested, into: &reading, in: judged, shared: plan.shared, reader: reader)
+            } else if judged.platform == .android {
+                plan.settleDrawnParts(in: &reading, tree: judged)
             }
             plan.settleGroups(in: &reading)
         }
@@ -101,6 +104,9 @@ enum FrontJudge {
         var groups: [Int: [Int]] = [:]
         /// What every judgement on the tree shares, for the parts beside covers read after.
         var shared: TapCover.Shared?
+        /// What may draw over any point of the tree, and its pages, for the parts beside covers on Android.
+        var occluders: AccessibilityTargetResolver.Occluders?
+        var stack = ScreenStack.empty
 
         /// `spareReads` is how many points may be hit-tested for what a group holds, beyond those asked about: a group needing more stays as its own point says. Nil when reading costs nothing. `index`, when given, is already read over `tree.roots`.
         init(tree: UITree, indexes: some Sequence<Int>, reading: FrontReading, spareReads: Int? = nil, index: TreeIndex? = nil) {
@@ -111,6 +117,8 @@ enum FrontJudge {
             guard let shared = TapCover.Shared(tree, index: indexed, stack: stack) else { return }
             self.shared = shared
             let occluders = AccessibilityTargetResolver.Occluders(indexed, viewport: viewport)
+            self.occluders = occluders
+            self.stack = stack
             let indicators = ScrollIndicator.all(in: tree.roots)
             var asked = Set(indexes)
             for index in asked.sorted() where index < flat.count && Self.isGroup(flat[index]) && reading.covered[index] == nil && reading.beneath[index] == nil {
@@ -142,10 +150,10 @@ enum FrontJudge {
             !containerRoles.contains(node.role) && !node.role.isActionable && node.normalizedLabel == nil && !node.children.isEmpty
         }
 
-        /// A group is drawn on with what it holds, so its own point says little: one whose every labelled element and control a touch would miss is out of reach too.
+        /// A group is drawn on with what it holds, so its own point says little: one whose every labelled element and control a touch would miss is out of reach too, unless what covers one is the group's own.
         func settleGroups(in reading: inout FrontReading) {
             for (group, held) in groups.sorted(by: { $0.key > $1.key }) where reading.covered[group] == nil && reading.beneath[group] == nil {
-                guard held.allSatisfy(reading.unreached.contains) else { continue }
+                guard held.allSatisfy({ reading.unreached.contains($0) && !isUnderOwnContent($0, of: group, in: reading) }) else { continue }
                 if let page = held.compactMap({ [beneath = reading.beneath] in beneath[$0] }).first {
                     reading.beneath[group] = page
                 } else if let verdict = held.compactMap({ [covered = reading.covered] in covered[$0] }).first {
@@ -155,9 +163,68 @@ enum FrontJudge {
             }
         }
 
+        /// The only reason a touch misses the element at `index` is a cover that `group` holds, with no copy of it elsewhere.
+        private func isUnderOwnContent(_ index: Int, of group: Int, in reading: FrontReading) -> Bool {
+            guard reading.beneath[index] == nil, reading.clipped[index] == nil, let cover = reading.covered[index]?.cover, let tree = shared?.index else { return false }
+            let copies = tree.indexes(of: cover)
+            return !copies.isEmpty && copies.allSatisfy(tree.subtree(group).contains)
+        }
+
+        /// Android has no hit-test, so the parts beside a plain label drawn on an element are read from its drawing order, with no device read; a tap still judges its own point, kept in `judged`.
+        func settleDrawnParts(in reading: inout FrontReading, tree: UITree) {
+            guard let shared, let occluders else { return }
+            for entry in entries {
+                guard let verdict = reading.covered[entry.index], entry.judging.keyboard == nil, let target = entry.resolution.target, verdict.isLabelDrawn(on: target),
+                      let frame = verdict.touchFrame, !hasOutsideControl(over: entry.index, among: occluders) else { continue }
+                let shows = TapCover.partPoints(of: entry.resolution, beside: frame, in: tree).prefix(TapCover.partTries).contains { point in
+                    var moved = TapResolution(point: (x: point.x, y: point.y), isSwitchLikeControl: entry.resolution.isSwitchLikeControl, target: target, matched: target, stack: stack)
+                    let candidates = AccessibilityTargetResolver.coverCandidates(of: target, matched: target, at: point, among: occluders)
+                    moved.coverCandidates = candidates.isEmpty ? [] : AccessibilityTargetResolver.onTopCandidates(candidates, over: target, in: occluders.tree, stack: stack)
+                    guard let judging = TapCover.Judging(moved, on: shared, beneath: false, movingBesideBars: false), judging.keyboard == nil, judging.systemBar == nil,
+                          judging.verdict(hit: nil)?.isConfident != true else { return false }
+                    return CoverJudge.isDrawnOnTop(target, at: point, on: shared.ground)
+                }
+                if shows { reading.covered[entry.index] = nil }
+            }
+        }
+
+        /// Something to press that the element at `index` does not hold is drawn over part of it: another layer, such as a dialog or a page.
+        private func hasOutsideControl(over index: Int, among occluders: AccessibilityTargetResolver.Occluders) -> Bool {
+            let tree = occluders.tree
+            guard let frame = tree.nodes[index].frame else { return false }
+            let own = tree.subtree(index), around = Set(tree.lineage(of: index))
+            return occluders.overlapping(frame).contains { other in
+                let node = tree.nodes[other]
+                guard node.role.isActionable || node.role.isTextInput, !own.contains(other), !around.contains(other), occluders.place(of: other)?.underKeyboard == false,
+                      !stack.isBeneath(index: other), let overlap = node.frame?.intersection(frame), overlap.width >= 1, overlap.height >= 1 else { return false }
+                let order = UITree.zOrder(at: other, over: index, in: tree)
+                return !order.byDrawingOrder || order.isAbove
+            }
+        }
+
+        /// Of the elements only a page the tree cannot order may be over, this many per page are hit-tested, the first and the last; the rest follow them.
+        static let orderSamples = 2
+
         /// The judged elements something may draw over, which an iOS simulator's hit-test settles.
         var contested: [Entry] {
-            unblocked.filter { $0.judging.isContested }
+            let sampled = Set(orderGroups.values.flatMap { group in [group.first, group.last].compactMap { $0?.index } })
+            return unblocked.filter { $0.judging.isContested && (!$0.judging.isContestedByOrderAlone || sampled.contains($0.index)) }
+        }
+
+        /// Elements contested only by an unordered page, by the topmost such page's index.
+        private var orderGroups: [Int: [Entry]] {
+            Dictionary(grouping: unblocked.filter(\.judging.isContestedByOrderAlone)) { $0.judging.unorderedPages.last?.index ?? -1 }
+        }
+
+        /// An element no hit-test read follows its page's samples: beneath it when both were read and found beneath it.
+        func settleUnordered(in reading: inout FrontReading) {
+            for (_, group) in orderGroups where group.count > Self.orderSamples {
+                let samples = [group[0], group[group.count - 1]]
+                guard let page = reading.beneath[samples[0].index], samples.allSatisfy({ reading.beneath[$0.index] == page }) else { continue }
+                for entry in group where reading.beneath[entry.index] == nil && reading.judged[entry.index] == nil {
+                    reading.beneath[entry.index] = page
+                }
+            }
         }
 
         /// The judged elements the keyboard does not cover.
@@ -183,7 +250,11 @@ enum FrontJudge {
                     AccessibilityFetcher.isTransientPointFallback(hit, at: AccessibilityPoint(x: entry.judging.point.x, y: entry.judging.point.y))
                 } == true
                 reading.judged[entry.index] = FrontReading.Judged(point: entry.judging.point, verdict: verdict, ownHit: hits[entry.index].map(entry.judging.surelyReaches(hit:)), unsure: unsure)
-                if let verdict, verdict.isConfident {
+                // A hit on the page's own text names no listed element, but the cover it settles on does.
+                if !unsure, let page = hits[entry.index].flatMap(entry.judging.page(holding:))
+                    ?? verdict.flatMap({ $0.isConfident ? entry.judging.page(holding: $0.cover) : nil }) {
+                    reading.beneath[entry.index] = page.name
+                } else if let verdict, verdict.isConfident {
                     reading.covered[entry.index] = verdict
                 }
             }

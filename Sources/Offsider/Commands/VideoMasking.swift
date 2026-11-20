@@ -130,7 +130,8 @@ struct VideoMaskOptions: ParsableArguments {
                 reason: .videoUnmasked
             )
         }
-        if let unproven = ScreenCapture.unproven(tree) {
+        // Frames are not read for text, so a backdrop over an unlisted band is warned of on its own.
+        if let unproven = ScreenCapture.unproven(tree) ?? HiddenScreen.region(in: tree, belowStatusBar: IOSBackend.statusBarHeight).map({ _ in "modal" }) {
             Console.current.notice(ScreenCapture.unprovenNotice(unproven, subject: "the video"))
         }
     }

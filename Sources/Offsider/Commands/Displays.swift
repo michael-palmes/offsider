@@ -26,11 +26,14 @@ struct Displays: AsyncParsableCommand {
 
     func run() async throws {
         let logger = OffsiderLogger()
-        let route = try await DeviceRouter.route(deviceOption.id, logger: logger)
-        try await route.backend.prepare()
-        let device = try await route.backend.requireBootedDevice(route.device).id
+        let watchdog = DeviceWatchdog()
+        let route = try await watchdog.guardingSetup(device: deviceOption.id) { try await DeviceRouter.route(deviceOption.id, logger: logger) }
+        let device = try await watchdog.guardingSetup(device: deviceOption.id) {
+            try await route.backend.prepare()
+            return try await route.backend.requireBootedDevice(route.device).id
+        }
         let console = Console.current
-        let list = try await console.progress("Reading the displays") { try await Self.list(on: device, backend: route.backend, deviceName: deviceOption.id) }
+        let list = try await console.progress("Reading the displays") { try await Self.list(on: device, backend: route.backend, deviceName: deviceOption.id, watchdog: watchdog) }
         if json {
             console.data(DisplayReport.json(list) + "\n")
         } else {
@@ -44,11 +47,12 @@ struct Displays: AsyncParsableCommand {
         return json ? DisplayReport.json(list) : DisplayReport.table(list, platform: device.platform)
     }
 
+    /// One read of the displays under `watchdog`'s read bound.
     @MainActor
-    static func list(on device: DeviceID, backend: any DeviceBackend, deviceName: String) async throws -> DisplayList {
+    static func list(on device: DeviceID, backend: any DeviceBackend, deviceName: String, watchdog: DeviceWatchdog = DeviceWatchdog()) async throws -> DisplayList {
         guard let displays = backend as? any DisplayControlling else {
             throw CLIError(errorDescription: "displays is not available for \(deviceName) yet.", reason: .notSupported)
         }
-        return try await displays.displays(of: device)
+        return try await watchdog.guardingRead(of: device) { try await displays.displays(of: device) }
     }
 }

@@ -37,6 +37,9 @@ struct Tap: AsyncParsableCommand, VerifiableCommand {
     @Option(name: .customLong("tap-style"), help: "Tap event style: automatic uses physical touch for switches and a single tap event for other targets; simulator always sends a single tap event; physical uses touch down and up.")
     var tapStyle: TapStyle?
 
+    @Option(name: .customLong("hold"), help: ArgumentHelp("Hold the touch down this many milliseconds, from 100 to 10000, for a long press.", valueName: "ms"))
+    var hold: Int?
+
     @Option(name: .customLong("wait-timeout"), help: "Maximum seconds to poll for the element before failing (0 = no waiting, default). Only applies to --id/--label/--label-contains/--value targeting.")
     var waitTimeout: Double?
 
@@ -111,6 +114,15 @@ struct Tap: AsyncParsableCommand, VerifiableCommand {
             throw ValidationError("Use only one of --allow-covered or --fail-if-covered.")
         }
 
+        if let hold {
+            guard Self.holdRange.contains(hold) else {
+                throw ValidationError("--hold must be from 100 to 10000 milliseconds; got \(hold).")
+            }
+            guard tapStyle == nil else {
+                throw ValidationError("--hold always presses, holds and lifts; drop --tap-style.")
+            }
+        }
+
         if dryRun {
             guard pointX == nil else {
                 throw ValidationError("--dry-run checks an element; use it with --id, --label, --label-contains or --value.")
@@ -142,6 +154,8 @@ struct Tap: AsyncParsableCommand, VerifiableCommand {
             }
         }
     }
+
+    static let holdRange = Touch.holdRange
 
     /// Optional so a batch step can tell an explicit value from the batch-level default.
     var resolvedWaitTimeout: Double { waitTimeout ?? 0 }
@@ -182,8 +196,8 @@ struct Tap: AsyncParsableCommand, VerifiableCommand {
         }
     }
 
-    /// Resolves and sends the tap on `route`; tests pass a fake backend here. `details` learns the point it resolved.
-    func execute(on route: DeviceRouter.Route, progress: VerifyProgress?, logger: OffsiderLogger, details: InputDetails? = nil) async throws {
+    /// Resolves and sends the tap on `route`; tests pass a fake backend here. `details` learns the point it resolved; `watchdog` bounds the reads that place it.
+    func execute(on route: DeviceRouter.Route, progress: VerifyProgress?, logger: OffsiderLogger, details: InputDetails? = nil, watchdog: DeviceWatchdog = DeviceWatchdog()) async throws {
         await appOption.apply(to: route)
         let backend = route.backend
         let device = route.device
@@ -201,7 +215,7 @@ struct Tap: AsyncParsableCommand, VerifiableCommand {
             resolution = TapResolution(point: (x: pointX, y: pointY), isSwitchLikeControl: false)
             resolvedDescription = VerifyOutput.pointDescription(x: pointX, y: pointY)
             resolvedTree = nil
-            await Self.warnIfOffScreen(x: pointX, y: pointY, backend: backend, device: device)
+            await Self.warnIfOffScreen(x: pointX, y: pointY, backend: backend, device: device, watchdog: watchdog)
         } else {
             guard let query else {
                 throw CLIError(errorDescription: "Unexpected state: no coordinates and no element query.", reason: .internalError)
@@ -239,17 +253,18 @@ struct Tap: AsyncParsableCommand, VerifiableCommand {
         details?.point = UIPoint(x: resolution.point.x, y: resolution.point.y)
         if dryRun {
             details?.dryRun = true
+            let guarded = try await AppGuard.preview(at: UIPoint(x: resolution.point.x, y: resolution.point.y), backend: backend, device: device)
             Console.current.show(InputPersonView.receipt(
                 "Would tap \(verifyTarget)",
                 aside: VerifyOutput.pointDescription(x: resolution.point.x, y: resolution.point.y),
-                details: ["Nothing was sent"],
-                agent: "✓ Dry run: a tap on \(verifyTarget) at \(VerifyOutput.pointDescription(x: resolution.point.x, y: resolution.point.y)) would reach it. Nothing was sent.\n"
+                details: ["Nothing was sent"] + (guarded.map { [$0] } ?? []),
+                agent: "✓ Dry run: a tap on \(verifyTarget) at \(VerifyOutput.pointDescription(x: resolution.point.x, y: resolution.point.y)) would reach it. \(guarded.map { $0 + " " } ?? "")Nothing was sent.\n"
             ))
             return
         }
         logger.info().log("Tapping \(resolvedDescription)")
 
-        var physicalPoint = try await backend.deviceCoordinates(for: [resolution.point], tree: resolvedTree, on: device)[0]
+        var physicalPoint = try await watchdog.inputPoints([resolution.point], tree: resolvedTree, backend: backend, device: device)[0]
 
         let style = resolvedTapStyle(for: resolution)
         if let progress {
@@ -299,7 +314,7 @@ struct Tap: AsyncParsableCommand, VerifiableCommand {
                     let tap = try await resolvedAgain(in: tree, waitTimeout: max(0, resolvedWaitTimeout - elapsed), coverSettle: TapCover.coverSettle(lastInput: lastInput))
                     guard !isAimed(tap.point) else { return }
                     logger.info().log("\(verifyTarget) moved to \(VerifyOutput.pointDescription(x: tap.point.x, y: tap.point.y)) while settling; tapping there")
-                    physicalPoint = try await backend.deviceCoordinates(for: [tap.point], tree: tree, on: device)[0]
+                    physicalPoint = try await watchdog.inputPoints([tap.point], tree: tree, backend: backend, device: device)[0]
                     aimed = tap.point
                     aimedFrame = (tap.target ?? tap.matched)?.frame
                 },
@@ -332,8 +347,21 @@ struct Tap: AsyncParsableCommand, VerifiableCommand {
         Console.current.show(InputPersonView.receipt(
             Self.receiptHeadline(selector: selector, at: resolution.point),
             aside: selector == nil ? nil : VerifyOutput.pointDescription(x: resolution.point.x, y: resolution.point.y),
-            agent: Self.completionLine(selector: selector, at: resolution.point) + "\n"
+            details: heldFor.map { [InputPersonView.sentence(InputPersonView.held($0))] } ?? [],
+            agent: Self.completionLine(selector: selector, at: resolution.point, held: heldFor) + "\n"
         ))
+    }
+
+    /// `--hold` in seconds.
+    var heldFor: TimeInterval? { hold.map { Double($0) / 1000 } }
+
+    /// Down, held for `seconds`, then up at one point, as one event so the device times the hold.
+    static func heldTap(at point: (x: Double, y: Double), seconds: TimeInterval, pre: Double?, post: Double?) -> InputEvent {
+        var events: [InputEvent] = []
+        if let pre, pre > 0 { events.append(.delay(pre)) }
+        events += [.touch(direction: .down, x: point.x, y: point.y), .delay(seconds), .touch(direction: .up, x: point.x, y: point.y)]
+        if let post, post > 0 { events.append(.delay(post)) }
+        return .composite(events)
     }
 
     /// A keyboard's own control, such as Done or a key, whose one effect may rightly be closing the keyboard.
@@ -360,8 +388,8 @@ struct Tap: AsyncParsableCommand, VerifiableCommand {
 
     /// Warns rather than refuses, since an iPad app in a window can be smaller than the screen.
     @MainActor
-    static func warnIfOffScreen(x: Double, y: Double, backend: any DeviceBackend, device: DeviceID) async {
-        if let warning = offScreenText(x: x, y: y, screen: try? await backend.screenSize(for: device)) {
+    static func warnIfOffScreen(x: Double, y: Double, backend: any DeviceBackend, device: DeviceID, watchdog: DeviceWatchdog = DeviceWatchdog()) async {
+        if let warning = offScreenText(x: x, y: y, screen: try? await watchdog.screenSize(backend: backend, device: device)) {
             Console.current.notice(.warning(String(warning.dropLast()), agent: warning))
         }
     }
@@ -478,17 +506,22 @@ struct Tap: AsyncParsableCommand, VerifiableCommand {
         let pointText = VerifyOutput.pointDescription(x: point.x, y: point.y)
         let back = device.platform == .android && tree.map(KeyboardDismiss.showsKeys(in:)) != false
         let hide: String
+        var hint = "offsider describe-ui --summary\(appArgument) --device \(device.rawValue)"
         if back {
             hide = "Hide the keyboard with `offsider button back` (or scroll the target above it)"
+            hint = "offsider button back\(appArgument) --device \(device.rawValue)"
         } else if device.platform == .android {
             hide = "Scroll the target clear of the keyboard's toolbar (Back would go to the app, as only the toolbar shows)"
+        } else if case .control = tree.map(KeyboardHide.step(in:)) {
+            hide = "Hide the keyboard with `offsider keyboard hide` (or scroll the target above it)"
+            hint = "offsider keyboard hide\(appArgument) --device \(device.rawValue)"
         } else {
             hide = "Dismiss the keyboard in the app (or scroll the target above it)"
         }
         return CLIError(
             errorDescription: "The keyboard covers \(selector) at \(pointText), so the \(gesture) would press a key. \(hide), then retry. Nothing was sent.",
             reason: .targetUnderKeyboard,
-            hint: back ? "offsider button back\(appArgument) --device \(device.rawValue)" : "offsider describe-ui --summary\(appArgument) --device \(device.rawValue)"
+            hint: hint
         )
     }
 
@@ -504,9 +537,9 @@ struct Tap: AsyncParsableCommand, VerifiableCommand {
         }
     }
 
-    /// `✓ Tap at (x, y) ...` for coordinates; `✓ Tap on id=X at (x, y) ...` for a selector.
-    static func completionLine(selector: String?, at point: (x: Double, y: Double)) -> String {
-        let pointText = VerifyOutput.pointDescription(x: point.x, y: point.y)
+    /// `✓ Tap at (x, y) ...` for coordinates; `✓ Tap on id=X at (x, y) ...` for a selector; a hold adds `, held 1.5 s`.
+    static func completionLine(selector: String?, at point: (x: Double, y: Double), held: TimeInterval? = nil) -> String {
+        let pointText = VerifyOutput.pointDescription(x: point.x, y: point.y) + (held.map { ", " + InputPersonView.held($0) + "," } ?? "")
         guard let selector else {
             return "✓ Tap at \(pointText) completed successfully"
         }
@@ -519,6 +552,11 @@ struct Tap: AsyncParsableCommand, VerifiableCommand {
         in session: any InputSession,
         logger: OffsiderLogger
     ) async throws {
+        if let heldFor {
+            logger.info().log("Holding for \(heldFor)s")
+            try await session.perform(Self.heldTap(at: point, seconds: heldFor, pre: preDelay, post: postDelay))
+            return
+        }
         switch style {
         case .physical:
             try await session.performPhysicalTap(at: point, preDelay: preDelay, postDelay: postDelay)

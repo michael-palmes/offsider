@@ -63,10 +63,12 @@ struct HelperLauncher {
     var timing: AndroidTiming = .disabled
     /// How long the helper waits for a request before it exits; the warm helper's broker raises it past its own idle timeout.
     var idleTimeoutMs = HelperLauncher.idleTimeoutMs
+    /// The only packages whose toasts the helper holds at all, as on a phone held to its apps; nil holds every package's.
+    var toastPackages: [String]?
 
     /// Exits 90 unless the dex matches the manifest's SHA-256 (its size where the device has no `sha256sum`); `exec` lets adbd's hang-up
     /// reach the helper. After a push it moves the copy out of the private push folder, makes it 644 and prunes older copies first.
-    static func startScript(_ dex: HelperDex, pushedFrom pushDirectory: String?, idleTimeoutMs: Int = idleTimeoutMs) -> String {
+    static func startScript(_ dex: HelperDex, pushedFrom pushDirectory: String?, idleTimeoutMs: Int = idleTimeoutMs, toastPackages: [String]? = nil) -> String {
         var script = "f=\(AdbShellQuoting.quote(dex.devicePath)); "
         if let pushDirectory {
             let directory = AdbShellQuoting.quote(pushDirectory)
@@ -79,6 +81,7 @@ struct HelperLauncher {
             + "else [ \"$(stat -c %s \"$f\" 2>/dev/null)\" = \(dex.bytes.count) ] || exit \(missingStatus); fi; "
             + "CLASSPATH=\"$f\" exec app_process /data/local/tmp --nice-name=\(processName) \(mainClass) serve "
             + "--idle-timeout-ms \(idleTimeoutMs) --accept-timeout-ms \(acceptTimeoutMs)"
+            + (toastPackages.map { " --toast-packages " + AdbShellQuoting.quote($0.sorted().joined(separator: ",")) } ?? "")
     }
 
     /// The dex's name inside the push folder.
@@ -98,7 +101,7 @@ struct HelperLauncher {
     /// `milliseconds` runs from the first start script to the ready line, including any push.
     func launch() async throws -> (shell: ShellStream, ready: HelperReady, pushed: Bool, milliseconds: Int) {
         let started = ContinuousClock.now
-        if case .started(let shell, let ready) = try await attempt(Self.startScript(dex, pushedFrom: nil, idleTimeoutMs: idleTimeoutMs)) {
+        if case .started(let shell, let ready) = try await attempt(Self.startScript(dex, pushedFrom: nil, idleTimeoutMs: idleTimeoutMs, toastPackages: toastPackages)) {
             let elapsed = Self.milliseconds(since: started)
             log(.debug, "The UiAutomation helper on \(serial) was ready in \(elapsed) ms (pid \(ready.pid))")
             return (shell, ready, false, elapsed)
@@ -119,7 +122,7 @@ struct HelperLauncher {
         } catch let error as AndroidError where error.kind == .adbCommandFailed {
             throw HelperStartFailure.unavailable(.pushFailed(Self.pushDetail(error)))
         }
-        switch try await attempt(Self.startScript(dex, pushedFrom: pushDirectory, idleTimeoutMs: idleTimeoutMs)) {
+        switch try await attempt(Self.startScript(dex, pushedFrom: pushDirectory, idleTimeoutMs: idleTimeoutMs, toastPackages: toastPackages)) {
         case .started(let shell, let ready):
             let elapsed = Self.milliseconds(since: started)
             log(.debug, "The UiAutomation helper on \(serial) was pushed and ready in \(elapsed) ms (pid \(ready.pid))")

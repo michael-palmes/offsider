@@ -10,6 +10,8 @@ final class FakeXcodebuild: @unchecked Sendable {
     private var recorded: [[String]] = []
     var status: Int32 = 0
     var output = ""
+    /// Written into each app as `embedded.mobileprovision`, as a device build embeds its profile.
+    var profile: Data?
 
     var calls: [[String]] { lock.withLock { recorded } }
 
@@ -29,6 +31,11 @@ final class FakeXcodebuild: @unchecked Sendable {
         for file in files {
             try FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
             try Data("built \(file.lastPathComponent)".utf8).write(to: file)
+        }
+        if let profile {
+            for app in ["OffsiderRunnerHost.app", "OffsiderRunnerUITests-Runner.app"] {
+                try profile.write(to: config.appendingPathComponent(app).appendingPathComponent("embedded.mobileprovision"))
+            }
         }
         return ProcessCaptureResult(status: 0, stdout: "", stderr: "")
     }
@@ -68,14 +75,17 @@ struct RunnerProvisioningTests {
             cache = FileManager.default.temporaryDirectory.appendingPathComponent("offsider-runner-cache-\(UUID().uuidString)")
         }
 
-        func builder(environment: [String: String] = ["OFFSIDER_IOS_TEAM_ID": RunnerProvisioningTests.team], allowanceTeam: String? = nil, expected: [String: String]? = nil, registerDevice: Bool = false) -> XcodeRunnerBuilder {
+        func builder(
+            environment: [String: String] = ["OFFSIDER_IOS_TEAM_ID": RunnerProvisioningTests.team], allowance: DeviceAllowance? = nil, expected: [String: String]? = nil,
+            registerDevice: Bool = false, now: Date = Date()
+        ) -> XcodeRunnerBuilder {
             let xcodebuild = xcodebuild
             let signatures = signatures
             return XcodeRunnerBuilder(
                 source: source, cacheRoot: cache, xcode: XcodeLocation(developerDirectory: "/Xcode.app/Contents/Developer", source: "test", version: "27.0", build: "27A266a"),
-                environment: environment, signedInTeams: { ["AAAAA11111"] }, notice: notices.append, allowanceTeam: allowanceTeam,
+                environment: environment, signedInTeams: { ["AAAAA11111"] }, notice: notices.append, allowance: allowance,
                 expectedSource: expected, registerDevice: registerDevice,
-                xcodebuild: { try xcodebuild.run($0, $1, $2) }, signatureValid: { signatures.check($0, $1) }
+                xcodebuild: { try xcodebuild.run($0, $1, $2) }, signatureValid: { signatures.check($0, $1) }, now: { now }
             )
         }
 
@@ -148,7 +158,7 @@ struct RunnerProvisioningTests {
         let fixture = try Fixture()
         defer { fixture.remove() }
 
-        _ = try await fixture.builder(environment: [:], allowanceTeam: "ZYXWV98765", registerDevice: true).build(for: .device(udid: "U"), deviceName: "iPhone")
+        _ = try await fixture.builder(environment: [:], allowance: Self.allowance(team: "ZYXWV98765"), registerDevice: true).build(for: .device(udid: "U"), deviceName: "iPhone")
 
         let arguments = try #require(fixture.xcodebuild.calls.first)
         #expect(arguments.contains("-allowProvisioningDeviceRegistration"))
@@ -166,6 +176,77 @@ struct RunnerProvisioningTests {
         #expect(error?.reason == .runnerBuildFailed)
         #expect(error?.hint == "offsider runner build --register-device --device U")
         #expect(error?.message.contains("Xcode > Window > Devices and Simulators") == true)
+    }
+
+    static func allowance(team: String? = RunnerProvisioningTests.team, prefix: String? = nil, testDevice: Bool = false, apps: [String] = []) -> DeviceAllowance {
+        DeviceAllowance(
+            platform: .ios, key: IOSDeviceFixtures.phone, name: "Test iPhone", added: Date(timeIntervalSince1970: 1_790_000_000), expires: nil, apps: apps,
+            team: team, runnerPrefix: prefix, testDevice: testDevice
+        )
+    }
+
+    @Test("another team owning the runner's App ID is its own failure, never blamed on device registration, with a prefix of this team's own that validates")
+    func appIDTakenOffList() async throws {
+        let fixture = try Fixture()
+        defer { fixture.remove() }
+        fixture.xcodebuild.status = 65
+        fixture.xcodebuild.output = try IOSDeviceFixtures.text("xcodebuild-runner-app-id-taken.log")
+
+        let error = await #expect(throws: IOSDeviceError.self) { _ = try await fixture.builder().build(for: .device(udid: "U"), deviceName: "iPhone") }
+
+        #expect(error?.reason == .runnerBuildFailed)
+        #expect(error?.message.hasPrefix("Building the Offsider runner app failed: another Apple team already owns its App ID com.mpalmes.offsider.runner, so team ABCDE12345 needs a runner prefix of its own.") == true)
+        #expect(error?.message.localizedCaseInsensitiveContains("regist") == false, "nothing about the device being registered")
+        #expect(error?.hint == "OFFSIDER_IOS_RUNNER_PREFIX=dev.offsider.abcde12345 offsider runner build --device U")
+        let suggested = DeviceAllowance.suggestedRunnerPrefix(team: Self.team)
+        #expect(DeviceAllowance.isRunnerPrefix(suggested))
+        #expect(try XcodeRunnerBuilder.resolvePrefix(environment: ["OFFSIDER_IOS_RUNNER_PREFIX": suggested]) == suggested)
+        #expect(DeviceAllowance.suggestedRunnerPrefix(team: Self.team, avoiding: suggested) != suggested, "a prefix that is itself taken is never offered again")
+    }
+
+    @Test("on the allow-list the App ID fix is the devices add command that saves the prefix, keeping the device's use and team")
+    func appIDTakenOnList() async throws {
+        let fixture = try Fixture()
+        defer { fixture.remove() }
+        fixture.xcodebuild.status = 65
+        fixture.xcodebuild.output = try IOSDeviceFixtures.text("xcodebuild-runner-app-id-taken.log")
+
+        let test = await #expect(throws: IOSDeviceError.self) {
+            _ = try await fixture.builder(environment: [:], allowance: Self.allowance(testDevice: true)).build(for: .device(udid: IOSDeviceFixtures.phone), deviceName: "iPhone")
+        }
+        #expect(test?.hint == "offsider devices add --device \(IOSDeviceFixtures.phone) --test-device --team ABCDE12345 --runner-prefix dev.offsider.abcde12345")
+        #expect(test?.message.contains("which saves the prefix for this device and builds the runner") == true)
+
+        let pinned = await #expect(throws: IOSDeviceError.self) {
+            _ = try await fixture.builder(environment: [:], allowance: Self.allowance(apps: ["com.example.app"])).build(for: .device(udid: IOSDeviceFixtures.phone), deviceName: "iPhone")
+        }
+        #expect(pinned?.hint == "offsider devices add --device \(IOSDeviceFixtures.phone) --app com.example.app --team ABCDE12345 --runner-prefix dev.offsider.abcde12345")
+    }
+
+    @Test("the App ID named is the first runner id xcodebuild quotes, and only one of the runner's own")
+    func takenAppIDNamed() {
+        #expect(XcodeRunnerBuilder.takenAppID(in: #"The app identifier "com.example.qa.runner.uitests.xctrunner" cannot be registered"#, prefix: "com.example.qa") == "com.example.qa.runner.uitests.xctrunner")
+        #expect(XcodeRunnerBuilder.takenAppID(in: #"The app identifier "evil.example" cannot be registered"#, prefix: "com.example.qa") == "com.example.qa.runner")
+        #expect(XcodeRunnerBuilder.appIDTaken("error: An App ID with Identifier 'com.example.qa.runner' is not available. Please enter a different string."))
+        #expect(!XcodeRunnerBuilder.appIDTaken("error: Device \"iPhone\" isn't registered in your developer account."))
+    }
+
+    @Test("a prefix sealed into the allowance builds with no Touch ID; the same prefix only from the variable still needs a person")
+    func allowancePrefixApproved() async throws {
+        let fixture = try Fixture()
+        defer { fixture.remove() }
+        let sealed = Self.allowance(prefix: "com.example.qa")
+
+        _ = try await fixture.builder(environment: [:], allowance: sealed).build(for: .device(udid: "U"), deviceName: "iPhone")
+        let arguments = try #require(fixture.xcodebuild.calls.first)
+        #expect(arguments.contains("OFFSIDER_RUNNER_BUNDLE_PREFIX=com.example.qa"))
+
+        let other = try Fixture()
+        defer { other.remove() }
+        await #expect(throws: RunnerPrefixNeedsPerson.self) {
+            _ = try await other.builder(environment: ["OFFSIDER_IOS_RUNNER_PREFIX": "com.example.qa"], allowance: Self.allowance()).build(for: .device(udid: "U"), deviceName: "iPhone")
+        }
+        #expect(other.xcodebuild.calls.isEmpty)
     }
 
     @Test("a build records its products in a private products.json naming the device, team and prefix")
@@ -336,6 +417,18 @@ struct RunnerCleanupTests {
         #expect(report.removedLogs == [log.path])
         #expect(report.remains.contains("Only the Apple developer site"))
         #expect(report.remains.contains("com.example.qa.runner.uitests"))
+    }
+
+    @Test("--clean also uninstalls the apps under the prefix the device's allowance names, with no build left to name it")
+    func cleanAllowancePrefix() async throws {
+        let cache = FileManager.default.temporaryDirectory.appendingPathComponent("offsider-runner-clean-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: cache) }
+        let devicectl = FakeDevicectl(replies: [:])
+
+        let report = await RunnerCleanup.clean(udid: "UDID-A", cacheRoot: cache, environmentPrefix: "com.mpalmes.offsider", allowancePrefix: "dev.offsider.abcde12345", devicectl: devicectl, logPaths: [])
+
+        #expect(report.prefixes == ["com.mpalmes.offsider", "dev.offsider.abcde12345"])
+        #expect(devicectl.calls.filter { $0.starts(with: ["device", "uninstall", "app"]) }.map { $0[5] }.contains("dev.offsider.abcde12345.runner"))
     }
 
     @Test("an uninstall devicectl refuses is reported with its reason, and the rest of the clean-up still runs")

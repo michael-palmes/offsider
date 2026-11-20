@@ -44,7 +44,20 @@ enum SelectorQuery {
 
     /// Names the elements closest to `query` once a wait or assert ends with nothing matching it.
     static func explain(_ query: AccessibilityQuery) -> (UITree) -> WaitNearMiss? {
-        { tree in AccessibilityTargetResolver.nearMiss(roots: tree.roots, query: query) }
+        { tree in AccessibilityTargetResolver.nearMiss(roots: tree.roots, query: query) ?? hiddenWithoutID(in: tree, query: query) }
+    }
+
+    /// On a simulator, an `--id` that matched nothing while the read filled in what the app hides: a point read finds a hidden view's text, never its id.
+    static func hiddenWithoutID(in tree: UITree, query: AccessibilityQuery) -> WaitNearMiss? {
+        guard tree.platform == .ios, query.kind == "--id", let count = tree.filledFromGaps, count > 0,
+              let app = tree.roots.first(where: { $0.role == .application }) else { return nil }
+        let unnamed = app.children.prefix(count).filter { $0.normalizedID == nil && $0.normalizedLabel != nil }
+        guard let first = unnamed.first, let label = first.normalizedLabel else { return nil }
+        let shown = "\(first.role.rawValue) \(TerminalText.quoted(SelectorText.truncated(label, limit: 44)))"
+        let summary = unnamed.count == 1
+            ? "the app hides \(shown), whose id a simulator cannot read; if that is it, use --label \(VerifyOutput.shellWord(label))"
+            : "\(unnamed.count) elements hidden from accessibility have no id a simulator can read, such as \(shown); use --label"
+        return WaitNearMiss(summary: summary, candidates: [])
     }
 }
 
@@ -168,10 +181,13 @@ struct ElementSelectorOptions: ParsableArguments {
             if let hasValue {
                 let valued = pool.filter { Self.value(of: $0, equals: hasValue) }
                 guard !valued.isEmpty else {
-                    let hidden = revealed?.matches(pool[0]) == true || OutputMasks.current.mask.hidesValue(of: pool[0])
-                    let actual = pool[0].normalizedValue.map { hidden ? "has a masked value" : "has value '\(LogRedactor.redactValue(TerminalText.line($0, keepsTab: false)).text)'" } ?? "has no value"
+                    let hidden = revealed?.matches(pool[0]) == true || OutputMasks.current.mask.withholdsValue(of: pool[0])
                     let labelled = pool.contains { AccessibilityQuery.label(hasValue).matches($0) }
                     let hint = labelled ? "; '\(hasValue)' is its label: use --label '\(hasValue)'" : ""
+                    if hidden, pool[0].normalizedValue != nil {
+                        return absent("does not match '\(hasValue)': its value is masked, so it is not shown\(hint)")
+                    }
+                    let actual = pool[0].normalizedValue.map { "has value '\(LogRedactor.redactValue(TerminalText.line($0, keepsTab: false)).text)'" } ?? "has no value"
                     return absent("\(actual), expected '\(hasValue)'\(hint)")
                 }
                 pool = valued

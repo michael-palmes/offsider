@@ -114,6 +114,19 @@ struct AndroidBackendHelperTests {
         await rig.backend.close()
     }
 
+    @Test("an app window that took seconds to give no tree is stuck, so it is not read a second time")
+    func silentWindowIsReadOnce() async throws {
+        let device = FakeHelperDevice()
+        device.dump = Self.noWindowDump.replacingOccurrences(of: #""eventSeq":1"#, with: #""timings":{"walkMs":5004,"totalMs":5031},"eventSeq":1"#)
+        let rig = try HelperRig(device)
+
+        let error = await #expect(throws: AndroidError.self) { try await rig.read() }
+        #expect(error?.kind == .noWindow)
+        #expect(rig.device.ops.filter { $0 == "dump" }.count == 1)
+        #expect(rig.sleeps.sleeps.isEmpty)
+        await rig.backend.close()
+    }
+
     @Test("a window that appears by the second read gives the tree")
     func noWindowThenTree() async throws {
         let device = FakeHelperDevice()
@@ -172,6 +185,21 @@ struct AndroidBackendHelperTests {
         _ = try await rig.read()
 
         #expect(rig.log.warnings == ["The screen on emulator-5556 is past 20,000 accessibility nodes or depth 200; describe-ui shows what was read, and masks may miss the rest."])
+        await rig.backend.close()
+    }
+
+    @Test("a dump the helper cut short for time says the tree is partial, once per command, and marks it as cut")
+    func cutForTime() async throws {
+        let device = FakeHelperDevice()
+        device.dump = FakeHelperDevice.tapTestDump
+            .replacingOccurrences(of: #""truncated":false"#, with: #""truncated":true"#)
+            .replacingOccurrences(of: #""eventSeq":3"#, with: #""timings":{"walkMs":6012,"totalMs":6540},"eventSeq":3"#)
+        let rig = try HelperRig(device)
+        let tree = try await rig.read()
+        _ = try await rig.read()
+
+        #expect(rig.log.warnings == ["The app on emulator-5556 answered too slowly to read its whole screen, so the helper stopped after 6 s and this tree is partial: describe-ui shows what was read, and masks may miss the rest."])
+        #expect(tree.sourceTruncated)
         await rig.backend.close()
     }
 

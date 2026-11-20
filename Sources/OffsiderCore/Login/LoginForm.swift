@@ -437,7 +437,7 @@ public enum LoginForm {
         return output
     }
 
-    private static func isIdentityName(_ node: UINode) -> Bool {
+    static func isIdentityName(_ node: UINode) -> Bool {
         let flat = tokens(node).joined()
         return flat.contains("email") || flat.contains("username")
     }
@@ -450,7 +450,7 @@ public enum LoginForm {
         return !candidates.isDisjoint(with: ["login", "signin", "submit", "continue", "next"])
     }
 
-    private static func tokens(_ node: UINode) -> [String] {
+    static func tokens(_ node: UINode) -> [String] {
         let raw = [node.label, node.id].compactMap { $0 }.map(splitCamelCase).joined(separator: " ").lowercased()
         return raw.split { !$0.isLetter && !$0.isNumber }.map(String.init)
     }
@@ -473,7 +473,7 @@ public enum LoginForm {
     }
 
     /// A control a hit-test reached, read again: the same role and name in the same place, so a twin on a screen beneath does not count.
-    private static func isReached(_ reached: UINode, _ node: UINode) -> Bool {
+    static func isReached(_ reached: UINode, _ node: UINode) -> Bool {
         guard reached.role == node.role, sameIdentity(reached, node), let theirs = reached.frame, let mine = node.frame else { return false }
         return theirs.isWithinTolerance(of: mine)
     }

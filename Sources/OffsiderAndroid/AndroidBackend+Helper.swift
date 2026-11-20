@@ -169,14 +169,19 @@ extension AndroidBackend {
         }
     }
 
-    /// One dump mapped to dp; a dump with no app window is read once more after 500 ms, then `noWindow`.
+    /// One dump mapped to dp; a dump with no app window is read once more after 500 ms, unless the first already waited seconds on it, then `noWindow`.
     /// `everyView` adds views not important for accessibility, and leaves the session's node index as the last plain read set it.
     func helperRoots(_ serial: String, session: HelperSession, everyView: Bool = false) async throws -> (
-        roots: [UINode], truncated: Bool, windows: [UIWindowInfo], hidden: Int?, namedHidden: [UITreeContext.HiddenBranch]?
+        roots: [UINode], truncated: Bool, windows: [UIWindowInfo], hidden: Int?, namedHidden: [UITreeContext.HiddenBranch]?, toasts: [UIToast]?
     ) {
-        let options = HelperDumpOptions(notImportant: everyView)
+        var options = HelperDumpOptions(notImportant: everyView)
+        options.toasts = everyView ? nil : toastScope(serial)
         var dump = try await helperDump(serial, session: session, options: options)
         if HelperTreeMapping.appWindow(in: dump) == nil {
+            guard !dump.waitedOnSilentWindow else {
+                log(.debug, "The app's window on \(serial) gave no tree in \(dump.walkMs ?? 0) ms, so it is not read again")
+                throw AndroidError.noWindow(serial)
+            }
             log(.debug, "The helper found no window on \(serial); reading the screen again")
             try await host.sleep(.milliseconds(500))
             dump = try await helperDump(serial, session: session, options: options)
@@ -192,7 +197,7 @@ extension AndroidBackend {
             geometry = try await self.geometry(for: serial)
         }
         if dump.truncated, warnedAboutTruncation.insert(serial).inserted {
-            log(.warning, AndroidTreeSource.truncationWarning(serial: serial))
+            log(.warning, AndroidTreeSource.truncationWarning(serial: serial, cutForTime: dump.cutForTime))
         }
         let mapped = host.timing.measure(.treeMap) {
             HelperTreeMapping.roots(from: dump, scale: geometry.scale, pid: session.ready.pid)
@@ -200,8 +205,18 @@ extension AndroidBackend {
         if !everyView { session.remember(mapped.index) }
         return (
             mapped.roots, dump.truncated, HelperTreeMapping.windows(from: dump, scale: geometry.scale), dump.skippedInvisible,
-            HelperTreeMapping.hiddenBranches(from: dump, scale: geometry.scale)
+            HelperTreeMapping.hiddenBranches(from: dump, scale: geometry.scale), HelperTreeMapping.toasts(from: dump, pid: session.ready.pid)
         )
+    }
+
+    /// Whose toasts a read may list, so the helper drops every other app's before its reply: the command's app, else on a phone
+    /// the allowed app the foreground check just passed (or the only one pinned), else the app window the dump reads; nil lists none.
+    func toastScope(_ serial: String) -> String? {
+        let scope = appScopes[serial]
+        if let target = scope?.target { return target }
+        guard DeviceID(rawValue: serial, platform: .android).isPhysicalAndroidDevice, scope?.wholeDevice != true else { return HelperDumpOptions.frontApp }
+        if let checked = foregroundChecks[serial]?.package, scope?.permitted.contains(checked) == true { return checked }
+        return scope.flatMap { $0.permitted.count == 1 ? $0.permitted.first : nil }
     }
 
     /// Marks windows that may be the copy preview after one read of every window on an emulator; a phone (reads kept to its app) or a failed read marks them all.
@@ -329,7 +344,15 @@ extension AndroidBackend {
                 log(.debug, "The warm helper on \(serial) is unavailable (\(error.detail)); starting one for this command")
             }
         }
-        return try await HelperSession.start(client: client, serial: serial, dex: dex, log: log, timing: host.timing)
+        return try await HelperSession.start(client: client, serial: serial, dex: dex, log: log, timing: host.timing, toastPackages: heldToastPackages(serial))
+    }
+
+    /// On a phone, the only packages whose toasts a helper started for this command holds at all, none when no app is known, so no other app's text is kept in its memory; nil (every package) on an emulator or a test device.
+    func heldToastPackages(_ serial: String) -> [String]? {
+        guard DeviceID(rawValue: serial, platform: .android).isPhysicalAndroidDevice, appScopes[serial]?.wholeDevice != true else { return nil }
+        guard let scope = appScopes[serial] else { return [] }
+        if let target = scope.target { return [target] }
+        return scope.permitted.sorted()
     }
 
     /// Emulators keep the helper warm unless `OFFSIDER_ANDROID_SESSION` is off; a USB phone only when it is on.

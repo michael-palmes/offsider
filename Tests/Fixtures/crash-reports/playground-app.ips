@@ -1,0 +1,11 @@
+{"app_name":"OffsiderPlayground","timestamp":"2026-11-20 09:00:00.00 +1030","app_version":"1.0","bug_type":"309","bundleID":"com.mpalmes.offsider.playground","name":"OffsiderPlayground","incident_id":"00000000-0000-0000-0000-000000000002"}
+{
+  "uptime" : 1200,
+  "procRole" : "Foreground",
+  "pid" : 4100,
+  "procName" : "OffsiderPlayground",
+  "parentPid" : 1,
+  "coalitionName" : "com.apple.CoreSimulator.SimDevice.00000000-0000-0000-0000-000000000001",
+  "exception" : {"type" : "EXC_BREAKPOINT", "signal" : "SIGTRAP"},
+  "threads" : [{"triggered" : true, "frames" : [{"symbol" : "made-up frame"}]}]
+}

@@ -164,7 +164,7 @@ struct AndroidRoutingTests {
         #expect(rig.emulator.calls.last == .close)
     }
 
-    @Test("in a batch, type on Android becomes one text step, after its password-field check, instead of HID key events")
+    @Test("in a batch, type on Android becomes one text step between its password-field check and its read-back, instead of HID key events")
     func batchTypeIsText() async throws {
         let device = DeviceID(rawValue: "emulator-5556", platform: .android)
         let context = BatchContext(
@@ -176,8 +176,8 @@ struct AndroidRoutingTests {
         )
         let primitives = try await Type.parse(["héllo world", "--device", device.rawValue]).toBatchPrimitives(context: context, logger: OffsiderLogger())
 
-        guard primitives.count == 2, case .run = primitives[0], case .text(let text, replace: false) = primitives[1] else {
-            Issue.record("expected the check and one text step, got \(primitives)")
+        guard primitives.count == 3, case .run = primitives[0], case .text(let text, replace: false) = primitives[1], case .run = primitives[2] else {
+            Issue.record("expected the check, one text step and the read-back, got \(primitives)")
             return
         }
         #expect(text == "héllo world")

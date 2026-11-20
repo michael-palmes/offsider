@@ -79,12 +79,14 @@ struct EmulatorBootTests {
         let lines: [String]
     }
 
-    static func boot(_ host: AndroidHost, headless: Bool = false, timeout: Duration = .seconds(240)) async -> Run {
+    static func boot(_ host: AndroidHost, headless: Bool = false, timeout: Duration = .seconds(240), now: Date = Date()) async -> Run {
         var lines: [String] = []
         let request = EmulatorBootRequest(avdName: avd, headless: headless, timeout: timeout)
         do {
             let logs = host.homeDirectory.path
-            let result = try await EmulatorBooter(host: host, log: { _, _ in }, logsDirectory: { logs }).boot(request) { lines.append($0) }
+            var booter = EmulatorBooter(host: host, log: { _, _ in }, logsDirectory: { logs })
+            booter.now = { now }
+            let result = try await booter.boot(request) { lines.append($0) }
             return Run(result: .success(result), lines: lines)
         } catch let error as AndroidError {
             return Run(result: .failure(error), lines: lines)
@@ -93,14 +95,25 @@ struct EmulatorBootTests {
         }
     }
 
-    @Test("launch arguments are the AVD and -no-metrics, plus -no-window when headless; never -port or -grpc")
+    @Test("launch arguments are the AVD, -no-metrics and -no-audio, plus -no-window when headless; never -port or -grpc")
     func launchArguments() {
-        #expect(EmulatorBooter.launchArguments(avdName: "X", headless: false) == ["-avd", "X", "-no-metrics"])
-        #expect(EmulatorBooter.launchArguments(avdName: "X", headless: true) == ["-avd", "X", "-no-metrics", "-no-window"])
+        #expect(EmulatorBooter.launchArguments(avdName: "X", headless: false) == ["-avd", "X", "-no-metrics", "-no-audio"])
+        #expect(EmulatorBooter.launchArguments(avdName: "X", headless: true) == ["-avd", "X", "-no-metrics", "-no-audio", "-no-window"])
         for headless in [false, true] {
             let arguments = EmulatorBooter.launchArguments(avdName: "X", headless: headless)
             #expect(!arguments.contains { $0.hasPrefix("-port") || $0.hasPrefix("-grpc") })
         }
+    }
+
+    @Test("host audio is off unless --audio asks for it, and --emulator-arg -no-audio never sends the flag twice")
+    func audioIsOptIn() {
+        let kept = EmulatorBootRequest(avdName: "X", headless: false, timeout: .seconds(1), audio: true)
+        #expect(EmulatorBooter.launchArguments(kept) == ["-avd", "X", "-no-metrics"])
+        #expect(kept.launchOnlyOptions == ["--audio"])
+        let passed = EmulatorBootRequest(avdName: "X", headless: false, timeout: .seconds(1), extraArguments: ["-gpu", "host", "-no-audio"])
+        #expect(EmulatorBooter.launchArguments(passed) == ["-avd", "X", "-no-metrics", "-gpu", "host", "-no-audio"])
+        #expect(EmulatorArguments.refusal(in: ["-no-audio"]) == nil)
+        #expect(EmulatorArguments.refusal(in: ["-audio", "coreaudio"])?.hasPrefix("--emulator-arg -audio is refused") == true)
     }
 
     @Test("a cold boot launches once, takes the serial from the new discovery file and waits for Android and gRPC")
@@ -123,14 +136,16 @@ struct EmulatorBootTests {
         #expect(try run.result.get() == EmulatorBootResult(serial: "emulator-5556", alreadyRunning: false, hasGRPC: true, logPath: logPath))
         #expect(launcher.launches == [FakeLauncher.Launch(
             executable: home.appendingPathComponent("Library/Android/sdk/emulator/emulator").path,
-            arguments: ["-avd", Self.avd, "-no-metrics", "-no-window"],
+            arguments: ["-avd", Self.avd, "-no-metrics", "-no-audio", "-no-window"],
             logPath: logPath
         )])
         #expect(launcher.environments.map { $0["ADB_MDNS"] } == ["0"])
         #expect(launcher.environments.first?["TMPDIR"] == home.path)
         #expect(launcher.environments.first?["ANDROID_EMU_ENABLE_CRASH_REPORTING"] == "0")
         #expect(emulator.calls == [.status, .status, .close])
-        #expect(run.lines == ["Starting \(Self.avd)...", "Waiting for Android to finish booting on emulator-5556..."])
+        #expect(run.lines == [
+            "Starting \(Self.avd)...", "Waiting for Android to finish booting on emulator-5556...", "Started \(Self.avd) as emulator-5556 (emulator pid 4242).",
+        ])
     }
 
     @Test("the boot log lives in the private logs folder, named by the AVD made safe for a file name")
@@ -184,6 +199,21 @@ struct EmulatorBootTests {
         #expect(run.lines == ["--headless ignored: \(Self.avd) is already running.", "\(Self.avd) is already running as emulator-5556."])
     }
 
+    @Test("an AVD that was already up says when its emulator started and its pid, so a boot this call did not do is never read as one it did")
+    func alreadyBootedSaysSinceWhen() async throws {
+        let home = try Self.home()
+        Self.writeDiscovery(pid: 900, in: home)
+        let started = Date(timeIntervalSince1970: 1_790_000_000)
+        let host = AndroidTestHost.make(home: home, adb: Self.server(AdbState()), liveProcesses: [900], startTimes: [900: started], launcher: FakeLauncher())
+
+        let run = await Self.boot(host, now: started.addingTimeInterval(14 * 60 + 5))
+
+        let line = try #require(run.lines.last)
+        #expect(line.hasPrefix("\(Self.avd) is already running as emulator-5556 (emulator pid 900, started 14 min ago at "))
+        #expect(!line.contains("Started ") && !line.lowercased().contains("session"))
+        #expect(StartPersonView.bootLine(line) == .running)
+    }
+
     @Test("a running AVD is never launched again for memory, snapshot or extra arguments, and each is named as ignored")
     func alreadyRunningIgnoresLaunchOptions() async throws {
         let home = try Self.home()
@@ -207,9 +237,9 @@ struct EmulatorBootTests {
         let request = EmulatorBootRequest(
             avdName: "X", headless: true, timeout: .seconds(1), memoryMB: 3072, noSnapshotLoad: true, extraArguments: ["-gpu", "host"]
         )
-        #expect(EmulatorBooter.launchArguments(request) == ["-avd", "X", "-no-metrics", "-no-window", "-memory", "3072", "-no-snapshot-load", "-gpu", "host"])
+        #expect(EmulatorBooter.launchArguments(request) == ["-avd", "X", "-no-metrics", "-no-audio", "-no-window", "-memory", "3072", "-no-snapshot-load", "-gpu", "host"])
         #expect(EmulatorBooter.launchArguments(EmulatorBootRequest(avdName: "X", headless: false, timeout: .seconds(1), memoryMB: 2048))
-            == ["-avd", "X", "-no-metrics", "-memory", "2048"])
+            == ["-avd", "X", "-no-metrics", "-no-audio", "-memory", "2048"])
     }
 
     @Test("--emulator-arg refuses listener, metrics and Offsider-owned flags in bare, double-dash and =value forms", arguments: [
@@ -514,7 +544,7 @@ struct EmulatorBootTests {
 @Suite("boot command")
 struct BootCommandTests {
     @Test("boot refuses a simulator UUID, a serial and an out-of-range timeout with usage errors", arguments: [
-        ("boot \(UUID().uuidString) --memory 2048", "--memory, --no-snapshot-load and --emulator-arg start emulators only"),
+        ("boot \(UUID().uuidString) --memory 2048", "--memory, --no-snapshot-load, --audio and --emulator-arg start emulators only"),
         ("boot emulator-5556", "boot takes an AVD name, not a serial."),
         ("boot Pixel_9 --timeout 5", "--timeout must be between 10 and 1800 seconds."),
         ("boot Pixel_9 --emulator-arg -grpc", "--emulator-arg -grpc is refused: "),
@@ -522,6 +552,8 @@ struct BootCommandTests {
         ("boot Pixel_9 --emulator-arg @Work_AVD", "--emulator-arg @Work_AVD is refused: "),
         ("boot Pixel_9 --emulator-arg -network-user-mode-options --emulator-arg hostfwd=tcp::5555-:5555", "--emulator-arg -network-user-mode-options is refused: "),
         ("boot Pixel_9 --memory 512", "--memory must be from 1024 to 16384 MB; got 512."),
+        ("boot Pixel_9 --audio --emulator-arg -no-audio", "--audio keeps the emulator's audio and --emulator-arg -no-audio turns it off; pass one of them."),
+        ("boot 00000000-0000-0000-0000-000000000001 --audio", "--memory, --no-snapshot-load, --audio and --emulator-arg start emulators only"),
     ])
     func validation(command: String, message: String) async throws {
         let result = try await TestHelpers.runOffsiderWithoutAndroid(command)

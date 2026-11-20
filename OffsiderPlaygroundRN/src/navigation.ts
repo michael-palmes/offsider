@@ -87,6 +87,18 @@ export const routeInfo = {
     menuTitle: 'Keypad Test',
     subtitle: 'Price field fed by an in-app keypad',
   },
+  'code-entry-test': {
+    section: 'Input & Text',
+    title: 'Code Entry',
+    menuTitle: 'Code Entry',
+    subtitle: 'Button over a hidden one-time-code input',
+  },
+  'sign-up': {
+    section: 'Input & Text',
+    title: 'Sign Up',
+    menuTitle: 'Sign Up',
+    subtitle: 'Email, then password and confirm',
+  },
   'button-test': {
     section: 'Hardware',
     title: 'Button Test',
@@ -261,6 +273,30 @@ export const routeInfo = {
     menuTitle: 'Cover Test',
     subtitle: 'An app keypad over a field, stacked pages',
   },
+  'story-intro-test': {
+    section: 'Real-world RN',
+    title: 'Story Intro',
+    menuTitle: 'Story Intro Test',
+    subtitle: 'Three timed pages in a row, one id on the container',
+  },
+  'web-chart-test': {
+    section: 'Real-world RN',
+    title: 'Web Chart',
+    menuTitle: 'Web Chart Test',
+    subtitle: 'A web view canvas fed ticks, with pinch and pan',
+  },
+  'check-widget-test': {
+    section: 'Real-world RN',
+    title: 'Check Widget',
+    menuTitle: 'Check Widget Test',
+    subtitle: 'A sign-in form with a human check in a web view',
+  },
+  'storage-test': {
+    section: 'Real-world RN',
+    title: 'Storage',
+    menuTitle: 'Storage Test',
+    subtitle: 'Two keys written to app storage',
+  },
   'user-switch-test': {
     section: 'Real-world RN',
     title: 'User Switch',
@@ -281,9 +317,16 @@ export function markerId(route: RouteId): string {
   return route === 'batch-login-flow' ? 'batch-login-screen' : `${route}-screen`;
 }
 
+const screenUrl = /^offsiderplaygroundrn:\/\/screen\/([a-z-]+)\/?(\?intro=1)?$/;
+
 export function routeFromUrl(url: string | null): RouteId | null {
-  const match = url?.match(/^offsiderplaygroundrn:\/\/screen\/([a-z-]+)\/?$/);
+  const match = url?.match(screenUrl);
   return match && isRouteId(match[1]) ? match[1] : null;
+}
+
+/** `?intro=1` on a screen link shows the story intro first, as a first launch would. */
+export function introFromUrl(url: string | null): boolean {
+  return url?.match(screenUrl)?.[2] !== undefined;
 }
 
 export type Navigation = { push: (route: RouteId) => void; pop: () => void };

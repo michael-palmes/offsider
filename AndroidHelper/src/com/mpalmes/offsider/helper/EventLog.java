@@ -5,6 +5,7 @@ import android.os.SystemClock;
 import android.view.accessibility.AccessibilityEvent;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 
 /** The latest relevant accessibility events, numbered from 1, so a verifier can wake between tree reads. */
 final class EventLog implements UiAutomation.OnAccessibilityEventListener {
@@ -27,16 +28,22 @@ final class EventLog implements UiAutomation.OnAccessibilityEventListener {
 
     private final Entry[] ring;
     private long seq;
+    final ToastLog toasts;
 
-    EventLog(int capacity) {
+    EventLog(int capacity, Set<String> toastPackages) {
         ring = new Entry[capacity];
+        toasts = new ToastLog(toastPackages);
     }
 
     @Override
     public void onAccessibilityEvent(AccessibilityEvent event) {
         int type = event.getEventType();
         CharSequence pkg = event.getPackageName();
-        if (relevant(type, pkg)) {
+        if (type == AccessibilityEvent.TYPE_NOTIFICATION_STATE_CHANGED && ToastLog.isToast(event.getClassName())) {
+            toasts.record(text(event.getText()), pkg == null ? null : pkg.toString(), SystemClock.uptimeMillis());
+            // A wake for a waiting verifier, with no package or text: the toast itself leaves only through the ring's package filter.
+            record(type, null, -1);
+        } else if (relevant(type, pkg)) {
             record(type, pkg == null ? null : pkg.toString(), event.getWindowId());
         }
     }
@@ -59,6 +66,19 @@ final class EventLog implements UiAutomation.OnAccessibilityEventListener {
             default:
                 return false;
         }
+    }
+
+    /** The toast's message: its first part, as Android 12 and later add the app's name after it. */
+    static String text(List<CharSequence> parts) {
+        if (parts == null) {
+            return null;
+        }
+        for (CharSequence part : parts) {
+            if (part != null && part.toString().trim().length() > 0) {
+                return part.toString();
+            }
+        }
+        return null;
     }
 
     synchronized void record(int type, String pkg, int windowId) {

@@ -12,6 +12,14 @@ You are a macOS tooling engineer maintaining a small, local-only Swift CLI built
 
 Dead simple, secure by default. The focus, delivered with no effort from the developer: one command, nothing to look up or paste, a picker for every choice, a spinner over every pause, secure defaults nobody has to choose, and every dead end naming its fix in one line. Use words anyone understands and as few as possible: people do not read.
 
+Built for the agent in the middle. Developers work inside Claude Code or a similar agent: they rarely read docs or type a command, and ask the agent instead. Design every feature for that path:
+
+- **The agent finds it:** through the bundled skill, `--help`, `guide`, `doctor` or an error's hint, never through a docs page a person must read first.
+- **The agent sets it up and keeps it current:** safe defaults it can write, check and tighten on its own.
+- **Safety never rests on a person finding or writing a command.** When only a person may act, Offsider prints the complete command (a `--plan`) for the agent to hand over, and one Touch ID covers as much as it safely can.
+- **What an agent can write, it cannot loosen:** a change that weakens a guard waits for a person.
+- **Prove it:** set the feature up from a fresh clone inside an agent before the pull request, and count what the person had to type.
+
 ## Origin
 
 Offsider began as a fork of AXe (`cameroncooke/axe`) v1.8.0 and is developed independently. Nothing flows either way: no upstream remote, syncs or cherry-picks from AXe, and no PRs, issues or patches to AXe or `cameroncooke/idb`. Keep AXe's credit in `LICENSE`, `NOTICE.md` and `README.md`.
@@ -88,16 +96,17 @@ Agents building in parallel use `swift build --scratch-path <dir>` and `swift te
 | `OFFSIDER_ANDROID_APK` | The React Native playground's release APK the Android suites install |
 | `OFFSIDER_ANDROID_E2E_AVD` | The only AVD Android E2E may drive (default `Offsider_E2E`) |
 | `OFFSIDER_ANDROID_FOLD_AVD` | The fold AVD `--android-fold` drives (default `Offsider_E2E_Fold`) |
+| `OFFSIDER_E2E_KEEP_BOOTED=1` | `test-runner.sh` leaves a simulator or AVD it booted running at the end, as `--keep-booted` does; one already running is always left as it was |
 | `OFFSIDER_SIMULATOR_NAME`, `OFFSIDER_FOLDABLE_SIMULATOR_NAME` | The simulator names `test-runner.sh` picks for the simulator and foldable suites (defaults: a stock iPhone, `Offsider Duo`); `SIMULATOR_UDID` overrides both. `test-runner.sh` loads a git-ignored `.env` first, so machine-specific names live there (see `.env.example`) |
 | `OFFSIDER_ANDROID_LANDSCAPE_E2E=1` | Adds the Android landscape suite (Settings) |
-| `OFFSIDER_ANDROID_BOOT_E2E=1` | Adds the cold `boot` test, which stops and restarts the E2E AVD |
+| `OFFSIDER_ANDROID_BOOT_E2E=1` | Adds the cold `boot` test, which stops and restarts the E2E AVD, and the helper's framework restart test, which restarts Android on it (needs an image whose shell can `su`) |
 | `OFFSIDER_FOLDABLE_E2E=1` | Enables `FoldableTests` on the iPhone Duo simulator named by `SIMULATOR_UDID` |
 | `OFFSIDER_ANDROID_FOLD_E2E=1` | Enables `AndroidFoldableTests` (needs `OFFSIDER_ANDROID_E2E_AVD` set to the fold AVD) |
 | `OFFSIDER_ANDROID_PHONE` | The exact USB serial the `AndroidPhone*Tests` suites drive (an `adb devices -l` row with `usb:` and state `device`; refused beside `OFFSIDER_ANDROID_E2E`, and unless its allowance pins `com.mpalmes.offsider.playground.rn` or is a test device); unset, `--android-phone` uses the one active Android allowance, only when it pins `com.mpalmes.offsider.playground.rn` or is a test device |
 | `OFFSIDER_IOS_DEVICE_E2E=1` | Enables the `IOSDevice*E2ETests` suites in `swift test` (`test-runner.sh --ios-device` sets it) |
 | `OFFSIDER_IOS_DEVICE` | The exact UDID the iOS device suites drive (a physical iOS or iPadOS row in `devicectl list devices`; never a simulator); unset, `--ios-device` uses the one active iPhone or iPad allowance, only when it pins `com.mpalmes.offsider.playground` or is a test device |
 | `OFFSIDER_IOS_TEAM_ID` | The team (10 letters and digits) that signs the runner and the OffsiderPlaygroundApp for a device; used only when the allowance names no team, or the same one (another team exits 64), and `--ios-device` reads the allowance's team the same way; required when the allowance names none; Xcode's signed-in team is never picked silently |
-| `OFFSIDER_IOS_RUNNER_PREFIX` | The iPhone runner's bundle id prefix (default `com.mpalmes.offsider`; apps `<prefix>.runner` and `<prefix>.runner.uitests`; reverse-DNS, at most 100 characters, else exit 64); part of the runner cache key |
+| `OFFSIDER_IOS_RUNNER_PREFIX` | The iPhone runner's bundle id prefix (default `com.mpalmes.offsider`; apps `<prefix>.runner` and `<prefix>.runner.uitests`; reverse-DNS, at most 100 characters, else exit 64); part of the runner cache key; a prefix a person saved with `devices add --runner-prefix` wins, and another here exits 64 |
 | `OFFSIDER_ANDROID_TRANSPORT` | `adb` or `grpc` forces one Android transport (troubleshooting) |
 | `OFFSIDER_ANDROID_GRPC_AUTH` | `jwt` makes gRPC use a short-lived signing key instead of the discovery token |
 | `OFFSIDER_ANDROID_TREE` | `helper` or `uiautomator` forces one Android tree source (troubleshooting); default `auto` |
@@ -105,7 +114,7 @@ Agents building in parallel use `swift build --scratch-path <dir>` and `swift te
 | `OFFSIDER_ANDROID_SESSION_IDLE` | Seconds the warm helper stays after the last command (default 60, at most 3600); a broker stops after 12 hours at its next idle moment |
 | `OFFSIDER_ANDROID_INPUT` | `helper` or `input` forces how input reaches a device without gRPC; default `auto` (the helper when the command already runs it, or for a touch held still) |
 | `OFFSIDER_ANDROID_CAPTURE` | `screencap`, `raw` or `helper` forces how a device without gRPC is captured; `raw` and `helper` fall back to `screencap -p`; default `auto` (`screencap -p`) |
-| `OFFSIDER_SIMULATOR_SESSION` | `on` (default) keeps each simulator's input session warm between commands through its HID broker; `off` opens one per command (`touch --down` or `--up` alone still uses the broker) |
+| `OFFSIDER_SIMULATOR_SESSION` | `on` (default) keeps each simulator's input session warm between commands through its HID broker, which on iOS 27+ also holds the automation session reads would otherwise open each time; `off` opens one per command and reads set up their own (`touch --down` or `--up` alone still uses the broker) |
 | `OFFSIDER_SIMULATOR_SESSION_IDLE` | Seconds a simulator's warm input session stays after the last command (default 60, at most 3600); a broker stops after 12 hours at its next idle moment |
 | `OFFSIDER_IOS_RUNNER_IDLE` | Seconds an iPhone runner session stays up after its last request (default 300, at most 3600); a session is restarted after 12 hours |
 | `OFFSIDER_IOS_SESSION_IDLE` | Seconds an iPhone or iPad session broker stays up after its last command (default 300, at most 3600); a broker stops after 12 hours at its next idle moment |
@@ -135,6 +144,7 @@ Agents building in parallel use `swift build --scratch-path <dir>` and `swift te
 | iPhone runner | `Sources/Offsider/Resources/runner/` (`project.yml` and the generated `OffsiderRunner.xcodeproj`); regenerate with `scripts/build.sh runner` |
 | Android helper (Java) | `AndroidHelper/src/`; never edit the dex or manifest in `Sources/Offsider/Resources/helper/` by hand |
 | HID broker, accessibility resolution, errors | `Sources/Offsider/Utilities/` |
+| The app guard (`offsider.guard.json`: controls an agent asks before tapping, or never taps) | Rules, verdicts and approvals in `Sources/OffsiderCore/Guard/`; the gate every input passes in `Sources/Offsider/Utilities/AppGuard.swift`, called from `TrackedInputSession`; the command in `Commands/Guard.swift` |
 | Terminal output and prompts | `Sources/OffsiderCore/Terminal/`: `Console` (the one writer), `Page`, `Table`, `PersonRenderer`, `AgentRenderer`, screens such as `DevicesScreen`, and prompts (`TerminalUI`, `PromptScreen`); goldens in `Tests/Goldens/screens/`; scripts use `scripts/lib/ui.sh` |
 | The skill `offsider init` installs | `Sources/Offsider/Resources/skills/offsider/SKILL.md` (a router under 10 KB); topics `offsider guide` prints are `references/<topic>.md` beside it, listed in `Types/GuideTopic.swift` |
 | Version string | `Plugins/VersionPlugin` (generates git-ignored `Version.swift`) |
@@ -157,6 +167,9 @@ A command or option change also updates `docs/commands.md` (and the `docs/` page
 - Most HID commands are fire-and-forget: they confirm dispatch, not effect. Verify with `--verify` on `tap`, `type`, `key` and `button` (exit 5 when nothing changes), or with `describe-ui` or `screenshot`; `slider` always checks its own result. When input seems ignored, run `offsider doctor --device <DEVICE_ID>` to check Device Hub, Resize Mode and dtuhidd.
 - The HID broker serves a per-user Unix socket under `$TMPDIR/offsider-hid-<uid>`, rejects peers running as another user or from another Offsider build (code signature), and keeps a simulator's input session warm until 60 s after the last command. After simulator E2E or a manual check, `offsider session stop --device <UDID>` closes it.
 - A private API break is fixed by moving the idb pin, never by patching `idb_checkout/`.
+- No test or fixture crashes an app or a system process on purpose (`NoDeliberateCrashTests` fails on one): each crash raises a dialog on the Mac. End an app with the playground's `quit-now`, `kill -TERM` or `am force-stop`, and test crash handling with the made-up report in `Tests/Fixtures/crash-reports`.
+- An agent never erases a simulator to get past a crash loop: shut it down, wait for a quiet Mac, then boot it once. Only a person erases one that loops again on a quiet Mac; `doctor` and `test-runner.sh` print that command for them.
+- `test-runner.sh` boots a simulator or AVD only when the 1-minute load is at most twice the cores (it waits up to 10 minutes, then stops), shuts down what it booted when the run ends (`--keep-booted` keeps it; one already running is left alone), and ends a simulator run with the crash reports it wrote, failing on SpringBoard, PosterBoard or a playground app.
 - An iPhone Duo simulator, named by `OFFSIDER_FOLDABLE_SIMULATOR_NAME` (default `Offsider Duo`), is the foldable fixture; `offsider posture` folds and unfolds it through the hinge service, so `FoldableTests` runs unattended. `offsider orientation` turns it, folded or unfolded, through Device Hub's orientation picker.
 
 ## Physical iPhone caveats
@@ -172,14 +185,14 @@ A command or option change also updates `docs/commands.md` (and the `docs/` page
 
 ## Android emulator caveats
 
-- Launch emulators only through `offsider boot`, or with neither `-port` nor a bare `-grpc`: `-port` leaves no gRPC endpoint, and a bare `-grpc` binds `[::]` with no auth. Always pass `-no-metrics`.
+- Launch emulators only through `offsider boot`, or with neither `-port` nor a bare `-grpc`: `-port` leaves no gRPC endpoint, and a bare `-grpc` binds `[::]` with no auth. Always pass `-no-metrics`, and `-no-audio` unless the user asks for sound (`boot --audio`): host audio can open the Mac's microphone.
 - `boot --emulator-arg` takes only the flags in `EmulatorArguments.allowed`, each value checked, and refuses Offsider's own flags (`ownedFlags`) and everything else. Never add a listener, port, gRPC, metrics, network or host-path flag to the allow-list, nor `webcam` to the camera values.
 - Start the adb server with `ADB_MDNS=0`, so it sends no multicast on the LAN.
 - A physical phone is often attached to this Mac and must never be targeted: agents, scripts and E2E drive only the Offsider AVDs and simulators, and a phone only when the user names it and has run `offsider devices add` and chosen it themselves. Reading its `adb devices -l` row is fine; never send it a command. Offsider sets an `adb reverse` only from `rn open` on an allowed USB phone, as `tcp:<port> tcp:<port>` for a Metro port the person chose in `devices add`, once Metro on 127.0.0.1 answers and runs as this user; `session stop` removes only the ones it recorded. Never set one on a phone yourself, and never widen the ports.
 - E2E and manual checks drive only the AVDs `OFFSIDER_ANDROID_E2E_AVD` and `OFFSIDER_ANDROID_FOLD_AVD` name (defaults `Offsider_E2E` and `Offsider_E2E_Fold`), and check the AVD name first (`adb -s <serial> emu avd name`); never send anything to another emulator, which may be someone's work device.
 - Never bundle adb (Android SDK licence 3.4) or use Google's Android CLI (telemetry on by default). Use the SDK the user installed.
 - The gRPC JWT issuer is `gradle-utp-emulator-control`, with the method path as `aud` and no `typ` header; never `android-studio`.
-- `permission`, `status-bar` and `biometric` change state that outlives the command on both platforms, as `stay-awake` and `airplane` do on Android; E2E suites reset what they set, and Android permission resets are per app (never `pm reset-permissions`).
+- `permission`, `alert`'s answers, `status-bar` and `biometric` change state that outlives the command on both platforms, as `stay-awake` and `airplane` do on Android; E2E suites reset what they set, and Android permission resets are per app (never `pm reset-permissions`).
 - React Native E2E saves test users only for the RN playground's app id, refuses to start when that id already has saved users, and removes them and their sign-in records afterwards.
 - Never type, pipe or ask for a device's unlock code: the user saves it with `offsider unlock-code set` in their own terminal. `wake --unlock` types a saved code once; never loop on it.
 - On an emulator the helper stays warm, holding Android's single UiAutomation slot with `accessibility_enabled` reading 1, until 60 s after the last command; on a phone only while one command runs, unless `OFFSIDER_ANDROID_SESSION=on`. Its broker, like the other two, admits only this Offsider build, by code signature. After Android E2E or a manual check, run `offsider session stop --device <serial>` so other UiAutomation clients can connect. Keep its reflection to the four UiAutomation members and the display probe with its public fallback; never implement a hidden Binder interface.

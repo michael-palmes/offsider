@@ -3,7 +3,7 @@ import Foundation
 
 /// An advisory claim on a device across a session: a label, when it started and when it lapses. No input command reads it.
 public struct DeviceLease: Equatable, Sendable {
-    public static let labelLengths = 1...80
+    public static let labelLengths = 1...200
     public static let minutes = 1...1440
     public static let defaultMinutes = 240
 
@@ -23,12 +23,22 @@ public struct DeviceLease: Equatable, Sendable {
         self.owner = owner
     }
 
-    /// 1 to 80 printable characters, trimmed; nil otherwise.
+    /// 1 to 200 printable characters, trimmed and never cut, since `OFFSIDER_LEASE` must match it whole; nil otherwise.
     public static func validLabel(_ text: String) -> String? {
         let label = text.trimmingCharacters(in: .whitespaces)
         guard labelLengths.contains(label.count), label.unicodeScalars.allSatisfy({ !CharacterSet.controlCharacters.contains($0) }) else { return nil }
         return label
     }
+
+    /// Why `validLabel` refused `text`, with the limit and what was given.
+    public static func labelRefusal(_ text: String) -> String {
+        let count = text.trimmingCharacters(in: .whitespaces).count
+        let rule = "--label must be \(labelLengths.lowerBound) to \(labelLengths.upperBound) printable characters"
+        return labelLengths.contains(count) ? "\(rule); this one holds a control character." : "\(rule); got \(count)."
+    }
+
+    /// `--label`'s value name, so the usage line states the limit.
+    public static let labelValueName = "\(labelLengths.lowerBound)-\(labelLengths.upperBound) characters"
 
     var fileContents: String {
         var text = "label=\(label)\ncreated=\(Int(created.timeIntervalSince1970))\nexpires=\(Int(expires.timeIntervalSince1970))\npid=\(pid)\n"

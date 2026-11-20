@@ -15,7 +15,9 @@ struct DescribeUI: AsyncParsableCommand {
         branches the helper left out as not visible to the user, and context.hiddenBranches names up to five of them \
         ({id, label, className, frame}, on-screen and larger first). Both add what the app draws but hides from \
         accessibility, counted in context.filled; --diff leaves those out. On an allowed phone it still reads while the allowed app \
-        holds focus beneath a system window owned by android, naming it in context.window (readOnly); input stays refused there.
+        holds focus beneath a system window owned by android, naming it in context.window (readOnly); input stays refused there. \
+        On Android, context.toasts lists the app's toasts of the last 30 s ({text, package, ageMs}; a # toast: line each in \
+        text), masked like element text; on a phone only toasts raised during the command are seen.
         """
     )
 
@@ -89,7 +91,9 @@ struct DescribeUI: AsyncParsableCommand {
             try await Self.requireActive(displayOption, on: route, deviceName: deviceOption.id)
             if rawSource { return try Self.rawSourceText(try await Self.rawCapture(on: route)) + "\n" }
             return try await PhoneRead.$overSystemWindow.withValue(true) {
-                try await AccessibilityFetcher.$warnsWhenEmpty.withValue(true) { try await describe(on: route) }
+                // A test device held to one app reads that app's permission prompt, and nothing else over it.
+                _ = try await (route.backend as? any AppPromptCapturing)?.promptOverSelectedApp(on: route.device)
+                return try await AccessibilityFetcher.$warnsWhenEmpty.withValue(true) { try await describe(on: route) }
             }
         }
     }

@@ -56,6 +56,7 @@ public enum FailureReason: String, CaseIterable, Sendable {
     case emulatorTimedOut = "emulator_timed_out"
     case emulatorLaunchFailed = "emulator_launch_failed"
     case bootTimedOut = "boot_timed_out"
+    case bootFailed = "boot_failed"
     case shutdownFailed = "shutdown_failed"
     case shutdownTimedOut = "shutdown_timed_out"
     case hidBrokerFailed = "hid_broker_failed"
@@ -65,6 +66,7 @@ public enum FailureReason: String, CaseIterable, Sendable {
     case deviceListFailed = "device_list_failed"
     case expoDevClientFailed = "expo_dev_client_failed"
     case runnerBuildFailed = "runner_build_failed"
+    case profileExpired = "profile_expired"
     case runnerUnavailable = "runner_unavailable"
     case runActive = "run_active"
     case runUnavailable = "run_unavailable"
@@ -80,9 +82,12 @@ public enum FailureReason: String, CaseIterable, Sendable {
     case appNotResponding = "app_not_responding"
     case logBoxInspectorOpen = "logbox_inspector_open"
     case appNotAllowed = "app_not_allowed"
+    case guardedControl = "guarded_control"
     case personRequired = "person_required"
     case turnstileRequired = "turnstile_required"
     case foregroundChanged = "foreground_changed"
+    case secretWouldShow = "secret_would_show"
+    case fieldNotEmpty = "field_not_empty"
     case installDamaged = "install_damaged"
 
     case selectorNotFound = "selector_not_found"
@@ -94,6 +99,7 @@ public enum FailureReason: String, CaseIterable, Sendable {
     case conditionNotMet = "condition_not_met"
 
     case widgetNotShown = "widget_not_shown"
+    case alertNotShown = "alert_not_shown"
     case selectorAmbiguous = "selector_ambiguous"
     case selectorAmbiguousSwitch = "selector_ambiguous_switch"
     case userAmbiguous = "user_ambiguous"
@@ -142,7 +148,7 @@ public enum FailureReason: String, CaseIterable, Sendable {
 
     public var exitCode: OffsiderExitCode {
         switch self {
-        case .selectorNotFound, .selectorFilteredByType, .targetOffScreen, .focusMismatch, .userNotFound, .widgetNotShown:
+        case .selectorNotFound, .selectorFilteredByType, .targetOffScreen, .focusMismatch, .userNotFound, .widgetNotShown, .alertNotShown:
             return .selectorNotFound
         case .notVerified, .conditionNotMet, .focusNotConfirmed, .textNotAccepted:
             return .unverified

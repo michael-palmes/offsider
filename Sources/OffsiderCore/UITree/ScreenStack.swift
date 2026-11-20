@@ -30,6 +30,25 @@ public struct ScreenStack: Equatable, Sendable {
     public let beneath: [Beneath]
     /// Each covered element's index to the index of the topmost page over it.
     let topSealer: [Int: Int]
+    /// On a simulator, each element a sibling page of another size may be drawn over, which the tree's order cannot tell, to those pages, lowest first.
+    let unordered: [Int: [Page]]
+
+    init(pages: [Page], beneath: [Beneath], topSealer: [Int: Int], unordered: [Int: [Page]] = [:]) {
+        self.pages = pages
+        self.beneath = beneath
+        self.topSealer = topSealer
+        self.unordered = unordered
+    }
+
+    /// The pages a hit-test must settle for the element at this pre-order index: on a simulator, those it may lie beneath though the tree cannot say; empty when a page surely covers it.
+    public func unorderedPages(over index: Int) -> [Page] {
+        unordered[index] ?? []
+    }
+
+    /// `unorderedPages(over:)` for a node of a tree already indexed, by its first copy.
+    public func unorderedPages(over node: UINode, in tree: TreeIndex) -> [Page] {
+        tree.firstIndex(of: node).map(unorderedPages(over:)) ?? []
+    }
 
     /// True when the element at this pre-order index lies beneath a page.
     public func isBeneath(index: Int) -> Bool {
@@ -109,9 +128,14 @@ public struct ScreenStack: Equatable, Sendable {
         var pages: [Int: Page] = [:]
         var lowestSealer: [Int: Int] = [:]
         var topSealer: [Int: Int] = [:]
+        var unordered: [Int: [Page]] = [:]
         for parent in flat.entries.indices where flat.entries[parent].children.count > 1 && !flat.isScrolledOrKeyboard(parent) {
             guard let ordered = flat.bottomFirst(flat.entries[parent].children) else { continue }
             let byDrawingOrder = flat.entries[ordered[0]].node.drawingOrder != nil
+            // The app's own children are its windows and what the gap fill found, which hit-tests already read.
+            if !byDrawingOrder, flat.entries[parent].node.role != .application {
+                flat.addUnordered(among: ordered, viewport: viewport, to: &unordered)
+            }
             for (position, candidate) in ordered.enumerated() {
                 let above = byDrawingOrder ? Array(ordered[(position + 1)...]) : []
                 guard let page = flat.page(at: candidate, drawnBeneath: above, viewport: viewport) else { continue }
@@ -139,8 +163,23 @@ public struct ScreenStack: Equatable, Sendable {
         return ScreenStack(
             pages: pages.keys.sorted().filter { sealers.contains($0) }.compactMap { pages[$0] },
             beneath: beneath,
-            topSealer: topSealer
+            topSealer: topSealer,
+            unordered: unordered.filter { topSealer[$0.key] == nil }
         )
+    }
+
+    /// The covered screens of `roots`, then those a hit-test found beneath a page the tree cannot order, grouped by that page.
+    public static func beneath(of roots: [UINode], viewport: UIFrame?, front: FrontReading?) -> [Beneath] {
+        let flat = FlatTree(roots: roots)
+        let stack = build(flat, viewport: viewport)
+        let sealed = Set(stack.beneath.flatMap(\.indexes))
+        guard let viewport, let found = front?.beneath.filter({ !sealed.contains($0.key) && $0.key < flat.entries.count }), !found.isEmpty else { return stack.beneath }
+        let byPage = Dictionary(grouping: found.keys, by: { found[$0]! })
+        let more = byPage.keys.sorted { byPage[$0]!.min()! < byPage[$1]!.min()! }.map { page in
+            let indexes = Set(byPage[page]!)
+            return Beneath(name: flat.name(ofGroup: indexes.sorted(), viewport: viewport), under: page, elements: indexes.count, indexes: indexes)
+        }
+        return stack.beneath + more
     }
 
     static func share(of frame: UIFrame, in viewport: UIFrame) -> Double {
@@ -190,6 +229,16 @@ struct FlatTree {
         return false
     }
 
+    /// A hidden node of an app window that is hidden whole, as under a keyboard panel: every view there reads not visible, so the flag cannot tell one that is drawn from one that is not.
+    func isHiddenWithItsWindow(_ index: Int) -> Bool {
+        guard entries[index].node.visibleToUser == false else { return false }
+        var root = index
+        while let parent = entries[root].parent {
+            root = parent
+        }
+        return entries[root].node.role == .application && entries[root].node.visibleToUser == false
+    }
+
     /// Siblings bottom first: by drawing order on Android (nil when any lacks one), else tree order.
     func bottomFirst(_ siblings: [Int]) -> [Int]? {
         let android = siblings.contains { entries[$0].node.isAndroidNode }
@@ -208,12 +257,48 @@ struct FlatTree {
 
     private static let overlayTypes = ["alert", "dialog", "sheet"]
 
+    /// On a simulator, marks what each big sibling of another size encloses: listed by position, either may be on top.
+    func addUnordered(among siblings: [Int], viewport: UIFrame, to unordered: inout [Int: [ScreenStack.Page]]) {
+        guard siblings.contains(where: { entries[$0].node.iosPID != nil }) else { return }
+        for candidate in siblings {
+            guard let frame = entries[candidate].node.frame, let shown = frame.intersection(viewport),
+                  ScreenStack.share(of: shown, in: viewport) >= ScreenStack.minimumShare else { continue }
+            let enclosed = siblings.filter { other in
+                guard other != candidate, isOrderedByPosition(other, under: candidate),
+                      let visible = entries[other].node.frame?.intersection(viewport), frame.encloses(visible, tolerance: ScreenStack.tolerance) else { return false }
+                return subtree(other).contains { entries[$0].node.isTelling || entries[$0].node.normalizedID != nil }
+            }
+            guard !enclosed.isEmpty, let page = cover(at: candidate, viewport: viewport) else { continue }
+            for other in enclosed {
+                for index in subtree(other) {
+                    unordered[index, default: []].append(page)
+                }
+            }
+        }
+    }
+
+    /// The candidate as a page a hit-test may find drawn over a sibling: big, no control or overlay, with something telling on it.
+    private func cover(at index: Int, viewport: UIFrame) -> ScreenStack.Page? {
+        let node = entries[index].node
+        guard let frame = node.frame, let visible = frame.intersection(viewport),
+              ScreenStack.share(of: visible, in: viewport) >= ScreenStack.minimumShare,
+              !node.role.isActionable, !node.role.isTextInput, node.role != .keyboard, ![.scrollView, .list].contains(node.role),
+              !Self.overlayTypes.contains(where: { node.native.typeName?.lowercased().contains($0) == true }) else {
+            return nil
+        }
+        let content = Array(subtree(index).dropFirst())
+        let nodes = content.map { entries[$0].node }
+        guard nodes.contains(where: \.isTelling) else { return nil }
+        let name = node.id.flatMap(Self.nonEmpty) ?? headerOrFirstLabel(nodes) ?? node.role.rawValue
+        return ScreenStack.Page(index: index, name: name, frame: frame, content: Set([index] + content))
+    }
+
     /// The candidate as a page: big, no control, overlay, LogBox or scrim, labelled from its top quarter past its middle; `above` adds Android siblings on it.
     func page(at index: Int, drawnBeneath above: [Int], viewport: UIFrame) -> ScreenStack.Page? {
         let node = entries[index].node
         guard let frame = node.frame, let visible = frame.intersection(viewport),
               ScreenStack.share(of: visible, in: viewport) >= ScreenStack.minimumShare,
-              !node.role.isActionable, !node.role.isTextInput, node.role != .keyboard,
+              !node.role.isActionable, !node.role.isTextInput, node.role != .keyboard, !isHiddenWithItsWindow(index),
               !Self.overlayTypes.contains(where: { node.native.typeName?.lowercased().contains($0) == true }) else {
             return nil
         }

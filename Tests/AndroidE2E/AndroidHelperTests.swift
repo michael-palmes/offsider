@@ -5,7 +5,7 @@ import Testing
 extension AndroidE2E {
     /// Pids of Offsider helpers running on the device; empty when there are none.
     static func helperPids() async throws -> String {
-        try await shell("pidof offsider-helper || true").trimmingCharacters(in: .whitespacesAndNewlines)
+        try await pid(of: "offsider-helper")
     }
 
     static func accessibilityEnabled() async throws -> String {
@@ -18,6 +18,15 @@ extension AndroidE2E {
         guard try await eventually(timeout: timeout, { try await helperPids().isEmpty }) else {
             throw AndroidE2EError(description: "an Offsider helper was still running after \(Int(timeout)) s: \(try await helperPids())")
         }
+    }
+
+    /// True when the AVD's image lets the shell become root, as the tests that stop a process need; a Play image does not.
+    static func shellCanBecomeRoot() async -> Bool {
+        (try? await shell("su 0 id -u 2>/dev/null || true"))?.trimmingCharacters(in: .whitespacesAndNewlines) == "0"
+    }
+
+    static func pid(of process: String) async throws -> String {
+        try await shell("pidof \(process) || true").trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     static func ids(inDescribeUI output: String) throws -> [String] {
@@ -297,5 +306,80 @@ struct AndroidHelperTests {
         let onDevice = try await AndroidE2E.shell("sha256sum \(pushed)")
         #expect(onDevice.hasPrefix(bundled), "the device copy is \(onDevice), the bundle's dex \(bundled)")
         #expect(try await AndroidE2E.shell("stat -c %a \(pushed)").trimmingCharacters(in: .whitespacesAndNewlines) == "644")
+    }
+
+    @Test("a frozen app is reported as not responding within 12 s, its capture is refused, and the same helper reads on once the app runs again")
+    func frozenAppIsBoundedAndRecovers() async throws {
+        guard await AndroidE2E.shellCanBecomeRoot() else {
+            print("skipped: this AVD's shell cannot become root to freeze the app")
+            return
+        }
+        try await AndroidE2E.open("tap-test", waitingFor: "tap-test-area")
+        try await AndroidE2E.run("describe-ui")
+        let helper = try await AndroidE2E.helperPids()
+        let app = try await AndroidE2E.pid(of: AndroidE2E.package)
+        try #require(!helper.isEmpty && !app.isEmpty, "helper '\(helper)', app '\(app)'")
+        let image = AndroidE2E.temporaryFile("frozen.png")
+        defer { try? FileManager.default.removeItem(at: image) }
+
+        try await AndroidE2E.shell("su 0 kill -STOP \(app)")
+        let read: SeparatedCommandOutput
+        let capture: SeparatedCommandOutput
+        let readSeconds: TimeInterval
+        do {
+            let started = Date()
+            read = try await AndroidE2E.offsider("describe-ui")
+            readSeconds = Date().timeIntervalSince(started)
+            capture = try await AndroidE2E.offsider("screenshot --output \(image.path)", environment: ["OFFSIDER_RUN": "off"])
+        } catch {
+            try await AndroidE2E.shell("su 0 kill -CONT \(app)")
+            throw error
+        }
+        try await AndroidE2E.shell("su 0 kill -CONT \(app)")
+        try await AndroidE2E.dismissANRDialog()
+
+        #expect(read.exitCode != 0)
+        #expect(read.stderr.contains("the app is not responding or still starting"), "stderr: \(read.stderr)")
+        #expect(readSeconds < 12, "the read took \(readSeconds) s")
+        #expect(capture.exitCode != 0, "stderr: \(capture.stderr)")
+        #expect(!FileManager.default.fileExists(atPath: image.path))
+        let recovered = try await AndroidE2E.eventually(timeout: 15) { try await AndroidE2E.offsider("describe-ui").exitCode == 0 }
+        #expect(recovered, "no read succeeded within 15 s of the app running again")
+        #expect(try await AndroidE2E.helperPids() == helper)
+    }
+
+    @Test("after Android's framework restarts, the next reads replace the warm helper by themselves, with no session stop", .enabled(if: isAndroidBootE2EEnabled))
+    func frameworkRestartIsRecovered() async throws {
+        guard await AndroidE2E.shellCanBecomeRoot() else {
+            print("skipped: this AVD's shell cannot become root to restart the framework")
+            return
+        }
+        try await AndroidE2E.open("tap-test", waitingFor: "tap-test-area")
+        try await AndroidE2E.run("describe-ui")
+        let helper = try await AndroidE2E.helperPids()
+        let server = try await AndroidE2E.pid(of: "system_server")
+        try #require(!helper.isEmpty && !server.isEmpty, "helper '\(helper)', system_server '\(server)'")
+
+        try await AndroidE2E.shell("su 0 kill \(server)")
+        let restarted = try await AndroidE2E.eventually(timeout: 180, every: .seconds(1)) {
+            let now = try await AndroidE2E.pid(of: "system_server")
+            guard !now.isEmpty, now != server else { return false }
+            let state = try await AndroidE2E.shell("getprop init.svc.bootanim; service check accessibility; dumpsys window 2>/dev/null | grep mCurrentFocus || true")
+            return state.contains("stopped") && state.contains("accessibility: found") && state.contains("mCurrentFocus=Window{")
+        }
+        try #require(restarted, "Android's framework was not back within 180 s")
+
+        var failures: [String] = []
+        let read = try await AndroidE2E.eventually(timeout: 60, every: .seconds(1)) {
+            let result = try await AndroidE2E.offsider("describe-ui")
+            // The launcher may not have drawn yet, which is a read of the device as it is; a read the helper failed is the bug.
+            if result.exitCode != 0, result.stdout.contains(#""reason":"helper_failed""#) { failures.append(result.stderr) }
+            return result.exitCode == 0
+        }
+        #expect(read, "no read succeeded within 60 s of the restart")
+        #expect(failures.isEmpty, "reads failed on the helper: \(failures)")
+        let fresh = try await AndroidE2E.helperPids()
+        #expect(!fresh.isEmpty && fresh != helper, "helper before '\(helper)', after '\(fresh)'")
+        try await AndroidE2E.dismissANRDialog()
     }
 }

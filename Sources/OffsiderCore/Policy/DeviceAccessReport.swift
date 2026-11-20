@@ -2,9 +2,13 @@ import Foundation
 
 /// `devices status` text and JSON, version 1.
 public enum DeviceAccessReport {
-    /// `ready` and `needs` come from `add`: whether Offsider proved it can drive the device, and what stopped it.
-    public static func changeJSON(action: String, platform: DevicePlatform, key: String, allowance: DeviceAllowance?, stopped: [String] = [], notRemoved: [String] = [], retry: String? = nil, ready: Bool? = nil, needs: String? = nil) -> String {
+    /// `ready` and `needs` come from `add`: whether Offsider proved it can drive the device, and what stopped it; `firstRun` asks for the steps still owed on it after that.
+    public static func changeJSON(
+        action: String, platform: DevicePlatform, key: String, allowance: DeviceAllowance?, stopped: [String] = [], notRemoved: [String] = [], retry: String? = nil,
+        ready: Bool? = nil, needs: String? = nil, firstRun: [String] = []
+    ) -> String {
         let setup: [(String, OrderedJSON)] = (ready.map { [("ready", OrderedJSON.bool($0))] } ?? []) + (needs.map { [("needs", OrderedJSON.string($0))] } ?? [])
+            + (firstRun.isEmpty ? [] : [("firstRun", .array(firstRun.map { .string($0) }))])
         return OrderedJSON.object([
             ("version", .integer(1)),
             ("action", .string(action)),
@@ -18,6 +22,7 @@ public enum DeviceAccessReport {
                     ("apps", .array(entry.apps.map { .string($0) })),
                 ]
                 if let team = entry.team { fields.append(("team", .string(team))) }
+                if let prefix = entry.runnerPrefix { fields.append(("runnerPrefix", .string(prefix))) }
                 if !entry.metroPorts.isEmpty { fields.append(("metroPorts", .array(entry.metroPorts.map { .integer($0) }))) }
                 if entry.testDevice { fields.append(("testDevice", .bool(true))) }
                 return .object(fields)
@@ -68,8 +73,9 @@ public enum DeviceAccessReport {
                 apps = entry.apps.isEmpty ? "" : entry.allowsWholeDevice && entry.pinnedApps.isEmpty ? ", any app and all logs" : ", apps \(entry.apps.joined(separator: ", "))"
             }
             let team = entry.team.map { ", runner team \($0)" } ?? ""
+            let prefix = entry.runnerPrefix.map { ", runner prefix \($0)" } ?? ""
             let metro = entry.metroPorts.isEmpty ? "" : ", Metro ports \(entry.metroPorts.map(String.init).joined(separator: ", "))"
-            lines.append("\(entry.platform.rawValue)  \(entry.key)  \(entry.name): \(state)\(apps)\(team)\(metro)")
+            lines.append("\(entry.platform.rawValue)  \(entry.key)  \(entry.name): \(state)\(apps)\(team)\(prefix)\(metro)")
         }
         for entry in policy.list.newer {
             if case .refused(let refusal) = policy.decision(platform: entry.platform, key: entry.key, now: now) {

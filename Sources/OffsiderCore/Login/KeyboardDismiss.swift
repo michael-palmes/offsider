@@ -25,7 +25,7 @@ public enum KeyboardDismiss {
         let keys = coverageFrames(in: tree)
         if let top = keys.map(\.y).min(), let viewport = tree.viewport {
             // The bar above the keys, which a wrapper listed after it can hide from the chain.
-            let bar = nodes.filter { $0.id?.hasPrefix("SystemInputAssistant") == true }.compactMap(\.frame)
+            let bar = nodes.filter { $0.id?.hasPrefix(KeyboardBar.idPrefix) == true }.compactMap(\.frame)
             let avoid = keys + bar + fields.map { $0.outset(by: fieldMargin) }
             let aboveForm = fields.map(\.y).min().map { scan(tree, from: $0 - fieldMargin - 8, viewport: viewport, avoiding: avoid) } ?? []
             let nearKeys = scan(tree, from: top - 24, viewport: viewport, avoiding: avoid)
@@ -83,6 +83,11 @@ public enum KeyboardDismiss {
         return coverageFrames(in: tree).contains { $0.width >= 0.6 * viewport.width && $0.height >= 0.2 * viewport.height }
     }
 
+    /// Docked keys are on screen, so Back hides them and never reaches the app.
+    public static func docksKeys(in tree: UITree) -> Bool {
+        !coverageFrames(in: tree).isEmpty && showsKeys(in: tree)
+    }
+
     static func coverageFrames(in tree: UITree) -> [UIFrame] {
         let keyboards = tree.roots.flatMap { $0.flattened() }.filter { $0.role == .keyboard && ($0.frame?.height ?? 0) > 0 }
         guard let viewport = tree.viewport else { return keyboards.compactMap(\.frame) }
@@ -109,6 +114,8 @@ public enum KeyboardDismiss {
     }
 
     private static func chain(from node: UINode, at point: UIPoint, viewport: UIFrame) -> [UINode]? {
+        // The bar clips what scrolls inside it, which iOS 27 lists taller than the screen.
+        if KeyboardBar.isBar(node), node.frame?.contains(point) != true { return nil }
         for child in node.children.reversed() {
             if isBackdropKeyboard(child, in: viewport) { continue }
             if let found = chain(from: child, at: point, viewport: viewport) {
@@ -134,6 +141,23 @@ public enum KeyboardDismiss {
     public static func closesKeyboard(_ node: UINode) -> Bool {
         isHideControl(node) || (node.role == .button && [node.label, node.id].contains { $0?.trimmingCharacters(in: .whitespaces).lowercased() == "done" })
     }
+
+    /// The middle of the keyboard's own way out: its hide key, or a Done button in the bar that rides on top of the keys. A Done elsewhere may belong to the form.
+    public static func closingControl(in tree: UITree) -> UIPoint? {
+        let nodes = tree.roots.flatMap { $0.flattened() }
+        if let hide = nodes.first(where: isHideControl), let frame = hide.frame, frame.width > 0, frame.height > 0 { return frame.center }
+        guard let keys = coverageFrames(in: tree).map(\.y).min() else { return nil }
+        // An app's bar rides on the keyboard's whole area, which starts above the keys: at the suggestions, or at a margin iOS 27 leaves.
+        let area = nodes.filter { KeyboardBar.isBar($0) || $0.id == KeyboardBar.containerID }.compactMap(\.frame).filter { $0.height > 0 && $0.y < keys }
+        let top = area.map(\.y).min() ?? keys
+        return nodes.first { node in
+            guard closesKeyboard(node), let frame = node.frame, frame.width > 0, frame.height > 0 else { return false }
+            return frame.y + frame.height <= top + 1 && frame.y >= top - accessoryHeight
+        }?.frame?.center
+    }
+
+    /// How far above the keys an input accessory bar reaches.
+    static let accessoryHeight: Double = 64
 
     private static func isHideControl(_ node: UINode) -> Bool {
         guard node.role == .button || node.role == .other, node.frame != nil else { return false }

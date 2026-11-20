@@ -1,7 +1,9 @@
 package com.mpalmes.offsider.helper;
 
+import android.os.SystemClock;
 import android.util.Log;
 import java.nio.charset.StandardCharsets;
+import java.util.Arrays;
 import java.util.List;
 import org.json.JSONException;
 import org.json.JSONObject;
@@ -9,6 +11,9 @@ import org.json.JSONObject;
 /** Answers one request at a time with an ok or error envelope that carries the event log's sequence number. */
 final class Requests {
     static final long MAX_EVENT_WAIT_MS = 5000;
+    /** The ops that go through UiAutomation, so a dead connection fails them. */
+    static final List<String> USES_AUTOMATION =
+            Arrays.asList("dump", "display", "setProgress", "setText", "paste", "inject", "release", "screenshot");
 
     /** A reply frame, then a binary payload frame when there is one; quit asks the server to end after sending it. */
     static final class Reply {
@@ -59,6 +64,11 @@ final class Requests {
             if ("ping".equals(op)) {
                 seq = events.latest();
             } else if ("hello".equals(op)) {
+                long spoken = whole(request, "protocol", OffsiderHelper.PROTOCOL, 0, Integer.MAX_VALUE);
+                if (spoken != OffsiderHelper.PROTOCOL) {
+                    throw new RequestFailure("protocol-mismatch",
+                            "the helper on the device speaks protocol " + OffsiderHelper.PROTOCOL + ", Offsider speaks " + spoken, null);
+                }
                 json.field("helper", OffsiderHelper.VERSION);
                 json.field("protocol", OffsiderHelper.PROTOCOL);
                 json.name("ops").beginArray();
@@ -93,12 +103,23 @@ final class Requests {
             json.field("eventSeq", seq >= 0 ? seq : events.latest());
             return new Reply(json.endObject().bytes(), frame, quit);
         } catch (RequestFailure failure) {
+            if (!RequestFailure.BAD_REQUEST.equals(failure.code)) {
+                endIfConnectionLost(op);
+            }
             return new Reply(error(id, failure, events.latest()), false);
         } catch (RuntimeException e) {
+            endIfConnectionLost(op);
             String code = failureCode(op);
             Log.w(OffsiderHelper.TAG, op + " failed", e);
             RequestFailure failure = new RequestFailure(code, op + " failed", HelperFailure.describe(e));
             return new Reply(error(id, failure, events.latest()), false);
+        }
+    }
+
+    /** A request that failed on a dead connection ends the helper, as every later one would fail the same way. */
+    private void endIfConnectionLost(String op) {
+        if (op != null && USES_AUTOMATION.contains(op) && connection.lost()) {
+            throw OffsiderHelper.connectionLost();
         }
     }
 
@@ -143,6 +164,9 @@ final class Requests {
         TreeDumper dumper = new TreeDumper(json, options, table);
         dumper.dump(connection);
         long walked = System.nanoTime();
+        if (dumper.windows == 0 && connection.lost()) {
+            throw new RequestFailure("dump-failed", Connection.LOST, null);
+        }
         json.field("truncated", dumper.truncated);
         json.field("source", dumper.source);
         json.name("stats").beginObject();
@@ -157,10 +181,13 @@ final class Requests {
             json.field("windowRefreshes", dumper.windowRefreshes);
         }
         if (options.visibleOnly) {
-            dumper.hidden.write(json, options.testTags);
+            dumper.hidden.write(json, options.testTags, dumper.deadline);
         }
         long named = System.nanoTime();
         json.endObject();
+        if (options.toasts != null) {
+            writeToasts(json, events.toasts, DumpOptions.FRONT.equals(options.toasts) ? dumper.appPackage() : options.toasts);
+        }
         json.name("timings").beginObject();
         json.field("configureMs", ms(configured - start));
         json.field("clearMs", ms(cleared - configured));
@@ -171,6 +198,22 @@ final class Requests {
         json.field("totalMs", ms(named - start));
         json.endObject();
         return seq;
+    }
+
+    /** Only `pkg`'s toasts, newest last, each with its age on the helper's clock; no package lists none. */
+    static void writeToasts(Json json, ToastLog toasts, String pkg) {
+        long now = SystemClock.uptimeMillis();
+        json.field("toastPackage", pkg);
+        json.name("toasts").beginArray();
+        for (ToastLog.Entry entry : toasts.recent(pkg, now)) {
+            json.beginObject();
+            json.field("seq", entry.seq);
+            json.field("text", entry.text);
+            json.field("package", entry.pkg);
+            json.field("ageMs", now - entry.atMs);
+            json.endObject();
+        }
+        json.endArray();
     }
 
     private void writeEvents(Json json, JSONObject request) throws RequestFailure {

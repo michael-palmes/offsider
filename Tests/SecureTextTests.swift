@@ -141,6 +141,7 @@ struct SecureTextTests {
     @Test("type logs only the character count")
     func typeLogsCount() async throws {
         let backend = FakeDeviceBackend(trees: [Self.focusedField])
+        backend.valuesAfterKeys = ["field": Self.sentinel]
         let (logger, lines) = Self.capturingLogger()
         try await Type.parse([Self.sentinel, "--device", Self.device.rawValue])
             .execute(on: DeviceRouter.Route(backend: backend, device: Self.device), progress: nil, logger: logger)
@@ -229,6 +230,7 @@ struct SecureTextTests {
     @Test("batch --json masks the text of a type step and keeps its flags")
     func batchMasksType() async throws {
         let backend = FakeDeviceBackend(trees: [Self.focusedField])
+        backend.valuesAfterKeys = ["field": Self.sentinel]
         let result = try await Self.batch(["type \(Self.sentinel) --replace"], on: backend)
 
         #expect(result.records.map(\.line) == ["type <8 characters> --replace"])
@@ -311,6 +313,7 @@ struct SecureTextTests {
     @Test("a batch type step after -- types dash-leading text")
     func batchTerminatedText() async throws {
         let backend = FakeDeviceBackend(trees: [Self.focusedField])
+        backend.valuesAfterKeys = ["field": "-" + Self.sentinel]
         let result = try await Self.batch(["type -- -\(Self.sentinel)"], on: backend)
         #expect(result.records.map(\.ok) == [true])
         #expect(result.records.map(\.line) == ["type -- <9 characters>"])

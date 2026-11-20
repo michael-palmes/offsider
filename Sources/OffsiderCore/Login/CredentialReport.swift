@@ -224,7 +224,7 @@ public struct CredentialReport: Equatable, Sendable {
         signedInHere.map { ["Signed in here: \(LoginCredential.displayKey($0))" + (signedInHereStale ? " (stale: the app was installed again since)" : "")] } ?? []
     }
 
-    /// `tags` always, then each note and `updated` only when set, then `devices` and `confirm` when not the defaults (virtual, false).
+    /// `tags` always, then each note and `updated` only when set, then `devices`, `confirm` and `confirmAlways` when not the defaults (virtual, false, false).
     static func contextFields(_ context: LoginContext) -> [(String, OrderedJSON)] {
         var fields: [(String, OrderedJSON)] = [("tags", .array(context.tags.map { .string($0.rawValue) }))]
         for note in LoginNote.allCases {
@@ -233,7 +233,13 @@ public struct CredentialReport: Equatable, Sendable {
         if let updated = context.updated { fields.append(("updated", .string(ProcessStamp.timestamp(updated)))) }
         if context.devices != .virtual { fields.append(("devices", .string(context.devices.rawValue))) }
         if context.confirm { fields.append(("confirm", .bool(true))) }
+        if context.confirmAlways { fields.append(("confirmAlways", .bool(true))) }
         return fields
+    }
+
+    /// How a login that asks first says so, in a few words.
+    static func asksText(_ context: LoginContext) -> String {
+        context.confirmAlways ? "asks you first, even on test devices" : "asks you first"
     }
 
     static func signInsJSON(_ signIns: [LoginSignIn]) -> OrderedJSON {
@@ -257,9 +263,9 @@ public struct CredentialReport: Equatable, Sendable {
         }
         if let updated = context.updated { lines.append("  updated: \(ProcessStamp.timestamp(updated))") }
         if context.devices == .any {
-            lines.append(context.confirm ? "  devices: any, asks you first" : "  devices: any, without asking first (credential describe --confirm asks)")
+            lines.append(context.confirm ? "  devices: any, \(asksText(context))" : "  devices: any, without asking first (credential describe --confirm asks)")
         } else if context.confirm {
-            lines.append("  asks you first")
+            lines.append("  \(asksText(context))")
         }
         lines += signIns.map { "  signed in on " + signInText($0) }
         return lines

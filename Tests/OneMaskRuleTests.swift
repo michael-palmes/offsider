@@ -259,7 +259,7 @@ struct OneMaskRuleTests {
             }
         }
 
-        #expect(outcome.reason == "has a masked value, expected 'nope'")
+        #expect(outcome.reason == "does not match 'nope': its value is masked, so it is not shown")
     }
 
     // MARK: A planted secret

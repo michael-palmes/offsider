@@ -128,7 +128,11 @@ struct Swipe: AsyncParsableCommand {
 
     private func swipe(_ details: InputDetails) async throws {
         let logger = OffsiderLogger()
-        let route = try await DeviceRouter.routeForInput(deviceOption, logger: logger)
+        try await swipe(on: try await DeviceRouter.routeForInput(deviceOption, logger: logger), details: details, logger: logger)
+    }
+
+    /// Sends the swipe on `route`; `watchdog` bounds the read that places it.
+    func swipe(on route: DeviceRouter.Route, details: InputDetails, logger: OffsiderLogger, watchdog: DeviceWatchdog = DeviceWatchdog()) async throws {
         await appOption.apply(to: route)
         let backend = route.backend
         let device = route.device
@@ -140,11 +144,7 @@ struct Swipe: AsyncParsableCommand {
         logger.info().log("Performing swipe from (\(startX), \(startY)) to (\(endX), \(endY))")
         logger.info().log("Duration: \(swipeDuration)s, Delta: \(swipeDelta)")
 
-        let physicalPoints = try await backend.deviceCoordinates(
-            for: [(x: startX, y: startY), (x: endX, y: endY)],
-            tree: nil,
-            on: device
-        )
+        let physicalPoints = try await watchdog.inputPoints([(x: startX, y: startY), (x: endX, y: endY)], backend: backend, device: device)
 
         // Broadcast swipe notification for external listeners
         NotificationCenter.default.post(

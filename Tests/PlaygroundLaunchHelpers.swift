@@ -134,7 +134,7 @@ extension TestHelpers {
         case "switch-test": return .identifier("switch-test-screen")
         case "tab-view-test": return .identifier("tab-view-test-screen")
         case "motion-test": return .identifier("motion-toggle")
-        case "crash-test": return .identifier("crash-now")
+        case "quit-test": return .identifier("quit-now")
         case "slider-value-test": return .identifier("slider-value-slider")
         case "searchable-test": return .identifier("searchable-test-query")
         case "toolbar-picker-test":
@@ -155,13 +155,16 @@ extension TestHelpers {
         case "presented-sheet-test": return .identifier("presented-sheet-test-open")
         case "environment-test": return .identifier("environment-test-scheme")
         case "device-state": return .identifier("device-state-contacts")
+        case "permission-prompt": return .identifier("permission-prompt-notifications")
         case "text-input": return .identifier("text-input-screen")
         case "key-press": return .identifier("key-press-screen")
         case "key-sequence": return .label("Key Sequence Detection")
+        case "keyboard-bar", "keyboard-toolbar": return .identifier("keyboard-bar-screen")
         case "button-test": return .identifier("button-test-screen")
         case "batch-test": return .identifier("batch-test-screen")
         case "batch-login-flow": return .identifier("batch-login-screen")
         case "live-chart": return .identifier("live-chart-title")
+        case "widget-login", "widget-login-expiry", "widget-login-error", "widget-login-late", "widget-login-ticked": return .identifier("widget-login-submit")
         default:
             throw TestError.unexpectedState("Unknown playground fixture '\(screen)'")
         }

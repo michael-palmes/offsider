@@ -375,7 +375,7 @@ struct LoginFlowTests {
         ])
         script.advanceOnTap = true
         _ = try await run(script)
-        #expect(script.time < 1, "\(script.time)")
+        #expect(try #require(script.submittedAt) < 1, "\(script.time)")
     }
 
     @Test("a username the field shows a read late is waited for, not refused")
@@ -484,10 +484,12 @@ struct LoginFlowTests {
         var written: [String] = []
         let thrown = await LoginCommand.failure(stopped, json: true, scope: CommandScope(), write: { written.append($0) })
 
-        let message = "The keyboard covers the next control, so Turnstile was not checked and the submit button was not tapped. Both fields were filled."
+        let message = "The keyboard covers the next control and nothing Offsider may send closed it, so Turnstile was not checked and the submit button was not tapped. "
+            + "Close the keyboard in the app, or scroll the button above it, then run login again. Both fields were filled."
         #expect(written == [
-            #"{"version":1,"ok":false,"app":"com.example.app","key":"dev","identity":"filled","password":"filled","submitted":false,"name":"dev","tags":[],"turnstile":null,"exitCode":1,"#
-                + #""error":{"reason":"target_under_keyboard","message":"\#(message)","hint":null,"dispatched":null,"candidates":[]},"untrusted":["error.message"]}"#,
+            #"{"version":1,"ok":false,"app":"com.example.app","key":"dev","identity":"filled","password":"filled","submitted":false,"name":"dev","tags":[],"turnstile":null,"#
+                + #""formStillInFront":null,"savePrompt":null,"waitedForTurnstile":false,"exitCode":1,"#
+                + #""error":{"reason":"target_under_keyboard","message":"\#(message)","hint":"offsider describe-ui --summary --device <DEVICE_ID>","dispatched":null,"candidates":[]},"untrusted":["error.message"]}"#,
         ])
         #expect(try expectUntrustedPathsResolve(written[0]) == ["error.message"])
         #expect((thrown as? ReportedFailure)?.exitCode.rawValue == 1)
@@ -507,7 +509,7 @@ struct LoginFlowTests {
         let thrown = await LoginCommand.failure(stopped, json: true, scope: CommandScope(), write: { written.append($0) })
 
         #expect(written == [
-            #"{"version":1,"ok":false,"app":"com.example.app","key":"dev","identity":"filled","password":"not_filled","submitted":false,"name":"dev","tags":[],"turnstile":null,"exitCode":5,"#
+            #"{"version":1,"ok":false,"app":"com.example.app","key":"dev","identity":"filled","password":"not_filled","submitted":false,"name":"dev","tags":[],"turnstile":null,"formStillInFront":null,"savePrompt":null,"waitedForTurnstile":false,"exitCode":5,"#
                 + #""error":{"reason":"text_not_accepted","message":"The password field did not show one bullet per character. The submit button was not tapped. The email or username was filled.","hint":null,"dispatched":null,"candidates":[]},"untrusted":["error.message"]}"#,
         ])
         #expect((thrown as? ReportedFailure)?.exitCode.rawValue == 5)
@@ -916,6 +918,7 @@ struct LoginFlowTests {
             inspector,
         ])
         script.advanceOnTap = true
+        script.signedIn = nil
 
         let stopped = try #require(await #expect(throws: LoginFailure.self) { try await self.run(script) })
 
@@ -947,6 +950,7 @@ struct LoginFlowTests {
             menu,
         ])
         script.advanceOnTap = true
+        script.signedIn = nil
         let controls = SignInFixture.tree().roots[0].flattened()
         script.hit = { point in controls.last { $0.role != .application && $0.frame?.contains(point) == true } }
 
@@ -1134,7 +1138,7 @@ struct LoginFlowTests {
     }
 
     private func run(
-        _ script: LoginScript, profile: LoginProfile? = nil, webLogin: Bool = false, timeout: TimeInterval = 15,
+        _ script: LoginScript, profile: LoginProfile? = nil, webLogin: Bool = false, timeout: TimeInterval = 15, waitTurnstile: TimeInterval? = nil,
         lastSignIn: () -> LoginFlow.LastSignIn? = { nil }
     ) async throws -> LoginReport {
         let credential = try #require(LoginCredential(username: username, password: password))
@@ -1145,6 +1149,7 @@ struct LoginFlowTests {
             profile: profile,
             webLogin: webLogin,
             timeout: timeout,
+            turnstileWait: waitTurnstile.map(LoginFlow.TurnstileWait.init(seconds:)),
             services: script.services,
             lastSignIn: lastSignIn
         )
@@ -1176,14 +1181,45 @@ final class LoginScript {
     var hit: (UIPoint) -> UINode? = { _ in nil }
     var hitTests = 0
     var deviceNotes = 0
+    /// The screen once submit is tapped; nil keeps the form up, as a refused sign-in does.
+    var signedIn: UITree? = UITree(platform: .ios, device: "fake", roots: [
+        FakeUI.node(.application, label: "Example", frame: FakeUI.frame(0, 0, 402, 874), children: [FakeUI.node(.header, id: "home-title", label: "Home", frame: FakeUI.frame(16, 80, 370, 30))]),
+    ])
+    /// How long after the submit tap `signedIn` shows.
+    var signInDelay: TimeInterval = 0
+    /// When the login began watching the screen after its submit tap.
+    var submittedAt: TimeInterval?
+    /// Each step the login named, and the ones it showed.
+    var steps: [String] = []
+    var shownSteps: [String] = []
+    var asks: [String] = []
+    /// A save-password prompt that shows once the form has left, until `promptClosesAt` or a tap on its decline point.
+    var prompt: SavePrompt?
+    var promptClosesAt: TimeInterval?
+    /// Reads after submit fail with this while the prompt is up, as on a phone held to one app.
+    var promptStopsReads: (any Error)?
+    var declinesPrompts = true
+    var tapError: (any Error)?
+    /// With `typedAtPhase`, how many Turnstile reads came before the first type call.
+    var typedAtPhase = false
+    var phaseAtFirstType = 0
 
     init(trees: [UITree]) {
         self.trees = trees
     }
 
-    func read() -> UITree { trees[min(index, trees.count - 1)] }
+    var promptUp: Bool {
+        guard prompt != nil, let submittedAt, time >= submittedAt + signInDelay else { return false }
+        return promptClosesAt.map { time < $0 } ?? true
+    }
+
+    func read() -> UITree {
+        if let submittedAt, let signedIn, time >= submittedAt + signInDelay { return signedIn }
+        return trees[min(index, trees.count - 1)]
+    }
 
     func type(_ text: String, _: UINode) {
+        if typedAtPhase, typed.isEmpty { phaseAtFirstType = phaseIndex }
         typed.append(text)
         tapsBeforeType.append(taps.count)
         secrecy.append(InputSecrecy.isSecret)
@@ -1197,10 +1233,15 @@ final class LoginScript {
 
     var services: LoginFlow.Services {
         LoginFlow.Services(
-            readTree: { self.read() },
+            readTree: {
+                if self.promptUp, let error = self.promptStopsReads { throw error }
+                return self.read()
+            },
             typeText: { text, field in self.type(text, field) },
             tap: { point, _ in
+                if self.promptUp, let error = self.tapError { throw error }
                 self.taps.append(point)
+                if self.promptUp, point == self.prompt?.decline { self.promptClosesAt = self.time }
                 if self.advanceOnTap, self.index + 1 < self.trees.count { self.index += 1 }
             },
             readTurnstile: { _ in
@@ -1208,7 +1249,7 @@ final class LoginScript {
                 self.phaseIndex += 1
                 return phase
             },
-            hideKeyboard: { self.hide() },
+            hideKeyboard: { _ in self.hide() },
             clock: PollClock(
                 now: { self.time },
                 sleep: { duration in
@@ -1228,7 +1269,16 @@ final class LoginScript {
                 self.hitTests += 1
                 return self.hit(point)
             },
-            noteDevice: { self.deviceNotes += 1 }
+            noteDevice: { self.deviceNotes += 1 },
+            savePrompt: { _ in self.promptUp ? self.prompt : nil },
+            promptBehind: { _ in self.promptUp ? self.prompt : nil },
+            declinesPrompts: declinesPrompts,
+            step: { what, shown in
+                self.steps.append(what)
+                if shown { self.shownSteps.append(what) }
+                if what == "watching the screen after submit" { self.submittedAt = self.time }
+            },
+            ask: { self.asks.append($0) }
         )
     }
 }

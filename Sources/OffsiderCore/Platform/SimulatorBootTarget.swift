@@ -45,6 +45,14 @@ public enum SimulatorBootTarget {
         let rows = simulators.map { "  \($0.udid)  \($0.osVersion ?? "-")  \($0.state)" }
         return "\(simulators.count) simulators are named \(target). \(command == "boot" ? "Boot" : "Stop") one by its UDID:\n" + rows.joined(separator: "\n")
     }
+
+    /// A boot the simulator refused: names it and its runtime, and the `simctl` command that boots some runtimes this path cannot.
+    public static func bootFailure(name: String, udid: String, runtime: String?, detail: String) -> (message: String, hint: String) {
+        let simctl = "xcrun simctl boot \(udid)"
+        let which = runtime.map { "\(name) (\(udid), \($0))" } ?? "\(name) (\(udid))"
+        let reason = detail.trimmingCharacters(in: .whitespacesAndNewlines)
+        return ("\(which) did not boot\(reason.isEmpty ? "" : ": \(reason)"). Xcode's own tool can boot a runtime this path cannot: run `\(simctl)`, then `offsider boot \(udid)` to wait until it is ready.", simctl)
+    }
 }
 
 /// `boot --json` for a simulator: its UDID and name, and whether it was already booted.

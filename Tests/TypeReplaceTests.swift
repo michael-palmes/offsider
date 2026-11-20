@@ -48,6 +48,7 @@ struct TypeReplaceTests {
         let session = RecordingInputSession()
         let focused = FakeUI.tree([FakeUI.node(.textField, id: "field", frame: FakeUI.frame(20, 200, 360, 44), state: UIState(focused: true))])
         let backend = FakeDeviceBackend(platform: .ios, trees: [focused], session: session)
+        backend.valuesAfterKeys = ["field": "bye"]
         let context = BatchContext(
             backend: backend, device: DeviceID(rawValue: UUID().uuidString, platform: .ios), axCachePolicy: .perBatch, typeSubmissionMode: mode, typeChunkSize: 2
         )

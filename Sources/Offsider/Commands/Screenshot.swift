@@ -19,8 +19,10 @@ struct Screenshot: AsyncParsableCommand {
         is captured as it is, often dark. \
         Password fields are masked by default: the accessibility tree is read first and every password field is painted \
         opaque black before the image is written or compared; when a password field cannot be located, the image is \
-        withheld and no file is written. On Android the same mask paints keyboard text beside the keys (suggestions, \
-        a clipboard chip, clipboard history) and Android's copy preview, counted in maskedBy as keyboard and copyPreview. \
+        withheld and no file is written. The same mask paints keyboard text, counted in maskedBy as keyboard: on Android \
+        text beside the keys (suggestions, a clipboard chip, clipboard history) and Android's copy preview (copyPreview); \
+        on iOS the bar above the keys, whole, where suggestions can name a contact. An iOS keyboard whose bar the tree \
+        does not list gets a band painted where one would be, with maskUnproven keyboard and a warning. \
         --no-mask-secure (or OFFSIDER_MASK_SECURE=0) skips the tree read and the mask, \
         except during an evidence run that masks them. --mask-id, --mask-label, --mask-label-contains, --mask-text and --mask-emails paint the elements \
         they match the same way, even on a screen beneath a page (counted in maskedBeneath); --mask-region paints a rectangle \
@@ -75,7 +77,7 @@ struct Screenshot: AsyncParsableCommand {
     @Option(help: ArgumentHelp("With --compare, the outcome that passes: changed (the default) or unchanged. Exit 5 when the capture does not match it.", valueName: "changed|unchanged"))
     var expect: ScreenCompare.Outcome?
 
-    @Flag(name: .customLong("mask-secure"), inversion: .prefixedNo, help: "Paint password fields, and on Android keyboard text beside the keys and the copy preview, black before writing the image, and withhold it when one cannot be located (the default; OFFSIDER_MASK_SECURE=0 turns it off).")
+    @Flag(name: .customLong("mask-secure"), inversion: .prefixedNo, help: "Paint password fields, keyboard text (Android: beside the keys; iOS: the bar above them) and Android's copy preview black before writing the image, and withhold it when one cannot be located (the default; OFFSIDER_MASK_SECURE=0 turns it off).")
     var maskSecure: Bool?
 
     @Option(name: .customLong("mask-id"), parsing: .upToNextOption, help: ArgumentHelp("Paint every element with this id black. Repeatable.", valueName: "id"))
@@ -267,11 +269,19 @@ struct Screenshot: AsyncParsableCommand {
         var request = asked
         let own = requested
         let config = try MaskConfigs.current()?.config
-        let masks = config.map { requested.union($0.plan) } ?? requested
+        var masks = config.map { requested.union($0.plan) } ?? requested
         try await backend.prepare()
         let booted = try await backend.requireBootedDevice(route.device)
         let recorder = EvidenceRecorder.current
         let token = try recorder.begin(device: booted.id, kind: "screenshot")
+        // The app beneath a permission prompt cannot be read, so its masks cannot be proved: the capture shows the prompt alone.
+        let prompt = widget ? nil : try await (backend as? any AppPromptCapturing)?.promptOverSelectedApp(on: booted.id)
+        if let prompt {
+            guard let screen = try? await backend.screenInfo(for: booted.id) else {
+                throw MaskUnproven(detail: "A permission prompt is in front and the screen's size could not be read, so the app beneath it cannot be painted")
+            }
+            masks.regions += prompt.outside(on: UIFrame(x: 0, y: 0, width: screen.width, height: screen.height))
+        }
         let shownWidget = widget ? try await chosenWidget(on: route) : nil
         if let shownWidget { request.region = shownWidget.crop }
 
@@ -323,19 +333,27 @@ struct Screenshot: AsyncParsableCommand {
         }
         let captureMs = Self.milliseconds(since: captureStarted)
         if let tree, selected == nil { FrozenDisplay.check(capture, tree: tree, device: booted.id) }
-        let systemWindow = shownWidget == nil ? Self.namedSystemWindow(on: backend, device: booted.id) : nil
+        let systemWindow = shownWidget == nil ? Self.namedSystemWindow(on: backend, device: booted.id, quiet: prompt != nil) : nil
         var masked: ScreenCapture.MaskResult?
         if !masks.isEmpty {
-            var result = try Timings.measure("mask") { try ScreenCapture.masking(capture, plan: masks, tree: tree, revealed: revealed) }
+            let hidden = shownWidget == nil ? await ScreenCapture.hiddenText(in: capture, tree: tree) : nil
+            var result = try Timings.measure("mask") { try ScreenCapture.masking(capture, plan: masks, tree: tree, revealed: revealed, hidden: hidden) }
             if let config {
                 // The file's selectors are standing masks, so one that matches nothing on this screen is not worth a warning.
                 let quiet = config.selectorNames.subtracting(Self.selectorNames(own))
                 result.unmatched.removeAll(where: quiet.contains)
             }
+            if let prompt {
+                result.unproven = "prompt"
+                Console.current.notice(.warning(
+                    "Only the prompt shows; the app beneath is painted",
+                    agent: "a permission prompt for \(prompt.app) is in front, so this capture shows the prompt alone: the app beneath cannot be read, so everything outside the prompt is painted (maskUnproven). `offsider alert` answers it."
+                ))
+            }
             capture = result.capture
             masked = result
             let console = Console.current
-            if let unproven = result.unproven {
+            if prompt == nil, let unproven = result.unproven {
                 console.notice(ScreenCapture.unprovenNotice(unproven, subject: "the image"))
             }
             if !result.unmatched.isEmpty {
@@ -365,10 +383,12 @@ struct Screenshot: AsyncParsableCommand {
 
         var path: String?
         if output != nil || (compare == nil && token == nil) {
-            let target = try ScreenCapture.outputURL(path: output, prefix: ScreenCapture.defaultPrefix(for: booted.id), deviceName: booted.name, format: request.format)
+            let moved = output == nil ? try Self.unnamedFolder() : nil
+            let target = try ScreenCapture.outputURL(path: output ?? moved, prefix: ScreenCapture.defaultPrefix(for: booted.id), deviceName: booted.name, format: request.format)
             let url = try ScreenCapture.write(try rendered.encoded(as: request.format), to: target)
             path = url.path
             Self.saved(url.path, width: rendered.image.width, height: rendered.image.height)
+            if moved != nil { Console.current.notice(Self.outsideCheckoutNotice(url.path)) }
         }
         var runFile: String?
         if let token {
@@ -434,6 +454,25 @@ struct Screenshot: AsyncParsableCommand {
         return report
     }
 
+    /// Where a capture with no run and no `--output` goes when the current folder is a git work tree, where an untracked picture is one `git add` from a commit: the private `captures/`. Nil elsewhere, which keeps the current folder.
+    nonisolated static func folderOutsideCheckout(
+        currentDirectory: String = FileManager.default.currentDirectoryPath,
+        captures: () throws -> String = { try OffsiderPrivateDirectory.ensureSubdirectory(OffsiderPrivateDirectory.capturesDirectoryName) }
+    ) throws -> String? {
+        guard GitWorkTree.root(containing: currentDirectory) != nil else { return nil }
+        return try captures()
+    }
+
+    /// Tests bind their own, so none writes into this Mac's private directory.
+    @TaskLocal static var unnamedFolder: @Sendable () throws -> String? = { try folderOutsideCheckout() }
+
+    nonisolated static func outsideCheckoutNotice(_ path: String) -> Notice {
+        .note(
+            "Saved outside this git checkout: \(TerminalText.homePath(path))",
+            agent: "No run is recording and this folder is a git checkout, so the capture went to \(path). Pass --output to choose the file, or record every capture in one folder with `offsider run start <folder>`."
+        )
+    }
+
     /// Writes the device's PNG unchanged to `--output` or the default name, and into any run; the report carries only its path and size.
     @MainActor
     private func writePlain(
@@ -442,10 +481,12 @@ struct Screenshot: AsyncParsableCommand {
     ) throws -> ScreenshotReport {
         var path: String?
         if output != nil || token == nil {
-            let target = try ScreenCapture.outputURL(path: output, prefix: ScreenCapture.defaultPrefix(for: booted.id), deviceName: booted.name, format: .png)
+            let moved = output == nil ? try Self.unnamedFolder() : nil
+            let target = try ScreenCapture.outputURL(path: output ?? moved, prefix: ScreenCapture.defaultPrefix(for: booted.id), deviceName: booted.name, format: .png)
             let url = try ScreenCapture.write(png, to: target)
             path = url.path
             Self.saved(url.path, width: size.width, height: size.height)
+            if moved != nil { Console.current.notice(Self.outsideCheckoutNotice(url.path)) }
         }
         var runFile: String?
         if let token {
@@ -494,8 +535,9 @@ struct Screenshot: AsyncParsableCommand {
 
     /// The system window this capture went ahead under, named on stderr; nil when there is none.
     @MainActor
-    private static func namedSystemWindow(on backend: any DeviceBackend, device: DeviceID) -> UITreeContext.Window? {
+    private static func namedSystemWindow(on backend: any DeviceBackend, device: DeviceID, quiet: Bool = false) -> UITreeContext.Window? {
         guard let window = (backend as? any SystemWindowReporting)?.systemWindow(for: device) else { return nil }
+        guard !quiet else { return window }
         let name = TerminalText.quoted(TerminalText.line(window.title ?? window.package ?? "untitled", cap: 60))
         Console.current.notice(.note(
             "System window in front: \(name). Input stays refused",

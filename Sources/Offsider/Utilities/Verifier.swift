@@ -105,6 +105,37 @@ struct Verifier {
     }
 
     static let pollInterval: Duration = .milliseconds(200)
+    /// The helper dates a toast on the device's clock and the verifier the input on the Mac's, a few milliseconds apart.
+    static let toastClockSlackMs = 100
+    /// The least time from the first read before the input to the second, which learns what ticks by itself, however fast the reads are.
+    static let baselineReadGap: TimeInterval = 0.6
+    /// Before-shots one input may take while what an earlier input started is still drawing.
+    static let maxBaselineShots = 4
+    /// No more before-shots once this long has passed: a device whose capture is slower than that has drawn what an earlier input started by its first.
+    static let baselineWindow: TimeInterval = 1.05
+
+    /// Shots `screenshotSpacing` apart until two in a row agree, `maxBaselineShots` are taken or `baselineWindow` has passed, so the last is taken once what an input just before drew is over, however long the reads take.
+    static func settledBaseline(screenFrame: AccessibilitySnapshot.Frame?, dependencies: Dependencies) async -> [Data] {
+        let started = dependencies.now()
+        let bands = await dependencies.bands()
+        var shots: [Data] = []
+        var previous: ImageFingerprint?
+        while shots.count < maxBaselineShots {
+            if !shots.isEmpty {
+                guard dependencies.now() - started < baselineWindow, (try? await dependencies.sleep(screenshotSpacing)) != nil else { break }
+            }
+            guard let shot = try? await dependencies.screenshot() else { break }
+            shots.append(shot)
+            let exclusion = bandPixels(pngData: shot, screenFrame: screenFrame, bands: bands)
+            let print = ImageFingerprint(
+                pngData: shot, excludingTopPixels: exclusion.top, excludingBottomPixels: exclusion.bottom,
+                excludingLeftPixels: exclusion.left, excludingRightPixels: exclusion.right, tolerance: bands.noiseTolerance
+            )
+            if let previous, let print, previous.changedTiles(comparedTo: print)?.isEmpty == true { break }
+            previous = print
+        }
+        return shots
+    }
     static let screenshotSpacing: Duration = .milliseconds(350)
     static let screenshotCount = 3
     /// After-shots one attempt may take while a transition is still moving; a lagging stream may show it only from the second.
@@ -184,9 +215,9 @@ struct Verifier {
         }
         let firstReadAt = dependencies.date()
         let capturesBaseline = !ignoringText && !(target.map { stateRoles.contains($0.role) } ?? false)
-        // With a tree to catch the change, the baseline capture runs alongside the reads before the input.
-        let capture: Task<Data?, Never>? = capturesBaseline && first.isKnown
-            ? Task { await Timings.measure("baseline-capture") { try? await dependencies.screenshot() } }
+        // With a tree to catch the change, the baseline capture runs alongside the reads before the input, on its own clock.
+        let capture: Task<[Data], Never>? = capturesBaseline && first.isKnown
+            ? Task { await Timings.measure("baseline-capture") { await settledBaseline(screenFrame: rootFrame(first), dependencies: dependencies) } }
             : nil
         defer { capture?.cancel() }
         // Without a tree to catch the change, a second before-shot lets motion the input starts count.
@@ -199,7 +230,9 @@ struct Verifier {
             let masked = tree.redacted(valueMask, scope: .cache)
             live = LiveText.learn(cached: await dependencies.cachedRecord(), first: masked, readAt: firstReadAt, detector: detector)
         }
-        try await dependencies.sleep(pollInterval)
+        let sinceFirst = dependencies.now() - start
+        let minimum = pollInterval / .seconds(1)
+        try await dependencies.sleep(.seconds(max(minimum, baselineReadGap - sinceFirst)))
         let secondRead = read(try? await dependencies.tree())
         // A failed read says nothing, so the first stands as the baseline, and the input is still watched for its whole window.
         var baselineRead = secondRead.snapshot.isKnown || !first.isKnown ? secondRead : firstRead
@@ -218,7 +251,8 @@ struct Verifier {
         let baselineStart = dependencies.now()
         var baselineShots: [Data] = []
         if let capture {
-            baselineShots = await capture.value.map { [$0] } ?? []
+            // Only the settled shot is the baseline: with a tree, motion the input starts is not evidence, as before.
+            baselineShots = Array(await capture.value.suffix(1))
         } else if capturesBaseline {
             let gap = screenshotSpacing / .seconds(1) - (dependencies.now() - firstShotTime)
             if firstShot != nil, gap > 0 {
@@ -229,6 +263,8 @@ struct Verifier {
         phases.baseline = dependencies.now() - baselineStart
         var baselinePrints: [ImageFingerprint] = []
         var ignored: [VerifyIgnored] = []
+        /// Toasts already raised before the input, which never count as its effect.
+        let earlierToasts = Set(((firstRead.tree?.toasts ?? []) + (secondRead.tree?.toasts ?? [])).map(\.key))
 
         func finish(_ outcome: Outcome, attemptStart: TimeInterval) -> Outcome {
             var outcome = outcome
@@ -280,6 +316,25 @@ struct Verifier {
             return summary
         }
 
+        /// When the latest input went out, so a toast raised before it never counts, even one the reads before it missed.
+        var inputAt = dependencies.now()
+
+        /// The newest toast this read lists that no read before the input did, raised since the input.
+        func newToast(_ current: Read) -> UIToast? {
+            let sinceInputMs = Int(((dependencies.now() - inputAt) * 1000).rounded()) + Self.toastClockSlackMs
+            return current.tree?.toasts?.last { !earlierToasts.contains($0.key) && $0.ageMs <= sinceInputMs }
+        }
+
+        /// A toast is the input's only proof on screen when the app gives no other feedback; its text is shown masked, as `describe-ui` shows it.
+        func toastShown(_ toast: UIToast, attempt: Attempt, attemptStart: TimeInterval) -> Outcome {
+            var hidden = 0
+            let shown = toast.redacted(valueMask, count: &hidden)
+            let named = "toast " + TerminalText.quoted(shown.text, cap: 80)
+            var outcome = Outcome(verified: true, attempts: attempt.number, change: .toast, style: attempt.style, summary: named)
+            outcome.changes = [VerifyChange(kind: .added, node: named)]
+            return finish(outcome, attemptStart: attemptStart)
+        }
+
         func unverified(_ attempt: Attempt, note: VerifyNote? = nil) -> Outcome {
             var outcome = Outcome(verified: false, attempts: attempt.number, change: .none, style: attempt.style, summary: nil, note: note)
             outcome.phases = phases
@@ -296,6 +351,7 @@ struct Verifier {
             var pending: AccessibilitySnapshot?
             var lastUnchanged: Read?
             var lastRead: Read?
+            var toast: UIToast?
             if baseline.isKnown {
                 let polled: Outcome? = try await Timings.measure("verify-poll") {
                     repeat {
@@ -313,10 +369,13 @@ struct Verifier {
                             )
                         }
                         noteIgnored(currentRead)
+                        toast = newToast(currentRead) ?? toast
                         switch detector.compare(baseline, current, ignoring: volatile, live: live) {
                         case .unknown:
                             continue
                         case .unchanged:
+                            // A tree that shows nothing new leaves the toast as the effect; a changing tree still settles first.
+                            if let toast { return toastShown(toast, attempt: attempt, attemptStart: attemptStart) }
                             pending = nil
                             lastUnchanged = currentRead
                             lastRead = currentRead
@@ -336,6 +395,9 @@ struct Verifier {
             // A change that never settled counts only while the latest read still shows it.
             if seenChange, let lastRead, case .changed = detector.compare(baseline, lastRead.snapshot, ignoring: volatile, live: live) {
                 return (verified(read: lastRead, attempt: attempt, attemptStart: attemptStart), false, nil, nil)
+            }
+            if let toast {
+                return (toastShown(toast, attempt: attempt, attemptStart: attemptStart), false, nil, nil)
             }
 
             if !ignoringText, let shot = baselineShots.last {
@@ -389,6 +451,9 @@ struct Verifier {
             if case .changed = detector.compare(baseline, lateRead.snapshot, ignoring: volatile, live: live) {
                 return (verified(read: lateRead, attempt: attempt, attemptStart: attemptStart), false, nil, nil)
             }
+            if let late = newToast(lateRead) {
+                return (toastShown(late, attempt: attempt, attemptStart: attemptStart), false, nil, nil)
+            }
             if lateRead.snapshot.isKnown {
                 lastUnchanged = lateRead
             }
@@ -398,6 +463,7 @@ struct Verifier {
         for (index, style) in attempts.enumerated() {
             let attempt = Attempt(number: index + 1, style: style)
             let dispatchStart = dependencies.now()
+            inputAt = dispatchStart
             try await Timings.measure("dispatch") { try await action(attempt) }
             phases.dispatch += dependencies.now() - dispatchStart
             let attemptStart = dependencies.now()

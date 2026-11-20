@@ -321,8 +321,9 @@ struct TypeSecureFieldTests {
         return FakeUI.tree(platform: platform, children)
     }
 
-    static func type(_ arguments: [String], on device: DeviceID, trees: [UITree], refusing: Bool = true) async throws -> FakeDeviceBackend {
+    static func type(_ arguments: [String], on device: DeviceID, trees: [UITree], refusing: Bool = true, holding: [String: String] = [:]) async throws -> FakeDeviceBackend {
         let backend = FakeDeviceBackend(platform: device.platform, trees: trees)
+        backend.valuesAfterKeys = holding
         try await TypeIntoTests.quiet {
             try await Type.parse(arguments + ["--device", device.rawValue])
                 .execute(on: DeviceRouter.Route(backend: backend, device: device), progress: nil, logger: OffsiderLogger(), refusingSecureArgument: refusing)
@@ -341,13 +342,13 @@ struct TypeSecureFieldTests {
         return (error, backend)
     }
 
-    @Test("argument text aimed at a password field by --into-id exits 64 with nothing sent, pointing at login and --stdin", arguments: [android, simulator])
+    @Test("argument text aimed at a password field by --into-id exits 64 with nothing sent, pointing at login and login --fill", arguments: [android, simulator])
     func intoPassword(device: DeviceID) async throws {
         let (error, backend) = try await Self.refusal(["--into-id", "password", "hunter2"], on: device, trees: [Self.form(platform: device.platform)])
 
         #expect(error?.reason == .secureFieldArgument)
         #expect(error?.exitCode.rawValue == 64)
-        #expect(error?.userFacingDescription == "The field is a password field, and text given as an argument stays in shell history and process lists, so Offsider typed nothing. Sign in with `offsider login --device \(device.rawValue)`, or pipe it in with `offsider type --stdin --device \(device.rawValue)`.")
+        #expect(error?.userFacingDescription == "The field is a password field, and text given as an argument stays in shell history and process lists, so Offsider typed nothing. Sign in with `offsider login --device \(device.rawValue)`; on a sign-up screen, fill the password and confirm fields with `offsider login --fill password --device \(device.rawValue)`.")
         #expect(error?.hint == "offsider login --device \(device.rawValue)")
         #expect(backend.session.calls.isEmpty)
     }
@@ -367,7 +368,9 @@ struct TypeSecureFieldTests {
 
     @Test("argument text into an ordinary field is typed")
     func ordinaryField() async throws {
-        let backend = try await Self.type(["--into-id", "email", "a@b.c"], on: Self.simulator, trees: [Self.form(platform: .ios), Self.form(keyboard: true, platform: .ios)])
+        let backend = try await Self.type(
+            ["--into-id", "email", "a@b.c"], on: Self.simulator, trees: [Self.form(platform: .ios), Self.form(keyboard: true, platform: .ios)], holding: ["email": "a@b.c"]
+        )
         #expect(backend.session.calls.first == .perform(.tapAt(x: 200, y: 222)))
         #expect(backend.session.calls.count == 2)
     }

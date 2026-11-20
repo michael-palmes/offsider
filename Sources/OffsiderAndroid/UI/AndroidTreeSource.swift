@@ -30,7 +30,10 @@ enum AndroidTreeSource {
         "The UiAutomation helper is unavailable on \(serial) (\(reason)). Reading the screen with uiautomator instead, which takes about 2 s per read."
     }
 
-    static func truncationWarning(serial: String) -> String {
-        "The screen on \(serial) is past 20,000 accessibility nodes or depth 200; describe-ui shows what was read, and masks may miss the rest."
+    static func truncationWarning(serial: String, cutForTime: Bool = false) -> String {
+        guard cutForTime else {
+            return "The screen on \(serial) is past 20,000 accessibility nodes or depth 200; describe-ui shows what was read, and masks may miss the rest."
+        }
+        return "The app on \(serial) answered too slowly to read its whole screen, so the helper stopped after \(HelperDump.walkBudgetMs / 1000) s and this tree is partial: describe-ui shows what was read, and masks may miss the rest."
     }
 }

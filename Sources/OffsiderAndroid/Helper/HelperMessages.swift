@@ -9,6 +9,10 @@ struct HelperDumpOptions: Equatable, Sendable {
     var testTags = true
     var idleQuietMs = 100
     var idleTimeoutMs = 500
+    /// Whose recent toasts the reply lists: a package, or "front" for the app window the dump reads; nil asks for none.
+    var toasts: String? = nil
+
+    static let frontApp = "front"
 }
 
 /// One request; `fields` are the op's own keys beside `id` and `op`.
@@ -27,14 +31,16 @@ struct HelperRequest: Equatable, Sendable {
     static let quit = HelperRequest(op: "quit", fields: [:])
 
     static func dump(_ options: HelperDumpOptions) -> HelperRequest {
-        HelperRequest(op: "dump", fields: [
+        var fields: [String: HelperValue] = [
             "windows": .string(options.windows),
             "notImportant": .bool(options.notImportant),
             "visibleOnly": .bool(options.visibleOnly),
             "testTags": .bool(options.testTags),
             "idleQuietMs": .int(options.idleQuietMs),
             "idleTimeoutMs": .int(options.idleTimeoutMs),
-        ])
+        ]
+        fields["toasts"] = options.toasts.map(HelperValue.string)
+        return HelperRequest(op: "dump", fields: fields)
     }
 
     /// `ACTION_SET_PROGRESS` in the node's own units; `expect` is the range as dumped, so a changed range is refused as stale.
@@ -361,6 +367,22 @@ struct HelperDump: Decodable, Equatable, Sendable {
     let skippedInvisible: Int?
     /// Up to five of those subtrees' roots, each with its first labelled descendant when it has no label; nil before helper 1.6.0.
     let hiddenBranches: [HelperNode]?
+    /// How long the helper spent reading the windows and their trees.
+    let walkMs: Int?
+    /// The asked package's recent toasts, oldest first; nil when the request asked for none.
+    let toasts: [HelperToast]?
+
+    /// The helper gives one dump's walk this long, then stops and marks the dump truncated.
+    static let walkBudgetMs = 6000
+    /// Android waits 5 s for a window to answer one read; a walk this long that found no app tree waited on one that never did.
+    static let silentWindowMs = 4000
+
+    /// The walk ran out of time, so the tree is partial though no size limit was met. The helper cuts on whole milliseconds of another clock, so `walkMs` can read just under the budget.
+    var cutForTime: Bool { truncated && (walkMs ?? 0) >= Self.walkBudgetMs - 100 }
+    /// A listed application window took seconds to give no tree, as a stuck app's does; reading it again would only wait as long.
+    var waitedOnSilentWindow: Bool {
+        (walkMs ?? 0) >= Self.silentWindowMs && windows.contains { $0.type == "application" && $0.rootRequested && $0.root == nil }
+    }
 
     init(from decoder: any Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -373,11 +395,34 @@ struct HelperDump: Decodable, Equatable, Sendable {
         let stats = try c.decodeIfPresent(HelperDumpStats.self, forKey: .stats)
         skippedInvisible = stats?.skippedInvisible
         hiddenBranches = stats?.hiddenBranches
+        walkMs = try c.decodeIfPresent(Timings.self, forKey: .timings)?.walkMs
+        toasts = try c.decodeIfPresent([Lossy<HelperToast>].self, forKey: .toasts)?.compactMap(\.value)
+    }
+
+    private struct Timings: Decodable {
+        let walkMs: Int?
     }
 
     private enum CodingKeys: String, CodingKey {
-        case generation, idle, eventSeq, display, windows, truncated, stats
+        case generation, idle, eventSeq, display, windows, truncated, stats, timings, toasts
     }
+}
+
+/// One entry that is dropped, not fatal, when it does not decode, so a bad toast never costs the tree it came with.
+struct Lossy<Value: Decodable & Sendable>: Decodable, Sendable {
+    let value: Value?
+
+    init(from decoder: any Decoder) throws {
+        value = try? Value(from: decoder)
+    }
+}
+
+/// One toast the helper kept, already limited to the package the dump asked for.
+struct HelperToast: Decodable, Equatable, Sendable {
+    let seq: Int64
+    let text: String
+    let package: String
+    let ageMs: Int
 }
 
 /// The counts a dump reports beside its windows; only what Offsider reads.

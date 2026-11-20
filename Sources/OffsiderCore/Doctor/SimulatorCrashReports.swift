@@ -83,6 +83,20 @@ public enum SimulatorCrashReports {
             .max { $0.modified < $1.modified }
     }
 
+    /// ReportCrash writes the report after the process dies, sometimes 10 s or more later, so this looks for 5 s and then names the folder.
+    public static func awaitReport(
+        for bundleID: String, pid: Int, udid: String, since: Date, directory: String, attempts: Int = 10,
+        sleep: @Sendable (Duration) async -> Void = { try? await Task.sleep(for: $0) }
+    ) async -> AppCrashReport {
+        for attempt in 0..<attempts {
+            if attempt > 0 { await sleep(.milliseconds(500)) }
+            if let file = report(for: bundleID, pid: pid, udid: udid, in: scan(directory: directory, modifiedSince: since)) {
+                return .file(file.path)
+            }
+        }
+        return .pending(directory: directory)
+    }
+
     /// Crashes within `window` of `now`, so stale or future-dated reports never count.
     public static func recent(_ crashes: [SimulatorCrash], now: Date) -> [SimulatorCrash] {
         crashes.filter { now.timeIntervalSince($0.timestamp) <= window && $0.timestamp.timeIntervalSince(now) <= 60 }
@@ -123,7 +137,7 @@ public enum SimulatorCrashReports {
 
 extension DoctorRules {
     /// `crashes` are the recent reports for every simulator; only `udid`'s count.
-    public static func crashLoop(_ crashes: [SimulatorCrash], udid: String) -> Verdict {
+    public static func crashLoop(_ crashes: [SimulatorCrash], udid: String, audience: ErrorAudience = .current) -> Verdict {
         let counts = SimulatorCrashReports.counts(crashes, udid: udid)
         guard let worst = counts.first?.count else {
             return (.pass, "No crashes in the last 10 minutes", nil)
@@ -135,7 +149,7 @@ extension DoctorRules {
         guard worst >= loopThreshold else {
             return (.warn, detail, "A few crashes after boot or under host load are common; run doctor again if \"quit unexpectedly\" dialogs keep appearing.")
         }
-        return (.fail, detail, eraseHint(udid))
+        return (.fail, detail, crashLoopHint(udid, audience: audience))
     }
 
     /// A process that crashed this often in ten minutes is being restarted in a loop; busy hosts see two or three.
@@ -155,7 +169,7 @@ extension DoctorRules {
         return (
             .warn,
             looping.joined(separator: "; "),
-            "Run offsider doctor --device <UDID> for the fix; erasing a simulator removes its apps and settings."
+            "Run offsider doctor --device <UDID> for the fix."
         )
     }
 
@@ -163,7 +177,11 @@ extension DoctorRules {
         "\(entry.process) crashed \(entry.count) \(entry.count == 1 ? "time" : "times") in the last 10 minutes"
     }
 
-    static func eraseHint(_ udid: String) -> String {
-        "The simulator is in a crash loop. Erase it (this removes its apps and settings): xcrun simctl shutdown \(udid) && xcrun simctl erase \(udid)"
+    /// Erasing under load brings the loop back, so the fix is a quiet boot; only a person erases, and only after that fails.
+    static func crashLoopHint(_ udid: String, audience: ErrorAudience) -> String {
+        let quietBoot = "Shut it down with offsider shutdown \(udid), wait until the Mac is quiet, then boot it once."
+        return audience == .person
+            ? "\(quietBoot) Only if it loops again on a quiet Mac, erase it (this removes its apps and settings): xcrun simctl erase \(udid)"
+            : "\(quietBoot) Never erase it: if it loops again on a quiet Mac, ask the user to run `xcrun simctl erase \(udid)` in their own terminal (it removes its apps and settings)."
     }
 }

@@ -106,12 +106,13 @@ extension Tap: BatchConvertible {
             Self.warnIfOffScreen(subject: query.selectorDescription, at: resolution.point, in: resolved.tree)
         }
 
-        let physicalPoint = try await context.backend.deviceCoordinates(
-            for: [resolution.point],
-            tree: resolvedTree,
-            on: context.device
+        let physicalPoint = try await DeviceWatchdog.make().inputPoints(
+            [resolution.point], tree: resolvedTree, backend: context.backend, device: context.device
         )[0]
 
+        if let heldFor {
+            return [.hidBarrier(Self.heldTap(at: physicalPoint, seconds: heldFor, pre: preDelay, post: postDelay))]
+        }
         let style = resolvedTapStyle(for: resolution, context: context)
         switch style {
         case .physical:
@@ -128,10 +129,8 @@ extension Tap: BatchConvertible {
 extension Swipe: BatchConvertible {
     func toBatchPrimitives(context: BatchContext, logger: OffsiderLogger) async throws -> [BatchPrimitive] {
         guard !holdShots.isRequested else { throw ValidationError(HoldScreenshotOptions.batchMessage) }
-        let physicalPoints = try await context.backend.deviceCoordinates(
-            for: [(x: startX, y: startY), (x: endX, y: endY)],
-            tree: nil,
-            on: context.device
+        let physicalPoints = try await DeviceWatchdog.make().inputPoints(
+            [(x: startX, y: startY), (x: endX, y: endY)], backend: context.backend, device: context.device
         )
         let event = try swipeEvent(from: physicalPoints[0], to: physicalPoints[1])
         return [.hidMergeable(InputEvent.delayed(event, pre: preDelay, post: postDelay))]
@@ -141,10 +140,8 @@ extension Swipe: BatchConvertible {
 extension Drag: BatchConvertible {
     func toBatchPrimitives(context: BatchContext, logger: OffsiderLogger) async throws -> [BatchPrimitive] {
         guard !holdShots.isRequested else { throw ValidationError(HoldScreenshotOptions.batchMessage) }
-        let physicalPoints = try await context.backend.deviceCoordinates(
-            for: [(x: startX, y: startY), (x: endX, y: endY)],
-            tree: nil,
-            on: context.device
+        let physicalPoints = try await DeviceWatchdog.make().inputPoints(
+            [(x: startX, y: startY), (x: endX, y: endY)], backend: context.backend, device: context.device
         )
         let event = try dragEvent(from: physicalPoints[0], to: physicalPoints[1])
         return [.hidMergeable(InputEvent.delayed(event, pre: preDelay, post: postDelay))]
@@ -168,11 +165,7 @@ extension Touch: BatchConvertible {
         if fingers == 2 {
             return [.hidBarrier(try await twoFingerEvent(backend: context.backend, device: context.device))]
         }
-        let physicalPoint = try await context.backend.deviceCoordinates(
-            for: [(x: pointX, y: pointY)],
-            tree: nil,
-            on: context.device
-        )[0]
+        let physicalPoint = try await DeviceWatchdog.make().inputPoints([(x: pointX, y: pointY)], backend: context.backend, device: context.device)[0]
 
         let touchDownEvent = InputEvent.touch(direction: .down, x: physicalPoint.x, y: physicalPoint.y)
         let touchUpEvent = InputEvent.touch(direction: .up, x: physicalPoint.x, y: physicalPoint.y)
@@ -238,16 +231,23 @@ extension KeySequence: BatchConvertible {
         }
 
         guard KeySequence.typesText(parsedKeycodes) else { return [.hidMergeable(InputEvent.composite(events))] }
+        let focusTree = Type.FocusTreeBox()
         let focus = BatchPrimitive.run { _ in
             try await context.awaitInputDrawn()
-            try await Type.checkTextFocus(
+            focusTree.check = try await Type.checkTextFocus(
                 readTree: { try await context.accessibilityTree(forceRefresh: true) }, device: context.device, clock: .live,
                 warn: { Console.current.notice(.warning(InputPersonView.sentence($0), agent: $0)) },
                 refusingSecureTarget: KeySequence.spellsText(parsedKeycodes) ? Type.secureFieldRefusal(device: context.device, batch: true, keys: true) : nil, keys: true,
-                hitTester: context.backend as? any PointHitTesting
+                hitTester: context.backend as? any PointHitTesting, adb: Type.adbPath(of: context.backend)
             )
         }
-        return [focus, .hidMergeable(InputEvent.composite(events))]
+        let keys = BatchPrimitive.hidMergeable(InputEvent.composite(events))
+        guard context.device.platform == .android, KeySequence.spelledText(parsedKeycodes) != nil else { return [focus, keys] }
+        let landed = BatchPrimitive.run { _ in
+            guard let check = focusTree.check else { return }
+            try await KeySequence.confirmLanded(parsedKeycodes, focus: check, backend: context.backend, device: context.device)
+        }
+        return [focus, keys, landed]
     }
 }
 
@@ -281,25 +281,35 @@ extension Type: BatchConvertible {
         let focusTree = FocusTreeBox()
         let focus = BatchPrimitive.run { session in
             if intoQuery != nil || requireFocusID != nil {
-                focusTree.tree = try await ensureFocus(backend: context.backend, device: context.device, logger: logger, refusingSecureTarget: refusal) { event in
+                let check = try await ensureFocus(backend: context.backend, device: context.device, logger: logger, refusingSecureTarget: refusal) { event in
                     try await session.perform(event)
-                }.tree
+                }
+                focusTree.tree = check.tree
+                focusTree.check = check
                 context.invalidateTree(sentInput: DispatchTracker.current.state != .no)
                 return
             }
             guard sends else { return }
             try await context.awaitInputDrawn()
-            focusTree.tree = try await Type.checkTextFocus(
+            let check = try await Type.checkTextFocus(
                 readTree: { try await context.accessibilityTree(forceRefresh: true) }, device: context.device, clock: .live,
                 warn: { Console.current.notice(.warning(InputPersonView.sentence($0), agent: $0)) }, refusingSecureTarget: refusal,
-                hitTester: context.backend as? any PointHitTesting, unlistedField: unlistedField
-            ).tree
+                hitTester: context.backend as? any PointHitTesting, unlistedField: unlistedField, replacing: replace, adb: Type.adbPath(of: context.backend)
+            )
+            focusTree.tree = check.tree
+            focusTree.check = check
         }
         if throughSession {
-            if replace {
-                return [focus, .text(inputText, replace: true)]
+            let landed = BatchPrimitive.run { session in
+                guard let check = focusTree.check else { return }
+                try await confirmKeysLanded(inputText, focus: check, backend: context.backend, device: context.device)
+                try await confirmHeldOnDevice(inputText, focus: check, backend: context.backend, device: context.device) { try await session.perform($0) }
             }
-            return inputText.isEmpty && intoQuery == nil && requireFocusID == nil ? [] : [focus] + (inputText.isEmpty ? [] : [.text(inputText, replace: false)])
+            if replace {
+                return [focus, .text(inputText, replace: true)] + (inputText.isEmpty || !context.device.isPhysicalIOSDevice ? [] : [landed])
+            }
+            if inputText.isEmpty { return intoQuery != nil || requireFocusID != nil ? [focus] : [] }
+            return [focus, .text(inputText, replace: false), landed]
         }
         return [focus] + typingPrimitives(inputText, context: context, focusTree: focusTree)
     }
@@ -307,6 +317,12 @@ extension Type: BatchConvertible {
     /// The tree a step's focus check read, for the typing after it to pace a React Native app.
     final class FocusTreeBox {
         var tree: UITree?
+        /// What the focus check read, for the step's text to be read back from its field.
+        var check: FocusCheck?
+        /// Opened before a simulator step's keys, to read its field back after them.
+        var reader: FieldReader?
+        /// What became of the step's own clear.
+        var cleared = Cleared.none
     }
 
     private func typingPrimitives(_ inputText: String, context: BatchContext, focusTree: FocusTreeBox) -> [BatchPrimitive] {
@@ -314,21 +330,38 @@ extension Type: BatchConvertible {
         let chunked = context.typeSubmissionMode == .chunked
         let chunkSize = max(1, context.typeChunkSize)
         let replacing = replace
-        return [.run { session in
-            let events = try Type.iosEvents(for: inputText, replacing: false, paced: ReactNativeBundle.isFront(in: focusTree.tree))
-            let clear = replacing ? InputEvent.selectAllAndDelete(modifier: InputEvent.commandKey, settle: InputEvent.iosClearSettle) : nil
-            guard chunked else {
-                try await session.perform(.composite((clear.map { [$0] } ?? []) + events))
-                return
+        let typing = BatchPrimitive.run { session in
+            if let check = focusTree.check {
+                focusTree.reader = await fieldReader(for: inputText, focus: check, backend: context.backend, device: context.device)
             }
-            if let clear { try await session.perform(clear) }
-            var start = 0
-            while start < events.count {
-                let end = min(start + chunkSize, events.count)
-                try await session.perform(.composite(Array(events[start..<end])))
-                start = end
+            let paced = ReactNativeBundle.isFront(in: focusTree.tree)
+            do {
+                guard chunked else {
+                    focusTree.cleared = try await sendKeys(inputText, paced: paced, reader: focusTree.reader, clock: .live) { try await session.perform($0) }
+                    return
+                }
+                let events = try Type.iosEvents(for: inputText, replacing: false, paced: paced)
+                let clear = replacing ? InputEvent.selectAllAndDelete(modifier: InputEvent.commandKey, settle: InputEvent.iosClearSettle) : nil
+                if let clear { try await session.perform(clear) }
+                var start = 0
+                while start < events.count {
+                    let end = min(start + chunkSize, events.count)
+                    try await session.perform(.composite(Array(events[start..<end])))
+                    start = end
+                }
+            } catch {
+                focusTree.reader?.close()
+                throw error
             }
-        }]
+        }
+        guard !inputText.isEmpty else { return [typing] }
+        let landed = BatchPrimitive.run { session in
+            guard let check = focusTree.check else { return }
+            try await confirmHeld(inputText, focus: check, reader: focusTree.reader, cleared: focusTree.cleared, backend: context.backend, device: context.device, clock: .live) {
+                try await session.perform($0)
+            }
+        }
+        return [typing, landed]
     }
 }
 

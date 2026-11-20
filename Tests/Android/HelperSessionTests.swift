@@ -29,7 +29,7 @@ struct HelperSessionTests {
 
         #expect(device.ops == ["hello", "dump", "dump"])
         #expect(device.frames.first?.json.contains(#""token":"token-1""#) == true)
-        #expect(device.frames.first?.json.contains(#""protocol":2"#) == true)
+        #expect(device.frames.first?.json.contains(#""protocol":3"#) == true)
         #expect(Self.ids(device) == [1, 2, 3])
         await session.close()
     }
@@ -143,7 +143,7 @@ struct HelperSessionTests {
         await session.close()
     }
 
-    @Test("a helper lost before its reply is started again once; a second loss is a crash")
+    @Test("a helper lost before its reply is started again once; a second loss names session stop as the one fix")
     func lostTwice() async throws {
         let device = FakeHelperDevice()
         device.answer = { _, op, _ in op == "dump" ? .hangUp : nil }
@@ -151,7 +151,37 @@ struct HelperSessionTests {
 
         let error = await #expect(throws: AndroidError.self) { try await session.dump() }
         #expect(error?.kind == .helperCrashed)
-        #expect(error?.message == "The UiAutomation helper on emulator-5556 stopped unexpectedly (its socket closed before it answered `dump`). Retry; `adb -s emulator-5556 logcat -d -s OffsiderHelper AndroidRuntime` shows why.")
+        #expect(error?.message == "The UiAutomation helper on emulator-5556 stopped (its socket closed before it answered `dump`), and one fresh start did not bring it back. Run `offsider session stop --device emulator-5556`, then retry.")
+        #expect(error?.hint == "offsider session stop --device emulator-5556")
+        #expect(device.startedProcesses == 2)
+        #expect(device.ops == ["hello", "dump", "hello", "dump"])
+        await session.close()
+    }
+
+    @Test("a helper whose connection to Android died says so and goes; the read is sent once more to a fresh one")
+    func deadConnectionRestartsOnce() async throws {
+        let device = FakeHelperDevice()
+        device.answer = { process, op, _ in op == "dump" && process == 1 ? .bye("crash") : nil }
+        let session = try await Self.start(device)
+
+        let dump = try await session.dump()
+
+        #expect(dump.windows.count == 2)
+        #expect(device.ops == ["hello", "dump", "hello", "dump"])
+        #expect(session.ready.pid == 4002)
+        await session.close()
+    }
+
+    @Test("a lost helper whose second start fails names session stop, and no third start is tried")
+    func secondStartFails() async throws {
+        let device = FakeHelperDevice(starts: [.ready, .exit(status: 5, stdout: #"{"ok":false,"error":{"code":"connect-failed","message":"UiAutomation connect failed","detail":null}}"#)])
+        device.answer = { _, op, _ in op == "dump" ? .bye("crash") : nil }
+        let session = try await Self.start(device)
+
+        let error = await #expect(throws: AndroidError.self) { try await session.dump() }
+        #expect(error?.kind == .helperCrashed)
+        #expect(error?.message == "The UiAutomation helper on emulator-5556 stopped (it ended with crash: no request within 10000 ms), and one fresh start did not bring it back (it could not connect to UiAutomation: UiAutomation connect failed). Run `offsider session stop --device emulator-5556`, then retry.")
+        #expect(error?.hint == "offsider session stop --device emulator-5556")
         #expect(device.startedProcesses == 2)
         await session.close()
     }
@@ -232,12 +262,12 @@ struct HelperSessionTests {
         #expect(device.kills.isEmpty)
     }
 
-    @Test("a hello reply with another protocol is a handshake failure, and both streams close")
+    @Test("a hello reply from a protocol 2 helper is a handshake failure, and both streams close")
     func helloProtocol() async {
         let device = FakeHelperDevice()
-        device.answer = { _, op, _ in op == "hello" ? .ok(#"{"helper":"3.0.0","protocol":3}"#) : nil }
+        device.answer = { _, op, _ in op == "hello" ? .ok(#"{"helper":"1.8.0","protocol":2}"#) : nil }
 
-        await #expect(throws: HelperStartFailure.unavailable(.handshake("the helper on the device speaks protocol 3, Offsider speaks 2"))) {
+        await #expect(throws: HelperStartFailure.unavailable(.handshake("the helper on the device speaks protocol 2, Offsider speaks 3"))) {
             _ = try await Self.start(device)
         }
         #expect(device.timeline.contains("shell closed 1"))

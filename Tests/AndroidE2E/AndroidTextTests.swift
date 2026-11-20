@@ -27,6 +27,17 @@ struct AndroidTypeTests {
         #expect(try await AndroidE2E.label(of: "word-count") == "Words: 2")
     }
 
+    @Test("ASCII over 30 key events, shifted characters too, reaches the field whole and in order", arguments: [
+        "cam@example.com", "The Quick Brown Fox Jumps Over 13 Lazy Dogs!",
+    ])
+    func longASCII(text: String) async throws {
+        try await AndroidE2E.open("text-input", waitingFor: "text-input-field")
+        try await AndroidE2E.run("tap --id text-input-field")
+        try await AndroidE2E.run("type \(AndroidE2E.quote(text))")
+        _ = try await AndroidE2E.waitForFieldValue(text)
+        _ = try await AndroidE2E.waitForLabel(of: "character-count") { $0 == "Characters: \(text.count)" }
+    }
+
     @Test("non-ASCII text is pasted whole and the clipboard is restored")
     func unicodeRestoresClipboard() async throws {
         let emulator = try await AndroidE2E.emulatorClient()
@@ -109,6 +120,86 @@ struct AndroidTypeTests {
         #expect(result.exitCode == 1)
         #expect(result.stdout.contains(#""reason":"no_focused_field""#), "\(result.stdout)")
         #expect(result.stderr.contains("No text field has focus, so Offsider typed nothing"))
+    }
+}
+
+/// Gboard's "Try out your stylus" tutorial opens inside the keyboard about a second after a tap on a field, and takes keys while the app's field keeps focus.
+@Suite("Android stylus handwriting tutorial", .serialized, .enabled(if: isAndroidE2EEnabled), StylusHandwritingOn())
+struct AndroidStylusTutorialTests {
+    static let field = "gap-tabs-search-field"
+
+    static func value(of id: String = field) async throws -> String {
+        let node = AndroidE2E.nodes(in: try await AndroidE2E.tree()).first { $0["id"] as? String == id }
+        return node?["value"] as? String ?? ""
+    }
+
+    @Test("type --into-id reaches the field or refuses naming the tutorial, never passing with the text elsewhere; --replace then sets it", arguments: 1...3)
+    func intoIDNeverPassesElsewhere(attempt: Int) async throws {
+        try await AndroidE2E.open("gap-tabs-test", waitingFor: "gap-tabs-test-screen")
+        try await AndroidE2E.run("tap --id gap-tabs-tab-search")
+        _ = try await AndroidE2E.waitForLabel(of: "gap-tabs-pressed") { $0 == "Gap Pressed: Search Tab" }
+
+        let typed = try await AndroidE2E.offsider("type abc --into-id \(Self.field) --json")
+        try await Self.expectLandedOrRefused(typed)
+
+        try await AndroidE2E.run("type --replace abc --into-id \(Self.field)")
+        _ = try await AndroidE2E.waitForFieldValue("abc", id: Self.field)
+    }
+
+    @Test("a batch tap then plain type or spelled keys reaches the field or refuses naming the tutorial, never passing with the text elsewhere",
+          arguments: ["type abc", "key-sequence --keycodes 4,5,6"], 1...2)
+    func batchTapThenKeysNeverPassElsewhere(keys: String, attempt: Int) async throws {
+        try await AndroidE2E.open("text-input", waitingFor: "text-input-field")
+        let steps = ["tap --id text-input-field", keys].map { "--step \(AndroidE2E.quote($0))" }.joined(separator: " ")
+        try await Self.expectLandedOrRefused(try await AndroidE2E.offsider("batch \(steps) --json"), id: "text-input-field")
+    }
+
+    /// Whether the tutorial's panel has hidden the app's window: only then does the helper list the guide the text input screen parks at zero opacity.
+    static func windowHidden() async throws -> Bool {
+        AndroidE2E.nodes(in: try await AndroidE2E.tree()).contains { $0["id"] as? String == "text-input-parked-guide" }
+    }
+
+    @Test("under the tutorial's panel, which hides the app's window, describe-ui still lists the form, wait finds its title, and the guide parked at zero opacity is only a guess that --fail-if-covered stops on")
+    func parkedGuideUnderHiddenWindow() async throws {
+        var hidden = false
+        for _ in 1...3 where !hidden {
+            try await AndroidE2E.open("text-input", waitingFor: "text-input-field")
+            try await AndroidE2E.run("tap --id text-input-second-field")
+            for _ in 1...10 where !hidden {
+                try await Task.sleep(for: .milliseconds(400))
+                hidden = try await Self.windowHidden()
+            }
+        }
+        withKnownIssue("Gboard did not open its tutorial in three tries, so the hidden window went unproved on this run", isIntermittent: true) {
+            #expect(hidden)
+        }
+        let summary = try await AndroidE2E.run("describe-ui --summary").stdout
+        #expect(summary.contains("id=text-input-title") && summary.contains("id=text-input-field"), "\(summary)")
+        #expect(!summary.contains("# beneath"), "\(summary)")
+        try await AndroidE2E.run("wait --id text-input-title --timeout 2")
+
+        let plain = try await AndroidE2E.offsider("tap --id text-input-field --dry-run")
+        #expect(plain.exitCode == 0, "\(plain.stderr)")
+        let sure = try await AndroidE2E.offsider("tap --id text-input-field --dry-run --fail-if-covered --json")
+        // Gboard does not open its tutorial on every tap, and without it the helper never lists the guide, so nothing is in doubt.
+        if hidden {
+            #expect(plain.stderr.contains("may be covered by") && plain.stderr.contains("Typing Guide"), "\(plain.stderr)")
+            #expect(sure.exitCode == 1, "\(sure.stdout)")
+            #expect(sure.stdout.contains(#""evidence":"hiddenWindow""#) && sure.stdout.contains("offsider screenshot"), "\(sure.stdout)")
+        } else {
+            #expect(sure.exitCode == 0, "\(sure.stdout)")
+        }
+    }
+
+    /// Exit 0 only with the text in the field; otherwise a refusal before or after the keys that names the tutorial.
+    static func expectLandedOrRefused(_ typed: SeparatedCommandOutput, id: String = field) async throws {
+        let output = typed.stdout + typed.stderr
+        guard typed.exitCode != 0 else {
+            #expect(try await Self.value(of: id) == "abc", "exited 0, but the field does not hold the text: \(output)")
+            return
+        }
+        #expect(output.contains(#""reason":"focus_mismatch""#) || output.contains(#""reason":"text_not_accepted""#), "\(output)")
+        #expect(output.contains("stylus handwriting tutorial"), "\(output)")
     }
 }
 

@@ -55,7 +55,7 @@ struct ReactNativeMaskRuleTests {
 
         let miss = try await app.offsider("assert --id mask-rule-test-password --has-value nope")
         #expect(miss.exitCode != 0)
-        #expect(miss.stderr.contains("has a masked value"), "\(miss.stderr)")
+        #expect(miss.stderr.contains("its value is masked"), "\(miss.stderr)")
         #expect(!(miss.stdout + miss.stderr).contains(Self.password))
         try Self.expectTreeCacheHolds(none: [Self.password])
 
@@ -168,7 +168,7 @@ struct ReactNativeMaskRuleTests {
             let modalVideo = directory.appendingPathComponent("modal.mp4").path
             let modal = try await Self.recordVideo(to: modalVideo, in: directory, platform: platform)
             #expect(modal.exitCode == 0, "\(modal.stderr)")
-            #expect(modal.stderr.contains("a modal window covers the app"), "\(modal.stderr)")
+            #expect(modal.stderr.contains("a modal covers the app"), "\(modal.stderr)")
             #expect(modal.stderr.contains("maskUnproven"), "\(modal.stderr)")
             #expect(FileManager.default.fileExists(atPath: modalVideo), "a warned recording still saves")
         }

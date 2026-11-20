@@ -130,7 +130,7 @@ enum ScreenCapture {
         /// Nil unless `--mask-skip-beneath` was given; then every skippable kind asked for, zeros included.
         var skipped: [MaskKind: Int]?
         var unmatched: [String]
-        /// `modal` when Android left the windows beneath a modal out of the tree.
+        /// `modal` when Android left the windows beneath a modal out of the tree, or iOS a screen behind a backdrop that shows text; `keyboard` when an iOS keyboard is up and its bar is not listed, so a band was painted where one would be.
         var unproven: String? = nil
     }
 
@@ -151,7 +151,7 @@ enum ScreenCapture {
         switch reason {
         case "truncated":
             return .warning(
-                "The screen was too big to read whole; check \(subject)",
+                "The screen was not read whole; check \(subject)",
                 agent: "the device cut this accessibility tree short, so masks may miss elements past the cut; check \(subject) or add --mask-region (maskUnproven)."
             )
         case "no-windows":
@@ -159,23 +159,55 @@ enum ScreenCapture {
                 "Masks can't tell if a modal is open; check \(subject)",
                 agent: "this read lists no windows, so a modal hiding what is behind it cannot be told and masks may miss text drawn there; check \(subject) or add --mask-region (maskUnproven)."
             )
+        case "keyboard":
+            return .warning(
+                "Painted a band for the keyboard's suggestions; check \(subject)",
+                agent: "a keyboard is up and its suggestion bar is not in the tree, so a band was painted where one would be; check \(subject), or close the keyboard first with `offsider keyboard hide` (maskUnproven)."
+            )
         default:
             return .warning(
                 "Masks can't see behind this modal; check \(subject)",
-                agent: "a modal window covers the app and Android leaves what is behind it out of the tree, so masks may miss text drawn there; check \(subject) or add --mask-region (maskUnproven)."
+                agent: "a modal covers the app and leaves what is behind it out of the tree, so masks may miss text drawn there; check \(subject) or add --mask-region (maskUnproven)."
             )
         }
     }
 
+    /// What text recognition found where an iOS backdrop hides the screen from every read: the lines no element lists, or `unread` when it could not finish.
+    struct HiddenText {
+        var lines: [ScreenTextLine] = []
+        var unread = false
+        var unproven: Bool { unread || !lines.isEmpty }
+    }
+
+    /// Recognition on the Mac is bounded, as a stalled read must not hold a capture; the fast pass, as the accurate one compiles its model for each new build.
+    nonisolated static let hiddenTextLimit: TimeInterval = 2
+
+    /// Reads the capture's text only when a backdrop leaves its top band unlisted; nil otherwise.
+    nonisolated static func hiddenText(in capture: CapturedScreen, tree: UITree?) async -> HiddenText? {
+        guard let tree, let region = HiddenScreen.region(in: tree, belowStatusBar: IOSBackend.statusBarHeight) else { return nil }
+        guard capture.upright, let pixelsPerPoint = capture.pixelsPerPoint else { return HiddenText(unread: true) }
+        let image = capture.image
+        let lines = try? await Timings.measure("hidden-text") {
+            try await DoctorProbes.withTimeout(hiddenTextLimit, operation: "Reading text behind a sheet") {
+                await ScreenTextReader.framedLines(in: image, region: region, pixelsPerPoint: pixelsPerPoint)
+            }
+        }
+        guard let read = lines else { return HiddenText(unread: true) }
+        return HiddenText(lines: HiddenScreen.unlisted(read, in: tree))
+    }
+
     /// Paints every mask in `plan` black; a capture that is not upright cannot be mapped, so it is withheld.
-    /// `revealed` adds the plain text fields that show a password field the device had earlier, painted as password fields.
-    nonisolated static func masking(_ capture: CapturedScreen, plan: MaskPlan, tree: UITree?, revealed: RevealedSecrets? = nil) throws -> MaskResult {
+    /// `revealed` adds the plain text fields that show a password field the device had earlier, painted as password fields; `hidden` is text no read lists, from `hiddenText`.
+    nonisolated static func masking(
+        _ capture: CapturedScreen, plan: MaskPlan, tree: UITree?, revealed: RevealedSecrets? = nil, hidden: HiddenText? = nil
+    ) throws -> MaskResult {
         var targets = MaskTargets()
         if let tree {
             targets = try plan.textTargets(in: tree)
             if plan.secure {
                 targets.add(tree.roots.flatMap { $0.flattened() }.filter { $0.isSecure || revealed?.matches($0) == true }, as: .secure)
-                targets.add(KeyboardText.hiddenElements(in: tree.roots), as: .keyboard)
+                // iOS paints its bar whole, below, so a suggestion that arrives after the read is covered too.
+                if tree.platform != .ios { targets.add(KeyboardText.hiddenElements(in: tree.roots), as: .keyboard) }
             }
             let selectors = plan.ids.map { (MaskKind.id, AccessibilityQuery.id($0)) } + plan.labels.map { (MaskKind.label, AccessibilityQuery.label($0)) }
                 + plan.labelsContaining.map { (MaskKind.labelContains, AccessibilityQuery.labelContains($0)) }
@@ -189,10 +221,21 @@ enum ScreenCapture {
         }
         targets.frames[.region] = plan.regions.map { UIFrame(x: $0.x, y: $0.y, width: $0.width, height: $0.height) }
         let placement = tree.map { targets.placeBeneath(in: $0, skip: plan.skipsBeneath) } ?? (painted: [:], skipped: [:])
+        var keyboardUnplaced = false
         if let tree, plan.secure {
             // Windows, not elements, so no page can be beneath them.
             targets.frames[.keyboard, default: []] += KeyboardText.unreadWindows(in: tree).map(Optional.some)
+            let bar = KeyboardBar.placement(in: tree)
+            targets.frames[.keyboard, default: []] += bar.frames
+            keyboardUnplaced = bar.unplaced
             targets.frames[.copyPreview] = CopyPreview.frames(in: tree)
+        }
+        if let hidden, !hidden.lines.isEmpty {
+            let found = try HiddenScreen.targets(hidden.lines, plan: plan)
+            for (kind, frames) in found.frames {
+                targets.frames[kind, default: []] += frames.map { Optional(UIFrame(x: $0.x - 2, y: $0.y - 2, width: $0.width + 4, height: $0.height + 4)) }
+            }
+            targets.unmatched.removeAll { name in found.matched.contains { name == "--mask-text \($0)" } }
         }
         let beneathFrames = placement.painted
         let skipped = plan.skipsBeneath ? Dictionary(uniqueKeysWithValues: plan.kinds.filter(\.skippableBeneath).map { ($0, placement.skipped[$0] ?? 0) }) : nil
@@ -221,7 +264,7 @@ enum ScreenCapture {
         }
         beneath = beneath.filter { $0.value > 0 }
         painted = painted.filter { !$0.key.ridesWithSecure || $0.value > 0 }
-        let unproven = tree.flatMap(Self.unproven)
+        let unproven = tree.flatMap(Self.unproven) ?? (hidden?.unproven == true ? "modal" : nil) ?? (keyboardUnplaced ? "keyboard" : nil)
         guard image !== capture.image else {
             return MaskResult(capture: capture, painted: painted, beneath: beneath, skipped: skipped, unmatched: targets.unmatched, unproven: unproven)
         }

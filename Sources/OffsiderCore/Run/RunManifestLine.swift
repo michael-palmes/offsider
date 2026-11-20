@@ -28,11 +28,18 @@ public struct RunManifestLine: Codable, Equatable, Sendable {
     public var expect: String?
     public var entries: Int?
     public var redacted: Int?
+    /// The system prompt `alert` answered, by its title.
+    public var prompt: String?
+    /// The button it chose.
+    public var button: String?
+    /// The fields `login --fill` aimed at and what became of each; never the text.
+    public var fields: [RunFieldOutcome]?
 
     public init(
         n: Int? = nil, file: String? = nil, command: String, step: Int? = nil, line: String? = nil, device: String? = nil, platform: String? = nil,
         time: Date, ms: Int, exit: Int, reason: String? = nil, args: [String]? = nil, output: String? = nil, diff: String? = nil,
-        masked: Int? = nil, skippedBeneath: Int? = nil, changed: Bool? = nil, expect: String? = nil, entries: Int? = nil, redacted: Int? = nil
+        masked: Int? = nil, skippedBeneath: Int? = nil, changed: Bool? = nil, expect: String? = nil, entries: Int? = nil, redacted: Int? = nil,
+        prompt: String? = nil, button: String? = nil, fields: [RunFieldOutcome]? = nil
     ) {
         self.n = n
         self.file = file
@@ -54,6 +61,9 @@ public struct RunManifestLine: Codable, Equatable, Sendable {
         self.expect = expect
         self.entries = entries
         self.redacted = redacted
+        self.prompt = prompt
+        self.button = button
+        self.fields = fields
     }
 
     public func jsonLine(timeZone: TimeZone = .current) -> String {
@@ -82,10 +92,22 @@ public struct RunManifestLine: Codable, Equatable, Sendable {
             ("expect", .optional(expect, OrderedJSON.string)),
             ("entries", .optional(entries, OrderedJSON.integer)),
             ("redacted", .optional(redacted, OrderedJSON.integer)),
-        ])
+        ] + (prompt == nil && button == nil ? [] : [("prompt", .optional(prompt, OrderedJSON.string)), ("button", .optional(button, OrderedJSON.string))])
+            + (fields.map { [("fields", .array($0.map { .object([("field", .string($0.field)), ("state", .string($0.state))]) }))] } ?? []))
     }
 
     public init(jsonLine: String) throws {
         self = try RunCoding.decoder.decode(RunManifestLine.self, from: Data(jsonLine.utf8))
+    }
+}
+
+/// One field a command typed into, or meant to: `id=password` and `filled` or `not_filled`.
+public struct RunFieldOutcome: Codable, Equatable, Sendable {
+    public var field: String
+    public var state: String
+
+    public init(field: String, state: String) {
+        self.field = field
+        self.state = state
     }
 }

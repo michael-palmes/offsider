@@ -91,11 +91,32 @@ public struct RunnerSessionRecord: Codable, Equatable, Sendable {
 }
 
 
+/// `runner-failure.json`: why the last runner start on a device failed when only a person can clear it; the next start that answers removes it.
+public struct RunnerStartFailure: Codable, Equatable, Sendable {
+    public enum Kind: String, Codable, Sendable {
+        case certificateNotTrusted = "certificate_not_trusted"
+    }
+
+    public var version: Int
+    public var kind: Kind
+    /// The team whose developer certificate the device refused.
+    public var team: String
+    public var at: Date
+
+    public init(kind: Kind, team: String, at: Date) {
+        version = 1
+        self.kind = kind
+        self.team = team
+        self.at = at
+    }
+}
+
 /// Session files under `<private>/ios-devices/<udid>/`, written atomically 0600.
 public struct RunnerSessionStore: Sendable {
     static let fileName = "runner.json"
     static let logName = "runner.log"
     static let lockName = "runner.lock"
+    static let failureName = "runner-failure.json"
 
     public let root: String
 
@@ -126,14 +147,36 @@ public struct RunnerSessionStore: Sendable {
 
     /// Deletes `runner.log` for a device this Mac keeps a folder for; never creates one.
     public func removeLog(udid: String) {
-        let name = IOSDevicePaths.safeName(udid)
-        guard let known = IOSDevicePaths.knownDevices(root: root).first(where: { $0.caseInsensitiveCompare(name) == .orderedSame }) else { return }
-        let devices = (root as NSString).appendingPathComponent(IOSDevicePaths.directoryName)
-        OffsiderPrivateDirectory.removeFile(named: Self.logName, in: (devices as NSString).appendingPathComponent(known))
+        guard let directory = knownDirectory(udid: udid) else { return }
+        OffsiderPrivateDirectory.removeFile(named: Self.logName, in: directory)
     }
 
     public func logPath(udid: String) throws -> String {
         (try IOSDevicePaths.device(udid, root: root) as NSString).appendingPathComponent(Self.logName)
+    }
+
+    /// The folder this Mac keeps for the device, or nil; never creates one.
+    func knownDirectory(udid: String) -> String? {
+        let name = IOSDevicePaths.safeName(udid)
+        guard let known = IOSDevicePaths.knownDevices(root: root).first(where: { $0.caseInsensitiveCompare(name) == .orderedSame }) else { return nil }
+        return ((root as NSString).appendingPathComponent(IOSDevicePaths.directoryName) as NSString).appendingPathComponent(known)
+    }
+
+    public func writeFailure(_ failure: RunnerStartFailure, udid: String) throws {
+        let directory = try IOSDevicePaths.device(udid, root: root)
+        try OffsiderPrivateDirectory.writeAtomically(try Self.encoder.encode(failure), named: Self.failureName, in: directory)
+    }
+
+    /// The last start's failure, read without creating the device's folder; nil when none is recorded or it cannot be read.
+    public func failure(udid: String) -> RunnerStartFailure? {
+        guard let directory = knownDirectory(udid: udid),
+              let data = (try? OffsiderPrivateDirectory.readOwnedFile(named: Self.failureName, in: directory, maxBytes: 4 * 1024)) ?? nil else { return nil }
+        return try? Self.decoder.decode(RunnerStartFailure.self, from: data)
+    }
+
+    public func clearFailure(udid: String) {
+        guard let directory = knownDirectory(udid: udid) else { return }
+        OffsiderPrivateDirectory.removeFile(named: Self.failureName, in: directory)
     }
 
     static let encoder: JSONEncoder = {
@@ -359,11 +402,12 @@ public final class RunnerSessionManager {
             guard processes.isRunning(record) else { break }
             if let ping = try? await client.ping(timeout: 1), ping.buildKey == build.key {
                 _ = keep(&record)
+                store.clearFailure(udid: udid)
                 return client
             }
             if let finding = watch.check() {
                 abandon(record)
-                throw Self.error(for: finding, deviceName: deviceName)
+                throw failure(finding, destination: destination, build: build, deviceName: deviceName)
             }
             if now() >= nextUsbmuxCheck {
                 nextUsbmuxCheck = now().addingTimeInterval(usbmuxCheckInterval)
@@ -384,7 +428,7 @@ public final class RunnerSessionManager {
         }
         let exited = !processes.isRunning(record)
         abandon(record)
-        if exited, let finding = watch.check(maxBytes: Self.exitedLogLimit) { throw Self.error(for: finding, deviceName: deviceName) }
+        if exited, let finding = watch.check(maxBytes: Self.exitedLogLimit) { throw failure(finding, destination: destination, build: build, deviceName: deviceName) }
         let outcome = exited
             ? "xcodebuild exited before the Offsider runner on \(udid) answered."
             : "The Offsider runner on \(udid) did not start within \(Int(startTimeout)) seconds."
@@ -458,11 +502,24 @@ public final class RunnerSessionManager {
         }
     }
 
-    static func error(for finding: RunnerLogWatch.Finding, deviceName: String) -> IOSDeviceError {
+    /// The error for what the log showed; an untrusted certificate is also recorded for `doctor`, with the team the build's record names.
+    func failure(_ finding: RunnerLogWatch.Finding, destination: RunnerDestination, build: RunnerBuild, deviceName: String) -> IOSDeviceError {
+        if finding == .certificateNotTrusted, case .device(let udid) = destination, let team = ((try? RunnerProducts.read(in: build.directory)) ?? nil)?.team {
+            try? store.writeFailure(RunnerStartFailure(kind: .certificateNotTrusted, team: team, at: now()), udid: udid)
+        }
+        if finding == .profileNotValid {
+            // The next start or `runner build` makes a new build, which fetches a new profile.
+            try? FileManager.default.removeItem(at: build.directory)
+        }
+        return Self.error(for: finding, deviceName: deviceName, udid: destination.udid)
+    }
+
+    static func error(for finding: RunnerLogWatch.Finding, deviceName: String, udid: String) -> IOSDeviceError {
         switch finding {
         case .deviceLocked: return .runnerLocked(deviceName)
         case .automationNotEnabled: return .runnerAutomationBlocked(deviceName)
         case .certificateNotTrusted: return .runnerCertificateNotTrusted(deviceName)
+        case .profileNotValid: return .runnerProfileNotValid(deviceName, udid: udid)
         }
     }
 

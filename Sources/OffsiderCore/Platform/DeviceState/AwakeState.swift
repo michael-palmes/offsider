@@ -26,7 +26,7 @@ public struct PowerSources: OptionSet, Equatable, Sendable {
     }
 }
 
-/// Android's `mWakefulness`: input reaches apps only while the screen is on.
+/// Android's `mWakefulness`, dark whenever the display's own power state is: input reaches apps only while the screen is on.
 public enum ScreenPower: String, Equatable, Sendable {
     case on
     case off

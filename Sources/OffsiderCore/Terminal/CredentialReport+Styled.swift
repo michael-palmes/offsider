@@ -97,6 +97,7 @@ extension CredentialReport {
             if let text = context[note], let mark = marks[note] { rows.append("\(mark) \(text)") }
         }
         if let updated = context.updated { rows.append("🕒 updated \(ProcessStamp.timestamp(updated))") }
+        if context.confirm { rows.append("🔏 " + asksText(context)) }
         rows += signIns.map { "📱 signed in on " + signInText($0) }
         return rows.map { indent + style.dim($0) }
     }

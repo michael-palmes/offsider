@@ -5,6 +5,7 @@ import android.graphics.Rect;
 import android.graphics.Region;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.SystemClock;
 import android.text.TextUtils;
 import android.view.accessibility.AccessibilityNodeInfo;
 import android.view.accessibility.AccessibilityWindowInfo;
@@ -16,6 +17,10 @@ final class TreeDumper {
     static final String COMPOSE_TEST_TAG_KEY = "androidx.compose.ui.semantics.testTag";
     static final int MAX_DEPTH = 200;
     static final int MAX_NODES = 20000;
+    /** One dump's reads stop this long after its walk starts, so a window that answers slowly gives a truncated tree, not a hang. */
+    static final long WALK_BUDGET_MS = 6000;
+    /** Android waits 5 s for a window to answer one read; a root that took this long to come back null will not answer the next read either. */
+    static final long SILENT_WINDOW_MS = 4000;
 
     private final Json json;
     private final DumpOptions options;
@@ -38,6 +43,8 @@ final class TreeDumper {
     int testTagRefreshes;
     int windowRefreshes;
     boolean truncated;
+    /** On the uptime clock; set when the walk starts. */
+    long deadline = Long.MAX_VALUE;
     final HiddenBranches hidden = new HiddenBranches();
     private final Rect windowBounds = new Rect();
     private boolean nameHidden;
@@ -54,11 +61,14 @@ final class TreeDumper {
     void dump(Connection connection) {
         UiAutomation automation = connection.automation();
         json.name("windows").beginArray();
+        long started = SystemClock.uptimeMillis();
+        deadline = started + WALK_BUDGET_MS;
         List<AccessibilityWindowInfo> list = automation.getWindows();
         if (options.appWindowsOnly) {
             findApp(automation, list);
+            boolean silent = app != null && appRoot == null && SystemClock.uptimeMillis() - started >= SILENT_WINDOW_MS;
             // Android 9 can leave a window that appeared during a screen change out of the list until it is read again.
-            if (appRoot == null && connection.shouldRefreshFor(unlistedActiveWindow(automation, list)) && connection.refreshWindows()) {
+            if (appRoot == null && !silent && connection.shouldRefreshFor(unlistedActiveWindow(automation, list)) && connection.refreshWindows()) {
                 windowRefreshes++;
                 list = automation.getWindows();
                 findApp(automation, list);
@@ -78,9 +88,14 @@ final class TreeDumper {
                 keyboardShown = keyboardShown || window.getType() == AccessibilityWindowInfo.TYPE_INPUT_METHOD;
             }
             for (AccessibilityWindowInfo window : list) {
-                AccessibilityNodeInfo popup = options.appWindowsOnly ? popupRoot(window) : null;
+                boolean late = window != app && pastDeadline();
+                AccessibilityNodeInfo popup = options.appWindowsOnly && !late ? popupRoot(window) : null;
                 boolean tree = !options.appWindowsOnly || window == app || popup != null
                         || window.getType() == AccessibilityWindowInfo.TYPE_INPUT_METHOD;
+                if (late && (tree || mayBePopup(window))) {
+                    truncated = true;
+                    tree = false;
+                }
                 window(window, tree, popup);
             }
         }
@@ -104,14 +119,32 @@ final class TreeDumper {
         return id;
     }
 
+    private boolean pastDeadline() {
+        return SystemClock.uptimeMillis() >= deadline;
+    }
+
+    /** An application window over the app's own, whose root says whether it is the app's popup. */
+    private boolean mayBePopup(AccessibilityWindowInfo window) {
+        return app != null && appRoot != null && window != app && window.getType() == AccessibilityWindowInfo.TYPE_APPLICATION
+                && window.getLayer() > app.getLayer();
+    }
+
     /** The root of an application window over the app's own from the same package, such as a dropdown that does not take focus; null otherwise. */
     private AccessibilityNodeInfo popupRoot(AccessibilityWindowInfo window) {
-        if (app == null || appRoot == null || window == app || window.getType() != AccessibilityWindowInfo.TYPE_APPLICATION
-                || window.getLayer() <= app.getLayer()) {
+        if (!mayBePopup(window)) {
             return null;
         }
         AccessibilityNodeInfo root = window.getRoot();
         return root != null && TextUtils.equals(root.getPackageName(), appRoot.getPackageName()) ? root : null;
+    }
+
+    /** The package of the application window the dump took as the app's; null when it read none, or a system window is in front. */
+    String appPackage() {
+        if (app == null || appRoot == null || app.getType() != AccessibilityWindowInfo.TYPE_APPLICATION) {
+            return null;
+        }
+        CharSequence pkg = appRoot.getPackageName();
+        return pkg == null ? null : pkg.toString();
     }
 
     /** The app window and its root, each read once. */
@@ -336,14 +369,14 @@ final class TreeDumper {
         if (count == 0) {
             return;
         }
-        if (depth + 1 > MAX_DEPTH || nodes >= MAX_NODES) {
+        if (depth + 1 > MAX_DEPTH || nodes >= MAX_NODES || pastDeadline()) {
             truncated = true;
             json.field("childCount", count);
             return;
         }
         boolean open = false;
         for (int i = 0; i < count; i++) {
-            if (nodes >= MAX_NODES) {
+            if (nodes >= MAX_NODES || pastDeadline()) {
                 truncated = true;
                 break;
             }

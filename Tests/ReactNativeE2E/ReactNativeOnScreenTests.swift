@@ -84,6 +84,29 @@ struct ReactNativeOnScreenTests {
         _ = try await app.waitForLabel(of: "cover-test-amount") { $0 == "Amount, 5, Points" }
     }
 
+    @Test("a card with its own text at its centre, and one with a label drawn over its centre from beside it, are on screen; on Android a tap on the second is still refused", arguments: RNPlatform.enabled)
+    func cardsUnderTheirLabels(platform: RNPlatform) async throws {
+        let app = RNApp(platform)
+        try await app.open("cover-test")
+        for card in ["cover-test-own-card", "cover-test-badge-card"] {
+            try await app.run("wait --id \(card) --timeout 5")
+            try await app.run("assert --id \(card)")
+        }
+        let summary = try await app.run("describe-ui --summary").stdout
+        #expect(summary.contains("id=cover-test-badge-card") && !summary.contains("# covered: "), "\(summary)")
+
+        let own = try await app.offsider("tap --id cover-test-own-card --dry-run --fail-if-covered")
+        #expect(own.exitCode == 0, "\(own.stderr)")
+        let badged = try await app.offsider("tap --id cover-test-badge-card --dry-run --json")
+        if platform == .android {
+            #expect(badged.exitCode == 1, "\(badged.stderr)")
+            #expect(badged.stdout.contains(#""reason":"target_covered""#) && badged.stdout.contains(#""evidence":"drawingOrder""#), "\(badged.stdout)")
+            #expect(badged.stdout.contains("cover-test-badge"), "\(badged.stdout)")
+        } else {
+            #expect(badged.exitCode == 0, "\(badged.stderr)")
+        }
+    }
+
     @Test("--label Back with the notes page over the details page pops only the top page, warning of nothing", arguments: RNPlatform.enabled)
     func backOverBack(platform: RNPlatform) async throws {
         let app = RNApp(platform)

@@ -65,7 +65,7 @@ public protocol MaskTreeReading: AnyObject {
 
 /// What a command that only looks may read on a phone, beyond what a command that can act may.
 public enum PhoneRead {
-    /// Set around `describe-ui` and `screenshot` alone: they may read a system window over the allowed app while that app holds focus. Input never sees it.
+    /// Set around reads that only look (`describe-ui`, `screenshot`, and `login` naming a prompt after its submit tap): they may read a system window over the allowed app while that app holds focus. Input never sees it.
     @TaskLocal public static var overSystemWindow = false
 }
 
@@ -148,6 +148,29 @@ extension PointHitTesting {
     public func quickHitTest(at point: UIPoint, on id: DeviceID) async throws -> UINode? {
         try await hitTest(at: point, on: id, appPIDs: [])
     }
+}
+
+/// Optional capability: an element kept open after one hit-test, so each later read of it is one short round trip; only the iOS simulator has one.
+@MainActor
+public protocol ElementWatching: DeviceBackend {
+    /// The element a touch at `point` reaches, kept open until the caller closes it; nil when nothing answers there.
+    func watchElement(at point: UIPoint, on id: DeviceID) async throws -> (any ElementWatch)?
+}
+
+@MainActor
+public protocol ElementWatch: AnyObject {
+    /// The element as it is now; nil once it no longer answers.
+    func read() async -> UINode?
+    func close()
+}
+
+/// Optional capability: the element with keyboard focus in one short read, for text that went as key presses; only a USB iPhone or iPad has one.
+@MainActor
+public protocol FocusedElementReading: DeviceBackend {
+    /// True when `text` goes to the device as key presses, which a command can send again one at a time.
+    func typesWithKeys(_ text: String, on id: DeviceID) async -> Bool
+    /// The element with keyboard focus, nil when none has it; a password field comes back without its value.
+    func focusedElement(on id: DeviceID) async throws -> UINode?
 }
 
 /// Optional capability: one read of the element at a point, never retried, so describe-ui and a missed wait can tell what the screen shows that the tree does not; only the iOS simulator has one.

@@ -18,11 +18,13 @@ struct RNOpen: AsyncParsableCommand {
         as this user (else exit 7, metro_port_not_allowed, or 9), and session stop removes it. \
         Exits 9 (metro_not_running) when Metro does not answer on 127.0.0.1, also when it answers only on ::1, 1 (rn_load_failed) \
         when the app shows a load error, 1 (app_crashed) when its process stops, naming the iOS crash report or \
-        the Android exception class or signal, and 5 at --timeout. It stops early with exit 5 when the app holds \
-        a screen without --wait-id for 15 s (naming the screen) or shows Expo's dev menu intro, 1 (person_required) \
+        the Android exception class or signal, and 5 at --timeout. It stops early with exit 5 when a screen \
+        without --wait-id has been still for 15 s (naming the screen; one that keeps changing by itself, such as an \
+        intro carousel, is watched until --timeout) or Expo's dev menu intro shows, 1 (person_required) \
         when a system prompt covers the app on an iOS simulator (it never answers one), and with the read's own \
         error when tree reads fail for 10 s (on Android, app_not_responding when the app in front has no window). \
-        On a phone allowed for any app it reads only --bundle-id. --restart stops the app first (simctl \
+        A tree read on a simulator or emulator that never returns ends it after 30 s (exit 1, device_unresponsive). \
+        On a phone allowed for any app it reads only --bundle-id (--app is the same). --restart stops the app first (simctl \
         terminate or am force-stop), so the link opens it fresh; use it when a timeout reports a blank screen.
 
         Example:
@@ -34,7 +36,13 @@ struct RNOpen: AsyncParsableCommand {
     var port: Int
 
     @Option(name: .customLong("bundle-id"), help: ArgumentHelp("The app's bundle ID on iOS or package on Android.", valueName: "bundle-id|package"), transform: AppID.parse)
-    var bundleID: String
+    var bundleIDOption: String?
+
+    @Option(name: .customLong("app"), help: ArgumentHelp("The same as --bundle-id.", valueName: "bundle-id|package"), transform: AppID.parse)
+    var app: String?
+
+    /// `--bundle-id`, or `--app` naming the same app; `validate` makes sure one is given.
+    var bundleID: String { bundleIDOption ?? app ?? "" }
 
     @Option(help: ArgumentHelp("The dev client's link scheme, such as exp+my-app or the app's own; read from the app when it has exactly one.", valueName: "scheme"))
     var scheme: String?
@@ -87,6 +95,7 @@ struct RNOpen: AsyncParsableCommand {
     }
 
     func validate() throws {
+        try AppID.requireOne(bundleID: bundleIDOption, app: app)
         guard (1...65_535).contains(port) else {
             throw ValidationError("--port must be from 1 to 65535; got \(port).")
         }
@@ -122,16 +131,16 @@ struct RNOpen: AsyncParsableCommand {
         }
     }
 
-    /// A failed run leaves its reverse set, as a successful one does, so it says so.
+    /// A failed run leaves its reverse set, as a successful one does, so it says so. `watchdog` bounds each tree read.
     @MainActor
-    func open(on route: DeviceRouter.Route, metro: MetroStatus, clock: PollClock, gate: DevicePolicyGate = .current) async throws -> Report {
+    func open(on route: DeviceRouter.Route, metro: MetroStatus, clock: PollClock, gate: DevicePolicyGate = .current, watchdog: DeviceWatchdog = DeviceWatchdog()) async throws -> Report {
         let device = route.device
         guard let opener = route.backend as? any ExpoDevClientOpening, !device.isPhysicalIOSDevice else {
             throw CLIError(errorDescription: "rn open works on iOS simulators and Android devices; \(device.rawValue) is a physical iPhone or iPad. Open the app's dev client link there yourself.", reason: .notSupported)
         }
         if let allowance = route.allowance { try gate.requireApp(bundleID, on: allowance) }
         do {
-            return try await load(opener, on: route, metro: metro, clock: clock)
+            return try await load(opener, on: route, metro: metro, clock: clock, watchdog: watchdog)
         } catch {
             await noteReverseLeft(on: route)
             throw error
@@ -153,7 +162,7 @@ struct RNOpen: AsyncParsableCommand {
 
     /// Checks Metro, sends the link, then polls the tree until the app is up; `metro` and `clock` let tests run without a network or real waits.
     @MainActor
-    private func load(_ opener: any ExpoDevClientOpening, on route: DeviceRouter.Route, metro: MetroStatus, clock: PollClock) async throws -> Report {
+    private func load(_ opener: any ExpoDevClientOpening, on route: DeviceRouter.Route, metro: MetroStatus, clock: PollClock, watchdog: DeviceWatchdog) async throws -> Report {
         let device = route.device
         // A phone allowed for any app reads only the app a command names.
         (route.backend as? any AppTargetSelecting)?.selectApp(bundleID, on: device)
@@ -222,6 +231,8 @@ struct RNOpen: AsyncParsableCommand {
             }
         }
         try await send()
+        // An emulator's helper starts under its own bound, so each read below gets the read bound alone.
+        try? await watchdog.guardingTreeStart(on: route)
 
         var failing: (since: TimeInterval, error: any Error)?
         var anyRead = false
@@ -233,7 +244,7 @@ struct RNOpen: AsyncParsableCommand {
             let readStart = clock.now()
             let tree: UITree
             do {
-                tree = try await route.backend.accessibilityTree(for: device)
+                tree = try await watchdog.guardingRead(of: device) { try await route.backend.accessibilityTree(for: device) }
             } catch is CancellationError {
                 throw CancellationError()
             } catch {
@@ -281,7 +292,7 @@ struct RNOpen: AsyncParsableCommand {
             let now = clock.now()
             let app = watch.hasPendingMiss ? nil : watch.seen
             let found = waitID.map { Verifier.isOnScreen($0, in: tree) } ?? false
-            if !found, let cover = await Self.cover(over: tree, app: app, on: route) {
+            if !found, let cover = await watchdog.guardingRead(of: device, { await Self.cover(over: tree, app: app, on: route) }) {
                 quietSince = nil
                 previous = nil
                 shown = nil
@@ -299,9 +310,13 @@ struct RNOpen: AsyncParsableCommand {
             if let waitID {
                 guard found else {
                     let name = blank || bare || Self.isForeign(tree, app: app) ? nil : Self.topElement(of: tree)
-                    shown = name.map { (name: $0, since: shown?.name == $0 ? shown?.since ?? now : now) }
+                    // A screen that moves on by itself, such as an intro carousel, may yet reach the id, so only a still one ends the wait.
+                    let snapshot = AccessibilitySnapshot(tree: tree)
+                    let still = previous.map { ChangeDetector().compare($0, snapshot) == .unchanged } ?? false
+                    previous = snapshot
+                    shown = name.map { (name: $0, since: shown?.name == $0 && still ? shown?.since ?? now : now) }
                     if let shown, now - shown.since >= Self.otherScreenFor {
-                        throw otherScreen(shown.name, waitID: waitID, after: "it has shown it for \(WaitLoop.seconds(Self.otherScreenFor)), so rn open stopped waiting", route: route)
+                        throw otherScreen(shown.name, waitID: waitID, after: "the screen has been still for \(WaitLoop.seconds(Self.otherScreenFor)), so rn open stopped waiting", route: route)
                     }
                     continue
                 }
@@ -474,10 +489,15 @@ struct RNOpen: AsyncParsableCommand {
             )
         case .prompt(let prompt, let buttons):
             let choices = buttons.isEmpty ? "" : " (\(buttons.map { TerminalText.quoted(SelectorText.truncated($0)) }.joined(separator: ", ")))"
+            // Only SpringBoard's own alert lists its buttons, and only that can be a permission prompt `alert` reads.
+            let alert = "offsider alert show --app \(bundleID) --device \(device.rawValue)"
+            let next = buttons.isEmpty
+                ? "ask the user which to choose, answer it, then run rn open again."
+                : "read it with `\(alert)`, answer it with alert's accept, deny or choose when it is \(bundleID)'s, then run rn open again."
             return CLIError(
-                errorDescription: "\(bundleID) is behind \(prompt.summary)\(choices), so rn open stopped waiting. It never answers a system prompt: ask the user which to choose, answer it, then run rn open again.",
+                errorDescription: "\(bundleID) is behind \(prompt.summary)\(choices), so rn open stopped waiting. It never answers a system prompt: \(next)",
                 reason: .personRequired,
-                hint: buttons.isEmpty ? "offsider screenshot\(route.appArgument) --device \(device.rawValue)" : "offsider describe-ui --summary\(route.appArgument) --device \(device.rawValue)",
+                hint: buttons.isEmpty ? "offsider screenshot\(route.appArgument) --device \(device.rawValue)" : alert,
                 ask: "Can you answer the system prompt on \(PersonAsk.devicePlaceholder)?"
             )
         case .otherApp(let name, let title, let buttons):

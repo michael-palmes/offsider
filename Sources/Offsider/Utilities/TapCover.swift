@@ -82,6 +82,11 @@ struct TapCover {
         let promptHost: Bool
         /// Something may draw over the point, so the judge has work to do; else the point is clear.
         let isContested: Bool
+        /// On a simulator, the pages the tree cannot order against the target, which a hit-test inside one shows are drawn over it.
+        let unorderedPages: [ScreenStack.Page]
+        /// Contested only by those pages.
+        var isContestedByOrderAlone: Bool { isContested && !isContestedByTree }
+        private let isContestedByTree: Bool
 
         /// The keyboard over the point, which `check` refuses before anything else; nil when it is clear of keys.
         let keyboard: UINode?
@@ -146,13 +151,22 @@ struct TapCover {
             let takenByDevMenu = ground.devMenuButtons.contains { button in
                 KnownOverlays.devMenuButton(button, takes: point)
             }
-            isContested = android || systemBar != nil || !candidates.isEmpty || beneath || promptHost || takenByDevMenu
+            isContestedByTree = android || systemBar != nil || !candidates.isEmpty || beneath || promptHost || takenByDevMenu
+            unorderedPages = android ? [] : ground.stack.unorderedPages(over: matched, in: ground.tree)
+            isContested = isContestedByTree || !unorderedPages.isEmpty
             self.target = target
             self.matched = matched
             self.point = point
             self.ground = ground
             self.candidates = candidates
             logBoxInset = shared.logBoxInset
+        }
+
+        /// The unordered page whose content holds `hit`, or the page over it when another covers it: the target lies beneath that; nil when none does.
+        func page(holding hit: UINode) -> ScreenStack.Page? {
+            let copies = unorderedPages.isEmpty ? [] : ground.tree.indexes(of: hit)
+            guard let page = unorderedPages.last(where: { page in copies.contains(where: page.content.contains) }) else { return nil }
+            return ground.stack.page(over: page.index) ?? page
         }
 
         /// The process ids a hit-test should count as the app's own: the prompt host's, while one is up.
@@ -278,11 +292,11 @@ struct TapCover {
         }
         guard failIfCovered, verdict.isEmptyViewDoubt else {
             let scroll = verdict.evidence == .systemBar ? Self.scrollClear(judging.target, of: verdict.cover, roots: judging.roots, viewport: judging.viewport, device: device) : nil
-            try act(on: verdict, selector: selector, at: judging.point, viewport: judging.viewport, device: device, scrollHint: scroll)
+            try act(on: verdict, selector: selector, at: judging.point, viewport: judging.viewport, device: device, scrollHint: scroll, target: judging.target)
             return resolution
         }
         guard await Self.showsOnScreen(judging.target, viewport: judging.viewport, backend: backend, device: device) else {
-            try act(on: verdict, selector: selector, at: judging.point, viewport: judging.viewport, device: device, unread: true)
+            try act(on: verdict, selector: selector, at: judging.point, viewport: judging.viewport, device: device, unread: true, target: judging.target)
             return resolution
         }
         notices.say(.note(
@@ -348,14 +362,21 @@ struct TapCover {
 
     /// The tap moved to the middle of each part of the target that a cover at `coverFrame` leaves showing, best first; empty when none is 8 pt across. A wide switch toggles only at its knob, so its tap keeps the knob's x, and a part without it does not count.
     static func clearParts(of resolution: TapResolution, beside coverFrame: UIFrame, in tree: UITree, index: TreeIndex? = nil) -> [TapResolution] {
+        guard let viewport = tree.viewport else { return [] }
+        return partPoints(of: resolution, beside: coverFrame, in: tree).map { point in
+            AccessibilityTargetResolver.resolution(of: resolution, at: point, in: index ?? TreeIndex(roots: tree.roots), viewport: viewport)
+        }
+    }
+
+    /// The middle of each part `clearParts` moves the tap to, best first.
+    static func partPoints(of resolution: TapResolution, beside coverFrame: UIFrame, in tree: UITree) -> [UIPoint] {
         guard let target = resolution.target, let frame = target.frame, let viewport = tree.viewport,
               let visible = AccessibilityTargetResolver.visibleRegion(of: target, frame: frame, viewport: viewport, roots: tree.roots),
               let overlap = visible.intersection(coverFrame) else { return [] }
         let knob = AccessibilityTargetResolver.isWideSwitch(target, frame: frame) ? resolution.point.x : nil
         return parts(of: visible, outside: overlap, minimum: frame).compactMap { part in
             if let knob, knob < part.x || knob > part.x + part.width { return nil }
-            let point = UIPoint(x: knob ?? part.center.x, y: part.center.y)
-            return AccessibilityTargetResolver.resolution(of: resolution, at: point, in: index ?? TreeIndex(roots: tree.roots), viewport: viewport)
+            return UIPoint(x: knob ?? part.center.x, y: part.center.y)
         }
     }
 
@@ -379,9 +400,10 @@ struct TapCover {
 
     /// Refuses a confident cover, or a guessed one with `--fail-if-covered`, and warns of the rest.
     @MainActor
-    private func act(on verdict: CoverVerdict, selector: String, at point: UIPoint, viewport: UIFrame, device: DeviceID, unread: Bool = false, scrollHint: String? = nil) throws {
+    private func act(on verdict: CoverVerdict, selector: String, at point: UIPoint, viewport: UIFrame, device: DeviceID, unread: Bool = false, scrollHint: String? = nil, target: UINode? = nil) throws {
         let pointText = VerifyOutput.pointDescription(x: point.x, y: point.y)
-        let cover = Self.describe(verdict)
+        let holder = target.flatMap { Self.pageTap(verdict.cover, holding: $0, at: point, device: device) }
+        let cover = holder == nil ? Self.describe(verdict) : "the page that holds it, \(Self.describe(verdict))"
         let tapping = dryRun ? "would \(gesture)" : gerund
         if verdict.isConfident, allowCovered {
             notices.say(.warning(
@@ -409,21 +431,34 @@ struct TapCover {
         }
         if verdict.isConfident {
             throw CLIError(
-                errorDescription: "\(selector) at \(pointText) is covered by \(cover) (\(Self.evidence(verdict.evidence))), so the \(gesture) would land on it. Nothing was sent. Close what covers it or wait for it to go (--wait-timeout), or \(override).",
+                errorDescription: holder == nil
+                    ? "\(selector) at \(pointText) is covered by \(cover) (\(Self.evidence(verdict.evidence))), so the \(gesture) would land on it. Nothing was sent. Close what covers it or wait for it to go (--wait-timeout), or \(override)."
+                    : "\(selector) at \(pointText) is covered by \(cover) (\(Self.evidence(verdict.evidence))), so the \(gesture) would land on that page. Nothing was sent. To tap the page instead: `\(holder ?? "")`; or \(override).",
                 reason: .targetCovered,
-                hint: CommandScope.current.describeHint(device: device.rawValue),
+                hint: holder ?? CommandScope.current.describeHint(device: device.rawValue),
                 coveredBy: CoverReport(verdict)
             )
         }
         let unseen = unread ? " Its text does not show in a screenshot." : ""
-        let message = "\(selector) at \(pointText) may be covered by \(cover); the \(gesture) may land on it.\(unseen)"
+        // Back is no fix: under a panel such as Gboard's handwriting tutorial it goes to the app and can leave the screen.
+        let hidden = verdict.evidence == .hiddenWindow
+        let unsure = hidden ? " The app's window reads hidden, as under a keyboard panel, so Android cannot say whether that view is drawn." : ""
+        let message = "\(selector) at \(pointText) may be covered by \(cover); the \(gesture) may land on it.\(unseen)\(unsure)"
         if failIfCovered {
-            throw CLIError(errorDescription: "\(message) Nothing was sent.", reason: .targetCovered, hint: CommandScope.current.describeHint(device: device.rawValue), coveredBy: CoverReport(verdict))
+            let fix = holder.map { " To tap the page instead: `\($0)`." } ?? (hidden ? " Close the panel, or check a screenshot and \(gesture) without --fail-if-covered." : "")
+            let look = hidden ? "offsider screenshot\(CommandScope.current.appArgument(device: device.rawValue)) --device \(device.rawValue)" : CommandScope.current.describeHint(device: device.rawValue)
+            throw CLIError(errorDescription: "\(message) Nothing was sent.\(fix)", reason: .targetCovered, hint: holder ?? look, coveredBy: CoverReport(verdict))
         }
         notices.say(.warning(
             "\(selector) may be covered by \(cover); the \(gesture) may land on it",
             agent: message + (stopFlag.map { " Pass \($0) to stop instead." } ?? "")
         ))
+    }
+
+    /// The tap at `point` when `cover` holds `target`, as a pager does its page: there the touch reaches the pager, so that tap is what the selector would send; nil for any other cover.
+    static func pageTap(_ cover: UINode, holding target: UINode, at point: UIPoint, device: DeviceID) -> String? {
+        guard !cover.isSameElement(as: target), cover.contains(where: { $0.isSameElement(as: target) }) else { return nil }
+        return "offsider tap -x \(VerifyOutput.number(point.x)) -y \(VerifyOutput.number(point.y)) --device \(device.rawValue)"
     }
 
     /// The swipe that scrolls `target` away from the system bar `bar`, over the part of its scroll view clear of the bar; nil when nothing around it scrolls.
@@ -518,6 +553,7 @@ struct TapCover {
         case .otherProcess: return "a hit-test at the point found another process's view"
         case .devMenuTouchArea: return "its touch area reaches past its icon there"
         case .systemBar: return "Android's system bar takes touches there"
+        case .hiddenWindow: return "Android draws it on top there, if it draws it at all"
         }
     }
 

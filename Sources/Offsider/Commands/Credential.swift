@@ -53,14 +53,17 @@ struct CredentialCommand: AsyncParsableCommand {
     /// The one app every action but `add` takes.
     var app: String? { apps.first }
 
-    @Option(name: .customLong("about"), help: ArgumentHelp("With add or describe: what the login can do, and when to use it. \"\" clears it.", valueName: "text"))
+    @Option(name: .customLong("about"), help: ArgumentHelp("With add or describe: what the login can do, and when to use it. \(CredentialCommand.noteLimit) \"\" clears it.", valueName: "text"))
     var about: String?
 
-    @Option(name: .customLong("avoid"), help: ArgumentHelp("With add or describe: tests the login must not be used for. \"\" clears it.", valueName: "text"))
+    @Option(name: .customLong("avoid"), help: ArgumentHelp("With add or describe: tests the login must not be used for. \(CredentialCommand.noteLimit) \"\" clears it.", valueName: "text"))
     var avoid: String?
 
-    @Option(name: .customLong("state"), help: ArgumentHelp("With add or describe: what the account holds now, such as 3 items in the cart. \"\" clears it.", valueName: "text"))
+    @Option(name: .customLong("state"), help: ArgumentHelp("With add or describe: what the account holds now, such as 3 items in the cart. \(CredentialCommand.noteLimit) \"\" clears it.", valueName: "text"))
     var state: String?
+
+    /// The rule `LoginContext.noteProblem` enforces on each note, as the help says it.
+    static let noteLimit = "One line, at most \(LoginContext.noteCharacters) characters, no email address."
 
     @Option(name: .customLong("tag"), help: ArgumentHelp("With add or describe: add a tag, a word or key=value such as role=admin. Repeatable.", valueName: "tag"))
     var tags: [String] = []
@@ -80,6 +83,17 @@ struct CredentialCommand: AsyncParsableCommand {
     @Flag(name: .customLong("confirm"), inversion: .prefixedNo, help: "With add or describe: --confirm makes login ask for Touch ID or your password first; --no-confirm (needs a person) stops asking.")
     var confirm: Bool?
 
+    @Flag(name: .customLong("confirm-always"), help: "With add or describe: login asks for Touch ID or your password before every sign-in, test devices too. Turns on --confirm.")
+    var confirmAlwaysOn = false
+
+    @Flag(name: .customLong("no-confirm-always"), help: "With add or describe (needs a person): back to plain --confirm, so test devices sign in without asking.")
+    var confirmAlwaysOff = false
+
+    /// `--confirm-always` or `--no-confirm-always`; nil with neither. Two flags, so passing both is refused rather than the last one winning.
+    var confirmAlways: Bool? {
+        confirmAlwaysOn ? true : confirmAlwaysOff ? false : nil
+    }
+
     @Flag(name: .customLong("web-login"), inversion: .prefixedNo, help: "With add or describe: --web-login (needs a person) lets login type into a web view, with webLogin in offsider.login.json; --no-web-login stops it.")
     var webLogin: Bool?
 
@@ -93,8 +107,13 @@ struct CredentialCommand: AsyncParsableCommand {
         if let flag = (contextFlags + settingsFlags).first, parsed != .set, parsed != .describe {
             throw ValidationError("\(flag) goes with add or describe, not \(parsed.rawValue).")
         }
+        if let clash = confirmClash {
+            throw ValidationError("\(clash.0) and \(clash.1) contradict each other: pass one.")
+        }
         if parsed == .describe, contextFlags.isEmpty, settingsFlags.isEmpty {
-            throw ValidationError("describe needs at least one of --about, --avoid, --state, --tag, --untag, --clear-tags, --devices, --confirm, --no-confirm, --web-login or --no-web-login.")
+            throw ValidationError(
+                "describe needs at least one of --about, --avoid, --state, --tag, --untag, --clear-tags, --devices, --confirm, --no-confirm, --confirm-always, --no-confirm-always, --web-login or --no-web-login."
+            )
         }
         _ = try contextEdit()
         if !filters.isEmpty, parsed != .status { throw ValidationError("--where goes with status or login, not credential \(parsed.rawValue).") }
@@ -213,11 +232,20 @@ struct CredentialCommand: AsyncParsableCommand {
         var flags: [String] = []
         if let devices { flags.append("--devices \(devices.rawValue)") }
         if let confirm { flags.append(confirm ? "--confirm" : "--no-confirm") }
+        if confirmAlwaysOn { flags.append("--confirm-always") }
+        if confirmAlwaysOff { flags.append("--no-confirm-always") }
         if let webLogin { flags.append(webLogin ? "--web-login" : "--no-web-login") }
         return flags
     }
 
-    var settingsEdit: LoginSettingsEdit { LoginSettingsEdit(devices: devices, confirm: confirm, webLogin: webLogin) }
+    /// Two confirm flags given together that ask for opposite things.
+    var confirmClash: (String, String)? {
+        if confirmAlwaysOn, confirmAlwaysOff { return ("--confirm-always", "--no-confirm-always") }
+        if confirmAlwaysOn, confirm == false { return ("--confirm-always", "--no-confirm") }
+        return nil
+    }
+
+    var settingsEdit: LoginSettingsEdit { LoginSettingsEdit(devices: devices, confirm: confirm, confirmAlways: confirmAlways, webLogin: webLogin) }
 
     /// The platform of the device in hand, for the deny-list; nil with `--app` alone.
     var platform: DevicePlatform? {

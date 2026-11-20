@@ -336,7 +336,7 @@ final class HelperBroker {
             return [HelperBrokerWire.bye(reason: "lost", detail: detail)]
         case .timedOut:
             helperGone = "no reply to `\(request.op)` within \(timeout)"
-            return [HelperBrokerWire.bye(reason: "timeout", detail: helperGone)]
+            return [HelperBrokerWire.bye(reason: HelperBrokerWire.timedOutReason, detail: helperGone)]
         }
     }
 

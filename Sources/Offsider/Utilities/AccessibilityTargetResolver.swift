@@ -782,6 +782,13 @@ struct AccessibilityTargetResolver {
             return Array(Set(rows[row]).union(anywhere)).sorted()
         }
 
+        /// Pre-order indexes of the nodes that may cover some point of `frame`.
+        func overlapping(_ frame: UIFrame) -> Set<Int> {
+            guard let first = Self.row(of: max(frame.y, viewport.y), in: viewport),
+                  let last = Self.row(of: min(frame.y + frame.height, viewport.y + viewport.height), in: viewport), first <= last else { return Set(all) }
+            return Set(rows[first...last].joined()).union(anywhere)
+        }
+
         /// The row of the viewport holding `y`, clamped to the rows; nil for a size or place that is not finite.
         private static func row(of y: Double, in viewport: UIFrame) -> Int? {
             let height = viewport.height / Double(rowCount)
@@ -966,13 +973,14 @@ struct AccessibilityTargetResolver {
         return .notFound(kind: query.kind, value: query.rawValue, suggestions: near.map(\.match), candidates: near.compactMap(\.summary))
     }
 
-    /// The field a near miss may name: a label as tree output shows it, and no value of an element a mask hides.
-    private static func shownField(of node: UINode, query: AccessibilityQuery) -> String? {
+    /// The field a near miss may name: a label as tree output shows it, and no value of a password field, a revealed one or an element a mask hides.
+    static func shownField(of node: UINode, query: AccessibilityQuery) -> String? {
         guard let field = query.field(of: node) else { return nil }
         let mask = OutputMasks.current.mask
         switch query.kind {
         case "--id": return field
-        case "--value": return mask.hides(id: node.normalizedID, label: node.normalizedLabel) ? nil : LogRedactor.redactValue(field).text
+        case "--value":
+            return mask.withholdsValue(of: node) ? nil : LogRedactor.redactValue(field).text
         default: return mask.shownLabel(field, id: node.normalizedID)
         }
     }

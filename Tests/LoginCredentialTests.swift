@@ -161,10 +161,10 @@ struct LoginCredentialTests {
 
         let admin = try #require(LoginTag(rawValue: "role=admin"))
         let report = LoginReport(app: "com.example.app", key: "qa-admin", turnstile: .absent, submitLabel: "Sign in", tags: [admin], filter: [admin])
-        #expect(report.jsonLine() == #"{"version":1,"ok":true,"app":"com.example.app","key":"qa-admin","identity":"filled","password":"filled","submitted":true,"name":"qa-admin","tags":["role=admin"],"where":["role=admin"],"turnstile":"absent","exitCode":0,"error":null}"#)
+        #expect(report.jsonLine() == #"{"version":1,"ok":true,"app":"com.example.app","key":"qa-admin","identity":"filled","password":"filled","submitted":true,"name":"qa-admin","tags":["role=admin"],"where":["role=admin"],"turnstile":"absent","formStillInFront":null,"savePrompt":null,"waitedForTurnstile":false,"exitCode":0,"error":null}"#)
         #expect(report.textLine().hasPrefix("com.example.app as qa-admin (chosen by --where role=admin): "))
         let unnamed = LoginReport(app: "com.example.app", key: LoginCredential.defaultAccountKey, turnstile: nil, submitLabel: nil).jsonLine()
-        #expect(unnamed.hasSuffix(#""key":"*","identity":"filled","password":"filled","submitted":true,"name":"default","tags":[],"turnstile":null,"exitCode":0,"error":null}"#))
+        #expect(unnamed.hasSuffix(#""key":"*","identity":"filled","password":"filled","submitted":true,"name":"default","tags":[],"turnstile":null,"formStillInFront":null,"savePrompt":null,"waitedForTurnstile":false,"exitCode":0,"error":null}"#))
     }
 
     @Test("status --where is a dry run of login --where: one match prints it without a username")
