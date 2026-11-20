@@ -336,8 +336,14 @@ struct Screenshot: AsyncParsableCommand {
         let systemWindow = shownWidget == nil ? Self.namedSystemWindow(on: backend, device: booted.id, quiet: prompt != nil) : nil
         var masked: ScreenCapture.MaskResult?
         if !masks.isEmpty {
-            let hidden = shownWidget == nil ? await ScreenCapture.hiddenText(in: capture, tree: tree) : nil
-            var result = try Timings.measure("mask") { try ScreenCapture.masking(capture, plan: masks, tree: tree, revealed: revealed, hidden: hidden) }
+            let behind = shownWidget == nil
+                ? await ScreenCapture.behindModal(tree, plan: masks, screen: capture.screen, device: booted.id, backend: backend) : nil
+            let hidden = await ScreenCapture.hiddenText(in: capture, behind: behind, tree: tree, plan: masks)
+            let remembered = ScreenCapture.remembered(behind, hidden: hidden)
+            if behind?.modal.byMemory == true, let hidden, !hidden.unread { DeviceActivityLedger.current.recordBeneath(shown: hidden.modalShown, on: booted.id) }
+            var result = try Timings.measure("mask") {
+                try ScreenCapture.masking(capture, plan: masks, tree: tree, revealed: revealed, hidden: hidden, remembered: remembered)
+            }
             if let config {
                 // The file's selectors are standing masks, so one that matches nothing on this screen is not worth a warning.
                 let quiet = config.selectorNames.subtracting(Self.selectorNames(own))
@@ -353,11 +359,21 @@ struct Screenshot: AsyncParsableCommand {
             capture = result.capture
             masked = result
             let console = Console.current
-            if prompt == nil, let unproven = result.unproven {
-                console.notice(ScreenCapture.unprovenNotice(unproven, subject: "the image"))
+            // Under a permission prompt everything outside it is painted, and the prompt's own note says so.
+            if prompt == nil {
+                if !result.remembered.isEmpty {
+                    console.notice(ScreenCapture.rememberedNotice(result.remembered, subject: "the image"))
+                }
+                if result.unlistedEmails > 0 {
+                    console.notice(ScreenCapture.unlistedEmailNotice(result.unlistedEmails, subject: "the image"))
+                } else if let unproven = result.unproven, unproven != "remembered" {
+                    console.notice(ScreenCapture.unprovenNotice(unproven, subject: "the image"))
+                }
             }
-            if !result.unmatched.isEmpty {
-                let names = result.unmatched.joined(separator: ", ")
+            // A selector painted where the cache last saw it is named in that warning instead.
+            let missed = result.unmatched.filter { !result.remembered.contains($0) }
+            if !missed.isEmpty {
+                let names = missed.joined(separator: ", ")
                 console.notice(.warning("Nothing matched \(names), so nothing was painted for it", agent: "nothing matched \(names), so nothing was painted for it."))
             }
             let skipped = result.skipped?.values.reduce(0, +) ?? 0
@@ -397,6 +413,7 @@ struct Screenshot: AsyncParsableCommand {
                 entry.output = path
                 entry.masked = masked.map { $0.painted.values.reduce(0, +) }
                 entry.skippedBeneath = masked?.skipped.map { $0.values.reduce(0, +) }
+                entry.maskUnproven = masked?.unproven
             }
             if path == nil, let runFile {
                 path = runFile

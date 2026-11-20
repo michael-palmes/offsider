@@ -93,7 +93,7 @@ struct UIToastTests {
         let activity = DeviceActivityLedger.Activity(
             device: DeviceID(rawValue: "emulator-5554", platform: .android), tree: Self.tree([Self.toast("Draft saved")]), treeReadAt: now
         )
-        let record = try #require(TreeCacheRecord.committing(activity, previous: nil, command: "describe-ui", inputAtEnd: false, bootMarker: nil, now: now))
+        let record = try #require(TreeCacheRecord.committing(activity, previous: nil, command: "describe-ui", inputAtEnd: false, bootMarker: nil, now: now, statusBar: 60))
         #expect(!String(decoding: record.encoded(), as: UTF8.self).contains("Draft saved"))
         #expect(record.tree?.toasts == nil)
     }

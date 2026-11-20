@@ -305,7 +305,7 @@ struct ReactNativeGotchaTests {
             let path = directory.appendingPathComponent("emails.png").path
             let emails = try await app.run("screenshot --mask-emails --scale points --json --output \(AndroidE2E.quote(path))")
             let report = try Self.json(emails.stdout)
-            #expect((report["maskedBy"] as? [String: Int])?["emails"] == 1, "\(report)")
+            #expect(((report["maskedBy"] as? [String: Int])?["emails"] ?? 0) >= 1, "\(report)")
             #expect(try ReactNativeEvidenceTests.pixel(atPoint: (field.x + 40, field.y + field.height / 2), in: path) == [0, 0, 0], "the email behind the sheet was left unmasked")
 
             let text = try Self.json(try await app.run(#"screenshot --mask-text '\.\.\.' --json --output "# + AndroidE2E.quote(path)).stdout)
@@ -313,14 +313,45 @@ struct ReactNativeGotchaTests {
                 #expect(report["maskUnproven"] == nil, "\(report)")
                 #expect((text["maskedBy"] as? [String: Int])?["text"] == 2, "\(text)")
             } else {
-                #expect(report["maskUnproven"] as? String == "modal", "\(report)")
+                // The field was read before the sheet rose, so the tree cache paints it, and says so.
+                #expect(report["maskUnproven"] as? String == "remembered", "\(report)")
                 #expect(emails.stderr.contains("(maskUnproven)"), "\(emails.stderr)")
-                #expect(text["maskUnproven"] as? String == "modal", "\(text)")
+                #expect(text["maskUnproven"] as? String == "remembered", "\(text)")
             }
         }
 
         try await app.run("tap --id mask-sheet-test-root-close")
         try await app.run("wait --id mask-sheet-test-open-root --timeout 5")
+    }
+
+    @Test("behind a full-screen modal of each shape the email is painted twice over, on iOS from the tree cache and the text read, reported unproven", arguments: RNPlatform.enabled, ["card", "tap", "top"])
+    func modalHidesScreen(platform: RNPlatform, shape: String) async throws {
+        let app = RNApp(platform)
+        try await app.open("mask-sheet-test")
+        try await app.run("tap --id mask-sheet-test-email")
+        try await app.run("type --replace \(ReactNativeEvidenceTests.email)")
+        let field = try await app.frame(of: "mask-sheet-test-email")
+        try await app.run("tap --id mask-sheet-test-open-\(shape)")
+        try await app.run("wait --id mask-sheet-test-cover-close --timeout 5")
+        try await app.run("wait --settled --ignore-values --timeout 5")
+
+        try await ReactNativeEnvironmentTests.withTemporaryDirectory { directory in
+            for round in 1...2 {
+                let path = directory.appendingPathComponent("\(shape)-\(round).png").path
+                let shot = try await app.run("screenshot --mask-emails --scale points --json --output \(AndroidE2E.quote(path))")
+                let report = try Self.json(shot.stdout)
+                #expect(try ReactNativeEvidenceTests.pixel(atPoint: (field.x + 40, field.y + field.height / 2), in: path) == [0, 0, 0], "\(shape), capture \(round): the email behind the modal was left unmasked")
+                if platform == .android {
+                    #expect(report["maskUnproven"] == nil, "\(report)")
+                } else {
+                    #expect(report["maskUnproven"] as? String == "remembered", "\(shape), capture \(round): \(report)")
+                    #expect(shot.stderr.contains("(maskUnproven)"), "\(shot.stderr)")
+                }
+            }
+        }
+
+        try await app.run("tap --id mask-sheet-test-cover-close")
+        try await app.run("wait --id mask-sheet-test-open-card --timeout 5")
     }
 
     @Test("in the slow search field, type --verify exits 0 only when the field holds the word, and 5 when a key was lost", arguments: RNPlatform.enabled, [false, true])
