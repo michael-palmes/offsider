@@ -31,6 +31,38 @@ public struct TreeCacheRecord: Equatable, Sendable {
     public var hash: String?
     public var truncated: Bool
     public var roots: [UINode]?
+    /// The last tree read with no modal over the app, kept while later reads of the same app on the same screen show a modal, which hides it.
+    public var beneath: Beneath?
+
+    /// One tree read and when; `confirmed` once a modal's own shape or a capture's text read showed it hides that screen.
+    public struct Beneath: Equatable, Sendable {
+        /// A memory nothing confirmed lasts an agent's next step or two, as moving to a new screen with no read between looks like a modal too.
+        public static let unconfirmedLifetime: TimeInterval = 120
+
+        public var readAt: Date
+        public var roots: [UINode]
+        public var confirmed: Bool
+
+        public init(readAt: Date, roots: [UINode], confirmed: Bool = false) {
+            self.readAt = readAt
+            self.roots = roots
+            self.confirmed = confirmed
+        }
+
+        /// Under its lifetime at `now`: the cache's own once confirmed, else `unconfirmedLifetime`.
+        public func isFresh(now: Date) -> Bool {
+            let age = now.timeIntervalSince(readAt)
+            return age >= 0 && age < (confirmed ? TreeCacheRecord.lifetime : Self.unconfirmedLifetime)
+        }
+
+        /// The same app, named alike, in an app frame of the same size within 1 pt, so the screen did not turn or resize.
+        public func fits(_ tree: UITree) -> Bool {
+            let app = roots.first { $0.role == .application }
+            guard let app, app.normalizedLabel == tree.roots.first(where: { $0.role == .application })?.normalizedLabel else { return false }
+            guard let old = UITree.applicationFrame(in: roots), let new = tree.applicationFrame else { return true }
+            return abs(old.width - new.width) <= 1 && abs(old.height - new.height) <= 1
+        }
+    }
 
     public init(
         platform: DevicePlatform,
@@ -45,7 +77,8 @@ public struct TreeCacheRecord: Equatable, Sendable {
         appFrame: UIFrame? = nil,
         hash: String? = nil,
         truncated: Bool = false,
-        roots: [UINode]? = nil
+        roots: [UINode]? = nil,
+        beneath: Beneath? = nil
     ) {
         self.platform = platform
         self.device = device
@@ -60,6 +93,14 @@ public struct TreeCacheRecord: Equatable, Sendable {
         self.hash = hash
         self.truncated = truncated
         self.roots = roots
+        self.beneath = beneath
+    }
+
+    /// What a modal shown now hides: `beneath`, else this record's own tree when no iOS modal covers it.
+    public func uncovered(statusBar: Double) -> Beneath? {
+        if let beneath { return beneath }
+        guard platform == .ios, let roots, let tree, HiddenScreen.modal(in: tree, belowStatusBar: statusBar) == nil else { return nil }
+        return Beneath(readAt: treeReadAt ?? writtenAt, roots: roots)
     }
 
     /// The cached tree, without a screen; nil for a record with no tree.
@@ -117,6 +158,9 @@ public struct TreeCacheRecord: Equatable, Sendable {
             ("hash", .optional(hash, OrderedJSON.string)),
             ("truncated", .bool(truncated)),
             ("roots", roots.map { .array($0.map(Self.encode)) } ?? .null),
+            ("beneath", beneath.map {
+                .object([("readAt", .integer(Self.milliseconds($0.readAt))), ("confirmed", .bool($0.confirmed)), ("roots", .array($0.roots.map(Self.encode)))])
+            } ?? .null),
         ]
         return Data(OrderedJSON.object(members).rendered(compact: true).utf8)
     }
@@ -146,7 +190,13 @@ public struct TreeCacheRecord: Equatable, Sendable {
             appFrame: frame,
             hash: object["hash"] as? String,
             truncated: object["truncated"] as? Bool ?? false,
-            roots: try (object["roots"] as? [[String: Any]]).map { try $0.map { try UINode(jsonObject: $0, platform: platform) } }
+            roots: try (object["roots"] as? [[String: Any]]).map { try $0.map { try UINode(jsonObject: $0, platform: platform) } },
+            beneath: try (object["beneath"] as? [String: Any]).flatMap { beneath -> Beneath? in
+                guard let read = beneath["readAt"] as? NSNumber, let roots = beneath["roots"] as? [[String: Any]] else { return nil }
+                return Beneath(
+                    readAt: Self.date(read), roots: try roots.map { try UINode(jsonObject: $0, platform: platform) }, confirmed: beneath["confirmed"] as? Bool ?? false
+                )
+            }
         )
     }
 
@@ -171,7 +221,8 @@ extension TreeCacheRecord {
         command: String,
         inputAtEnd: Bool,
         bootMarker: String?,
-        now: Date
+        now: Date,
+        statusBar: Double
     ) -> TreeCacheRecord? {
         let input = activity.lastInputAt ?? (inputAtEnd ? now : nil)
         let role: TreeRole?
@@ -199,7 +250,12 @@ extension TreeCacheRecord {
             lastInputAt: lastInputAt,
             bootMarker: bootMarker
         )
-        guard let role, let tree = activity.tree else { return tombstone }
+        let carried = { previous.flatMap { $0.uncovered(statusBar: statusBar) }.flatMap { $0.isFresh(now: now) ? $0 : nil } }
+        guard let role, let tree = activity.tree else {
+            var record = tombstone
+            record.beneath = carried()
+            return record
+        }
         var record = tombstone
         record.treeRole = role
         record.treeReadAt = activity.treeReadAt
@@ -208,11 +264,26 @@ extension TreeCacheRecord {
         record.hash = TreeDiff.hash(tree)
         record.truncated = tree.sourceTruncated
         record.roots = tree.roots
+        // A modal over the same app on the same screen hides what the last read without one showed; any other read starts afresh.
+        // The backdrop check first, so a screen with none reads nothing of the earlier tree.
+        if let previous, activity.beneathShown != false, HiddenScreen.mayHide(tree, belowStatusBar: statusBar), var carried = carried(), carried.fits(tree),
+           let modal = HiddenScreen.modal(in: tree, belowStatusBar: statusBar, remembered: UITree(platform: tree.platform, device: tree.device, roots: carried.roots)),
+           previous.matches(appFrame: record.appFrame, screen: activity.screen) {
+            if !modal.byMemory || activity.beneathShown == true { carried.confirmed = true }
+            record.beneath = carried
+        }
         return record
     }
 }
 
 extension TreeCacheRecord {
+    /// The same record without the tree a modal hides, for one over the size cap.
+    public func withoutBeneath() -> TreeCacheRecord {
+        var record = self
+        record.beneath = nil
+        return record
+    }
+
     /// The same record with the tree dropped, for one over the size cap.
     public func withoutTree() -> TreeCacheRecord {
         TreeCacheRecord(platform: platform, device: device, command: command, writtenAt: writtenAt, lastInputAt: lastInputAt, bootMarker: bootMarker)

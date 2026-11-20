@@ -8,7 +8,7 @@ final class FakeHelperDevice: @unchecked Sendable {
     static let dexBytes = Data("dex".utf8)
     static let dex = try! HelperDex(bytes: dexBytes, manifestJSON: manifest(for: dexBytes))
 
-    static func manifest(for bytes: Data, protocol number: Int = 2, sha256: String? = nil) -> Data {
+    static func manifest(for bytes: Data, protocol number: Int = HelperDex.protocolVersion, sha256: String? = nil) -> Data {
         let hash = sha256 ?? SHA256.hash(data: bytes).map { String(format: "%02x", $0) }.joined()
         return Data("""
         {"helper": "offsider-helper", "helperVersion": "1.0.0", "protocol": \(number), "dex": {"file": "offsider-helper.dex", "bytes": \(bytes.count), "sha256": "\(hash)"}}
@@ -180,9 +180,9 @@ final class FakeHelperDevice: @unchecked Sendable {
             }
             switch start {
             case .ready:
-                process.pending = [Self.stdout(readyLine(process, protocol: 2))]
+                process.pending = [Self.stdout(readyLine(process, protocol: HelperDex.protocolVersion))]
             case .readyAfter(let lines):
-                process.pending = lines.map { Self.stdout($0 + "\n") } + [Self.stdout(readyLine(process, protocol: 2))]
+                process.pending = lines.map { Self.stdout($0 + "\n") } + [Self.stdout(readyLine(process, protocol: HelperDex.protocolVersion))]
             case .readyWithProtocol(let number):
                 process.pending = [Self.stdout(readyLine(process, protocol: number))]
             case .exit(let status, let stdout, let stderr):
@@ -255,7 +255,7 @@ final class FakeHelperDevice: @unchecked Sendable {
         switch op {
         case "hello":
             let ops = lock.withLock { helloOps }.map { #","ops":[\#($0.map { "\"\($0)\"" }.joined(separator: ","))]"# } ?? ""
-            return .ok(#"{"helper":"1.5.0","protocol":2\#(ops)}"#)
+            return .ok(#"{"helper":"1.5.0","protocol":\#(HelperDex.protocolVersion)\#(ops)}"#)
         case "ping", "quit", "release": return .ok("{}")
         case "dump": return .ok(lock.withLock { dump })
         case "display": return .ok(Self.displayReply)

@@ -153,7 +153,22 @@ final class Server {
             Log.w(OffsiderHelper.TAG, "could not set up the client socket: " + e.getMessage());
             return false;
         }
-        return send(requests.handle(payload));
+        boolean sent = send(requests.handle(payload));
+        if (!speaksProtocol(payload)) {
+            Log.w(OffsiderHelper.TAG, "refused a client with uid " + uid + " pid " + peer.getPid() + ": it speaks another protocol");
+            return false;
+        }
+        return sent;
+    }
+
+    /** A hello with no protocol is taken as this one's, as the request handler takes it; the reply already said why any other is refused. */
+    private static boolean speaksProtocol(byte[] payload) {
+        try {
+            Object spoken = new JSONObject(new String(payload, StandardCharsets.UTF_8)).opt("protocol");
+            return spoken == null || (spoken instanceof Number && ((Number) spoken).longValue() == OffsiderHelper.PROTOCOL);
+        } catch (JSONException e) {
+            return false;
+        }
     }
 
     private static boolean isHelloWithToken(byte[] payload, byte[] token) {

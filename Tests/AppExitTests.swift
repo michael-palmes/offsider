@@ -137,6 +137,35 @@ struct AppExitTests {
         }
     }
 
+    @Test("a tap that crashes the app is not verified: the simulator's crash report makes it app_crashed, naming the report, sent once")
+    func crashedTapNamesTheReport() async throws {
+        let folder = try CrashReportFixture.emptyFolder()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        try CrashReportFixture.write(into: folder)
+        let backend = FakeDeviceBackend(trees: [])
+        backend.livenessReadings = [.notRunning]
+        backend.crashReportFolder = folder.path
+        var trees = [Self.app(pid: 4100), Self.app(pid: 4100), Self.home]
+        var now: TimeInterval = 0
+        var dependencies = Verifier.Dependencies(
+            tree: { trees.count > 1 ? trees.removeFirst() : trees[0] },
+            screenshot: { throw CancellationError() },
+            sleep: { now += Double($0.components.seconds) + Double($0.components.attoseconds) / 1e18 },
+            now: { now }
+        )
+        dependencies.appExit = AppExitCheck(reader: backend, device: Self.device, since: Date(timeIntervalSinceNow: -60), sleep: { _ in })
+        var sent = 0
+
+        let error = await #expect(throws: AppExitError.self) {
+            try await Verifier.run(styles: [.simulator, .physical], timeout: .seconds(1), dependencies: dependencies) { _ in sent += 1 }
+        }
+
+        #expect(error?.reason == .appCrashed)
+        #expect(error?.message.hasPrefix("The app crashed: its process stopped. Crash report: ") == true)
+        #expect(error?.message.hasSuffix("/\(CrashReportFixture.name)") == true)
+        #expect(sent == 1)
+    }
+
     @Test("Android: the crash buffer names a package's newest crash by its own pid, Java or native, and nothing for another package")
     func androidCrashByPackage() {
         let buffer = """
