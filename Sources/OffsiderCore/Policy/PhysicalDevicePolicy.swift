@@ -120,6 +120,11 @@ public struct PhysicalDevicePolicy: Equatable, Sendable {
         allowance.testDevice && managed.testDeviceRefusal == nil
     }
 
+    /// Why managed policy keeps a test device a person chose from being driven whole, naming the key; nil for any other allowance.
+    public func testDeviceOff(_ allowance: DeviceAllowance) -> String? {
+        allowance.testDevice ? managed.testDeviceRefusal : nil
+    }
+
     /// The apps the entry pins, within the managed bundle list; nil when neither limits them.
     public func permittedApps(for allowance: DeviceAllowance) -> Set<String>? {
         let pinned = allowance.pinnedApps.isEmpty ? nil : Set(allowance.pinnedApps)

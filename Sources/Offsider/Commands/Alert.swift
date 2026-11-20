@@ -120,7 +120,14 @@ struct AlertCommand: AsyncParsableCommand {
     static func requireDevice(_ route: DeviceRouter.Route, gate: DevicePolicyGate = .current) throws {
         guard let allowance = route.allowance else { return }
         let device = route.device.rawValue
-        guard gate.policy().drivesWhole(allowance) else {
+        let policy = gate.policy()
+        guard policy.drivesWhole(allowance) else {
+            if let off = policy.testDeviceOff(allowance) {
+                throw CLIError(
+                    errorDescription: "\(device) is a test device, but \(off), so Offsider read and sent nothing. The prompt is the user's to answer; ask the administrator of this Mac to change it.",
+                    reason: .personRequired, ask: "Can you answer the prompt on \(PersonAsk.devicePlaceholder)?"
+                )
+            }
             throw CLIError(
                 errorDescription: "\(device) is in personal use, not a test device, and Offsider answers a system prompt only on a simulator, an emulator or a test device, so it read and sent nothing. The prompt is the user's to answer.",
                 reason: .personRequired, ask: "Can you answer the prompt on \(PersonAsk.devicePlaceholder)?"
