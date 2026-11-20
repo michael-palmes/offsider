@@ -50,16 +50,18 @@ run_swift_suite() {
 # A fake swift test: the parallel run plays $PARALLEL, a rerun of named tests $RETRY and a full serial run $SERIAL.
 run_selected_swift() {
     shift
-    local arg previous="" report=""
+    local arg previous="" report="" stream=""
     for arg in "$@"; do
         if [[ "$previous" == --xunit-output ]]; then report="$arg"; fi
+        if [[ "$previous" == --event-stream-output-path ]]; then stream="$arg"; fi
         previous="$arg"
     done
     if [[ -n "$report" ]]; then
         printf 'parallel\n' >> "$WORK/events"
         case "$PARALLEL" in
             pass) echo "Test run with 2 tests in 1 suite passed after 1.0 seconds." ;;
-            stall)
+            stall | stall-no-stream)
+                [[ "$PARALLEL" == stall-no-stream ]] || stalled_stream > "$stream"
                 printf '%s\n' '◇ Test "slow" started.' '◇ Test "quick" started.' '✔ Test "quick" passed after 0.1 seconds.'
                 sleep 30
                 ;;
@@ -84,6 +86,11 @@ run_selected_swift() {
     fi
     if [[ " $* " == *" --filter "* ]]; then
         printf 'retry\n' >> "$WORK/events"
+        previous=""
+        for arg in "$@"; do
+            if [[ "$previous" == --filter ]]; then printf '%s\n' "$arg" >> "$WORK/filters"; fi
+            previous="$arg"
+        done
         case "$RETRY" in
             pass) echo "Test run with 1 test in 1 suite passed after 1.0 seconds." ;;
             fail) echo "Test run with 1 test in 1 suite failed after 1.0 seconds with 1 issue."; return 1 ;;
@@ -93,6 +100,17 @@ run_selected_swift() {
     fi
     printf 'serial\n' >> "$WORK/events"
     [[ "$SERIAL" == pass ]]
+}
+
+# What swift test streams before it is stopped: two tests planned, one finished, and a line cut short.
+stalled_stream() {
+    printf '%s\n' \
+        '{"kind":"test","payload":{"id":"OffsiderTests.Lock/slow()/LockTests.swift:3:6","kind":"function"},"version":0}' \
+        '{"kind":"test","payload":{"id":"OffsiderTests.Lock/quick()/LockTests.swift:9:6","kind":"function"},"version":0}' \
+        '{"kind":"event","payload":{"kind":"runStarted"},"version":0}' \
+        '{"kind":"event","payload":{"kind":"testStarted","testID":"OffsiderTests.Lock/slow()/LockTests.swift:3:6"},"version":0}' \
+        '{"kind":"event","payload":{"kind":"testEnded","testID":"OffsiderTests.Lock/quick()/LockTests.swift:9:6"},"version":0}'
+    printf '%s' '{"kind":"event","payload":{"kind":"testSta'
 }
 
 failed_report() {
@@ -110,6 +128,7 @@ scenario() {
     PARALLEL="$1" RETRY="${2:-pass}" SERIAL="${3:-pass}"
     RESULT_NAMES=() RESULT_STATES=() RESULT_TIMES=()
     : > "$WORK/events"
+    : > "$WORK/filters"
     local status=0
     run_unit_tests_parallel > "$WORK/out" 2>&1 || status=$?
     cleanup_unit_tests
@@ -129,12 +148,29 @@ check "a host that dies with no report runs everything serially" "1 parallel ser
 check "too many failures fail without a retry" "1 parallel  [fail]" "$(scenario too-many)"
 
 UNIT_PARALLEL_LIMIT=1
-check "a stalled run is stopped and everything runs serially" "0 parallel serial  [ok]" "$(GITHUB_ACTIONS=true scenario stall)"
+check "a stalled run is stopped and only the test it did not finish runs again" "0 parallel retry  [ok]" \
+    "$(GITHUB_ACTIONS=true scenario stall)"
+check "the rerun names the unfinished test, never the one that passed" 'OffsiderTests\.Lock/slow\(\)' "$(cat "$WORK/filters")"
 check "a stall is named as one, with the tests still running" \
-    'warn The parallel run passed its 1 s limit, still running "slow". Running every test, one at a time.' "$(grep '^warn' "$WORK/events")"
+    'warn The parallel run passed its 1 s limit, still running "slow". Running the 1 test that did not pass, one at a time.' \
+    "$(grep '^warn' "$WORK/events")"
 check "GitHub gets an annotation naming the stall" \
+    '::warning title=Parallel run timed out::Stopped at its 1 s limit with "slow" still running, so the 1 test that did not pass ran again, one at a time.' \
+    "$(grep '^::warning' "$WORK/out")"
+check "an unfinished test that fails alone fails the run" "1 parallel retry  [fail]" "$(scenario stall fail)"
+check "a stall rerun that matches no tests runs everything serially" "0 parallel retry serial  [ok]" \
+    "$(scenario stall matched-none pass)"
+check "a stall with no event stream runs everything serially" "0 parallel serial  [ok]" \
+    "$(GITHUB_ACTIONS=true scenario stall-no-stream)"
+check "that stall says every test runs again" \
+    'warn The parallel run passed its 1 s limit, still running "slow". Running every test, one at a time.' \
+    "$(grep '^warn' "$WORK/events")"
+check "and so does its annotation" \
     '::warning title=Parallel run timed out::Stopped at its 1 s limit with "slow" still running, so every test ran again, one at a time.' \
     "$(grep '^::warning' "$WORK/out")"
+UNIT_STALL_RETRY_MOST=0
+check "more unfinished tests than a stall may rerun runs everything serially" "0 parallel serial  [ok]" "$(scenario stall)"
+UNIT_STALL_RETRY_MOST=1000
 UNIT_PARALLEL_LIMIT=360
 
 scenario one-failed pass > /dev/null
