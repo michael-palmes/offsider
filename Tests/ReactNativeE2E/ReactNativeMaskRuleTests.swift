@@ -55,7 +55,7 @@ struct ReactNativeMaskRuleTests {
 
         let miss = try await app.offsider("assert --id mask-rule-test-password --has-value nope")
         #expect(miss.exitCode != 0)
-        #expect(miss.stderr.contains("has a masked value"), "\(miss.stderr)")
+        #expect(miss.stderr.contains("its value is masked"), "\(miss.stderr)")
         #expect(!(miss.stdout + miss.stderr).contains(Self.password))
         try Self.expectTreeCacheHolds(none: [Self.password])
 

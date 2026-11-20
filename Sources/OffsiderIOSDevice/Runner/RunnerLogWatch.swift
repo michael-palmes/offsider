@@ -10,6 +10,8 @@ struct RunnerLogWatch {
         case automationNotEnabled
         /// The device refused to launch the runner until a person trusts its developer certificate.
         case certificateNotTrusted
+        /// The device refused to launch the runner with 0xe8008011, its answer for a provisioning profile that is no longer valid, as when it has expired.
+        case profileNotValid
     }
 
     static let chunkLimit = 64 * 1024
@@ -37,8 +39,9 @@ struct RunnerLogWatch {
         return nil
     }
 
-    /// The device-preparation unlock error, XCTest's automation timeout or an untrusted certificate, whatever the device is called.
+    /// The device-preparation unlock error, XCTest's automation timeout, an untrusted certificate or a profile the device refused, whatever the device is called.
     static func finding(in line: String) -> Finding? {
+        if line.range(of: "0xe8008011", options: .caseInsensitive) != nil || line.contains("-402620399") { return .profileNotValid }
         if line.range(of: "enabling automation mode", options: .caseInsensitive) != nil { return .automationNotEnabled }
         if line.range(of: "Developer App Certificate", options: .caseInsensitive) != nil, line.contains("trusted") { return .certificateNotTrusted }
         guard line.contains("com.apple.dt.deviceprep") else { return nil }

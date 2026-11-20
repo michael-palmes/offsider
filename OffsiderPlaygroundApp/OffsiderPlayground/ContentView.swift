@@ -107,6 +107,8 @@ struct ContentView: View {
             KeyboardBarView(toolbar: true)
         case "web-login":
             WebLoginView()
+        case "sign-up":
+            SignUpView()
         case "widget-login":
             WidgetLoginView()
         case "widget-login-expiry":
@@ -161,6 +163,7 @@ struct MainMenuView: View {
             ("widget-login-error", "Widget Login Error", "The check fails when ticked"),
             ("widget-login-late", "Widget Login Late", "The check asks for a tick after 4 s"),
             ("widget-login-ticked", "Widget Login Ticked", "The check ticks itself after 6 s"),
+            ("sign-up", "Sign Up", "Email, then password and confirm"),
             ("live-chart", "Live Chart", "Web chart whose groups keep moving")
         ]),
         ("Hardware", [

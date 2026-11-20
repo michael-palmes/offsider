@@ -216,7 +216,7 @@ struct MaskFileLabelTests {
         }
 
         #expect(!outcome.met)
-        #expect(outcome.reason == "has a masked value, expected '$5'")
+        #expect(outcome.reason == "does not match '$5': its value is masked, so it is not shown")
     }
 
     @Test("a hidden branch named by a masked descendant's label shows it masked")

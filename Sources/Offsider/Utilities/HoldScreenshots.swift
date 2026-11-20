@@ -2,7 +2,7 @@ import ArgumentParser
 import Foundation
 import OffsiderCore
 
-/// `--screenshot-at` and `--output` on swipe and drag: masked screenshots while the finger rests at the end, before it lifts.
+/// `--screenshot-at`, `--output`, `--scale` and `--mask-skip-beneath` on swipe and drag: masked screenshots while the finger rests at the end, before it lifts.
 struct HoldScreenshotOptions: ParsableArguments {
     static let maxShots = 10
     static let maxOffset = 10_000
@@ -14,6 +14,12 @@ struct HoldScreenshotOptions: ParsableArguments {
     @Option(help: ArgumentHelp("With --screenshot-at, the image path or a folder for generated names; several screenshots to one path are numbered -1, -2.", valueName: "path"))
     var output: String?
 
+    @Option(help: ArgumentHelp("With --screenshot-at, 'points' for one pixel per point, or a factor from 0.1 to 1, as for screenshot.", valueName: "points|factor"))
+    var scale: String?
+
+    @Flag(name: .customLong("mask-skip-beneath"), help: "With --screenshot-at, leave matches of the other masks and the run's email and id masks unpainted on a screen beneath a page, as for screenshot. Password fields are always painted.")
+    var maskSkipBeneath = false
+
     var isRequested: Bool { !offsets.isEmpty }
 
     /// The offsets in the order they are taken.
@@ -21,8 +27,11 @@ struct HoldScreenshotOptions: ParsableArguments {
 
     /// Usage problems, given the command's own --hold-end when one was passed.
     func check(holdEnd: Int?) throws {
-        if output != nil, offsets.isEmpty {
-            throw ValidationError("--output applies to --screenshot-at only.")
+        if offsets.isEmpty, let given = [output.map { _ in "--output" }, scale.map { _ in "--scale" }, maskSkipBeneath ? "--mask-skip-beneath" : nil].compactMap({ $0 }).first {
+            throw ValidationError("\(given) applies to --screenshot-at only.")
+        }
+        if let scale {
+            do { _ = try ScreenshotScale.parse(scale) } catch { throw ValidationError(error.localizedDescription) }
         }
         guard offsets.count <= Self.maxShots else {
             throw ValidationError("--screenshot-at takes at most \(Self.maxShots) screenshots; got \(offsets.count).")
@@ -78,7 +87,7 @@ struct HoldScreenshotOptions: ParsableArguments {
     @MainActor
     func perform(press: InputEvent, lift: InputEvent, holdEnd: Int, on route: DeviceRouter.Route, details: InputDetails, watchdog: DeviceWatchdog = DeviceWatchdog()) async throws {
         let shots = try ordered.indices.map { index in
-            try Screenshot.parse(["--device", route.device.rawValue] + (outputPath(for: index).map { ["--output", $0] } ?? []))
+            try Screenshot.parse(["--device", route.device.rawValue] + (outputPath(for: index).map { ["--output", $0] } ?? []) + captureArguments)
         }
         guard let first = shots.first else { return }
         let masks = first.masksWithRunDefaults(try first.maskPlan())
@@ -113,6 +122,11 @@ struct HoldScreenshotOptions: ParsableArguments {
             throw error
         }
         await session.close()
+    }
+
+    /// What each screenshot passes on to `screenshot`; a run's masks are added there whatever these say.
+    var captureArguments: [String] {
+        (scale.map { ["--scale", $0] } ?? []) + (maskSkipBeneath ? ["--mask-skip-beneath"] : [])
     }
 
     /// A note when the screenshots kept the finger down past the --hold-end the caller passed.
