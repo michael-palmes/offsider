@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.17.0] - 2026-11-20
+
 ### Added
 
 - `alert show|accept|deny|choose "<label>" --app <id>`: reads or answers the permission prompt the system shows for one app, so a hands-off run no longer stops at each one. On a simulator, an emulator and an Android, iPhone or iPad test device, never a phone, iPhone or iPad in personal use, and only when the system ties the prompt to `--app`: on Android the app that started the permission dialog, by package and uid; on an iOS simulator a SpringBoard alert over that app's card whose title names it first; on an iPhone or iPad SpringBoard's alert with the app's process in front beneath it, no other app active and a title that names the app first, which the runner (version 5) reads without reading the app and answers by tapping a button by its label once it has checked the alert's title and the button's frame again. Anything else in front exits 7 naming it, and no prompt, on a second read 0.6 s later, exits 2 (`alert_not_shown`). `accept` picks the narrowest grant that lasts on every platform, never a broader or one-time one; Android buttons are matched by resource id and iOS ones by one table of English labels, with a privacy prompt's ids deciding in another language; on iOS `accept` and `deny` act only on a privacy prompt or a title worded as a permission request; and `accept` and `choose` are held to the app's guard rules. Each answer is a line in an evidence run's timeline.
@@ -1209,7 +1211,8 @@ First release of Offsider, forked from [AXe](https://github.com/cameroncooke/axe
 - Shortened HID broker socket names so they stay within the Unix socket path limit.
 - Builds now honour an explicit `OFFSIDER_VERSION` when generating the version string.
 
-[Unreleased]: https://github.com/michael-palmes/offsider/compare/v0.16.0...HEAD
+[Unreleased]: https://github.com/michael-palmes/offsider/compare/v0.17.0...HEAD
+[0.17.0]: https://github.com/michael-palmes/offsider/compare/v0.16.0...v0.17.0
 [0.16.0]: https://github.com/michael-palmes/offsider/compare/v0.15.0...v0.16.0
 [0.15.0]: https://github.com/michael-palmes/offsider/compare/v0.14.0...v0.15.0
 [0.14.0]: https://github.com/michael-palmes/offsider/compare/v0.13.0...v0.14.0
