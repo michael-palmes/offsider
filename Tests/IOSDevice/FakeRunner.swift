@@ -17,6 +17,8 @@ final class FakeRunnerTransport: RunnerTransport, @unchecked Sendable {
     private var recorded: [RunnerCall] = []
     var buildKey: String
     var snapshot: Data
+    /// The node `/focused` reports as holding keyboard focus; nil reports none.
+    var focused: [String: Any]?
     var failure: (path: String, status: Int, code: String)?
     var refuseConnections = false
     var pingTimesOut = false
@@ -86,6 +88,8 @@ final class FakeRunnerTransport: RunnerTransport, @unchecked Sendable {
         case "/snapshot":
             let data = (try? JSONSerialization.jsonObject(with: snapshot)) ?? []
             return Self.response(200, ["ok": true, "data": data])
+        case "/focused":
+            return Self.response(200, ["ok": true, "data": ["focused": focused as Any? ?? NSNull()]])
         default:
             return Self.response(200, ["ok": true, "data": [String: Any]()])
         }

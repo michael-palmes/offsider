@@ -182,9 +182,20 @@ struct SessionCommandTests {
         #expect(sessions.map { $0["device"] as? String } == ["A", "SIM-1", "emulator-5554"])
         #expect(sessions[0]["input"] is NSNull && sessions[2]["input"] is NSNull)
         let fields = try #require(sessions[1]["input"] as? [String: Any])
-        #expect(Set(fields.keys) == ["state", "pid", "startedAt", "idleSeconds", "idleFor", "attached"])
+        #expect(Set(fields.keys) == ["state", "pid", "startedAt", "idleSeconds", "idleFor", "attached", "accessibilityHeld"])
         #expect(fields["state"] as? String == "stopping")
         #expect(fields["pid"] as? Int == 44 && fields["attached"] as? Int == 1 && fields["idleFor"] as? Int == 7)
+        #expect(fields["accessibilityHeld"] as? Bool == false)
+    }
+
+    @Test("a held accessibility session shows as warm reads in text and true in JSON")
+    func simulatorHeldReads() throws {
+        let input = HIDBrokerStatus(udid: "SIM-1", pid: 44, startedAt: Self.started.timeIntervalSince1970, idleSeconds: 60, idleFor: 7, attached: 0, state: "ready", accessibilityHeld: true)
+        let rows = DeviceSessionRow.rows(runners: [], brokers: [], inputs: [input])
+        #expect(DeviceSessionRow.text(rows).contains("idle 7 s of 60 s  reads warm"))
+        let object = try #require(try JSONSerialization.jsonObject(with: Data(DeviceSessionRow.json(rows).utf8)) as? [String: Any])
+        let fields = try #require((object["sessions"] as? [[String: Any]])?.first?["input"] as? [String: Any])
+        #expect(fields["accessibilityHeld"] as? Bool == true)
     }
 
     @Test("stop says when a simulator's input session was stopped")

@@ -113,6 +113,21 @@ public struct RevealedSecrets: Equatable, Sendable {
         frames = record.entries.filter { $0.id == nil }.compactMap(\.frame)
     }
 
+    public init(ids: Set<String> = [], frames: [UIFrame] = []) {
+        self.ids = ids
+        self.frames = frames
+    }
+
+    /// These and every password field in `nodes`, so a later read that shows one as plain text still hides it.
+    public func adding(_ nodes: [UINode]) -> RevealedSecrets {
+        let secure = nodes.filter(\.isSecure)
+        guard !secure.isEmpty else { return self }
+        return RevealedSecrets(
+            ids: ids.union(secure.compactMap(\.normalizedID)),
+            frames: frames + secure.filter { $0.normalizedID == nil }.compactMap(\.frame)
+        )
+    }
+
     public var isEmpty: Bool { ids.isEmpty && frames.isEmpty }
 
     /// A plain text field at a recorded id, or with no id at a recorded frame within 2 points.

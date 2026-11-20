@@ -1,8 +1,11 @@
 package com.mpalmes.offsider.helper;
 
+import java.util.HashSet;
+import java.util.Set;
+
 /** Command-line options for the helper's three modes. */
 final class Options {
-    static final String USAGE = "usage: OffsiderHelper serve [--idle-timeout-ms MS] [--accept-timeout-ms MS]"
+    static final String USAGE = "usage: OffsiderHelper serve [--idle-timeout-ms MS] [--accept-timeout-ms MS] [--toast-packages P,Q]"
             + " | dump [--compressed] [--visible-only] [--app-windows] [--no-idle] [--no-test-tags]"
             + " [--idle-quiet MS] [--idle-timeout MS] | version";
     static final long MIN_TIMEOUT_MS = 100;
@@ -12,6 +15,8 @@ final class Options {
     long idleTimeoutMs = 10000;
     long acceptTimeoutMs = 10000;
     DumpOptions dump = DumpOptions.fullTree();
+    /** The packages whose toasts the helper holds at all, empty for none; null holds every package's. */
+    Set<String> toastPackages;
 
     static Options parse(String[] args) throws HelperFailure {
         if (args.length == 0) {
@@ -40,6 +45,8 @@ final class Options {
                 idleTimeoutMs = number(args[++i], a, MIN_TIMEOUT_MS, MAX_TIMEOUT_MS);
             } else if ("--accept-timeout-ms".equals(a) && i + 1 < args.length) {
                 acceptTimeoutMs = number(args[++i], a, MIN_TIMEOUT_MS, MAX_TIMEOUT_MS);
+            } else if ("--toast-packages".equals(a) && i + 1 < args.length) {
+                toastPackages = packages(args[++i], a);
             } else {
                 throw HelperFailure.usage("unknown or incomplete option '" + a + "'; " + USAGE);
             }
@@ -70,6 +77,20 @@ final class Options {
         if (dump.idleQuietMs > dump.idleTimeoutMs) {
             throw HelperFailure.usage("--idle-quiet must not exceed --idle-timeout");
         }
+    }
+
+    private static Set<String> packages(String value, String name) throws HelperFailure {
+        Set<String> out = new HashSet<String>();
+        if (value.isEmpty()) {
+            return out;
+        }
+        for (String part : value.split(",", -1)) {
+            if (!DumpOptions.isPackageName(part)) {
+                throw HelperFailure.usage(name + " takes package names separated by commas, got '" + value + "'");
+            }
+            out.add(part);
+        }
+        return out;
     }
 
     private static long number(String value, String name, long min, long max) throws HelperFailure {

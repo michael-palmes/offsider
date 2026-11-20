@@ -37,6 +37,7 @@ enum CommandEffect: String, Sendable {
         "appearance": .input,
         "content-size": .input,
         "permission": .input,
+        "alert": .input,
         "app info": .none,
         "app launch": .input,
         "app stop": .input,

@@ -28,6 +28,11 @@ enum DeviceRouter {
     }
 
     /// Routes, then locks the device for this command before any input session or helper starts.
+    /// The device's revealed password fields, so every message this command prints about an element hides their text.
+    static func learnMasks(for route: Route) async {
+        OutputMasks.current.learn(revealed: await TreeCache.revealedSecrets(for: route.device, backend: route.backend))
+    }
+
     static func routeForInput(
         _ option: DeviceOption,
         logger: OffsiderLogger,
@@ -49,7 +54,7 @@ enum DeviceRouter {
     ) async throws -> Route {
         _ = try MaskConfigs.current()
         let route = try await route(rawID, logger: logger, host: host, scope: scope)
-        OutputMasks.current.learn(revealed: await TreeCache.revealedSecrets(for: route.device, backend: route.backend))
+        await learnMasks(for: route)
         if locking {
             try await claims.claim(route.device)
         }
@@ -70,7 +75,7 @@ enum DeviceRouter {
         let route = try await watchdog.guardingSetup(device: rawID) {
             try await route(rawID, logger: logger, host: host, scope: scope)
         }
-        OutputMasks.current.learn(revealed: await TreeCache.revealedSecrets(for: route.device, backend: route.backend))
+        await learnMasks(for: route)
         if locking {
             try await claims.claim(route.device)
         }

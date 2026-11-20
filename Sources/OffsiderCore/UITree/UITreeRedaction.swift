@@ -82,6 +82,11 @@ public struct TreeValueMask: @unchecked Sendable {
         return hides(id: node.normalizedID, label: node.normalizedLabel)
     }
 
+    /// Whether a message may not show this element's value: a password field, one a toggle revealed, or one a mask names.
+    public func withholdsValue(of node: UINode) -> Bool {
+        node.isSecure || revealed?.matches(node) == true || hidesValue(of: node)
+    }
+
     /// Whether a masked id or label names the element with this trimmed `id` and `label`, so output hides its text.
     public func hides(id: String?, label: String?) -> Bool {
         guard hidesElements else { return false }
@@ -245,8 +250,9 @@ public final class OutputMasks: @unchecked Sendable {
         self.revealed = revealed.flatMap { $0.isEmpty ? nil : $0 }
     }
 
-    /// Remembers what `tree`'s nesting hides, so a later message about one of its elements hides it too.
+    /// Remembers what `tree`'s nesting hides, and its password fields, so a later message about one of its elements hides it too.
     public func note(_ tree: UITree) {
+        learnSecure(in: tree)
         let base = base
         guard base.hidesElements || base.revealed != nil else { return }
         var seen = NestedMasks()
@@ -260,6 +266,16 @@ public final class OutputMasks: @unchecked Sendable {
         nested.ids.formUnion(seen.ids)
         nested.labels.formUnion(seen.labels)
         nested.rewrites.merge(seen.rewrites) { _, new in new }
+    }
+
+    /// A field seen as a password field and revealed later in the same command stays hidden.
+    private func learnSecure(in tree: UITree) {
+        let nodes = tree.roots.flatMap { $0.flattened() }
+        guard nodes.contains(where: \.isSecure) else { return }
+        let known = base.revealed
+        lock.lock()
+        defer { lock.unlock() }
+        revealed = (revealed ?? known ?? RevealedSecrets()).adding(nodes)
     }
 
     private static func collect(_ raw: UINode, shown: UINode, inherited: Bool, mask: TreeValueMask, into seen: inout NestedMasks) {
@@ -294,6 +310,7 @@ extension UITree {
             hiddenBelow.removeAll(keepingCapacity: true)
             Self.redact(&copy.roots[index], mask: mask, scope: scope, inherited: false, hiddenBelow: &hiddenBelow, counts: &counts)
         }
+        copy.toasts = toasts?.map { $0.redacted(mask, count: &counts.redacted) }
         if scope == .output {
             counts.keyboard = KeyboardText.hiddenCount(in: copy.roots)
             counts.copyPreview = CopyPreview.shownCount(in: copy.roots)

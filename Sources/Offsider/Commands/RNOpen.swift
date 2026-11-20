@@ -489,10 +489,15 @@ struct RNOpen: AsyncParsableCommand {
             )
         case .prompt(let prompt, let buttons):
             let choices = buttons.isEmpty ? "" : " (\(buttons.map { TerminalText.quoted(SelectorText.truncated($0)) }.joined(separator: ", ")))"
+            // Only SpringBoard's own alert lists its buttons, and only that can be a permission prompt `alert` reads.
+            let alert = "offsider alert show --app \(bundleID) --device \(device.rawValue)"
+            let next = buttons.isEmpty
+                ? "ask the user which to choose, answer it, then run rn open again."
+                : "read it with `\(alert)`, answer it with alert's accept, deny or choose when it is \(bundleID)'s, then run rn open again."
             return CLIError(
-                errorDescription: "\(bundleID) is behind \(prompt.summary)\(choices), so rn open stopped waiting. It never answers a system prompt: ask the user which to choose, answer it, then run rn open again.",
+                errorDescription: "\(bundleID) is behind \(prompt.summary)\(choices), so rn open stopped waiting. It never answers a system prompt: \(next)",
                 reason: .personRequired,
-                hint: buttons.isEmpty ? "offsider screenshot\(route.appArgument) --device \(device.rawValue)" : "offsider describe-ui --summary\(route.appArgument) --device \(device.rawValue)",
+                hint: buttons.isEmpty ? "offsider screenshot\(route.appArgument) --device \(device.rawValue)" : alert,
                 ask: "Can you answer the system prompt on \(PersonAsk.devicePlaceholder)?"
             )
         case .otherApp(let name, let title, let buttons):

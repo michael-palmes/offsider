@@ -109,7 +109,7 @@ struct AndroidDoctorProbeTests {
             return
         }
         #expect(!pushed)
-        #expect(protocolVersion == 2)
+        #expect(protocolVersion == HelperDex.protocolVersion)
         #expect(rig.device.ops == ["hello", "ping", "quit"])
     }
 

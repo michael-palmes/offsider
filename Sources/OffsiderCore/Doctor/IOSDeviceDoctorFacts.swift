@@ -70,6 +70,8 @@ public struct IOSDeviceDoctorFacts: Equatable, Sendable {
         /// The team or prefix cannot be used as set; `message` says why and what to do.
         case unsettled(message: String, hint: String?)
         case built(team: String, prefix: String)
+        /// Built, but an installed app's provisioning profile has expired or ends within an hour, so the next start rebuilds it.
+        case profileExpiring(team: String, prefix: String, expires: Date, expired: Bool)
         /// `needsPerson` when the prefix is new to this Mac, so its first build waits on Touch ID.
         case notBuilt(team: String, prefix: String, needsPerson: Bool)
         /// The last build failed because another Apple team owns one of the runner's App IDs; `fix` gives the device a prefix of its own.

@@ -283,6 +283,10 @@ public enum IOSDeviceDoctorRules {
             return (.fail, message, hint)
         case .built(let team, let prefix)?:
             return (.pass, "Built for team \(team) as \(prefix).runner", nil)
+        case .profileExpiring(let team, let prefix, let expires, let expired)?:
+            let detail = "Built for team \(team) as \(prefix).runner, but its provisioning profile \(expired ? "expired" : "expires") on \(profileDay(expires)), so the next start rebuilds it"
+            let agent = "Run `\(build)` now to renew it. If Xcode cannot renew it here, its error names the command the user runs."
+            return (.warn, detail, ErrorAudience.current == .person ? "Run \(build) to renew it now." : agent)
         case .notBuilt(let team, let prefix, let needsPerson)?:
             let detail = "Not built yet for team \(team) as \(prefix).runner, so the first command that reads the screen builds it (about a minute)"
             if needsPerson { return (.warn, detail, personStep(build, why: "its first build under \(prefix) needs Touch ID")) }
@@ -314,6 +318,13 @@ public enum IOSDeviceDoctorRules {
         case .untrusted(let team)?:
             return (.fail, "The runner's last start failed: the device does not trust team \(team)'s developer certificate", trustHint(udid: udid))
         }
+    }
+
+    public static func profileDay(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_AU")
+        formatter.dateFormat = "d MMM yyyy, HH:mm"
+        return formatter.string(from: date)
     }
 
     /// A step only a person can take: the command for them, or for an agent, the words to hand it over.

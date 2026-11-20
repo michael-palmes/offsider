@@ -36,6 +36,10 @@ enum LoginFlow {
         var step: (_ what: String, _ shown: Bool) -> Void = { _, _ in }
         /// Passes a request on to the person while the login waits for them.
         var ask: (String) -> Void = { _ in }
+        /// Throws while a recording runs on the device, read again before each field `--fill` types into.
+        var refuseRecording: () throws -> Void = {}
+        /// Password fields the tree cache saw that may now show as plain text.
+        var revealedSecrets: () async -> RevealedSecrets? = { nil }
     }
 
     /// The time `--wait-turnstile` gives a person, counted from the first wait and shared by every wait of one login.
@@ -280,7 +284,7 @@ enum LoginFlow {
     }
 
     /// True once a read shows no prompt; a read the prompt still stops counts as open.
-    private static func promptClosed(within limit: TimeInterval, interval: Duration, services: Services) async -> Bool {
+    static func promptClosed(within limit: TimeInterval, interval: Duration, services: Services) async -> Bool {
         let deadline = services.clock.now() + limit
         while true {
             try? await services.clock.sleep(interval)
@@ -522,7 +526,7 @@ enum LoginFlow {
     }
 
     /// Recomputes the app in front from a tree already read. A different app, or none, stops the login.
-    private static func requireForeground(_ app: String, in tree: UITree, services: Services, stopped: String) throws {
+    static func requireForeground(_ app: String, in tree: UITree, services: Services, stopped: String) throws {
         let now = try? services.foregroundApp(tree)
         guard now != app else { return }
         let front = now.map { "\($0) is in front now" } ?? "The app in front can no longer be read"
@@ -614,7 +618,7 @@ enum LoginFlow {
         try await services.typeText(text, field)
     }
 
-    private static func masked(_ value: String?, length: Int) -> Bool {
+    static func masked(_ value: String?, length: Int) -> Bool {
         guard let value, value.count == length, length > 0 else { return false }
         return value.allSatisfy { $0 == SecureText.bullet }
     }
@@ -633,7 +637,7 @@ enum LoginFlow {
     }
 
     /// On an iOS tree that names no focused text field, only a keyboard coming up shows the password tap landed; one already up would prove nothing, and the password would go to the field that still has focus.
-    private static func hideKeysForFocusProof(in tree: UITree, fields: [UINode], services: Services) async throws -> UITree {
+    static func hideKeysForFocusProof(in tree: UITree, fields: [UINode], services: Services) async throws -> UITree {
         guard tree.platform == .ios, keyboardOnScreen(keyboards(in: tree), in: tree),
               !tree.roots.flatMap({ $0.flattened() }).contains(where: { $0.state.focused == true && $0.role.isTextInput }) else {
             return tree
@@ -668,7 +672,7 @@ enum LoginFlow {
     static let keyboardSettle: TimeInterval = 1.5
 
     /// The keys can still be sliding away when the tree is read straight after a dismiss.
-    private static func readUntil(_ done: (UITree) -> Bool, services: Services) async throws -> UITree {
+    static func readUntil(_ done: (UITree) -> Bool, services: Services) async throws -> UITree {
         let deadline = services.clock.now() + keyboardSettle
         while true {
             let tree = try await services.readTree()
@@ -807,7 +811,7 @@ enum LoginFlow {
         }
     }
 
-    private static func seconds(_ value: TimeInterval) -> String {
+    static func seconds(_ value: TimeInterval) -> String {
         let rounded = (value * 10).rounded() / 10
         let text = rounded.rounded() == rounded ? String(Int(rounded)) : String(rounded)
         return "\(text) s"

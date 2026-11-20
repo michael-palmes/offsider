@@ -56,7 +56,7 @@ struct HelperWireTests {
 
     @Test("requests carry id and op beside their own fields, with sorted keys")
     func requests() throws {
-        #expect(String(decoding: try HelperRequest.hello(token: "t").payload(id: 1), as: UTF8.self) == #"{"id":1,"op":"hello","protocol":2,"token":"t"}"#)
+        #expect(String(decoding: try HelperRequest.hello(token: "t").payload(id: 1), as: UTF8.self) == #"{"id":1,"op":"hello","protocol":3,"token":"t"}"#)
         #expect(String(decoding: try HelperRequest.quit.payload(id: 9), as: UTF8.self) == #"{"id":9,"op":"quit"}"#)
         #expect(String(decoding: try HelperRequest.dump(HelperDumpOptions()).payload(id: 2), as: UTF8.self)
             == #"{"id":2,"idleQuietMs":100,"idleTimeoutMs":500,"notImportant":false,"op":"dump","testTags":true,"visibleOnly":true,"windows":"app"}"#)

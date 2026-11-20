@@ -137,6 +137,7 @@ extension AndroidBackend {
             window = try readableSystemWindow(try await windowFocus(serial), alongside: packages.filter { $0 != AndroidWindowFocus.systemOwner }, title: title, on: serial)
         } else {
             try requireDrivableWindows(tree, on: serial)
+            window = packages.lazy.compactMap { self.provenPrompt(serial, package: $0) }.first
         }
         systemWindowChecks[serial] = (ContinuousClock.now, window)
         return window
@@ -153,6 +154,7 @@ extension AndroidBackend {
                 window = try readableSystemWindow(focus, alongside: [], title: focus.title, on: serial)
             } else {
                 try requireDrivable(owner, on: serial)
+                window = provenPrompt(serial, package: owner)
             }
         }
         systemWindowChecks[serial] = (ContinuousClock.now, window)
@@ -163,7 +165,9 @@ extension AndroidBackend {
         let scope = appScopes[serial]
         if let scope, scope.wholeDevice {
             // A named app still holds its command to it, so a login's keys never reach what comes up over it.
-            if let target = scope.target, package != target { throw Self.otherThanTarget(package, target, on: serial) }
+            if let target = scope.target, package != target, provenPrompt(serial, package: package) == nil {
+                throw Self.otherThanTarget(package, target, on: serial)
+            }
             return
         }
         if let scope { try requireDrivableTarget(of: scope, on: serial) }
@@ -184,7 +188,15 @@ extension AndroidBackend {
     }
 
     private static func otherThanTarget(_ package: String, _ target: String, on serial: String) -> AndroidError {
-        AndroidError(
+        if SystemAppDenyList.isPermissionDialog(package, platform: .android) {
+            let show = "offsider alert show --app \(target) --device \(serial)"
+            return AndroidError(
+                .otherAppInFront,
+                "A permission dialog is in front on \(serial), not \(target), the app this command drives, so Offsider did nothing. Read it with `\(show)`, which answers it too when \(target) raised it.",
+                hint: show
+            )
+        }
+        return AndroidError(
             .otherAppInFront,
             "\(package) is in front on \(serial), not \(target), the app this command drives, so Offsider did nothing. Bring \(target) to the front, then retry."
         )

@@ -71,6 +71,11 @@ enum HelperTreeMapping {
     }
 
     /// Every listed window in dp, with the package of its root when the helper walked it.
+    /// The dump's toasts, keyed by the helper's process and count so a restarted helper's never pass for ones already seen.
+    static func toasts(from dump: HelperDump, pid: Int32) -> [UIToast]? {
+        dump.toasts?.map { UIToast(key: "\(pid)-\($0.seq)", text: $0.text, package: $0.package, ageMs: max(0, $0.ageMs)) }
+    }
+
     static func windows(from dump: HelperDump, scale: Double) -> [UIWindowInfo] {
         dump.windows.map { window in
             let bounds = window.bounds.count == 4 && scale > 0

@@ -1,7 +1,7 @@
 import ArgumentParser
 import Foundation
 import OffsiderCore
-import OffsiderIOSDevice
+@testable import OffsiderIOSDevice
 import Testing
 @testable import Offsider
 
@@ -176,7 +176,114 @@ struct TypeIntoTests {
         #expect(try await Self.focus(["--into-id", "password"], trees: [tree], device: Self.iPhone) == [.tapAt(x: 215, y: 382)])
     }
 
+    /// A control over a hidden input: a button the tree lists, which never reports focus; the keyboard rises for the input beneath it.
+    static func codeEntry(keyboard: Bool) -> UITree {
+        var children = [FakeUI.node(.button, id: "code-entry", label: "Enter code", frame: FakeUI.frame(20, 200, 360, 56), platform: .ios)]
+        if keyboard { children.append(FakeUI.node(.keyboard, frame: FakeUI.frame(0, 574, 402, 300), platform: .ios)) }
+        return FakeUI.tree(platform: .ios, children)
+    }
+
+    static func focusCheck(_ arguments: [String], trees: [UITree], device: DeviceID) async throws -> Type.FocusCheck {
+        let backend = FakeDeviceBackend(platform: device.platform, trees: trees)
+        return try await quiet {
+            try await Type.parse(arguments + ["text", "--device", device.rawValue]).ensureFocus(
+                backend: backend, device: device, logger: OffsiderLogger(), clock: ScriptedClock().poll, warn: { _ in }
+            ) { _ in }
+        }
+    }
+
+    @Test("on a physical iPhone a keyboard that rises after the tap, with the control still listed, confirms focus on a field that may be a password field")
+    func physicalDeviceKeyboard() async throws {
+        let check = try await Self.focusCheck(["--into-id", "code-entry"], trees: [Self.codeEntry(keyboard: false), Self.codeEntry(keyboard: true)], device: Self.iPhone)
+        #expect(check.secure == .unknown)
+
+        let simulator = try await Self.focusCheck(["--into-id", "code-entry"], trees: [Self.codeEntry(keyboard: false), Self.codeEntry(keyboard: true)], device: Self.simulator)
+        #expect(simulator.secure == nil)
+    }
+
+    @Test("on a physical iPhone a field's own focus is not in doubt, and a keyboard that was already up proves nothing")
+    func physicalDeviceKeyboardAlreadyUp() async throws {
+        let own = try await Self.focusCheck(
+            ["--into-id", "second-field"], trees: [Self.form(focused: nil, platform: .ios), Self.form(focused: "second-field", keyboard: true, platform: .ios)], device: Self.iPhone
+        )
+        #expect(own.secure == nil)
+
+        let error = await #expect(throws: CLIError.self) {
+            _ = try await Self.focus(["--into-id", "code-entry"], trees: [Self.codeEntry(keyboard: true)], device: Self.iPhone)
+        }
+        #expect(error?.reason == .focusNotConfirmed)
+    }
+
+    @Test("a physical iPhone's field that never takes focus says no keyboard appeared, without the simulator's hardware keyboard")
+    func physicalDeviceNoFocusMessage() async throws {
+        let error = await #expect(throws: CLIError.self) {
+            _ = try await Self.focus(["--into-id", "code-entry"], trees: [Self.codeEntry(keyboard: false)], device: Self.iPhone)
+        }
+        #expect(error?.reason == .focusNotConfirmed)
+        #expect(error?.userFacingDescription.contains("no keyboard appeared") == true)
+        #expect(error?.userFacingDescription.contains("simulator") == false)
+    }
+
     static let playground = "com.mpalmes.offsider.playground"
+
+    /// An iPhone on an Xcode 27 host: the tree and the focused element come from the scripted runner, taps and keys go to the scripted broker.
+    static func brokerBackend(plainField: Bool) throws -> (IOSDeviceBackend, FakeRunnerTransport, FakeSessionLink) {
+        var snapshot = try IOSDeviceFixtures.data("runner-snapshot.json")
+        if plainField {
+            snapshot = Data(String(decoding: snapshot, as: UTF8.self).replacingOccurrences(of: #""SecureTextField""#, with: #""TextField""#).utf8)
+        }
+        let transport = FakeRunnerTransport(snapshot: snapshot)
+        let link = FakeSessionLink.broker(udid: IOSDeviceFixtures.phone)
+        var host = IOSDeviceHost.fake(try FakeDevicectl.listing("devicectl-list-xcode26.json"))
+        host.runnerConnector = FakeRunnerConnector(transport: transport)
+        host.sessionConnector = FakeSessionConnector(link: link)
+        let backend = IOSDeviceBackend(host: host) { _, _ in }
+        backend.input.coreDeviceVersion = { CoreDeviceVersion("651.13.4") }
+        return (backend, transport, link)
+    }
+
+    static func keyRequests(_ link: FakeSessionLink) -> Int {
+        link.requests.filter { if case .keys = $0 { return true } else { return false } }.count
+    }
+
+    @Test("type on a physical iPhone sends the text as broker keys, then asks the runner once for the focused element, and never to type")
+    func physicalDeviceReadBack() async throws {
+        let (backend, transport, link) = try Self.brokerBackend(plainField: true)
+        transport.focused = ["type": "TextField", "AXUniqueId": "password", "AXValue": "new", "focused": true, "frame": ["x": 16, "y": 360, "width": 398, "height": 44]]
+
+        try await Self.quiet { try await Type.parse(["--require-focus-id", "password", "--replace", "new", "--app", Self.playground, "--device", Self.iPhone.rawValue])
+            .execute(on: DeviceRouter.Route(backend: backend, device: Self.iPhone), progress: nil, logger: OffsiderLogger()) }
+
+        #expect(Self.keyRequests(link) == 1)
+        #expect(transport.calls.filter { $0.path == "/focused" }.count == 1)
+        #expect(!transport.calls.contains { $0.path == "/type" })
+    }
+
+    @Test("a password field on a physical iPhone takes text as broker keys, and the runner is never asked for its focused element")
+    func physicalDevicePasswordUnread() async throws {
+        let (backend, transport, link) = try Self.brokerBackend(plainField: false)
+
+        try await Self.quiet { try await Type.parse(["--require-focus-id", "password", "new", "--app", Self.playground, "--device", Self.iPhone.rawValue])
+            .execute(on: DeviceRouter.Route(backend: backend, device: Self.iPhone), progress: nil, logger: OffsiderLogger()) }
+
+        #expect(Self.keyRequests(link) == 1)
+        #expect(!transport.calls.contains { $0.path == "/focused" || $0.path == "/type" })
+    }
+
+    @Test("--replace into a password field on a physical iPhone is still refused, with no key sent and nothing asked of the runner's typing", arguments: [
+        ["--into-id", "password"], ["--require-focus-id", "password"],
+    ])
+    func physicalDevicePasswordReplaceRefused(focus: [String]) async throws {
+        let (backend, transport, link) = try Self.brokerBackend(plainField: false)
+
+        let error = await #expect(throws: (any Error).self) {
+            try await Self.quiet { try await Type.parse(focus + ["--replace", "new", "--app", Self.playground, "--device", Self.iPhone.rawValue])
+                .execute(on: DeviceRouter.Route(backend: backend, device: Self.iPhone), progress: nil, logger: OffsiderLogger()) }
+        }
+        #expect((error as? IOSDeviceError)?.kind == .secureFieldRefused)
+        #expect(Self.keyRequests(link) == 0)
+        #expect(!transport.calls.contains { $0.path == "/type" || $0.path == "/focused" })
+    }
 
     /// An iPhone on an Xcode 26 host, so the tree, the focus tap and the text all reach the scripted runner.
     /// With `plainField`, the snapshot's focused password field is an ordinary text field, which a batch type step may fill.
@@ -202,7 +309,8 @@ struct TypeIntoTests {
         ["--into-id", "password"], ["--require-focus-id", "password"],
     ])
     func physicalDeviceApp(focus: [String]) async throws {
-        let (backend, transport) = try Self.runnerBackend()
+        // A plain field: --replace into a password field is refused before the runner is asked.
+        let (backend, transport) = try Self.runnerBackend(plainField: true)
 
         try await Self.quiet { try await Type.parse(focus + ["--replace", "new", "--app", Self.playground, "--device", Self.iPhone.rawValue])
             .execute(on: DeviceRouter.Route(backend: backend, device: Self.iPhone), progress: nil, logger: OffsiderLogger()) }

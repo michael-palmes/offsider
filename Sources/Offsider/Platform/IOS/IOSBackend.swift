@@ -233,6 +233,14 @@ final class IOSBackend: DeviceBackend {
         return PanelTurn(orientation: orientation.coreOrientation, panelWidth: Double(screen.widthPixels) / Double(screen.scale), panelHeight: Double(screen.heightPixels) / Double(screen.scale))
     }
 
+    /// Whether the app a front read finds is SpringBoard, from the root's process alone; nil when the read fails.
+    func frontIsSpringBoard(on id: DeviceID) async -> Bool? {
+        guard let simulator = try? await simulator(for: id),
+              let data = try? await AccessibilityFetcher.fetchFrontmostFrameJSONData(from: simulator, logger: logger),
+              let roots = try? IOSAccessibilityMapping.roots(fromJSON: data), !roots.isEmpty else { return nil }
+        return Self.isSpringBoard(roots)
+    }
+
     private static func isSpringBoard(_ roots: [UINode]) -> Bool {
         roots.first?.iosPID.flatMap { Int32(exactly: $0) }.flatMap(ProcessPath.of(pid:)).map(SimulatorHomePress.isSpringBoard(path:)) == true
     }
@@ -445,6 +453,7 @@ final class IOSBackend: DeviceBackend {
             throw CLIError.deviceNotBooted(id: id.rawValue, state: FBiOSTargetStateStringFromState(simulator.state).rawValue)
         }
         simulators[id.rawValue] = simulator
+        await AccessibilityHold.adopt(simulator)
         return simulator
     }
 }

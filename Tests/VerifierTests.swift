@@ -12,6 +12,12 @@ private final class FakeSimulator {
     var clock: TimeInterval = 0
     var trees: [UITree]
     var screens: [Data]
+    /// The screen as a function of the clock, as a real one changes with time whatever the reads take; nil serves `screens` in turn.
+    var screenAt: ((TimeInterval) -> Data)?
+    /// How long a tree read takes on the clock.
+    var readTime: TimeInterval = 0.3
+    /// How long a screenshot takes on the clock.
+    var shotTime: TimeInterval = 0
     var bands = ScreenBands(top: 60, bottom: 0)
     /// Gives the verifier a change wait, as a backend with accessibility events does.
     var waitsForChange = false
@@ -37,7 +43,7 @@ private final class FakeSimulator {
                 treeReads += 1
                 events.append("tree")
                 if yields { await Task.yield() }
-                clock += 0.3
+                clock += readTime
                 return trees.count > 1 ? trees.removeFirst() : trees[0]
             },
             screenshot: { [unowned self] in
@@ -45,6 +51,8 @@ private final class FakeSimulator {
                 events.append("shot-start")
                 if yields { for _ in 0..<5 { await Task.yield() } }
                 events.append("shot-end")
+                clock += shotTime
+                if let screenAt { return screenAt(clock) }
                 guard !screens.isEmpty else { throw CLIError(errorDescription: "no screenshot") }
                 return screens.count > 1 ? screens.removeFirst() : screens[0]
             },
@@ -343,7 +351,7 @@ struct VerifierTests {
     @Test("a two-tile repaint away from the target holds the retry, so the tap is sent once and ends unsettled; the same repaint at the target verifies")
     func smallRepaintAwayFromTarget() async throws {
         for (area, verifies) in [(UIFrame(x: 40, y: 100, width: 10, height: 10), false), (UIFrame(x: 8, y: 68, width: 6, height: 10), true)] {
-            let fake = FakeSimulator(trees: [tree(count: "0")], screens: [screen(shade: 10), screen(shade: 10, caret: true)])
+            let fake = FakeSimulator(trees: [tree(count: "0")], screens: [screen(shade: 10), screen(shade: 10), screen(shade: 10, caret: true)])
             var sent = 0
 
             let outcome = try await Verifier.run(styles: [.simulator, .physical], timeout: .seconds(1), dependencies: fake.dependencies, targetArea: { area }) { _ in sent += 1 }
@@ -387,8 +395,20 @@ struct VerifierTests {
         let outcome = try await run(fake, actions: &actions, retries: &retries)
 
         #expect(outcome.verified)
-        #expect(fake.sleeps == [.milliseconds(200)])
+        #expect(fake.sleeps == [.milliseconds(300)], "the first read took 0.3 s, so 0.3 s more makes the 0.6 s between the reads before the input")
         #expect(fake.waits == [.milliseconds(200), .milliseconds(200)])
+    }
+
+    @Test("the second read before the input comes at least 0.6 s after the first however fast reads are, and no later than 200 ms after a slow one", arguments: [(0.0, 0.6), (0.3, 0.3), (0.7, 0.2)])
+    func baselineReadsSpanTime(readTime: TimeInterval, sleep: TimeInterval) async throws {
+        let fake = FakeSimulator(trees: [tree(count: "0"), tree(count: "0"), tree(count: "1")])
+        fake.readTime = readTime
+        var actions: [Verifier.Attempt] = []
+        var retries: [Int] = []
+        _ = try await run(fake, actions: &actions, retries: &retries)
+
+        let first = try #require(fake.sleeps.first)
+        #expect(abs(first / .seconds(1) - sleep) < 0.001)
     }
 
     @Test("Without a change wait, every poll sleeps the interval")
@@ -398,7 +418,7 @@ struct VerifierTests {
         var retries: [Int] = []
         _ = try await run(fake, actions: &actions, retries: &retries)
 
-        #expect(fake.sleeps == [.milliseconds(200), .milliseconds(200), .milliseconds(200)])
+        #expect(fake.sleeps == [.milliseconds(300), .milliseconds(200), .milliseconds(200)])
         #expect(fake.waits.isEmpty)
     }
 
@@ -663,7 +683,7 @@ struct VerifierTests {
 
     @Test("With a tree that never changes, motion the input starts reads as no change, so the input is retried and unverified")
     func motionStartedUnderUnchangedTreeIsNotCounted() async throws {
-        let fake = FakeSimulator(trees: [tree(count: "0")], screens: [screen(shade: 10)] + Self.endlessMotion)
+        let fake = FakeSimulator(trees: [tree(count: "0")], screens: [screen(shade: 10), screen(shade: 10)] + Self.endlessMotion)
         var actions: [Verifier.Attempt] = []
         var retries: [Int] = []
         let outcome = try await run(fake, styles: [nil, nil], actions: &actions, retries: &retries)
@@ -673,7 +693,7 @@ struct VerifierTests {
         #expect(actions.count == 2)
     }
 
-    @Test("Before the input, a tree needs one screenshot and no tree two", arguments: [(true, 1), (false, 2)])
+    @Test("Before the input, a still screen takes two screenshots, with a tree or without one", arguments: [(true, 2), (false, 2)])
     func beforeShotsFollowTheTree(knownTree: Bool, shots: Int) async throws {
         let fake = FakeSimulator(trees: [knownTree ? tree(count: "0") : emptyTree], screens: [screen(shade: 10)])
         var actions: [Verifier.Attempt] = []
@@ -696,6 +716,33 @@ struct VerifierTests {
         #expect(!outcome.verified)
         #expect(outcome.change == ChangeKind.none)
         #expect(actions.count == 2)
+    }
+
+    @Test("a tap that changes nothing while an earlier input still draws does not verify, and one that changes the screen does, at any read speed", arguments: [0.0, 0.7])
+    func earlierInputStillDrawing(readTime: TimeInterval) async throws {
+        for changes in [false, true] {
+            let fake = FakeSimulator(trees: [tree(count: "0")])
+            fake.readTime = readTime
+            var acted = false
+            // An earlier input's effect fades in over the first 0.6 s; an input that works turns the screen to 220.
+            fake.screenAt = { clock in acted && changes ? screen(shade: 220) : screen(shade: UInt8(40 + 20 * min(6, Int(clock * 10)))) }
+            let outcome = try await Verifier.run(styles: [nil], timeout: .seconds(1), dependencies: fake.dependencies) { _ in acted = true }
+            #expect(outcome.verified == changes)
+            #expect(outcome.change == (changes ? .screenshot : ChangeKind.none))
+        }
+    }
+
+    @Test("before the input a moving screen takes shots for about a second at most, and a device with a slow capture takes one, as before", arguments: [(0.05, 4), (0.4, 2), (1.2, 1)])
+    func baselineShotsStopByTime(shotTime: TimeInterval, shots: Int) async throws {
+        let fake = FakeSimulator(trees: [tree(count: "0")], screens: Self.endlessMotion)
+        fake.shotTime = shotTime
+        var actions: [Verifier.Attempt] = []
+        var retries: [Int] = []
+        var shotsBeforeInput: Int?
+        _ = try await run(fake, styles: [nil], timeout: .seconds(1), actions: &actions, retries: &retries) { _ in
+            shotsBeforeInput = fake.screenReads
+        }
+        #expect(shotsBeforeInput == shots)
     }
 
     @Test("An input that stops motion verifies on its first attempt")
@@ -973,7 +1020,7 @@ struct VerifierLiveTests {
         }
         let ticks = (0..<40).map { small("\($0 / 2 + 61) bpm") }
         for (after, verified) in [(screen(shade: 10, label: 90), false), (screen(shade: 200, label: 90), true)] {
-            let fake = FakeSimulator(trees: ticks, screens: [screen(shade: 10, label: 60), after])
+            let fake = FakeSimulator(trees: ticks, screens: [screen(shade: 10, label: 60), screen(shade: 10, label: 60), after])
             fake.cached = try LiveTextTests.record(small("60 bpm"))
             let (outcome, _) = try await Self.run(fake, styles: [nil])
             #expect(outcome.verified == verified)
@@ -1013,14 +1060,14 @@ struct VerifierLiveTests {
         #expect(sent == 1)
     }
 
-    @Test("phases: settle covers the gap and second read, dispatch the input, verify the polls")
+    @Test("phases: settle covers the gap (0.6 s from the first read) and second read, dispatch the input, verify the polls")
     func phases() async throws {
         let fake = FakeSimulator(trees: [tree(count: "0"), tree(count: "1"), tree(count: "1")])
         let outcome = try await Verifier.run(styles: [nil], timeout: .seconds(2), dependencies: fake.dependencies, initialTree: tree(count: "0")) { _ in
             fake.clock += 0.1
         }
         #expect(outcome.verified)
-        #expect(abs(outcome.phases.settle - 0.5) < 0.001)
+        #expect(abs(outcome.phases.settle - 0.9) < 0.001)
         #expect(abs(outcome.phases.dispatch - 0.1) < 0.001)
         #expect(abs(outcome.phases.verify - 1.0) < 0.001)
     }
@@ -1228,5 +1275,100 @@ struct VerifierHoldTests {
         outcome.note = .screenUnchanged
 
         #expect(VerifyOutput.unverifiedLine(outcome, for: request) == #"✗ Tap on id=details-back was dispatched but --verify-id 'home-screen' did not come on screen within 10 s after 1 attempt: it is beneath "details-screen", and nothing on screen changed, so the input may not have landed. Check the screen with describe-ui --summary."#)
+    }
+}
+
+extension VerifierTests {
+    private func toasted(_ base: UITree, _ toasts: [UIToast]) -> UITree {
+        var tree = base
+        tree.toasts = toasts
+        return tree
+    }
+
+    private static func toast(_ text: String, key: String, ageMs: Int = 100) -> UIToast {
+        UIToast(key: key, text: text, package: "com.mpalmes.offsider.playground.rn", ageMs: ageMs)
+    }
+
+    @Test("an older toast still listed in the baseline, with the input raising none, is not the input's change")
+    func olderToastInBaseline() async throws {
+        let earlier = toasted(tree(count: "0"), [Self.toast("Draft saved", key: "9-1", ageMs: 12_000)])
+        let aged = toasted(tree(count: "0"), [Self.toast("Draft saved", key: "9-1", ageMs: 13_000)])
+        let fake = FakeSimulator(trees: [earlier, earlier, aged])
+        var (actions, retries) = ([Verifier.Attempt](), [Int]())
+
+        let outcome = try await run(fake, styles: [.simulator], actions: &actions, retries: &retries)
+
+        #expect(!outcome.verified && outcome.change == .none)
+    }
+
+    @Test("a toast first listed after the input but raised before it, which the baseline reads missed, is not the input's change")
+    func toastFromBeforeTheInput() async throws {
+        let before = toasted(tree(count: "0"), [])
+        let late = toasted(tree(count: "0"), [Self.toast("Draft saved", key: "9-1", ageMs: 9_000)])
+        let fake = FakeSimulator(trees: [before, before, late])
+        var (actions, retries) = ([Verifier.Attempt](), [Int]())
+
+        let outcome = try await run(fake, styles: [.simulator], actions: &actions, retries: &retries)
+
+        #expect(!outcome.verified && outcome.change == .none)
+    }
+
+    @Test("a toast raised after the input, with nothing else changing, verifies the input as a toast, once, with no screenshot")
+    func toastVerifies() async throws {
+        let before = toasted(tree(count: "0"), [])
+        let after = toasted(tree(count: "0"), [Self.toast("Draft saved", key: "9-1")])
+        let fake = FakeSimulator(trees: [before, before, after])
+        var (actions, retries) = ([Verifier.Attempt](), [Int]())
+
+        let outcome = try await run(fake, actions: &actions, retries: &retries)
+
+        #expect(outcome.verified && outcome.change == .toast)
+        #expect(outcome.summary == #"toast "Draft saved""#)
+        #expect(outcome.changes == [VerifyChange(kind: .added, node: #"toast "Draft saved""#)])
+        #expect(actions.count == 1 && retries.isEmpty)
+        #expect(fake.screenReads <= 1)
+        let device = DeviceID(rawValue: "emulator-5554", platform: .android)
+        let request = VerifyRequest(command: "tap", subject: "Tap on id=save", target: "id=save", backend: StubBackend(session: RecordingInputSession()), device: device, options: VerificationOptions(), styles: [.simulator])
+        #expect(VerifyOutput.verifiedLine(outcome, for: request).hasPrefix(#"✓ Tap on id=save verified: a toast "Draft saved" showed, attempt 1"#))
+    }
+
+    @Test("a toast shown before the input is never its effect, so the input is sent again")
+    func earlierToastIsNotTheEffect() async throws {
+        let earlier = toasted(tree(count: "0"), [Self.toast("Draft saved", key: "9-1")])
+        let fake = FakeSimulator(trees: [earlier])
+        var (actions, retries) = ([Verifier.Attempt](), [Int]())
+
+        let outcome = try await run(fake, actions: &actions, retries: &retries)
+
+        #expect(!outcome.verified)
+        #expect(outcome.change != .toast)
+        #expect(actions.count == 2)
+    }
+
+    @Test("a toast's text in the outcome is masked as describe-ui masks it")
+    func toastSummaryIsMasked() async throws {
+        let before = toasted(tree(count: "0"), [])
+        let after = toasted(tree(count: "0"), [Self.toast("Your code is 482913", key: "9-1")])
+        let fake = FakeSimulator(trees: [before, before, after])
+        var (actions, retries) = ([Verifier.Attempt](), [Int]())
+
+        let outcome = try await run(fake, actions: &actions, retries: &retries)
+
+        #expect(outcome.change == .toast)
+        #expect(outcome.summary == #"toast "Your code is [redacted]""#)
+        #expect(!"\(outcome)".contains("482913"))
+    }
+
+    @Test("when the tree also changes, the change settles and is listed, rather than the toast")
+    func treeChangeStillSettles() async throws {
+        let before = toasted(tree(count: "0"), [])
+        let after = toasted(tree(count: "1"), [Self.toast("Saved", key: "9-1")])
+        let fake = FakeSimulator(trees: [before, before, after, after])
+        var (actions, retries) = ([Verifier.Attempt](), [Int]())
+
+        let outcome = try await run(fake, actions: &actions, retries: &retries)
+
+        #expect(outcome.verified && outcome.change == .accessibilityTree)
+        #expect(outcome.summary == #"value of tap-count changed from "0" to "1""#)
     }
 }

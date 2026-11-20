@@ -48,6 +48,8 @@ public final class AndroidBackend: DeviceBackend, AccessibilityActionPerforming,
     var foregroundChecks: [String: (at: ContinuousClock.Instant, package: String?)] = [:]
     /// Each phone's latest read of the windows in front, and the system window it may have gone ahead under.
     var systemWindowChecks: [String: (at: ContinuousClock.Instant, window: UITreeContext.Window?)] = [:]
+    var promptReads: [String: (at: ContinuousClock.Instant, package: String, window: UITreeContext.Window)] = [:]
+    var appUIDs: [String: Int] = [:]
     /// Per phone serial, the apps its allowance and managed policy permit; a serial with no entry may run any app the deny-list allows.
     public var appScopes: [String: AndroidAppScope] = [:]
 
@@ -196,10 +198,11 @@ public final class AndroidBackend: DeviceBackend, AccessibilityActionPerforming,
         var windows: [UIWindowInfo]?
         var hidden: Int?
         var namedHidden: [UITreeContext.HiddenBranch]?
+        var toasts: [UIToast]?
         switch try await treeSource(for: serial) {
         case .helper(let session):
             let read = try await helperRoots(serial, session: session, everyView: everyView)
-            (roots, truncated, windows, hidden, namedHidden) = (read.roots, read.truncated, read.windows, read.hidden, read.namedHidden)
+            (roots, truncated, windows, hidden, namedHidden, toasts) = (read.roots, read.truncated, read.windows, read.hidden, read.namedHidden, read.toasts)
         case .uiautomator:
             roots = try await uiautomatorRoots(serial, compressed: !everyView)
         }
@@ -208,6 +211,7 @@ public final class AndroidBackend: DeviceBackend, AccessibilityActionPerforming,
         tree.windows = windows
         tree.hiddenBranches = hidden
         tree.namedHiddenBranches = namedHidden
+        tree.toasts = toasts
         if checkingWindows {
             tree.systemWindow = try await requireReadableWindows(tree, on: serial)
         }
@@ -836,6 +840,8 @@ public final class AndroidBackend: DeviceBackend, AccessibilityActionPerforming,
         warnedAboutTruncation = []
         foregroundChecks = [:]
         systemWindowChecks = [:]
+        promptReads = [:]
+        appUIDs = [:]
         transports = [:]
         geometries = [:]
         activeUniqueIds = [:]

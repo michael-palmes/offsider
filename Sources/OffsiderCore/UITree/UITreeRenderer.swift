@@ -100,7 +100,7 @@ public enum UITreeRenderer {
     /// The context's keys that carry the app's text.
     static let contextUntrustedPaths = UntrustedPaths.under("context", [
         "window.title", "presented.label", "presented.process", "staleFrame.id", "staleFrame.label",
-        "hiddenBranches[].id", "hiddenBranches[].label",
+        "hiddenBranches[].id", "hiddenBranches[].label", "toasts[].text",
     ])
 
     /// Every path in a describe-ui JSON document that can carry the app's text: `nodes[]` when flat, else every node under `roots[]`.

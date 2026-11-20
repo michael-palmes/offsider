@@ -80,11 +80,13 @@ final class HelperSession {
         dex: HelperDex,
         log: @escaping AndroidLog,
         timing: AndroidTiming = .disabled,
-        idleTimeoutMs: Int = HelperLauncher.idleTimeoutMs
+        idleTimeoutMs: Int = HelperLauncher.idleTimeoutMs,
+        toastPackages: [String]? = nil
     ) async throws -> HelperSession {
         var launcher = HelperLauncher(client: client, serial: serial, dex: dex, log: log)
         launcher.timing = timing
         launcher.idleTimeoutMs = idleTimeoutMs
+        launcher.toastPackages = toastPackages
         let connection = try await open(launcher, helloID: 1)
         return HelperSession(origin: .launched(launcher), serial: serial, connection: connection, nextID: 2, log: log)
     }

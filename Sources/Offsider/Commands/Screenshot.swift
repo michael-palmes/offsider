@@ -269,11 +269,19 @@ struct Screenshot: AsyncParsableCommand {
         var request = asked
         let own = requested
         let config = try MaskConfigs.current()?.config
-        let masks = config.map { requested.union($0.plan) } ?? requested
+        var masks = config.map { requested.union($0.plan) } ?? requested
         try await backend.prepare()
         let booted = try await backend.requireBootedDevice(route.device)
         let recorder = EvidenceRecorder.current
         let token = try recorder.begin(device: booted.id, kind: "screenshot")
+        // The app beneath a permission prompt cannot be read, so its masks cannot be proved: the capture shows the prompt alone.
+        let prompt = widget ? nil : try await (backend as? any AppPromptCapturing)?.promptOverSelectedApp(on: booted.id)
+        if let prompt {
+            guard let screen = try? await backend.screenInfo(for: booted.id) else {
+                throw MaskUnproven(detail: "A permission prompt is in front and the screen's size could not be read, so the app beneath it cannot be painted")
+            }
+            masks.regions += prompt.outside(on: UIFrame(x: 0, y: 0, width: screen.width, height: screen.height))
+        }
         let shownWidget = widget ? try await chosenWidget(on: route) : nil
         if let shownWidget { request.region = shownWidget.crop }
 
@@ -325,7 +333,7 @@ struct Screenshot: AsyncParsableCommand {
         }
         let captureMs = Self.milliseconds(since: captureStarted)
         if let tree, selected == nil { FrozenDisplay.check(capture, tree: tree, device: booted.id) }
-        let systemWindow = shownWidget == nil ? Self.namedSystemWindow(on: backend, device: booted.id) : nil
+        let systemWindow = shownWidget == nil ? Self.namedSystemWindow(on: backend, device: booted.id, quiet: prompt != nil) : nil
         var masked: ScreenCapture.MaskResult?
         if !masks.isEmpty {
             let behind = shownWidget == nil
@@ -341,16 +349,26 @@ struct Screenshot: AsyncParsableCommand {
                 let quiet = config.selectorNames.subtracting(Self.selectorNames(own))
                 result.unmatched.removeAll(where: quiet.contains)
             }
+            if let prompt {
+                result.unproven = "prompt"
+                Console.current.notice(.warning(
+                    "Only the prompt shows; the app beneath is painted",
+                    agent: "a permission prompt for \(prompt.app) is in front, so this capture shows the prompt alone: the app beneath cannot be read, so everything outside the prompt is painted (maskUnproven). `offsider alert` answers it."
+                ))
+            }
             capture = result.capture
             masked = result
             let console = Console.current
-            if !result.remembered.isEmpty {
-                console.notice(ScreenCapture.rememberedNotice(result.remembered, subject: "the image"))
-            }
-            if result.unlistedEmails > 0 {
-                console.notice(ScreenCapture.unlistedEmailNotice(result.unlistedEmails, subject: "the image"))
-            } else if let unproven = result.unproven, unproven != "remembered" {
-                console.notice(ScreenCapture.unprovenNotice(unproven, subject: "the image"))
+            // Under a permission prompt everything outside it is painted, and the prompt's own note says so.
+            if prompt == nil {
+                if !result.remembered.isEmpty {
+                    console.notice(ScreenCapture.rememberedNotice(result.remembered, subject: "the image"))
+                }
+                if result.unlistedEmails > 0 {
+                    console.notice(ScreenCapture.unlistedEmailNotice(result.unlistedEmails, subject: "the image"))
+                } else if let unproven = result.unproven, unproven != "remembered" {
+                    console.notice(ScreenCapture.unprovenNotice(unproven, subject: "the image"))
+                }
             }
             // A selector painted where the cache last saw it is named in that warning instead.
             let missed = result.unmatched.filter { !result.remembered.contains($0) }
@@ -534,8 +552,9 @@ struct Screenshot: AsyncParsableCommand {
 
     /// The system window this capture went ahead under, named on stderr; nil when there is none.
     @MainActor
-    private static func namedSystemWindow(on backend: any DeviceBackend, device: DeviceID) -> UITreeContext.Window? {
+    private static func namedSystemWindow(on backend: any DeviceBackend, device: DeviceID, quiet: Bool = false) -> UITreeContext.Window? {
         guard let window = (backend as? any SystemWindowReporting)?.systemWindow(for: device) else { return nil }
+        guard !quiet else { return window }
         let name = TerminalText.quoted(TerminalText.line(window.title ?? window.package ?? "untitled", cap: 60))
         Console.current.notice(.note(
             "System window in front: \(name). Input stays refused",

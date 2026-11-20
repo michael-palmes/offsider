@@ -18,8 +18,8 @@ import java.nio.charset.StandardCharsets;
  */
 public final class OffsiderHelper {
     static final String NAME = "offsider-helper";
-    static final String VERSION = "1.8.0";
-    static final int PROTOCOL = 2;
+    static final String VERSION = "1.9.0";
+    static final int PROTOCOL = 3;
     static final String[] OPS = {
         "hello", "ping", "dump", "display", "setProgress", "setText", "paste", "events", "inject", "release", "screenshot", "quit",
     };
@@ -67,7 +67,7 @@ public final class OffsiderHelper {
 
     private static void serve(Options options) throws HelperFailure {
         Connection connection = new Connection();
-        EventLog events = new EventLog(EVENT_CAPACITY);
+        EventLog events = new EventLog(EVENT_CAPACITY, options.toastPackages);
         Server s = new Server(connection, events, options);
         server = s;
         s.watchStdin();
@@ -139,7 +139,7 @@ public final class OffsiderHelper {
             json.field("sdkInt", Build.VERSION.SDK_INT);
             json.field("pid", Process.myPid());
             json.field("uid", Process.myUid());
-            long seq = Requests.writeDump(json, connection, new EventLog(1), new NodeTable(), options.dump);
+            long seq = Requests.writeDump(json, connection, new EventLog(1, null), new NodeTable(), options.dump);
             json.field("eventSeq", seq);
             return json.endObject().toString();
         } catch (RequestFailure failure) {

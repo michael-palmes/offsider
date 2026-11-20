@@ -205,3 +205,22 @@ struct UniversalHIDReplyTests {
         #expect(UniversalHIDService.outcome(refusal) == .refused(CoreDeviceErrorInfo(domain: "com.apple.dt.CoreDeviceError", code: 1)))
     }
 }
+
+@Suite("Connection traffic")
+struct ConnectionTrafficTests {
+    @Test("the first error and the invalidation are each marked at the count of messages handed over before them, once")
+    func marksTheEnd() {
+        let traffic = ConnectionTraffic()
+        #expect(traffic.endedAfter == nil)
+        traffic.noteSend()
+        traffic.noteSend()
+        traffic.noteError(invalidated: false)
+        #expect(traffic.invalidatedAfter == nil)
+        traffic.noteSend()
+        traffic.noteError(invalidated: true)
+        traffic.noteError(invalidated: true)
+        #expect(traffic.endedAfter == 2)
+        #expect(traffic.invalidatedAfter == 3)
+        #expect(traffic.sentCount == 3)
+    }
+}

@@ -87,6 +87,7 @@ public struct XcodeRunnerBuilder: RunnerBuilding {
     let xcodebuild: XcodebuildRunning
     /// Whether the bundle at a path is validly signed and satisfies a requirement, sealed resources included.
     let signatureValid: @Sendable (_ path: String, _ requirement: String) -> Bool
+    let now: @Sendable () -> Date
 
     public init(
         source: URL,
@@ -99,7 +100,8 @@ public struct XcodeRunnerBuilder: RunnerBuilding {
         expectedSource: [String: String]? = nil,
         registerDevice: Bool = false,
         xcodebuild: @escaping XcodebuildRunning = XcodeRunnerBuilder.runXcodebuild,
-        signatureValid: @escaping @Sendable (String, String) -> Bool = { CodeSignatureCheck.satisfies(path: $0, requirement: $1, resources: true) }
+        signatureValid: @escaping @Sendable (String, String) -> Bool = { CodeSignatureCheck.satisfies(path: $0, requirement: $1, resources: true) },
+        now: @escaping @Sendable () -> Date = Date.init
     ) {
         self.source = source
         self.cacheRoot = cacheRoot
@@ -112,6 +114,7 @@ public struct XcodeRunnerBuilder: RunnerBuilding {
         self.registerDevice = registerDevice
         self.xcodebuild = xcodebuild
         self.signatureValid = signatureValid
+        self.now = now
     }
 
     var allowanceTeam: String? { allowance?.team }
@@ -288,6 +291,11 @@ public struct XcodeRunnerBuilder: RunnerBuilding {
     }
 
     public func build(for destination: RunnerDestination, deviceName: String) async throws -> RunnerBuild {
+        try await build(for: destination, deviceName: deviceName, renewing: nil)
+    }
+
+    /// `renewing` is the expiry of the profile this build replaces, so a build that fails says the profile could not be renewed.
+    func build(for destination: RunnerDestination, deviceName: String, renewing: Date?) async throws -> RunnerBuild {
         let signing = try signing(for: destination)
         do {
             let key = try cacheKey(for: destination, signing: signing)
@@ -301,7 +309,7 @@ public struct XcodeRunnerBuilder: RunnerBuilding {
                     return RunnerBuild(key: key, xctestrun: xctestrun, directory: directory)
                 }
                 if case .device(let udid) = destination { try await approvePrefix(signing.prefix, udid: udid) }
-                return try await runBuild(key: key, directory: directory, destination: destination, signing: signing)
+                return try await runBuild(key: key, directory: directory, destination: destination, signing: signing, renewing: renewing)
             }
         } catch let error as IOSDeviceError {
             throw error
@@ -380,7 +388,7 @@ public struct XcodeRunnerBuilder: RunnerBuilding {
         return arguments
     }
 
-    func runBuild(key: String, directory: URL, destination: RunnerDestination, signing: Signing) async throws -> RunnerBuild {
+    func runBuild(key: String, directory: URL, destination: RunnerDestination, signing: Signing, renewing: Date? = nil) async throws -> RunnerBuild {
         let project = directory.appendingPathComponent("source", isDirectory: true)
         try? FileManager.default.removeItem(at: project)
         try FileManager.default.copyItem(at: source, to: project)
@@ -405,7 +413,10 @@ public struct XcodeRunnerBuilder: RunnerBuilding {
                 if Self.appIDTaken(output) {
                     throw appIDTakenFailure(udid: udid, team: team, prefix: signing.prefix, appID: Self.takenAppID(in: output, prefix: signing.prefix))
                 }
+                // With no account, xcodebuild also says it found no profiles, which reads as a registration failure.
+                if let renewing, Self.accountMissing(output) { throw profileExpired(udid: udid, team: team, expiry: renewing, output: output) }
                 if Self.needsRegistration(output) { throw Self.registrationFailure(udid: udid, team: team, output: output, log: log) }
+                if let renewing { throw profileExpired(udid: udid, team: team, expiry: renewing, output: output) }
             }
             throw Self.failure(detail: "xcodebuild exited \(result.status)", output: output, log: log)
         }
@@ -416,10 +427,17 @@ public struct XcodeRunnerBuilder: RunnerBuilding {
 
     public func verifyForLaunch(_ build: RunnerBuild, for destination: RunnerDestination, deviceName: String) async throws -> RunnerBuild {
         let signing = try signing(for: destination)
-        guard let problem = productProblem(build, destination: destination, signing: signing) else { return build }
-        notice("Rebuilding the Offsider runner for \(deviceName): its cached build \(problem)")
+        let problem = productProblem(build, destination: destination, signing: signing)
+        let expiry = problem == nil ? expiringProfile(build, signing: signing) : nil
+        guard let reason = problem ?? expiry.map(profileProblem) else { return build }
+        notice("Rebuilding the Offsider runner for \(deviceName): its cached build \(reason)")
         try? FileManager.default.removeItem(at: build.directory)
-        let rebuilt = try await self.build(for: destination, deviceName: deviceName)
+        let rebuilt = try await self.build(for: destination, deviceName: deviceName, renewing: expiry)
+        // Xcode can hand back a profile that is close to its end but still valid; that build still launches.
+        if expiry != nil, let team = signing.team, let still = expiringProfile(rebuilt, signing: signing), still <= now() {
+            try? FileManager.default.removeItem(at: rebuilt.directory)
+            throw profileExpired(udid: destination.udid, team: team, expiry: still, output: "")
+        }
         if let again = productProblem(rebuilt, destination: destination, signing: signing) {
             try? FileManager.default.removeItem(at: rebuilt.directory)
             throw IOSDeviceError(
@@ -453,6 +471,38 @@ public struct XcodeRunnerBuilder: RunnerBuilding {
             return "has \((unsigned as NSString).lastPathComponent), which is not signed by team \(team)"
         }
         return nil
+    }
+
+    /// The earliest expiry among the installed apps' embedded profiles, when it falls within `ProvisioningProfile.renewalMargin`; nil for a simulator build or a profile this cannot read.
+    func expiringProfile(_ build: RunnerBuild, signing: Signing) -> Date? {
+        guard signing.team != nil else { return nil }
+        let apps = RunnerProducts.signedBundles(in: build.directory).paths.filter { $0.hasSuffix(".app") }
+        guard let earliest = apps.compactMap(ProvisioningProfile.expiry(inBundle:)).min() else { return nil }
+        return earliest < now().addingTimeInterval(ProvisioningProfile.renewalMargin) ? earliest : nil
+    }
+
+    func profileProblem(_ expiry: Date) -> String {
+        "has a provisioning profile that \(expiry <= now() ? "expired" : "expires") on \(IOSDeviceDoctorRules.profileDay(expiry))"
+    }
+
+    /// xcodebuild's words when Xcode has no Apple Account to sign with.
+    static func accountMissing(_ output: String) -> Bool {
+        let text = output.lowercased()
+        return ["no accounts", "no account for team", "not signed in"].contains { text.contains($0) }
+    }
+
+    /// Xcode signs with an account signed in to it; an agent's shell may have none, so the renewal is a person's step.
+    func profileExpired(udid: String, team: String, expiry: Date, output: String) -> IOSDeviceError {
+        let command = "offsider runner build --device \(udid)"
+        let when = "\(expiry <= now() ? "expired" : "expires") on \(IOSDeviceDoctorRules.profileDay(expiry))"
+        let step = ErrorAudience.current == .person
+            ? "Sign in to Xcode (Settings > Accounts) with team \(team)'s Apple Account, then run `\(command)`."
+            : "A person signs in to Xcode (Settings > Accounts) with team \(team)'s Apple Account, then runs `\(command)` in their own terminal."
+        return IOSDeviceError(
+            .profileExpired,
+            "The Offsider runner's provisioning profile \(when), and Xcode could not renew it here, as when no Apple Account for team \(team) is signed in. \(step)\(Self.tail(output))",
+            hint: command
+        )
     }
 
     static func xctestrun(in directory: URL) -> URL? {
@@ -506,7 +556,13 @@ public struct XcodeRunnerBuilder: RunnerBuilding {
         }
         guard let team = signing.team, let key = try? cacheKey(for: destination, signing: signing) else { return nil }
         let directory = cacheRoot.appendingPathComponent(key, isDirectory: true)
-        if Self.xctestrun(in: directory) != nil { return .built(team: team, prefix: signing.prefix) }
+        if Self.xctestrun(in: directory) != nil {
+            let build = RunnerBuild(key: key, xctestrun: directory, directory: directory)
+            if let expiry = expiringProfile(build, signing: signing) {
+                return .profileExpiring(team: team, prefix: signing.prefix, expires: expiry, expired: expiry <= now())
+            }
+            return .built(team: team, prefix: signing.prefix)
+        }
         let log = directory.appendingPathComponent(Self.logName)
         let output = UntrustedRead.contents(atPath: log.path, maxBytes: Self.maxLogBytes, truncate: true).map { String(decoding: $0, as: UTF8.self) } ?? ""
         if Self.appIDTaken(output) {

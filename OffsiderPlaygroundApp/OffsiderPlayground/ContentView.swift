@@ -61,8 +61,8 @@ struct ContentView: View {
             TabViewTestView()
         case "motion-test":
             MotionTestView()
-        case "crash-test":
-            CrashTestView()
+        case "quit-test":
+            QuitTestView()
         case "slider-value-test":
             SliderValueTestView()
         case "searchable-test":
@@ -91,6 +91,8 @@ struct ContentView: View {
             EnvironmentTestView()
         case "device-state":
             DeviceStateTestView()
+        case "permission-prompt":
+            PermissionPromptTestView()
             
         // Input & Text
         case "text-input":
@@ -105,6 +107,8 @@ struct ContentView: View {
             KeyboardBarView(toolbar: true)
         case "web-login":
             WebLoginView()
+        case "sign-up":
+            SignUpView()
         case "widget-login":
             WidgetLoginView()
         case "widget-login-expiry":
@@ -145,7 +149,7 @@ struct MainMenuView: View {
             ("switch-test", "Switch Test", "SwiftUI and UIKit switch controls"),
             ("tab-view-test", "TabView Test", "Standard SwiftUI tab switching"),
             ("motion-test", "Motion Test", "Motion only screenshots can see"),
-            ("crash-test", "Crash Test", "Buttons that crash or quit the app")
+            ("quit-test", "Quit Test", "A button that quits the app")
         ]),
         ("Input & Text", [
             ("text-input", "Text Input", "Text typed by CLI commands"),
@@ -159,6 +163,7 @@ struct MainMenuView: View {
             ("widget-login-error", "Widget Login Error", "The check fails when ticked"),
             ("widget-login-late", "Widget Login Late", "The check asks for a tick after 4 s"),
             ("widget-login-ticked", "Widget Login Ticked", "The check ticks itself after 6 s"),
+            ("sign-up", "Sign Up", "Email, then password and confirm"),
             ("live-chart", "Live Chart", "Web chart whose groups keep moving")
         ]),
         ("Hardware", [
@@ -173,7 +178,8 @@ struct MainMenuView: View {
             ("searchable-test", "Searchable Test", "Navigation search field targeting"),
             ("toolbar-picker-test", "Toolbar Picker Test", "Toolbar segmented picker targeting"),
             ("environment-test", "Environment Test", "Colour scheme, content size and orientation"),
-            ("device-state", "Device State Test", "Permissions and biometric authentication")
+            ("device-state", "Device State Test", "Permissions and biometric authentication"),
+            ("permission-prompt", "Permission Prompt Test", "System prompts for notifications, camera, location and tracking")
         ]),
         ("Presentation", [
             ("alert-test", "Alert Test", "Alert presentation and button targeting"),
