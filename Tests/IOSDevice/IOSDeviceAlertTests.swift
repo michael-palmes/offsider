@@ -63,12 +63,12 @@ struct IOSDeviceAlertTests {
         #expect(transport.calls.last?.body["app"] == AnyHashable(Self.app))
     }
 
-    @Test("a phone in personal use is refused before the runner is asked anything")
+    @Test("a device not driven whole is refused before the runner is asked anything")
     func personalPhone() async throws {
         let (backend, transport) = try Self.backend(testDevice: false)
         let error = await #expect(throws: IOSDeviceError.self) { _ = try await backend.appPrompt(for: Self.app, on: Self.phone) }
         #expect(error?.kind == .appNotAllowed)
-        #expect(error?.message.contains("in personal use, not a test device") == true)
+        #expect(error?.message.contains("is not a test device Offsider may drive whole") == true)
         await #expect(throws: IOSDeviceError.self) {
             try await backend.answer(AlertPromptTestsSupport.prompt, with: AlertPromptTestsSupport.prompt.buttons[0], on: Self.phone)
         }

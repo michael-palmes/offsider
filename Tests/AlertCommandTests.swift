@@ -154,7 +154,24 @@ struct AlertCommandTests {
         #expect(error?.userFacingDescription.contains("personal use") == false)
     }
 
-    @Test("a simulator and an emulator pass; a test iPhone is not reached yet, and says what to use")
+    @Test("an iPhone or iPad test device passes, and under managed policy that keeps it from being driven whole the refusal names the key, never personal use", arguments: [
+        (ManagedDevicePolicy(allowTestDevices: false), "your organisation does not allow test devices (allowTestDevices)"),
+        (ManagedDevicePolicy(allowedBundleIDs: [AlertFixtures.ios], allowTestDevices: true), "your organisation limits the apps on this Mac (allowedBundleIDs)"),
+    ])
+    func iPhoneTestDevice(managed: ManagedDevicePolicy, names: String) throws {
+        let entry = DeviceAllowance(platform: .ios, key: PolicyFixtures.phone, name: "Test iPhone", added: PolicyFixtures.added, expires: nil, apps: [], team: "ABCDE12345", testDevice: true)
+        let route = DeviceRouter.Route(backend: PromptBackend(platform: .ios, trees: []), device: DeviceID(rawValue: PolicyFixtures.phone, platform: .ios), allowance: entry)
+        try AlertCommand.requireDevice(route, gate: .fixed(PhysicalDevicePolicy(managed: .none, list: DeviceAllowList(entries: [entry]))))
+
+        let error = #expect(throws: CLIError.self) {
+            try AlertCommand.requireDevice(route, gate: DevicePolicyGate.fixed(PhysicalDevicePolicy(managed: managed, list: DeviceAllowList(entries: [entry]))))
+        }
+        #expect(error?.reason == .personRequired)
+        #expect(error?.userFacingDescription.contains(names) == true, "\(error?.userFacingDescription ?? "")")
+        #expect(error?.userFacingDescription.contains("personal use") == false)
+    }
+
+    @Test("a simulator and an emulator pass; a backend that cannot read prompts says what to use on a test device")
     func otherDevices() throws {
         try AlertCommand.requireDevice(DeviceRouter.Route(backend: Self.backend([.prompt(Self.prompt)]), device: Self.device))
         let entry = DeviceAllowance(platform: .ios, key: PolicyFixtures.phone, name: "Test iPhone", added: PolicyFixtures.added, expires: nil, apps: [], team: "ABCDE12345", testDevice: true)

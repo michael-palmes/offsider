@@ -31,7 +31,7 @@ extension IOSDeviceBackend: AppPromptReading, AppPromptAnswering {
         guard state.pinPolicy != nil, !state.drivesWhole else { return }
         throw IOSDeviceError(
             .appNotAllowed,
-            "\(id.rawValue) is in personal use, not a test device, so Offsider reads and answers no system prompt on it. The prompt is the user's to answer."
+            "\(id.rawValue) is not a test device Offsider may drive whole (no person chose it as one, or managed policy keeps it from being one), so Offsider reads and answers no system prompt on it. The prompt is the user's to answer."
         )
     }
 
