@@ -122,9 +122,12 @@ enum TreeCache {
                 let previous = read(device, in: directory, bootMarker: marker, now: now)
                 guard let record = TreeCacheRecord.committing(
                     activity, previous: previous, command: command,
-                    inputAtEnd: effect == .input && !sentNothing, bootMarker: marker, now: now
+                    inputAtEnd: effect == .input && !sentNothing, bootMarker: marker, now: now, statusBar: IOSBackend.statusBarHeight
                 ) else { return }
                 var data = record.encoded()
+                if data.count > TreeCacheRecord.maximumBytes, record.beneath != nil {
+                    data = record.withoutBeneath().encoded()
+                }
                 if data.count > TreeCacheRecord.maximumBytes {
                     data = record.withoutTree().encoded()
                 }

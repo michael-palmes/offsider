@@ -66,15 +66,17 @@ extension Wait: BatchReadable {
     var awaitsInputDrawn: Bool { selector.query != nil }
 
     func runInBatch(context: BatchContext, logger: OffsiderLogger) async throws -> BatchReadResult {
+        // A cached read dates its toasts from before the wait, which would make an old one look young enough to count.
+        let source: TreeSource = toast == nil ? context.pollingTreeSource() : { try await context.accessibilityTree(forceRefresh: true) }
         let outcome = try await context.watchdog.guarding(bound: watchdogBound, of: context.device) {
-            try await evaluate(on: context.route, logger: logger, tree: context.pollingTreeSource())
+            try await evaluate(on: context.route, logger: logger, tree: source)
         }
         if !readsTree {
             // Time passed without a tree read, so the cached tree may be stale.
             context.invalidateTree()
         }
         let sparse = outcome.sparse ? " (nearly empty screen; it may still be loading)" : ""
-        return try await .redacted(outcome, on: context.route, success: successLine(outcome) + sparse, failure: failureLine, checked: selector.query == nil ? nil : selector)
+        return try await .redacted(outcome, on: context.route, success: successLine(outcome) + sparse, failure: { failureLine($0) }, checked: selector.query == nil ? nil : selector)
     }
 }
 

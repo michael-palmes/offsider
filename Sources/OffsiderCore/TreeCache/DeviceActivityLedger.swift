@@ -15,6 +15,8 @@ public final class DeviceActivityLedger {
         public var lastInputAt: Date?
         /// Every node of the last gap fill's tree; never written to a file.
         public var filled: [UINode] = []
+        /// A capture's text read on whether the screen the tree cache last saw shows behind a modal; nil when none read for it.
+        public var beneathShown: Bool?
 
         public init(
             device: DeviceID,
@@ -49,12 +51,18 @@ public final class DeviceActivityLedger {
             activity.tree = tree
             activity.treeReadAt = now()
             activity.filled = []
+            activity.beneathShown = nil
         }
     }
 
     /// A gap fill's result stays in memory: only its password fields' places reach a file, so showing one later still masks it.
     public func recordFill(_ tree: UITree, on device: DeviceID) {
         update(device) { $0.filled = tree.roots.flatMap { $0.flattened() } }
+    }
+
+    /// What a capture's text read settled about an earlier screen behind a modal, which the tree cache then keeps or drops.
+    public func recordBeneath(shown: Bool, on device: DeviceID) {
+        update(device) { $0.beneathShown = shown }
     }
 
     public func recordScreen(_ screen: UIScreenInfo?, on device: DeviceID) {

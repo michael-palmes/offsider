@@ -130,8 +130,12 @@ enum ScreenCapture {
         /// Nil unless `--mask-skip-beneath` was given; then every skippable kind asked for, zeros included.
         var skipped: [MaskKind: Int]?
         var unmatched: [String]
-        /// `modal` when Android left the windows beneath a modal out of the tree, or iOS a screen behind a backdrop that shows text; `keyboard` when an iOS keyboard is up and its bar is not listed, so a band was painted where one would be.
+        /// `remembered` (painted where the tree cache last saw it), `modal` (an Android modal window, an iOS backdrop over drawn text, or no cache under an iOS modal) or `keyboard` (an unlisted iOS keyboard bar).
         var unproven: String? = nil
+        /// What was painted where the tree cache last saw it (`--mask-id profile-email`, `an email address`).
+        var remembered: [String] = []
+        /// Email addresses the text read found that no listed element holds.
+        var unlistedEmails = 0
     }
 
     /// Why this tree cannot prove its masks: `truncated` by the device; on Android, `no-windows` when uiautomator lists none, or `modal` when a window, but an empty or opaque LogBox one, hides those beneath.
@@ -159,6 +163,8 @@ enum ScreenCapture {
                 "Masks can't tell if a modal is open; check \(subject)",
                 agent: "this read lists no windows, so a modal hiding what is behind it cannot be told and masks may miss text drawn there; check \(subject) or add --mask-region (maskUnproven)."
             )
+        case "remembered":
+            return rememberedNotice([], subject: subject)
         case "keyboard":
             return .warning(
                 "Painted a band for the keyboard's suggestions; check \(subject)",
@@ -172,19 +178,74 @@ enum ScreenCapture {
         }
     }
 
+    /// Painted where the tree cache last saw what `names` names, as an iOS modal hides it from the tree now.
+    nonisolated static func rememberedNotice(_ names: [String], subject: String) -> Notice {
+        let named = names.isEmpty ? "a masked element" : names.joined(separator: ", ")
+        return .warning(
+            "Painted where the modal hides \(TerminalText.line(named, cap: 80)); check \(subject)",
+            agent: "a modal hides \(named) from the tree, so its mask was painted where the tree cache last saw it, which no read proves; check \(subject) or add --mask-region (maskUnproven)."
+        )
+    }
+
+    /// The text read found email addresses that no element the tree lists holds, painted all the same.
+    nonisolated static func unlistedEmailNotice(_ count: Int, subject: String) -> Notice {
+        let found = count == 1 ? "An email address shows" : "\(count) email addresses show"
+        return .warning(
+            "\(found) that the tree does not list; check \(subject)",
+            agent: "\(found.prefix(1).lowercased() + found.dropFirst()) behind a modal that no element in the tree holds; it was painted from a text read, which may miss part of it; check \(subject) or add --mask-region (maskUnproven)."
+        )
+    }
+
     /// What text recognition found where an iOS backdrop hides the screen from every read: the lines no element lists, or `unread` when it could not finish.
     struct HiddenText {
         var lines: [ScreenTextLine] = []
         var unread = false
-        var unproven: Bool { unread || !lines.isEmpty }
+        /// False for a modal told by memory alone whose read saw nothing of the screen gone: a new screen, not a modal, so its own unlisted text proves nothing.
+        var modalShown = true
+        var unproven: Bool { unread || (modalShown && !lines.isEmpty) }
     }
 
     /// Recognition on the Mac is bounded, as a stalled read must not hold a capture; the fast pass, as the accurate one compiles its model for each new build.
     nonisolated static let hiddenTextLimit: TimeInterval = 2
 
-    /// Reads the capture's text only when a backdrop leaves its top band unlisted; nil otherwise.
-    nonisolated static func hiddenText(in capture: CapturedScreen, tree: UITree?) async -> HiddenText? {
-        guard let tree, let region = HiddenScreen.region(in: tree, belowStatusBar: IOSBackend.statusBarHeight) else { return nil }
+    /// An iOS modal hiding the screen beneath, the cache's last tree of that screen and what the plan's masks name in it; `cacheOff` when none can be kept.
+    struct BehindModal {
+        let modal: ModalScreen
+        let remembered: UITree?
+        var found = RememberedMasks.Found()
+        let cacheOff: Bool
+    }
+
+    /// Tree checks only, plus the device's tree cache file when a backdrop could hide a screen and a mask names elements or text; nil with no modal, at no cost.
+    @MainActor
+    static func behindModal(
+        _ tree: UITree?, plan: MaskPlan, screen: UIScreenInfo?, device: DeviceID, backend: any DeviceBackend, environment: TreeCacheEnvironment = .current
+    ) async -> BehindModal? {
+        let statusBar = IOSBackend.statusBarHeight
+        guard let tree, HiddenScreen.mayHide(tree, belowStatusBar: statusBar) else { return nil }
+        var remembered: UITree?
+        if environment.cacheOn, plan.recalls {
+            let record = await TreeCache.load(for: device, backend: backend, environment: environment)
+            remembered = RememberedMasks.tree(in: record, current: tree, screen: screen, now: environment.now(), statusBar: statusBar)
+        }
+        guard let modal = HiddenScreen.modal(in: tree, belowStatusBar: statusBar, remembered: remembered) else { return nil }
+        var behind = BehindModal(modal: modal, remembered: remembered, cacheOff: !environment.cacheOn && plan.recalls)
+        if let remembered {
+            let selected = selectors(of: plan).map { kind, query in
+                (kind: kind, name: selectorName(query), nodes: AccessibilityTargetResolver.candidates(roots: remembered.roots, query: query, elementType: nil).matches)
+            }
+            behind.found = (try? RememberedMasks.targets(plan: plan, selected: selected, remembered: remembered, current: tree, region: modal.region)) ?? RememberedMasks.Found()
+        }
+        // Told by memory alone, as a new screen is too: worth a text read only when the screen gone held something a mask names.
+        if modal.byMemory, behind.found.isEmpty { return nil }
+        return behind
+    }
+
+    /// Reads the capture's text only under an iOS modal hiding the screen beneath: for an email or text mask, a memory to confirm, or the band shape.
+    nonisolated static func hiddenText(in capture: CapturedScreen, behind: BehindModal?, tree: UITree?, plan: MaskPlan) async -> HiddenText? {
+        guard let tree, let behind, behind.modal.hidesBand || behind.modal.byMemory || plan.emails || !plan.texts.isEmpty else { return nil }
+        let modal = behind.modal
+        let region = modal.region
         guard capture.upright, let pixelsPerPoint = capture.pixelsPerPoint else { return HiddenText(unread: true) }
         let image = capture.image
         let lines = try? await Timings.measure("hidden-text") {
@@ -193,13 +254,39 @@ enum ScreenCapture {
             }
         }
         guard let read = lines else { return HiddenText(unread: true) }
-        return HiddenText(lines: HiddenScreen.unlisted(read, in: tree))
+        let unlisted = HiddenScreen.unlisted(read, in: tree)
+        let shown = !modal.byMemory || behind.remembered.map { HiddenScreen.showsRemembered(unlisted, remembered: $0, current: tree) } == true
+        return HiddenText(lines: unlisted, modalShown: shown)
+    }
+
+    /// What the tree cache remembers beneath an iOS modal for a plan's id, label, text and email masks.
+    enum Remembered {
+        case found(RememberedMasks.Found)
+        /// The cache is off, so nothing beneath the modal can be remembered.
+        case off
+    }
+
+    /// What the plan's masks name that the modal hides now; for a modal told by memory alone, only once the text read saw the old screen or could not finish.
+    nonisolated static func remembered(_ behind: BehindModal?, hidden: HiddenText?) -> Remembered? {
+        guard let behind else { return nil }
+        if behind.cacheOff { return .off }
+        guard !behind.found.isEmpty, !behind.modal.byMemory || hidden.map({ $0.unread || $0.modalShown }) == true else { return nil }
+        return .found(behind.found)
+    }
+
+    nonisolated private static func selectors(of plan: MaskPlan) -> [(MaskKind, AccessibilityQuery)] {
+        plan.ids.map { (MaskKind.id, AccessibilityQuery.id($0)) } + plan.labels.map { (MaskKind.label, AccessibilityQuery.label($0)) }
+            + plan.labelsContaining.map { (MaskKind.labelContains, AccessibilityQuery.labelContains($0)) }
+    }
+
+    nonisolated private static func selectorName(_ query: AccessibilityQuery) -> String {
+        "--mask-\(query.kind.dropFirst(2)) \(query.rawValue)"
     }
 
     /// Paints every mask in `plan` black; a capture that is not upright cannot be mapped, so it is withheld.
-    /// `revealed` adds the plain text fields that show a password field the device had earlier, painted as password fields; `hidden` is text no read lists, from `hiddenText`.
+    /// `revealed` adds plain fields showing an earlier password field; `hidden` (text no read lists) and `remembered` (frames the cache saw beneath a modal) only add paint.
     nonisolated static func masking(
-        _ capture: CapturedScreen, plan: MaskPlan, tree: UITree?, revealed: RevealedSecrets? = nil, hidden: HiddenText? = nil
+        _ capture: CapturedScreen, plan: MaskPlan, tree: UITree?, revealed: RevealedSecrets? = nil, hidden: HiddenText? = nil, remembered: Remembered? = nil
     ) throws -> MaskResult {
         var targets = MaskTargets()
         if let tree {
@@ -209,13 +296,11 @@ enum ScreenCapture {
                 // iOS paints its bar whole, below, so a suggestion that arrives after the read is covered too.
                 if tree.platform != .ios { targets.add(KeyboardText.hiddenElements(in: tree.roots), as: .keyboard) }
             }
-            let selectors = plan.ids.map { (MaskKind.id, AccessibilityQuery.id($0)) } + plan.labels.map { (MaskKind.label, AccessibilityQuery.label($0)) }
-                + plan.labelsContaining.map { (MaskKind.labelContains, AccessibilityQuery.labelContains($0)) }
-            for (kind, query) in selectors {
+            for (kind, query) in selectors(of: plan) {
                 let matches = AccessibilityTargetResolver.candidates(roots: tree.roots, query: query, elementType: nil).matches
                 targets.add(matches, as: kind)
                 if matches.isEmpty {
-                    targets.unmatched.append("--mask-\(query.kind.dropFirst(2)) \(query.rawValue)")
+                    targets.unmatched.append(selectorName(query))
                 }
             }
         }
@@ -237,8 +322,26 @@ enum ScreenCapture {
             }
             targets.unmatched.removeAll { name in found.matched.contains { name == "--mask-text \($0)" } }
         }
+        var recalled: [String] = []
+        var skippedRemembered: [MaskKind: Int] = [:]
+        if case .found(let found) = remembered {
+            for (kind, frames) in found.frames {
+                // A remembered element sits on the screen the modal covers, so --mask-skip-beneath leaves it as it leaves one beneath a page.
+                if plan.skipsBeneath, kind.skippableBeneath {
+                    skippedRemembered[kind, default: 0] += frames.count
+                } else {
+                    targets.frames[kind, default: []] += frames.map(Optional.some)
+                }
+            }
+            if skippedRemembered.isEmpty { recalled = found.names }
+        }
+        var unlistedEmails = 0
+        if plan.emails, let hidden, hidden.modalShown {
+            unlistedEmails = try HiddenScreen.targets(hidden.lines, plan: MaskPlan(emails: true)).frames[.emails]?.count ?? 0
+        }
         let beneathFrames = placement.painted
-        let skipped = plan.skipsBeneath ? Dictionary(uniqueKeysWithValues: plan.kinds.filter(\.skippableBeneath).map { ($0, placement.skipped[$0] ?? 0) }) : nil
+        let skipped = plan.skipsBeneath
+            ? Dictionary(uniqueKeysWithValues: plan.kinds.filter(\.skippableBeneath).map { ($0, (placement.skipped[$0] ?? 0) + (skippedRemembered[$0] ?? 0)) }) : nil
 
         var image = capture.image
         var painted: [MaskKind: Int] = [:]
@@ -264,15 +367,22 @@ enum ScreenCapture {
         }
         beneath = beneath.filter { $0.value > 0 }
         painted = painted.filter { !$0.key.ridesWithSecure || $0.value > 0 }
-        let unproven = tree.flatMap(Self.unproven) ?? (hidden?.unproven == true ? "modal" : nil) ?? (keyboardUnplaced ? "keyboard" : nil)
+        let unproven = tree.flatMap(Self.unproven) ?? (recalled.isEmpty ? nil : "remembered") ?? (hidden?.unproven == true ? "modal" : nil)
+            ?? (remembered.map { if case .off = $0 { "modal" } else { nil } } ?? nil) ?? (keyboardUnplaced ? "keyboard" : nil)
         guard image !== capture.image else {
-            return MaskResult(capture: capture, painted: painted, beneath: beneath, skipped: skipped, unmatched: targets.unmatched, unproven: unproven)
+            return MaskResult(
+                capture: capture, painted: painted, beneath: beneath, skipped: skipped, unmatched: targets.unmatched, unproven: unproven,
+                remembered: recalled, unlistedEmails: unlistedEmails
+            )
         }
         let masked = CapturedScreen(
             image: image, platform: capture.platform, screen: capture.screen, pixelsPerPoint: capture.pixelsPerPoint,
             upright: capture.upright, untouchedPNG: nil
         )
-        return MaskResult(capture: masked, painted: painted, beneath: beneath, skipped: skipped, unmatched: targets.unmatched, unproven: unproven)
+        return MaskResult(
+            capture: masked, painted: painted, beneath: beneath, skipped: skipped, unmatched: targets.unmatched, unproven: unproven,
+            remembered: recalled, unlistedEmails: unlistedEmails
+        )
     }
 
     nonisolated private static func subject(of kind: MaskKind) -> String {
