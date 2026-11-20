@@ -55,12 +55,44 @@ public struct RunFolder: Equatable, Sendable {
         public var errorDescription: String? { "\(path) \(detail)" }
     }
 
-    /// The folder a run record names, only while it is an absolute, standardised path to a real directory this user owns that no one else
-    /// can write, holding a private `run.json` for the same run (same label, started no later than the record).
+    /// `path` (absolute) with every link above its last component resolved, so `/tmp/run` and `/private/tmp/run` name one folder,
+    /// while a link standing at the last component stays for `prepare` and `validateRecorded` to refuse.
+    public static func resolvingParents(_ path: String) -> String {
+        let name = (path as NSString).lastPathComponent
+        let parent = (path as NSString).deletingLastPathComponent
+        guard name != ".", name != "..", parent != path else { return canonical(path) }
+        return (canonical(parent) as NSString).appendingPathComponent(name)
+    }
+
+    /// `path` (absolute) with every link resolved; below the deepest folder that exists, components stay as written, with `.` and `..` applied.
+    /// Never `URL.standardizedFileURL` or `resolvingSymlinksInPath`: Foundation drops `/private` from a path only once it exists.
+    public static func canonical(_ path: String) -> String {
+        if let real = realPath(path) { return real }
+        let parent = (path as NSString).deletingLastPathComponent
+        guard parent != path else { return path }
+        let base = canonical(parent)
+        switch (path as NSString).lastPathComponent {
+        case ".", "":
+            return base
+        case "..":
+            return (base as NSString).deletingLastPathComponent
+        case let name:
+            return (base as NSString).appendingPathComponent(name)
+        }
+    }
+
+    static func realPath(_ path: String) -> String? {
+        guard let resolved = unsafe Darwin.realpath(path, nil) else { return nil }
+        defer { unsafe free(resolved) }
+        return unsafe String(cString: resolved)
+    }
+
+    /// The folder a run record names, only while it is an absolute path with no link, `.` or `..` above it, to a real directory this user owns
+    /// that no one else can write, holding a private `run.json` for the same run (same label, started no later than the record).
     public static func validateRecorded(_ record: RunRecord, uid: uid_t = getuid()) throws -> RunFolder {
         let path = record.dir
-        guard path.hasPrefix("/"), URL(fileURLWithPath: path).standardizedFileURL.path == path else {
-            throw RecordedFolderError(path: path, detail: "is not an absolute, standardised path")
+        guard path.hasPrefix("/"), resolvingParents(path) == path else {
+            throw RecordedFolderError(path: path, detail: "passes through a link or a `..`, so it may not be the folder the run started in")
         }
         var info = stat()
         guard unsafe lstat(path, &info) == 0 else {

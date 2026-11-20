@@ -90,7 +90,7 @@ struct HoldScreenshotOptions: ParsableArguments {
             try Screenshot.parse(["--device", route.device.rawValue] + (outputPath(for: index).map { ["--output", $0] } ?? []) + captureArguments)
         }
         guard let first = shots.first else { return }
-        let masks = first.masksWithRunDefaults(try first.maskPlan())
+        let masks = try first.masksWithRunDefaults(try first.maskPlan())
         let standing = try MaskConfigs.current()?.config.plan
         if (standing.map(masks.union) ?? masks).needsTree, let reader = route.backend as? any MaskTreeReading {
             try await reader.prepareMaskTree(for: route.device)

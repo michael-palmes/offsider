@@ -358,7 +358,7 @@ struct OneMaskRuleTests {
             try await Self.masked {
                 try await DevicePolicyGate.$current.withValue(Self.wholeDevice) {
                     try await run.command(run.recorder("screenshot")) {
-                        _ = try await command.take(try command.request(), on: route, masks: command.masksWithRunDefaults(try command.maskPlan(environment: [:])))
+                        _ = try await command.take(try command.request(), on: route, masks: try command.masksWithRunDefaults(try command.maskPlan(environment: [:])))
                     }
                     let outcome = try await check.evaluate(on: route, logger: OffsiderLogger())
                     let capture = ConsoleCapture()

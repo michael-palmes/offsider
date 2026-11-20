@@ -117,7 +117,7 @@ extension DescribeUI: BatchReadable {
 
 extension Screenshot: BatchReadable {
     func runInBatch(context: BatchContext, logger: OffsiderLogger) async throws -> BatchReadResult {
-        let masks = masksWithRunDefaults(try maskPlan(batchDefault: context.maskSecure))
+        let masks = try masksWithRunDefaults(try maskPlan(batchDefault: context.maskSecure))
         let report = try await PhoneRead.$overSystemWindow.withValue(true) {
             try await take(try request(), on: context.route, masks: masks) {
                 guard let reader = context.backend as? any MaskTreeReading else {

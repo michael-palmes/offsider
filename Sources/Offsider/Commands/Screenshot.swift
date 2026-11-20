@@ -523,8 +523,8 @@ struct Screenshot: AsyncParsableCommand {
 
     /// The capture's own masks with the run's added, so a capture never drops a run mask; only --mask-skip-beneath leaves one unpainted beneath a page.
     @MainActor
-    func masksWithRunDefaults(_ own: MaskPlan) -> MaskPlan {
-        guard let defaults = EvidenceRecorder.current.defaultMasks else { return own }
+    func masksWithRunDefaults(_ own: MaskPlan) throws -> MaskPlan {
+        guard let defaults = try EvidenceRecorder.current.defaultMasks() else { return own }
         return own.union(defaults)
     }
 

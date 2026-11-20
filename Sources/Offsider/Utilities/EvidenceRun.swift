@@ -80,10 +80,11 @@ struct EndedRunMarker: Codable, Equatable {
 
 /// Starting, finding, stopping and listing runs. A command belongs to the run whose owner (pid and start time) is in its own ancestry.
 enum RunRegistry {
+    /// The folder as recorded: absolute, with the links above it resolved, so it reads the same before `run start` creates it and after.
     static func absolute(_ path: String) -> String {
         let expanded = (path as NSString).expandingTildeInPath
         let joined = expanded.hasPrefix("/") ? expanded : (FileManager.default.currentDirectoryPath as NSString).appendingPathComponent(expanded)
-        return URL(fileURLWithPath: joined).standardizedFileURL.path
+        return RunFolder.resolvingParents(joined)
     }
 
     static func unavailable(_ message: String) -> CLIError {
@@ -175,6 +176,10 @@ enum RunRegistry {
             prepared = try RunFolder.prepare(dir)
         } catch {
             throw unavailable("Could not use \(dir) as a run folder: \(OffsiderCommand.message(for: error)).")
+        }
+        // Every capture checks the folder as `validateRecorded` does, so a session's run refuses here what its captures would refuse.
+        if owner != nil, prepared.writableByOthers {
+            throw unavailable("Other users can write to \(dir), so its captures could not be trusted. Run `chmod go-w \(VerifyOutput.shellWord(dir))`, or choose another folder.")
         }
         let folder = prepared.folder
         let now = environment.now()
