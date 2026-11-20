@@ -71,19 +71,19 @@ struct OneMaskRuleTests {
         let mask = TreeValueMask(ids: ["balance"])
         for scope in [TreeRedactionScope.output, .cache] {
             let row = Self.screen().redacted(mask, scope: scope).roots[0].children[0]
-            #expect(row.label == "Balance [redacted] Details")
+            #expect(row.label == "[redacted]")
             #expect(row.children[1].label == "[redacted]")
             #expect(row.children[0].label == "Balance" && row.children[2].label == "Details")
         }
     }
 
-    @Test("a masked row's unmatched child is hidden too, and a child naming the file's text keeps it")
+    @Test("a masked row and every child are hidden whole, even a child naming only the file's text")
     func childOfMaskedHidden() {
         let mask = TreeValueMask(labelContains: ["Referral code."])
         for scope in [TreeRedactionScope.output, .cache] {
             let row = Self.screen().redacted(mask, scope: scope).roots[0].children[1]
-            #expect(row.label == "Referral code. [redacted]")
-            #expect(row.children[0].label == "Referral code.")
+            #expect(row.label == "[redacted]")
+            #expect(row.children[0].label == "[redacted]")
             #expect(row.children[1].label == "[redacted]")
         }
     }
@@ -109,7 +109,7 @@ struct OneMaskRuleTests {
             FakeUI.node(.text, id: "long", label: "1234", platform: .android),
         ])
         let shown = UITree(platform: .android, device: "x", roots: [parent]).redacted(TreeValueMask(ids: ["short", "long"])).roots[0]
-        #expect(shown.label == "[redacted] and [redacted]")
+        #expect(shown.label == "[redacted]")
     }
 
     @Test("a revealed field's text is hidden in a parent's copy")
@@ -118,7 +118,7 @@ struct OneMaskRuleTests {
         let row = FakeUI.node(.button, label: "PIN 4471", platform: .android, children: [field])
         let record = SecureFieldRecord(platform: .android, device: "x", writtenAt: Date(), bootMarker: nil, entries: [.init(id: "pin", frame: nil)])
         let shown = UITree(platform: .android, device: "x", roots: [row]).redacted(TreeValueMask(revealed: RevealedSecrets(record))).roots[0]
-        #expect(shown.label == "PIN [redacted]")
+        #expect(shown.label == "[redacted]")
         #expect(shown.children[0].value == "••••")
     }
 
@@ -160,7 +160,7 @@ struct OneMaskRuleTests {
         for message in messages {
             Self.expectClean(message)
         }
-        #expect(messages[0].hasPrefix("Multiple (3)") && !messages[0].contains("[redacted]"), "masked rows are never candidates: \(messages[0])")
+        #expect(messages[0].hasPrefix("Multiple (2)") && !messages[0].contains("[redacted]"), "masked rows and children are never candidates: \(messages[0])")
         #expect(messages[1].contains("select those by --id") && messages[2].contains("select those by --id"))
     }
 
@@ -171,11 +171,11 @@ struct OneMaskRuleTests {
             try await Self.masked {
                 let tree = try await Self.backend().accessibilityTree(for: Self.device)
                 let rows = tree.roots[0].children
-                #expect(PresentationProbe.shownLabel(of: rows[0]) == "Balance [redacted] Details")
-                #expect(MatchSummary.shownLabel(of: rows[0]) == "Balance [redacted] Details")
+                #expect(PresentationProbe.shownLabel(of: rows[0]) == "[redacted]")
+                #expect(MatchSummary.shownLabel(of: rows[0]) == "[redacted]")
                 #expect(MatchSummary.shownLabel(of: rows[1].children[1]) == "[redacted]")
                 let cover = CoverReport(CoverVerdict(cover: rows[0], evidence: .hitTest, isConfident: true, screen: nil))
-                #expect(cover.label == "Balance [redacted] Details")
+                #expect(cover.label == "[redacted]")
             }
         }
     }
@@ -192,7 +192,7 @@ struct OneMaskRuleTests {
         try await TreeCacheFixture().run {
             try await OutputMasks.$current.withValue(masks) {
                 let read = try await backend.accessibilityTree(for: Self.device)
-                #expect(MatchSummary.shownLabel(of: read.roots[0].children[0]) == "PIN [redacted]")
+                #expect(MatchSummary.shownLabel(of: read.roots[0].children[0]) == "[redacted]")
             }
         }
     }
@@ -219,7 +219,7 @@ struct OneMaskRuleTests {
         let masks = OutputMasks { mask }
         masks.note(FakeUI.tree([FakeUI.node(.text, label: "Offer rc-5521")]))
         #expect(masks.mask.nested == NestedMasks())
-        #expect(masks.mask.shownLabel("Offer rc-5521", id: nil) == "Offer [redacted]")
+        #expect(masks.mask.shownLabel("Offer rc-5521", id: nil) == "[redacted]")
     }
 
     @Test("--verify on the fixture prints no planted text, whatever changed")

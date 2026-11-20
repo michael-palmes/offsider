@@ -88,7 +88,7 @@ struct ScreenshotMaskTests {
         let result = try await Self.capture(["--mask-id", "profile-email"], on: backend)
         defer { try? FileManager.default.removeItem(atPath: result.path) }
 
-        #expect(result.report.maskedBy == [.id: 2])
+        #expect(result.report.maskedBy == [.rules: 2])
         #expect(Self.point(result.image, 116, 120) == Self.black)
         #expect(Self.point(result.image, 116, 320) == Self.black)
         #expect(Self.point(result.image, 116, 520) == Self.white)
@@ -100,7 +100,7 @@ struct ScreenshotMaskTests {
         let result = try await Self.capture(["--mask-label", "Don't Allow"], on: backend)
         defer { try? FileManager.default.removeItem(atPath: result.path) }
 
-        #expect(result.report.maskedBy == [.label: 1])
+        #expect(result.report.maskedBy == [.rules: 1])
         #expect(Self.point(result.image, 116, 120) == Self.black)
     }
 
@@ -111,7 +111,7 @@ struct ScreenshotMaskTests {
         let result = try await Self.capture(["--mask-emails"], on: try Self.backend([row]))
         defer { try? FileManager.default.removeItem(atPath: result.path) }
 
-        #expect(result.report.maskedBy == [.emails: 1])
+        #expect(result.report.maskedBy == [.rules: 1])
         #expect(Self.point(result.image, 116, 135) == Self.black)
         #expect(Self.point(result.image, 300, 250) == Self.white)
     }
@@ -269,9 +269,9 @@ struct ScreenshotMaskTests {
         }
         let (report, image, _) = try await Self.stackCapture(["--mask-label", "Stack Depth: 1"], tree: tree)
 
-        #expect(report.maskedBy == [.label: 2])
-        #expect(report.maskedBeneath == [.label: 1])
-        #expect(report.jsonLine().contains(#""masked":2,"maskedBy":{"label":2},"maskedBeneath":{"label":1}"#))
+        #expect(report.maskedBy == [.rules: 2])
+        #expect(report.maskedBeneath == [.rules: 1])
+        #expect(report.jsonLine().contains(#""masked":2,"maskedBy":{"rules":2},"maskedBeneath":{"rules":1}"#))
         #expect(Self.pixel(image, 79, 433) == Self.black)
         #expect(Self.pixel(image, 394, 315) == Self.black)
         #expect(Self.pixel(image, 538, 1575) == Self.white)
@@ -281,8 +281,8 @@ struct ScreenshotMaskTests {
     func identicalElementOnThePage() async throws {
         let (report, image, _) = try await Self.stackCapture(["--mask-id", "stack-test-depth"], tree: try Self.stackTreeWithPageCopy())
 
-        #expect(report.maskedBy == [.id: 2])
-        #expect(report.maskedBeneath == [.id: 1])
+        #expect(report.maskedBy == [.rules: 2])
+        #expect(report.maskedBeneath == [.rules: 1])
         #expect(Self.pixel(image, 79, 433) == Self.black)
     }
 
@@ -295,11 +295,11 @@ struct ScreenshotMaskTests {
         }
         let (report, image, _) = try await Self.stackCapture(["--mask-label", "Stack Depth: 1", "--mask-skip-beneath"], tree: tree)
 
-        #expect(report.maskedBy == [.label: 1])
-        #expect(report.skippedBeneath == [.label: 1])
+        #expect(report.maskedBy == [.rules: 1])
+        #expect(report.skippedBeneath == [.rules: 1])
         #expect(report.maskedBeneath.isEmpty)
         #expect(report.maskUnmatched.isEmpty)
-        #expect(report.jsonLine().contains(#""masked":1,"maskedBy":{"label":1},"skippedBeneath":{"label":1},"orientation""#))
+        #expect(report.jsonLine().contains(#""masked":1,"maskedBy":{"rules":1},"skippedBeneath":{"rules":1},"orientation""#))
         #expect(Self.pixel(image, 79, 433) == Self.white)
         #expect(Self.pixel(image, 394, 315) == Self.black)
     }
@@ -320,7 +320,7 @@ struct ScreenshotMaskTests {
     func doubledCountsBeneath() async throws {
         let (report, image, _) = try await Self.stackCapture(["--mask-text", "Stack Depth: 1"], tree: try Self.doubledBeneathTree())
 
-        #expect(report.maskedBeneath == [.text: 1])
+        #expect(report.maskedBeneath == [.rules: 1])
         let frame = try #require(try Self.doubledBeneathTree().roots.flatMap { $0.flattened() }.first { $0.id == "stack-test-depth" }?.frame)
         #expect(Self.point(image, frame.x + 2, frame.y + 2) == Self.black)
     }
@@ -330,7 +330,7 @@ struct ScreenshotMaskTests {
         let (report, image, _) = try await Self.stackCapture(["--mask-text", "Stack Depth: 1", "--mask-skip-beneath"], tree: try Self.doubledBeneathTree())
 
         #expect(report.maskedBeneath.isEmpty)
-        #expect(report.skippedBeneath?[.text] == 1)
+        #expect(report.skippedBeneath?[.rules] == 1)
         let frame = try #require(try Self.doubledBeneathTree().roots.flatMap { $0.flattened() }.first { $0.id == "stack-test-depth" }?.frame)
         #expect(Self.point(image, frame.x + 2, frame.y + 2) != Self.black)
     }
@@ -339,8 +339,8 @@ struct ScreenshotMaskTests {
     func skipBeneathPaintsIdenticalPageElement() async throws {
         let (report, image, _) = try await Self.stackCapture(["--mask-id", "stack-test-depth", "--mask-skip-beneath"], tree: try Self.stackTreeWithPageCopy())
 
-        #expect(report.maskedBy == [.id: 1])
-        #expect(report.skippedBeneath == [.id: 1])
+        #expect(report.maskedBy == [.rules: 1])
+        #expect(report.skippedBeneath == [.rules: 1])
         #expect(Self.pixel(image, 79, 433) == Self.black)
     }
 
@@ -364,8 +364,8 @@ struct ScreenshotMaskTests {
         let result = try await Self.capture(["--mask-emails", "--mask-skip-beneath"], on: backend)
         defer { try? FileManager.default.removeItem(atPath: result.path) }
 
-        #expect(result.report.maskedBy == [.emails: 1])
-        #expect(result.report.skippedBeneath == [.emails: 0])
+        #expect(result.report.maskedBy == [.rules: 1])
+        #expect(result.report.skippedBeneath == [.rules: 0])
         #expect(Self.point(result.image, 116, 120) == Self.black)
     }
 
@@ -423,7 +423,7 @@ struct ScreenshotMaskTests {
         defer { try? FileManager.default.removeItem(atPath: result.path) }
 
         #expect(result.report.maskUnmatched == ["--mask-id profile-email"])
-        #expect(result.report.jsonLine().contains(#""masked":1,"maskedBy":{"id":0,"label":1},"maskUnmatched":["--mask-id profile-email"]"#))
+        #expect(result.report.jsonLine().contains(#""masked":1,"maskedBy":{"rules":1},"maskUnmatched":["--mask-id profile-email"]"#))
         #expect(FileManager.default.fileExists(atPath: result.path))
     }
 
@@ -494,7 +494,7 @@ struct ScreenshotMaskTests {
         let written = try ScreenImage.decode(try Data(contentsOf: URL(fileURLWithPath: path)))
 
         #expect(records.allSatisfy { $0.ok })
-        #expect(records.last?.jsonLine().contains(#""maskedBy":{"secure":1,"emails":1}"#) == true)
+        #expect(records.last?.jsonLine().contains(#""maskedBy":{"secure":1,"rules":1}"#) == true)
         #expect(records.last?.jsonLine().contains("skippedBeneath") == false)
         #expect(backend.treeReads == 1)
         #expect(Self.pixel(written, 600, 870) == Self.black)
@@ -510,7 +510,7 @@ struct ScreenshotMaskTests {
         let records = try await Self.batch(["screenshot --mask-emails --mask-skip-beneath --output \(path)"], on: backend)
 
         #expect(records.allSatisfy { $0.ok })
-        #expect(records.last?.jsonLine().contains(#""maskedBy":{"emails":1},"skippedBeneath":{"emails":0}"#) == true)
+        #expect(records.last?.jsonLine().contains(#""maskedBy":{"rules":1},"skippedBeneath":{"rules":0}"#) == true)
     }
 
     // MARK: - offsider.mask.json and revealed password fields
@@ -522,7 +522,7 @@ struct ScreenshotMaskTests {
         let result = try await MaskConfigs.$source.withValue({ loaded }) { try await Self.capture([], on: backend) }
         defer { try? FileManager.default.removeItem(atPath: result.path) }
 
-        #expect(result.report.jsonLine().contains(#""maskedBy":{"id":1}"#))
+        #expect(result.report.jsonLine().contains(#""maskedBy":{"rules":1}"#))
         #expect(result.report.maskUnmatched.isEmpty)
         #expect(Self.point(result.image, 100, 115) == Self.black)
         #expect(Self.point(result.image, 100, 300) == Self.white)

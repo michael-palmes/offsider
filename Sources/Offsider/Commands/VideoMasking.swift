@@ -111,9 +111,10 @@ struct VideoMaskOptions: ParsableArguments {
         if let refusal = VideoMaskPolicy.keyboardTextRefusal(command: command, in: tree) {
             throw CLIError(errorDescription: refusal, reason: .videoUnmasked)
         }
-        if let config, let shown = try configMatch(config.config, in: tree) {
+        // Which rule matched is never named, so a rule added as a guess tells nothing of text another rule hides.
+        if let config, try configMatch(config.config, in: tree) != nil {
             throw CLIError(
-                errorDescription: "\(command) will not start while \(shown), which \(MaskConfig.fileName) masks, is on screen: video cannot be masked reliably frame by frame. "
+                errorDescription: "\(command) will not start while something \(MaskConfig.fileName) masks is on screen: video cannot be masked reliably frame by frame. "
                     + "Leave that screen first, use `screenshot`, which masks it, or pass --unmasked to record anyway.",
                 reason: .videoUnmasked
             )
@@ -138,7 +139,7 @@ struct VideoMaskOptions: ParsableArguments {
     }
 
     /// The first selector of the file that matches an element on screen, as `--mask-id x` names it; nil when none does.
-    nonisolated static func configMatch(_ config: MaskConfig, in tree: UITree) throws -> String? {
+    nonisolated static func configMatch(_ config: MaskConfig, in tree: UITree, standing: TreeValueMask = AmbientMasks.outputMask()) throws -> String? {
         let viewport = tree.viewport
         func onScreen(_ node: UINode) -> Bool {
             guard let viewport, let frame = node.frame else { return true }
@@ -152,6 +153,10 @@ struct VideoMaskOptions: ParsableArguments {
         let texts = try MaskConfig(valuePatterns: config.valuePatterns, emails: config.emails).plan.textTargets(in: tree)
         for group in texts.groups where group.nodes.contains(where: onScreen) {
             return group.kind == .emails ? "an email address" : "text a value pattern matches"
+        }
+        // Text any standing mask hides refuses too, so a rule added as a guess at it adds no refusal of its own.
+        if MaskedFields.of(tree.roots, mask: standing)?.hiddenNodes(in: tree.roots).contains(where: onScreen) == true {
+            return "hidden text"
         }
         return nil
     }

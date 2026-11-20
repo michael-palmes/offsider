@@ -197,7 +197,7 @@ struct MaskBehindModalTests {
         let (report, image, err) = try await Self.capture(["--mask-emails"], tree: Self.modal(shape), png: try Self.receiptBehindPNG(), fixture: fixture)
 
         #expect(Self.fieldPainted(image), "the email field the modal hides was left unpainted")
-        #expect(report.maskedBy?[.emails] == 1)
+        #expect(report.maskedBy?[.rules] == 1)
         #expect(report.maskUnproven == "remembered")
         #expect(err.components(separatedBy: "a modal hides an email address from the tree").count == 2, "\(err)")
         #expect(!err.contains(Self.email))
@@ -242,7 +242,7 @@ struct MaskBehindModalTests {
         let (report, image, err) = try await Self.capture(["--mask-emails", "--mask-skip-beneath"], tree: Self.modal(.tap), png: try Self.png([]), fixture: fixture)
 
         #expect(!Self.fieldPainted(image))
-        #expect(report.skippedBeneath?[.emails] == 1)
+        #expect(report.skippedBeneath?[.rules] == 1)
         #expect(report.maskUnproven != "remembered")
         #expect(!err.contains("tree cache last saw"), "\(err)")
     }
