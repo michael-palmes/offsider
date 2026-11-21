@@ -274,7 +274,14 @@ struct Type: AsyncParsableCommand, VerifiableCommand {
         )
     }
 
-    /// Nothing goes out unless a field has focus; with no tree to read, Android (whose input still checks for a password field) and a physical iPhone warn and send.
+    /// Why a read said no rather than failed: the app in front, a system prompt, a lock, a pulled cable or the allowance. Keys sent after one would go where the read was kept from.
+    static let readRefusals: Set<FailureReason> = [.appNotAllowed, .systemPromptInFront, .deviceLocked, .deviceNotWired, .deviceNotAllowed, .usage]
+
+    static func isRefusal(_ error: any Error) -> Bool {
+        error.isOtherAppInFront || ((error as? any OffsiderFailure)?.reason).map(readRefusals.contains) == true
+    }
+
+    /// Nothing goes out unless a field has focus; with no tree to read, Android (whose input still checks for a password field) and a physical iPhone warn and send, but a read that was refused stops the text with its refusal.
     @MainActor
     static func checkTextFocus(
         readTree: @MainActor () async throws -> UITree,
@@ -291,7 +298,7 @@ struct Type: AsyncParsableCommand, VerifiableCommand {
         var tree: UITree
         do {
             tree = try await readTree()
-        } catch where device.platform == .android || device.isPhysicalIOSDevice {
+        } catch where (device.platform == .android || device.isPhysicalIOSDevice) && !isRefusal(error) {
             warn("Offsider could not read the screen to check that a field has focus, so the \(keys ? "keys" : "text") went out unchecked.")
             return FocusCheck(secure: secureRefusal == nil ? nil : .unknown)
         }

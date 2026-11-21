@@ -551,6 +551,26 @@ struct CoverAndVerifyTests {
         #expect(!stderr.contains("did not settle"))
     }
 
+    @Test("a --verify-id retry is held when a LogBox toast came up over the target after the first tap, as a second tap would open the log")
+    func verifyIDRetryHeldUnderNewCover() async throws {
+        let save = FakeUI.node(.button, id: "save", label: "Save", frame: FakeUI.frame(16, 810, 370, 40), platform: .android, drawingOrder: 1)
+        let toast = FakeUI.node(.other, label: LogBoxCoverTests.toastLabel, frame: FakeUI.frame(10, 806, 382, 48), platform: .android, drawingOrder: 2)
+        let backend = FakeDeviceBackend(
+            platform: .android, trees: [FakeUI.tree(platform: .android, [save]), FakeUI.tree(platform: .android, [save, toast])], advanceTreeOnInput: true
+        )
+
+        var failure: (any Error)?
+        var stderr = ""
+        do {
+            stderr = try await Self.tap(["--id", "save", "--verify-id", "saved", "--verify-timeout", "0.5", "--retries", "1"], on: backend, device: Self.android, progress: VerifyProgress()).err
+        } catch {
+            failure = error
+        }
+
+        #expect(failure as? ExitCode == ExitCode(5), "\(String(describing: failure)) \(stderr)")
+        #expect(backend.session.calls.count == 1)
+    }
+
     // MARK: R39, R40, R42, R59, R75
 
     /// A row half under a tab bar, with a labelled image spread behind everything as a sibling.
