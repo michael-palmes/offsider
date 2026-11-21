@@ -39,8 +39,8 @@ struct PresentedSheetTests {
         _ = try await Self.openPicker(simulatorUDID: simulatorUDID)
 
         let gone = try await TestHelpers.runOffsiderCommandSeparated("wait --id presented-sheet-test-open --gone --timeout 10 --json", simulatorUDID: simulatorUDID)
-        let object = try #require(try JSONSerialization.jsonObject(with: Data(gone.stdout.utf8)) as? [String: Any], "\(gone.stdout) \(gone.stderr)")
         #expect(gone.exitCode == 0, "\(gone.stderr)")
+        let object = try #require((try? JSONSerialization.jsonObject(with: Data(gone.stdout.utf8))) as? [String: Any], "\(gone.stdout) \(gone.stderr)")
         #expect(object["met"] as? Bool == true)
         #expect((object["reason"] as? String)?.contains(": under ") == true, "\(object["reason"] ?? "no reason")")
 

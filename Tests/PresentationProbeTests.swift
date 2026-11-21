@@ -338,12 +338,12 @@ struct PresentationProbeTests {
     @Test("a control under a picker another process draws counts as gone and names what covers it, and with --allow-offscreen the wait misses and names what is presented")
     func controlUnderPickerIsGone() async throws {
         let (tree, photo) = Self.underPicker()
-        for arguments in [["--gone"], ["--gone", "--timeout", "2"]] {
+        for arguments in [["--gone", "--timeout", "0"], ["--gone", "--timeout", "2"]] {
             let backend = ProbingFakeBackend(trees: [tree])
             backend.coverHit = photo
             backend.probeHit = photo
             let route = DeviceRouter.Route(backend: backend, device: Self.device)
-            let wait = try Wait.parse(["--id", "home-open"] + arguments + (arguments.contains("--timeout") ? [] : ["--timeout", "0"]) + ["--device", Self.device.rawValue])
+            let wait = try Wait.parse(["--id", "home-open"] + arguments + ["--device", Self.device.rawValue])
 
             let outcome = try await wait.evaluate(on: route, logger: OffsiderLogger(), clock: ScriptedClock().poll, probesOnMiss: true)
 
