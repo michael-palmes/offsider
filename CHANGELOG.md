@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Changed
+
+- `test-runner.sh --unit-tests` reruns alone only the tests a stalled parallel run did not finish, read from Swift Testing's event stream, instead of every test; a stream it cannot read still reruns everything. CI pull requests restore the newest debug build main saved and recompile only the files whose contents changed, and the release rehearsal reuses fetched package repositories.
+
 ## [0.17.0] - 2026-11-20
 
 ### Added
@@ -43,7 +47,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ### Changed
 
 - `doctor`'s `simulator.crash-loop` fix and `test-runner.sh`'s crash-loop refusal are a quiet boot (shut the simulator down, wait for the Mac to be quiet, boot it once) instead of erasing it. An agent is told never to erase one; a person gets `xcrun simctl erase <UDID>` only for a loop that comes back on a quiet Mac.
-- `test-runner.sh --unit-tests` reruns alone only the tests a stalled parallel run did not finish, read from Swift Testing's event stream, instead of every test; a stream it cannot read still reruns everything. CI pull requests restore the newest debug build main saved and recompile only the files whose contents changed, and the release rehearsal reuses fetched package repositories.
 - `test-runner.sh` boots a simulator or AVD only once the 1-minute load is at most twice the cores, waiting up to 10 minutes; shuts down a simulator or AVD it booted when the run ends (`--keep-booted` or `OFFSIDER_E2E_KEEP_BOOTED=1` keeps it); and ends a simulator run with the crash reports that simulator wrote, failing a run that passed when SpringBoard, PosterBoard or a playground app crashed.
 - No test or fixture crashes an app on purpose: the playground's crash button is gone (its screen is now Quit Test), the verify and React Native suites end the app cleanly, and a made-up crash report keeps `app_crashed` covered. `NoDeliberateCrashTests` fails on a deliberate crash that comes back.
 - A label or value `offsider.mask.json` or a run's masks touch is hidden whole: `describe-ui`, messages and the tree cache show `[redacted]` with no kept words (a `labelContains` match no longer shows its own text), a label a value pattern or the email mask hits anywhere is hidden whole, and a screenshot paints whole any element holding hidden text and any row that copies it. Screenshot `--json` reports id, label, text and email masks together as `maskedBy.rules`, each element once.
