@@ -4,8 +4,10 @@ import Foundation
 public enum DeviceRefusal: Equatable, Sendable {
     /// The managed preference turns physical devices off.
     case managedOff
-    /// A managed preference could not be read, so every physical device is refused.
-    case managedUnreadable
+    /// The managed key could not be read, so every physical device is refused.
+    case managedUnreadable(String)
+    /// A forced key this build does not know, so it cannot honour it and refuses every physical device.
+    case managedUnknownKey(String)
     /// The managed device list does not name this device.
     case managedNotListed
     /// No one allowed this device.
@@ -22,17 +24,39 @@ public enum DeviceRefusal: Equatable, Sendable {
     /// True when only an administrator can lift it; `devices add` cannot.
     public var isManaged: Bool {
         switch self {
-        case .managedOff, .managedUnreadable, .managedNotListed: return true
+        case .managedOff, .managedUnreadable, .managedUnknownKey, .managedNotListed: return true
         default: return false
+        }
+    }
+
+    /// The managed refusal a `code` and `key` describe, as `doctor --json` carries them; nil for any other code.
+    public static func managed(code: String, key: String?) -> DeviceRefusal? {
+        switch (code, key) {
+        case ("managed_off", _): return .managedOff
+        case ("managed_not_listed", _): return .managedNotListed
+        case ("managed_unreadable", let key?): return .managedUnreadable(key)
+        case ("managed_unknown_key", let key?): return .managedUnknownKey(key)
+        default: return nil
+        }
+    }
+
+    /// The managed key behind the refusal; nil for the allow-list's own refusals.
+    public var managedKey: String? {
+        switch self {
+        case .managedOff: return ManagedDevicePolicy.allowPhysicalDevicesKey
+        case .managedNotListed: return ManagedDevicePolicy.allowedDeviceIDsKey
+        case .managedUnreadable(let key), .managedUnknownKey(let key): return key
+        default: return nil
         }
     }
 
     /// One sentence for an error message.
     public var explanation: String {
         switch self {
-        case .managedOff: return "managed policy on this Mac turns physical devices off, and the allow-list cannot override it"
-        case .managedUnreadable: return "managed policy on this Mac could not be read, so every physical device is refused, and the allow-list cannot override it"
-        case .managedNotListed: return "managed policy on this Mac does not list it, and the allow-list cannot override it"
+        case .managedOff: return ManagedRefusalText.physicalOff
+        case .managedUnreadable(let key): return ManagedRefusalText.unreadable(key)
+        case .managedUnknownKey(let key): return ManagedRefusalText.unknown(key)
+        case .managedNotListed: return ManagedRefusalText.deviceNotListed
         case .notAllowed: return "it is not on the allow-list"
         case .expired(let date): return "its allow-list entry expired at \(ProcessStamp.timestamp(date))"
         case .listUnreadable(let detail): return "the allow-list could not be read (\(detail))"
@@ -46,6 +70,7 @@ public enum DeviceRefusal: Equatable, Sendable {
         switch self {
         case .managedOff: return "managed_off"
         case .managedUnreadable: return "managed_unreadable"
+        case .managedUnknownKey: return "managed_unknown_key"
         case .managedNotListed: return "managed_not_listed"
         case .notAllowed: return "not_allowed"
         case .expired: return "expired"
@@ -78,7 +103,8 @@ public struct PhysicalDevicePolicy: Equatable, Sendable {
     }
 
     public func decision(platform: DevicePlatform, key: String, now: Date = Date()) -> DeviceDecision {
-        if managed.unreadable { return .refused(.managedUnreadable) }
+        if let key = managed.unreadableKeys.first { return .refused(.managedUnreadable(key)) }
+        if let key = managed.unknownKeys.first { return .refused(.managedUnknownKey(key)) }
         if managed.allowPhysicalDevices == false { return .refused(.managedOff) }
         if !managed.lists(platform: platform, key: key) { return .refused(.managedNotListed) }
         if let listProblem { return .refused(.listUnreadable(listProblem)) }
@@ -92,6 +118,11 @@ public struct PhysicalDevicePolicy: Equatable, Sendable {
     /// Whether agents may drive all of this device: a person chose a test device, and managed policy leaves it so.
     public func drivesWhole(_ allowance: DeviceAllowance) -> Bool {
         allowance.testDevice && managed.testDeviceRefusal == nil
+    }
+
+    /// Why managed policy keeps a test device a person chose from being driven whole, naming the key; nil for any other allowance.
+    public func testDeviceOff(_ allowance: DeviceAllowance) -> String? {
+        allowance.testDevice ? managed.testDeviceRefusal : nil
     }
 
     /// The apps the entry pins, within the managed bundle list; nil when neither limits them.
@@ -127,7 +158,7 @@ public struct PhysicalDevicePolicy: Equatable, Sendable {
         }
         guard permits(app: app, on: allowance) else {
             if managed.allowedBundleIDs.map({ !$0.contains(app) }) ?? false {
-                return "Managed policy on this Mac does not list \(app), and the allow-list cannot override it. Nothing was read or sent."
+                return "\(ManagedRefusalText.sentence(ManagedRefusalText.appNotListed(app))) Nothing was read or sent."
             }
             return "\(app) is not among the apps allowed on \(allowance.name) (\(allowance.key)). Nothing was read or sent."
                 + audience.personStep(DeviceAddPlan.pinCommand(key: allowance.key, keeping: allowance.pinnedApps, adding: app))
@@ -158,14 +189,15 @@ public struct PhysicalDevicePolicy: Equatable, Sendable {
             return .object(fields)
         }
         let held = list.newer.filter { entry in only.map { $0.platform == entry.platform && $0.key == entry.key } ?? true }.map { entry -> OrderedJSON in
-            var refusal: OrderedJSON = .null
-            if case .refused(let why) = decision(platform: entry.platform, key: entry.key, now: now) { refusal = .string(why.code) }
+            var refusal: DeviceRefusal?
+            if case .refused(let why) = decision(platform: entry.platform, key: entry.key, now: now) { refusal = why }
             return .object([
                 ("platform", .string(entry.platform.rawValue)),
                 ("id", .string(entry.key)),
                 ("name", .string(entry.name)),
                 ("active", .bool(false)),
-                ("refusal", refusal),
+                ("refusal", .optional(refusal) { .string($0.code) }),
+                ("key", .optional(refusal?.managedKey) { .string($0) }),
                 ("unknownKeys", .array(entry.unknownKeys.map { .string($0) })),
             ])
         }
@@ -176,8 +208,11 @@ public struct PhysicalDevicePolicy: Equatable, Sendable {
                 ("allowPhysicalDevices", .optional(managed.allowPhysicalDevices) { .bool($0) }),
                 ("allowedDeviceIDs", .optional(managed.allowedDeviceIDs) { .array($0.map { .string($0) }) }),
                 ("allowedBundleIDs", .optional(managed.allowedBundleIDs) { .array($0.map { .string($0) }) }),
+                ("deniedBundleIDs", .optional(managed.deniedBundleIDs) { .array($0.map { .string($0) }) }),
                 ("allowTestDevices", .optional(managed.allowTestDevices) { .bool($0) }),
                 ("unreadable", .bool(managed.unreadable)),
+                ("unreadableKeys", .array(managed.unreadableKeys.map { .string($0) })),
+                ("unknownKeys", .array(managed.unknownKeys.map { .string($0) })),
             ])),
             ("list", .object([
                 ("readable", .bool(listProblem == nil)),
@@ -190,6 +225,7 @@ public struct PhysicalDevicePolicy: Equatable, Sendable {
             if case .refused(let why) = decision(platform: only.platform, key: only.key, now: now) { refusal = why } else { refusal = nil }
             fields.append(("allowed", .bool(refusal == nil)))
             fields.append(("refusal", .optional(refusal) { .string($0.code) }))
+            fields.append(("key", .optional(refusal?.managedKey) { .string($0) }))
         }
         return OrderedJSON.object(fields).rendered() + "\n"
     }

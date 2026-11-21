@@ -50,6 +50,17 @@ struct ErrorHintTests {
         #expect(person.hint == "offsider devices add")
     }
 
+    @Test("a managed refusal names the organisation and the key, says nothing was sent, and sends the person to the administrator")
+    func managedWording() {
+        let off = CLIError.deviceNotAllowed(name: "Test Phone", key: "SERIAL123", refusal: .managedOff, audience: .agent)
+        #expect(off.userFacingDescription == "Your organisation turns off phones on this Mac (allowPhysicalDevices). Nothing was sent to Test Phone (SERIAL123). Ask the administrator of this Mac.")
+        #expect(off.hint == nil)
+        let unlisted = CLIError.deviceNotAllowed(name: nil, key: "SERIAL123", refusal: .managedNotListed, audience: .person)
+        #expect(unlisted.userFacingDescription.hasPrefix("Your organisation does not list this device (allowedDeviceIDs). Nothing was sent to SERIAL123."))
+        let unknown = CLIError.deviceNotAllowed(name: nil, key: "SERIAL123", refusal: .managedUnknownKey("auditDays"), audience: .agent)
+        #expect(unknown.userFacingDescription.contains("(auditDays). Nothing was sent to SERIAL123. Update Offsider (`brew upgrade offsider`), or ask the administrator of this Mac."))
+    }
+
     @Test("an app outside the phone's allowance and a missing team split the same way")
     func appAndTeamWording() {
         let agent = AndroidError.appNotPermitted("SERIAL123", package: "com.example.app", byManagedPolicy: false, audience: .agent)

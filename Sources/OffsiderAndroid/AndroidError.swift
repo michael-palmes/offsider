@@ -617,7 +617,7 @@ public struct AndroidError: LocalizedError, CustomStringConvertible, Equatable, 
         if byManagedPolicy {
             return AndroidError(
                 .appNotAllowed,
-                "\(package), the app this command drives, is not listed by managed policy on this Mac, so Offsider did nothing on \(serial). The allow-list cannot override managed policy; name an app it lists."
+                "\(ManagedRefusalText.sentence(ManagedRefusalText.appNotListed(package))) It is the app this command drives, so Offsider did nothing on \(serial). Name an app your organisation lists."
             )
         }
         return AndroidError(
@@ -635,7 +635,7 @@ public struct AndroidError: LocalizedError, CustomStringConvertible, Equatable, 
         if byManagedPolicy {
             return AndroidError(
                 .otherAppInFront,
-                "\(package) is in front on \(serial), and managed policy on this Mac does not list it, so Offsider did nothing. The allow-list cannot override managed policy; bring an app it lists to the front, then retry."
+                "\(package) is in front on \(serial), and \(ManagedRefusalText.appNotListed(package)), so Offsider did nothing. Bring an app your organisation lists to the front, then retry."
             )
         }
         return AndroidError(

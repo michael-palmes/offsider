@@ -63,9 +63,28 @@ final class EvidenceRecorder {
     /// The caller's run, found once; a run that cannot be read is an error, never no run, so no capture drops its masks.
     func run() throws -> ActiveRun? {
         guard let environment else { return nil }
+        if lookup == nil, case .off = environment.override { noteRunOff(in: environment) }
         let result = lookup ?? Result { try RunRegistry.active(in: environment) }
         lookup = result
         return try result.get()
+    }
+
+    /// Once per process, so `OFFSIDER_RUN=off` never drops a capture from a run without a word; reads the records only when there are any.
+    static var notedRunOff = false
+
+    private func noteRunOff(in environment: EvidenceRunEnvironment) {
+        guard !Self.notedRunOff, !["record-video", "stream-video"].contains(command) else { return }
+        Self.notedRunOff = true
+        guard let directory = try? environment.runsDirectory(), let names = try? FileManager.default.contentsOfDirectory(atPath: directory), !names.isEmpty,
+              let record = try? RunRegistry.record(of: environment) else { return }
+        Console.current.notice(Self.runOffNotice(dir: record.dir))
+    }
+
+    nonisolated static func runOffNotice(dir: String) -> Notice {
+        .note(
+            "OFFSIDER_RUN=off: not recording into \(TerminalText.homePath(dir)), nor applying its masks",
+            agent: "OFFSIDER_RUN=off: not recording into \(dir), nor applying its masks"
+        )
     }
 
     /// The run's masks, added to every capture's own; throws when the run cannot be read.

@@ -271,6 +271,20 @@ struct DoctorDevicePolicyTests {
         let json = try #require(object["policy"] as? [String: Any])
         #expect(json["allowed"] as? Bool == false)
         #expect(json["refusal"] as? String == "not_allowed")
+        #expect(json["key"] is NSNull)
+    }
+
+    @Test("a managed refusal's doctor check and JSON name the key")
+    func managedReport() throws {
+        let policy = DoctorPolicy(platform: .ios, key: PolicyFixtures.phone, decision: .refused(.managedNotListed), managed: true)
+        #expect(policy.check.detail == "\(PolicyFixtures.phone) is blocked: your organisation does not list this device (allowedDeviceIDs); the allow-list cannot override it")
+        #expect(policy.check.hint == "Ask the administrator of this Mac.")
+        let object = try #require(try JSONSerialization.jsonObject(with: JSONEncoder().encode(policy)) as? [String: Any])
+        #expect(object["refusal"] as? String == "managed_not_listed")
+        #expect(object["key"] as? String == "allowedDeviceIDs")
+        let decoded = try JSONDecoder().decode(DoctorPolicy.self, from: JSONEncoder().encode(policy))
+        #expect(decoded == policy)
+        #expect(decoded.check.detail == policy.check.detail)
     }
 
     @Test("an allowed device passes device.policy, unless only OFFSIDER_DEVICE named it")

@@ -308,14 +308,15 @@ struct VideoMaskTests {
         #expect(result.stderr.contains("stream-video will not run while the evidence run masks email addresses"))
     }
 
-    @Test("--unmasked records past the refusal with a warning, as far as the device")
-    func unmaskedReachesDevice() async throws {
+    @Test("--unmasked from an agent with no terminal is refused person_required before its warning or any device work")
+    func unmaskedNeedsPersonForAgent() async throws {
         let result = try await TestHelpers.runOffsiderCommandSeparated(
             "record-video --unmasked --device \(Self.device.rawValue) --json", environment: ["OFFSIDER_MASK_SECURE": "1"]
         )
-        #expect(result.exitCode == 7)
-        #expect(result.stdout.contains(#""reason":"device_not_found""#), "\(result.stdout)")
-        #expect(result.stderr.contains("Warning: --unmasked: nothing in this video is masked"))
+        #expect(result.exitCode == 1)
+        #expect(result.stdout.contains(#""reason":"person_required""#), "\(result.stdout)")
+        #expect(!result.stdout.contains("device_not_found"))
+        #expect(!result.stderr.contains("Warning: --unmasked"))
     }
 }
 

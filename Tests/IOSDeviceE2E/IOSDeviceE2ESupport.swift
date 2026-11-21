@@ -306,6 +306,19 @@ extension IOSDeviceE2E {
         }
     }
 
+    /// Removes the playground and installs it again, which clears every permission iOS holds for it and for no other app.
+    static func reinstallPlayground() async throws {
+        try await ensurePlaygroundInstalled()
+        let udid = try await udid()
+        let workspace = FileManager.default.temporaryDirectory.appendingPathComponent("offsider-ios-device-e2e")
+        let app = try await buildPlayground(team: try team(), derivedData: workspace.appendingPathComponent("DerivedData"))
+        try await devicectl("device uninstall app \(playgroundBundleID)")
+        let install = try await CommandRunner.runSeparated("xcrun devicectl device install app --device \(udid) \(quote(app))", timeout: 300)
+        guard install.exitCode == 0 else {
+            throw IOSDeviceE2EError(description: "devicectl device install app exited \(install.exitCode): \(install.stderr)\(install.stdout)")
+        }
+    }
+
     /// Restarts the playground on one screen and waits until describe-ui shows a node labelled `label`.
     /// The runner's snapshot gives every element on a screen the screen's identifier, so the suites find nodes by label and role.
     static func open(_ screen: String, waitingForLabel label: String) async throws {

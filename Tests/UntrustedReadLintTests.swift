@@ -4,7 +4,10 @@ import Testing
 /// Whole-file reads in `Sources/` go through `UntrustedRead` (or `readOwnedFile` for private files), so a FIFO or a symlink to a device cannot hang or exhaust a command.
 @Suite("Untrusted read lint")
 struct UntrustedReadLintTests {
-    static let patterns = ["FileManager.default.contents(atPath", "Data(contentsOf:", "String(contentsOf"]
+    static let patterns = [
+        "FileManager.default.contents(atPath", "Data(contentsOf:", "String(contentsOf", "NSString(contentsOf", "NSData(contentsOf",
+        "FileHandle(forReadingAtPath", "FileHandle(forReadingFrom", "NSDictionary(contentsOf", "NSArray(contentsOf",
+    ]
 
     /// Sites that read a file Offsider or a trusted tool just wrote in a folder only this user can write, or a bundle Apple signed; each says why.
     static let allowed: [String: String] = [
@@ -14,7 +17,7 @@ struct UntrustedReadLintTests {
         "OffsiderIOSDevice/Runner/RunnerProducts.swift": "private runner build products",
         // The PNG devicectl wrote to a temporary path Offsider created for it.
         "OffsiderIOSDevice/Screen/IOSDeviceScreenshot.swift": "devicectl output in Offsider's temporary file",
-        // simctl output into temporary files Offsider created.
+        // simctl output into temporary files Offsider created, read whole or by its PNG header.
         "Offsider/Utilities/SimctlScreenshot.swift": "simctl output in Offsider's temporary file",
         "Offsider/Platform/IOS/IOSDisplayCatalog.swift": "simctl output and the selected Xcode's device type profile",
         // The agent skill files `init` installs and compares.

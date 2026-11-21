@@ -69,11 +69,9 @@ public enum SimulatorCrashReports {
                 values.isRegularFile == true,
                 let modified = values.contentModificationDate,
                 modified >= since,
-                let handle = try? FileHandle(forReadingFrom: entry)
+                let data = UntrustedRead.contents(atPath: entry.path, maxBytes: prefixBytes, truncate: true),
+                let crash = parse(String(decoding: data, as: UTF8.self), modified: modified)
             else { return nil }
-            defer { try? handle.close() }
-            guard let data = try? handle.read(upToCount: prefixBytes),
-                  let crash = parse(String(decoding: data, as: UTF8.self), modified: modified) else { return nil }
             return SimulatorCrashFile(path: entry.path, modified: modified, crash: crash)
         }
     }

@@ -307,6 +307,42 @@ struct RunTests {
         #expect(throws: CLIError.self) { try fixture.start(variables: ["OFFSIDER_RUN": "off"]) }
     }
 
+    @Test("OFFSIDER_RUN=off beside this session's run says once that the capture is not recorded into it; with no run it says nothing")
+    func runOffNotes() async throws {
+        let fixture = try RunFixture()
+        let backend = try Self.screenshotBackend()
+        let output = ScreenshotMaskTests.temporaryPath()
+        defer {
+            try? FileManager.default.removeItem(atPath: output)
+            EvidenceRecorder.notedRunOff = false
+        }
+        let off = ["OFFSIDER_RUN": "off"]
+        let quiet = ConsoleCapture()
+        EvidenceRecorder.notedRunOff = false
+        try await Console.$current.withValue(quiet.console(out: .agent, err: .agent)) {
+            try await fixture.command(fixture.recorder("screenshot", variables: off)) { _ = try await Self.screenshot(["--output", output], on: backend) }
+        }
+        #expect(!quiet.err.contains("OFFSIDER_RUN=off"))
+
+        _ = try fixture.start()
+        EvidenceRecorder.notedRunOff = false
+        let capture = ConsoleCapture()
+        try await Console.$current.withValue(capture.console(out: .agent, err: .agent)) {
+            for _ in 0..<2 {
+                try await fixture.command(fixture.recorder("screenshot", variables: off)) { _ = try await Self.screenshot(["--output", output], on: backend) }
+            }
+        }
+        #expect(capture.err.components(separatedBy: "Note: OFFSIDER_RUN=off: not recording into \(fixture.folder()), nor applying its masks").count == 2)
+        #expect(fixture.manifest().isEmpty)
+
+        EvidenceRecorder.notedRunOff = false
+        let video = ConsoleCapture()
+        try await Console.$current.withValue(video.console(out: .agent, err: .agent)) {
+            try await fixture.command(fixture.recorder("record-video", variables: off)) { _ = try EvidenceRecorder.current.run() }
+        }
+        #expect(!video.err.contains("OFFSIDER_RUN=off"))
+    }
+
     // MARK: - Start and stop
 
     @Test("starting the same folder again is a no-op, and a different one is run_active")

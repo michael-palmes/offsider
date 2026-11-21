@@ -13,8 +13,8 @@ struct Boot: AsyncParsableCommand, JSONReportingCommand {
 
         The emulator runs detached with its window (use --headless to hide it), always with -no-metrics, and with \
         -no-audio unless --audio: an emulator with host audio can open the Mac's microphone, which drops Bluetooth \
-        headphones to call quality. Its output \
-        goes to $TMPDIR/offsider-boot-<avd>.log. --memory, --no-snapshot-load and --emulator-arg add to that launch; \
+        headphones to call quality. Its output goes to logs/boot-<avd>.log in Offsider's private directory (0600). \
+        --memory, --no-snapshot-load and --emulator-arg add to that launch; \
         --emulator-arg takes only \(EmulatorArguments.allowedNames), each value in its own --emulator-arg, and anything \
         else exits 64 before anything starts. An AVD that is \
         already running is not started again: boot prints its serial, waiting first if it is still booting, and says \

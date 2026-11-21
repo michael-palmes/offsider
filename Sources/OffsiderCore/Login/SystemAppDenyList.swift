@@ -7,6 +7,24 @@ public enum SystemAppDenyList {
         case browser, systemUI, mail, messages, passwords, settings, wallet, photos, health, store, contacts, phone, files, findMy
         /// Named by the managed `deniedBundleIDs` key.
         case managed
+        /// The managed `deniedBundleIDs` key is forced but not a list of strings, so every app is refused.
+        case managedUnreadable
+    }
+
+    /// The managed `deniedBundleIDs` list, or a forced value of the wrong type.
+    public enum ManagedList: Equatable, Sendable, ExpressibleByArrayLiteral {
+        case entries([String])
+        case unreadable
+
+        public init(arrayLiteral elements: String...) { self = .entries(elements) }
+
+        public static func read(from source: any ManagedPreferenceSource) -> ManagedList {
+            switch source.forcedValue(forKey: ManagedDevicePolicy.deniedBundleIDsKey) {
+            case .strings(let values): return .entries(values)
+            case nil: return .entries([])
+            default: return .unreadable
+            }
+        }
     }
 
     static let ios: [String: Category] = [
@@ -106,10 +124,10 @@ public enum SystemAppDenyList {
         ("com.samsung.android.messaging", .messages),
     ]
 
-    /// The managed `deniedBundleIDs` list, read once per process; tests inject one. An entry ending in `.` is a prefix.
-    @TaskLocal public static var managedOverride: [String]?
-    static let managedLive: [String] = ManagedDevicePolicy.read(from: LiveManagedPreferences()).deniedBundleIDs ?? []
-    static var managed: [String] { managedOverride ?? managedLive }
+    /// The managed `deniedBundleIDs` list, read once per process and only that key; tests inject one. An entry ending in `.` is a prefix.
+    @TaskLocal public static var managedOverride: ManagedList?
+    static let managedLive = ManagedList.read(from: LiveManagedPreferences())
+    static var managed: ManagedList { managedOverride ?? managedLive }
 
     /// The category that keeps `appID` off limits on `platform`, or nil when the app may be driven.
     public static func category(of appID: String, platform: DevicePlatform) -> Category? {
@@ -117,8 +135,10 @@ public enum SystemAppDenyList {
         if let category = exact[appID] { return category }
         let prefixes = platform == .ios ? iosPrefixes : androidPrefixes
         if let match = prefixes.first(where: { appID.hasPrefix($0.0) }) { return match.1 }
-        if managed.contains(where: { matches(appID, entry: $0, platform: platform) }) { return .managed }
-        return nil
+        switch managed {
+        case .unreadable: return .managedUnreadable
+        case .entries(let entries): return entries.contains { matches(appID, entry: $0, platform: platform) } ? .managed : nil
+        }
     }
 
     /// A managed entry ending in `.` is a prefix; iOS ids compare without case.
@@ -137,6 +157,8 @@ public enum SystemAppDenyList {
     /// One line for an error message: why Offsider will not act on `appID`.
     public static func refusal(_ appID: String, platform: DevicePlatform) -> String? {
         guard let category = category(of: appID, platform: platform) else { return nil }
+        if category == .managed { return ManagedRefusalText.capitalised(ManagedRefusalText.appDenied(appID)) }
+        if category == .managedUnreadable { return ManagedRefusalText.capitalised(ManagedRefusalText.deniedListUnreadable) }
         let what: String
         switch category {
         case .browser: what = "a browser"
@@ -153,7 +175,7 @@ public enum SystemAppDenyList {
         case .phone: what = "the phone app"
         case .files: what = "the files app"
         case .findMy: what = "the Find My app"
-        case .managed: what = "on your organisation's denied list"
+        case .managed, .managedUnreadable: return nil
         }
         return "\(appID) is \(what), which Offsider never signs in to or drives"
     }

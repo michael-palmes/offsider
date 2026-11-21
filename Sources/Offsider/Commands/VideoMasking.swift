@@ -26,7 +26,7 @@ struct VideoMaskOptions: ParsableArguments {
     @Option(name: .customLong("mask-region"), parsing: .upToNextOption, help: ArgumentHelp("Paint this rectangle, in points as tap takes them, black on every frame; a frame taken in another orientation is replaced by the last good one. Repeatable.", valueName: "x,y,w,h"))
     var maskRegions: [String] = []
 
-    @Flag(name: .customLong("unmasked"), help: "Record although a password field is on screen or the evidence run asks for masks video cannot apply; prints a warning.")
+    @Flag(name: .customLong("unmasked"), help: "Record although a password field is on screen or the evidence run asks for masks video cannot apply; prints a warning. An agent needs a person to confirm it.")
     var unmasked = false
 
     /// The tree-mask flags given, in help order.
@@ -81,7 +81,19 @@ struct VideoMaskOptions: ParsableArguments {
         }
     }
 
-    /// `OFFSIDER_MASK_SECURE=0` turns the password check off, so for an agent a person confirms it, as `screenshot` asks. `--unmasked` has its warning and ask rule instead.
+    /// `--unmasked` can record password fields, so for an agent a person confirms it, as `screenshot --no-mask-secure` asks; before its warning prints.
+    @MainActor
+    func confirmUnmasked(command: String, profile: OutputProfile = .gated) async throws {
+        guard unmasked else { return }
+        try await UnmaskedConsent.confirm(reason: "\(command) with password fields unmasked", refusal: Self.unmaskedRefusal(command: command), profile: profile)
+    }
+
+    static func unmaskedRefusal(command: String) -> String {
+        "\(command) --unmasked can show password fields, so it needs a person when an agent runs it. Nothing was captured. "
+            + "Run it from your own terminal, or use `screenshot`, which masks them."
+    }
+
+    /// `OFFSIDER_MASK_SECURE=0` turns the password check off, so for an agent a person confirms it, as `screenshot` asks; `--unmasked` asked already.
     @MainActor
     func confirmCheckOff(command: String, environment: [String: String] = ProcessInfo.processInfo.environment, profile: OutputProfile = .gated) async throws {
         guard !unmasked, !Screenshot.masksSecure(flag: nil, environment: environment) else { return }
