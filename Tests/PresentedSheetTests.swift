@@ -33,14 +33,19 @@ struct PresentedSheetTests {
         #expect(!process.contains("OffsiderPlayground"))
     }
 
-    @Test("a wait for the screen beneath to go misses and names what is presented")
-    func waitMissNamesPicker() async throws {
+    @Test("a wait for the screen beneath to go passes and names what covers it, and with --allow-offscreen misses and names what is presented")
+    func waitGoneUnderPicker() async throws {
         let simulatorUDID = try TestHelpers.requireSimulatorUDID()
         _ = try await Self.openPicker(simulatorUDID: simulatorUDID)
 
-        let result = try await TestHelpers.runOffsiderCommandSeparated("wait --id presented-sheet-test-open --gone --timeout 1", simulatorUDID: simulatorUDID)
+        let gone = try await TestHelpers.runOffsiderCommandSeparated("wait --id presented-sheet-test-open --gone --timeout 10 --json", simulatorUDID: simulatorUDID)
+        let object = try #require(try JSONSerialization.jsonObject(with: Data(gone.stdout.utf8)) as? [String: Any], "\(gone.stdout) \(gone.stderr)")
+        #expect(gone.exitCode == 0, "\(gone.stderr)")
+        #expect(object["met"] as? Bool == true)
+        #expect((object["reason"] as? String)?.contains(": under ") == true, "\(object["reason"] ?? "no reason")")
 
-        #expect(result.exitCode == 5)
-        #expect(result.stderr.contains("; presented: "), "\(result.stderr)")
+        let held = try await TestHelpers.runOffsiderCommandSeparated("wait --id presented-sheet-test-open --gone --allow-offscreen --timeout 1", simulatorUDID: simulatorUDID)
+        #expect(held.exitCode == 5)
+        #expect(held.stderr.contains("; presented: "), "\(held.stderr)")
     }
 }

@@ -8,6 +8,8 @@ import Testing
 @MainActor
 final class ProbingFakeBackend: FakeDeviceBackend, PointHitTesting, PresentationProbing {
     var probeHit: UINode?
+    /// When set, answers every hit-test, as another process's view drawn over the whole screen.
+    var coverHit: UINode?
     /// How long a probe takes to answer, for a read that stalls.
     var probeDelay: Duration?
     private(set) var probes = 0
@@ -19,6 +21,7 @@ final class ProbingFakeBackend: FakeDeviceBackend, PointHitTesting, Presentation
     func hitTest(at point: UIPoint, on id: DeviceID, appPIDs: Set<Int>) async throws -> UINode? {
         hitTests += 1
         hitPoints.append(point)
+        if let coverHit { return coverHit }
         return try await accessibilityTree(for: id, point: point).roots.first
     }
 
@@ -321,6 +324,47 @@ struct PresentationProbeTests {
 
         #expect(backend.probes == 1)
         #expect(outcome.reason == #"not found; presented: "Cancel""#)
+    }
+
+    /// The home screen still listed beneath a picker another process draws: the app holds only the bare host UIKit adds for it, larger than the screen.
+    static func underPicker() -> (tree: UITree, photo: UINode) {
+        let host = node(.group, frame: FakeUI.frame(0, 0, 402, 874), children: [node(.group, frame: FakeUI.frame(0, 0, 804, 1748))])
+        let tree = UITree(platform: .ios, device: device.rawValue, roots: [
+            node(.application, label: "Playground", frame: FakeUI.frame(0, 0, 402, 874), children: [home.roots[0].children[0], home.roots[0].children[1], host]),
+        ])
+        return (tree, node(.image, label: "Photo 1", frame: FakeUI.frame(134, 400, 134, 134), pid: foreignPID))
+    }
+
+    @Test("a control under a picker another process draws counts as gone and names what covers it, and with --allow-offscreen the wait misses and names what is presented")
+    func controlUnderPickerIsGone() async throws {
+        let (tree, photo) = Self.underPicker()
+        for arguments in [["--gone"], ["--gone", "--timeout", "2"]] {
+            let backend = ProbingFakeBackend(trees: [tree])
+            backend.coverHit = photo
+            backend.probeHit = photo
+            let route = DeviceRouter.Route(backend: backend, device: Self.device)
+            let wait = try Wait.parse(["--id", "home-open"] + arguments + (arguments.contains("--timeout") ? [] : ["--timeout", "0"]) + ["--device", Self.device.rawValue])
+
+            let outcome = try await wait.evaluate(on: route, logger: OffsiderLogger(), clock: ScriptedClock().poll, probesOnMiss: true)
+
+            #expect(outcome.met, "\(arguments): \(outcome.reason)")
+            #expect(outcome.goneBecause == #"under image "Photo 1" (134, 400) 134x134"#, "\(arguments)")
+            #expect(backend.probes == 0)
+        }
+
+        let asserted = ProbingFakeBackend(trees: [tree])
+        asserted.coverHit = photo
+        let assert = try Assert.parse(["--id", "home-open", "--gone", "--device", Self.device.rawValue])
+        let held = try await assert.evaluate(on: DeviceRouter.Route(backend: asserted, device: Self.device), logger: OffsiderLogger(), probesOnMiss: true)
+        #expect(assert.successLine(held) == #"✓ --id 'home-open' is not on screen: under image "Photo 1" (134, 400) 134x134"#)
+
+        let listed = ProbingFakeBackend(trees: [tree])
+        listed.coverHit = photo
+        listed.probeHit = photo
+        let missed = try await Self.wait(["--id", "home-open", "--gone", "--allow-offscreen"], on: listed, probesOnMiss: true)
+        #expect(!missed.met)
+        #expect(missed.reason == #"still on screen; presented: "Photo 1""#)
+        #expect(listed.probes == 1)
     }
 
     @Test("a tap, with or without --verify-id polling for its effect, never probes")
