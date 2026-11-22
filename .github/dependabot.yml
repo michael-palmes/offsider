@@ -16,7 +16,7 @@ updates:
           - "*"
   # Dependabot cannot load the root Package.swift (its binary targets come from scripts/build.sh), so it reads this copy.
   - package-ecosystem: swift
-    directory: /.github/swiftpm-watch
+    directory: /swiftpm-watch
     schedule:
       interval: weekly
       day: monday
