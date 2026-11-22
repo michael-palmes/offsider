@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Offsider release pipeline: stage -> sign -> notarize -> package -> verify -> brew-gate.
+# Offsider release pipeline: stage -> sign -> notarize -> record -> package -> verify -> brew-gate.
 # Consumes build_products/ from `scripts/build.sh xcframeworks` + `scripts/build.sh executable`.
 # Used unchanged by release.yml (Developer ID), ci.yml (--adhoc) and local rehearsals. Bash 3.2 compatible.
 set -euo pipefail
@@ -33,6 +33,8 @@ VERSION=""
 DIST="${REPO_ROOT}/dist"
 STAGE=""
 ARCHIVE=""
+RECORD_DIR=""
+SBOM=""
 SHA256_EXPECTED=""
 URL=""
 ADHOC=0
@@ -56,14 +58,18 @@ Commands:
   stage           Copy build_products into dist/offsider-<v>-arm64, normalise rpaths, sanitise
   sign            Sign inside-out with $OFFSIDER_SIGNING_IDENTITY (hardened runtime, timestamp)
   notarize        notarytool submit --wait ($OFFSIDER_NOTARY_KEY_PATH, $OFFSIDER_NOTARY_KEY_ID, $OFFSIDER_NOTARY_ISSUER_ID)
-  package         Create dist/offsider-<v>-arm64.tar.gz and dist/SHA256SUMS
+  record          Write build-info.txt and offsider-<v>.cdx.json (scripts/sbom.sh) and copy SECURITY.md, beside the tarball
+  package         Create dist/offsider-<v>-arm64.tar.gz and dist/SHA256SUMS (the tarball, then record's three files)
   pack-payload    Create dist/offsider-<v>-arm64-unsigned.tar.gz and dist/PAYLOAD.sha256 from the stage
   unpack-payload  Recreate the stage from the unsigned payload (the signing job); --sha256 checks it first
   unpack-archive  Recreate the stage from the signed tarball (the verify job)
   verify          Extract the tarball and check layout, linkage, signatures, behaviour
   brew-gate       Install the tarball via a throwaway local tap and prove Homebrew changed nothing
   render-formula  Print Formula/offsider.rb for the GitHub release URL
-  rehearse        stage, sign, [notarize], package, verify, brew-gate
+  rehearse        stage, sign, [notarize], record, package, verify, brew-gate
+  check-security  Fail unless line 1 of SECURITY.md reads "**As of version <v>.**"
+  tag             Make the signed tag v<v>: needs check-security to pass, a clean main equal to
+                  origin/main (fetched first) and an unused tag. Never pushes; prints the push command.
 
 Options:
   --version V            Required, except by rehearse (default: git describe, without the leading "v"). No leading "v".
@@ -167,14 +173,20 @@ codesign_retry() {
 
 cs() { codesign_retry --force --sign "$SIGN_ID" --options runtime "$SIGN_TS" "$@"; }
 
-need_version() {
+check_version() {
   local re='^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$'
   [ -n "$VERSION" ] || die "--version is required"
   [[ "$VERSION" =~ $re ]] || die "invalid version '${VERSION}' (no leading v)"
+}
+
+need_version() {
+  check_version
   mkdir -p "$DIST"
   DIST="$(cd "$DIST" && pwd)"
   STAGE="${STAGE:-${DIST}/offsider-${VERSION}-arm64}"
   ARCHIVE="${ARCHIVE:-${DIST}/offsider-${VERSION}-arm64.tar.gz}"
+  RECORD_DIR="$(dirname "$ARCHIVE")"
+  SBOM="${RECORD_DIR}/offsider-${VERSION}.cdx.json"
 }
 
 # SwiftPM's Bundle.module falls back to an absolute .build path baked into the binary. Hide it
@@ -430,16 +442,80 @@ cmd_unpack_archive() {
   unpack_into_stage "$ARCHIVE"
 }
 
+# Line 1 of SECURITY.md names the version it describes; trailing spaces and one CR are let through, nothing else.
+check_security_version() {
+  local file="${REPO_ROOT}/SECURITY.md" line="" want="**As of version ${VERSION}.**"
+  [ -f "$file" ] || die "SECURITY.md not found in ${REPO_ROOT}"
+  IFS= read -r line < "$file" || true
+  line="${line%$'\r'}"
+  while [ "${line% }" != "$line" ]; do line="${line% }"; done
+  [ "$line" = "$want" ] || die "line 1 of SECURITY.md must read '${want}' (it reads '${line}'); change it in the release pull request"
+}
+
+cmd_check_security() {
+  check_version
+  check_security_version
+  log "SECURITY.md names version ${VERSION}"
+}
+
+# What a rebuild would need to know; outside GitHub Actions the runner fields read "local".
+write_build_info() {
+  local pin_url pin_ref commit xcode swift_version macos dex line
+  # shellcheck disable=SC2016
+  pin_url="$(sed -n 's/^IDB_GIT_URL="\${IDB_GIT_URL:-\(https:[^}]*\)}"$/\1/p' "${SCRIPT_DIR}/build.sh")"
+  pin_ref="$(sed -n 's/^DEFAULT_IDB_GIT_REF="\([0-9a-f]\{40\}\)"$/\1/p' "${SCRIPT_DIR}/build.sh")"
+  if [ -z "$pin_url" ] || [ -z "$pin_ref" ]; then die "no idb fork URL or pin in ${SCRIPT_DIR}/build.sh"; fi
+  commit="$(git -C "$REPO_ROOT" rev-parse HEAD)" || die "build-info.txt needs the commit: ${REPO_ROOT} is not a git checkout"
+  git -C "$REPO_ROOT" diff --quiet HEAD || commit="${commit}-dirty"
+  macos="$(sw_vers -productVersion) $(sw_vers -buildVersion)"
+  xcode="$(xcodebuild -version | tr '\n' ' ' | sed 's/ *$//')"
+  swift_version="$(swift --version 2>&1 | sed -n 1p)"
+  dex="$(plutil -extract dex.sha256 raw -o - "$HELPER_MANIFEST_SOURCE")"
+  {
+    echo "version=${VERSION}"
+    echo "commit=${commit}"
+    echo "workflow_ref=${GITHUB_WORKFLOW_REF:-local}"
+    echo "run_id=${GITHUB_RUN_ID:-local}"
+    echo "run_attempt=${GITHUB_RUN_ATTEMPT:-local}"
+    echo "runner_environment=${RUNNER_ENVIRONMENT:-local}"
+    echo "runner_labels=${RELEASE_RUNNER_LABELS:-local}"
+    echo "runner_image=${ImageOS:-local}${ImageVersion:+ ${ImageVersion}}"
+    echo "macos=${macos}"
+    echo "xcode=${xcode}"
+    echo "swift=${swift_version}"
+    echo "idb=${pin_url}@${pin_ref}"
+    echo "helper_dex_sha256=${dex}"
+  } > "${RECORD_DIR}/build-info.txt"
+  while IFS= read -r line; do
+    case "$line" in ?*=?*) ;; *) die "build-info.txt has an empty value: '${line}'" ;; esac
+  done < "${RECORD_DIR}/build-info.txt"
+}
+
+cmd_record() {
+  need_version
+  mkdir -p "$RECORD_DIR"
+  rm -f "${RECORD_DIR}/build-info.txt" "$SBOM" "${RECORD_DIR}/SECURITY.md"
+  write_build_info
+  "${SCRIPT_DIR}/sbom.sh" --version "$VERSION" --output "$SBOM"
+  cp "${REPO_ROOT}/SECURITY.md" "${RECORD_DIR}/SECURITY.md"
+  log "recorded build-info.txt, $(basename "$SBOM") and SECURITY.md in ${RECORD_DIR}"
+}
+
 cmd_package() {
   need_version
+  local f
+  for f in build-info.txt "$(basename "$SBOM")" SECURITY.md; do
+    [ -f "${RECORD_DIR}/${f}" ] || die "missing ${RECORD_DIR}/${f} (run record first)"
+  done
   sanitise "$STAGE"
-  rm -f "$ARCHIVE" "$(dirname "$ARCHIVE")/SHA256SUMS"
+  rm -f "$ARCHIVE" "${RECORD_DIR}/SHA256SUMS"
   # shellcheck disable=SC2086
   COPYFILE_DISABLE=1 /usr/bin/tar --no-mac-metadata --no-xattrs --no-acls --no-fflags \
     --uid 0 --gid 0 --numeric-owner \
     -czf "$ARCHIVE" -C "$STAGE" "$EXE" "$BUNDLE" Frameworks $LICENCE_FILES
-  (cd "$(dirname "$ARCHIVE")" && shasum -a 256 "$(basename "$ARCHIVE")" > SHA256SUMS)
-  log "packaged $(cat "$(dirname "$ARCHIVE")/SHA256SUMS")"
+  (cd "$RECORD_DIR" && shasum -a 256 "$(basename "$ARCHIVE")" build-info.txt "$(basename "$SBOM")" SECURITY.md > SHA256SUMS)
+  log "packaged:"
+  cat "${RECORD_DIR}/SHA256SUMS" >&2
 }
 
 cmd_verify() {
@@ -562,10 +638,33 @@ cmd_rehearse() {
   cmd_stage
   cmd_sign
   if [ "$ADHOC" = 0 ]; then cmd_notarize; CHECK_NOTARIZATION=1; fi
+  cmd_record
   cmd_package
   cmd_verify
   cmd_brew_gate
   log "rehearsal complete: ${ARCHIVE}"
+}
+
+# The release starts when the tag is pushed, and a person pushes it: this stops at the signed tag.
+cmd_tag() {
+  check_version
+  local tag="v${VERSION}" head remote
+  git_repo() { git -C "$REPO_ROOT" "$@"; }
+  [ "$(git_repo symbolic-ref --quiet --short HEAD 2>/dev/null || true)" = main ] \
+    || die "check out main first: a release is tagged on main"
+  [ -z "$(git_repo status --porcelain)" ] || die "the working tree has changes; commit or remove them, then tag"
+  git_repo fetch --quiet --no-tags origin "+refs/heads/main:refs/remotes/origin/main" \
+    || die "could not fetch origin's main, so main cannot be compared with it"
+  head="$(git_repo rev-parse HEAD)"
+  [ "$head" = "$(git_repo rev-parse refs/remotes/origin/main)" ] \
+    || die "main is not origin/main; pull or push until they match, then tag"
+  check_security_version
+  ! git_repo rev-parse --quiet --verify "refs/tags/${tag}" >/dev/null || die "tag ${tag} already exists here"
+  remote="$(git_repo ls-remote --tags origin "refs/tags/${tag}")" || die "could not ask origin whether ${tag} exists"
+  [ -z "$remote" ] || die "tag ${tag} already exists on origin"
+  git_repo tag -s "$tag" -m "Offsider ${VERSION}" || die "could not make the signed tag ${tag}; check git's signing key"
+  log "tagged ${tag} at ${head}; nothing was pushed. Push it to start the release:"
+  echo "git push origin ${tag}"
 }
 
 command_name="${1:-help}"
@@ -605,6 +704,9 @@ case "$command_name" in
   brew-gate) cmd_brew_gate ;;
   render-formula) cmd_render_formula ;;
   rehearse) cmd_rehearse ;;
+  record) cmd_record ;;
+  check-security) cmd_check_security ;;
+  tag) cmd_tag ;;
   help) usage ;;
   *) usage >&2; die "unknown command: ${command_name}" ;;
 esac

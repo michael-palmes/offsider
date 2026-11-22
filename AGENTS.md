@@ -52,7 +52,10 @@ Offsider began as a fork of AXe (`cameroncooke/axe`) v1.8.0 and is developed ind
 | `./scripts/build.sh help` | List build steps (`setup`, `clean`, `generate`, `frameworks`, `install`, `strip`, `xcframeworks`, `dev`, `executable`, `verify-xcframeworks`, `verify-arches`, `helper`, `runner`, `dev-sign`); bare `./scripts/build.sh` prints where to start |
 | `./scripts/build.sh helper` or `make helper` | Rebuild the Android helper dex and manifest after changing `AndroidHelper/`; refuses toolchain drift |
 | `./scripts/build.sh helper --check` or `make helper-check` | Rebuild the helper and compare it with the committed dex and manifest, as CI does |
-| `scripts/release.sh rehearse --version X --adhoc` | Stage, sign, package, verify and Homebrew-gate a local build without secrets; without `--version` it uses `git describe`'s |
+| `scripts/release.sh rehearse --version X --adhoc` | Stage, sign, record, package, verify and Homebrew-gate a local build without secrets; without `--version` it uses `git describe`'s |
+| `scripts/release.sh tag --version X.Y.Z` | Make the signed tag `vX.Y.Z`, only when line 1 of `SECURITY.md` reads `**As of version X.Y.Z.**`, main is clean and equals `origin/main` (fetched first) and the tag is unused here and on origin; it never pushes, it prints the push command for a person |
+| `scripts/release.sh record`, `check-security` | `record` writes `build-info.txt`, the SBOM (`scripts/sbom.sh`, CycloneDX 1.6) and a copy of `SECURITY.md` into `dist/`, which `package` lists in `SHA256SUMS`; `check-security` is the `SECURITY.md` line 1 check alone, as the release build runs it on a tag |
+| `bash scripts/sbom.test.sh` | Test `scripts/sbom.sh` against this checkout: every `Package.resolved` pin, the idb fork, the helper and the run-time frameworks |
 | `scripts/release.sh pack-payload`, `unpack-payload`, `unpack-archive` | Move the unsigned payload and the signed archive between the release workflow's build, sign and verify jobs |
 | `make e2e` or `./test-runner.sh --simulator` | Rebuild idb (unless `OFFSIDER_REUSE_IDB=1`), build Offsider and the playground, run simulator E2E suites (needs XcodeGen) |
 | `./test-runner.sh` | On a person's terminal, a mode picker (phone and iPhone modes never the default); otherwise, and always for an agent, `--simulator`. `--help` lists modes, `--help-env` settings, suites and examples |

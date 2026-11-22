@@ -14,5 +14,16 @@ updates:
       github-actions:
         patterns:
           - "*"
-# Swift packages are not watched: Package.swift declares binary targets under build_products/,
-# which scripts/build.sh produces, so Dependabot cannot load the manifest.
+  # Dependabot cannot load the root Package.swift (its binary targets come from scripts/build.sh), so it reads this copy.
+  - package-ecosystem: swift
+    directory: /.github/swiftpm-watch
+    schedule:
+      interval: weekly
+      day: monday
+    cooldown:
+      default-days: 7
+    open-pull-requests-limit: 5
+    groups:
+      swift:
+        patterns:
+          - "*"
