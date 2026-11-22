@@ -79,7 +79,7 @@ Every store, with where it lives and how long it lasts: [Privacy, What Offsider 
 
 ## Managed Macs
 
-A configuration profile in the domain `com.mpalmes.offsider` sets a ceiling over every person's allow-list: phones off, listed devices only, listed apps only, or apps denied. Offsider reads only forced values and fails closed on a bad one. [Managed Macs](mdm.md) has the five keys, a sample profile and how to verify it.
+A configuration profile in the domain `com.mpalmes.offsider` sets a ceiling over every person's allow-list: phones off, listed devices only, listed apps only, or apps denied. Ten more keys cap what anyone may loosen: masks and redaction kept on, a longest allowance, no saved logins, no `--allow-path`, no `adb reverse`, no device registration, listed Apple teams only, named apps only, no saved unlock codes and no permission changes on phones. Offsider reads only forced values and fails closed on a bad one. [Managed Macs](mdm.md) has every key, a JSON schema, a sample profile and how to verify it, and [Managed harnesses](agents.md#managed-harnesses) has the fragments for a locked-down Claude Code or Codex.
 
 ## How a release is built and proved
 

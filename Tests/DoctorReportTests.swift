@@ -141,6 +141,8 @@ struct DoctorReportTests {
             "install.skill",
             "install.rules",
             "install.deny-rules",
+            "managed.policy",
+            "harness.managed",
         ])
         #expect(DoctorCheckID.allCases.filter(\.isPerSimulator).count == 8)
         #expect(DoctorCheckID.allCases.filter(\.isAndroidHost).count == 7)

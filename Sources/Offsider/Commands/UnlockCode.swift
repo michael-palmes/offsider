@@ -54,6 +54,7 @@ struct UnlockCodeCommand: AsyncParsableCommand {
 
     func run() async throws {
         let parsed = try parsedAction()
+        if parsed == .set { try CLIError.requireManaged(.allowUnlockCodes, outcome: "Nothing was saved.") }
         let device = try Self.deviceKey(deviceOption.id)
         let console = Console.current
         let name = try await console.progress("Looking for the device") {

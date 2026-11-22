@@ -246,7 +246,7 @@ struct DoctorDevicePolicyTests {
         let report = await DevicePolicyGate.$current.withValue(DevicePolicyRoutingTests.gate([])) {
             await doctor.makeReport(host: host)
         }
-        #expect(report.checks.filter { !$0.id.rawValue.hasPrefix("host.") && !$0.id.rawValue.hasPrefix("install.") }.map(\.id) == [.devicePolicy])
+        #expect(report.checks.filter { check in !["host.", "install.", "managed.", "harness."].contains { check.id.rawValue.hasPrefix($0) } }.map(\.id) == [.devicePolicy])
         #expect(report.checks.first?.status == .fail)
         #expect(report.exitCode == .doctorFailures)
         #expect(report.exitCode.rawValue == 4)

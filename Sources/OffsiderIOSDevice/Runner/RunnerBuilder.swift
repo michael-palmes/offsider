@@ -282,7 +282,11 @@ public struct XcodeRunnerBuilder: RunnerBuilding {
     func signing(for destination: RunnerDestination) throws -> Signing {
         let prefix = try Self.resolvePrefix(environment: environment, allowancePrefix: allowancePrefix)
         guard case .device = destination else { return Signing(team: nil, prefix: prefix) }
-        return Signing(team: try Self.resolveTeam(environment: environment, allowanceTeam: allowanceTeam, signedInTeams: signedInTeams()), prefix: prefix)
+        let team = try Self.resolveTeam(environment: environment, allowanceTeam: allowanceTeam, signedInTeams: signedInTeams())
+        if let why = ManagedGate.teamRefusal(team) {
+            throw IOSDeviceError(.managedPolicy, "\(ManagedRefusalText.sentence(why)) The runner was not built. Ask the administrator of this Mac.")
+        }
+        return Signing(team: team, prefix: prefix)
     }
 
     func cacheKey(for destination: RunnerDestination, signing: Signing) throws -> String {
@@ -382,8 +386,12 @@ public struct XcodeRunnerBuilder: RunnerBuilding {
             "OFFSIDER_RUNNER_BUNDLE_PREFIX=\(signing.prefix)",
         ]
         if let team = signing.team {
-            arguments += ["DEVELOPMENT_TEAM=\(team)", "-allowProvisioningUpdates"]
-            if registerDevice { arguments.append("-allowProvisioningDeviceRegistration") }
+            arguments.append("DEVELOPMENT_TEAM=\(team)")
+            // Without the flag xcodebuild signs only with profiles already on this Mac: it creates no App ID, profile or device record.
+            if ManagedGate.refusal(.allowRunnerRegistration) == nil {
+                arguments.append("-allowProvisioningUpdates")
+                if registerDevice { arguments.append("-allowProvisioningDeviceRegistration") }
+            }
         }
         return arguments
     }
@@ -415,7 +423,9 @@ public struct XcodeRunnerBuilder: RunnerBuilding {
                 }
                 // With no account, xcodebuild also says it found no profiles, which reads as a registration failure.
                 if let renewing, Self.accountMissing(output) { throw profileExpired(udid: udid, team: team, expiry: renewing, output: output) }
-                if Self.needsRegistration(output) { throw Self.registrationFailure(udid: udid, team: team, output: output, log: log) }
+                if Self.needsRegistration(output) {
+                    throw Self.registrationFailure(udid: udid, team: team, output: output, log: log, managed: ManagedGate.refusal(.allowRunnerRegistration))
+                }
                 if let renewing { throw profileExpired(udid: udid, team: team, expiry: renewing, output: output) }
             }
             throw Self.failure(detail: "xcodebuild exited \(result.status)", output: output, log: log)
@@ -549,7 +559,7 @@ public struct XcodeRunnerBuilder: RunnerBuilding {
         let signing: Signing
         do {
             signing = try self.signing(for: destination)
-        } catch let error as IOSDeviceError where error.kind == .invalidSetting {
+        } catch let error as IOSDeviceError where error.kind == .invalidSetting || error.kind == .managedPolicy {
             return .unsettled(message: error.message, hint: error.hint)
         } catch {
             return nil
@@ -580,8 +590,14 @@ public struct XcodeRunnerBuilder: RunnerBuilding {
             .contains { text.contains($0) }
     }
 
-    static func registrationFailure(udid: String, team: String, output: String, log: URL) -> IOSDeviceError {
-        IOSDeviceError(
+    static func registrationFailure(udid: String, team: String, output: String, log: URL, managed: String? = nil) -> IOSDeviceError {
+        if let managed {
+            return IOSDeviceError(
+                .managedPolicy,
+                "Building the Offsider runner app failed: \(udid) is not registered with team \(team), or no provisioning profile covers it, and \(managed). Register it in Xcode > Window > Devices and Simulators, or ask the administrator of this Mac.\(tail(output))"
+            )
+        }
+        return IOSDeviceError(
             .runnerBuildFailed,
             "Building the Offsider runner app failed: \(udid) is not registered with team \(team), or no provisioning profile covers it. A person registers it by running `offsider runner build --register-device --device \(udid)` in their own terminal, or in Xcode > Window > Devices and Simulators.\(tail(output))",
             hint: "offsider runner build --register-device --device \(udid)"

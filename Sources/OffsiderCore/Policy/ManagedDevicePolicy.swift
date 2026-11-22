@@ -5,6 +5,7 @@ import Foundation
 public enum ManagedPreferenceValue: Equatable, Sendable {
     case bool(Bool)
     case strings([String])
+    case integer(Int)
     /// Forced, but not a type Offsider reads.
     case unreadable
 }
@@ -30,6 +31,11 @@ public struct LiveManagedPreferences: ManagedPreferenceSource {
     public func forcedValue(forKey key: String) -> ManagedPreferenceValue? {
         let domain = self.domain as CFString
         guard CFPreferencesAppValueIsForced(key as CFString, domain), let value = CFPreferencesCopyAppValue(key as CFString, domain) else { return nil }
+        return Self.value(of: value)
+    }
+
+    /// A plist value as a managed preference: a boolean, a whole number or strings; a real number, a string or a mixed array is unreadable.
+    static func value(of value: CFPropertyList) -> ManagedPreferenceValue {
         if CFGetTypeID(value) == CFBooleanGetTypeID() {
             return .bool(CFBooleanGetValue(unsafeBitCast(value, to: CFBoolean.self)))
         }
@@ -37,7 +43,24 @@ public struct LiveManagedPreferences: ManagedPreferenceSource {
             let strings = items.compactMap { $0 as? String }
             return strings.count == items.count ? .strings(strings) : .unreadable
         }
+        if CFGetTypeID(value) == CFNumberGetTypeID(), let number = value as? NSNumber, !CFNumberIsFloatType(number), let count = Int(exactly: number) {
+            return .integer(count)
+        }
         return .unreadable
+    }
+
+    /// A forced string, as another program's managed domain may hold; nil when absent, not forced or not a string.
+    public func forcedText(forKey key: String) -> String? {
+        let domain = self.domain as CFString
+        guard CFPreferencesAppValueIsForced(key as CFString, domain) else { return nil }
+        return CFPreferencesCopyAppValue(key as CFString, domain) as? String
+    }
+
+    /// The lists of strings in a forced dictionary, as another program's `permissions` holds its rules; empty when absent or not forced.
+    public func forcedLists(forKey key: String) -> [String: [String]] {
+        let domain = self.domain as CFString
+        guard CFPreferencesAppValueIsForced(key as CFString, domain), let members = CFPreferencesCopyAppValue(key as CFString, domain) as? [String: Any] else { return [:] }
+        return members.compactMapValues { $0 as? [String] }
     }
 
     /// `CFPreferencesCopyKeyList` leaves out managed keys, so this filters the merged view; about a millisecond, read on the physical path only.
@@ -60,6 +83,10 @@ public enum ManagedRefusalText {
     public static func appsLimited(_ key: String) -> String { "your organisation limits the apps on this Mac (\(key))" }
     public static func unreadable(_ key: String) -> String { "your organisation's setting could not be read, so Offsider refuses every phone (\(key))" }
     public static func unknown(_ key: String) -> String { "your organisation sets a setting this Offsider does not know, so it refuses every phone (\(key))" }
+    public static func teamNotListed(_ team: String) -> String { "your organisation does not list team \(team) (allowedTeamIDs)" }
+    public static func allowanceCapped(days: Int) -> String { "your organisation limits an allowance to \(ManagedCeilings.days(days)) (maxAllowanceDays)" }
+    /// A ceiling of the wrong type, read where no phone is named, so the strictest value holds.
+    public static func strictest(_ key: String) -> String { "your organisation's setting could not be read, so Offsider keeps its strictest value (\(key))" }
     /// `deniedBundleIDs` of the wrong type, where `login` and `credential` read it for any device.
     public static let deniedListUnreadable = "your organisation's setting could not be read, so Offsider refuses every app (deniedBundleIDs)"
 
@@ -84,6 +111,7 @@ public struct ManagedDevicePolicy: Equatable, Sendable {
     public let allowedBundleIDs: [String]?
     public let deniedBundleIDs: [String]?
     public let allowTestDevices: Bool?
+    public let ceilings: ManagedCeilings
     /// Forced keys holding a value of the wrong type, in `knownKeys` order.
     public let unreadableKeys: [String]
     /// Forced keys this build does not know, perhaps set for a newer Offsider, sorted.
@@ -91,21 +119,22 @@ public struct ManagedDevicePolicy: Equatable, Sendable {
 
     public init(
         allowPhysicalDevices: Bool? = nil, allowedDeviceIDs: [String]? = nil, allowedBundleIDs: [String]? = nil, deniedBundleIDs: [String]? = nil,
-        allowTestDevices: Bool? = nil, unreadableKeys: [String] = [], unknownKeys: [String] = []
+        allowTestDevices: Bool? = nil, ceilings: ManagedCeilings = .none, unreadableKeys: [String] = [], unknownKeys: [String] = []
     ) {
         self.allowPhysicalDevices = allowPhysicalDevices
         self.allowedDeviceIDs = allowedDeviceIDs
         self.allowedBundleIDs = allowedBundleIDs
         self.deniedBundleIDs = deniedBundleIDs
         self.allowTestDevices = allowTestDevices
-        self.unreadableKeys = unreadableKeys
+        self.ceilings = ceilings
+        self.unreadableKeys = unreadableKeys + ceilings.unreadableKeys
         self.unknownKeys = unknownKeys
     }
 
     public static let none = ManagedDevicePolicy()
 
     /// The keys this build honours.
-    public static let knownKeys = [allowPhysicalDevicesKey, allowedDeviceIDsKey, allowedBundleIDsKey, deniedBundleIDsKey, allowTestDevicesKey]
+    public static let knownKeys = [allowPhysicalDevicesKey, allowedDeviceIDsKey, allowedBundleIDsKey, deniedBundleIDsKey, allowTestDevicesKey] + ManagedCeilings.keys
 
     /// `PayloadUUID` and its kin, which some MDM tools leave beside the settings; never an Offsider key.
     static func isProfileMetadata(_ key: String) -> Bool { key.hasPrefix("Payload") }
@@ -116,7 +145,7 @@ public struct ManagedDevicePolicy: Equatable, Sendable {
     /// True when any key is forced.
     public var present: Bool {
         allowPhysicalDevices != nil || allowedDeviceIDs != nil || allowedBundleIDs != nil || deniedBundleIDs != nil || allowTestDevices != nil
-            || unreadable || !unknownKeys.isEmpty
+            || ceilings.present || unreadable || !unknownKeys.isEmpty
     }
 
     /// Why a test device is only a plain Any app allowance on this Mac; nil when it may be driven whole.
@@ -124,6 +153,7 @@ public struct ManagedDevicePolicy: Equatable, Sendable {
         guard present else { return nil }
         if allowedBundleIDs != nil { return ManagedRefusalText.appsLimited(Self.allowedBundleIDsKey) }
         if deniedBundleIDs != nil { return ManagedRefusalText.appsLimited(Self.deniedBundleIDsKey) }
+        if let pins = ceilings.refusal(.requirePinnedApps) { return pins }
         return allowTestDevices == true ? nil : ManagedRefusalText.testDevicesOff
     }
 
@@ -155,8 +185,28 @@ public struct ManagedDevicePolicy: Equatable, Sendable {
         let unknown = source.forcedKeys().filter { !knownKeys.contains($0) && !isProfileMetadata($0) }.sorted()
         return ManagedDevicePolicy(
             allowPhysicalDevices: allow, allowedDeviceIDs: devices, allowedBundleIDs: bundles, deniedBundleIDs: denied, allowTestDevices: testDevices,
-            unreadableKeys: unreadable, unknownKeys: unknown
+            ceilings: ManagedCeilings.read(from: source), unreadableKeys: unreadable, unknownKeys: unknown
         )
+    }
+
+    /// Every forced key as `key=value`, in `knownKeys` order, then the keys that refuse every phone, for `doctor`.
+    public var inForce: [String] {
+        let lists = [(Self.allowedDeviceIDsKey, allowedDeviceIDs), (Self.allowedBundleIDsKey, allowedBundleIDs), (Self.deniedBundleIDsKey, deniedBundleIDs)]
+        let own = unreadableKeys.filter { !ceilings.unreadableKeys.contains($0) }.map { "\($0)=unreadable" }
+            + (allowPhysicalDevices.map { ["\(Self.allowPhysicalDevicesKey)=\($0)"] } ?? [])
+            + lists.compactMap { key, values in values.map { "\(key)=[\($0.joined(separator: ", "))]" } }
+            + (allowTestDevices.map { ["\(Self.allowTestDevicesKey)=\($0)"] } ?? [])
+        return own + ceilings.inForce + unknownKeys.map { "\($0)=unknown" }
+    }
+
+    /// `doctor`'s `managed.policy`: the keys in force, failing when one cannot be honoured.
+    public var doctorVerdict: DoctorRules.Verdict {
+        guard present else { return (.skip, "No key is forced on this Mac", nil) }
+        let detail = inForce.joined(separator: ", ")
+        if unreadable || !unknownKeys.isEmpty {
+            return (.fail, "\(detail); a key Offsider cannot read or does not know refuses every phone", "Ask the administrator of this Mac.")
+        }
+        return (.pass, detail, nil)
     }
 
     /// Whether the managed list names the device; UDIDs compare without case.
