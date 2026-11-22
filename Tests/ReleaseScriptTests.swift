@@ -343,7 +343,7 @@ struct ReleaseScriptTests {
         var origin: URL { base.appendingPathComponent("origin.git") }
         var script: URL { work.appendingPathComponent("scripts/release.sh") }
 
-        init(securityLine: String = "**As of version 1.2.3.**\n") throws {
+        init(securityLine: String = "**As of version 1.2.3.**\n", trustsItsKey: Bool = true) throws {
             base = FileManager.default.temporaryDirectory.appendingPathComponent("offsider-release-tag-\(UUID().uuidString)")
             try FileManager.default.createDirectory(at: work.appendingPathComponent("scripts"), withIntermediateDirectories: true)
             try FileManager.default.copyItem(at: ReleaseScriptTests.root.appendingPathComponent("scripts/release.sh"), to: script)
@@ -356,6 +356,20 @@ struct ReleaseScriptTests {
             try keygen.run()
             keygen.waitUntilExit()
             try #require(keygen.terminationStatus == 0)
+
+            let trusted = trustsItsKey ? "key" : "other-key"
+            if !trustsItsKey {
+                let other = Process()
+                other.executableURL = URL(fileURLWithPath: "/usr/bin/ssh-keygen")
+                other.arguments = ["-q", "-t", "ed25519", "-N", "", "-C", "someone-else", "-f", base.appendingPathComponent("other-key").path]
+                other.standardOutput = Pipe()
+                try other.run()
+                other.waitUntilExit()
+                try #require(other.terminationStatus == 0)
+            }
+            let publicKey = try String(contentsOf: base.appendingPathComponent("\(trusted).pub"), encoding: .utf8)
+            try FileManager.default.createDirectory(at: work.appendingPathComponent(".github"), withIntermediateDirectories: true)
+            try Data("release-test@localhost namespaces=\"git\" \(publicKey)".utf8).write(to: work.appendingPathComponent(".github/allowed_signers"))
 
             try FileManager.default.createDirectory(at: origin, withIntermediateDirectories: true)
             try ReleaseScriptTests.git(origin, "init", "-q", "--bare", "-b", "main")
@@ -405,6 +419,18 @@ struct ReleaseScriptTests {
         let signers = fixture.base.appendingPathComponent("allowed_signers")
         try Data("release-test@localhost namespaces=\"git\" \(publicKey)".utf8).write(to: signers)
         try Self.git(fixture.work, "-c", "gpg.ssh.allowedSignersFile=\(signers.path)", "verify-tag", "v1.2.3")
+        #expect(try fixture.tags(in: fixture.origin).isEmpty)
+    }
+
+    @Test("tag deletes a tag whose key main's allowed_signers does not list, and says how to fix the signing key")
+    func tagRefusesAnUnlistedKey() throws {
+        let fixture = try TagFixture(trustsItsKey: false)
+        defer { fixture.remove() }
+        let result = try fixture.tag()
+        #expect(result.status == 1)
+        #expect(result.stderr.contains("tag v1.2.3 is not signed by a key in main's .github/allowed_signers, so it was deleted; set git's user.signingkey to that key"))
+        #expect(result.stdout.isEmpty)
+        #expect(try fixture.tags(in: fixture.work).isEmpty)
         #expect(try fixture.tags(in: fixture.origin).isEmpty)
     }
 

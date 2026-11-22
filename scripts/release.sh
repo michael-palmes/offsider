@@ -684,7 +684,7 @@ cmd_rehearse() {
 # The release starts when the tag is pushed, and a person pushes it: this stops at the signed tag.
 cmd_tag() {
   check_version
-  local tag="v${VERSION}" head remote
+  local tag="v${VERSION}" head remote signers
   git_repo() { git -C "$REPO_ROOT" "$@"; }
   [ "$(git_repo symbolic-ref --quiet --short HEAD 2>/dev/null || true)" = main ] \
     || die "check out main first: a release is tagged on main"
@@ -698,7 +698,15 @@ cmd_tag() {
   ! git_repo rev-parse --quiet --verify "refs/tags/${tag}" >/dev/null || die "tag ${tag} already exists here"
   remote="$(git_repo ls-remote --tags origin "refs/tags/${tag}")" || die "could not ask origin whether ${tag} exists"
   [ -z "$remote" ] || die "tag ${tag} already exists on origin"
+  signers="$(mktemp)"
+  add_cleanup "rm -f $(printf %q "$signers")"
+  git_repo show "${head}:.github/allowed_signers" > "$signers" 2>/dev/null || die "main has no .github/allowed_signers, so the tag's signer cannot be checked"
   git_repo tag -s "$tag" -m "Offsider ${VERSION}" || die "could not make the signed tag ${tag}; check git's signing key"
+  # The release build checks the same way, against main's allowed_signers, so a tag that fails here would fail there.
+  if ! git_repo -c gpg.ssh.allowedSignersFile="$signers" -c gpg.minTrustLevel=fully verify-tag "$tag" >/dev/null 2>&1; then
+    git_repo tag -d "$tag" >/dev/null 2>&1 || true
+    die "tag ${tag} is not signed by a key in main's .github/allowed_signers, so it was deleted; set git's user.signingkey to that key (or add yours there in a signed pull request), then tag again"
+  fi
   log "tagged ${tag} at ${head}; nothing was pushed. Push it to start the release:"
   echo "git push origin ${tag}"
 }
