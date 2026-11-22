@@ -79,7 +79,31 @@ struct AppExitTests {
         )
 
         #expect(outcome.met == gone)
+        #expect(backend.livenessReads.count == (gone ? 2 : 1))
+    }
+
+    @Test("on Android a --gone pass asks once, as a process kept after its screen goes is the app still running")
+    func goneOnAndroidAsksOnce() async throws {
+        let backend = FakeDeviceBackend(platform: .android, trees: [])
+        backend.livenessReadings = [.running(AppProcess(pid: 100)), .notRunning]
+        let check = AppExitCheck(reader: backend, device: DeviceID(rawValue: "emulator-5554", platform: .android), sleep: { _ in })
+
+        try await check.check(ShownApp(pid: nil, appID: "com.example.playground"), latest: nil, exiting: true)
+
         #expect(backend.livenessReads.count == 1)
+    }
+
+    @Test("--gone met as the app quits waits for its process to end: still found on the first read, gone on the next two, it exits 1 app_stopped")
+    func goneWhileTheAppExits() async throws {
+        let backend = FakeDeviceBackend(trees: [])
+        backend.livenessReadings = [.running(AppProcess(pid: 100)), .notRunning]
+
+        let error = await #expect(throws: AppExitError.self) {
+            try await WaitLoop.run(.element(probe: Self.probe, gone: true), timeout: 1, interval: 0.25, sources: Self.sources([Self.app(pid: 100, [Self.save]), Self.home], backend: backend))
+        }
+
+        #expect(error?.reason == .appStopped)
+        #expect(backend.livenessReads.count == 3)
     }
 
     @Test("reads of the same app make no liveness read, met or timed out")

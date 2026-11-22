@@ -23,6 +23,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Fixed
 
+- `wait --gone` and `assert --gone` on an iOS simulator no longer pass when the app quits mid-wait: a `--gone` about to pass on another app's screen asks again 1 s later when the app's process still shows, and exits 1 (`app_stopped` or `app_crashed`) once it has ended.
 - A `key-sequence` that spells text on an iOS simulator is now read back from the focused field, as on Android, in `batch` too: keys the field never showed exit 5 (`text_not_accepted`) instead of passing.
 - `key-sequence --delay 0` on an emulator over gRPC no longer exits before Android has taken its keys, which let a read straight after miss them: keys sent less than 50 ms apart go in bursts of 15 presses, each once Android has taken the last, and keys it never takes exit 5 (`text_not_accepted`).
 - `type` and a `key-sequence` of text keys on a phone, iPhone or iPad no longer treat a refused read as an unreadable screen. When the read before the keys is refused (another app or a system prompt in front, a locked screen, a pulled cable, no app named or an app outside the allowance), nothing is sent and the command exits with that refusal, where it used to warn that the text went out unchecked and open the input session. On an iPhone or iPad test device with `--app`, whose keys go through the session broker with no front-app check, text could reach whatever app was in front.
