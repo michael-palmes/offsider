@@ -68,7 +68,7 @@ struct AppPrefsCommand: AsyncParsableCommand {
     }
 
     static func summary(_ storage: AppKeyStore) -> String {
-        storage.unread.map { "not read (\($0))" } ?? count(storage.keys.count, "key")
+        storage.unread.map { "not read (\($0.rawValue))" } ?? count(storage.keys.count, "key")
     }
 
     static func person(_ preferences: AppPreferences) -> [Block] {
@@ -94,12 +94,14 @@ struct AppPrefsCommand: AsyncParsableCommand {
         let stop = "offsider app stop --app \(preferences.app) --device \(device.rawValue)"
         switch storage.unread {
         case nil: break
-        case "changing": notices.append(.warning("\(storage.database) changed twice while it was read, so its keys are not listed. Stop the app, then run this again", try: stop))
-        case "unfinished": notices.append(.warning("\(storage.database) has a write the app did not finish, so its keys are not listed. Run this again; if it repeats, open the app once"))
-        case "utf16": notices.append(.warning("\(storage.database) stores text as UTF-16, which is not read, so its keys are not listed"))
-        case "schema": notices.append(.warning("\(storage.database) is not laid out as AsyncStorage's database, so its keys are not listed"))
-        case "large": notices.append(.warning("\(storage.database) is too large to list, so its keys are not listed"))
-        default: notices.append(.warning("\(storage.database) could not be read as a SQLite database, so its keys are not listed"))
+        case .changing: notices.append(.warning("\(storage.database) changed twice while it was read, so its keys are not listed. Stop the app, then run this again", try: stop))
+        case .unfinished: notices.append(.warning("\(storage.database) has a write the app did not finish, so its keys are not listed. Run this again; if it repeats, open the app once"))
+        case .utf16: notices.append(.warning("\(storage.database) stores text as UTF-16, which is not read, so its keys are not listed"))
+        case .schema: notices.append(.warning("\(storage.database) is not laid out as AsyncStorage's own database, so its keys are not listed"))
+        case .large: notices.append(.warning("\(storage.database) is too large to list, so its keys are not listed"))
+        case .format: notices.append(.warning("\(storage.database) is not a SQLite database Offsider can read (it may be encrypted), so its keys are not listed"))
+        case .corrupt: notices.append(.warning("\(storage.database) has a page that does not add up, so its keys are not listed"))
+        case .failed: notices.append(.warning("\(device.rawValue) did not answer while \(storage.database) was read, so its keys are not listed. Run this again"))
         }
         if storage.cut > 0 {
             notices.append(.note("\(count(storage.cut, "key name")) too long to read whole, shown cut short"))

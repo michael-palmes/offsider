@@ -30,6 +30,8 @@ enum AndroidAsyncStorage {
     static let frameMarker = "\(AndroidAppPackage.marker) frame "
     static let endMarker = "\(AndroidAppPackage.marker) end"
     static let pagesPerCall = 64
+    /// The header bytes that fix where every page starts and ends: page size, format versions and reserved bytes.
+    static let layoutRange = 16..<21
     static let maximumFrames = 1_024
     /// A rollback journal that starts with this is a write the app has not finished.
     static let journalMagic: [UInt8] = [0xd9, 0xd5, 0x05, 0xf9, 0x20, 0xa1, 0x63, 0xd7]
@@ -64,8 +66,9 @@ enum AndroidAsyncStorage {
         """)
     }
 
-    /// The device reads each page once and prints it only if it is the schema leaf (`schema`) or an index page, so a table page cannot leave even if the app rewrote the file since the last call. It prints the page's header, cell pointers and cells, never the free space between them, which can hold bytes a table page left behind, nor the reserved bytes after them.
-    static func pagesScript(package: String, store: Store, pageSize: Int, usable: Int, schema: Bool, sources: [Source]) -> String {
+    /// The device reads each page once and prints it only if it is the schema leaf (`schema`) or an index page, so a table page cannot leave even if the app rewrote the file since the last call. It reads nothing unless the file's page size and reserved bytes (`layout`, header bytes 16 to 20) are still the ones these offsets were worked out for. It prints the page's header, cell pointers and cells, never the free space between them, which can hold bytes a table page left behind, nor the reserved bytes after them.
+    static func pagesScript(package: String, store: Store, header: SQLiteKeyIndex.Header, layout: [UInt8], schema: Bool, sources: [Source]) -> String {
+        let (pageSize, usable) = (header.pageSize, header.usableSize)
         let base = schema ? SQLiteKeyIndex.headerBytes : 0
         let requests = sources.map { "p \(store.database)\($0.log ? "-wal" : "") \($0.offset)" }.joined(separator: "\n")
         return wrapped(package: package, store: store, """
@@ -78,7 +81,9 @@ enum AndroidAsyncStorage {
           [ "$e" -le "$c" ] && [ "$c" -le \(usable) ] || { echo '\(pageMarker)refused'; return 0; }
           echo "\(pageMarker)${h:0:$((e*2))}:$c:${h:$((c*2)):$(((\(usable)-c)*2))}"
         }
+        if [ "$(x \(store.database) \(layoutRange.lowerBound) \(layoutRange.count))" = \(hex(layout)) ]; then
         \(requests)
+        fi
         """)
     }
 
@@ -106,8 +111,11 @@ enum AndroidAsyncStorage {
         }
     }
 
-    static func stamps(_ stdout: String) -> [Stamp] {
-        stamps(stdout.split(whereSeparator: \.isNewline))
+    /// The probe's stamps: only the lines after the preference listing's last closing marker, as the lines before it carry file names the app chose.
+    static func stamps(afterPreferences stdout: String) -> [Stamp] {
+        let lines = stdout.split(whereSeparator: \.isNewline)
+        guard let done = lines.lastIndex(where: { $0 == AndroidAppPackage.prefsDoneMarker }) else { return [] }
+        return stamps(Array(lines[(done + 1)...]))
     }
 
     /// A page as the device printed it, `<header and pointers>:<cell content offset>:<cells>`, with zeros for the free space between and the reserved bytes after. Nil for a refusal or anything out of shape.
@@ -129,6 +137,10 @@ enum AndroidAsyncStorage {
         return bytes
     }
 
+    static func hex(_ bytes: [UInt8]) -> String {
+        bytes.map { ($0 < 16 ? "0" : "") + String($0, radix: 16) }.joined()
+    }
+
     private static func nibble(_ digit: UInt8) -> UInt8? {
         switch digit {
         case UInt8(ascii: "0")...UInt8(ascii: "9"): digit - UInt8(ascii: "0")
@@ -141,7 +153,7 @@ enum AndroidAsyncStorage {
 
     private enum Stop: Error {
         case changed(Stamp?)
-        case unread(String)
+        case unread(AppKeyStore.Unread)
     }
 
     /// The store's key names, read through `shell`, which runs one script and returns its stdout. A database that changes during the read is read once more; nothing here throws, so a failure never costs the caller its preference listing.
@@ -156,12 +168,26 @@ enum AndroidAsyncStorage {
             } catch Stop.unread(let word) {
                 return AppKeyStore(database: store.database, keys: [], unread: word)
             } catch let failure as SQLiteKeyIndex.Failure {
-                return AppKeyStore(database: store.database, keys: [], unread: failure.rawValue)
+                return AppKeyStore(database: store.database, keys: [], unread: AppKeyStore.Unread(rawValue: failure.rawValue) ?? .failed)
             } catch {
-                return AppKeyStore(database: store.database, keys: [], unread: "failed")
+                return AppKeyStore(database: store.database, keys: [], unread: .failed)
             }
         }
-        return AppKeyStore(database: store.database, keys: [], unread: "changing")
+        return AppKeyStore(database: store.database, keys: [], unread: .changing)
+    }
+
+    /// The first database that reads; one that is not AsyncStorage's shape gives way to the next, as an app may keep a file of its own under either name. `other` names a database left out.
+    @MainActor
+    static func read(found: [Stamp], package: String, shell: (String) async throws -> String) async -> AppKeyStore? {
+        var first: AppKeyStore?
+        for store in stores {
+            guard let stamp = found.first(where: { $0.database == store.database }) else { continue }
+            var keys = await read(stamp, store: store, package: package, shell: shell)
+            keys.other = found.first { $0.database != store.database }?.database
+            guard let unread = keys.unread, [.format, .utf16, .schema].contains(unread) else { return keys }
+            first = first ?? keys
+        }
+        return first
     }
 
     /// Masked and cut as a preference key is; a name its page held only the start of always ends in an ellipsis.
@@ -176,11 +202,11 @@ enum AndroidAsyncStorage {
     @MainActor
     private static func keys(_ stamp: Stamp, store: Store, package: String, shell: (String) async throws -> String) async throws -> [SQLiteKeyIndex.Key] {
         let header = try SQLiteKeyIndex.header(stamp.header)
-        guard stamp.journal != journalMagic else { throw Stop.unread("unfinished") }
+        guard stamp.journal != journalMagic else { throw Stop.unread(.unfinished) }
 
         func ask(_ script: String) async throws -> [Substring] {
             let lines = try await shell(script).split(whereSeparator: \.isNewline)
-            guard lines.last == Substring(endMarker) else { throw Stop.unread("failed") }
+            guard lines.last == Substring(endMarker) else { throw Stop.unread(.failed) }
             let latest = stamps(lines).first { $0.database == store.database }
             guard latest == stamp else { throw Stop.changed(latest) }
             return lines
@@ -192,15 +218,15 @@ enum AndroidAsyncStorage {
             guard count <= maximumFrames else { throw SQLiteKeyIndex.Failure.large }
             if count > 0 {
                 let printed = try await ask(framesScript(package: package, store: store, pageSize: header.pageSize, count: count)).filter { $0.hasPrefix(frameMarker) }
-                frames = printed.map { bytes(hex: $0.dropFirst(frameMarker.count)) ?? [] }
-                guard frames.count == count else { throw Stop.unread("failed") }
+                frames = printed.compactMap { bytes(hex: $0.dropFirst(frameMarker.count)) }.filter { $0.count == SQLiteKeyIndex.WriteAheadLog.frameHeaderBytes }
+                guard frames.count == count, printed.count == count else { throw Stop.unread(.failed) }
             }
         }
         let log = SQLiteKeyIndex.WriteAheadLog(header: stamp.logHeader, frameHeaders: frames, pageSize: header.pageSize)
 
         func fetch(_ numbers: [Int], schema: Bool) async throws -> [[UInt8]] {
             let sources = numbers.map { number in log.offset(of: number).map { Source(log: true, offset: $0) } ?? Source(log: false, offset: (number - 1) * header.pageSize) }
-            let printed = try await ask(pagesScript(package: package, store: store, pageSize: header.pageSize, usable: header.usableSize, schema: schema, sources: sources)).filter { $0.hasPrefix(pageMarker) }
+            let printed = try await ask(pagesScript(package: package, store: store, header: header, layout: Array(stamp.header[layoutRange]), schema: schema, sources: sources)).filter { $0.hasPrefix(pageMarker) }
             let pages = printed.compactMap { page($0.dropFirst(pageMarker.count), pageSize: header.pageSize, usable: header.usableSize) }
             guard printed.count == numbers.count, pages.count == numbers.count else { throw schema ? SQLiteKeyIndex.Failure.schema : SQLiteKeyIndex.Failure.corrupt }
             return pages

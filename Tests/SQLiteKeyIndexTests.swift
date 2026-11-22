@@ -7,7 +7,7 @@ struct SQLiteFixture {
     static let folder = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("Fixtures/sqlite")
     /// In every value of every fixture, so it must never show in anything read from one.
     static let canary = "OFFSIDER-CANARY-VALUE-5e1d7c"
-    static let all = ["legacy.db", "room.db", "two-level.db", "deep.db", "overflow.db", "empty.db", "utf16.db", "without-rowid.db", "value-first.db", "reused.db", "wal.db", "wal-restarted.db"]
+    static let all = ["legacy.db", "room.db", "two-level.db", "deep.db", "overflow.db", "empty.db", "utf16.db", "without-rowid.db", "value-first.db", "value-index.db", "rowless-neighbour.db", "reused.db", "wal.db", "wal-restarted.db"]
 
     let name: String
     let table: String
@@ -130,6 +130,8 @@ struct SQLiteKeyIndexTests {
         #expect(throws: SQLiteKeyIndex.Failure.utf16) { try SQLiteFixture("utf16.db").read() }
         #expect(throws: SQLiteKeyIndex.Failure.schema) { try SQLiteFixture("without-rowid.db").read() }
         #expect(throws: SQLiteKeyIndex.Failure.schema) { try SQLiteFixture("value-first.db").read() }
+        #expect(throws: SQLiteKeyIndex.Failure.schema) { try SQLiteFixture("value-index.db").read() }
+        #expect(throws: SQLiteKeyIndex.Failure.schema) { try SQLiteFixture("rowless-neighbour.db").read() }
         let legacy = try SQLiteFixture("legacy.db")
         let header = try SQLiteKeyIndex.header(legacy.database)
         #expect(throws: SQLiteKeyIndex.Failure.schema) { try SQLiteKeyIndex.keyIndexRoot(schemaPage: Array(legacy.database.prefix(4096)), header: header, table: "Storage") }
@@ -224,6 +226,18 @@ struct SQLiteKeyIndexTests {
             } catch {
                 #expect(!"\(error)".contains("CANARY"), "\(name)")
             }
+        }
+    }
+
+    @Test("every word the reader fails with is one app prefs reports, and each is in the docs")
+    func unreadWords() throws {
+        for failure in SQLiteKeyIndex.Failure.allCases {
+            #expect(AppKeyStore.Unread(rawValue: failure.rawValue) != nil, "\(failure)")
+        }
+        let page = SQLiteFixture.folder.deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent().appendingPathComponent("docs/device-state.md")
+        let docs = try String(contentsOf: page, encoding: .utf8)
+        for word in AppKeyStore.Unread.allCases {
+            #expect(docs.contains("`\(word.rawValue)`"), "docs/device-state.md does not explain unread \(word.rawValue)")
         }
     }
 

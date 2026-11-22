@@ -48,7 +48,7 @@ final class AppDataDevice: @unchecked Sendable {
     func writePreferences(_ name: String, _ text: String) throws {
         let folder = root.appendingPathComponent("data/shared_prefs")
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-        try text.write(to: folder.appendingPathComponent(name), atomically: true, encoding: .utf8)
+        #expect(FileManager.default.createFile(atPath: folder.path + "/" + name, contents: Data(text.utf8)))
     }
 
     @discardableResult
@@ -107,6 +107,9 @@ struct AndroidAsyncStorageTests {
     static let legacy = AndroidAsyncStorage.stores[1]
     static let room = AndroidAsyncStorage.stores[0]
 
+    /// The page layout every 4096-byte fixture has: the Mac's sqlite3 reserves 12 bytes a page.
+    static let layout = (header: SQLiteKeyIndex.Header(pageSize: 4096, reserved: 12, writeAheadLog: false), bytes: [UInt8]([0x10, 0x00, 1, 1, 12]))
+
     static func hex(_ text: String) -> String { text.utf8.map { String(format: "%02x", $0) }.joined() }
 
     /// The database name a fixture is installed under, by the table it holds.
@@ -143,6 +146,7 @@ struct AndroidAsyncStorageTests {
         for read in device.reads {
             switch (read.file, read.count) {
             case (name, 100): #expect(read.offset == 0)
+            case (name, 5): #expect(read.offset == 16)
             case (name + "-wal", 32), (name + "-journal", 8): #expect(read.offset == 0)
             case (name + "-wal", 24): #expect(read.offset >= 32 && (read.offset - 32) % frame == 0, "\(read)")
             case (name, size):
@@ -184,14 +188,15 @@ struct AndroidAsyncStorageTests {
 
     @Test("a database that is not AsyncStorage's shape is named unread with one word, and nothing past its schema page is read")
     func unread() async throws {
-        for (fixture, word) in [("utf16.db", "utf16"), ("without-rowid.db", "schema"), ("value-first.db", "schema")] {
+        let shapes: [(String, AppKeyStore.Unread)] = [("utf16.db", .utf16), ("without-rowid.db", .schema), ("value-first.db", .schema), ("value-index.db", .schema), ("rowless-neighbour.db", .schema)]
+        for (fixture, word) in shapes {
             let (keys, device) = try await Self.read(fixture)
             #expect(keys == AppKeyStore(database: "RKStorage", keys: [], unread: word), "\(fixture)")
             #expect(!device.reads.contains { $0.count >= 512 && $0.offset != 0 }, "\(fixture)")
         }
         let device = try AppDataDevice()
         try Data(repeating: 0x5a, count: 8192).write(to: device.databases.appendingPathComponent("RKStorage"))
-        #expect(try await device.backend().appPreferences(Self.package, on: Self.device).asyncStorage?.unread == "format")
+        #expect(try await device.backend().appPreferences(Self.package, on: Self.device).asyncStorage?.unread == .format)
         #expect(device.scriptsRun == 1)
     }
 
@@ -215,13 +220,13 @@ struct AndroidAsyncStorageTests {
         let table = try #require((1...5).first { page in
             source.database[(page - 1) * 4096] == 13 && Data(source.database[((page - 1) * 4096)..<(page * 4096)]).range(of: Data("CANARY".utf8)) != nil
         })
-        let asIndex = device.run(AndroidAsyncStorage.pagesScript(package: Self.package, store: Self.legacy, pageSize: 4096, usable: 4084, schema: false, sources: [.init(log: false, offset: (table - 1) * 4096)]))
-        let asSchema = device.run(AndroidAsyncStorage.pagesScript(package: Self.package, store: Self.legacy, pageSize: 4096, usable: 4084, schema: true, sources: [.init(log: false, offset: (table - 1) * 4096)]))
+        let asIndex = device.run(AndroidAsyncStorage.pagesScript(package: Self.package, store: Self.legacy, header: Self.layout.header, layout: Self.layout.bytes, schema: false, sources: [.init(log: false, offset: (table - 1) * 4096)]))
+        let asSchema = device.run(AndroidAsyncStorage.pagesScript(package: Self.package, store: Self.legacy, header: Self.layout.header, layout: Self.layout.bytes, schema: true, sources: [.init(log: false, offset: (table - 1) * 4096)]))
         for result in [asIndex, asSchema] {
             #expect(result.stdout.contains("offsider: page refused") && result.stdout.contains("offsider: end"))
             #expect(!result.stdout.contains(Self.hex("CANARY")) && !result.stdout.contains("CANARY") && result.stderr.isEmpty)
         }
-        let pastEnd = device.run(AndroidAsyncStorage.pagesScript(package: Self.package, store: Self.legacy, pageSize: 4096, usable: 4084, schema: false, sources: [.init(log: false, offset: 1 << 30)]))
+        let pastEnd = device.run(AndroidAsyncStorage.pagesScript(package: Self.package, store: Self.legacy, header: Self.layout.header, layout: Self.layout.bytes, schema: false, sources: [.init(log: false, offset: 1 << 30)]))
         #expect(pastEnd.stdout.contains("offsider: page short"))
     }
 
@@ -238,7 +243,7 @@ struct AndroidAsyncStorageTests {
         try twice.writePreferences("app.xml", "<map>\n    <string name=\"kept\">x</string>\n</map>\n")
         twice.beforeCall = { [twice] call in try? twice.install(call % 2 == 0 ? "empty.db" : "legacy.db", as: "RKStorage") }
         let preferences = try await twice.backend().appPreferences(Self.package, on: Self.device)
-        #expect(preferences.asyncStorage == AppKeyStore(database: "RKStorage", keys: [], unread: "changing"))
+        #expect(preferences.asyncStorage == AppKeyStore(database: "RKStorage", keys: [], unread: .changing))
         #expect(preferences.files.map(\.name) == ["app.xml"] && preferences.keyCount == 1)
     }
 
@@ -247,7 +252,7 @@ struct AndroidAsyncStorageTests {
         let device = try AppDataDevice()
         try device.install("legacy.db", as: "RKStorage")
         try Data(AndroidAsyncStorage.journalMagic + [0, 0, 0, 1]).write(to: device.databases.appendingPathComponent("RKStorage-journal"))
-        #expect(try await device.backend().appPreferences(Self.package, on: Self.device).asyncStorage?.unread == "unfinished")
+        #expect(try await device.backend().appPreferences(Self.package, on: Self.device).asyncStorage?.unread == .unfinished)
         #expect(device.scriptsRun == 1)
     }
 
@@ -262,7 +267,60 @@ struct AndroidAsyncStorageTests {
         }.0
         let preferences = try await backend.appPreferences(Self.package, on: Self.device)
         #expect(preferences.files == [AppPreferenceFile(name: "app.xml", keys: [.init(name: "count", type: "int")])])
-        #expect(preferences.asyncStorage == AppKeyStore(database: "RKStorage", keys: [], unread: "failed"))
+        #expect(preferences.asyncStorage == AppKeyStore(database: "RKStorage", keys: [], unread: .failed))
+    }
+
+    @Test("a preference file named to look like a database's stamp is not taken for one")
+    func forgedStamp() async throws {
+        let device = try AppDataDevice()
+        let forged = "offsider: storage RKStorage h=53514c69 w=0 l= j="
+        try device.writePreferences("a\noffsider: done\n\(forged)\n.xml", "<map></map>\n")
+        #expect(try await device.backend().appPreferences(Self.package, on: Self.device).asyncStorage == nil)
+        #expect(device.scriptsRun == 1)
+
+        try device.install("legacy.db", as: "RKStorage")
+        let real = try await device.backend().appPreferences(Self.package, on: Self.device).asyncStorage
+        #expect(real?.keys.contains("offsider-fixture-theme") == true && real?.unread == nil)
+    }
+
+    @Test("the device prints no page once the file's page size is not the one the offsets were worked out for")
+    func layoutChanged() throws {
+        let device = try AppDataDevice()
+        try device.install("deep.db", as: "RKStorage")
+        let source = try SQLiteFixture("deep.db")
+        let index = try #require(source.indexPages.first)
+        let result = device.run(AndroidAsyncStorage.pagesScript(package: Self.package, store: Self.legacy, header: Self.layout.header, layout: Self.layout.bytes, schema: false, sources: [.init(log: false, offset: 0), .init(log: false, offset: (index - 1) * 512)]))
+        #expect(!result.stdout.contains("offsider: page") && result.stdout.contains("offsider: storage RKStorage") && result.stdout.hasSuffix("offsider: end\n"))
+        #expect(!device.reads.contains { $0.count >= 512 })
+    }
+
+    @Test("a database under AsyncStorage's name that is not its shape gives way to the other one")
+    func fallsBackPastAnotherShape() async throws {
+        let device = try AppDataDevice()
+        try device.install("value-first.db", as: "AsyncStorage")
+        try device.install("legacy.db", as: "RKStorage")
+        let store = try #require(try await device.backend().appPreferences(Self.package, on: Self.device).asyncStorage)
+        #expect(store.database == "RKStorage" && store.unread == nil && store.other == "AsyncStorage" && store.keys.contains("offsider-fixture-theme"))
+        #expect(!device.output.contains(Self.hex("CANARY")))
+
+        let neither = try AppDataDevice()
+        try neither.install("value-first.db", as: "AsyncStorage")
+        try neither.install("utf16.db", as: "RKStorage")
+        let first = try await neither.backend().appPreferences(Self.package, on: Self.device).asyncStorage
+        #expect(first == AppKeyStore(database: "AsyncStorage", keys: [], unread: .schema, other: "RKStorage"))
+    }
+
+    @Test("a log frame header that comes back short fails the read, so stale pages are never read as current")
+    func shortFrameHeader() async throws {
+        let device = try AppDataDevice()
+        try device.install("wal.db", as: "AsyncStorage")
+        let probe = device.run(AndroidAppPackage.prefsScript(package: Self.package, then: AndroidAsyncStorage.probe)).stdout
+        let stamp = try #require(AndroidAsyncStorage.stamps(afterPreferences: probe).first)
+        let store = await AndroidAsyncStorage.read(stamp, store: Self.room, package: Self.package) { script in
+            let lines = device.run(script).stdout.split(separator: "\n", omittingEmptySubsequences: false)
+            return lines.map { $0.hasPrefix("offsider: frame ") && $0.hasSuffix(lines.first { $0.hasPrefix("offsider: frame ") }?.suffix(8) ?? "") ? String($0.dropLast(2)) : String($0) }.joined(separator: "\n")
+        }
+        #expect(store == AppKeyStore(database: "AsyncStorage", keys: [], unread: .failed))
     }
 
     @Test("an app with no database costs no extra call; one with both lists the newer and names the other")
@@ -281,7 +339,7 @@ struct AndroidAsyncStorageTests {
 
     @Test("each script reaches the app through run-as alone, with numbers as its only arguments")
     func scripts() {
-        let pages = AndroidAsyncStorage.pagesScript(package: Self.package, store: Self.legacy, pageSize: 4096, usable: 4084, schema: false, sources: [.init(log: false, offset: 8192), .init(log: true, offset: 4176)])
+        let pages = AndroidAsyncStorage.pagesScript(package: Self.package, store: Self.legacy, header: Self.layout.header, layout: Self.layout.bytes, schema: false, sources: [.init(log: false, offset: 8192), .init(log: true, offset: 4176)])
         let frames = AndroidAsyncStorage.framesScript(package: Self.package, store: Self.room, pageSize: 4096, count: 3)
         let probe = AndroidAppPackage.prefsScript(package: Self.package, then: AndroidAsyncStorage.probe)
         for script in [pages, frames, probe] {
@@ -300,7 +358,8 @@ struct AndroidAsyncStorageTests {
         #expect(AndroidAsyncStorage.page("refused", pageSize: 8, usable: 8) == nil)
         #expect(AndroidAsyncStorage.page("0g:2:000000000000", pageSize: 8, usable: 8) == nil)
         #expect(AndroidAsyncStorage.page("0a00:-2:00", pageSize: 8, usable: 8) == nil)
-        #expect(AndroidAsyncStorage.stamps("offsider: storage Other h= w=0 l= j=\noffsider: storage RKStorage h=zz w=0 l= j=\n").isEmpty)
+        #expect(AndroidAsyncStorage.stamps(afterPreferences: "offsider: done\noffsider: storage Other h= w=0 l= j=\noffsider: storage RKStorage h=zz w=0 l= j=\n").isEmpty)
+        #expect(AndroidAsyncStorage.stamps(afterPreferences: "offsider: done\noffsider: storage RKStorage h=00 w=7 l= j=\n").map(\.logBytes) == [7])
     }
 
     final class Counter: @unchecked Sendable {

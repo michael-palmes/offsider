@@ -160,7 +160,8 @@ enum FuzzTargets {
         let log = SQLiteKeyIndex.WriteAheadLog(header: Array(bytes.prefix(32)), frameHeaders: frames, pageSize: 4096)
         precondition(log.frames.values.allSatisfy { $0 < frames.count }, "a frame outside the log was listed")
         let text = String(decoding: data.prefix(1 << 14), as: UTF8.self)
-        _ = AndroidAsyncStorage.stamps(text)
+        _ = AndroidAsyncStorage.stamps(afterPreferences: text)
+        _ = AndroidAsyncStorage.stamps(text.split(whereSeparator: \.isNewline))
         if let page = AndroidAsyncStorage.page(Substring(text), pageSize: 4096, usable: 4084) { precondition(page.count == 4096, "a page of the wrong size") }
 
         guard let header = try? SQLiteKeyIndex.header(bytes) else { return false }

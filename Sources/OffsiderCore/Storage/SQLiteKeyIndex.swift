@@ -3,7 +3,7 @@ import Foundation
 /// Reads key names out of a SQLite table's automatic index, from pages another program wrote. It takes the database header, the schema page and index pages, never a table row, and never follows an overflow chain, so a value has no way in.
 public enum SQLiteKeyIndex {
     /// One word for why a database was not read, as `app prefs` reports it.
-    public enum Failure: String, Error, Equatable, Sendable {
+    public enum Failure: String, Error, Equatable, Sendable, CaseIterable {
         case format, utf16, schema, corrupt, large
     }
 
@@ -61,7 +61,7 @@ public enum SQLiteKeyIndex {
 
     // MARK: Schema
 
-    /// The root page of `table`'s key index, from page 1. A schema that fills more than page 1 is not read, as its other pages look like any table's.
+    /// The root page of `table`'s key index, from page 1. A schema that fills more than page 1 is not read, as its other pages look like any table's. Nor is one with any other index or a `WITHOUT ROWID` table, whose pages look like the key index's and can hold rows.
     public static func keyIndexRoot(schemaPage page: [UInt8], header: Header, table: String) throws -> Int {
         let usable = try usableSize(of: page, header: header, else: .schema)
         guard page[headerBytes] == 13 else { throw Failure.schema }
@@ -70,14 +70,23 @@ public enum SQLiteKeyIndex {
         for cell in try cells(page, base: headerBytes, headerSize: 8, usable: usable) {
             guard let payload = varint(page, at: cell, limit: usable), let rowid = varint(page, at: cell + payload.length, limit: usable) else { throw Failure.corrupt }
             let start = cell + payload.length + rowid.length
-            guard payload.value <= UInt64(usable - 35) else { continue }
+            guard payload.value <= UInt64(usable - 35) else { throw Failure.schema }
             guard start + Int(payload.value) <= usable else { throw Failure.corrupt }
             let columns = try record(page, start: start, local: Int(payload.value), total: Int(payload.value))
-            guard columns.count >= 5, case .text(let type) = columns[0], case .text(let name) = columns[1], case .text(let owner) = columns[2] else { continue }
-            if text(page, type) == "table", text(page, name) == table, case .text(let sql) = columns[4] {
-                declared = declaresKeyIndex(text(page, sql))
-            } else if text(page, type) == "index", text(page, name) == "sqlite_autoindex_\(table)_1", text(page, owner) == table, case .integer(let number) = columns[3], number >= 2, number <= Int64(Int32.max) {
+            guard columns.count >= 5, case .text(let type) = columns[0], case .text(let name) = columns[1], case .text(let owner) = columns[2] else { throw Failure.schema }
+            switch text(page, type) {
+            case "table":
+                guard case .text(let sql) = columns[4] else { throw Failure.schema }
+                if text(page, name) == table {
+                    declared = declaresKeyIndex(text(page, sql))
+                } else if plainWords(text(page, sql)).contains("without rowid") {
+                    throw Failure.schema
+                }
+            case "index":
+                guard root == nil, text(page, name) == "sqlite_autoindex_\(table)_1", text(page, owner) == table, case .integer(let number) = columns[3], number >= 2, number <= Int64(Int32.max) else { throw Failure.schema }
                 root = Int(number)
+            default:
+                break
             }
         }
         guard declared, let root else { throw Failure.schema }
@@ -86,10 +95,14 @@ public enum SQLiteKeyIndex {
 
     /// Whether the table's only unique constraint is a primary key on `key`, so its first automatic index holds key names and nothing else.
     static func declaresKeyIndex(_ sql: String) -> Bool {
-        let plain = sql.lowercased().filter { !"`\"'[]".contains($0) }
-        let words = plain.split(whereSeparator: \.isWhitespace).joined(separator: " ")
+        let words = plainWords(sql)
         guard !words.contains("without rowid"), !words.contains("unique"), words.components(separatedBy: "primary key").count == 2 else { return false }
         return words.contains(#/[(,] ?key text( not null)? primary key/#) || words.contains(#/primary key ?\( ?key ?\)/#)
+    }
+
+    /// Lower case, quotes dropped, one space between words.
+    private static func plainWords(_ sql: String) -> String {
+        sql.lowercased().filter { !"`\"'[]".contains($0) }.split(whereSeparator: \.isWhitespace).joined(separator: " ")
     }
 
     // MARK: Index pages

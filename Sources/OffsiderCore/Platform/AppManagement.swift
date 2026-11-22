@@ -60,16 +60,21 @@ public struct AppPreferenceFile: Equatable, Sendable {
 
 /// The key names in an app's AsyncStorage database. As with a preference file, there is no place here for a value, a length or a hash.
 public struct AppKeyStore: Equatable, Sendable {
+    /// Why a database that exists was not read, as `--json` and the notes name it.
+    public enum Unread: String, CaseIterable, Sendable {
+        case format, utf16, schema, corrupt, large, unfinished, changing, failed
+    }
+
     public var database: String
     public var keys: [String]
     /// Names too long for their page to hold whole, each listed cut short.
     public var cut: Int
-    /// One word for why a database that exists was not read; nil when it was.
-    public var unread: String?
+    /// Nil when the database was read.
+    public var unread: Unread?
     /// A second AsyncStorage database the app also has, which is left unread.
     public var other: String?
 
-    public init(database: String, keys: [String], cut: Int = 0, unread: String? = nil, other: String? = nil) {
+    public init(database: String, keys: [String], cut: Int = 0, unread: Unread? = nil, other: String? = nil) {
         self.database = database
         self.keys = keys
         self.cut = cut
@@ -176,7 +181,7 @@ public enum AppManagementReport {
             ])
         }
         let storage = OrderedJSON.optional(preferences.asyncStorage) { store in
-            .object([("database", .string(store.database)), ("keys", .array(store.keys.map { .string($0) })), ("cut", .integer(store.cut))] + (store.unread.map { [("unread", .string($0))] } ?? []))
+            .object([("database", .string(store.database)), ("keys", .array(store.keys.map { .string($0) })), ("cut", .integer(store.cut))] + (store.unread.map { [("unread", .string($0.rawValue))] } ?? []))
         }
         let document = OrderedJSON.object(AppReport.header("prefs", app: preferences.app, device: device) + [("files", .array(files)), ("asyncStorage", storage)])
         return UntrustedPaths.marked(document, ["files[].name", "files[].keys[].name", "asyncStorage.keys[]"]).rendered(compact: true)

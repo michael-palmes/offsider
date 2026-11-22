@@ -86,6 +86,21 @@ CREATE TABLE catalystLocalStorage (value TEXT UNIQUE, key TEXT PRIMARY KEY);
 INSERT INTO catalystLocalStorage VALUES ('$canary', 'offsider-fixture-theme');
 SQL
 
+# A second index, here on the value, has pages the device cannot tell from the key index's.
+build value-index.db "" <<SQL
+$legacy
+CREATE INDEX by_value ON catalystLocalStorage (value);
+INSERT INTO catalystLocalStorage VALUES ('offsider-fixture-theme', '$canary');
+SQL
+
+# So has a WITHOUT ROWID table beside the right one: its index pages hold whole rows.
+build rowless-neighbour.db "" <<SQL
+$legacy
+CREATE TABLE cache (name TEXT PRIMARY KEY, secret TEXT) WITHOUT ROWID;
+INSERT INTO catalystLocalStorage VALUES ('offsider-fixture-theme', '$canary');
+INSERT INTO cache VALUES ('entry', '$canary');
+SQL
+
 # With secure_delete off, an index that grows into pages table rows left in the same transaction keeps their values in its free space.
 build reused.db catalystLocalStorage <<SQL
 PRAGMA secure_delete = OFF;

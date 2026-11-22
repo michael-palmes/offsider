@@ -115,17 +115,20 @@ struct AppManagementCommandTests {
 
     @Test("a database left unread says why in one word, lists no key, and names the fix where there is one")
     func asyncStorageUnread() {
-        let changing = AppPreferences(app: "com.example.app", files: [], asyncStorage: AppKeyStore(database: "RKStorage", keys: [], unread: "changing"))
+        let changing = AppPreferences(app: "com.example.app", files: [], asyncStorage: AppKeyStore(database: "RKStorage", keys: [], unread: .changing))
         #expect(AppPrefsCommand.lines(changing).contains("0 files, 0 keys (names and types only)\n  AsyncStorage (RKStorage)  not read (changing)"))
         #expect(AppManagementReport.preferences(changing, on: Self.pixel).contains(#""asyncStorage":{"database":"RKStorage","keys":[],"cut":0,"unread":"changing"}"#))
         let notices = AppPrefsCommand.notices(changing, on: Self.pixel)
         #expect(notices.map(\.command) == ["offsider app stop --app com.example.app --device \(Self.pixel.rawValue)"])
 
-        for word in ["format", "utf16", "schema", "corrupt", "large", "unfinished", "failed"] {
+        for word in AppKeyStore.Unread.allCases {
             let unread = AppPreferences(app: "com.example.app", files: [], asyncStorage: AppKeyStore(database: "AsyncStorage", keys: [], unread: word))
             let notice = AppPrefsCommand.notices(unread, on: Self.pixel)
             #expect(notice.count == 1 && notice[0].text.contains("AsyncStorage") && notice[0].text.contains("not listed"), "\(word)")
+            #expect(AppManagementReport.preferences(unread, on: Self.pixel).contains(#""unread":"\#(word.rawValue)""#), "\(word)")
         }
+        let failed = AppPrefsCommand.notices(AppPreferences(app: "com.example.app", files: [], asyncStorage: AppKeyStore(database: "RKStorage", keys: [], unread: .failed)), on: Self.pixel)
+        #expect(failed[0].text.contains("did not answer") && !failed[0].text.contains("SQLite"))
 
         let both = AppPreferences(app: "com.example.app", files: [], asyncStorage: AppKeyStore(database: "AsyncStorage", keys: ["a…"], cut: 1, other: "RKStorage"))
         let texts = AppPrefsCommand.notices(both, on: Self.pixel).map(\.text)
