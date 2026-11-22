@@ -84,6 +84,7 @@ public enum FailureReason: String, CaseIterable, Sendable {
     case appNotAllowed = "app_not_allowed"
     case guardedControl = "guarded_control"
     case personRequired = "person_required"
+    case managedPolicy = "managed_policy"
     case turnstileRequired = "turnstile_required"
     case foregroundChanged = "foreground_changed"
     case secretWouldShow = "secret_would_show"

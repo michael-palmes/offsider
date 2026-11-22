@@ -99,6 +99,16 @@ struct CLIError: LocalizedError, UserFacingError, OffsiderFailure {
         CLIError(errorDescription: message, reason: .personRequired, hint: hint)
     }
 
+    /// A ceiling the organisation forced, as a `ManagedRefusalText` clause; `outcome` says what did not happen.
+    static func managedPolicy(_ clause: String, outcome: String) -> CLIError {
+        CLIError(errorDescription: "\(ManagedRefusalText.sentence(clause)) \(outcome) Ask the administrator of this Mac.", reason: .managedPolicy)
+    }
+
+    /// Throws `managed_policy` when the organisation forces `item` to its strict value; reads that one key.
+    static func requireManaged(_ item: ManagedCeilings.Switch, outcome: String) throws {
+        if let why = ManagedGate.refusal(item) { throw managedPolicy(why, outcome: outcome) }
+    }
+
     /// A physical device the allow-list or managed policy refuses; only a person (or an administrator) can change that.
     static func deviceNotAllowed(name: String?, key: String, refusal: DeviceRefusal, audience: ErrorAudience = .current) -> CLIError {
         let device = name.map { "\($0) (\(key))" } ?? key

@@ -819,6 +819,7 @@ enum AllowPathConsent {
     /// Asks only when `path` is one `--file` refuses; refuses with `person_required` without a terminal or a GUI session.
     static func confirm(path: String?, allowPath: Bool, command: String) async throws {
         guard allowPath, let path, let found = TextFileInput.sensitive(path) else { return }
+        try CLIError.requireManaged(.allowFileInput, outcome: "Nothing was read.")
         guard PersonPresence.terminal() else {
             throw CLIError.personRequired(
                 "--allow-path needs a person at a terminal to confirm \(TerminalText.line(found.resolvedPath)). Nothing was read. Run it from your own terminal."

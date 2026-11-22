@@ -138,6 +138,7 @@ struct CredentialCommand: AsyncParsableCommand {
 
     func run() async throws {
         let parsed = try parsedAction()
+        if Self.savesLogin.contains(parsed) { try CLIError.requireManaged(.allowSavedLogins, outcome: "Nothing was saved.") }
         let key = key.map { Self.storedKey($0) ?? $0 }
         let store = KeychainLoginCredentialStore()
         let console = Console.current
@@ -288,6 +289,9 @@ struct CredentialCommand: AsyncParsableCommand {
         guard (1...256).contains(trimmed.count), trimmed.unicodeScalars.allSatisfy({ (0x21...0x7E).contains($0.value) }) else { return nil }
         return trimmed
     }
+
+    /// The actions managed `allowSavedLogins` refuses; `status`, `remove` and `signed-out` save nothing.
+    static let savesLogin: Set<Action> = [.set, .describe, .join]
 
     /// Exactly as written, so a permission rule such as `offsider credential remove*` matches every spelling that runs.
     func parsedAction() throws -> Action {

@@ -46,6 +46,9 @@ extension AndroidBackend: MetroReverseSetting {
             throw ExpoDevClientError(.noRoute, "Offsider sets an adb reverse only on a USB phone, and \(serial) is not one.")
         }
         if let problem = MetroReverse.refusal(port: port) { throw ExpoDevClientError(.noRoute, problem) }
+        if let why = ManagedGate.refusal(.allowMetroReverse) {
+            throw ExpoDevClientError(.managedPolicy, "\(ManagedRefusalText.sentence(why)) Offsider set no adb reverse on \(serial). Ask the administrator of this Mac.")
+        }
         try await prepare()
         if case .tcp(_, let server) = try LoopbackEndpoint.adbServer(environment: host.environment), Int(server) == port {
             throw ExpoDevClientError(.noRoute, "Port \(port) is the adb server's own, never Metro.")
