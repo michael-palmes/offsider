@@ -559,7 +559,7 @@ public struct XcodeRunnerBuilder: RunnerBuilding {
         let signing: Signing
         do {
             signing = try self.signing(for: destination)
-        } catch let error as IOSDeviceError where error.kind == .invalidSetting {
+        } catch let error as IOSDeviceError where error.kind == .invalidSetting || error.kind == .managedPolicy {
             return .unsettled(message: error.message, hint: error.hint)
         } catch {
             return nil

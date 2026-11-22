@@ -245,6 +245,9 @@ struct ManagedGateCommandTests {
             #expect(error?.message.contains("does not list team \(RunnerProvisioningTests.team) (allowedTeamIDs)") == true)
         }
         #expect(fixture.xcodebuild.calls.isEmpty)
+        let status = ManagedGate.$sourceOverride.withValue(listed) { fixture.builder().cacheStatus(udid: "U") }
+        guard case .unsettled(let message, let hint)? = status else { Issue.record("doctor's runner build fact hides the managed refusal: \(String(describing: status))"); return }
+        #expect(message.contains("(allowedTeamIDs)") && hint == nil)
         _ = try await ManagedGate.$sourceOverride.withValue(listed) {
             try await fixture.builder(environment: [:], allowance: RunnerProvisioningTests.allowance(team: "zyxwv98765")).build(for: .device(udid: "U"), deviceName: "iPhone")
         }

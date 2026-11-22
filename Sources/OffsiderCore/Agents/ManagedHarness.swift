@@ -9,6 +9,7 @@ public struct ManagedHarness: Equatable, Sendable {
     public static let claudeDomain = "com.anthropic.claudecode"
     public static let rulesLockKey = "allowManagedPermissionRulesOnly"
     public static let customisationLockKey = "strictPluginOnlyCustomization"
+    public static let sourcesKey = "managedSourcesBehavior"
     public static let codexFile = "/etc/codex/requirements.toml"
     public static let codexDomain = "com.openai.codex"
     public static let codexRequirementsKey = "requirements_toml_base64"
@@ -26,11 +27,14 @@ public struct ManagedHarness: Equatable, Sendable {
         public var forcedLists: @Sendable (_ domain: String, _ key: String) -> [String: [String]]
         /// Whether `init` left a skill in the person's own Claude Code folder, which a skills lock ignores.
         public var userSkill: @Sendable () -> Bool
+        /// The keys a managed domain forces; any at all means a profile is installed for it.
+        public var profileKeys: @Sendable (_ domain: String) -> [String]
 
         public init(
             file: @escaping @Sendable (String) -> Data?, names: @escaping @Sendable (String) -> [String],
             forced: @escaping @Sendable (String, String) -> ManagedPreferenceValue?, forcedText: @escaping @Sendable (String, String) -> String? = { _, _ in nil },
-            forcedLists: @escaping @Sendable (String, String) -> [String: [String]] = { _, _ in [:] }, userSkill: @escaping @Sendable () -> Bool = { false }
+            forcedLists: @escaping @Sendable (String, String) -> [String: [String]] = { _, _ in [:] }, userSkill: @escaping @Sendable () -> Bool = { false },
+            profileKeys: @escaping @Sendable (String) -> [String] = { _ in [] }
         ) {
             self.file = file
             self.names = names
@@ -38,6 +42,7 @@ public struct ManagedHarness: Equatable, Sendable {
             self.forcedText = forcedText
             self.forcedLists = forcedLists
             self.userSkill = userSkill
+            self.profileKeys = profileKeys
         }
 
         /// Claude Code follows a symlinked settings file, so the read does too.
@@ -48,7 +53,8 @@ public struct ManagedHarness: Equatable, Sendable {
                 forced: { LiveManagedPreferences(domain: $0).forcedValue(forKey: $1) },
                 forcedText: { LiveManagedPreferences(domain: $0).forcedText(forKey: $1) },
                 forcedLists: { LiveManagedPreferences(domain: $0).forcedLists(forKey: $1) },
-                userSkill: { FileManager.default.fileExists(atPath: home + "/" + userSkillPath) }
+                userSkill: { UntrustedRead.contents(atPath: URL(fileURLWithPath: home + "/" + userSkillPath).resolvingSymlinksInPath().path).map(SkillInstall.isOffsiderSkill) ?? false },
+                profileKeys: { LiveManagedPreferences(domain: $0).forcedKeys() }
             )
         }
     }
@@ -74,17 +80,24 @@ public struct ManagedHarness: Equatable, Sendable {
             guard let parsed = try? OrderedJSON.parse(data), case .object(let members) = parsed else { return nil }
             return members
         }
-        let forcedRulesLock = probe.forced(claudeDomain, rulesLockKey)
-        let forcedCustomisation = probe.forced(claudeDomain, customisationLockKey)
-        found.claudeManaged = !documents.isEmpty || forcedRulesLock != nil || forcedCustomisation != nil
+        // Claude Code reads only its highest-ranked managed source, a profile before the files, unless one of them asks to merge.
+        let profile = !probe.profileKeys(claudeDomain).isEmpty
+        let merges = probe.forcedText(claudeDomain, sourcesKey) == "merge" || documents.contains { $0.contains { if case (sourcesKey, .string("merge")) = $0 { return true } else { return false } } }
+        let read = profile && !merges ? [] : documents
+        found.claudeManaged = !documents.isEmpty || profile
 
-        var rulesLock = forcedRulesLock.map { $0 != .bool(false) } ?? false
-        var skillsLock = forcedCustomisation.map { value in
-            if case .strings(let surfaces) = value { return surfaces.contains("skills") }
-            return value != .bool(false)
-        } ?? false
-        var lists = probe.forcedLists(claudeDomain, "permissions").filter { ["allow", "ask", "deny"].contains($0.key) }
-        for members in documents {
+        var rulesLock = false
+        var skillsLock = false
+        var lists: [String: [String]] = [:]
+        if profile {
+            rulesLock = probe.forced(claudeDomain, rulesLockKey).map { $0 != .bool(false) } ?? false
+            skillsLock = probe.forced(claudeDomain, customisationLockKey).map { value in
+                if case .strings(let surfaces) = value { return surfaces.contains("skills") }
+                return value != .bool(false)
+            } ?? false
+            lists = probe.forcedLists(claudeDomain, "permissions").filter { ["allow", "ask", "deny"].contains($0.key) }
+        }
+        for members in read {
             for (key, value) in members {
                 switch (key, value) {
                 case (rulesLockKey, .bool(false)), (customisationLockKey, .bool(false)): break

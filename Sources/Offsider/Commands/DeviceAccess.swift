@@ -711,7 +711,7 @@ struct DeviceAccessAllow: AsyncParsableCommand {
             shownTeam = Self.teamShown(onlyTeam, among: teams)
             prompt.lines([TerminalUI.receipt("Team", Self.teamShown(onlyTeam, among: teams), style: prompt.style)])
         } else if row.platform == .ios, team == nil {
-            let picked = try await step("Team") { try await pickTeam(on: prompt, teams: teams, current: current?.team, step: $0, ceilings: ceilings, hidden: teamsHidden) }
+            let picked = try await step("Team") { try await pickTeam(on: prompt, teams: teams, current: current?.team.flatMap { ceilings.permits(team: $0) ? $0 : nil }, step: $0, ceilings: ceilings, hidden: teamsHidden) }
             chosenTeam = picked.value
             shownTeam = picked.value == nil ? nil : picked.shown
         }

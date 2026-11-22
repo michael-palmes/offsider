@@ -18,7 +18,11 @@ struct ManagedHarnessTests {
             forced: { forced["\($0):\($1)"] },
             forcedText: { forcedText["\($0):\($1)"] },
             forcedLists: { domain, key in domain == ManagedHarness.claudeDomain && key == "permissions" ? profileRules : [:] },
-            userSkill: { userSkill }
+            userSkill: { userSkill },
+            profileKeys: { domain in
+                (forced.keys.sorted() + forcedText.keys.sorted()).filter { $0.hasPrefix(domain + ":") }.map { String($0.dropFirst(domain.count + 1)) }
+                    + (domain == ManagedHarness.claudeDomain && !profileRules.isEmpty ? ["permissions"] : [])
+            }
         )
     }
 
@@ -66,11 +70,23 @@ struct ManagedHarnessTests {
         #expect(!carried.rulesDropped && carried.claudeManaged)
         let partial = ManagedHarness.read(Self.probe(forced: lock, profileRules: ["ask": Array(AgentPermissionRules.patterns(.ask).dropLast())]))
         #expect(partial.rulesDropped)
-        let split = ManagedHarness.read(Self.probe(
-            files: [Self.dropIn: #"{"permissions": {"ask": ["Bash(offsider permission*)"]}}"#], forced: lock,
-            profileRules: ["ask": AgentPermissionRules.patterns(.ask).filter { $0 != "Bash(offsider permission*)" }]
+        let rulesOnly = ManagedHarness.read(Self.probe(profileRules: ["ask": AgentPermissionRules.patterns(.ask)]))
+        #expect(rulesOnly.claudeManaged && rulesOnly.doctorVerdict.status == .pass)
+    }
+
+    @Test("a profile wins over the files as Claude Code reads them: a fragment in a file does not answer a lock in the profile unless the sources merge")
+    func profileBeforeFiles() {
+        let lock = ["com.anthropic.claudecode:allowManagedPermissionRulesOnly": ManagedPreferenceValue.bool(true)]
+        let files = [Self.dropIn: ManagedHarness.claudeFragment()]
+        #expect(ManagedHarness.read(Self.probe(files: files, forced: lock)).rulesDropped)
+        let merged = ManagedHarness.read(Self.probe(files: files, forced: lock, forcedText: ["com.anthropic.claudecode:managedSourcesBehavior": "merge"]))
+        #expect(!merged.rulesDropped)
+        let fileMerges = ManagedHarness.read(Self.probe(files: files.merging([ManagedHarness.claudeFile: #"{"managedSourcesBehavior": "merge"}"#]) { $1 }, forced: lock))
+        #expect(!fileMerges.rulesDropped)
+        let ignoredFileLock = ManagedHarness.read(Self.probe(
+            files: [ManagedHarness.claudeFile: #"{"allowManagedPermissionRulesOnly": true}"#], forced: ["com.anthropic.claudecode:strictPluginOnlyCustomization": .bool(false)]
         ))
-        #expect(!split.rulesDropped)
+        #expect(!ignoredFileLock.rulesDropped && ignoredFileLock.claudeManaged)
     }
 
     @Test("init asks only about the agents and skill it handled, and doctor names both locks at once")
