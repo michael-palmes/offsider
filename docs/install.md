@@ -15,10 +15,10 @@ To install the signed release tarball by hand instead, see [Verified tarball](#v
 
 ## Verified tarball
 
-Each release publishes `offsider-<version>-arm64.tar.gz`, a `SHA256SUMS` file and a GitHub build provenance attestation from `.github/workflows/release.yml`. The binary is signed with a Developer ID certificate, runs with library validation on (it loads only frameworks signed by the same team or by Apple) and is notarised. `--signer-workflow` and `--source-ref` check that the attestation came from the release workflow building that tag.
+Each release publishes `offsider-<version>-arm64.tar.gz`, a `SHA256SUMS` file and a GitHub build provenance attestation from `.github/workflows/release.yml`, whose build job holds no secrets: a separate job signs and notarises the payload it built ([Release integrity](../SECURITY.md#release-integrity)). The binary is signed with a Developer ID certificate, runs with library validation on (it loads only frameworks signed by the same team or by Apple) and is notarised. `--signer-workflow` and `--source-ref` check that the attestation came from the release workflow building that tag.
 
 ```bash
-VERSION=0.17.0
+VERSION=$(gh release view --repo michael-palmes/offsider --json tagName -q .tagName | sed 's/^v//')   # the latest release
 gh release download "v${VERSION}" --repo michael-palmes/offsider \
   --pattern "offsider-${VERSION}-arm64.tar.gz" --pattern SHA256SUMS
 shasum -a 256 -c SHA256SUMS --ignore-missing
@@ -28,6 +28,8 @@ gh attestation verify "offsider-${VERSION}-arm64.tar.gz" --repo michael-palmes/o
 mkdir -p ~/.local/offsider && tar -xzf "offsider-${VERSION}-arm64.tar.gz" -C ~/.local/offsider
 codesign -dv --verbose=4 ~/.local/offsider/offsider
 ```
+
+[Verify an install](../SECURITY.md#verify-an-install) also checks the signing team and the entitlements.
 
 Keep the `offsider` binary beside its `Frameworks/` directory and resource bundle, then put a symlink on your `PATH` rather than moving the binary:
 
