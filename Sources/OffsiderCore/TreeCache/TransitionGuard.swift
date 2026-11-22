@@ -2,7 +2,7 @@ import Foundation
 
 public enum TransitionDecision: Equatable, Sendable {
     public enum Reason: String, Sendable {
-        /// The last input was 500 ms or more ago, or there was none.
+        /// The last input was 500 ms or more ago, or there was none, and the target did not come up in the last 500 ms.
         case noRecentInput
         /// The target sits within 1 pt of where the cached tree had it.
         case sameFrame
@@ -33,19 +33,25 @@ public enum TransitionGuard {
         guard let record else {
             return .recheck(after: noRecordGap)
         }
-        guard let lastInput = record.lastInputAt else {
-            return .actNow(.noRecentInput)
+        let windowSeconds = seconds(window)
+        guard let lastInput = record.lastInputAt, max(0, now.timeIntervalSince(lastInput)) < windowSeconds else {
+            return appeared(target, since: record, now: now) ?? .actNow(.noRecentInput)
         }
         let elapsed = max(0, now.timeIntervalSince(lastInput))
-        let windowSeconds = seconds(window)
-        if elapsed >= windowSeconds {
-            return .actNow(.noRecentInput)
-        }
         if let roots = record.roots, hasSameFrame(target, in: roots),
            keyboardShowing() == record.tree.map(TextFocus.hasKeyboard) {
             return .actNow(.sameFrame)
         }
         return .recheck(after: .milliseconds(Int(((windowSeconds - elapsed) * 1000).rounded())))
+    }
+
+    /// A target a whole cached read under 500 ms ago lacked came up since, in a window that may still slide in with its frames already final.
+    static func appeared(_ target: UINode, since record: TreeCacheRecord, now: Date) -> TransitionDecision? {
+        guard let roots = record.roots, !record.truncated, let readAt = record.treeReadAt else { return nil }
+        let since = max(0, now.timeIntervalSince(readAt))
+        let windowSeconds = seconds(window)
+        guard since < windowSeconds, !roots.contains(where: { $0.flattened().contains { NodeIdentity.isGuardMatch($0, target) } }) else { return nil }
+        return .recheck(after: .milliseconds(Int(((windowSeconds - since) * 1000).rounded())))
     }
 
     static func hasSameFrame(_ target: UINode, in roots: [UINode]) -> Bool {

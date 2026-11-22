@@ -46,6 +46,26 @@ struct TransitionGuardTests {
         #expect(TransitionGuard.decide(target: Self.apply(y: 650), record: Self.record(applyY: nil, inputAge: -3), now: Self.now) == .recheck(after: .milliseconds(500)))
     }
 
+    /// A read `readAge` ago with no input since, holding Open alone or Open and Apply.
+    static func readRecord(readAge: TimeInterval, withApply: Bool) -> TreeCacheRecord {
+        let open = FakeUI.node(.button, id: "open", label: "Open", frame: FakeUI.frame(20, 100, 350, 44))
+        let roots = FakeUI.tree(withApply ? [open, apply(y: 600)] : [open]).roots
+        return TreeCacheRecord(
+            platform: .ios, device: device.rawValue, command: "tap", writtenAt: now - readAge, treeReadAt: now - readAge, lastInputAt: now - 3, treeRole: .read,
+            appFrame: UITree.applicationFrame(in: roots), roots: roots
+        )
+    }
+
+    @Test("a target a read under 500 ms ago lacked waits out the rest of 500 ms, with no recent input, as its window may still slide in with final frames")
+    func newlyShownTargetWaits() {
+        #expect(TransitionGuard.decide(target: Self.apply(y: 600), record: Self.readRecord(readAge: 0.2, withApply: false), now: Self.now) == .recheck(after: .milliseconds(300)))
+        #expect(TransitionGuard.decide(target: Self.apply(y: 600), record: Self.readRecord(readAge: 0.6, withApply: false), now: Self.now) == .actNow(.noRecentInput))
+        #expect(TransitionGuard.decide(target: Self.apply(y: 600), record: Self.readRecord(readAge: 0.2, withApply: true), now: Self.now) == .actNow(.noRecentInput))
+        var cut = Self.readRecord(readAge: 0.2, withApply: false)
+        cut.truncated = true
+        #expect(TransitionGuard.decide(target: Self.apply(y: 600), record: cut, now: Self.now) == .actNow(.noRecentInput), "a cut read may have stopped short of it")
+    }
+
     @Test("no record waits 150 ms")
     func noRecord() {
         #expect(TransitionGuard.decide(target: Self.apply(y: 600), record: nil, now: Self.now) == .recheck(after: .milliseconds(150)))
