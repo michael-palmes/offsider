@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Changed
+
+- `test-runner.sh --unit-tests` reruns alone only the tests a stalled parallel run did not finish, read from Swift Testing's event stream, instead of every test; a stream it cannot read still reruns everything. CI pull requests restore the newest debug build main saved and recompile only the files whose contents changed, and the release rehearsal reuses fetched package repositories.
+
 ## [0.17.0] - 2026-11-20
 
 ### Added

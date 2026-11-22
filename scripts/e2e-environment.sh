@@ -24,10 +24,11 @@ configure_e2e_environment() {
     export DEVELOPER_DIR="$SELECTED_DEVELOPER_DIR"
 }
 
-# In CI, build and test refuse to resolve past Package.resolved, so a run uses exactly the pinned dependencies.
+# In CI, build and test use exactly the pinned dependencies and compare file contents, so a restored build recompiles only what changed.
 run_selected_swift() {
     if [[ "${CI:-}" == "true" ]] && { [[ "${1:-}" == "build" ]] || [[ "${1:-}" == "test" ]]; }; then
-        DEVELOPER_DIR="$SELECTED_DEVELOPER_DIR" "$SELECTED_SWIFT" "$@" --force-resolved-versions
+        DEVELOPER_DIR="$SELECTED_DEVELOPER_DIR" "$SELECTED_SWIFT" "$@" --force-resolved-versions \
+            -Xswiftc -enable-incremental-file-hashing
     else
         DEVELOPER_DIR="$SELECTED_DEVELOPER_DIR" "$SELECTED_SWIFT" "$@"
     fi
