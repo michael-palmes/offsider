@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- Pages for security teams: [Offsider for security teams](docs/security-overview.md), one page to forward, and [Managed Macs](docs/mdm.md), with a sample profile. `SECURITY.md` names the version it describes and gains "Verify an install", "Process", "Known limits" and "Not yet", and [Privacy](docs/privacy.md) says what Offsider keeps and how to clear each store.
+
 ## [0.17.0] - 2026-11-20
 
 ### Added
