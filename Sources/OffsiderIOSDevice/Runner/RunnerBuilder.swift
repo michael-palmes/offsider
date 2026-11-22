@@ -88,6 +88,8 @@ public struct XcodeRunnerBuilder: RunnerBuilding {
     /// Whether the bundle at a path is validly signed and satisfies a requirement, sealed resources included.
     let signatureValid: @Sendable (_ path: String, _ requirement: String) -> Bool
     let now: @Sendable () -> Date
+    /// Seals `approved-prefixes`; an approval whose file does not match the seal counts as none.
+    let prefixSeal: any RunnerPrefixSealing
 
     public init(
         source: URL,
@@ -96,6 +98,7 @@ public struct XcodeRunnerBuilder: RunnerBuilding {
         environment: [String: String],
         signedInTeams: @escaping @Sendable () -> [String],
         notice: @escaping @Sendable (String) -> Void,
+        prefixSeal: any RunnerPrefixSealing,
         allowance: DeviceAllowance? = nil,
         expectedSource: [String: String]? = nil,
         registerDevice: Bool = false,
@@ -109,6 +112,7 @@ public struct XcodeRunnerBuilder: RunnerBuilding {
         self.environment = environment
         self.signedInTeams = signedInTeams
         self.notice = notice
+        self.prefixSeal = prefixSeal
         self.allowance = allowance
         self.expectedSource = expectedSource
         self.registerDevice = registerDevice
@@ -328,10 +332,11 @@ public struct XcodeRunnerBuilder: RunnerBuilding {
     @TaskLocal public static var confirmNewPrefix: (@Sendable (String) async throws -> Void)?
     static let approvedPrefixesFile = "approved-prefixes"
 
-    /// The prefixes a person approved at `runner build`, recorded beside the cached builds.
+    /// The prefixes a person approved at `runner build`, recorded beside the cached builds; none unless the file matches its seal.
     func approvedPrefixes() -> [String] {
-        let recorded = (try? OffsiderPrivateDirectory.readOwnedFile(named: Self.approvedPrefixesFile, in: cacheRoot.path, maxBytes: 64 * 1024)) ?? nil
-        return recorded.map { String(decoding: $0, as: UTF8.self).split(separator: "\n").map(String.init) } ?? []
+        guard let recorded = (try? OffsiderPrivateDirectory.readOwnedFile(named: Self.approvedPrefixesFile, in: cacheRoot.path, maxBytes: 64 * 1024)) ?? nil,
+              prefixSeal.seals(recorded) else { return [] }
+        return String(decoding: recorded, as: UTF8.self).split(separator: "\n").map(String.init)
     }
 
     /// Offsider's own prefix and the one a person sealed into the device's allowance under Touch ID need no approval; the environment's alone never counts.
@@ -351,7 +356,9 @@ public struct XcodeRunnerBuilder: RunnerBuilding {
             throw PrefixApproval(underlying: error)
         }
         approved.append(prefix)
-        try OffsiderPrivateDirectory.writeAtomically(Data(approved.joined(separator: "\n").utf8), named: Self.approvedPrefixesFile, in: directory)
+        let recorded = Data(approved.joined(separator: "\n").utf8)
+        try OffsiderPrivateDirectory.writeAtomically(recorded, named: Self.approvedPrefixesFile, in: directory)
+        try prefixSeal.seal(recorded)
     }
 
     /// `flock` on `<key>.lock`, polled so the task stays cancellable; the kernel drops it if this process dies.

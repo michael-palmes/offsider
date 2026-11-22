@@ -66,6 +66,7 @@ extension IOSDeviceBackend {
             environment: host.environment,
             signedInTeams: IOSDeviceDoctorProbe.signedInTeams,
             notice: { log(.notice, $0) },
+            prefixSeal: KeychainRunnerPrefixSeal(),
             allowance: state.runnerAllowance,
             expectedSource: host.runnerSourceDigests,
             registerDevice: registerDevice
