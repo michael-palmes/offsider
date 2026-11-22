@@ -6,6 +6,26 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- Pages for security teams: [Offsider for security teams](docs/security-overview.md), one page to forward, and [Managed Macs](docs/mdm.md), with a sample profile. `SECURITY.md` names the version it describes and gains "Verify an install", "Process", "Known limits" and "Not yet", and [Privacy](docs/privacy.md) says what Offsider keeps and how to clear each store.
+- Each release now carries its proof beside the tarball: `offsider-<version>-arm64.tar.gz.intoto.jsonl` (the provenance bundle, so `gh attestation verify --bundle` needs no call to GitHub for it), `offsider-<version>.cdx.json` (a CycloneDX 1.6 SBOM from `scripts/sbom.sh`: every Swift package pin, the idb fork with its upstream, the bundled frameworks, the Android helper, and the Xcode and macOS frameworks loaded at run time and never shipped), `SECURITY.md` as of that version and `build-info.txt` (the runner, Xcode, Swift, the idb pin, the helper's digest and the commit). All are in `SHA256SUMS` and attested, the SBOM also as a `https://cyclonedx.org/bom` attestation on the tarball, and the release notes give the commands. `SHA256SUMS` now lists more than the tarball, so check it with `shasum -a 256 -c SHA256SUMS --ignore-missing` when you download only some files.
+- A release refuses to build unless line 1 of `SECURITY.md` reads `**As of version <version>.**` for the tag's version (trailing spaces and a CR are let through), so the security policy a release ships always describes it.
+- `scripts/release.sh tag --version X.Y.Z` makes the signed release tag after the same `SECURITY.md` check, and only on a clean `main` equal to `origin/main` (fetched first) with the tag unused here and on origin. It never pushes: it prints the push command. `record` writes the build record, the SBOM and the `SECURITY.md` copy that `package` lists in `SHA256SUMS`, and `rehearse` runs it.
+- OpenSSF Scorecard (weekly and on each push to main, results published), CodeQL for the workflows, the Java Android helper and the TypeScript test fixture (Swift 6.4 is not supported by CodeQL yet), and dependency review on every pull request.
+- Dependabot now watches the Swift packages through `.github/swiftpm-watch/Package.swift`, a copy of the root manifest's remote requirements; a test fails while the two manifests or their `Package.resolved` pins differ, so a bump lands in both.
+- `security-insights.yml` (OpenSSF Security Insights 2.2.0): where to report a vulnerability, the release pipeline, its attestations and the scanners that run.
+
+### Changed
+
+- `test-runner.sh --unit-tests` reruns alone only the tests a stalled parallel run did not finish, read from Swift Testing's event stream, instead of every test; a stream it cannot read still reruns everything. CI pull requests restore the newest debug build main saved and recompile only the files whose contents changed, and the release rehearsal reuses fetched package repositories.
+
+### Fixed
+
+- `type` and a `key-sequence` of text keys on a phone, iPhone or iPad no longer treat a refused read as an unreadable screen. When the read before the keys is refused (another app or a system prompt in front, a locked screen, a pulled cable, no app named or an app outside the allowance), nothing is sent and the command exits with that refusal, where it used to warn that the text went out unchecked and open the input session. On an iPhone or iPad test device with `--app`, whose keys go through the session broker with no front-app check, text could reach whatever app was in front.
+- `tap --verify-id` with `--retries` judges a selector's target again before each retry, as `tap --verify` does: a target that moved, went or came under a cover since the first tap holds the retry (the first tap is watched for one more window). The check that nothing on screen changed leaves out a LogBox toast and what lies beneath a page, so a toast raised by the first tap over the target could take the second.
+- `tap --verify` with `--retries` on a screen whose tree could not be read before the tap no longer sends a selector's retry unjudged: it reads the tree once more, and holds the retry when that read fails or the target is not where the tap aimed.
+
 ## [0.17.0] - 2026-11-20
 
 ### Added

@@ -1264,6 +1264,57 @@ struct VerifierHoldTests {
         #expect(outcome.note == nil)
     }
 
+    @Test("--verify-id with a retry judges the target again on the latest read, and holds the retry when it is no longer where the input aimed", arguments: [(true, 2), (false, 1)])
+    func verifyIDRetryJudgesTheTargetAgain(stays: Bool, sends: Int) async throws {
+        let fake = FakeSimulator(trees: [Self.stacked(pushed: true)])
+        var sent = 0
+        var held = 0
+        var judged: [UITree] = []
+
+        let outcome = try await Verifier.run(
+            styles: [nil, nil], timeout: .seconds(1), dependencies: Self.judging(fake), mode: .appearing(id: "home-screen"),
+            targetStays: { tree in
+                judged.append(tree)
+                return stays
+            },
+            onHold: { _ in held += 1 }
+        ) { _ in sent += 1 }
+
+        #expect(sent == sends && held == (stays ? 0 : 1))
+        #expect(judged == [Self.stacked(pushed: true)])
+        #expect(!outcome.verified)
+        #expect(outcome.note == (stays ? .screenUnchanged : nil), "a hold for the target never says nothing changed")
+    }
+
+    @Test("a selector's retry with no tree to compare reads one for the target's judgement, and is held when it fails or the target moved", arguments: [
+        (true, true, 2), (true, false, 1), (false, true, 1),
+    ])
+    func blindRetryJudgesTheTarget(readable: Bool, stays: Bool, sends: Int) async throws {
+        let fake = FakeSimulator(trees: [emptyTree], screens: [screen(shade: 10)])
+        var dependencies = fake.dependencies
+        let read = dependencies.tree
+        var sent = 0
+        dependencies.tree = {
+            if sent > 0, !readable { throw CLIError(errorDescription: "read failed") }
+            return try await read()
+        }
+        var held = 0
+        var judged = 0
+
+        let outcome = try await Verifier.run(
+            styles: [nil, nil], timeout: .seconds(1), dependencies: dependencies,
+            targetStays: { _ in
+                judged += 1
+                return stays
+            },
+            onHold: { _ in held += 1 }
+        ) { _ in sent += 1 }
+
+        #expect(sent == sends && held == 2 - sends)
+        #expect(judged == (readable ? 1 : 0))
+        #expect(!outcome.verified)
+    }
+
     @Test("an --verify-id failure names where the element is and whether anything changed")
     func verifyIDFailureLine() throws {
         let request = VerifyRequest(
