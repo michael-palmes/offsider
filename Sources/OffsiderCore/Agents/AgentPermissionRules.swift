@@ -246,6 +246,71 @@ public enum AgentPermissionRules {
         return Merge(content: Data((OrderedJSON.object(root).rendered() + "\n").utf8), added: added, replaced: replaced)
     }
 
+    // MARK: Removing
+
+    public struct Removal: Equatable, Sendable {
+        /// The file's new content; nil when nothing of Offsider's is in it, or when `deletesFile`.
+        public let content: Data?
+        public let removed: Int
+        /// Only Offsider's header and rules were in the file, so it goes.
+        public var deletesFile = false
+    }
+
+    /// `init --uninstall`: takes out every rule init adds or once added where init puts it; a moved rule and the rest stay.
+    public static func remove(_ agent: Agent, existing: Data?) throws -> Removal {
+        guard let existing else { return Removal(content: nil, removed: 0) }
+        if existing.count > maxFileBytes { throw MergeError.tooLarge }
+        switch agent {
+        case .claudeCode: return try removeFromClaudeSettings(existing)
+        case .codex: return try removeFromCodexRules(existing)
+        }
+    }
+
+    static func removeFromClaudeSettings(_ existing: Data) throws -> Removal {
+        guard !isBlank(existing) else { return Removal(content: nil, removed: 0) }
+        let parsed: OrderedJSON
+        do {
+            parsed = try OrderedJSON.parse(existing)
+        } catch {
+            throw MergeError.malformed("is not valid JSON")
+        }
+        guard case .object(var root) = parsed else { throw MergeError.malformed("is not a JSON object") }
+        guard let permissionsIndex = root.firstIndex(where: { $0.0 == "permissions" }) else { return Removal(content: nil, removed: 0) }
+        guard case .object(var permissions) = root[permissionsIndex].1 else { throw MergeError.malformed("has a permissions value that is not an object") }
+        var removed = 0
+        for decision in Decision.allCases {
+            guard let index = permissions.firstIndex(where: { $0.0 == decision.rawValue }) else { continue }
+            guard case .array(let entries) = permissions[index].1 else { throw MergeError.malformed("has a permissions.\(decision.rawValue) value that is not a list") }
+            let ours = Set((rules + replacedRules).filter { $0.decision == decision }.map(\.claudePattern))
+            let kept = entries.filter { if case .string(let pattern) = $0 { return !ours.contains(pattern) } else { return true } }
+            removed += entries.count - kept.count
+            if kept.isEmpty, entries.count > kept.count {
+                permissions.remove(at: index)
+            } else {
+                permissions[index].1 = .array(kept)
+            }
+        }
+        guard removed > 0 else { return Removal(content: nil, removed: 0) }
+        if permissions.isEmpty {
+            root.remove(at: permissionsIndex)
+        } else {
+            root[permissionsIndex].1 = .object(permissions)
+        }
+        return Removal(content: Data((OrderedJSON.object(root).rendered() + "\n").utf8), removed: removed)
+    }
+
+    static func removeFromCodexRules(_ existing: Data) throws -> Removal {
+        guard let text = String(validating: existing, as: UTF8.self) else { throw MergeError.malformed("is not UTF-8 text") }
+        let keys = (codexRules + replacedRules.filter { !$0.codex.isEmpty }).map(\.codexKey)
+        let lines = text.split(separator: "\n", omittingEmptySubsequences: false)
+        let kept = lines.filter { line in !keys.contains { line.contains($0) } }
+        let removed = lines.count - kept.count
+        guard removed > 0 else { return Removal(content: nil, removed: 0) }
+        let rest = kept.filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty && $0 + "\n" != codexHeader }
+        if rest.isEmpty { return Removal(content: nil, removed: removed, deletesFile: true) }
+        return Removal(content: Data(kept.joined(separator: "\n").utf8), removed: removed)
+    }
+
     public static let codexHeader = "# Offsider's permission rules for Codex, from offsider init. Edit freely: init only adds missing rules.\n"
 
     /// Appends the missing `prefix_rule` lines to Offsider's own Codex rules file and takes out earlier ones they replace.
@@ -329,13 +394,13 @@ public enum AgentPermissionRules {
         return "Rules added to \(path) (\(added) new\(note))"
     }
 
-    public static func failureLine(path: String, error: MergeError) -> String {
+    public static func failureLine(path: String, error: MergeError, fix: String = "offsider init --rules-only") -> String {
         let problem: String
         switch error {
         case .tooLarge: problem = "is over 1 MiB"
         case .malformed(let detail): problem = detail
         }
-        return "\(path) \(problem), so it was left as is. Fix it, then run offsider init --rules-only."
+        return "\(path) \(problem), so it was left as is. Fix it, then run \(fix)."
     }
 
     /// `install.rules`: every installed agent has every rule; `lacking` names the agents that do not, `outdated` those holding a rule since replaced.

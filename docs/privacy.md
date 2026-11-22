@@ -70,7 +70,7 @@ Most of it lives in a private folder, `offsider-<uid>/` in your per-user temp fo
 | Unlock codes | Login Keychain, never synced | Until removed | `offsider unlock-code remove` |
 | The iPhone runner's build and the bundle prefixes you approved | `~/Library/Caches/offsider/runner/`, `approved-prefixes`; its seal in the login Keychain (`com.mpalmes.offsider.runner`) | Until removed | `offsider session stop --device <UDID> --clean` for a device's build; delete the folder for the rest, and the seal with `security delete-generic-password -s com.mpalmes.offsider.runner` |
 | The skill `init` installs | `~/.claude/skills/offsider`, `~/.agents/skills/offsider` or your `--dest` | Until removed | `offsider init --uninstall` |
-| The permission rules `init` adds | `~/.claude/settings.json` (`permissions.ask`) and `~/.codex/rules/offsider.rules` | Until removed | By hand for now: `init --uninstall` leaves them |
+| The permission rules `init` adds | `~/.claude/settings.json` (`permissions.ask`) and `~/.codex/rules/offsider.rules` | Until removed | `offsider init --uninstall` |
 | An emulator's gRPC public key, with `OFFSIDER_ANDROID_GRPC_AUTH=jwt` only | The emulator's `jwks` folder | While the command runs | The next command removes one a killed command left |
 | Screenshots, recordings and evidence run folders | Where you put them | Until you delete them | Delete them; Offsider never does |
 
