@@ -14,6 +14,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - `test-runner.sh --unit-tests` reruns alone only the tests a stalled parallel run did not finish, read from Swift Testing's event stream, instead of every test; a stream it cannot read still reruns everything. CI pull requests restore the newest debug build main saved and recompile only the files whose contents changed, and the release rehearsal reuses fetched package repositories.
 
+### Fixed
+
+- `type` and a `key-sequence` of text keys on a phone, iPhone or iPad no longer treat a refused read as an unreadable screen. When the read before the keys is refused (another app or a system prompt in front, a locked screen, a pulled cable, no app named or an app outside the allowance), nothing is sent and the command exits with that refusal, where it used to warn that the text went out unchecked and open the input session. On an iPhone or iPad test device with `--app`, whose keys go through the session broker with no front-app check, text could reach whatever app was in front.
+- `tap --verify-id` with `--retries` judges a selector's target again before each retry, as `tap --verify` does: a target that moved, went or came under a cover since the first tap holds the retry (the first tap is watched for one more window). The check that nothing on screen changed leaves out a LogBox toast and what lies beneath a page, so a toast raised by the first tap over the target could take the second.
+- `tap --verify` with `--retries` on a screen whose tree could not be read before the tap no longer sends a selector's retry unjudged: it reads the tree once more, and holds the retry when that read fails or the target is not where the tap aimed.
+
 ## [0.17.0] - 2026-11-20
 
 ### Added
