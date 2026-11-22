@@ -227,7 +227,7 @@ Before any pull request is opened, run `/code-review high` (Claude Code) or `/re
 
 The repository is public, and so are its PRs, issues and releases.
 
-- Never commit or post local device ids (serials, UDIDs, CoreDevice ids, panel ids), Apple team IDs, simulator or AVD names from the maintainer's machine, personal device models or local paths. The E2E fixture names (`Offsider_E2E`, `Offsider_E2E_Fold`, `Offsider Duo`) are public defaults and may appear in code and PR text.
+- Never commit or post local device ids (serials, UDIDs, CoreDevice ids, panel ids), Apple team IDs, simulator or AVD names from the maintainer's machine, personal device models or local paths. The E2E fixture names (`Offsider_E2E`, `Offsider_E2E_Fold`, `Offsider Duo`) are public defaults and may appear in code and PR text. The one team ID that may appear is the Developer ID team that signs releases, in `SECURITY.md`'s verify block and the release's build record, read from a release's signed binary (`codesign -dv`), never from any other file.
 - Never commit or post anything from the private apps the maintainer tests on: names, bundle ids, screens, labels, testIDs, copy or data. Call them "private apps".
 - Use placeholders (`<udid>`, `<serial>`, `/Users/me`) and the playground's own ids instead.
 - Issues found by testing a private app reach the repo rewritten: brief sub-agents with the rewritten version, and invent the labels, ids, copy, coordinates and log lines a fix and its tests need (or use the playground's). Name none of the app's SDKs or their log formats, and never call it a field case in code, tests or messages. The leak gate checks only its deny-list, so before committing grep the diff and messages for the issue's own words, numbers and device names.
@@ -261,5 +261,5 @@ Simulator-dependent suites are gated: `@Suite("Tap", .serialized, .enabled(if: i
   - Reference private notes or internal roadmap stages in the repo. Describe the change itself.
   - Use `--no-verify`. Fix what the hook reports.
   - Sign with `codesign --deep`. Sign nested code inside-out, frameworks first.
-  - Connect to non-loopback addresses, resolve hostnames or send telemetry. Offsider may use Unix sockets and loopback TCP to local developer daemons (the adb server and the Android Emulator); nothing leaves the Mac.
+  - Connect to non-loopback addresses, resolve hostnames or send telemetry. Offsider may use Unix sockets and loopback TCP to local developer daemons (the adb server, the Android Emulator, usbmuxd and Metro), and CoreDevice's USB tunnel for a wired iPhone or iPad; nothing leaves the Mac.
   - Edit files under `idb_checkout/`. Move the pin instead.
