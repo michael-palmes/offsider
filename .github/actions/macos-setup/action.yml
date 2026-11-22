@@ -13,13 +13,13 @@ inputs:
     description: The SHA-256 of that release's xcodegen.zip.
     default: "4d9e34b62172d645eed6457cac13fc222569974098ef4ee9c3368bedf0196806"
   debug-build-cache:
-    description: "true restores .build for a debug build, check only looks it up; either saves it on a miss. For unit test jobs only, never a release path."
+    description: "restore takes the newest .build main saved; save also stores this commit's after the job. For unit test jobs only, never a release path."
     default: "false"
 
 outputs:
   debug-build-cache-hit:
-    description: Whether .build was restored for this exact key.
-    value: ${{ steps.debug-build.outputs.cache-hit }}
+    description: Whether save found .build already stored for this commit.
+    value: ${{ steps.debug-build-save.outputs.cache-hit }}
 
 runs:
   using: composite
@@ -75,15 +75,35 @@ runs:
           build_products/XCFrameworks
         key: idb-arm64-xcode-${{ steps.xcode.outputs.build }}-${{ steps.idb.outputs.ref }}-xcodegen-${{ inputs.xcodegen-version }}-${{ hashFiles('scripts/build.sh', 'Package.swift') }}
 
-    # A fresh checkout's new timestamps recompile Offsider's own code every time, so only dependencies and SDK modules are reused.
-    - name: Cache the debug build
-      id: debug-build
+    # One per main commit; CI builds compare file contents, so the checkout's new timestamps recompile only what changed.
+    - name: Name the debug build cache
+      id: debug-key
       if: inputs.debug-build-cache != 'false'
+      shell: bash
+      env:
+        PREFIX: debug-build-arm64-xcode-${{ steps.xcode.outputs.build }}-${{ steps.idb.outputs.ref }}-${{ hashFiles('Package.swift', 'Package.resolved') }}-
+        MODE: ${{ inputs.debug-build-cache }}
+      run: |
+        set -euo pipefail
+        case "$MODE" in restore | save) ;; *) echo "::error::debug-build-cache is false, restore or save, not $MODE"; exit 1 ;; esac
+        echo "prefix=$PREFIX" >> "$GITHUB_OUTPUT"
+
+    - name: Restore the newest debug build from main
+      if: inputs.debug-build-cache == 'restore'
+      uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: .build
+        key: ${{ steps.debug-key.outputs.prefix }}${{ github.sha }}
+        restore-keys: ${{ steps.debug-key.outputs.prefix }}
+
+    - name: Restore the newest debug build, and save this commit's
+      id: debug-build-save
+      if: inputs.debug-build-cache == 'save'
       uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
         path: .build
-        key: debug-build-arm64-xcode-${{ steps.xcode.outputs.build }}-${{ steps.idb.outputs.ref }}-${{ hashFiles('Package.swift', 'Package.resolved') }}
-        lookup-only: ${{ inputs.debug-build-cache == 'check' }}
+        key: ${{ steps.debug-key.outputs.prefix }}${{ github.sha }}
+        restore-keys: ${{ steps.debug-key.outputs.prefix }}
 
     - name: Build idb frameworks
       shell: bash

@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- Pages for security teams: [Offsider for security teams](docs/security-overview.md), one page to forward, and [Managed Macs](docs/mdm.md), with a sample profile. `SECURITY.md` names the version it describes and gains "Verify an install", "Process", "Known limits" and "Not yet", and [Privacy](docs/privacy.md) says what Offsider keeps and how to clear each store.
+
+### Changed
+
+- `test-runner.sh --unit-tests` reruns alone only the tests a stalled parallel run did not finish, read from Swift Testing's event stream, instead of every test; a stream it cannot read still reruns everything. CI pull requests restore the newest debug build main saved and recompile only the files whose contents changed, and the release rehearsal reuses fetched package repositories.
+
 ### Fixed
 
 - `type` and a `key-sequence` of text keys on a phone, iPhone or iPad no longer treat a refused read as an unreadable screen. When the read before the keys is refused (another app or a system prompt in front, a locked screen, a pulled cable, no app named or an app outside the allowance), nothing is sent and the command exits with that refusal, where it used to warn that the text went out unchecked and open the input session. On an iPhone or iPad test device with `--app`, whose keys go through the session broker with no front-app check, text could reach whatever app was in front.
