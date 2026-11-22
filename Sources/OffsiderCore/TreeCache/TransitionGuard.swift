@@ -54,6 +54,30 @@ public enum TransitionGuard {
         return .recheck(after: .milliseconds(Int(((windowSeconds - since) * 1000).rounded())))
     }
 
+    public static let pixelGap: Duration = .milliseconds(33)
+
+    /// No read since an input under 1.5 s ago listed the target, so it may have come up with that input and still be sliding in.
+    public static func unproven(_ target: UINode, since record: TreeCacheRecord, now: Date) -> Bool {
+        guard let lastInput = record.lastInputAt, max(0, now.timeIntervalSince(lastInput)) < seconds(movingLimit) else { return false }
+        guard let readAt = record.treeReadAt, readAt >= lastInput, let roots = record.roots else { return true }
+        return !roots.contains { $0.flattened().contains { NodeIdentity.isGuardMatch($0, target) } }
+    }
+
+    /// Samples the target's pixels `gap` apart until two in a row match, for at most `limit`; false when they never did or could not be read.
+    @MainActor
+    public static func pixelsStill(
+        gap: Duration = pixelGap, limit: Duration = window, elapsed: () -> Duration, sleep: (Duration) async throws -> Void, sample: () -> ImageFingerprint?
+    ) async throws -> Bool {
+        guard var last = sample() else { return false }
+        while elapsed() < limit {
+            try await sleep(gap)
+            guard let next = sample() else { return false }
+            if next.changedTiles(comparedTo: last)?.isEmpty == true { return true }
+            last = next
+        }
+        return false
+    }
+
     static func hasSameFrame(_ target: UINode, in roots: [UINode]) -> Bool {
         guard let frame = target.frame else { return false }
         return roots.contains { root in

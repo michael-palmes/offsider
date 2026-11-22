@@ -32,6 +32,7 @@ private func resolveBatchTapPoint(
         pick: pick,
         coverCheck: coverCheck,
         coverSettle: coverSettle,
+        pixels: (context.backend as? any TargetPixelReading).map { reader in { await reader.targetPixels(for: context.device) } },
         logger: logger
     ) {
         await AccessibilityPoller.judgingMatches(try await fetchTree(), query: query, elementType: elementType, pick: pick, backend: context.backend, device: context.device)
