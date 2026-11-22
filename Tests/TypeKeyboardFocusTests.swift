@@ -362,6 +362,24 @@ struct TypeKeyboardFocusTests {
         try await Self.keySequence("11,8,15,15,18", on: landed, device: Self.simulator)
     }
 
+    @Test("keys into a field that clears itself pass when new text on the screen shows them, not when a clock ticks, on an iOS simulator and Android alike", arguments: [DevicePlatform.ios, .android])
+    func keySequenceIntoClearingField(platform: DevicePlatform) async throws {
+        var shown = Self.form(focused: "second-field", platform: platform)
+        shown.roots.append(FakeUI.node(.text, label: "Keys: h e l l o", frame: FakeUI.frame(20, 400, 360, 30), platform: platform))
+        let backend = StagedBackend([Self.form(focused: "second-field", platform: platform), shown], platform: platform)
+        try await Self.keySequence("11,8,15,15,18", on: backend, device: platform == .ios ? Self.simulator : Self.android)
+
+        var ticking = Self.form(focused: "second-field", platform: platform)
+        ticking.roots.append(FakeUI.node(.text, label: "00:01", frame: FakeUI.frame(20, 400, 360, 30), platform: platform))
+        var ticked = Self.form(focused: "second-field", platform: platform)
+        ticked.roots.append(FakeUI.node(.text, label: "00:02", frame: FakeUI.frame(20, 400, 360, 30), platform: platform))
+        let clock = StagedBackend([ticking, ticked], platform: platform)
+        let error = await #expect(throws: CLIError.self, "a clock that ticked shows none of the keys") {
+            try await Self.keySequence("11,8,15,15,18", on: clock, device: platform == .ios ? Self.simulator : Self.android)
+        }
+        #expect(error?.reason == .textNotAccepted)
+    }
+
     @Test("a batch key-sequence step that spells text on an iOS simulator is read back, and fails when the field never showed the keys")
     func batchKeySequenceOnSimulator() async throws {
         let unchanged = StagedBackend([Self.form(focused: "second-field", platform: .ios)], platform: .ios)

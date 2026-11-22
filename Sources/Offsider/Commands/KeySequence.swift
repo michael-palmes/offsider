@@ -153,8 +153,19 @@ struct KeySequence: AsyncParsableCommand {
         let typed = TypedExpectation(
             text: text, replacing: false, field: focus.field, query: nil, secure: focus.secure == .secure || focus.field?.isSecure == true, ignoringText: false
         )
-        try await Type.confirmLanded(typed, before: focus.field?.value, target: target, device: device, clock: clock, adb: Type.adbPath(of: backend), keys: true) {
+        let typedCharacters = Set(text.lowercased().filter { !$0.isWhitespace })
+        let moved = focus.tree.map { Set(shownText($0)) }.map { before in
+            { (tree: UITree) in shownText(tree).contains { !before.contains($0) && $0.lowercased().contains(where: typedCharacters.contains) } }
+        }
+        try await Type.confirmLanded(
+            typed, before: focus.field?.value, target: target, device: device, clock: clock, adb: Type.adbPath(of: backend), keys: true, screenMoved: moved
+        ) {
             try await backend.accessibilityTree(for: device)
         }
+    }
+
+    /// The app's labels and values outside its text fields and the keyboard: new text there holding a typed character shows keys a field took and cleared.
+    static func shownText(_ tree: UITree) -> [String] {
+        tree.roots.filter { $0.role != .keyboard }.flatMap { $0.flattened() }.filter { !$0.role.isTextInput }.map { "\($0.label ?? "")\u{1F}\($0.value ?? "")" }
     }
 } 
