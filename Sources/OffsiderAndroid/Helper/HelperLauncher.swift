@@ -76,12 +76,13 @@ struct HelperLauncher {
                 + "for o in /data/local/tmp/offsider-helper-*.dex; do [ \"$o\" = \"$f\" ] || rm -f \"$o\"; done; "
         }
         return script
-            + "[ -f \"$f\" ] && [ ! -L \"$f\" ] || exit \(missingStatus); "
-            + "if command -v sha256sum >/dev/null 2>&1; then case \"$(sha256sum \"$f\" 2>/dev/null)\" in \(dex.sha256)\\ *) ;; *) exit \(missingStatus);; esac; "
-            + "else [ \"$(stat -c %s \"$f\" 2>/dev/null)\" = \(dex.bytes.count) ] || exit \(missingStatus); fi; "
-            + "CLASSPATH=\"$f\" exec app_process /data/local/tmp --nice-name=\(processName) \(mainClass) serve "
+            + "[ -f \"$f\" ] && [ ! -L \"$f\" ] && [ -r \"$f\" ] && exec 3<\"$f\" || exit \(missingStatus); d=/proc/$$/fd/3; "
+            + "if command -v sha256sum >/dev/null 2>&1; then case \"$(sha256sum \"$d\" 2>/dev/null)\" in \(dex.sha256)\\ *) ;; *) exit \(missingStatus);; esac; "
+            + "else [ \"$(stat -L -c %s \"$d\" 2>/dev/null)\" = \(dex.bytes.count) ] || exit \(missingStatus); fi; "
+            + "CLASSPATH=/proc/self/fd/3 exec app_process /data/local/tmp --nice-name=\(processName) \(mainClass) serve "
             + "--idle-timeout-ms \(idleTimeoutMs) --accept-timeout-ms \(acceptTimeoutMs)"
             + (toastPackages.map { " --toast-packages " + AdbShellQuoting.quote($0.sorted().joined(separator: ",")) } ?? "")
+            + " 3<&3"
     }
 
     /// The dex's name inside the push folder.

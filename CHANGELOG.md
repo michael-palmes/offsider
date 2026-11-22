@@ -25,6 +25,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Fixed
 
+- The Android helper's start script opens the dex once, hashes it through that descriptor and loads the helper from it (`CLASSPATH=/proc/self/fd/3`), so the bytes it checked are the bytes that run, even if the file is replaced in between.
 - A runner bundle prefix approval now needs its seal: `runner build` records the SHA-256 of `approved-prefixes` in a login Keychain item, and a file that does not match it, such as one another program wrote, counts as no approval, so the next build asks the person again. Approvals made before this release are asked for once more.
 - A TCP adb server Offsider did not start as you is no longer used: the first connection of each command checks that one of your processes accepted it, and another user's listener on 5037 (or the configured port) exits 9 with `adb_server_misconfigured`, as a Unix socket of another user's already did. `doctor`'s `android.adb-server` names the program behind the port and warns when it is not the SDK's `adb`.
 - The built-in deny-list now holds WhatsApp and WhatsApp Business, Signal, Telegram, Slack, Teams, LastPass, Dashlane, Keeper, Proton Pass and Enpass on iOS and Android, by prefix where they ship more than one build, so an Any app allowance never reaches a chat or a vault. On iOS its ids compare without case, as managed `deniedBundleIDs` entries already did, so a differently cased id is refused too.
