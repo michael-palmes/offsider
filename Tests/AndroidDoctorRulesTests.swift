@@ -79,6 +79,16 @@ struct AndroidDoctorRulesTests {
         #expect(CheckStatus.aggregate(plain.map(\.status)) == .pass)
     }
 
+    @Test("a server answered by a program other than the SDK's adb warns and names both; the SDK's own passes")
+    func serverOwner() {
+        let answering = AdbServerFact.answering(endpoint: "127.0.0.1:5037", version: 41)
+        let other = AndroidDoctorRules.adbServer(answering, owner: .other(executable: "/opt/tools/relay", pid: 4242, sdkAdb: "/sdk/platform-tools/adb"))
+        #expect(other.status == .warn)
+        #expect(other.detail == "Answering on 127.0.0.1:5037, but from /opt/tools/relay (pid 4242), not this SDK's /sdk/platform-tools/adb")
+        #expect(AndroidDoctorRules.adbServer(answering, owner: .sdkAdb("/sdk/platform-tools/adb")).status == .pass)
+        #expect(AndroidDoctorRules.adbServer(answering).status == .pass)
+    }
+
     @Test("a non-loopback adb server setting fails")
     func badServerSetting() {
         #expect(AndroidDoctorRules.adbServer(.badSetting("ADB_SERVER_SOCKET is tcp:10.0.0.2:5037, which is not on this Mac.")).status == .fail)

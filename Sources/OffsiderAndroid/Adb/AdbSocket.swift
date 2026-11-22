@@ -10,6 +10,8 @@ enum AdbConnectError: Error, Equatable, Sendable {
     case failed(errno: Int32)
     /// A Unix socket whose server runs as another user.
     case foreignPeer(uid: uid_t)
+    /// A TCP port no process of this user accepted the connection on: another user's server holds it.
+    case foreignListener
 }
 
 protocol AdbByteStream: Sendable {
@@ -25,14 +27,16 @@ protocol AdbConnecting: Sendable {
 
 /// BSD sockets on numeric loopback addresses or a Unix path; there is no code path that resolves a name.
 struct PosixAdbConnector: AdbConnecting {
-    /// The only user a Unix-socket server may run as.
+    /// The only user the server may run as.
     var ownerUID: uid_t = getuid()
+    var ownerProbe: AdbServerOwnership.Probe = AdbServerOwnership.liveProbe
 
     func connect(to endpoint: LoopbackEndpoint, timeout: Duration) async throws -> any AdbByteStream {
         let deadline = ContinuousClock.now + timeout
         let owner = ownerUID
+        let probe = ownerProbe
         return try await PosixAdbStream.onQueue(DispatchQueue(label: "offsider.adb.connect")) {
-            try PosixAdbStream.open(endpoint, deadline: deadline, ownerUID: owner)
+            try PosixAdbStream.open(endpoint, deadline: deadline, ownerUID: owner, ownerProbe: probe)
         }
     }
 }
@@ -60,7 +64,12 @@ final class PosixAdbStream: AdbByteStream, @unchecked Sendable {
         }
     }
 
-    static func open(_ endpoint: LoopbackEndpoint, deadline: ContinuousClock.Instant, ownerUID: uid_t = getuid()) throws -> PosixAdbStream {
+    /// How long a TCP check waits for the server to accept, within the connection's own deadline.
+    static let acceptWait: Duration = .seconds(2)
+
+    static func open(
+        _ endpoint: LoopbackEndpoint, deadline: ContinuousClock.Instant, ownerUID: uid_t = getuid(), ownerProbe: AdbServerOwnership.Probe = AdbServerOwnership.liveProbe
+    ) throws -> PosixAdbStream {
         let family: Int32
         switch endpoint {
         case .tcp(.ipv4, _): family = AF_INET
@@ -89,6 +98,11 @@ final class PosixAdbStream: AdbByteStream, @unchecked Sendable {
             var gid: gid_t = 0
             guard unsafe getpeereid(fd, &uid, &gid) == 0 else { throw AdbConnectError.failed(errno: errno) }
             guard uid == ownerUID else { throw AdbConnectError.foreignPeer(uid: uid) }
+        } else {
+            let wait = max(.milliseconds(200), min(deadline - ContinuousClock.now, acceptWait))
+            guard AdbServerOwnership.verify(fd, endpoint: endpoint, uid: ownerUID, wait: wait, probe: ownerProbe) != nil else {
+                throw AdbConnectError.foreignListener
+            }
         }
         return stream
     }
