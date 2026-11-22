@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- Pages for security teams: [Offsider for security teams](docs/security-overview.md), one page to forward, and [Managed Macs](docs/mdm.md), with a sample profile. `SECURITY.md` names the version it describes and gains "Verify an install", "Process", "Known limits" and "Not yet", and [Privacy](docs/privacy.md) says what Offsider keeps and how to clear each store.
+
 ### Changed
 
 - `test-runner.sh --unit-tests` reruns alone only the tests a stalled parallel run did not finish, read from Swift Testing's event stream, instead of every test; a stream it cannot read still reruns everything. CI pull requests restore the newest debug build main saved and recompile only the files whose contents changed, and the release rehearsal reuses fetched package repositories.
