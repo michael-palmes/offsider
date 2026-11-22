@@ -242,7 +242,7 @@ extension KeySequence: BatchConvertible {
             )
         }
         let keys = BatchPrimitive.hidMergeable(InputEvent.composite(events))
-        guard context.device.platform == .android, KeySequence.spelledText(parsedKeycodes) != nil else { return [focus, keys] }
+        guard !context.device.isPhysicalIOSDevice, KeySequence.spelledText(parsedKeycodes) != nil else { return [focus, keys] }
         let landed = BatchPrimitive.run { _ in
             guard let check = focusTree.check else { return }
             try await KeySequence.confirmLanded(parsedKeycodes, focus: check, backend: context.backend, device: context.device)
