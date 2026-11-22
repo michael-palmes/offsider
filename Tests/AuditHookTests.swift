@@ -267,6 +267,27 @@ struct AuditHookTests {
         #expect(stamped["version"] as? String == VERSION && stamped["pid"] as? Int == Int(getpid()) && stamped["command"] as? String == "unknown")
     }
 
+    @Test("the session is the owner a lease would record, found without walking past it")
+    func sessionStopsAtOwner() {
+        let lookups = AuditCapture()
+        let names: [Int32: (String, Int32)] = [900: ("zsh", 800), 800: ("env", 700), 700: ("node", 600), 600: ("login", 500), 500: ("Terminal", 1)]
+        let table = ProcessTable { pid in
+            lookups.stamped()
+            return names[pid].map { (ProcessIdentity(pid: pid, startTime: UInt64(pid), name: $0.0), $0.1) }
+        }
+        let session = AuditTrail.session(from: 900, in: table)
+        #expect(session == AuditRecord.Session(pid: 700, name: "node") && lookups.stamps == 3)
+        let owner = ProcessAncestry.owner(from: 900, in: table)
+        #expect(owner?.pid == session?.pid && owner?.name == session?.name)
+        #expect(AuditTrail.session(from: 1, in: table) == nil && AuditTrail.session(from: 4242, in: table) == nil)
+        let shells = ProcessTable { pid in pid == 9 ? (ProcessIdentity(pid: 9, startTime: 1, name: "zsh"), 1) : nil }
+        #expect(AuditTrail.session(from: 9, in: shells) == nil && ProcessAncestry.owner(from: 9, in: shells) == nil)
+        let mine = try? #require(ProcessTable.quick.lookup(getpid()))
+        let live = ProcessTable.live.lookup(getpid())
+        #expect(mine?.identity == live?.identity && mine?.parent == live?.parent)
+        #expect(ProcessTable.quick.lookup(1)?.identity.name == "launchd")
+    }
+
     @Test("the store every command writes the allow-list through carries the audit trail")
     func liveStoreIsAudited() {
         #expect(DevicePolicySources.store().map { $0.audit != nil } ?? true)

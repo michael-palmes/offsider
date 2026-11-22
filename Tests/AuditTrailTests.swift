@@ -59,6 +59,26 @@ struct AuditTrailTests {
         }
     }
 
+    @Test("the hand-written line is the same JSON the general renderer gives, with every field and with none of the optional ones")
+    func lineMatchesRenderer() {
+        let full = AuditRecord(
+            AuditEvent(.allowed, platform: .ios, key: PolicyFixtures.phone, app: AuditFixtures.playground, exit: 7, reason: "device_not_allowed", refusal: "expired", testDevice: true,
+                       managed: true, expires: PolicyFixtures.now, pins: 2),
+            time: PolicyFixtures.now, version: "0.18.0-3-gabc1234", pid: 4242, session: AuditRecord.Session(pid: 7, name: "node"), command: "app launch", milliseconds: 12
+        )
+        let bare = AuditRecord(AuditEvent(.ran, platform: .android, key: "K"), time: PolicyFixtures.now, version: "0.18.0", pid: 1, session: nil, command: "tap", milliseconds: nil)
+        for record in [full, bare] {
+            #expect(record.line(prev: AuditTrail.genesis) == record.json(prev: AuditTrail.genesis).rendered(compact: true))
+            #expect(AuditRecord.parse(Data(record.line(prev: AuditTrail.genesis).utf8))?.record == record)
+        }
+    }
+
+    @Test("a record's time reads exactly as every other Offsider timestamp does", arguments: [0, 951_782_400, 1_709_251_199, 1_790_000_060.9, 4_102_444_799])
+    func stampMatchesTimestamps(seconds: Double) {
+        let date = Date(timeIntervalSince1970: seconds)
+        #expect(AuditRecord.stamp(date) == ProcessStamp.timestamp(date))
+    }
+
     @Test("an edited line, a removed line and a cut start each break the chain where it happened")
     func tamperBreaksChain() throws {
         try Self.withHome { home in

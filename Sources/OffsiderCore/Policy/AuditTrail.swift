@@ -171,7 +171,7 @@ public struct AuditTrail: Sendable {
     }
 
     static func hash(_ line: Data) -> String {
-        SHA256.hash(data: line).map { unsafe String(format: "%02x", $0) }.joined()
+        AuditRecord.hex(SHA256.hash(data: line))
     }
 
     private static func lastLineHash(atPath path: String, uid: uid_t) -> String? {

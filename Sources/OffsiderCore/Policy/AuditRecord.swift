@@ -1,4 +1,5 @@
 import CryptoKit
+import Darwin
 import Foundation
 
 /// What a caller knows about one physical-device event; `AuditTrail` adds the time, the build, the process and the chain.
@@ -114,8 +115,30 @@ public struct AuditRecord: Equatable, Sendable {
 
     /// As the tree cache names its files, so an administrator can match a record to inventory and nobody reads a serial from it.
     public static func deviceKey(platform: DevicePlatform, key: String) -> String {
-        let digest = SHA256.hash(data: Data("\(platform.rawValue):\(key)".utf8))
-        return digest.prefix(8).map { unsafe String(format: "%02x", $0) }.joined()
+        hex(SHA256.hash(data: Data("\(platform.rawValue):\(key)".utf8)).prefix(8))
+    }
+
+    private static let hexDigits = Array("0123456789abcdef".utf8)
+
+    /// Lower-case hex without a formatter, which costs a fresh process far more than the hash itself.
+    static func hex(_ bytes: some Sequence<UInt8>) -> String {
+        var text: [UInt8] = []
+        for byte in bytes {
+            text.append(hexDigits[Int(byte >> 4)])
+            text.append(hexDigits[Int(byte & 15)])
+        }
+        return String(decoding: text, as: UTF8.self)
+    }
+
+    /// `2026-10-05T03:12:44Z`, as `ProcessStamp.timestamp` writes it, from `gmtime_r` so a record never pays for a date formatter's first use.
+    static func stamp(_ date: Date) -> String {
+        var seconds = time_t(date.timeIntervalSince1970.rounded(.down))
+        var parts = tm()
+        unsafe gmtime_r(&seconds, &parts)
+        func two(_ value: Int32) -> String { value < 10 ? "0\(value)" : "\(value)" }
+        let year = Int(parts.tm_year) + 1900
+        guard (1000...9999).contains(year) else { return ProcessStamp.timestamp(date) }
+        return "\(year)-\(two(parts.tm_mon + 1))-\(two(parts.tm_mday))T\(two(parts.tm_hour)):\(two(parts.tm_min)):\(two(parts.tm_sec))Z"
     }
 
     /// The keys a line may hold, in the order they are written.
@@ -126,13 +149,26 @@ public struct AuditRecord: Equatable, Sendable {
 
     /// One JSON object with no newline, `prev` first so the chain reads without parsing the rest.
     public func line(prev: String) -> String {
-        json(prev: prev).rendered(compact: true)
+        // Written by hand: every value is already cut to a shape that needs no escaping, and the general renderer costs a fresh process far more.
+        var text = "{\"prev\":\"\(prev)\",\"time\":\"\(Self.stamp(time))\",\"version\":\"\(version)\",\"pid\":\(pid)"
+        if let session { text += ",\"session\":{\"pid\":\(session.pid),\"name\":\"\(session.name)\"}" }
+        text += ",\"command\":\"\(command)\",\"platform\":\"\(platform.rawValue)\",\"device\":\"\(device)\""
+        if let app { text += ",\"app\":\"\(app)\"" }
+        text += ",\"outcome\":\"\(outcome.rawValue)\""
+        if let exit { text += ",\"exit\":\(exit)" }
+        if let reason { text += ",\"reason\":\"\(reason)\"" }
+        if let refusal { text += ",\"refusal\":\"\(refusal)\"" }
+        text += ",\"testDevice\":\(testDevice),\"managed\":\(managed)"
+        if let milliseconds { text += ",\"ms\":\(milliseconds)" }
+        if let expires { text += ",\"expires\":\"\(Self.stamp(expires))\"" }
+        if let pins { text += ",\"pins\":\(pins)" }
+        return text + "}"
     }
 
     /// The record's fields in file order; `prev` is left out when nil.
     func json(prev: String?) -> OrderedJSON {
         var fields: [(String, OrderedJSON)] = (prev.map { [("prev", .string($0))] } ?? []) + [
-            ("time", .string(ProcessStamp.timestamp(time))),
+            ("time", .string(Self.stamp(time))),
             ("version", .string(version)),
             ("pid", .integer(Int(pid))),
         ]
@@ -148,7 +184,7 @@ public struct AuditRecord: Equatable, Sendable {
         fields.append(("testDevice", .bool(testDevice)))
         fields.append(("managed", .bool(managed)))
         if let milliseconds { fields.append(("ms", .integer(milliseconds))) }
-        if let expires { fields.append(("expires", .string(ProcessStamp.timestamp(expires)))) }
+        if let expires { fields.append(("expires", .string(Self.stamp(expires)))) }
         if let pins { fields.append(("pins", .integer(pins))) }
         return .object(fields)
     }
@@ -205,7 +241,8 @@ public struct AuditRecord: Equatable, Sendable {
 
         /// A bundle id or package name, as the allow-list takes one; nil for anything else.
         static func app(_ text: String) -> String? {
-            DeviceAllowance.isAppID(text) && !text.hasPrefix("-") ? text : nil
+            let shaped = (1...255).contains(text.utf8.count) && text.contains(".") && !text.hasPrefix(".") && !text.hasSuffix(".") && !text.hasPrefix("-")
+            return shaped && text.allSatisfy(identifier.contains) ? text : nil
         }
 
         /// One of the failure reasons Offsider exits with; nil for any other text.

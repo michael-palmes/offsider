@@ -40,7 +40,7 @@ offsider devices remove    # pick one to withdraw; stops its runner and session 
 
 ## Audit trail
 
-Every command that drives a physical device, is refused on one, or changes who may drive one leaves one record on the Mac. Simulators and emulators leave none. There is no switch, and a record costs a command well under a millisecond.
+Every command that drives a physical device, is refused on one, or changes who may drive one leaves one record on the Mac. Simulators and emulators leave none. There is no switch, and a record costs a command about half a millisecond.
 
 ```bash
 offsider devices status --audit                 # the newest 20 records
