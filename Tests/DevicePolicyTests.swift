@@ -251,7 +251,7 @@ struct PhysicalDevicePolicyTests {
         (ManagedDevicePolicy(allowedDeviceIDs: [PolicyFixtures.phone.lowercased()]), nil),
         (ManagedDevicePolicy(allowedDeviceIDs: ["00008130-0000000000000DEF"]), .managedNotListed),
         (ManagedDevicePolicy(allowPhysicalDevices: true, unreadableKeys: [ManagedDevicePolicy.allowedDeviceIDsKey]), .managedUnreadable(ManagedDevicePolicy.allowedDeviceIDsKey)),
-        (ManagedDevicePolicy(allowPhysicalDevices: true, unknownKeys: ["maxAllowanceDays"]), .managedUnknownKey("maxAllowanceDays")),
+        (ManagedDevicePolicy(allowPhysicalDevices: true, unknownKeys: ["requireAuditReview"]), .managedUnknownKey("requireAuditReview")),
     ])
     func precedence(managed: ManagedDevicePolicy, refusal: DeviceRefusal?) {
         let decision = Self.decide(managed)
@@ -295,10 +295,10 @@ struct PhysicalDevicePolicyTests {
 
     @Test("a forced key this build does not know refuses every physical device and is named, beside known keys or alone")
     func unknownKey() {
-        let alone = ManagedDevicePolicy.read(from: FakeManagedPreferences(values: ["maxAllowanceDays": .unreadable]))
-        #expect(alone.unknownKeys == ["maxAllowanceDays"])
+        let alone = ManagedDevicePolicy.read(from: FakeManagedPreferences(values: ["requireAuditReview": .unreadable]))
+        #expect(alone.unknownKeys == ["requireAuditReview"])
         #expect(alone.present)
-        #expect(Self.decide(alone) == .refused(.managedUnknownKey("maxAllowanceDays")))
+        #expect(Self.decide(alone) == .refused(.managedUnknownKey("requireAuditReview")))
         let beside = ManagedDevicePolicy.read(from: FakeManagedPreferences(values: [
             ManagedDevicePolicy.allowPhysicalDevicesKey: .bool(true), "requireAudit": .bool(true), "auditDays": .unreadable,
         ]))

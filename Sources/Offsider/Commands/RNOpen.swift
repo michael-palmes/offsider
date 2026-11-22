@@ -386,6 +386,9 @@ struct RNOpen: AsyncParsableCommand {
             let host = try await opener.metroHost(port: port, on: device)
             guard let setter = route.backend as? any MetroReverseSetting, let allowance = route.allowance, allowance.platform == .android else { return (host, false, false) }
             let recorded = await setter.recordedMetroPorts(on: device).contains(port)
+            if recorded, let why = ManagedGate.refusal(.allowMetroReverse) {
+                throw CLIError.managedPolicy(why, outcome: "Offsider did not use the adb reverse it set on \(device.rawValue); `offsider session stop --device \(device.rawValue)` removes it.")
+            }
             if recorded, !allowance.metroPorts.contains(port) {
                 let undo = "offsider session stop --device \(device.rawValue)"
                 throw CLIError(
@@ -398,6 +401,7 @@ struct RNOpen: AsyncParsableCommand {
             return (host, false, recorded)
         } catch let error as ExpoDevClientError where error.kind == .noRoute {
             guard let setter = route.backend as? any MetroReverseSetting, let allowance = route.allowance, allowance.platform == .android else { throw error }
+            try CLIError.requireManaged(.allowMetroReverse, outcome: "Offsider set no adb reverse on \(device.rawValue).")
             guard allowance.metroPorts.contains(port) else {
                 let step = ErrorAudience.current.personStep("offsider devices add", agentTail: ", choose \(allowance.name) and Metro port \(port); an agent cannot allow a port")
                 throw CLIError(

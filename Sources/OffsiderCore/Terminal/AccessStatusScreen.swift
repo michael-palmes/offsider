@@ -7,6 +7,7 @@ public enum AccessStatusScreen {
     public static let nothingAllowed = "Nothing allowed yet."
     public static let managedBlocksAll = "Managed policy blocks every device."
     public static let managedBlocksSome = "Managed policy blocks some devices."
+    public static let managedEndedSome = "Managed policy ended an allowance. Allow again."
     public static let listChanged = "List changed outside Offsider. Allow again."
     public static let listUnreadable = "List unreadable. Allow again."
     public static let allowCommand = "offsider devices add"
@@ -40,7 +41,10 @@ public enum AccessStatusScreen {
 
     /// The devices agents may control now; expired and refused entries are left out.
     public static func allowed(_ policy: PhysicalDevicePolicy, now: Date) -> [DeviceAllowance] {
-        policy.list.entries.filter { policy.decision(platform: $0.platform, key: $0.key, now: now) == .allowed($0) }
+        policy.list.entries.compactMap { entry in
+            if case .allowed(let held) = policy.decision(platform: entry.platform, key: entry.key, now: now) { return held }
+            return nil
+        }
     }
 
     /// `Test Pixel needs a newer Offsider.`, or how many do.
@@ -61,19 +65,23 @@ public enum AccessStatusScreen {
         if policy.managed.unreadable || !policy.managed.unknownKeys.isEmpty || policy.managed.allowPhysicalDevices == false { return managedBlocksAll }
         if policy.listProblem != nil { return listUnreadable }
         if !policy.sealIntact, !policy.list.isEmpty { return listChanged }
-        let blocked = policy.list.entries.contains { entry in
-            if case .refused(let refusal) = policy.decision(platform: entry.platform, key: entry.key, now: now) { return refusal.isManaged }
-            return false
+        let refusals = policy.list.entries.compactMap { entry -> DeviceRefusal? in
+            if case .refused(let refusal) = policy.decision(platform: entry.platform, key: entry.key, now: now) { return refusal }
+            return nil
         }
-        return blocked ? managedBlocksSome : newerNeeded(policy)
+        if refusals.contains(where: \.isManaged) { return managedBlocksSome }
+        return refusals.contains { $0.managedKey != nil } ? managedEndedSome : newerNeeded(policy)
     }
 
     /// A person's page; `agent` is what an agent reads on stdout instead, as it always did.
     public static func page(_ policy: PhysicalDevicePolicy, now: Date, timeZone: TimeZone, agent: String = "", style: TerminalStyle = .detect(isTerminal: false)) -> Page {
         var notices: [Notice] = []
         if let warning = warning(policy, now: now) {
-            let allowAgain = [listChanged, listUnreadable].contains(warning)
+            let allowAgain = [listChanged, listUnreadable, managedEndedSome].contains(warning)
             notices.append(.warning(warning, try: allowAgain ? allowCommand : warning == newerNeeded(policy) ? NewerDeviceEntry.updateCommand : nil))
+        }
+        if policy.managed.ceilings.present, !policy.managed.ceilings.shown.isEmpty {
+            notices.append(.note("Your organisation sets: \(policy.managed.ceilings.shown.joined(separator: ", "))"))
         }
         let entries = allowed(policy, now: now)
         guard !entries.isEmpty else {

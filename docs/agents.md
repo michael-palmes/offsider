@@ -77,6 +77,21 @@ Offsider enforces, whatever the agent does:
 - On an Android phone, `permission ... all` is refused, `permission --app`, `app`, `notifications` and `logs` reach only allowed apps, and browsers, system apps or the notification shade in front stop screen reads and input. A system window owned by `android` over the allowed app, with that app still holding focus, stops input and every read but `describe-ui` and `screenshot`, which name it; a managed `allowedBundleIDs` list without `android`, or a `deniedBundleIDs` naming it, keeps it unread. `screenshot --widget` reads the launcher's tree to find the allowed app's own widget, never prints or caches that tree, and writes only the widget.
 - Its brokers serve only an Offsider build that passes their code signature check (a release, any Offsider of the same team and identifier; a development build, only itself), and the iPhone session broker stops within 30 s of an allowance lapsing.
 
+## Managed harnesses
+
+An administrator can lock Claude Code or Codex so that only managed settings count. Two Claude Code locks undo what `offsider init` installs: `allowManagedPermissionRulesOnly` ignores every permission rule outside managed settings, the `ask` rules above included, and `strictPluginOnlyCustomization` (set to `true`, or naming `skills`) stops the skill loading from `~/.claude/skills`. Codex's managed requirements drop nothing, but only what they hold applies to everyone.
+
+`offsider init --print-managed` prints what an administrator deploys instead, and writes nothing:
+
+- **Claude Code:** a settings document with the same `permissions.ask` rules, to save as `/Library/Application Support/ClaudeCode/managed-settings.d/50-offsider.json`, or to merge into `managed-settings.json` or a `com.anthropic.claudecode` profile. A copy is in [mdm/claude-code-managed-settings.json](mdm/claude-code-managed-settings.json).
+- **Codex:** a `[rules]` table whose `prefix_rules` prompt for the same commands, for `/etc/codex/requirements.toml` or the `requirements_toml_base64` key of a `com.openai.codex` profile. A copy is in [mdm/codex-requirements.toml](mdm/codex-requirements.toml).
+
+If managed settings turn Claude Code's sandbox on, also add `"offsider *"` to `sandbox.excludedCommands`: Claude Code's sandbox blocks Unix sockets and direct loopback connections by default, and Offsider reaches simulators, emulators and phones through both. An excluded command still passes the rules above. This line comes from Claude Code's documentation and has not been checked in a sandboxed session.
+
+`offsider init` prints one line for each lock that ignores what it just installed, naming what to ask your administrator for, and `doctor`'s `harness.managed` warns until it is sorted: for the rules, until the managed files or the profile carry them; for the skill, which an administrator deploys as a managed skill or plugin (`offsider init --print` prints it), until the copy in `~/.claude/skills/offsider` is removed. It reads the managed files and the two managed preference domains on this Mac; settings pushed from a vendor's console are not visible to it.
+
+These rules slow a misled agent; Offsider's own checks, and the [managed keys](mdm.md), are what hold.
+
 ## Device lock and leases
 
 ![A timeline for one device: the first command holds it, a second command that arrives meanwhile exits 8 at once, and the same command with --wait-lock waits until the first lets go, then runs.](assets/device-lock.png)

@@ -63,6 +63,7 @@ struct Wake: AsyncParsableCommand {
             break
         }
         try StayAwakeCommand.requireAndroid(deviceOption.id, command: "wake")
+        if unlock { try CLIError.requireManaged(.allowUnlockCodes, outcome: "Nothing was sent to \(deviceOption.id).") }
         let route = try await DeviceRouter.routeForInput(deviceOption, logger: OffsiderLogger())
         let console = Console.current
         let result = try await console.progress("Waking the screen") {

@@ -1,0 +1,98 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Offsider (com.mpalmes.offsider)",
+  "description": "Ceilings an administrator sets for Offsider on a managed Mac. Offsider honours a key only while macOS reports it forced; a key left out sets no limit, and a key of the wrong type refuses every physical device.",
+  "type": "object",
+  "properties": {
+    "allowPhysicalDevices": {
+      "title": "Allow physical devices",
+      "description": "False refuses every phone, iPhone and iPad. True sets no limit beyond each person's allow-list.",
+      "type": "boolean"
+    },
+    "allowedDeviceIDs": {
+      "title": "Allowed device IDs",
+      "description": "Only these devices may be driven: iPhone and iPad UDIDs (any case) and Android serials (exact). An empty list allows none.",
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "allowedBundleIDs": {
+      "title": "Allowed app IDs",
+      "description": "Apps on a physical device are limited to these exact bundle ids and package names. An empty list allows none.",
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "deniedBundleIDs": {
+      "title": "Denied app IDs",
+      "description": "Apps Offsider never signs in to on any device, and never drives on a physical device. An entry ending in a full stop is a prefix.",
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "allowTestDevices": {
+      "title": "Allow test devices",
+      "description": "While any key is set, a test device is a plain Any app allowance unless this is true and neither app list nor requirePinnedApps is set.",
+      "type": "boolean"
+    },
+    "forceMasks": {
+      "title": "Keep masks and redaction on",
+      "description": "True refuses every way to drop a password mask or log redaction, for a person and an agent alike.",
+      "type": "boolean"
+    },
+    "maxAllowanceDays": {
+      "title": "Longest allowance, in days",
+      "description": "The longest a physical device's allowance lasts. Longer and endless allowances are refused, and a saved one ends this many days after it was added.",
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 3650
+    },
+    "allowSavedLogins": {
+      "title": "Allow saved logins",
+      "description": "False refuses login, and credential add, describe and join, on every device.",
+      "type": "boolean"
+    },
+    "allowFileInput": {
+      "title": "Allow --allow-path",
+      "description": "False refuses --allow-path on type --file and batch for a file Offsider protects, such as one under ~/.ssh or named .env.",
+      "type": "boolean"
+    },
+    "allowMetroReverse": {
+      "title": "Allow adb reverse to Metro",
+      "description": "False stops rn open setting an adb reverse on a phone, or using one it set.",
+      "type": "boolean"
+    },
+    "allowRunnerRegistration": {
+      "title": "Allow runner registration",
+      "description": "False refuses runner build --register-device and builds the iPhone runner without -allowProvisioningUpdates, so Xcode creates no App ID, profile or device record.",
+      "type": "boolean"
+    },
+    "allowedTeamIDs": {
+      "title": "Allowed Apple team IDs",
+      "description": "Only these Apple development teams (any case) may sign the iPhone runner. An empty list allows none.",
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "requirePinnedApps": {
+      "title": "Require named apps",
+      "description": "True limits each physical device to named apps: no Any app allowance and no test device.",
+      "type": "boolean"
+    },
+    "allowUnlockCodes": {
+      "title": "Allow saved unlock codes",
+      "description": "False refuses unlock-code set and wake --unlock.",
+      "type": "boolean"
+    },
+    "allowPhonePermissionChanges": {
+      "title": "Allow permission changes on phones",
+      "description": "False refuses permission grant, revoke and reset on a phone, iPhone or iPad.",
+      "type": "boolean"
+    }
+  },
+  "additionalProperties": false
+}

@@ -48,6 +48,7 @@ public enum DeviceAccessReport {
             if let apps = managed.allowedBundleIDs { parts.append("apps limited to \(apps.isEmpty ? "none" : apps.joined(separator: ", "))") }
             if let denied = managed.deniedBundleIDs { parts.append("apps denied: \(denied.isEmpty ? "none" : denied.joined(separator: ", "))") }
             if let tests = managed.allowTestDevices { parts.append(tests ? "test devices on" : "test devices off") }
+            parts += managed.ceilings.shown
             lines.append("Managed policy: \(parts.joined(separator: "; ")).")
         } else {
             lines.append("Managed policy: none.")
@@ -63,7 +64,7 @@ public enum DeviceAccessReport {
         for entry in policy.list.entries {
             let state: String
             switch policy.decision(platform: entry.platform, key: entry.key, now: now) {
-            case .allowed: state = entry.expires.map { "allowed until \(ProcessStamp.timestamp($0))" } ?? "allowed until removed"
+            case .allowed(let held): state = held.expires.map { "allowed until \(ProcessStamp.timestamp($0))" } ?? "allowed until removed"
             case .refused(let refusal): state = "refused: \(refusal.explanation)"
             }
             let apps: String

@@ -41,6 +41,9 @@ struct Init: AsyncParsableCommand {
     @Flag(name: .customLong("print-rules"), help: "Print the permission rules as JSON, to apply by hand.")
     var printRules: Bool = false
 
+    @Flag(name: .customLong("print-managed"), help: "Print the same rules as a Claude Code managed-settings fragment and a Codex requirements.toml snippet, for an administrator to deploy. Writes nothing.")
+    var printManaged: Bool = false
+
     func validate() throws {
         if printSkill, uninstall {
             throw ValidationError("--print cannot be used with --uninstall")
@@ -62,6 +65,10 @@ struct Init: AsyncParsableCommand {
             throw ValidationError("--print-rules cannot be used with other options")
         }
 
+        if printManaged, printRules || printSkill || uninstall || force || dest != nil || client != .auto || noRules || rulesOnly {
+            throw ValidationError("--print-managed cannot be used with other options")
+        }
+
         if rulesOnly, noRules || uninstall || force || dest != nil || printSkill {
             throw ValidationError("--rules-only cannot be used with --no-rules, --uninstall, --force, --dest or --print")
         }
@@ -70,6 +77,10 @@ struct Init: AsyncParsableCommand {
     func run() async throws {
         if printRules {
             Swift.print(AgentPermissionRules.printedJSON(), terminator: "")
+            return
+        }
+        if printManaged {
+            Swift.print(ManagedHarness.printed(), terminator: "")
             return
         }
 
@@ -99,6 +110,7 @@ struct Init: AsyncParsableCommand {
             }
             let (steps, failures) = Self.applyRules(agents, home: home)
             Console.current.show(InitScreen.page(steps))
+            Self.noteManagedHarness(rules: agents, skill: false)
             try Self.throwFirst(failures)
             return
         }
@@ -120,7 +132,14 @@ struct Init: AsyncParsableCommand {
         let (ruleSteps, failures) = Self.applyRules(agents, home: home)
         steps += ruleSteps
         Console.current.show(InitScreen.page(steps, next: "offsider doctor"))
+        Self.noteManagedHarness(rules: agents, skill: targets.contains { $0.id == .claude })
         try Self.throwFirst(failures)
+    }
+
+    /// One line for each thing this run installed that an administrator's lock on Claude Code or Codex ignores.
+    static func noteManagedHarness(rules: [AgentPermissionRules.Agent], skill: Bool, harness: ManagedHarness.Probe = .live(home: homeDirectoryPath())) {
+        guard !rules.isEmpty || skill else { return }
+        for ask in ManagedHarness.read(harness).asks(rules: rules, skill: skill) { Console.current.line(ask, person: .warning(ask)) }
     }
 
     /// With more than one skills folder detected, a person ticks which to install into; every one starts ticked.
