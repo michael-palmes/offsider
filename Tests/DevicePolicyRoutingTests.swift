@@ -72,9 +72,16 @@ struct DevicePolicyRoutingTests {
         let resolved = DeviceDefault.$environment.withValue({ Self.phone }) { DeviceDefault.resolve(explicit: nil) }
         #expect(resolved?.source == .environment)
         defer { DeviceDefault.record(Self.phone, source: .option) }
-        let error = await #expect(throws: CLIError.self) { _ = try await Self.route(Self.phone, gate: Self.gate([PolicyFixtures.entry()])) }
+        let home = try makePolicyHome()
+        defer { try? FileManager.default.removeItem(atPath: home) }
+        let scope = CommandScope()
+        scope.audit.attach { AuditFixtures.trail(home: home) }
+        let error = await #expect(throws: CLIError.self) { _ = try await Self.route(Self.phone, gate: Self.gate([PolicyFixtures.entry()]), scope: scope) }
         #expect(error?.reason == .usage)
         #expect(error?.userFacingDescription.contains("must be named with --device") == true)
+        scope.audit.finish(exit: 64, reason: FailureReason.usage.rawValue)
+        let record = try #require(try AuditFixtures.objects(home).first)
+        #expect(record["outcome"] as? String == "refused" && record["refusal"] as? String == SessionAudit.notNamed && record["exit"] as? Int == 64)
 
         _ = DeviceDefault.resolve(explicit: Self.phone)
         _ = try await Self.route(Self.phone, gate: Self.gate([PolicyFixtures.entry()]))
@@ -246,7 +253,7 @@ struct DoctorDevicePolicyTests {
         let report = await DevicePolicyGate.$current.withValue(DevicePolicyRoutingTests.gate([])) {
             await doctor.makeReport(host: host)
         }
-        #expect(report.checks.filter { !$0.id.rawValue.hasPrefix("host.") && !$0.id.rawValue.hasPrefix("install.") }.map(\.id) == [.devicePolicy])
+        #expect(report.checks.filter { !$0.id.rawValue.hasPrefix("host.") && !$0.id.rawValue.hasPrefix("install.") && !$0.id.rawValue.hasPrefix("audit.") }.map(\.id) == [.devicePolicy])
         #expect(report.checks.first?.status == .fail)
         #expect(report.exitCode == .doctorFailures)
         #expect(report.exitCode.rawValue == 4)

@@ -166,8 +166,8 @@ public struct PhysicalDevicePolicy: Equatable, Sendable {
         return nil
     }
 
-    /// `devices status --json`, version 1.
-    public func statusJSON(now: Date, only: (platform: DevicePlatform, key: String)? = nil) -> String {
+    /// `devices status --json`, version 1; `audit` adds the records `--audit` asked for.
+    public func statusJSON(now: Date, only: (platform: DevicePlatform, key: String)? = nil, audit: [AuditRecord]? = nil) -> String {
         let entries = list.entries.filter { entry in only.map { $0.platform == entry.platform && $0.key == entry.key } ?? true }
         let devices = entries.map { entry -> OrderedJSON in
             var fields: [(String, OrderedJSON)] = [
@@ -227,6 +227,7 @@ public struct PhysicalDevicePolicy: Equatable, Sendable {
             fields.append(("refusal", .optional(refusal) { .string($0.code) }))
             fields.append(("key", .optional(refusal?.managedKey) { .string($0) }))
         }
+        if let audit { fields.append(("audit", AuditScreen.json(audit))) }
         return OrderedJSON.object(fields).rendered() + "\n"
     }
 }

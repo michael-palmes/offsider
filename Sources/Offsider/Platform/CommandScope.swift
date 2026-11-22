@@ -24,6 +24,9 @@ final class CommandScope {
     /// Set by the first screen check, so a report written before the command ends and its final error share one probe.
     private var screenChecked = false
 
+    /// The physical devices this command reached, for the audit trail; the watchdog finishes it from its own thread.
+    nonisolated let audit = CommandAudit()
+
     nonisolated init(claims: DeviceClaims = .current) {
         self.claims = claims
     }
@@ -64,6 +67,7 @@ final class CommandScope {
         let policy = DevicePolicyGate.current.policy()
         let managed = policy.managed.present
         let whole = policy.drivesWhole(allowance)
+        noteAllowed(allowance, policy: policy)
         let line = Self.banner(for: allowance, managed: managed, wholeDevice: whole)
         if let bannerNote {
             bannerNote(line)
@@ -73,6 +77,26 @@ final class CommandScope {
         let err = console.err
         // Never a notice: a safety line is never deduped or capped.
         console.data(err.profile == .person ? Self.personBanner(for: allowance, managed: managed, wholeDevice: whole, now: Date(), timeZone: .current, canvas: err.canvas) : line + "\n", to: .err)
+    }
+
+    /// Every physical device the gate lets this command reach gets one audit record when the command ends.
+    func noteAllowed(_ allowance: DeviceAllowance, policy: PhysicalDevicePolicy) {
+        let app = namedApp ?? (allowance.pinnedApps.count == 1 ? allowance.pinnedApps[0] : nil)
+        audit.note(platform: allowance.platform, key: allowance.key, app: app, testDevice: policy.drivesWhole(allowance), managed: policy.managed.present)
+    }
+
+    /// A physical device the gate refused, so the failing command's record reads `refused` with the gate's code.
+    func noteRefusal(platform: DevicePlatform, key: String, gate: DevicePolicyGate) {
+        guard case .refused(let refusal) = gate.decision(platform: platform, key: key) else { return }
+        let policy = gate.policy()
+        let whole = policy.list.entry(platform: platform, key: key).map(policy.drivesWhole) ?? false
+        audit.noteRefusal(platform: platform, key: key, code: refusal.code, testDevice: whole, managed: policy.managed.present)
+    }
+
+    /// Costs a simulator or emulator command one empty check: no file, no log line and no timing.
+    private func finishAudit(exit: Int32, reason: String?) {
+        guard !audit.isEmpty else { return }
+        Timings.measure("audit") { audit.finish(exit: exit, reason: reason) }
     }
 
     /// A person's one dim line: `🔐  Driving Test iPhone · allowed until 18:00 · com.example.app only`, broken between parts when narrow.
@@ -105,13 +129,14 @@ final class CommandScope {
         return await ScreenStateHint.annotate(error, routes: routes, note: note)
     }
 
-    /// Runs `body`, writes the tree cache, then closes every adopted backend in reverse adoption order, also when `body` throws.
+    /// Runs `body`, writes the audit trail and the tree cache, then closes every adopted backend in reverse adoption order, also when `body` throws.
     func run(_ body: () async throws -> Void) async throws {
         do {
             try await body()
         } catch {
             let status = ErrorReporter.status(for: error)
             EvidenceRecorder.current.finishAll(exit: status.exit, reason: status.reason)
+            finishAudit(exit: status.exit, reason: status.reason)
             let error = await screenHint(for: error)
             await commitTreeCache(failed: true)
             await closeAll()
@@ -119,6 +144,7 @@ final class CommandScope {
             throw error
         }
         EvidenceRecorder.current.finishAll(exit: 0, reason: nil)
+        finishAudit(exit: 0, reason: nil)
         await commitTreeCache()
         await closeAll()
         claims.releaseAll()

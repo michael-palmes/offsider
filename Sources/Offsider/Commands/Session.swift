@@ -165,6 +165,7 @@ struct SessionStop: AsyncParsableCommand {
         let console = Console.current
         let (stopped, left, cleaned, recordingRunning) = await console.progress("Stopping sessions") {
             let (stopped, left, recordingKept) = await Self.stopSessions(device: device)
+            SessionAudit.noteStopped(stopped.map(\.device) + [cleanUDID].compactMap { $0 })
             if let recordingKept { console.notice(recordingKept) }
             var cleaned: RunnerCleanupReport?
             if let cleanUDID {
@@ -193,6 +194,54 @@ struct SessionStop: AsyncParsableCommand {
             throw CLIError(errorDescription: failed.map(\.sentence).joined(separator: " "), reason: .deviceControlFailed, hint: first.retry)
         }
     }
+}
+
+/// What `session stop` and `runner stop` leave in the audit trail.
+enum SessionAudit {
+    /// One `session_stopped` record for each iPhone, iPad or USB phone whose runner, broker, helper or recorded state was stopped; simulators and emulators leave none.
+    @MainActor
+    static func noteStopped(
+        _ devices: [String], gate: DevicePolicyGate = .current, audit: CommandAudit = CommandScope.current.audit,
+        isDefinedAVD: (String) -> Bool = { AndroidPhoneListing.isDefinedAVD(name: $0, host: .cli()) }
+    ) {
+        for device in Set(devices).sorted() {
+            guard let target = physical(device), target.platform == .ios || !isDefinedAVD(target.key) else { continue }
+            let policy = gate.policy()
+            let whole = policy.list.entry(platform: target.platform, key: target.key).map(policy.drivesWhole) ?? false
+            audit.note(platform: target.platform, key: target.key, testDevice: whole, managed: policy.managed.present)
+            audit.mark(.sessionStopped, platform: target.platform, key: target.key)
+        }
+    }
+
+    static func physical(_ device: String) -> (platform: DevicePlatform, key: String)? {
+        switch DeviceIDClassifier.classify(device.trimmingCharacters(in: .whitespacesAndNewlines)) {
+        case .iosDevice(let udid): return (.ios, udid.uppercased())
+        case .androidName(let serial): return (.android, serial)
+        default: return nil
+        }
+    }
+
+    /// `session_started` now, and `session_stopped` when this broker's command ends, however it ends.
+    static func noteBroker(_ allowance: DeviceAllowance, policy: PhysicalDevicePolicy, audit: CommandAudit) {
+        let app = allowance.pinnedApps.count == 1 ? allowance.pinnedApps[0] : nil
+        let whole = policy.drivesWhole(allowance)
+        audit.note(platform: allowance.platform, key: allowance.key, app: app, testDevice: whole, managed: policy.managed.present)
+        audit.write(AuditEvent(.sessionStarted, platform: allowance.platform, key: allowance.key, app: app, testDevice: whole, managed: policy.managed.present))
+        audit.mark(.sessionStopped, platform: allowance.platform, key: allowance.key)
+    }
+
+    /// The gate's refusal for a device a broker serves, read afresh; noted so the broker's last record says why it stopped.
+    @discardableResult
+    static func noteLapse(platform: DevicePlatform, key: String, gate: DevicePolicyGate, audit: CommandAudit) -> DeviceRefusal? {
+        guard case .refused(let refusal) = gate.decision(platform: platform, key: key) else { return nil }
+        audit.noteRefusal(platform: platform, key: key, code: refusal.code, managed: gate.policy().managed.present)
+        return refusal
+    }
+
+    /// The code a broker's last record carries when its device left USB.
+    static let notWired = "not_wired"
+    /// The code for a physical device named only by `OFFSIDER_DEVICE`.
+    static let notNamed = "device_not_named"
 }
 
 enum DeviceSessions {

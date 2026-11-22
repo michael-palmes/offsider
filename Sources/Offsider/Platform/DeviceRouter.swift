@@ -89,28 +89,48 @@ enum DeviceRouter {
         scope: CommandScope = .current
     ) async throws -> Route {
         let route = try await resolve(rawID, logger: logger, host: host, scope: scope, gate: DevicePolicyGate.current)
-        try requireNamedApp(scope.namedApp, on: route, gate: DevicePolicyGate.current)
+        try requireNamedApp(scope.namedApp, on: route, gate: DevicePolicyGate.current, scope: scope)
         scope.noteRoute(route)
         if let name = route.allowance?.name { ErrorReporter.noteDeviceName(name) }
         return route
     }
 
     /// `--app` or `--bundle-id` on a phone: refused here, whichever command took it, before anything reaches the device.
-    static func requireNamedApp(_ app: String?, on route: Route, gate: DevicePolicyGate) throws {
+    static func requireNamedApp(_ app: String?, on route: Route, gate: DevicePolicyGate, scope: CommandScope = .current) throws {
         guard let app, let allowance = route.allowance else { return }
-        try gate.requireApp(app, on: allowance)
+        do {
+            try gate.requireApp(app, on: allowance)
+        } catch {
+            let policy = gate.policy()
+            scope.audit.noteRefusal(
+                platform: allowance.platform, key: allowance.key, code: FailureReason.appNotAllowed.rawValue, app: app,
+                testDevice: policy.drivesWhole(allowance), managed: policy.managed.present
+            )
+            throw error
+        }
     }
 
     /// Gates a physical device: it must be named with `--device`, and the allow-list and managed policy must both allow it.
-    static func requireAllowed(platform: DevicePlatform, key: String, rawID: String, gate: DevicePolicyGate, displayName: String? = nil) throws -> DeviceAllowance {
-        let allowance = try gate.require(platform: platform, key: key, displayName: displayName)
+    static func requireAllowed(
+        platform: DevicePlatform, key: String, rawID: String, gate: DevicePolicyGate, displayName: String? = nil, scope: CommandScope = .current
+    ) throws -> DeviceAllowance {
+        let allowance: DeviceAllowance
+        do {
+            allowance = try gate.require(platform: platform, key: key, displayName: displayName)
+        } catch {
+            scope.noteRefusal(platform: platform, key: key, gate: gate)
+            throw error
+        }
         if let source = DeviceDefault.lastSource(for: rawID), source != .option {
+            let policy = gate.policy()
+            scope.audit.noteRefusal(platform: platform, key: key, code: SessionAudit.notNamed, testDevice: policy.drivesWhole(allowance), managed: policy.managed.present)
             throw CLIError(
                 errorDescription: "\(DeviceDefault.environmentKey) names the physical device \(key); a physical device must be named with --device on each command. Pass --device \(key).",
                 reason: .usage,
                 hint: "--device \(key)"
             )
         }
+        scope.noteAllowed(allowance, policy: gate.policy())
         return allowance
     }
 
@@ -164,7 +184,7 @@ enum DeviceRouter {
             return Route(backend: scope.adopt(IOSBackend(logger: logger)), device: DeviceID(rawValue: udid, platform: .ios))
         case .iosDevice(let udid):
             // Gated before the backend exists; readiness is checked on first use, so routing costs no devicectl call.
-            let allowance = try requireAllowed(platform: .ios, key: udid.uppercased(), rawID: rawID, gate: gate)
+            let allowance = try requireAllowed(platform: .ios, key: udid.uppercased(), rawID: rawID, gate: gate, scope: scope)
             let backend = scope.adopt(IOSDeviceBackend.make(logger: logger))
             IOSDevicePinning.configure(backend, allowance: allowance, policy: gate.policy())
             backend.runnerAllowance = allowance
@@ -183,7 +203,7 @@ enum DeviceRouter {
             let device = DeviceID(rawValue: serial, platform: .android)
             guard device.isPhysicalAndroidDevice else { return Route(backend: backend, device: device) }
             // Only the host-side device list has been read; nothing reaches the phone before this check.
-            let allowance = try requireAllowed(platform: .android, key: serial, rawID: rawID, gate: gate)
+            let allowance = try requireAllowed(platform: .android, key: serial, rawID: rawID, gate: gate, scope: scope)
             backend.appScopes[serial] = appScope(for: allowance, policy: gate.policy(), profilePackage: profilePackage)
             return Route(backend: backend, device: device, allowance: allowance)
         case .empty:

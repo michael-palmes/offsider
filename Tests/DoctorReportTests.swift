@@ -134,6 +134,8 @@ struct DoctorReportTests {
             "device.lease",
             "device.recording",
             "device.policy",
+            "audit.file",
+            "audit.chain",
             "host.load",
             "host.disk",
             "host.sessions",

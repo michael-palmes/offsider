@@ -77,6 +77,7 @@ struct UnlockCodeCommand: AsyncParsableCommand {
                 throw CLIError(errorDescription: "Only set reads a code.", reason: .usage)
             }
         }
+        if parsed == .set { CommandScope.current.audit.mark(.unlockCodeSaved, platform: .android, key: device) }
         let notices = report.person.notices.map(\.forPersonOnly)
         DevicePersonView.emit(report.text, json: json, person: report.person.blocks, notices: notices, console: console)
     }
@@ -101,16 +102,17 @@ struct UnlockCodeCommand: AsyncParsableCommand {
     /// `set` on a listed phone needs the allow-list's consent before its label is read; `status` and `remove` stay open and skip the label (false) unless the phone is allowed.
     @MainActor
     static func gatePhone(
-        _ device: String, rawID: String, action: Action, gate: DevicePolicyGate = .current,
+        _ device: String, rawID: String, action: Action, gate: DevicePolicyGate = .current, scope: CommandScope = .current,
         isListedPhone: (String) async -> Bool = { await AndroidPhoneListing.isListedPhone(serial: $0, host: .cli()) }
     ) async throws -> Bool {
         guard await isListedPhone(device) else { return true }
         if action == .set {
-            _ = try DeviceRouter.requireAllowed(platform: .android, key: device, rawID: rawID, gate: gate)
+            _ = try DeviceRouter.requireAllowed(platform: .android, key: device, rawID: rawID, gate: gate, scope: scope)
             return true
         }
-        if case .allowed = gate.decision(platform: .android, key: device) { return true }
-        return false
+        guard case .allowed(let allowance) = gate.decision(platform: .android, key: device) else { return false }
+        scope.noteAllowed(allowance, policy: gate.policy())
+        return true
     }
 
     /// A phone serial or an AVD name; emulator serials change between launches, so they are refused.

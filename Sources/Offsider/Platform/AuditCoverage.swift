@@ -1,0 +1,95 @@
+import Foundation
+
+/// How a command's use of a physical device reaches the audit trail.
+enum AuditCoverage: String, Sendable {
+    /// Reaches a device only through `DeviceRouter`, whose gate notes it on the command's scope.
+    case routed
+    /// Reaches or changes access to a physical device another way, and notes it itself.
+    case own
+    /// Sends nothing to a physical device and changes no access to one.
+    case none
+
+    /// Keyed by command path; a test fails when a command is missing, so a new one cannot ship unrecorded.
+    static let table: [String: AuditCoverage] = [
+        "describe-ui": .routed,
+        "devices": .none,
+        "list-devices": .none,
+        "boot": .none,
+        "shutdown": .none,
+        "doctor": .own,
+        "init": .none,
+        "guide": .none,
+        "tap": .routed,
+        "turnstile": .routed,
+        "login": .routed,
+        "credential": .routed,
+        "guard": .routed,
+        "slider": .routed,
+        "type": .routed,
+        "swipe": .routed,
+        "drag": .routed,
+        "button": .routed,
+        "shake": .routed,
+        "keyboard": .routed,
+        "orientation": .routed,
+        "displays": .routed,
+        "posture": .routed,
+        "appearance": .routed,
+        "content-size": .routed,
+        "permission": .routed,
+        "alert": .routed,
+        "app info": .routed,
+        "app launch": .routed,
+        "app stop": .routed,
+        "app open": .routed,
+        "app install": .routed,
+        "app uninstall": .routed,
+        "app prefs": .routed,
+        "app broadcast": .routed,
+        "airplane": .routed,
+        "status-bar": .routed,
+        "biometric": .routed,
+        "unlock-code": .own,
+        "lease": .routed,
+        "devices add": .own,
+        "devices status": .none,
+        "devices remove": .own,
+        "stay-awake": .routed,
+        "wake": .routed,
+        "sleep": .routed,
+        "key": .routed,
+        "key-sequence": .routed,
+        "key-combo": .routed,
+        "touch": .routed,
+        "gesture": .routed,
+        "stream-video": .routed,
+        "record-video": .routed,
+        "screenshot": .routed,
+        "logs": .routed,
+        "notifications": .routed,
+        "wait": .routed,
+        "assert": .routed,
+        "batch": .routed,
+        "rn prepare": .routed,
+        "run start": .none,
+        "run stop": .none,
+        "run status": .none,
+        "rn open": .routed,
+        "rn devmenu": .routed,
+        "rn tools off": .routed,
+        "rn logbox status": .routed,
+        "rn logbox dismiss": .routed,
+        "rn logbox open": .routed,
+        "hid-broker": .none,
+        "runner build": .routed,
+        "runner status": .none,
+        "runner stop": .own,
+        "session status": .none,
+        "session stop": .own,
+        "device-session serve": .own,
+        "android-session serve": .own,
+    ]
+
+    /// Command files that ask the gate about a device only to label a row, and send it nothing.
+    static let readOnlyFiles: Set<String> = ["ListDevices.swift"]
+}

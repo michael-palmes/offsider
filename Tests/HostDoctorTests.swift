@@ -37,11 +37,18 @@ struct HostDoctorRulesTests {
         #expect(verdict == (.pass, "2 other Offsider commands: pid 12 tap on emulator-5554, pid 13 offsider", nil))
     }
 
-    @Test("every report carries host facts, then the three host checks and the install check after its own")
+    @Test("every report carries host facts, then the three host checks, the two audit trail checks and the install checks after its own")
     func withHost() throws {
         let base = DoctorReport(offsiderVersion: "0.8.0", udid: nil, xcode: XcodeSummary(developerDir: nil, version: nil, build: nil, coreSimulator: nil), booted: [], checks: [])
-        let report = Doctor.withHost(base, Self.facts())
-        #expect(report.checks.map(\.id) == [.hostLoad, .hostDisk, .hostSessions, .installBundle, .installSkill, .installRules, .installDenyRules])
+        let home = try makePolicyHome()
+        defer { try? FileManager.default.removeItem(atPath: home) }
+        let report = Doctor.$auditTrail.withValue({ AuditFixtures.trail(home: home) }) { Doctor.withHost(base, Self.facts()) }
+        #expect(report.checks.map(\.id) == [.hostLoad, .hostDisk, .hostSessions, .auditFile, .auditChain, .installBundle, .installSkill, .installRules, .installDenyRules])
+        #expect(report.checks.filter { $0.id.rawValue.hasPrefix("audit.") }.allSatisfy { $0.status == .pass })
+        AuditFixtures.trail(home: home).record([AuditEvent(.ran, platform: .android, key: PolicyFixtures.serial, exit: 0)])
+        try "edited\n".write(toFile: AuditFixtures.path(home), atomically: true, encoding: .utf8)
+        let broken = Doctor.$auditTrail.withValue({ AuditFixtures.trail(home: home) }) { Doctor.withHost(base, Self.facts()) }
+        #expect(broken.checks.first { $0.id == .auditChain }?.status == .warn && broken.exitCode == .doctorWarnings)
         let object = try #require(try JSONSerialization.jsonObject(with: try report.jsonData()) as? [String: Any])
         let host = try #require(object["host"] as? [String: Any])
         #expect(Set(host.keys) == ["loadAverage", "cpuCount", "memoryGB", "diskFreeGB", "diskPath", "sessions"])
