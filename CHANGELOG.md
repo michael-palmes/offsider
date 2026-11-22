@@ -15,6 +15,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - OpenSSF Scorecard (weekly and on each push to main, results published), CodeQL for the workflows, the Java Android helper and the TypeScript test fixture (Swift 6.4 is not supported by CodeQL yet), and dependency review on every pull request.
 - Dependabot now watches the Swift packages through `swiftpm-watch/Package.swift`, a copy of the root manifest's remote requirements; a test fails while the two manifests or their `Package.resolved` pins differ, so a bump lands in both.
 - `security-insights.yml` (OpenSSF Security Insights 2.2.0): where to report a vulnerability, the release pipeline, its attestations and the scanners that run.
+- `app prefs` on Android also lists the key names in a React Native app's AsyncStorage database (`RKStorage`, or `AsyncStorage` for the library's Room storage), with no new option and never a value. The database is read a page at a time under `run-as`, with no `sqlite3` on the device, and the device prints only its header, its schema page and the pages of the key index, each checked on the device first, so no row leaves it. `--json` gains `asyncStorage`: `null`, or `database`, `keys` and `cut`, with `unread` and one word when a database could not be read, which never fails the preference listing. A storage check no longer needs a raw `adb shell run-as`, which prints values.
 
 ### Changed
 

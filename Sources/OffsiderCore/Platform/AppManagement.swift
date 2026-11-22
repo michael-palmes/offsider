@@ -58,13 +58,41 @@ public struct AppPreferenceFile: Equatable, Sendable {
     }
 }
 
+/// The key names in an app's AsyncStorage database. As with a preference file, there is no place here for a value, a length or a hash.
+public struct AppKeyStore: Equatable, Sendable {
+    /// Why a database that exists was not read, as `--json` and the notes name it.
+    public enum Unread: String, CaseIterable, Sendable {
+        case format, utf16, schema, corrupt, large, unfinished, changing, failed
+    }
+
+    public var database: String
+    public var keys: [String]
+    /// Names too long for their page to hold whole, each listed cut short.
+    public var cut: Int
+    /// Nil when the database was read.
+    public var unread: Unread?
+    /// A second AsyncStorage database the app also has, which is left unread.
+    public var other: String?
+
+    public init(database: String, keys: [String], cut: Int = 0, unread: Unread? = nil, other: String? = nil) {
+        self.database = database
+        self.keys = keys
+        self.cut = cut
+        self.unread = unread
+        self.other = other
+    }
+}
+
 public struct AppPreferences: Equatable, Sendable {
     public var app: String
     public var files: [AppPreferenceFile]
+    /// Nil when the app has no AsyncStorage database.
+    public var asyncStorage: AppKeyStore?
 
-    public init(app: String, files: [AppPreferenceFile]) {
+    public init(app: String, files: [AppPreferenceFile], asyncStorage: AppKeyStore? = nil) {
         self.app = app
         self.files = files
+        self.asyncStorage = asyncStorage
     }
 
     public var keyCount: Int { files.reduce(0) { $0 + $1.keys.count } }
@@ -152,8 +180,11 @@ public enum AppManagementReport {
                 ("keys", .array(file.keys.map { .object([("name", .string($0.name)), ("type", .string($0.type))]) })),
             ])
         }
-        let document = OrderedJSON.object(AppReport.header("prefs", app: preferences.app, device: device) + [("files", .array(files))])
-        return UntrustedPaths.marked(document, ["files[].name", "files[].keys[].name"]).rendered(compact: true)
+        let storage = OrderedJSON.optional(preferences.asyncStorage) { store in
+            .object([("database", .string(store.database)), ("keys", .array(store.keys.map { .string($0) })), ("cut", .integer(store.cut))] + (store.unread.map { [("unread", .string($0.rawValue))] } ?? []))
+        }
+        let document = OrderedJSON.object(AppReport.header("prefs", app: preferences.app, device: device) + [("files", .array(files)), ("asyncStorage", storage)])
+        return UntrustedPaths.marked(document, ["files[].name", "files[].keys[].name", "asyncStorage.keys[]"]).rendered(compact: true)
     }
 
     public static func broadcast(_ broadcast: AppBroadcast, on device: DeviceID) -> String {
