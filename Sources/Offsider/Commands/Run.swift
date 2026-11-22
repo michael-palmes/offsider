@@ -13,7 +13,9 @@ struct RunCommand: AsyncParsableCommand {
         `run stop --summary` ends the run and prints its timeline. A run masks password fields and email addresses in \
         every capture unless started with --no-mask-secure or --no-mask-emails; its masks apply on top of the capture's own, \
         and a capture's --no-mask-secure never drops the run's. `run start` again on the active folder adds the masks its \
-        flags name and never removes one. A folder `run start` creates gets a .gitignore of `*`. The one exception: `screenshot --mask-skip-beneath` leaves the run's email and id matches unpainted on a \
+        flags name and never removes one. A run ends on its own after --expires (7 days by default; `run status` shows when), and \
+        its folder is never deleted. A folder `run start` creates gets a .gitignore of `*` and a .metadata_never_index, so Spotlight \
+        leaves its captures out of its index. The one exception: `screenshot --mask-skip-beneath` leaves the run's email and id matches unpainted on a \
         screen beneath a page; password fields always stay masked. OFFSIDER_RUN=off records nothing, and says so once beside a run; OFFSIDER_RUN=<dir> \
         records into <dir> whatever the session, with the default masks unless `run start` set others there.
         """,
@@ -51,15 +53,23 @@ struct RunStart: AsyncParsableCommand {
     @Option(name: .customLong("mask-id"), parsing: .upToNextOption, help: ArgumentHelp("Mask elements with this id in every capture of the run, on top of its own masks. Repeatable.", valueName: "id"))
     var maskIDs: [String] = []
 
+    @Option(help: ArgumentHelp("How long the run records before it ends on its own: <n>d, 1 to 30 days (default 7d). Its folder is kept.", valueName: "days"))
+    var expires: String?
+
     @Flag(name: .customLong("json"), help: "Print one JSON object to stdout; human text goes to stderr.")
     var json = false
+
+    func validate() throws {
+        guard expires.map({ RunExpiry.seconds($0) != nil }) ?? true else { throw ValidationError("--expires takes <n>d, 1 to \(RunExpiry.maximumDays) days, such as 7d.") }
+    }
 
     @MainActor
     func run() async throws {
         let environment = try runEnvironment()
+        let lasting = expires.flatMap(RunExpiry.seconds) ?? TimeInterval(RunExpiry.defaultDays) * 86_400
         let masks = RunMasks(secure: maskSecure ?? true, emails: maskEmails ?? true, ids: maskIDs)
         let explicit = RunMasks(secure: maskSecure == true, emails: maskEmails == true, ids: maskIDs)
-        let started = try RunRegistry.start(dir, label: label, masks: masks, explicit: explicit, in: environment)
+        let started = try RunRegistry.start(dir, label: label, masks: masks, explicit: explicit, lasting: lasting, in: environment)
         let path = started.folder.path
         let console = Console.current
         if !started.state.masks.secure {
@@ -72,6 +82,13 @@ struct RunStart: AsyncParsableCommand {
             console.hold("Warning: other users can write to \(path), so they could add or change files in the run.", person: .warning("Other users can write to this run's folder"))
         }
         let start: StartPersonView.RunStart
+        if started.unchanged, expires != nil {
+            let until = started.state.expires.map { " (it ends \(RunClock.iso($0, timeZone: environment.timeZone)))" } ?? ""
+            console.hold(
+                "Warning: --expires does not change a run that is already active\(until); run `offsider run stop`, then start it again with --expires.",
+                person: .warning("--expires does not change an active run; stop it and start again")
+            )
+        }
         if started.unchanged {
             start = .active(added: started.addedMasks)
             console.hold(Self.activeRunLine(path: path, masks: started.state.masks, added: started.addedMasks), person: nil)
@@ -144,6 +161,6 @@ struct RunStatus: AsyncParsableCommand {
         if json {
             return console.data(RunStatusEntry.jsonLine(runs: status.runs, ended: status.ended, timeZone: environment.timeZone) + "\n")
         }
-        console.show(StartPersonView.runStatus(runs: status.runs, ended: status.ended, timeZone: environment.timeZone))
+        console.show(StartPersonView.runStatus(runs: status.runs, ended: status.ended, now: environment.now(), timeZone: environment.timeZone))
     }
 }

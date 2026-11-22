@@ -35,7 +35,7 @@ Your agent sends what it sees to its model provider. Screen text is written by t
 | Logs | Tokens, keys, emails, card numbers and one-time codes read `[redacted]` | It works by pattern, so a secret under an unusual key or in free text still shows |
 | Codes in the tree | One-time codes, card numbers, wallet addresses and recovery phrases read `[redacted ...]` | By pattern too |
 | Typed text | Offsider never echoes it | Text passed as an argument shows in the Mac's process list; use `--stdin` for anything sensitive |
-| Evidence runs | Emails are masked too, and the folder gets a `.gitignore` of `*` | The folder stays where you put it |
+| Evidence runs | Emails are masked too, and the folder gets a `.gitignore` of `*` and a `.metadata_never_index` for Spotlight | The folder stays where you put it; the run stops recording after 7 days (`--expires`) |
 
 Only you, at your own terminal, can turn off the password mask, log redaction or video's check. When an agent asks, Offsider wants your Touch ID or password, and no variable stands in for it. An agent can still edit `offsider.mask.json` or start an evidence run without email masks.
 
