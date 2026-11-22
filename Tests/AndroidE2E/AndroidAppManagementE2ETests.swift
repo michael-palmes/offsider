@@ -106,27 +106,53 @@ struct AndroidAppManagementE2ETests {
         environment["OFFSIDER_RUN"] = run.path
         _ = try await TestHelpers.runOffsiderCommandSeparated("run start \(AndroidE2E.quote(run.path)) --label e2e", environment: environment, timeout: 30)
 
+        // Two databases whose every value holds the canary: one with a write-ahead log, one several index levels deep.
+        try await plant("wal.db", as: "AsyncStorage")
+        try await plant("wal.db-wal", as: "AsyncStorage-wal")
+        try await plant("two-level.db", as: "RKStorage")
+
         let text = try await AndroidE2E.run("app prefs \(app)", environment: environment)
         let json = try await AndroidE2E.run("app prefs \(app) --json", environment: environment)
+        _ = try await AndroidE2E.shell("run-as \(AndroidE2E.package) rm -f databases/AsyncStorage databases/AsyncStorage-wal")
+        let legacy = try await AndroidE2E.run("app prefs \(app) --json", environment: environment)
+        _ = try await AndroidE2E.shell("run-as \(AndroidE2E.package) rm -f databases/RKStorage")
+        let none = try await AndroidE2E.run("app prefs \(app) --json", environment: environment)
         _ = try await AndroidE2E.run("describe-ui --summary", environment: environment)
-        for output in [text.stdout, text.stderr, json.stdout, json.stderr] {
+        for output in [text.stdout, text.stderr, json.stdout, json.stderr, legacy.stdout, legacy.stderr, none.stdout, none.stderr] {
             #expect(!output.contains(secret))
             #expect(!output.contains("314159"))
+            #expect(!output.contains("CANARY"))
         }
         #expect(text.stdout.contains("auth_token") && json.stdout.contains(#""name":"auth_token","type":"string""#))
 
+        let logged = try #require(try Self.json(json.stdout)["asyncStorage"] as? [String: Any])
+        let loggedKeys = logged["keys"] as? [String] ?? []
+        #expect(logged["database"] as? String == "AsyncStorage" && logged["unread"] == nil)
+        #expect(loggedKeys.count == 63 && loggedKeys.contains("offsider-fixture-theme") && loggedKeys.contains("committed-0060") && !loggedKeys.contains { $0.hasPrefix("uncommitted") })
+        #expect(text.stdout.contains("63 AsyncStorage keys") && json.stderr.contains("RKStorage"))
+        let deep = try #require(try Self.json(legacy.stdout)["asyncStorage"] as? [String: Any])
+        #expect(deep["database"] as? String == "RKStorage" && (deep["keys"] as? [String])?.count == 300)
+        #expect(try Self.json(none.stdout)["asyncStorage"] is NSNull)
+
         let manifest = try String(contentsOf: run.appendingPathComponent(RunFolder.manifestName), encoding: .utf8)
         #expect(manifest.contains(#""command":"app prefs""#))
-        #expect(manifest.contains(#""entries":3"#))
-        #expect(!manifest.contains(secret))
+        #expect(manifest.contains(#""entries":66"#) && manifest.contains(#""entries":303"#) && manifest.contains(#""entries":3"#))
+        #expect(!manifest.contains(secret) && !manifest.contains("CANARY") && !manifest.contains("offsider-fixture-theme"))
 
         let trees = URL(fileURLWithPath: OffsiderPrivateDirectory.root).appendingPathComponent("trees")
         let cached = FileManager.default.enumerator(at: trees, includingPropertiesForKeys: nil)?.compactMap { $0 as? URL } ?? []
         #expect(!cached.isEmpty, "describe-ui should have written the tree cache")
         for url in cached {
             let bytes = (try? Data(contentsOf: url)) ?? Data()
-            #expect(bytes.range(of: Data(secret.utf8)) == nil, "\(url.lastPathComponent)")
+            #expect(bytes.range(of: Data(secret.utf8)) == nil && bytes.range(of: Data("CANARY".utf8)) == nil, "\(url.lastPathComponent)")
         }
+    }
+
+    /// Streams a fixture database into the app's own folder, as the app would have written it.
+    private static func plant(_ fixture: String, as name: String) async throws {
+        let file = SQLiteFixture.folder.appendingPathComponent(fixture).path
+        let write = "run-as \(AndroidE2E.package) sh -c 'mkdir -p databases && cat > databases/\(name)'"
+        try await AndroidE2E.adb("exec-in \(AndroidE2E.quote(write)) < \(AndroidE2E.quote(file))")
     }
 
     @Test("what airplane on set, session stop resets; what was already on, it leaves")
