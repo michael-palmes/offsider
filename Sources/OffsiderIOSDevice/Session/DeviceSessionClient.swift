@@ -337,7 +337,7 @@ public final class DeviceSessionManager: DeviceSessionConnecting {
     func start(udid: String) async throws -> DeviceSessionClient {
         let socket = try store.socketPath(udid: udid)
         let logPath = try store.logPath(udid: udid)
-        unlink(logPath)
+        unsafe unlink(logPath)
         let pid: Int32
         do {
             pid = try processes.launch(arguments: Self.serveArguments + [udid], environment: ChildEnvironment.make(.offsiderBroker, from: environment), logPath: logPath)

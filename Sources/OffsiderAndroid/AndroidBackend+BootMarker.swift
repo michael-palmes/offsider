@@ -26,6 +26,6 @@ extension AndroidBackend: BootMarking {
     private nonisolated static func bootMarker(of discovery: EmulatorDiscovery, host: AndroidHost) -> String? {
         guard let start = host.processStartTime(discovery.pid) else { return nil }
         let microseconds = Int64((start.timeIntervalSince1970 * 1_000_000).rounded())
-        return "emulator \(microseconds / 1_000_000).\(String(format: "%06d", microseconds % 1_000_000))"
+        return unsafe "emulator \(microseconds / 1_000_000).\(String(format: "%06d", microseconds % 1_000_000))"
     }
 }

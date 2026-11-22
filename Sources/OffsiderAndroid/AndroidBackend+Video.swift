@@ -91,14 +91,14 @@ extension AndroidBackend: RawVideoStreaming {
     }
 
     nonisolated static func write(_ data: Data, to fileDescriptor: Int32) throws {
-        try data.withUnsafeBytes { buffer in
+        try unsafe data.withUnsafeBytes { buffer in
             guard let base = buffer.baseAddress else { return }
             var offset = 0
             while offset < buffer.count {
-                let written = Darwin.write(fileDescriptor, base + offset, buffer.count - offset)
+                let written = unsafe Darwin.write(fileDescriptor, base + offset, buffer.count - offset)
                 if written < 0 {
                     if errno == EINTR { continue }
-                    throw AndroidError.videoOutputFailed(detail: String(cString: strerror(errno)))
+                    throw unsafe AndroidError.videoOutputFailed(detail: String(cString: strerror(errno)))
                 }
                 offset += written
             }

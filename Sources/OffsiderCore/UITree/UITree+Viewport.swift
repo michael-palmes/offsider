@@ -95,6 +95,6 @@ extension UIFrame {
         if value.rounded() == value, abs(value) < 1e15 {
             return String(Int(value))
         }
-        return String(format: "%.1f", value)
+        return unsafe String(format: "%.1f", value)
     }
 }

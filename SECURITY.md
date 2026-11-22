@@ -244,7 +244,7 @@ gh attestation verify "offsider-$VERSION-arm64.tar.gz" --repo michael-palmes/off
 
 ## Build hardening
 
-- `OffsiderCore`, the pure logic every command uses, is compiled with Swift's strict memory safety checking, so each unsafe pointer, C string and C call is marked where it happens. The other targets are not yet.
+- `OffsiderCore`, `OffsiderAndroid` and `OffsiderIOSDevice`, the pure logic and the device backends, are compiled with Swift's strict memory safety checking, so each unsafe pointer, C string and C call is marked where it happens, and a unit test fails if a target loses the setting. The command target, which calls idb's frameworks, is not.
 - CI runs the unit tests under AddressSanitizer after each merge to main and weekly, and property tests feed the parsers seeded random and malformed input on every `swift test`.
 - A weekly job fuzzes the parsers for device, daemon and file bytes (adb, the helper's frames, usbmux, screenshots, uiautomator dumps, the media stream answer, the tree cache, the allow-list, the mask file, JSON and the log redactor) under AddressSanitizer. It is a mutation fuzzer, not coverage guided, since Xcode's toolchain ships no libFuzzer runtime.
 
@@ -282,7 +282,6 @@ Accepted by design; each links its section.
 
 Deferred work, recorded so nobody mistakes it for done.
 
-- Strict memory safety in targets other than `OffsiderCore`.
 - Core dumps turned off for every command, not only the brokers.
 - `init --uninstall` removing the permission rules it added.
 - Coverage-guided fuzzing (mutation only today: Xcode's toolchain ships no libFuzzer).

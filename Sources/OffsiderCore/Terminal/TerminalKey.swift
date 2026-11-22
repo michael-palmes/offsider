@@ -94,7 +94,7 @@ public enum TerminalKey: Equatable, Sendable {
     public mutating func wipe() {
         guard case .text(var typed) = self else { return }
         self = .ignored
-        typed.withUnsafeMutableBytes { _ = memset_s($0.baseAddress, $0.count, 0, $0.count) }
+        typed.withUnsafeMutableBytes { _ = unsafe memset_s($0.baseAddress, $0.count, 0, $0.count) }
     }
 
     /// True when `bytes` stop inside an escape sequence, such as an arrow key split across two reads.
@@ -135,19 +135,19 @@ public final class LineEditor {
     public var isEmpty: Bool { storage.isEmpty }
 
     /// Characters typed so far, counting each Unicode scalar once.
-    public var length: Int { storage.withBytes { $0.reduce(0) { $0 + ($1 & 0xC0 == 0x80 ? 0 : 1) } } }
+    public var length: Int { unsafe storage.withBytes { unsafe $0.reduce(0) { $0 + ($1 & 0xC0 == 0x80 ? 0 : 1) } } }
 
     /// Swift cannot wipe a `String`, so a secret becomes one only here, once, at the hand-off.
-    public var text: String { storage.withBytes { String(decoding: $0, as: UTF8.self) } }
+    public var text: String { unsafe storage.withBytes { unsafe String(decoding: $0, as: UTF8.self) } }
 
     /// The text before the cursor, to place it. Never read for a masked answer.
     public var textBeforeCursor: String {
-        storage.withBytes { String(decoding: UnsafeBufferPointer(rebasing: $0[..<cursor]), as: UTF8.self) }
+        unsafe storage.withBytes { unsafe String(decoding: UnsafeBufferPointer(rebasing: $0[..<cursor]), as: UTF8.self) }
     }
 
     /// True when `text` is exactly the bytes typed, compared without copying them.
     public func matches(_ text: String) -> Bool {
-        storage.withBytes { text.utf8.elementsEqual($0) }
+        unsafe storage.withBytes { unsafe text.utf8.elementsEqual($0) }
     }
 
     public func apply(_ key: TerminalKey) -> Outcome {
@@ -187,31 +187,31 @@ public final class LineEditor {
     }
 
     private func characterEnd(after start: Int) -> Int {
-        storage.withBytes { bytes in
+        unsafe storage.withBytes { bytes in
             guard start < bytes.count else { return start }
             var index = start + 1
-            while index < bytes.count, bytes[index] & 0xC0 == 0x80 { index += 1 }
+            while index < bytes.count, unsafe bytes[index] & 0xC0 == 0x80 { index += 1 }
             return index
         }
     }
 
     /// Where Control-W stops: back over spaces, then back over the word before them.
     private func wordStart(before end: Int) -> Int {
-        storage.withBytes { bytes in
+        unsafe storage.withBytes { bytes in
             let space: (UInt8) -> Bool = { $0 == 0x20 || $0 == 0x09 }
             var index = end
-            while index > 0, space(bytes[index - 1]) { index -= 1 }
-            while index > 0, !space(bytes[index - 1]) { index -= 1 }
+            while index > 0, unsafe space(bytes[index - 1]) { index -= 1 }
+            while index > 0, unsafe !space(bytes[index - 1]) { index -= 1 }
             return index
         }
     }
 
     private func characterStart(before end: Int) -> Int {
-        storage.withBytes { bytes in
+        unsafe storage.withBytes { bytes in
             var index = end
             while index > 0 {
                 index -= 1
-                if bytes[index] & 0xC0 != 0x80 { break }
+                if unsafe bytes[index] & 0xC0 != 0x80 { break }
             }
             return index
         }

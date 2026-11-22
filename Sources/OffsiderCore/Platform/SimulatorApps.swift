@@ -17,7 +17,7 @@ public enum SimulatorApps {
     /// `simctl appinfo`'s property list (OpenStep text); nil when it does not parse or names another app.
     public static func info(_ output: String, bundleID: String) -> AppInfo? {
         guard let data = output.data(using: .utf8),
-              let plist = try? PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any],
+              let plist = try? unsafe PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any],
               (plist["CFBundleIdentifier"] as? String)?.lowercased() == bundleID.lowercased() else { return nil }
         let text: (String) -> String? = { key in (plist[key] as? String).flatMap { $0.isEmpty ? nil : $0 } }
         return AppInfo(

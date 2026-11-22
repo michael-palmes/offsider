@@ -172,7 +172,7 @@ public enum LogText {
         let seconds = timeZone.secondsFromGMT(for: date)
         if seconds == 0, ["UTC", "GMT"].contains(timeZone.identifier) { return "Z" }
         let minutes = abs(seconds) / 60
-        return String(format: "%@%02d:%02d", seconds < 0 ? "-" : "+", minutes / 60, minutes % 60)
+        return unsafe String(format: "%@%02d:%02d", seconds < 0 ? "-" : "+", minutes / 60, minutes % 60)
     }
 
     static func clockTime(_ date: Date, timeZone: TimeZone) -> String {
@@ -180,7 +180,7 @@ public enum LogText {
         calendar.timeZone = timeZone
         let components = calendar.dateComponents([.hour, .minute, .second, .nanosecond], from: date)
         let milliseconds = min(999, (components.nanosecond ?? 0) / 1_000_000)
-        return String(format: "%02d:%02d:%02d.%03d", components.hour ?? 0, components.minute ?? 0, components.second ?? 0, milliseconds)
+        return unsafe String(format: "%02d:%02d:%02d.%03d", components.hour ?? 0, components.minute ?? 0, components.second ?? 0, milliseconds)
     }
 
     private static func quoted(_ value: String) -> String {

@@ -239,7 +239,7 @@ public final class DeviceSessionServer {
         }
         accepting.raise()
         Darwin.close(listener)
-        if let identity, Self.socketIdentity(socketPath) == identity { unlink(socketPath) }
+        if let identity, Self.socketIdentity(socketPath) == identity { unsafe unlink(socketPath) }
         // Only an idle stop sleeps the screen: an expired allowance or a lost device gets no press.
         if wentIdle { await idleSleep?() }
         await inputGate.run { await frameGate.run { await hardware.close() } }
@@ -313,7 +313,7 @@ public final class DeviceSessionServer {
         case let .press(page, code, hold):
             guard hold >= 0, hold <= 10 else { throw IOSDeviceError(.sessionFailed, "A button hold of \(hold) s is outside 0 to 10 s.") }
             guard DeviceSessionLimits.allowsButton(page: page, code: code) else {
-                throw IOSDeviceError(.sessionFailed, "The device session presses only the home, lock, side and Siri buttons; it refused usage \(String(format: "0x%llX", page)):\(String(format: "0x%llX", code)).")
+                throw IOSDeviceError(.sessionFailed, unsafe "The device session presses only the home, lock, side and Siri buttons; it refused usage \(String(format: "0x%llX", page)):\(String(format: "0x%llX", code)).")
             }
             try await hardware.press(usagePage: page, usageCode: code, hold: hold, abandoned: origin.isGone)
         case .touch(let steps):
@@ -354,7 +354,7 @@ public final class DeviceSessionServer {
         } catch UnixSocketError.notOwnedSocket {
             throw IOSDeviceError(.sessionFailed, "\(path) is not a socket this user owns, so Offsider will not replace it.")
         } catch UnixSocketError.system(let operation, _, let code) {
-            throw IOSDeviceError(.sessionFailed, "The device session could not \(operation) \(path): \(String(cString: strerror(code))).")
+            throw IOSDeviceError(.sessionFailed, unsafe "The device session could not \(operation) \(path): \(String(cString: strerror(code))).")
         } catch UnixSocketError.pathTooLong {
             throw DeviceSessionWireError(detail: "the socket path \(path) is too long")
         }
@@ -384,7 +384,7 @@ public final class DeviceSessionServer {
         let thread = Thread {
             while !flag.isSet {
                 var poller = pollfd(fd: listener, events: Int16(POLLIN), revents: 0)
-                guard poll(&poller, 1, 100) > 0, !flag.isSet else { continue }
+                guard unsafe poll(&poller, 1, 100) > 0, !flag.isSet else { continue }
                 let client = CloseOnExecSocket.accept(listener)
                 guard client >= 0 else { continue }
                 // Another user's client, or code other than this Offsider build, is closed before it gets a byte.

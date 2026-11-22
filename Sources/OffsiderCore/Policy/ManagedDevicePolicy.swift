@@ -31,7 +31,7 @@ public struct LiveManagedPreferences: ManagedPreferenceSource {
         let domain = self.domain as CFString
         guard CFPreferencesAppValueIsForced(key as CFString, domain), let value = CFPreferencesCopyAppValue(key as CFString, domain) else { return nil }
         if CFGetTypeID(value) == CFBooleanGetTypeID() {
-            return .bool(CFBooleanGetValue(unsafeBitCast(value, to: CFBoolean.self)))
+            return unsafe .bool(CFBooleanGetValue(unsafeBitCast(value, to: CFBoolean.self)))
         }
         if CFGetTypeID(value) == CFArrayGetTypeID(), let items = value as? [Any] {
             let strings = items.compactMap { $0 as? String }

@@ -186,7 +186,7 @@ public struct XcodeRunnerBuilder: RunnerBuilding {
         case .simulator: destinationText = "iphonesimulator"
         }
         let text = [sourceDigest, xcodeBuild ?? "unknown", team ?? "", prefix, destinationText].joined(separator: "\n")
-        return SHA256.hash(data: Data(text.utf8)).map { String(format: "%02x", $0) }.joined()
+        return SHA256.hash(data: Data(text.utf8)).map { unsafe String(format: "%02x", $0) }.joined()
     }
 
     /// One digest over `path\0digest\0` for each file, in path order.
@@ -356,7 +356,7 @@ public struct XcodeRunnerBuilder: RunnerBuilding {
 
     /// `flock` on `<key>.lock`, polled so the task stays cancellable; the kernel drops it if this process dies.
     static func withBuildLock<T: Sendable>(_ path: URL, _ body: () async throws -> T) async throws -> T {
-        let descriptor = open(path.path, O_CREAT | O_RDWR | O_CLOEXEC | O_NOFOLLOW, S_IRUSR | S_IWUSR)
+        let descriptor = unsafe open(path.path, O_CREAT | O_RDWR | O_CLOEXEC | O_NOFOLLOW, S_IRUSR | S_IWUSR)
         guard descriptor >= 0 else { throw PrivateDirectoryError(.system(operation: "open", code: errno), path: path.path) }
         defer { close(descriptor) }
         let deadline = Date().addingTimeInterval(buildTimeout + 60)
@@ -605,11 +605,11 @@ public struct XcodeRunnerBuilder: RunnerBuilding {
     static func makePrivateDirectories(_ directory: URL) throws {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
         for url in [directory.deletingLastPathComponent(), directory] {
-            chmod(url.path, S_IRWXU)
+            unsafe chmod(url.path, S_IRWXU)
         }
     }
 
     static func hex(_ digest: some Sequence<UInt8>) -> String {
-        digest.map { String(format: "%02x", $0) }.joined()
+        digest.map { unsafe String(format: "%02x", $0) }.joined()
     }
 }

@@ -167,7 +167,7 @@ public enum AgentPermissionRules {
 
     public static func defaultIsDirectory(_ path: String) -> Bool {
         var directory: ObjCBool = false
-        return FileManager.default.fileExists(atPath: path, isDirectory: &directory) && directory.boolValue
+        return unsafe FileManager.default.fileExists(atPath: path, isDirectory: &directory) && directory.boolValue
     }
 
     // MARK: Merging

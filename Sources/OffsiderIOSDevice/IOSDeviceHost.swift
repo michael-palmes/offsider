@@ -53,7 +53,7 @@ public struct XcrunDevicectl: DevicectlRunning {
             }
         }
         var isDirectory: ObjCBool = false
-        guard FileManager.default.fileExists(atPath: path, isDirectory: &isDirectory), isDirectory.boolValue else {
+        guard unsafe FileManager.default.fileExists(atPath: path, isDirectory: &isDirectory), isDirectory.boolValue else {
             throw IOSDeviceError.xcodeMissing("\(path) (from \(source)) does not exist")
         }
         // devicectl and xcodebuild run only from the resolved directory of an Apple-signed Xcode.

@@ -69,8 +69,8 @@ private typealias ErrorOut = UnsafeMutablePointer<Unmanaged<NSError>?>
 
 private enum Runtime {
     static func loadAVConference() throws {
-        guard dlopen(MediaStreamSymbols.avConference, RTLD_NOW) != nil else {
-            throw MediaStreamRuntimeError(description: "AVConference did not load: \(dlerror().map { String(cString: $0) } ?? "unknown")")
+        guard unsafe dlopen(MediaStreamSymbols.avConference, RTLD_NOW) != nil else {
+            throw MediaStreamRuntimeError(description: unsafe "AVConference did not load: \(dlerror().map { unsafe String(cString: $0) } ?? "unknown")")
         }
     }
 
@@ -80,12 +80,12 @@ private enum Runtime {
     }
 
     static func implementation<F>(_ type: AnyClass, _ selector: String, as _: F.Type) throws -> F {
-        guard class_respondsToSelector(type, NSSelectorFromString(selector)), let method = class_getMethodImplementation(type, NSSelectorFromString(selector)) else {
+        guard class_respondsToSelector(type, NSSelectorFromString(selector)), let method = unsafe class_getMethodImplementation(type, NSSelectorFromString(selector)) else {
             throw MediaStreamRuntimeError(description: "\(NSStringFromClass(type)) has no \(selector)")
         }
         let expected = try PrivateAPIGuard.recordedEncoding(selector, in: MediaStreamSymbols.encodings, framework: "AVConference")
         try PrivateAPIGuard.requireMethod(type, NSSelectorFromString(selector), encoding: expected, framework: "AVConference", owner: "macOS")
-        return unsafeBitCast(method, to: F.self)
+        return unsafe unsafeBitCast(method, to: F.self)
     }
 
     static func implementation<F>(_ object: AnyObject, _ selector: String, as kind: F.Type) throws -> F {
@@ -96,19 +96,20 @@ private enum Runtime {
     static func alloc(_ type: AnyClass) throws -> UnsafeMutableRawPointer {
         typealias Alloc = @convention(c) (AnyObject, Selector) -> UnsafeMutableRawPointer
         let metaclass: AnyClass = object_getClass(type)!
-        return try implementation(metaclass, MediaStreamSymbols.alloc, as: Alloc.self)(type, NSSelectorFromString(MediaStreamSymbols.alloc))
+        return try unsafe implementation(metaclass, MediaStreamSymbols.alloc, as: Alloc.self)(type, NSSelectorFromString(MediaStreamSymbols.alloc))
     }
 
     static func adopt(_ pointer: UnsafeMutableRawPointer?) -> AnyObject? {
-        pointer.map { Unmanaged<AnyObject>.fromOpaque($0).takeRetainedValue() }
+        unsafe pointer.map { unsafe Unmanaged<AnyObject>.fromOpaque($0).takeRetainedValue() }
     }
 
     static func borrow(_ pointer: UnsafeMutableRawPointer?) -> AnyObject? {
-        pointer.map { Unmanaged<AnyObject>.fromOpaque($0).takeUnretainedValue() }
+        unsafe pointer.map { unsafe Unmanaged<AnyObject>.fromOpaque($0).takeUnretainedValue() }
     }
 
     static func failure(_ what: String, _ error: Unmanaged<NSError>?) -> MediaStreamRuntimeError {
-        MediaStreamRuntimeError(description: "\(what) failed" + (error.map { ": \($0.takeUnretainedValue().localizedDescription)" } ?? ""))
+        let detail = unsafe error.map { unsafe ": \($0.takeUnretainedValue().localizedDescription)" } ?? ""
+        return MediaStreamRuntimeError(description: "\(what) failed" + detail)
     }
 
     static func send(_ object: AnyObject, _ selector: String) throws {
@@ -118,7 +119,7 @@ private enum Runtime {
 
     static func get(_ object: AnyObject, _ selector: String) throws -> AnyObject? {
         typealias Call = @convention(c) (AnyObject, Selector) -> UnsafeMutableRawPointer?
-        return borrow(try implementation(object, selector, as: Call.self)(object, NSSelectorFromString(selector)))
+        return unsafe borrow(try implementation(object, selector, as: Call.self)(object, NSSelectorFromString(selector)))
     }
 
     static func set(_ object: AnyObject, _ selector: String, _ value: AnyObject) throws {
@@ -135,11 +136,11 @@ final class MediaStreamNegotiator {
         try Runtime.loadAVConference()
         typealias Init = @convention(c) (UnsafeMutableRawPointer, Selector, Int, NSDictionary, ErrorOut?) -> UnsafeMutableRawPointer?
         let type: AnyClass = try Runtime.type(MediaStreamSymbols.negotiatorClass)
-        let initialise = try Runtime.implementation(type, MediaStreamSymbols.negotiatorInit, as: Init.self)
+        let initialise = try unsafe Runtime.implementation(type, MediaStreamSymbols.negotiatorInit, as: Init.self)
         var error: Unmanaged<NSError>?
-        let raw = try Runtime.alloc(type)
-        guard let object = Runtime.adopt(initialise(raw, NSSelectorFromString(MediaStreamSymbols.negotiatorInit), MediaStreamSymbols.screenSharingMode, [:], &error)) else {
-            throw Runtime.failure("creating the stream negotiator", error)
+        let raw = try unsafe Runtime.alloc(type)
+        guard let object = unsafe Runtime.adopt(initialise(raw, NSSelectorFromString(MediaStreamSymbols.negotiatorInit), MediaStreamSymbols.screenSharingMode, [:], &error)) else {
+            throw unsafe Runtime.failure("creating the stream negotiator", error)
         }
         self.object = object
     }
@@ -158,12 +159,12 @@ final class MediaStreamNegotiator {
         typealias SetAnswer = @convention(c) (AnyObject, Selector, NSData, ErrorOut?) -> Bool
         typealias Generate = @convention(c) (AnyObject, Selector, ErrorOut?) -> UnsafeMutableRawPointer?
         var error: Unmanaged<NSError>?
-        guard try Runtime.implementation(object, MediaStreamSymbols.setAnswer, as: SetAnswer.self)(object, NSSelectorFromString(MediaStreamSymbols.setAnswer), answer as NSData, &error) else {
-            throw Runtime.failure("reading the device's stream answer", error)
+        guard try unsafe Runtime.implementation(object, MediaStreamSymbols.setAnswer, as: SetAnswer.self)(object, NSSelectorFromString(MediaStreamSymbols.setAnswer), answer as NSData, &error) else {
+            throw unsafe Runtime.failure("reading the device's stream answer", error)
         }
         func generate(_ selector: String) throws -> AnyObject {
-            guard let value = Runtime.borrow(try Runtime.implementation(object, selector, as: Generate.self)(object, NSSelectorFromString(selector), &error)) else {
-                throw Runtime.failure(selector, error)
+            guard let value = unsafe Runtime.borrow(try Runtime.implementation(object, selector, as: Generate.self)(object, NSSelectorFromString(selector), &error)) else {
+                throw unsafe Runtime.failure(selector, error)
             }
             return value
         }
@@ -185,13 +186,13 @@ final class MediaVideoStream {
         merged[MediaStreamSymbols.clientNameKey] = MediaStreamSymbols.clientName
         merged[MediaStreamSymbols.sessionKey] = session
         let sockets = xpc_dictionary_create(nil, nil, 0)
-        xpc_dictionary_set_fd(sockets, MediaStreamSymbols.sharedSocketKey, socket)
+        unsafe xpc_dictionary_set_fd(sockets, MediaStreamSymbols.sharedSocketKey, socket)
         let type: AnyClass = try Runtime.type(MediaStreamSymbols.videoStreamClass)
-        let initialise = try Runtime.implementation(type, MediaStreamSymbols.videoStreamInit, as: Init.self)
+        let initialise = try unsafe Runtime.implementation(type, MediaStreamSymbols.videoStreamInit, as: Init.self)
         var error: Unmanaged<NSError>?
-        let raw = try Runtime.alloc(type)
-        guard let object = Runtime.adopt(initialise(raw, NSSelectorFromString(MediaStreamSymbols.videoStreamInit), sockets, merged as NSDictionary, &error)) else {
-            throw Runtime.failure("creating the video stream", error)
+        let raw = try unsafe Runtime.alloc(type)
+        guard let object = unsafe Runtime.adopt(initialise(raw, NSSelectorFromString(MediaStreamSymbols.videoStreamInit), sockets, merged as NSDictionary, &error)) else {
+            throw unsafe Runtime.failure("creating the video stream", error)
         }
         self.object = object
         self.delegate = delegate
@@ -201,8 +202,8 @@ final class MediaVideoStream {
     func configure(_ configuration: AnyObject) throws {
         typealias Configure = @convention(c) (AnyObject, Selector, AnyObject, ErrorOut?) -> Bool
         var error: Unmanaged<NSError>?
-        guard try Runtime.implementation(object, MediaStreamSymbols.configure, as: Configure.self)(object, NSSelectorFromString(MediaStreamSymbols.configure), configuration, &error) else {
-            throw Runtime.failure("configuring the video stream", error)
+        guard try unsafe Runtime.implementation(object, MediaStreamSymbols.configure, as: Configure.self)(object, NSSelectorFromString(MediaStreamSymbols.configure), configuration, &error) else {
+            throw unsafe Runtime.failure("configuring the video stream", error)
         }
     }
 
@@ -274,22 +275,22 @@ enum ImageQueueTap {
             guard !installed else { return }
             let type: AnyClass = try Runtime.type(MediaStreamSymbols.imageQueueClass)
             for selector in [MediaStreamSymbols.streamOutput, MediaStreamSymbols.setStreamOutput, MediaStreamSymbols.streamToken] {
-                _ = try Runtime.implementation(type, selector, as: IMP.self)
+                _ = try unsafe Runtime.implementation(type, selector, as: IMP.self)
             }
-            _ = try Runtime.implementation(try Runtime.type(MediaStreamSymbols.streamOutputClass), MediaStreamSymbols.streamOutputInit, as: IMP.self)
+            _ = try unsafe Runtime.implementation(try Runtime.type(MediaStreamSymbols.streamOutputClass), MediaStreamSymbols.streamOutputInit, as: IMP.self)
             try PrivateAPIGuard.requireMethod(type, NSSelectorFromString(MediaStreamSymbols.start), encoding: try PrivateAPIGuard.recordedEncoding(MediaStreamSymbols.start, in: MediaStreamSymbols.encodings, framework: "AVConference"), framework: "AVConference", owner: "macOS")
-            guard let method = class_getInstanceMethod(type, NSSelectorFromString(MediaStreamSymbols.start)) else {
+            guard let method = unsafe class_getInstanceMethod(type, NSSelectorFromString(MediaStreamSymbols.start)) else {
                 throw MediaStreamRuntimeError(description: "\(MediaStreamSymbols.imageQueueClass) has no \(MediaStreamSymbols.start)")
             }
-            original = method_getImplementation(method)
+            unsafe original = unsafe method_getImplementation(method)
             let replacement: @convention(block) (AnyObject) -> Void = { queue in
                 ImageQueueTap.attach(to: queue)
                 typealias Start = @convention(c) (AnyObject, Selector) -> Void
-                if let original = ImageQueueTap.lock.withLock({ ImageQueueTap.original }) {
-                    unsafeBitCast(original, to: Start.self)(queue, NSSelectorFromString(MediaStreamSymbols.start))
+                if let original = unsafe ImageQueueTap.lock.withLock({ unsafe ImageQueueTap.original }) {
+                    unsafe unsafeBitCast(original, to: Start.self)(queue, NSSelectorFromString(MediaStreamSymbols.start))
                 }
             }
-            method_setImplementation(method, imp_implementationWithBlock(replacement))
+            unsafe method_setImplementation(method, imp_implementationWithBlock(replacement))
             installed = true
         }
     }
@@ -300,9 +301,9 @@ enum ImageQueueTap {
         guard let delegate = lock.withLock({ armed }), (try? Runtime.get(queue, MediaStreamSymbols.streamOutput)) == nil else { return }
         guard let type: AnyClass = try? Runtime.type(MediaStreamSymbols.streamOutputClass),
               let token = try? Runtime.implementation(queue, MediaStreamSymbols.streamToken, as: Token.self)(queue, NSSelectorFromString(MediaStreamSymbols.streamToken)),
-              let initialise = try? Runtime.implementation(type, MediaStreamSymbols.streamOutputInit, as: Init.self),
-              let raw = try? Runtime.alloc(type),
-              let output = Runtime.adopt(initialise(raw, NSSelectorFromString(MediaStreamSymbols.streamOutputInit), token, getpid(), delegate, delegate.queue)) else {
+              let initialise = try? unsafe Runtime.implementation(type, MediaStreamSymbols.streamOutputInit, as: Init.self),
+              let raw = try? unsafe Runtime.alloc(type),
+              let output = unsafe Runtime.adopt(initialise(raw, NSSelectorFromString(MediaStreamSymbols.streamOutputInit), token, getpid(), delegate, delegate.queue)) else {
             return
         }
         try? Runtime.set(queue, MediaStreamSymbols.setStreamOutput, output)

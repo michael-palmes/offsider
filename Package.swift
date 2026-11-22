@@ -67,13 +67,19 @@ let package = Package(
             ],
             path: "Sources/OffsiderAndroid",
             exclude: ["Grpc/Proto"],
-            swiftSettings: [.swiftLanguageMode(.v5)]
+            swiftSettings: [
+                .swiftLanguageMode(.v5),
+                .strictMemorySafety()
+            ]
         ),
         .target(
             name: "OffsiderIOSDevice",
             dependencies: ["OffsiderCore"],
             path: "Sources/OffsiderIOSDevice",
-            swiftSettings: [.swiftLanguageMode(.v5)]
+            swiftSettings: [
+                .swiftLanguageMode(.v5),
+                .strictMemorySafety()
+            ]
         ),
         .executableTarget(
             name: "Offsider",

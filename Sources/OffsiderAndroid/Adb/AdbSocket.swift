@@ -71,23 +71,23 @@ final class PosixAdbStream: AdbByteStream, @unchecked Sendable {
         guard fd >= 0 else { throw AdbConnectError.failed(errno: errno) }
         let stream = PosixAdbStream(fd: fd)
         var noSigPipe: Int32 = 1
-        setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &noSigPipe, socklen_t(MemoryLayout<Int32>.size))
+        unsafe setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &noSigPipe, socklen_t(MemoryLayout<Int32>.size))
         _ = fcntl(fd, F_SETFL, fcntl(fd, F_GETFL) | O_NONBLOCK)
 
-        let result = try withSocketAddress(endpoint) { address, length in Darwin.connect(fd, address, length) }
+        let result = try unsafe withSocketAddress(endpoint) { address, length in unsafe Darwin.connect(fd, address, length) }
         if result != 0 {
             let code = errno
             guard code == EINPROGRESS else { throw mapConnectError(code) }
             guard try stream.wait(for: Int16(POLLOUT), until: deadline) else { throw AdbConnectError.timedOut }
             var pending: Int32 = 0
             var length = socklen_t(MemoryLayout<Int32>.size)
-            getsockopt(fd, SOL_SOCKET, SO_ERROR, &pending, &length)
+            unsafe getsockopt(fd, SOL_SOCKET, SO_ERROR, &pending, &length)
             if pending != 0 { throw mapConnectError(pending) }
         }
         if case .unix = endpoint {
             var uid: uid_t = 0
             var gid: gid_t = 0
-            guard getpeereid(fd, &uid, &gid) == 0 else { throw AdbConnectError.failed(errno: errno) }
+            guard unsafe getpeereid(fd, &uid, &gid) == 0 else { throw AdbConnectError.failed(errno: errno) }
             guard uid == ownerUID else { throw AdbConnectError.foreignPeer(uid: uid) }
         }
         return stream
@@ -96,7 +96,7 @@ final class PosixAdbStream: AdbByteStream, @unchecked Sendable {
     /// A connection a listener accepted, made non-blocking like an opened one.
     static func adopting(_ fd: Int32) -> PosixAdbStream {
         var noSigPipe: Int32 = 1
-        setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &noSigPipe, socklen_t(MemoryLayout<Int32>.size))
+        unsafe setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &noSigPipe, socklen_t(MemoryLayout<Int32>.size))
         _ = fcntl(fd, F_SETFL, fcntl(fd, F_GETFL) | O_NONBLOCK)
         return PosixAdbStream(fd: fd)
     }
@@ -126,18 +126,18 @@ final class PosixAdbStream: AdbByteStream, @unchecked Sendable {
                 address.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)
                 address.sin_family = sa_family_t(AF_INET)
                 address.sin_port = port.bigEndian
-                guard inet_pton(AF_INET, host.rawValue, &address.sin_addr) == 1 else { throw AdbConnectError.failed(errno: EINVAL) }
+                guard unsafe inet_pton(AF_INET, host.rawValue, &address.sin_addr) == 1 else { throw AdbConnectError.failed(errno: EINVAL) }
                 return withUnsafePointer(to: &address) {
-                    $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { body($0, socklen_t(MemoryLayout<sockaddr_in>.size)) }
+                    unsafe $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { unsafe body($0, socklen_t(MemoryLayout<sockaddr_in>.size)) }
                 }
             }
             var address = sockaddr_in6()
             address.sin6_len = UInt8(MemoryLayout<sockaddr_in6>.size)
             address.sin6_family = sa_family_t(AF_INET6)
             address.sin6_port = port.bigEndian
-            guard inet_pton(AF_INET6, host.rawValue, &address.sin6_addr) == 1 else { throw AdbConnectError.failed(errno: EINVAL) }
+            guard unsafe inet_pton(AF_INET6, host.rawValue, &address.sin6_addr) == 1 else { throw AdbConnectError.failed(errno: EINVAL) }
             return withUnsafePointer(to: &address) {
-                $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { body($0, socklen_t(MemoryLayout<sockaddr_in6>.size)) }
+                unsafe $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { unsafe body($0, socklen_t(MemoryLayout<sockaddr_in6>.size)) }
             }
         case .unix(let path):
             var address = sockaddr_un()
@@ -146,10 +146,10 @@ final class PosixAdbStream: AdbByteStream, @unchecked Sendable {
             address.sun_len = UInt8(MemoryLayout<sockaddr_un>.size)
             address.sun_family = sa_family_t(AF_UNIX)
             withUnsafeMutableBytes(of: &address.sun_path) { buffer in
-                buffer.copyBytes(from: bytes)
+                unsafe buffer.copyBytes(from: bytes)
             }
             return withUnsafePointer(to: &address) {
-                $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { body($0, socklen_t(MemoryLayout<sockaddr_un>.size)) }
+                unsafe $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { unsafe body($0, socklen_t(MemoryLayout<sockaddr_un>.size)) }
             }
         }
     }
@@ -162,7 +162,7 @@ final class PosixAdbStream: AdbByteStream, @unchecked Sendable {
             let (seconds, attoseconds) = remaining.components
             let milliseconds = Int32(clamping: seconds * 1000 + attoseconds / 1_000_000_000_000_000 + 1)
             var descriptor = pollfd(fd: fd, events: events, revents: 0)
-            let ready = poll(&descriptor, 1, milliseconds)
+            let ready = unsafe poll(&descriptor, 1, milliseconds)
             if ready > 0 { return true }
             if ready < 0, errno != EINTR { throw AdbConnectError.failed(errno: errno) }
         }
@@ -174,7 +174,7 @@ final class PosixAdbStream: AdbByteStream, @unchecked Sendable {
             while offset < data.count {
                 guard !isClosed else { throw AdbConnectError.failed(errno: EBADF) }
                 guard try wait(for: Int16(POLLOUT), until: deadline) else { throw AdbConnectError.timedOut }
-                let written = data.withUnsafeBytes { Darwin.write(fd, $0.baseAddress! + offset, data.count - offset) }
+                let written = unsafe data.withUnsafeBytes { unsafe Darwin.write(fd, $0.baseAddress! + offset, data.count - offset) }
                 if written > 0 {
                     offset += written
                 } else if written < 0, errno != EAGAIN, errno != EINTR {
@@ -190,7 +190,7 @@ final class PosixAdbStream: AdbByteStream, @unchecked Sendable {
             while true {
                 guard !isClosed else { throw AdbConnectError.failed(errno: EBADF) }
                 guard try wait(for: Int16(POLLIN), until: deadline) else { throw AdbConnectError.timedOut }
-                let received = Darwin.read(fd, &buffer, buffer.count)
+                let received = unsafe Darwin.read(fd, &buffer, buffer.count)
                 if received >= 0 { return Data(buffer.prefix(received)) }
                 if errno != EAGAIN, errno != EINTR { throw AdbConnectError.failed(errno: errno) }
             }

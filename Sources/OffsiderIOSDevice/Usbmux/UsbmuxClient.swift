@@ -64,21 +64,21 @@ public struct UsbmuxClient: UsbmuxListing {
         let capacity = MemoryLayout.size(ofValue: address.sun_path)
         guard socketPath.utf8.count < capacity else { throw UsbmuxError.socketUnavailable("\(socketPath) is too long for a socket path") }
         let descriptor = CloseOnExecSocket.make(AF_UNIX, SOCK_STREAM)
-        guard descriptor >= 0 else { throw UsbmuxError.socketUnavailable(String(cString: strerror(errno))) }
+        guard descriptor >= 0 else { throw unsafe UsbmuxError.socketUnavailable(String(cString: strerror(errno))) }
         var noSigPipe: Int32 = 1
-        setsockopt(descriptor, SOL_SOCKET, SO_NOSIGPIPE, &noSigPipe, socklen_t(MemoryLayout<Int32>.size))
+        unsafe setsockopt(descriptor, SOL_SOCKET, SO_NOSIGPIPE, &noSigPipe, socklen_t(MemoryLayout<Int32>.size))
         UsbmuxSocket.setTimeouts(descriptor, seconds: timeout)
         withUnsafeMutableBytes(of: &address.sun_path) { buffer in
-            buffer.copyBytes(from: socketPath.utf8)
-            buffer[socketPath.utf8.count] = 0
+            unsafe buffer.copyBytes(from: socketPath.utf8)
+            unsafe buffer[socketPath.utf8.count] = 0
         }
         let status = withUnsafePointer(to: &address) {
-            $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
-                Darwin.connect(descriptor, $0, socklen_t(MemoryLayout<sockaddr_un>.size))
+            unsafe $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+                unsafe Darwin.connect(descriptor, $0, socklen_t(MemoryLayout<sockaddr_un>.size))
             }
         }
         guard status == 0 else {
-            let detail = String(cString: strerror(errno))
+            let detail = unsafe String(cString: strerror(errno))
             Darwin.close(descriptor)
             throw UsbmuxError.socketUnavailable("\(socketPath): \(detail)")
         }
@@ -91,15 +91,15 @@ enum UsbmuxSocket {
     static func setTimeouts(_ descriptor: Int32, seconds: TimeInterval) {
         let whole = Int(seconds)
         var value = timeval(tv_sec: whole, tv_usec: Int32((seconds - Double(whole)) * 1_000_000))
-        setsockopt(descriptor, SOL_SOCKET, SO_RCVTIMEO, &value, socklen_t(MemoryLayout<timeval>.size))
-        setsockopt(descriptor, SOL_SOCKET, SO_SNDTIMEO, &value, socklen_t(MemoryLayout<timeval>.size))
+        unsafe setsockopt(descriptor, SOL_SOCKET, SO_RCVTIMEO, &value, socklen_t(MemoryLayout<timeval>.size))
+        unsafe setsockopt(descriptor, SOL_SOCKET, SO_SNDTIMEO, &value, socklen_t(MemoryLayout<timeval>.size))
     }
 
     static func writeAll(_ data: Data, to descriptor: Int32) throws {
-        try data.withUnsafeBytes { buffer in
+        try unsafe data.withUnsafeBytes { buffer in
             var offset = 0
             while offset < buffer.count {
-                let written = Darwin.write(descriptor, buffer.baseAddress! + offset, buffer.count - offset)
+                let written = unsafe Darwin.write(descriptor, buffer.baseAddress! + offset, buffer.count - offset)
                 if written > 0 {
                     offset += written
                 } else if written < 0, errno == EINTR {
@@ -115,7 +115,7 @@ enum UsbmuxSocket {
     static func readSome(from descriptor: Int32, limit: Int) throws -> Data? {
         var buffer = [UInt8](repeating: 0, count: limit)
         while true {
-            let count = Darwin.read(descriptor, &buffer, limit)
+            let count = unsafe Darwin.read(descriptor, &buffer, limit)
             if count > 0 { return Data(buffer.prefix(count)) }
             if count == 0 { return nil }
             if errno == EINTR { continue }

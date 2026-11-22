@@ -155,24 +155,24 @@ enum TunnelEndpoint {
 
     static func bytes(_ text: String) -> [UInt8]? {
         var address = in6_addr()
-        guard inet_pton(AF_INET6, text, &address) == 1 else { return nil }
-        return withUnsafeBytes(of: &address) { Array($0) }
+        guard unsafe inet_pton(AF_INET6, text, &address) == 1 else { return nil }
+        return withUnsafeBytes(of: &address) { unsafe Array($0) }
     }
 
     /// Every IPv6 address on this Mac with its interface name.
     static func interfaces() -> [Interface] {
         var list: UnsafeMutablePointer<ifaddrs>?
-        guard getifaddrs(&list) == 0 else { return [] }
-        defer { freeifaddrs(list) }
+        guard unsafe getifaddrs(&list) == 0 else { return [] }
+        defer { unsafe freeifaddrs(list) }
         var found: [Interface] = []
-        var cursor = list
-        while let entry = cursor {
-            cursor = entry.pointee.ifa_next
-            guard let socket = entry.pointee.ifa_addr, socket.pointee.sa_family == UInt8(AF_INET6) else { continue }
-            var address = UnsafeRawPointer(socket).load(as: sockaddr_in6.self).sin6_addr
+        var cursor = unsafe list
+        while let entry = unsafe cursor {
+            unsafe cursor = unsafe entry.pointee.ifa_next
+            guard let socket = unsafe entry.pointee.ifa_addr, unsafe socket.pointee.sa_family == UInt8(AF_INET6) else { continue }
+            var address = unsafe UnsafeRawPointer(socket).load(as: sockaddr_in6.self).sin6_addr
             var buffer = [CChar](repeating: 0, count: Int(INET6_ADDRSTRLEN))
-            guard inet_ntop(AF_INET6, &address, &buffer, socklen_t(buffer.count)) != nil else { continue }
-            found.append(Interface(name: String(cString: entry.pointee.ifa_name), address: String(cString: buffer)))
+            guard unsafe inet_ntop(AF_INET6, &address, &buffer, socklen_t(buffer.count)) != nil else { continue }
+            unsafe found.append(Interface(name: String(cString: entry.pointee.ifa_name), address: String(cString: buffer)))
         }
         return found
     }
