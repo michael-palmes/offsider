@@ -79,6 +79,37 @@ struct AndroidGrpcTextTests {
         #expect(rig.sleeps.sleeps == [AndroidKeyBacklog.blindPause])
     }
 
+    @Test("key presses with no delay go in bursts of 15 presses, each once the guest has taken the last, as the guest drops a burst over 31 key events")
+    func undelayedKeysInBursts() async throws {
+        let rig = try AndroidGrpcInputTests.rig(keyBacklog: Backlog([0]).reply)
+        try await rig.backend.perform(.composite(Array(repeating: InputEvent.shortKeyPress(4), count: 40)), on: Self.device)
+
+        #expect(rig.emulator.calls == Array(repeating: .key(.usb(0x070004, .press)), count: 40))
+        #expect(rig.adbScripts == [AndroidKeyBacklog.script, AndroidKeyBacklog.script])
+    }
+
+    @Test("key presses paced by the default delay read no backlog, as the guest takes each as it comes")
+    func delayedKeysNeedNoDrain() async throws {
+        let rig = try AndroidGrpcInputTests.rig(keyBacklog: Backlog([0]).reply)
+        let events = (0..<40).flatMap { index in index == 0 ? [InputEvent.shortKeyPress(4)] : [.delay(0.1), .shortKeyPress(4)] }
+        try await rig.backend.perform(.composite(events), on: Self.device)
+
+        #expect(rig.emulator.calls.count == 40)
+        #expect(rig.adbScripts.isEmpty)
+    }
+
+    @Test("key presses the guest never takes stop with text_not_accepted, naming no count, since the keys may spell text")
+    func stalledKeysStop() async throws {
+        let rig = try AndroidGrpcInputTests.rig(keyBacklog: Backlog([30]).reply)
+
+        let error = await #expect(throws: AndroidError.self) {
+            try await rig.backend.perform(.composite(Array(repeating: InputEvent.shortKeyPress(4), count: 20)), on: Self.device)
+        }
+        #expect(error?.kind == .textNotAccepted)
+        #expect(error?.message.contains("stopped part-way") == true && error?.message.contains("15") == false, "\(error?.message ?? "")")
+        #expect(rig.emulator.calls.count == 15)
+    }
+
     @Test("non-ASCII text is pasted: save, set, paste over adb, restore, with the settles between")
     func pasteSequence() async throws {
         let rig = try AndroidGrpcInputTests.rig(emulator: FakeEmulator(clipboard: "sentinel"), uiautomatorDump: Self.plainFocus)
