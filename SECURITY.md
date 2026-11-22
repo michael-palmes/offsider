@@ -245,7 +245,7 @@ gh attestation verify "offsider-$VERSION-arm64.tar.gz" --repo michael-palmes/off
 ## Build hardening
 
 - `OffsiderCore`, `OffsiderAndroid` and `OffsiderIOSDevice`, the pure logic and the device backends, are compiled with Swift's strict memory safety checking, so each unsafe pointer, C string and C call is marked where it happens, and a unit test fails if a target loses the setting. The command target, which calls idb's frameworks, is not.
-- CI runs the unit tests under AddressSanitizer after each merge to main and weekly, and property tests feed the parsers seeded random and malformed input on every `swift test`.
+- CI runs the unit tests under AddressSanitizer after each merge to main and weekly, and under ThreadSanitizer weekly, and property tests feed the parsers seeded random and malformed input on every `swift test`.
 - A weekly job fuzzes the parsers for device, daemon and file bytes (adb, the helper's frames, usbmux, screenshots, uiautomator dumps, the media stream answer, the tree cache, the allow-list, the mask file, JSON and the log redactor) under AddressSanitizer. It is a mutation fuzzer, not coverage guided, since Xcode's toolchain ships no libFuzzer runtime.
 
 ## Process
@@ -253,7 +253,7 @@ gh attestation verify "offsider-$VERSION-arm64.tar.gz" --repo michael-palmes/off
 - **Every pull request** to `main` must pass the required checks: Lint (shellcheck and actionlint), Leak gate (private strings), the Android helper rebuild and compare, the React Native playground typecheck, `Protected paths signed`, and `CI passed`, which also needs the unit tests and an ad-hoc release build and rehearsal on any change beyond docs (`.github/workflows/ci.yml`, `scripts/ci-gate.sh`). Commits on `main` must be signed. There is one maintainer, so no second person approves a merge.
 - **Signed heads.** A pull request's head commit must be signed by a key in the base branch's `allowed_signers` (`.github/workflows/signers.yml`).
 - **An AI review before each pull request.** The maintainer runs `/code-review high` (Claude Code's review) on the branch and works through each finding for speed, security, privacy and an easy secure path, writing a reason for any left in the pull request (`CLAUDE.md`, "Pull requests"). It is not a human review.
-- **After each merge and weekly,** the unit tests run under AddressSanitizer, and a failure opens an issue on `main` (`ci.yml`, "Unit tests (AddressSanitizer)").
+- **After each merge and weekly,** the unit tests run under AddressSanitizer, and **weekly** under ThreadSanitizer (one test of a signal handler's timing left out, as TSan defers handlers); a failure of either opens an issue on `main` (`ci.yml`, "Unit tests (AddressSanitizer)" and "Unit tests (ThreadSanitizer)").
 - **Weekly fuzzing** of the parsers for device, daemon and file bytes, under AddressSanitizer (`.github/workflows/fuzz.yml`).
 - **Workflow hygiene.** Every workflow starts from `permissions: {}` or `contents: read`, pins each action to a full commit SHA, and checks out with `persist-credentials: false`; Dependabot proposes action updates weekly after a 7-day cooldown (`.github/dependabot.yml`).
 - **Releases** come only from a signed tag on `main`, through the jobs in [Release integrity](#release-integrity), and the Homebrew tap updates only through its own checked pull request.
