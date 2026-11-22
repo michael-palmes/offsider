@@ -64,18 +64,21 @@ extension AndroidAppPackage {
     static let keyTypes = ["string", "int", "long", "float", "boolean", "set"]
     static let maximumKeyCharacters = 200
 
-    /// Names and types only: the device filters the file, so no value ever crosses adb. Text inside a value has its `<` escaped, and `grep -o` prints nothing but each match.
-    static func prefsScript(package: String) -> String {
+    /// Names and types only: the device filters the file, so no value ever crosses adb. Text inside a value has its `<` escaped, and `grep -o` prints nothing but each match. `probe` runs after it, from the app's data folder.
+    static func prefsScript(package: String, then probe: String = "") -> String {
         let types = keyTypes.joined(separator: "|")
         let script = """
-        cd shared_prefs 2>/dev/null || { echo '\(prefsDoneMarker)'; exit 0; }
-        for f in *.xml; do
-          [ -f "$f" ] || continue
-          printf '\(prefsFileMarker)%s\\n' "$f"
-          case "$(head -c 3 "$f" 2>/dev/null)" in ABX) echo '\(prefsBinaryMarker)'; continue ;; esac
-          grep -oE '<(\(types)) name="[^"]*"' "$f" 2>/dev/null
-        done
+        if cd shared_prefs 2>/dev/null; then
+          for f in *.xml; do
+            [ -f "$f" ] || continue
+            printf '\(prefsFileMarker)%s\\n' "$f"
+            case "$(head -c 3 "$f" 2>/dev/null)" in ABX) echo '\(prefsBinaryMarker)'; continue ;; esac
+            grep -oE '<(\(types)) name="[^"]*"' "$f" 2>/dev/null
+          done
+          cd ..
+        fi
         echo '\(prefsDoneMarker)'
+        \(probe)
         """
         return "run-as \(ExpoDevClient.shellQuote(package)) sh -c \(ExpoDevClient.shellQuote(script))"
     }
@@ -104,7 +107,7 @@ extension AndroidAppPackage {
     }
 
     /// A name holding a token's shape is masked as a log line would be, and a very long one cut: such a key is data, not a name.
-    private static func shown(_ name: String) -> String {
+    static func shown(_ name: String) -> String {
         let masked = LogRedactor.redact(name).text
         return masked.count > maximumKeyCharacters ? String(masked.prefix(maximumKeyCharacters)) + "…" : masked
     }

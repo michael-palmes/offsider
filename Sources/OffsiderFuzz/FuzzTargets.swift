@@ -26,6 +26,7 @@ enum FuzzTargets {
         "apk-manifest": apkManifest,
         "app-prefs": appPrefs,
         "query-receivers": queryReceivers,
+        "sqlite-key-index": sqliteKeyIndex,
     ]
 
     /// A stream decoder sees the bytes in chunks; the first byte picks the chunk size so splits vary with the input.
@@ -150,6 +151,40 @@ enum FuzzTargets {
         let report = AppManagementReport.preferences(preferences, on: DeviceID(rawValue: "emulator-5554", platform: .android))
         precondition((try? JSONSerialization.jsonObject(with: Data(report.utf8))) != nil, "the preferences report is not JSON")
         return true
+    }
+
+    /// The input is a whole database file, served a page at a time as a device would; its first bytes also stand in for a log's headers and a device's replies.
+    static func sqliteKeyIndex(_ data: Data) -> Bool {
+        let bytes = [UInt8](data)
+        let frames = stride(from: 32, to: min(bytes.count, 32 + 24 * 64) - 23, by: 24).map { Array(bytes[$0..<($0 + 24)]) }
+        let log = SQLiteKeyIndex.WriteAheadLog(header: Array(bytes.prefix(32)), frameHeaders: frames, pageSize: 4096)
+        precondition(log.frames.values.allSatisfy { $0 < frames.count }, "a frame outside the log was listed")
+        let text = String(decoding: data.prefix(1 << 14), as: UTF8.self)
+        _ = AndroidAsyncStorage.stamps(text)
+        if let page = AndroidAsyncStorage.page(Substring(text), pageSize: 4096, usable: 4084) { precondition(page.count == 4096, "a page of the wrong size") }
+
+        guard let header = try? SQLiteKeyIndex.header(bytes) else { return false }
+        func page(_ number: Int) -> [UInt8] {
+            let start = (number - 1) * header.pageSize
+            return number >= 1 && start <= bytes.count - header.pageSize ? Array(bytes[start..<(start + header.pageSize)]) : []
+        }
+        var read = false
+        for store in AndroidAsyncStorage.stores {
+            guard let root = try? SQLiteKeyIndex.keyIndexRoot(schemaPage: page(1), header: header, table: store.table) else { continue }
+            var walk = SQLiteKeyIndex.Walk(root: root)
+            var asked = 0
+            while !walk.wanted.isEmpty {
+                asked += walk.wanted.count
+                precondition(asked <= SQLiteKeyIndex.Walk.maximumPages, "the walk passed its page limit")
+                guard (try? walk.take(walk.wanted.map(page), header: header)) != nil else { break }
+            }
+            let listed = AndroidAsyncStorage.listed(walk.keys, in: store)
+            precondition(listed.keys.allSatisfy { $0.count <= AndroidAppPackage.maximumKeyCharacters + 1 }, "a key name passed its cap")
+            let report = AppManagementReport.preferences(AppPreferences(app: dumpPackage, files: [], asyncStorage: listed), on: DeviceID(rawValue: "emulator-5554", platform: .android))
+            precondition((try? JSONSerialization.jsonObject(with: Data(report.utf8))) != nil, "the preferences report is not JSON")
+            read = true
+        }
+        return read
     }
 
     static func queryReceivers(_ data: Data) -> Bool {

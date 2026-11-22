@@ -95,6 +95,43 @@ struct AppManagementCommandTests {
         #expect(AppPrefsCommand.lines(AppPreferences(app: "com.example.app", files: [])) == "com.example.app has no preference files.")
     }
 
+    @Test("AsyncStorage key names list beside the preference files in every view, with nothing but names")
+    func asyncStorageViews() {
+        let file = AppPreferenceFile(name: "app.xml", keys: [.init(name: "auth_token", type: "string")])
+        let store = AppKeyStore(database: "RKStorage", keys: ["offsider-fixture-profile", "offsider-fixture-theme"])
+        let preferences = AppPreferences(app: "com.example.app", files: [file], asyncStorage: store)
+        let lines = AppPrefsCommand.lines(preferences)
+        #expect(lines.contains("1 file, 1 key, 2 AsyncStorage keys (names and types only)"))
+        #expect(lines.contains("  AsyncStorage (RKStorage)  2 keys\n") && lines.contains("offsider-fixture-profile") && lines.contains("offsider-fixture-theme"))
+        let json = AppManagementReport.preferences(preferences, on: Self.pixel)
+        #expect(json.contains(#""asyncStorage":{"database":"RKStorage","keys":["offsider-fixture-profile","offsider-fixture-theme"],"cut":0}"#))
+        #expect(json.contains(#""untrusted":["files[].name","files[].keys[].name","asyncStorage.keys[]"]"#))
+        #expect(AppPrefsCommand.notices(preferences, on: Self.pixel).isEmpty)
+
+        let alone = AppPreferences(app: "com.example.app", files: [], asyncStorage: store)
+        #expect(AppPrefsCommand.lines(alone).contains("0 files, 0 keys, 2 AsyncStorage keys"))
+        #expect(AppManagementReport.preferences(AppPreferences(app: "com.example.app", files: [file]), on: Self.pixel).contains(#""asyncStorage":null"#))
+    }
+
+    @Test("a database left unread says why in one word, lists no key, and names the fix where there is one")
+    func asyncStorageUnread() {
+        let changing = AppPreferences(app: "com.example.app", files: [], asyncStorage: AppKeyStore(database: "RKStorage", keys: [], unread: "changing"))
+        #expect(AppPrefsCommand.lines(changing).contains("0 files, 0 keys (names and types only)\n  AsyncStorage (RKStorage)  not read (changing)"))
+        #expect(AppManagementReport.preferences(changing, on: Self.pixel).contains(#""asyncStorage":{"database":"RKStorage","keys":[],"cut":0,"unread":"changing"}"#))
+        let notices = AppPrefsCommand.notices(changing, on: Self.pixel)
+        #expect(notices.map(\.command) == ["offsider app stop --app com.example.app --device \(Self.pixel.rawValue)"])
+
+        for word in ["format", "utf16", "schema", "corrupt", "large", "unfinished", "failed"] {
+            let unread = AppPreferences(app: "com.example.app", files: [], asyncStorage: AppKeyStore(database: "AsyncStorage", keys: [], unread: word))
+            let notice = AppPrefsCommand.notices(unread, on: Self.pixel)
+            #expect(notice.count == 1 && notice[0].text.contains("AsyncStorage") && notice[0].text.contains("not listed"), "\(word)")
+        }
+
+        let both = AppPreferences(app: "com.example.app", files: [], asyncStorage: AppKeyStore(database: "AsyncStorage", keys: ["a…"], cut: 1, other: "RKStorage"))
+        let texts = AppPrefsCommand.notices(both, on: Self.pixel).map(\.text)
+        #expect(texts.count == 2 && texts[0].contains("RKStorage") && texts[1].contains("1 key name"))
+    }
+
     @Test("a simulator or an iPhone is told these are Android only, before any stack starts")
     func androidOnly() {
         let simulator = #expect(throws: CLIError.self) { try AppManagementSupport.requireAndroid("00000000-0000-0000-0000-000000000001", command: "app prefs") }

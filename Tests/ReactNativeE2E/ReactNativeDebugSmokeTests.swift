@@ -38,6 +38,37 @@ struct ReactNativeDebugSmokeTests {
         #expect(try await app.label(of: "overlay-test-tab") == "Overlay Tab: Home")
     }
 
+    @Test("app prefs lists the keys AsyncStorage wrote and neither value, then neither key once they are cleared", .enabled(if: isAndroidE2EEnabled))
+    func asyncStorageKeyNames() async throws {
+        let app = RNApp(.android)
+        let keys = ["offsider-fixture-profile", "offsider-fixture-theme"]
+        func stored() async throws -> (keys: [String], output: SeparatedCommandOutput) {
+            let output = try await AndroidE2E.run("app prefs --app \(AndroidE2E.package) --json")
+            let report = try #require(try JSONSerialization.jsonObject(with: Data(output.stdout.utf8)) as? [String: Any])
+            let storage = try #require(report["asyncStorage"] as? [String: Any], "\(output.stdout)")
+            #expect(storage["database"] as? String == "RKStorage" && storage["unread"] == nil, "\(output.stdout) \(output.stderr)")
+            return (storage["keys"] as? [String] ?? [], output)
+        }
+        try await app.open("storage-test")
+        try await app.run("tap --id storage-test-clear")
+        _ = try await app.waitForLabel(of: "storage-test-count") { $0 == "Stored Keys: 0" }
+        try await app.run("tap --id storage-test-write")
+        _ = try await app.waitForLabel(of: "storage-test-count") { $0 == "Stored Keys: 2" }
+
+        let written = try await stored()
+        #expect(keys.allSatisfy(written.keys.contains), "\(written.keys)")
+        let text = try await AndroidE2E.run("app prefs --app \(AndroidE2E.package)")
+        #expect(keys.allSatisfy(text.stdout.contains))
+        for output in [written.output.stdout, written.output.stderr, text.stdout, text.stderr] {
+            #expect(!output.contains("dark") && !output.contains("basic") && !output.contains("visits"), "\(output)")
+        }
+
+        try await app.run("tap --id storage-test-clear")
+        _ = try await app.waitForLabel(of: "storage-test-count") { $0 == "Stored Keys: 0" }
+        let cleared = try await stored()
+        #expect(!keys.contains(where: cleared.keys.contains), "\(cleared.keys)")
+    }
+
     @Test("on a fresh install, rn prepare skips the dev menu intro so the first tap reaches the app", arguments: RNPlatform.enabled)
     func freshInstallSkipsIntro(platform: RNPlatform) async throws {
         let app = RNApp(platform)

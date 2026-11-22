@@ -37,8 +37,11 @@ extension AndroidBackend: AppManaging {
     public func appPreferences(_ app: String, on id: DeviceID) async throws -> AppPreferences {
         let package = try ExpoDevClient.validate(appID: app)
         try await prepare()
-        let result = try await requireClient().shell(AndroidAppPackage.prefsScript(package: package), on: id.rawValue, timeout: .seconds(30), label: "run-as \(package)")
-        if let preferences = AndroidAppPackage.preferences(result.stdoutText, package: package) { return preferences }
+        let result = try await requireClient().shell(AndroidAppPackage.prefsScript(package: package, then: AndroidAsyncStorage.probe), on: id.rawValue, timeout: .seconds(30), label: "run-as \(package)")
+        if var preferences = AndroidAppPackage.preferences(result.stdoutText, package: package) {
+            preferences.asyncStorage = await asyncStorageKeys(found: AndroidAsyncStorage.stamps(result.stdoutText), package: package, on: id)
+            return preferences
+        }
         let refusal = AndroidAppPackage.runAsLine(result.stderrText) ?? AndroidAppPackage.runAsLine(result.stdoutText)
         if refusal?.contains("not debuggable") == true {
             throw AppLifecycleError(
@@ -50,6 +53,17 @@ extension AndroidBackend: AppManaging {
             throw AndroidError.appNotInstalled(package, serial: id.rawValue, adb: adbPath)
         }
         throw AppLifecycleError(.failed, "\(id.rawValue) could not read \(package)'s preferences\(refusal.map { ": \($0)" } ?? " (run-as exit \(result.status))"). Nothing was read.")
+    }
+
+    /// The key names of the first AsyncStorage database the app has, with the other named so the caller can say it was left.
+    private func asyncStorageKeys(found: [AndroidAsyncStorage.Stamp], package: String, on id: DeviceID) async -> AppKeyStore? {
+        guard let store = AndroidAsyncStorage.stores.first(where: { store in found.contains { $0.database == store.database } }),
+              let stamp = found.first(where: { $0.database == store.database }) else { return nil }
+        var keys = await AndroidAsyncStorage.read(stamp, store: store, package: package) { script in
+            try await self.requireClient().shell(script, on: id.rawValue, timeout: .seconds(30), label: "run-as \(package)").stdoutText
+        }
+        keys.other = found.first { $0.database != store.database }?.database
+        return keys
     }
 
     public func sendBroadcast(_ action: String, receiver: String?, to app: String, on id: DeviceID) async throws -> AppBroadcast {
