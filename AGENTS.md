@@ -52,12 +52,15 @@ Offsider began as a fork of AXe (`cameroncooke/axe`) v1.8.0 and is developed ind
 | `./scripts/build.sh help` | List build steps (`setup`, `clean`, `generate`, `frameworks`, `install`, `strip`, `xcframeworks`, `dev`, `executable`, `verify-xcframeworks`, `verify-arches`, `helper`, `runner`, `dev-sign`); bare `./scripts/build.sh` prints where to start |
 | `./scripts/build.sh helper` or `make helper` | Rebuild the Android helper dex and manifest after changing `AndroidHelper/`; refuses toolchain drift |
 | `./scripts/build.sh helper --check` or `make helper-check` | Rebuild the helper and compare it with the committed dex and manifest, as CI does |
-| `scripts/release.sh rehearse --version X --adhoc` | Stage, sign, package, verify and Homebrew-gate a local build without secrets; without `--version` it uses `git describe`'s |
+| `scripts/release.sh rehearse --version X --adhoc` | Stage, sign, record, package, verify and Homebrew-gate a local build without secrets; without `--version` it uses `git describe`'s |
+| `scripts/release.sh tag --version X.Y.Z` | Make the signed tag `vX.Y.Z`, only when line 1 of `SECURITY.md` reads `**As of version X.Y.Z.**`, main is clean and equals `origin/main` (fetched first) and the tag is unused here and on origin; it never pushes, it prints the push command for a person |
+| `scripts/release.sh record`, `check-security` | `record` writes `build-info.txt`, the SBOM (`scripts/sbom.sh`, CycloneDX 1.6) and a copy of `SECURITY.md` into `dist/`, which `package` lists in `SHA256SUMS`; `check-security` is the `SECURITY.md` line 1 check alone, as the release build runs it on a tag |
+| `bash scripts/sbom.test.sh` | Test `scripts/sbom.sh` against this checkout: every `Package.resolved` pin, the idb fork, the helper and the run-time frameworks |
 | `scripts/release.sh pack-payload`, `unpack-payload`, `unpack-archive` | Move the unsigned payload and the signed archive between the release workflow's build, sign and verify jobs |
 | `make e2e` or `./test-runner.sh --simulator` | Rebuild idb (unless `OFFSIDER_REUSE_IDB=1`), build Offsider and the playground, run simulator E2E suites (needs XcodeGen) |
 | `./test-runner.sh` | On a person's terminal, a mode picker (phone and iPhone modes never the default); otherwise, and always for an agent, `--simulator`. `--help` lists modes, `--help-env` settings, suites and examples |
 | `scripts/e2e-devices.sh [status\|create]` or `make e2e-devices` | Show the E2E devices (`Offsider_E2E`, `Offsider_E2E_Fold`, the `Offsider Duo` simulator) and create the missing ones; never boots them. `scripts/e2e-devices-core.sh status\|create [--dry-run]` is its JSON core |
-| `./test-runner.sh --unit-tests` | Build dependencies, then run non-E2E tests in parallel; a test that fails reruns alone and must pass, and a stall or an unclear result reruns everything serially |
+| `./test-runner.sh --unit-tests` | Build dependencies, then run non-E2E tests in parallel; a test that fails reruns alone and must pass, a stall reruns alone the tests it did not finish, and an unclear result reruns everything serially |
 | `./test-runner.sh --tests-only` | Run E2E against an existing binary (`OFFSIDER_BIN_PATH`) |
 | `./test-runner.sh --android` or `make e2e-android` | Build Offsider and run the Android E2E suites on `OFFSIDER_ANDROID_DEVICE` (default `OFFSIDER_ANDROID_E2E_AVD`, booted if not running) |
 | `./test-runner.sh --foldable` or `make e2e-foldable` | Build Offsider and the playground, run `FoldableTests` on the iPhone Duo simulator `OFFSIDER_FOLDABLE_SIMULATOR_NAME` names (default `Offsider Duo`, or `SIMULATOR_UDID`) |
@@ -227,7 +230,7 @@ Before any pull request is opened, run `/code-review high` (Claude Code) or `/re
 
 The repository is public, and so are its PRs, issues and releases.
 
-- Never commit or post local device ids (serials, UDIDs, CoreDevice ids, panel ids), Apple team IDs, simulator or AVD names from the maintainer's machine, personal device models or local paths. The E2E fixture names (`Offsider_E2E`, `Offsider_E2E_Fold`, `Offsider Duo`) are public defaults and may appear in code and PR text.
+- Never commit or post local device ids (serials, UDIDs, CoreDevice ids, panel ids), Apple team IDs, simulator or AVD names from the maintainer's machine, personal device models or local paths. The E2E fixture names (`Offsider_E2E`, `Offsider_E2E_Fold`, `Offsider Duo`) are public defaults and may appear in code and PR text. The one team ID that may appear is the Developer ID team that signs releases, in `SECURITY.md`'s verify block and the release's build record, read from a release's signed binary (`codesign -dv`), never from any other file.
 - Never commit or post anything from the private apps the maintainer tests on: names, bundle ids, screens, labels, testIDs, copy or data. Call them "private apps".
 - Use placeholders (`<udid>`, `<serial>`, `/Users/me`) and the playground's own ids instead.
 - Issues found by testing a private app reach the repo rewritten: brief sub-agents with the rewritten version, and invent the labels, ids, copy, coordinates and log lines a fix and its tests need (or use the playground's). Name none of the app's SDKs or their log formats, and never call it a field case in code, tests or messages. The leak gate checks only its deny-list, so before committing grep the diff and messages for the issue's own words, numbers and device names.
@@ -261,5 +264,5 @@ Simulator-dependent suites are gated: `@Suite("Tap", .serialized, .enabled(if: i
   - Reference private notes or internal roadmap stages in the repo. Describe the change itself.
   - Use `--no-verify`. Fix what the hook reports.
   - Sign with `codesign --deep`. Sign nested code inside-out, frameworks first.
-  - Connect to non-loopback addresses, resolve hostnames or send telemetry. Offsider may use Unix sockets and loopback TCP to local developer daemons (the adb server and the Android Emulator); nothing leaves the Mac.
+  - Connect to non-loopback addresses, resolve hostnames or send telemetry. Offsider may use Unix sockets and loopback TCP to local developer daemons (the adb server, the Android Emulator, usbmuxd and Metro), and CoreDevice's USB tunnel for a wired iPhone or iPad; nothing leaves the Mac.
   - Edit files under `idb_checkout/`. Move the pin instead.

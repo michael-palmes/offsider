@@ -1,0 +1,132 @@
+header:
+  schema-version: 2.2.0
+  last-updated: '2026-11-22'
+  last-reviewed: '2026-11-22'
+  url: https://github.com/michael-palmes/offsider/raw/main/security-insights.yml
+  comment: OpenSSF Security Insights for Offsider, a local-only macOS command-line tool.
+
+project:
+  name: Offsider
+  homepage: https://offsidercli.com/
+  administrators:
+    - name: Michael Palmes
+      social: https://github.com/michael-palmes
+      primary: true
+  documentation:
+    quickstart-guide: https://github.com/michael-palmes/offsider/blob/main/docs/getting-started.md
+    detailed-guide: https://github.com/michael-palmes/offsider/blob/main/docs/README.md
+    signature-verification: https://github.com/michael-palmes/offsider/blob/main/docs/install.md
+  repositories:
+    - name: offsider
+      url: https://github.com/michael-palmes/offsider
+      comment: The command-line tool, its Android helper, its test fixtures and its release workflow.
+    - name: homebrew-tap
+      url: https://github.com/michael-palmes/homebrew-tap
+      comment: The Homebrew formula, updated by a pull request from each release and checked against its attestation.
+    - name: idb
+      url: https://github.com/michael-palmes/idb
+      comment: The fork of facebook/idb whose frameworks Offsider builds from a pinned commit and ships.
+  vulnerability-reporting:
+    reports-accepted: true
+    bug-bounty-available: false
+    policy: https://github.com/michael-palmes/offsider/blob/main/SECURITY.md
+    comment: Report privately through GitHub, at https://github.com/michael-palmes/offsider/security/advisories/new. Please do not open a public issue.
+
+repository:
+  url: https://github.com/michael-palmes/offsider
+  status: active
+  accepts-change-request: true
+  accepts-automated-change-request: true
+  core-team:
+    - name: Michael Palmes
+      social: https://github.com/michael-palmes
+      primary: true
+  documentation:
+    contributing-guide: https://github.com/michael-palmes/offsider/blob/main/CONTRIBUTING.md
+    security-policy: https://github.com/michael-palmes/offsider/blob/main/SECURITY.md
+  license:
+    url: https://github.com/michael-palmes/offsider/blob/main/LICENSE
+    expression: MIT
+  release:
+    automated-pipeline: true
+    changelog: https://github.com/michael-palmes/offsider/blob/main/CHANGELOG.md
+    distribution-points:
+      - uri: https://github.com/michael-palmes/offsider/releases
+        comment: A Developer ID signed, notarised arm64 tarball, with SHA256SUMS, the provenance bundle, the SBOM, SECURITY.md and build-info.txt.
+      - uri: https://github.com/michael-palmes/homebrew-tap
+        comment: The Homebrew formula, which installs the release tarball.
+    attestations:
+      - name: Build provenance
+        predicate-uri: https://slsa.dev/provenance/v1
+        location: https://github.com/michael-palmes/offsider/attestations
+        comment: Signed by .github/workflows/release.yml from a signed tag on main. Each release also attaches it as offsider-<version>-arm64.tar.gz.intoto.jsonl.
+      - name: SBOM
+        predicate-uri: https://cyclonedx.org/bom
+        location: https://github.com/michael-palmes/offsider/attestations
+        comment: CycloneDX 1.6, attested on the tarball. Each release also attaches it as offsider-<version>.cdx.json.
+  security:
+    assessments:
+      self:
+        evidence: https://github.com/michael-palmes/offsider/blob/main/SECURITY.md
+        comment: SECURITY.md holds the threat model and what Offsider does and does not protect. There has been no third-party audit.
+    tools:
+      - name: CodeQL
+        type: SAST
+        rulesets:
+          - default
+        integration:
+          adhoc: false
+          ci: true
+          release: false
+        results: {}
+        comment: Workflows, the Java Android helper and the TypeScript test fixture. CodeQL cannot analyse Swift 6.4 yet, so the Swift code is not scanned.
+      - name: Dependabot
+        type: SCA
+        rulesets:
+          - default
+        integration:
+          adhoc: false
+          ci: true
+          release: false
+        results: {}
+        comment: Weekly, with a seven-day cooldown, for GitHub Actions and the Swift packages.
+      - name: Dependency review
+        type: SCA
+        rulesets:
+          - default
+        integration:
+          adhoc: false
+          ci: true
+          release: false
+        results: {}
+        comment: On every pull request.
+      - name: OpenSSF Scorecard
+        type: other
+        rulesets:
+          - default
+        integration:
+          adhoc: false
+          ci: true
+          release: false
+        results: {}
+        comment: Weekly and on each push to main, with published results.
+      - name: GitHub secret scanning
+        type: secret
+        rulesets:
+          - default
+        integration:
+          adhoc: false
+          ci: true
+          release: false
+        results: {}
+        comment: On every push, with push protection.
+      - name: OffsiderFuzz
+        type: fuzzing
+        rulesets:
+          - default
+        integration:
+          adhoc: true
+          ci: true
+          release: false
+        results: {}
+        comment: A weekly AddressSanitizer run over every parser that reads device, daemon or file bytes.

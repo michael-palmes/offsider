@@ -1,4 +1,5 @@
 import Foundation
+import OffsiderAndroid
 import OffsiderCore
 import OffsiderIOSDevice
 import Testing
@@ -388,6 +389,62 @@ struct TextFocusTests {
         )
         #expect(check.tree == nil)
         #expect(warnings.count == 1)
+    }
+
+    static let androidPhone = DeviceID(rawValue: "R58MFAKE01", platform: .android)
+
+    @Test("a read refused for the app in front, a system prompt, a lock, a pulled cable or the allowance stops the text with that refusal and no warning: it is no unreadable screen")
+    func refusedReadSendsNothing() async throws {
+        let refusals: [(any Error, DeviceID)] = [
+            (IOSDeviceError(.otherAppInFront, "com.example.app is not in front."), Self.iPhone),
+            (IOSDeviceError(.appNotAllowed, "com.example.other is not among the apps allowed."), Self.iPhone),
+            (IOSDeviceError(.appRequired, "No app was named."), Self.iPhone),
+            (IOSDeviceError(.systemPromptOnTestDevice, "A system prompt is in front."), Self.iPhone),
+            (IOSDeviceError(.locked, "The iPhone is locked."), Self.iPhone),
+            (IOSDeviceError(.notWired, "The iPhone is not on USB."), Self.iPhone),
+            (IOSDeviceError(.notAllowed, "The iPhone's allowance lapsed."), Self.iPhone),
+            (AndroidError(.otherAppInFront, "Another app is in front."), Self.androidPhone),
+            (AndroidError(.appNotAllowed, "No app was named."), Self.androidPhone),
+            (AndroidError(.deviceLocked, "The phone is locked."), Self.androidPhone),
+        ]
+        for (refusal, device) in refusals {
+            for keys in [false, true] {
+                var warnings = 0
+                let error = await #expect(throws: (any Error).self, "\(refusal)") {
+                    try await Type.checkTextFocus(
+                        readTree: { throw refusal }, device: device, clock: ScriptedClock().poll, warn: { _ in warnings += 1 }, refusingSecureTarget: nil, keys: keys
+                    )
+                }
+                #expect((error as? any OffsiderFailure)?.failureMessage == (refusal as? any OffsiderFailure)?.failureMessage)
+                #expect(warnings == 0, "\(refusal)")
+            }
+        }
+    }
+
+    @Test("every failure reason that says a device is unavailable is classed: a refusal that stops the text, or a device or runner not ready to be read")
+    func readRefusalsClassEveryDeviceReason() {
+        let notReady: Set<FailureReason> = [
+            .deviceNotFound, .deviceNotBooted, .deviceNotReady, .deviceUnauthorised, .deviceAmbiguous, .avdNotFound, .deviceUntrusted,
+            .developerModeOff, .devicePreparing, .uiAutomationOff, .certificateNotTrusted, .metroPortNotAllowed,
+        ]
+        for reason in FailureReason.allCases where reason.exitCode == .deviceUnavailable {
+            #expect(Type.readRefusals.contains(reason) != notReady.contains(reason), "\(reason.rawValue) must be in one list")
+        }
+    }
+
+    @Test("type on an iPhone whose named app is not in front opens no input session, where its keys would go to whatever has focus")
+    func iPhoneOtherAppInFrontTypesNothing() async throws {
+        final class OtherAppInFront: FakeDeviceBackend {
+            override func accessibilityTree(for id: DeviceID, point: UIPoint?) async throws -> UITree {
+                throw IOSDeviceError(.otherAppInFront, "com.example.app is not in front on \(id.rawValue), so Offsider read nothing.")
+            }
+        }
+        let backend = OtherAppInFront(platform: .ios, trees: [])
+
+        let error = await #expect(throws: IOSDeviceError.self) { try await Self.send(["hi"], through: backend, device: Self.iPhone) }
+
+        #expect(error?.kind == .otherAppInFront)
+        #expect(backend.openedSessions.isEmpty)
     }
 
     @Test("key-sequence that spells text into a password field is refused, a shortcut or Return is not", arguments: [simulator, android])

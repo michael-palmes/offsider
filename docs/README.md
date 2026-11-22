@@ -1,5 +1,6 @@
 # Offsider docs
 
+- [Offsider for security teams](security-overview.md): one page to forward, with the proof behind each answer.
 - [Install](install.md): setting up a Mac, or checking a release tarball by hand.
 - [Getting started](getting-started.md): your first device, and what bare `offsider` and the device picker do.
 - [Commands](commands.md): every command, `--device`, `OFFSIDER_DEVICE` and the device list JSON.
@@ -7,8 +8,9 @@
 - [Input](input.md): tapping, typing, waiting and checking that input worked.
 - [Screenshots, video and logs](capture.md): capturing evidence, with masks and redaction.
 - [Agents](agents.md): setting up an agent, what it reads and what you see, sharing devices between agents, or moving from another tool.
-- [Physical devices](device-access.md): allowing a phone, iPhone or iPad, and managed policy.
-- [Privacy and security](privacy.md): what Offsider shows, keeps and refuses.
+- [Physical devices](device-access.md): allowing a phone, iPhone or iPad, and test devices.
+- [Managed Macs](mdm.md): a configuration profile that limits phones on a fleet.
+- [Privacy](privacy.md): what Offsider sends, shows and keeps, and how to clear it.
 - [App guard](guard.md): letting an agent drive a production build, with the controls it asks you about or never taps.
 - [Device state](device-state.md): appearance, permissions, apps, status bar, orientation and foldables.
 - [Sign in](sign-in.md): saving test users, `login` and Cloudflare Turnstile.
@@ -18,5 +20,5 @@
 - [Doctor and troubleshooting](troubleshooting.md): when input is ignored or a read fails.
 - [Exit codes and errors](errors.md): handling a failure in a script or an agent.
 - [Building from source](building.md): building, testing or benchmarking Offsider itself.
-- [Security policy](../SECURITY.md): reporting a vulnerability, and everything Offsider touches.
+- [Security policy](../SECURITY.md): reporting a vulnerability, the threat model and everything Offsider touches.
 - [Contributing](../CONTRIBUTING.md): before you open an issue or a pull request.

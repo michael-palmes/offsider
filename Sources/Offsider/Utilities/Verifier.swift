@@ -181,7 +181,7 @@ struct Verifier {
         case .appearing(let id):
             return try await runAppearing(
                 id: id, attempts: attempts, timeoutSeconds: timeoutSeconds, dependencies: dependencies,
-                initialTree: initialTree, beforeAction: beforeAction, onRetry: onRetry, onHold: onHold, action: action
+                initialTree: initialTree, targetStays: targetStays, beforeAction: beforeAction, onRetry: onRetry, onHold: onHold, action: action
             )
         case .change(let ignore):
             ignoringText = ignore
@@ -481,8 +481,13 @@ struct Verifier {
             phases.verify += dependencies.now() - attemptStart
             guard retrying else { return unverified(attempt) }
             var moving = checked.unsettled
-            if !moving, let targetStays, let tree = checked.latest?.tree {
-                moving = await !targetStays(tree)
+            if !moving, let targetStays {
+                // A second input goes only to a target judged again where it is now; with no read to judge it on, it is held.
+                let judgeStart = dependencies.now()
+                var tree = checked.latest?.tree
+                if tree == nil { tree = try? await dependencies.tree() }
+                if let tree { moving = await !targetStays(tree) } else { moving = true }
+                phases.verify += dependencies.now() - judgeStart
             }
             if moving {
                 // A second input would land on whatever the change brings, so this one is watched for one more window instead.
@@ -508,6 +513,7 @@ struct Verifier {
         timeoutSeconds: TimeInterval,
         dependencies: Dependencies,
         initialTree: UITree?,
+        targetStays: ((UITree) async -> Bool)?,
         beforeAction: (UITree) async throws -> Void,
         onRetry: (Attempt, Attempt) -> Void,
         onHold: (Attempt) -> Void,
@@ -522,7 +528,9 @@ struct Verifier {
         try await beforeAction(baseline)
         phases.settle = dependencies.now() - start
         var latest = baseline
+        var latestRead = read
         var lastReadFailed = false
+        var targetMoved = false
 
         /// Polls one window for the element; true once it is in front.
         func watch() async throws -> Bool {
@@ -538,6 +546,7 @@ struct Verifier {
                 let read = Read(try? await dependencies.tree())
                 lastReadFailed = !read.snapshot.isKnown
                 if !lastReadFailed, let tree = read.tree {
+                    latestRead = tree
                     latest = await dependencies.judge(tree, id)
                     if placement(of: id, in: latest) == .front { return true }
                 }
@@ -555,7 +564,7 @@ struct Verifier {
                 verified: verified, attempts: attempt.number, change: verified ? .element : .none, style: attempt.style,
                 summary: verified ? "--id '\(id)' is on screen" : placement(of: id, in: latest).reason
             )
-            if !verified, screenUnchanged() {
+            if !verified, !targetMoved, screenUnchanged() {
                 outcome.note = .screenUnchanged
             }
             outcome.phases = phases
@@ -569,7 +578,13 @@ struct Verifier {
             phases.dispatch += dependencies.now() - dispatchStart
             if try await watch() { return outcome(attempt, verified: true) }
             guard index + 1 < attempts.count else { break }
-            if !screenUnchanged() {
+            var moved = !screenUnchanged()
+            // The comparison leaves out a LogBox toast and what lies beneath a page, either of which can come over the target.
+            if !moved, let targetStays {
+                targetMoved = await !targetStays(latestRead)
+                moved = targetMoved
+            }
+            if moved {
                 // The screen is not as it was, so a second input would land on whatever it shows now.
                 onHold(attempt)
                 return outcome(attempt, verified: try await watch())

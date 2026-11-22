@@ -48,9 +48,11 @@ jobs:
           bash scripts/ci-gate.test.sh
           bash scripts/e2e-devices-core.test.sh
           bash scripts/failed-tests.test.sh
+          bash scripts/unfinished-tests.test.sh
           bash scripts/lib/adb.test.sh
           bash scripts/lib/e2e-host.test.sh
           bash scripts/lib/unit-tests.test.sh
+          bash scripts/sbom.test.sh
 
       - name: Every CI job gates merges
         run: scripts/ci-gate.sh --check-needs .github/workflows/ci.yml ci-passed asan-unit-tests asan-issue seed-debug-build
@@ -222,12 +224,12 @@ jobs:
       - uses: ./.github/actions/macos-setup
         with:
           xcode-app: ${{ env.XCODE_APP }}
-          debug-build-cache: "true"
+          debug-build-cache: restore
 
       - name: Unit tests
         run: OFFSIDER_REUSE_IDB=1 ./test-runner.sh --unit-tests
 
-  # Pull requests read only their own caches and main's, and the unit test job does not run on main, so this fills main's.
+  # Pull requests only restore, from main's caches, and the unit test job does not run on main, so this saves one per main commit.
   seed-debug-build:
     name: Seed the debug build cache
     if: github.event_name == 'push'
@@ -242,11 +244,17 @@ jobs:
         id: setup
         with:
           xcode-app: ${{ env.XCODE_APP }}
-          debug-build-cache: check
+          debug-build-cache: save
 
-      - name: Build, unless the cache already holds this key
+      # The build test-runner.sh makes, with the same flags, or a pull request's restore would recompile everything.
+      - name: Build, unless this commit's is already saved
         if: steps.setup.outputs.debug-build-cache-hit != 'true'
-        run: swift build --build-tests --force-resolved-versions
+        run: |
+          set -euo pipefail
+          # shellcheck source=/dev/null
+          source scripts/e2e-environment.sh
+          configure_e2e_environment
+          run_selected_swift build --build-tests
 
   release-rehearsal:
     name: Release build and rehearsal (ad-hoc)
@@ -265,6 +273,14 @@ jobs:
 
       - name: Runner project (regenerate and compare)
         run: scripts/build.sh runner --check
+
+      # Git sources only, never build products: SwiftPM still checks out each revision Package.resolved pins.
+      - name: Cache the fetched package repositories
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/Library/Caches/org.swift.swiftpm/repositories
+          key: swiftpm-repositories-${{ hashFiles('Package.resolved') }}
+          restore-keys: swiftpm-repositories-
 
       - name: Release build (arm64)
         env:
