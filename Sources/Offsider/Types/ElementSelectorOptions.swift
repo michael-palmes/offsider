@@ -44,7 +44,9 @@ enum SelectorQuery {
 
     /// Names the elements closest to `query` once a wait or assert ends with nothing matching it.
     static func explain(_ query: AccessibilityQuery) -> (UITree) -> WaitNearMiss? {
-        { tree in AccessibilityTargetResolver.nearMiss(roots: tree.roots, query: query) ?? hiddenWithoutID(in: tree, query: query) }
+        { tree in
+            HiddenBranchMiss.nearMiss(query: query, tree: tree) ?? AccessibilityTargetResolver.nearMiss(roots: tree.roots, query: query) ?? hiddenWithoutID(in: tree, query: query)
+        }
     }
 
     /// On a simulator, an `--id` that matched nothing while the read filled in what the app hides: a point read finds a hidden view's text, never its id.

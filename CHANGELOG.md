@@ -23,6 +23,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Fixed
 
+- `wait` and `assert` that end with nothing matching a selector Android lists only as hidden, such as a row under three-button navigation's bar, now say where it is and how to bring it out (as `tap` and `type --into-id` do) instead of naming a nearby element.
 - A selector `tap`, `slider` or `type --into-id` whose target came up since a screen read under 500 ms ago, as a dialog does that took longer than 500 ms to open, now waits out the rest of those 500 ms before it taps: the dialog's frames read final while it still slides in, so the tap could go past it.
 - `wait --gone` and `assert --gone` on an iOS simulator no longer pass when the app quits mid-wait: a `--gone` about to pass on another app's screen asks again 1 s later when the app's process still shows, and exits 1 (`app_stopped` or `app_crashed`) once it has ended.
 - A `key-sequence` that spells text on an iOS simulator is now read back from the focused field, as on Android, in `batch` too: keys the field never showed exit 5 (`text_not_accepted`) instead of passing.
