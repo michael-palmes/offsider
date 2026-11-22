@@ -21,7 +21,7 @@ Each release publishes `offsider-<version>-arm64.tar.gz`, a `SHA256SUMS` file an
 VERSION=0.17.0
 gh release download "v${VERSION}" --repo michael-palmes/offsider \
   --pattern "offsider-${VERSION}-arm64.tar.gz" --pattern SHA256SUMS
-shasum -a 256 -c SHA256SUMS
+shasum -a 256 -c SHA256SUMS --ignore-missing
 gh attestation verify "offsider-${VERSION}-arm64.tar.gz" --repo michael-palmes/offsider \
   --signer-workflow michael-palmes/offsider/.github/workflows/release.yml --source-ref "refs/tags/v${VERSION}" \
   --deny-self-hosted-runners

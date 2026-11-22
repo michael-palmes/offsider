@@ -51,6 +51,7 @@ jobs:
           bash scripts/lib/adb.test.sh
           bash scripts/lib/e2e-host.test.sh
           bash scripts/lib/unit-tests.test.sh
+          bash scripts/sbom.test.sh
 
       - name: Every CI job gates merges
         run: scripts/ci-gate.sh --check-needs .github/workflows/ci.yml ci-passed asan-unit-tests asan-issue seed-debug-build
