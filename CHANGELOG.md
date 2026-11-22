@@ -21,6 +21,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - `test-runner.sh --unit-tests` reruns alone only the tests a stalled parallel run did not finish, read from Swift Testing's event stream, instead of every test; a stream it cannot read still reruns everything. CI pull requests restore the newest debug build main saved and recompile only the files whose contents changed, and the release rehearsal reuses fetched package repositories.
 - `OffsiderAndroid` and `OffsiderIOSDevice` now build with Swift's strict memory safety checking, as `OffsiderCore` does, with each unsafe pointer, C string and C call marked where it happens. An Android frame with fewer bytes than its size claims is no longer turned, and a screen fingerprint never reads a buffer past its end.
+- Every command turns off core dumps (soft and hard limit 0) before it parses its arguments, so no command that holds a password, a code or a frame, nor any child it starts, can write a core file. Only the brokers did before.
 
 ### Fixed
 
