@@ -4,7 +4,7 @@ import Testing
 @Suite("SwiftPM watch manifest")
 struct SwiftPMWatchTests {
     static let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
-    static let watch = root.appendingPathComponent(".github/swiftpm-watch")
+    static let watch = root.appendingPathComponent("swiftpm-watch")
 
     struct Resolved: Decodable {
         struct Pin: Decodable, Equatable {
@@ -38,7 +38,7 @@ struct SwiftPMWatchTests {
         let watch = try Self.pins(in: Self.watch)
         #expect(!root.isEmpty)
         for (identity, pin) in root {
-            #expect(watch[identity] == pin, "\(identity) is pinned differently in .github/swiftpm-watch/Package.resolved; make the same change in both Package.resolved files")
+            #expect(watch[identity] == pin, "\(identity) is pinned differently in swiftpm-watch/Package.resolved; make both Package.resolved files agree (on a Dependabot pull request, move the root to match)")
         }
         #expect(Set(watch.keys).subtracting(root.keys).isEmpty, "the watch manifest pins packages the root does not")
     }
@@ -48,6 +48,16 @@ struct SwiftPMWatchTests {
         let root = try Self.requirements(in: Self.root)
         let watch = try Self.requirements(in: Self.watch)
         #expect(!root.isEmpty)
-        #expect(watch.sorted() == root.sorted(), "copy every .package(url:) line of the root Package.swift into .github/swiftpm-watch/Package.swift")
+        #expect(watch.sorted() == root.sorted(), "the .package(url:) lines of Package.swift and swiftpm-watch/Package.swift differ; make them the same (on a Dependabot pull request, change the root to match)")
+    }
+
+    @Test("Dependabot reads the watch manifest from a folder it may open pull requests for")
+    func dependabotReadsTheWatchFolderOutsideDotGitHub() throws {
+        let config = try String(contentsOf: Self.root.appendingPathComponent(".github/dependabot.yml"), encoding: .utf8)
+        let lines = config.split(separator: "\n").map { $0.trimmingCharacters(in: .whitespaces) }
+        let swift = try #require(lines.firstIndex(of: "- package-ecosystem: swift"))
+        let entry = lines[(swift + 1)...].prefix { !$0.hasPrefix("- package-ecosystem:") }
+        #expect(entry.contains("directory: /\(Self.watch.lastPathComponent)"), "dependabot.yml's swift entry must read \(Self.watch.lastPathComponent)/")
+        #expect(!entry.contains { $0.hasPrefix("directory: /.github") || $0.hasPrefix("- /.github") }, "Dependabot's pull request for a folder under .github/ is refused (HTTP 400) for every ecosystem but github-actions: dependabot/dependabot-core#15237")
     }
 }

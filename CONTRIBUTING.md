@@ -75,6 +75,8 @@ Commits on `main` must be signed.
 
 Every pull request's head commit must be signed by a key in the base branch's `.github/allowed_signers`, whatever it changes. The `Protected paths signed` check enforces it, using the base branch's copy of the workflow, so a pull request cannot change the rule it is checked by. Every Dependabot pull request fails that check until the maintainer re-signs its head commit: `git commit --amend --no-edit -S` on the branch, then a force push.
 
+A Dependabot pull request for Swift packages changes only `swiftpm-watch/`, the copy of the root manifest's requirements Dependabot can read. Before re-signing it, move the root the same way, since `SwiftPMWatchTests` fails until the two manifests and their pins agree: make the same `.package(url:)` change in the root `Package.swift` when the pull request has one, run `swift package resolve <package> --version <version>` at the root for each package it moves, then `cp Package.resolved swiftpm-watch/Package.resolved`.
+
 Physical-device suites (`--android-phone`, `--ios-device`) need the device to be allowed first, by you in your own terminal: `offsider device-access allow --device <ID>`. `test-runner.sh` checks and prints the exact command.
 
 By contributing you agree that your contributions are licensed under the [MIT licence](LICENSE).

@@ -13,7 +13,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - A release refuses to build unless line 1 of `SECURITY.md` reads `**As of version <version>.**` for the tag's version (trailing spaces and a CR are let through), so the security policy a release ships always describes it.
 - `scripts/release.sh tag --version X.Y.Z` makes the signed release tag after the same `SECURITY.md` check, and only on a clean `main` equal to `origin/main` (fetched first) with the tag unused here and on origin. It never pushes: it prints the push command. `record` writes the build record, the SBOM and the `SECURITY.md` copy that `package` lists in `SHA256SUMS`, and `rehearse` runs it.
 - OpenSSF Scorecard (weekly and on each push to main, results published), CodeQL for the workflows, the Java Android helper and the TypeScript test fixture (Swift 6.4 is not supported by CodeQL yet), and dependency review on every pull request.
-- Dependabot now watches the Swift packages through `.github/swiftpm-watch/Package.swift`, a copy of the root manifest's remote requirements; a test fails while the two manifests or their `Package.resolved` pins differ, so a bump lands in both.
+- Dependabot now watches the Swift packages through `swiftpm-watch/Package.swift`, a copy of the root manifest's remote requirements; a test fails while the two manifests or their `Package.resolved` pins differ, so a bump lands in both.
 - `security-insights.yml` (OpenSSF Security Insights 2.2.0): where to report a vulnerability, the release pipeline, its attestations and the scanners that run.
 
 ### Changed
