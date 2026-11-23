@@ -129,4 +129,4 @@ Locks are files in a private per-user directory, `offsider-<uid>/locks/` under t
 | `idb approve`, `idb revoke` | `permission grant`, `permission revoke` |
 | `idb record video`, `idb video-stream` | `record-video`, `stream-video` |
 
-Installing iOS apps stays with `xcrun simctl`; `app launch` and Android `app install` are Offsider's. Offsider keeps no element refs: selectors and the automatic device lock cover them. Between commands it keeps only what [Privacy](privacy.md#what-offsider-keeps-on-your-mac) lists.
+`app launch`, `app install` and `app uninstall` are Offsider's on every device, so no raw `simctl`, `devicectl` or `adb` install is needed. Offsider keeps no element refs: selectors and the automatic device lock cover them. Between commands it keeps only what [Privacy](privacy.md#what-offsider-keeps-on-your-mac) lists.

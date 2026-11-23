@@ -1,6 +1,6 @@
 import Foundation
 
-/// Optional capability: installing and removing one app, reading its preference names and sending a broadcast to it. Android only.
+/// Optional capability: installing an APK, removing an app, reading its preference names and sending a broadcast to it. Android only; `AppBundleManaging` installs on iOS.
 @MainActor
 public protocol AppManaging: DeviceBackend {
     /// Streams the APK with `app` as the package it must declare, which the device enforces too.
@@ -157,9 +157,10 @@ public enum AppBroadcastName {
 
 /// `--json` for `app install`, `uninstall`, `prefs` and `broadcast`, in schema order.
 public enum AppManagementReport {
-    public static func install(_ install: AppInstall, apk: String, on device: DeviceID) -> String {
-        OrderedJSON.object(AppReport.header("install", app: install.app, device: device) + [
-            ("apk", .string(apk)),
+    /// `path` on every platform; Android keeps `apk` beside it, as it was the only name before.
+    public static func install(_ install: AppInstall, path: String, on device: DeviceID) -> String {
+        OrderedJSON.object(AppReport.header("install", app: install.app, device: device) + [("path", .string(path))]
+            + (device.platform == .android ? [("apk", .string(path))] : []) + [
             ("replaced", .bool(install.replaced)),
             ("bytes", .integer(install.bytes)),
             ("milliseconds", .integer(install.milliseconds)),

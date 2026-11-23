@@ -5,21 +5,29 @@ import OffsiderCore
 struct AppInstallCommand: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "install",
-        abstract: "Install an APK, checked against the package it declares.",
+        abstract: "Install an APK or a built .app, checked against the app it declares.",
         discussion: """
-        Android only. Offsider reads the package from the APK before sending anything and refuses one that is not --app; \
-        Android checks the same package itself on install (`cmd package install --pkg`). On an emulator or a test device \
-        --app defaults to the APK's own package. On a phone the app must be pinned by name: allowing any app is not enough. \
-        Replaces an installed copy and keeps its data; an app signed differently is refused and named. Split APKs and \
-        .aab bundles are not installed.
+        The device decides the file: an .apk on Android, a built .app folder on an iPhone, iPad or simulator. Offsider \
+        reads the app's id from the file on the Mac before sending anything and refuses one that is not --app. On an \
+        emulator, a simulator or a test device --app defaults to the file's own id. On a phone, iPhone or iPad the app \
+        must be pinned by name: allowing any app is not enough. Replaces an installed copy and keeps its data.
 
-        Example:
+        Android checks the same package itself (`cmd package install --pkg`); an app signed differently is refused and \
+        named. Split APKs and .aab bundles are not installed.
+
+        iOS: Offsider installs a private copy of the .app it has checked, and never builds, signs or registers a \
+        device. An .ipa, a simulator build for a device and a build whose profile does not cover the device are \
+        refused before anything is sent. Over an App Store or TestFlight copy, an iPhone or iPad in personal use needs \
+        a person at the Mac (Touch ID).
+
+        Examples:
           offsider app install build/app-debug.apk --app com.example.app --device DEVICE_ID
+          offsider app install Build/Products/Debug-iphoneos/Example.app --device DEVICE_ID
         """
     )
 
-    @Argument(help: ArgumentHelp("The .apk file.", valueName: "apk"))
-    var apk: String
+    @Argument(help: ArgumentHelp("The .apk file (Android) or the built .app folder (iOS).", valueName: "path"))
+    var path: String
 
     @OptionGroup
     var appOption: AppTargetOption
@@ -32,14 +40,20 @@ struct AppInstallCommand: AsyncParsableCommand {
 
     @MainActor
     func run() async throws {
-        try AppManagementSupport.requireAndroid(deviceOption.id, command: "app install")
-        let file = try AppManagementSupport.open(apk)
+        switch DeviceIDClassifier.classify(deviceOption.id) {
+        case .iosSimulator: try await installBundle(for: .simulator)
+        case .iosDevice: try await installBundle(for: .device)
+        default: try await installApk()
+        }
+    }
+
+    @MainActor
+    private func installApk() async throws {
+        let file = try AppManagementSupport.open(path)
         let declared = try AppManagementSupport.package(of: file)
         let route = try await DeviceRouter.routeForInput(deviceOption, logger: OffsiderLogger())
         let app = try AppManagementSupport.installTarget(appOption, declared: declared, route: route)
-        guard app == declared else {
-            throw AppLifecycleError(.packageMismatch, "\(apk) is \(declared), not \(app), so nothing was sent. Build \(app), or pass --app \(declared) if that app is allowed here.")
-        }
+        guard app == declared else { throw AppManagementSupport.mismatch(path, declared: declared, app: app) }
         try AppTarget.requirePinned(app, route: route, command: "install")
         let install = try await Console.current.progress("Installing \(app), \(AppManagementSupport.megabytes(file.size))") {
             let backend = try AppTarget.manager(route, app: app)
@@ -47,14 +61,24 @@ struct AppInstallCommand: AsyncParsableCommand {
             let id = try await route.backend.requireBootedDevice(route.device).id
             return try await backend.installApp(file, as: app, on: id)
         }
-        DeviceActivityLedger.current.recordInput(on: route.device)
+        report(install, on: route.device)
+    }
+
+    @MainActor
+    func report(_ install: AppInstall, on device: DeviceID) {
+        DeviceActivityLedger.current.recordInput(on: device)
         let verb = install.replaced ? "Replaced" : "Installed"
-        let text = json ? AppManagementReport.install(install, apk: apk, on: route.device) : "\(verb) \(app) (\(AppManagementSupport.megabytes(install.bytes)), \(install.milliseconds) ms)."
-        DevicePersonView.emit(text, json: json, person: DevicePersonView.receipt("\(verb) \(app)", aside: "\(AppManagementSupport.megabytes(install.bytes)), \(install.milliseconds) ms"), console: .current)
+        let text = json ? AppManagementReport.install(install, path: path, on: device) : "\(verb) \(install.app) (\(AppManagementSupport.megabytes(install.bytes)), \(install.milliseconds) ms)."
+        DevicePersonView.emit(text, json: json, person: DevicePersonView.receipt("\(verb) \(install.app)", aside: "\(AppManagementSupport.megabytes(install.bytes)), \(install.milliseconds) ms"), console: .current)
     }
 }
 
 enum AppManagementSupport {
+    /// The file names one app and the command another: nothing is sent.
+    static func mismatch(_ path: String, declared: String, app: String) -> AppLifecycleError {
+        AppLifecycleError(.packageMismatch, "\(path) is \(declared), not \(app), so nothing was sent. Build \(app), or pass --app \(declared) if that app is allowed here.")
+    }
+
     /// Before routing, so an iOS device is refused without starting its stack.
     static func requireAndroid(_ id: String, command: String) throws {
         switch DeviceIDClassifier.classify(id) {
@@ -65,7 +89,7 @@ enum AppManagementSupport {
         }
     }
 
-    /// `--app`, else the APK's own package where it is allowed by name or any app is, else offsider.login.json's or the only pinned app, which then must match.
+    /// `--app`, else the file's own app where it is allowed by name or any app is, else offsider.login.json's or the only pinned app, which then must match.
     @MainActor
     static func installTarget(_ option: AppTargetOption, declared: String, route: DeviceRouter.Route, gate: DevicePolicyGate = .current) throws -> String {
         let own = route.allowance.map { gate.policy().drivesWhole($0) || $0.pinnedApps.contains(declared) } ?? true
@@ -78,7 +102,8 @@ enum AppManagementSupport {
         } catch ApkFile.Failure.missing {
             throw AppLifecycleError(.apkUnreadable, "No file at \(path).")
         } catch ApkFile.Failure.notRegularFile {
-            throw AppLifecycleError(.apkUnreadable, "\(path) is not a file.")
+            let bundle = (path as NSString).pathExtension.lowercased() == "app"
+            throw AppLifecycleError(.apkUnreadable, bundle ? "\(path) is an iOS app, and an Android device takes an .apk file. Nothing was sent." : "\(path) is not a file.")
         } catch {
             throw AppLifecycleError(.apkUnreadable, "\(path) could not be opened.")
         }

@@ -10,8 +10,9 @@ struct AppCommand: AsyncParsableCommand {
         Each action names one app (--app, else offsider.login.json's bundleId or package, else a physical device's only \
         pinned app) and reaches nothing else on the device. On a physical device the app must be one its allowance \
         permits: browsers, home screens, system apps and apps managed policy denies are refused (app_not_allowed). \
-        info and prefs only read; the others lock the device like input. install, uninstall, prefs and broadcast are Android only; \
-        on a phone, install and uninstall also need the app pinned by name, or a test device.
+        info and prefs only read; the others lock the device like input. prefs and broadcast are Android only. install \
+        takes an .apk on Android and a built .app on an iPhone, iPad or simulator; on a physical device, install and \
+        uninstall also need the app pinned by name, or a test device.
 
         Examples:
           offsider app info --app com.example.app --device DEVICE_ID
@@ -19,6 +20,7 @@ struct AppCommand: AsyncParsableCommand {
           offsider app stop --app com.example.app --device DEVICE_ID
           offsider app open 'https://example.com/offer?id=7&ref=push' --app com.example.app --device DEVICE_ID
           offsider app install build/app-debug.apk --device DEVICE_ID
+          offsider app install Build/Products/Debug-iphoneos/Example.app --device DEVICE_ID
           offsider app prefs --app com.example.app --device DEVICE_ID
           offsider app broadcast com.example.app.action.REFRESH --app com.example.app --device DEVICE_ID
         """,

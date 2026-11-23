@@ -51,6 +51,8 @@ extension AppLifecycleError: OffsiderFailure {
         case .apkUnreadable: return .apkUnreadable
         case .packageMismatch: return .packageMismatch
         case .installFailed: return .installFailed
+        case .bundleUnreadable: return .bundleUnreadable
+        case .notProvisioned: return .notProvisioned
         case .notDebuggable: return .notDebuggable
         case .broadcastRefused: return .broadcastRefused
         case .receiverNotFound: return .receiverNotFound

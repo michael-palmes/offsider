@@ -312,6 +312,7 @@ esac
 
 # Every E2E suite is in one of these lists or another mode's; E2ESuiteListTests fails on one that is in none.
 SIMULATOR_SUITES=(
+    "AppInstallE2ETests"
     "BatchTests"
     "ButtonTests"
     "CommandNamingTests"
@@ -1120,7 +1121,8 @@ run_ios_device_tests() {
     export OFFSIDER_IOS_TEAM_ID
     log "Environment: OFFSIDER_IOS_DEVICE=$OFFSIDER_IOS_DEVICE, OFFSIDER_IOS_TEAM_ID=$OFFSIDER_IOS_TEAM_ID"
     run_suite_list "IOSDeviceListE2ETests" "IOSDeviceDoctorE2ETests" "IOSDeviceScreenshotE2ETests" "IOSDeviceSettingsE2ETests" \
-        "IOSDeviceInputE2ETests" "IOSDeviceTreeE2ETests" "IOSDeviceRunnerE2ETests" "IOSDeviceAlertE2ETests"
+        "IOSDeviceInputE2ETests" "IOSDeviceTreeE2ETests" "IOSDeviceRunnerE2ETests" "IOSDeviceAlertE2ETests" \
+        "IOSDeviceAppInstallE2ETests"
 }
 
 # Picks the Offsider Duo unless SIMULATOR_UDID already names a simulator.
