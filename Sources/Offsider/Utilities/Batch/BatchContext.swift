@@ -37,6 +37,7 @@ final class BatchContext {
     private var cachedTree: UITree?
     /// The latest tree any step read, kept when the cache is dropped so the guard can compare against it.
     private var lastTree: UITree?
+    private var lastTreeAt: Date?
     private var lastInputAt: Date?
 
     init(
@@ -72,6 +73,7 @@ final class BatchContext {
         case .perStep, .none:
             let tree = try await backend.accessibilityTree(for: device)
             lastTree = tree
+            lastTreeAt = TreeCacheEnvironment.current.now()
             return tree
         case .perBatch:
             if !forceRefresh, let cachedTree {
@@ -81,6 +83,7 @@ final class BatchContext {
             // Only describe-ui and screenshot may read under a system window, so no later step gets this tree from the cache.
             cachedTree = tree.systemWindow == nil ? tree : nil
             lastTree = tree
+            lastTreeAt = TreeCacheEnvironment.current.now()
             return tree
         }
     }
@@ -149,6 +152,7 @@ final class BatchContext {
             device: device.rawValue,
             command: "batch",
             writtenAt: TreeCacheEnvironment.current.now(),
+            treeReadAt: tree == nil ? nil : lastTreeAt,
             lastInputAt: lastInputAt,
             treeRole: tree == nil ? nil : .read,
             appFrame: tree?.applicationFrame,

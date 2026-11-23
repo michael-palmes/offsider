@@ -70,6 +70,43 @@ struct HiddenBranchMissTests {
         #expect(!error.userFacingDescription.contains("navigation bar"))
     }
 
+    @Test("type --into-id on a field Android lists only as hidden under the bar says so, not Did you mean, and taps nothing")
+    func typeIntoHiddenField() async throws {
+        let error = await #expect(throws: HiddenBranchMiss.self) {
+            _ = try await TypeIntoTests.focus(["--into-id", "row-12"], trees: [Self.tree(hidden: Self.underBar)], device: Self.device)
+        }
+        #expect(error?.userFacingDescription.contains("it is under the navigation bar at (0, 870) 412x56") == true)
+    }
+
+    @Test("wait and assert that time out on a selector Android lists only as hidden name where it is, never a nearby row", arguments: ["wait", "assert"])
+    func waitAndAssertName(command: String) async throws {
+        let backend = FakeDeviceBackend(platform: .android, trees: [Self.tree(hidden: Self.underBar)])
+        let route = DeviceRouter.Route(backend: backend, device: Self.device)
+        let line: String
+        let outcome: WaitOutcome
+        if command == "wait" {
+            let wait = try Wait.parse(["--id", "row-12", "--timeout", "0", "--device", Self.device.rawValue])
+            outcome = try await wait.evaluate(on: route, logger: OffsiderLogger(), clock: ScriptedClock().poll)
+            line = wait.failureLine(outcome)
+        } else {
+            let assert = try Assert.parse(["--id", "row-12", "--device", Self.device.rawValue])
+            outcome = try await assert.evaluate(on: route, logger: OffsiderLogger())
+            line = assert.failureLine(outcome)
+        }
+        #expect(!outcome.met)
+        #expect(line.contains("--id 'row-12' is under the navigation bar at (0, 870) 412x56, so Android marks it hidden: scroll it up above the bar"), "\(line)")
+        #expect(!line.contains("row-1 ") && !line.contains("row-1)") && !line.contains("Did you mean"), "\(line)")
+        #expect(outcome.nearMiss?.candidates.isEmpty == true)
+    }
+
+    @Test("wait --any names a selector Android lists only as hidden where it is, too")
+    func waitAnyNames() async throws {
+        let backend = FakeDeviceBackend(platform: .android, trees: [Self.tree(hidden: Self.underBar)])
+        let wait = try Wait.parse(["--any", "--id", "row-12", "--id", "row-99", "--timeout", "0", "--device", Self.device.rawValue])
+        let outcome = try await wait.evaluate(on: DeviceRouter.Route(backend: backend, device: Self.device), logger: OffsiderLogger(), clock: ScriptedClock().poll)
+        #expect(outcome.nearMiss?.summary.contains("--id 'row-12': --id 'row-12' is under the navigation bar") == true, "\(outcome.nearMiss?.summary ?? "")")
+    }
+
     @Test("a selector no hidden branch matches keeps the usual miss")
     func otherMiss() async throws {
         let error = await Self.miss(["--id", "row-99", "--wait-timeout", "0"])

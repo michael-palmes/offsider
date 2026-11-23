@@ -64,7 +64,7 @@ struct Tap: AsyncParsableCommand, VerifiableCommand {
     @Flag(name: .customLong("topmost"), help: "With several on-screen matches, tap the one drawn on top: the only one on the front page when a page is drawn over the others, else the one a hit-test at its point reaches on an iOS simulator, else the one the tree draws on top there (Android drawing order, or tree order).")
     var topmost: Bool = false
 
-    @Flag(name: .customLong("no-settle"), help: "Tap a selector's target at once, without waiting out a transition an input under 500 ms ago may have started.")
+    @Flag(name: .customLong("no-settle"), help: "Tap a selector's target at once, without waiting out a transition an input, or the target coming up, under 500 ms ago may have started.")
     var noSettle: Bool = false
 
     @Flag(name: .customLong("dry-run"), help: "Find the target and check what a touch there would reach, then stop: nothing is sent. Takes a selector; exits as the tap would.")

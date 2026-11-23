@@ -35,7 +35,7 @@ Your agent sends what it sees to its model provider. Screen text is written by t
 | Logs | Tokens, keys, emails, card numbers and one-time codes read `[redacted]` | It works by pattern, so a secret under an unusual key or in free text still shows |
 | Codes in the tree | One-time codes, card numbers, wallet addresses and recovery phrases read `[redacted ...]` | By pattern too |
 | Typed text | Offsider never echoes it | Text passed as an argument shows in the Mac's process list; use `--stdin` for anything sensitive |
-| Evidence runs | Emails are masked too, and the folder gets a `.gitignore` of `*` | The folder stays where you put it |
+| Evidence runs | Emails are masked too, and the folder gets a `.gitignore` of `*` and a `.metadata_never_index` for Spotlight | The folder stays where you put it; the run stops recording after 7 days (`--expires`) |
 
 Only you, at your own terminal, can turn off the password mask, log redaction or video's check. When an agent asks, Offsider wants your Touch ID or password, and no variable stands in for it. An agent can still edit `offsider.mask.json` or start an evidence run without email masks.
 
@@ -56,6 +56,7 @@ Most of it lives in a private folder, `offsider-<uid>/` in your per-user temp fo
 | Sign-in records, never a username or password | `signins/` | Until the next `login` | `offsider credential signed-out` |
 | An Android device's auto-rotate before Offsider turned it | `orientation/` | Until it is turned back | `offsider orientation portrait --device <ID>` |
 | A fold, Metro reverse or airplane mode Offsider set on a device | `postures/`, `reverses/`, `airplane/` | Until it is undone | `offsider session stop` |
+| The pid of the adb server last found to be yours | `adb/` | Until another server answers | Delete the folder |
 | A foldable phone's active panel and size | `displays/` | While the phone's state matches | `OFFSIDER_DISPLAY_CACHE=off` stops it |
 | A failed unlock code marker, never the code | `unlock/` | Until the device is unlocked or the code saved again | `offsider unlock-code set` or `offsider unlock-code remove` |
 | Emulator boot logs | `logs/boot-<avd>.log` | Emptied past 5 MB | Delete the file |
@@ -69,9 +70,9 @@ Most of it lives in a private folder, `offsider-<uid>/` in your per-user temp fo
 | The app guard rules you approved, beside a lock file, and their seal | `~/.config/offsider/guards.json` and `.guards.lock`; the seal in the login Keychain (`com.mpalmes.offsider.guards`) | Until removed | No command yet: delete the files and the Keychain item together (the file alone holds its apps until you approve again) |
 | Test logins and their links between apps | Login Keychain, never synced | Until removed | `offsider credential remove` |
 | Unlock codes | Login Keychain, never synced | Until removed | `offsider unlock-code remove` |
-| The iPhone runner's build and the bundle prefixes you approved | `~/Library/Caches/offsider/runner/`, `approved-prefixes` | Until removed | `offsider session stop --device <UDID> --clean` for a device's build; delete the folder for the rest |
+| The iPhone runner's build and the bundle prefixes you approved | `~/Library/Caches/offsider/runner/`, `approved-prefixes`; its seal in the login Keychain (`com.mpalmes.offsider.runner`) | Until removed | `offsider session stop --device <UDID> --clean` for a device's build; delete the folder for the rest, and the seal with `security delete-generic-password -s com.mpalmes.offsider.runner` |
 | The skill `init` installs | `~/.claude/skills/offsider`, `~/.agents/skills/offsider` or your `--dest` | Until removed | `offsider init --uninstall` |
-| The permission rules `init` adds | `~/.claude/settings.json` (`permissions.ask`) and `~/.codex/rules/offsider.rules` | Until removed | By hand for now: `init --uninstall` leaves them |
+| The permission rules `init` adds | `~/.claude/settings.json` (`permissions.ask`) and `~/.codex/rules/offsider.rules` | Until removed | `offsider init --uninstall` |
 | An emulator's gRPC public key, with `OFFSIDER_ANDROID_GRPC_AUTH=jwt` only | The emulator's `jwks` folder | While the command runs | The next command removes one a killed command left |
 | Screenshots, recordings and evidence run folders | Where you put them | Until you delete them | Delete them; Offsider never does |
 

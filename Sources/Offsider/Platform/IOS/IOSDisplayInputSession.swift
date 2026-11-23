@@ -14,6 +14,7 @@ final class IOSDisplayInputSession: InputSession {
     private var digitizer: SimulatorDTUHID?
     private var idbSession: HIDInteractor.Session?
     private var contact = DTUHIDContact()
+    var onClose: (() -> Void)?
 
     init(device: DeviceID, simulator: FBSimulator, screenID: UInt64, mainSize: (width: Double, height: Double), logger: OffsiderLogger) {
         self.device = device
@@ -40,6 +41,8 @@ final class IOSDisplayInputSession: InputSession {
         digitizer = nil
         if let idbSession { await HIDInteractor.closeSession(idbSession) }
         idbSession = nil
+        onClose?()
+        onClose = nil
     }
 
     private func sendTouches(_ event: FBSimulatorHIDEvent) async throws {

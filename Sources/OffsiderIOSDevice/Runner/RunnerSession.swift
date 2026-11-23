@@ -16,12 +16,12 @@ public struct RunnerProcessIdentity: Codable, Equatable, Sendable {
     /// The live process's identity, or nil once it has exited or is a zombie.
     public static func of(pid: Int32) -> RunnerProcessIdentity? {
         guard pid > 0 else { return nil }
-        var info = kinfo_proc()
-        var size = MemoryLayout<kinfo_proc>.stride
+        var info = unsafe kinfo_proc()
+        var size = unsafe MemoryLayout<kinfo_proc>.stride
         var mib: [Int32] = [CTL_KERN, KERN_PROC, KERN_PROC_PID, pid]
-        guard sysctl(&mib, u_int(mib.count), &info, &size, nil, 0) == 0, size > 0, Int32(info.kp_proc.p_stat) != SZOMB else { return nil }
-        let start = info.kp_proc.p_starttime
-        let name = withUnsafeBytes(of: info.kp_proc.p_comm) { String(decoding: $0.prefix { $0 != 0 }, as: UTF8.self) }
+        guard unsafe sysctl(&mib, u_int(mib.count), &info, &size, nil, 0) == 0, size > 0, unsafe Int32(info.kp_proc.p_stat) != SZOMB else { return nil }
+        let start = unsafe info.kp_proc.p_starttime
+        let name = unsafe withUnsafeBytes(of: info.kp_proc.p_comm) { unsafe String(decoding: $0.prefix { $0 != 0 }, as: UTF8.self) }
         return RunnerProcessIdentity(startTime: UInt64(start.tv_sec) * 1_000_000 + UInt64(start.tv_usec), executable: name)
     }
 
@@ -364,7 +364,7 @@ public final class RunnerSessionManager {
         let directory = try IOSDevicePaths.device(udid, root: store.root)
         Self.removeResultBundles(in: directory)
         let logPath = try store.logPath(udid: udid)
-        unlink(logPath)
+        unsafe unlink(logPath)
         let token = Self.makeToken()
         let port = UInt16.random(in: 20000...59999)
         var childEnvironment = ChildEnvironment.make(.xcodebuild, from: environment)
@@ -493,7 +493,7 @@ public final class RunnerSessionManager {
 
     nonisolated static func makeToken() -> String {
         var generator = SystemRandomNumberGenerator()
-        return (0..<32).map { _ in String(format: "%02x", UInt8.random(in: 0...255, using: &generator)) }.joined()
+        return (0..<32).map { _ in unsafe String(format: "%02x", UInt8.random(in: 0...255, using: &generator)) }.joined()
     }
 
     nonisolated static func removeResultBundles(in directory: String) {

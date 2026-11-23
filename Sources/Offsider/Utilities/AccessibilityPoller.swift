@@ -18,6 +18,20 @@ enum SettlePolicy {
     case guarded(record: TreeCacheRecord?)
 }
 
+/// The target's pixels, read straight from the device's screen, for a check that it has stopped sliding.
+@MainActor
+protocol TargetPixels: AnyObject {
+    func fingerprint(of frame: UIFrame) -> ImageFingerprint?
+    func close()
+}
+
+typealias TargetPixelSource = @MainActor () async -> (any TargetPixels)?
+
+@MainActor
+protocol TargetPixelReading {
+    func targetPixels(for id: DeviceID) async -> (any TargetPixels)?
+}
+
 @MainActor
 struct AccessibilityPoller {
     /// `transientGrace` retries a transient tree failure for that long even without `--wait-timeout` (for `--verify`).
@@ -49,6 +63,7 @@ struct AccessibilityPoller {
             pick: pick,
             coverCheck: coverCheck,
             coverSettle: coverSettle,
+            pixels: (backend as? any TargetPixelReading).map { reader in { await reader.targetPixels(for: device) } },
             logger: logger
         ) {
             try await watchdog.guardingInputRead(of: device) {
@@ -107,6 +122,7 @@ struct AccessibilityPoller {
         pick: MatchPicker? = nil,
         coverCheck: CoverCheck? = nil,
         coverSettle: TimeInterval = 0,
+        pixels: TargetPixelSource? = nil,
         logger: OffsiderLogger,
         clock: PollClock = .live,
         treeFetcher: () async throws -> UITree
@@ -118,7 +134,7 @@ struct AccessibilityPoller {
             do {
                 polled = try await pollOnce(
                     query: query, waitTimeout: remaining, pollInterval: pollInterval, transientGrace: transientGrace, elementType: elementType,
-                    allowOffscreen: allowOffscreen, settle: settle, pick: pick, logger: logger, clock: clock, treeFetcher: treeFetcher
+                    allowOffscreen: allowOffscreen, settle: settle, pick: pick, pixels: pixels, logger: logger, clock: clock, treeFetcher: treeFetcher
                 )
             } catch where retryableMiss(error) != nil && clock.now() - start < waitTimeout {
                 logger.info().log("\(retryableMiss(error)?.isOffScreen == true ? "Element off screen" : "Element not found") once the screen settled, retrying in \(pollInterval)s…")
@@ -152,6 +168,7 @@ struct AccessibilityPoller {
         allowOffscreen: Bool,
         settle: SettlePolicy,
         pick: MatchPicker?,
+        pixels: TargetPixelSource?,
         logger: OffsiderLogger,
         clock: PollClock,
         treeFetcher: () async throws -> UITree
@@ -177,7 +194,7 @@ struct AccessibilityPoller {
             position: { resolution in UIPoint(x: resolution.point.x, y: resolution.point.y) },
             treeFetcher: treeFetcher
         )
-        return try await settled(polled, policy: settle, target: { $0.target ?? $0.matched }, logger: logger, treeFetcher: treeFetcher) { tree, explain in
+        return try await settled(polled, policy: settle, target: { $0.target ?? $0.matched }, pixels: pixels, logger: logger, treeFetcher: treeFetcher) { tree, explain in
             do {
                 return try await resolver(tree, explain)
             } catch let error as ElementResolutionError {
@@ -193,11 +210,20 @@ struct AccessibilityPoller {
         }
     }
 
+    /// Frames read final while a sheet still slides in, so a target no read since the input showed waits for its pixels to hold still.
+    private static func stillPixels(at frame: UIFrame, source: TargetPixelSource, environment: TreeCacheEnvironment) async throws {
+        guard let pixels = await source() else { return }
+        defer { pixels.close() }
+        let started = ContinuousClock.now
+        _ = try await TransitionGuard.pixelsStill(elapsed: { ContinuousClock.now - started }, sleep: { try await environment.sleep($0) }) { pixels.fingerprint(of: frame) }
+    }
+
     /// The transition guard: acts at once when the cache shows the target at rest, else waits and resolves on one more read.
     static func settled<T>(
         _ polled: Polled<T>,
         policy: SettlePolicy,
         target: (T) -> UINode?,
+        pixels: TargetPixelSource? = nil,
         logger: OffsiderLogger,
         environment: TreeCacheEnvironment = .current,
         treeFetcher: () async throws -> UITree,
@@ -216,6 +242,9 @@ struct AccessibilityPoller {
         let record = cached.flatMap { $0.matches(appFrame: polled.tree.applicationFrame) ? $0 : nil }
         let decision = TransitionGuard.decide(target: node, record: record, now: environment.now(), keyboardShowing: TextFocus.hasKeyboard(polled.tree))
         result.settledBy = decision
+        if decision == .actNow(.noRecentInput), let pixels, let record, let frame = node.frame, TransitionGuard.unproven(node, since: record, now: environment.now()) {
+            try await Timings.measure("pixel-settle") { try await stillPixels(at: frame, source: pixels, environment: environment) }
+        }
         guard case .recheck(let delay) = decision else { return result }
         func read(_ delay: Duration) async throws -> UITree {
             try await Timings.measure("settle") {

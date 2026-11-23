@@ -114,7 +114,7 @@ enum AndroidTreeMapping {
               min.isFinite, max.isFinite, current.isFinite, max != min else {
             return nil
         }
-        var text = String(format: "%.2f", (current - min) / (max - min) * 100)
+        var text = unsafe String(format: "%.2f", (current - min) / (max - min) * 100)
         while text.hasSuffix("0") { text.removeLast() }
         if text.hasSuffix(".") { text.removeLast() }
         return (text == "-0" ? "0" : text) + "%"

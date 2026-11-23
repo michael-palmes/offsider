@@ -90,7 +90,7 @@ public enum BrokerProcess {
     public static func holdsSocket(_ pid: pid_t, boundTo path: String) -> Bool {
         let wanted = (path as NSString).standardizingPath
         let stride = MemoryLayout<proc_fdinfo>.stride
-        let needed = unsafe proc_pidinfo(pid, PROC_PIDLISTFDS, 0, nil, 0)
+        let needed = proc_pidinfo(pid, PROC_PIDLISTFDS, 0, nil, 0)
         guard needed > 0 else { return false }
         var descriptors = [proc_fdinfo](repeating: proc_fdinfo(), count: Int(needed) / stride + 16)
         let bytes = unsafe proc_pidinfo(pid, PROC_PIDLISTFDS, 0, &descriptors, Int32(descriptors.count * stride))
@@ -100,7 +100,7 @@ public enum BrokerProcess {
             let size = Int32(MemoryLayout<socket_fdinfo>.size)
             guard unsafe proc_pidfdinfo(pid, descriptor.proc_fd, PROC_PIDFDSOCKETINFO, &info, size) == size, info.psi.soi_family == AF_UNIX else { continue }
             let bound = unsafe withUnsafeBytes(of: &info.psi.soi_proto.pri_un.unsi_addr.ua_sun.sun_path) { raw in
-                String(decoding: Array(raw.prefix { $0 != 0 }), as: UTF8.self)
+                unsafe String(decoding: Array(raw.prefix { $0 != 0 }), as: UTF8.self)
             }
             if !bound.isEmpty, (bound as NSString).standardizingPath == wanted { return true }
         }

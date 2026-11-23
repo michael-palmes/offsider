@@ -60,7 +60,7 @@ A test device is a phone a person marked as holding nothing personal. On one, an
 | `~/.config/offsider/guards.json` | The app guard rules a person approved | No command yet: delete it and its Keychain seal together |
 | The login Keychain, never synced | Test logins, unlock codes, and the seals of the allow-list and the guard approvals | `offsider credential remove`, `offsider unlock-code remove` |
 | `~/Library/Caches/offsider/runner/` | The iPhone runner's build | `offsider session stop --device <UDID> --clean` |
-| The agent's skill folder and permission rules | What `offsider init` installed | `offsider init --uninstall` (the rules stay until you delete them) |
+| The agent's skill folder and permission rules | What `offsider init` installed | `offsider init --uninstall` |
 
 Every store, with where it lives and how long it lasts: [Privacy, What Offsider keeps](privacy.md#what-offsider-keeps-on-your-mac).
 
@@ -79,7 +79,7 @@ Every store, with where it lives and how long it lasts: [Privacy, What Offsider 
 
 ## Managed Macs
 
-A configuration profile in the domain `com.mpalmes.offsider` sets a ceiling over every person's allow-list: phones off, listed devices only, listed apps only, or apps denied. Offsider reads only forced values and fails closed on a bad one. [Managed Macs](mdm.md) has the five keys, a sample profile and how to verify it.
+A configuration profile in the domain `com.mpalmes.offsider` sets a ceiling over every person's allow-list: phones off, listed devices only, listed apps only, or apps denied. Ten more keys cap what anyone may loosen: masks and redaction kept on, a longest allowance, no saved logins, no `--allow-path`, no `adb reverse`, no device registration, listed Apple teams only, named apps only, no saved unlock codes and no permission changes on phones. Offsider reads only forced values and fails closed on a bad one. [Managed Macs](mdm.md) has every key, a JSON schema, a sample profile and how to verify it, and [Managed harnesses](agents.md#managed-harnesses) has the fragments for a locked-down Claude Code or Codex.
 
 ## How a release is built and proved
 

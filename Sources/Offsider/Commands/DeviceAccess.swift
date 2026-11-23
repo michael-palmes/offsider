@@ -326,8 +326,9 @@ struct DeviceAccessAllow: AsyncParsableCommand {
         let profile = context.profile()
         // The person runs the command in their own terminal, whose environment is not this one, so the prefix goes into the command.
         let prefix = try XcodeRunnerBuilder.resolvePrefix(environment: context.environment())
+        let policy = context.policy()
         let built = DeviceAddPlan.make(
-            rows: rows, policy: context.policy(), teams: context.signingTeams().map { DeviceAddPlan.Team(id: $0.id, name: $0.name, free: $0.free) }, now: context.now(),
+            rows: rows, policy: policy, teams: context.signingTeams().filter { policy.managed.ceilings.permits(team: $0.id) }.map { DeviceAddPlan.Team(id: $0.id, name: $0.name, free: $0.free) }, now: context.now(),
             runnerPrefix: prefix, app: { $0 == .ios ? profile?.bundleID : profile?.package }
         )
         return json ? built.json() : built.text()
@@ -477,6 +478,17 @@ struct DeviceAccessAllow: AsyncParsableCommand {
         (.type, "Type a duration", nil),
     ]
     static let recommendedExpiry = 1
+    static let nothingSaved = "Nothing was saved."
+    static let noListedTeam = "Your organisation lists none of your teams (allowedTeamIDs). Type one it lists, or Return to skip."
+
+    /// The lengths a person may pick under the organisation's cap: none longer, and never "Until removed".
+    static func expiryOptions(within cap: TimeInterval?) -> [(mark: TerminalStyle.Mark, label: String, value: String?)] {
+        guard let cap else { return expiryOptions }
+        return expiryOptions.filter { option in
+            guard let value = option.value else { return true }
+            return (try? DeviceAccess.expiry(value)).flatMap { $0 }.map { $0 <= cap } ?? false
+        }
+    }
 
     /// One app recommends 7 days; any app on a phone stays at 12 hours.
     static func expiryRecommended(apps: [String]) -> Int {
@@ -589,7 +601,7 @@ struct DeviceAccessAllow: AsyncParsableCommand {
     /// Skip is chosen; a cancel or failure here never costs the device it just allowed.
     @MainActor
     private func offerLogin(_ choice: Choice, on prompt: TerminalPrompt, context: DeviceAccessContext, policy: PhysicalDevicePolicy) async {
-        guard !json, let store = context.credentials else { return }
+        guard !json, let store = context.credentials, policy.managed.ceilings.refusal(.allowSavedLogins) == nil else { return }
         let start = prompt.mark
         do {
             let rows = [MenuRow(.cancel, [AllowScreen.skipLogin], recommended: true), MenuRow(.lock, [AllowScreen.addLogin, AllowScreen.addLoginDetail])]
@@ -655,6 +667,12 @@ struct DeviceAccessAllow: AsyncParsableCommand {
                 throw CLIError(errorDescription: problem, reason: .appNotAllowed)
             }
         }
+        let asked = try expires.map { try DeviceAccess.expiry($0) }
+        if let why = policy.addRefusal(lifetime: asked, team: team, metroPorts: metroPorts ?? []) {
+            throw CLIError.managedPolicy(why, outcome: Self.nothingSaved)
+        }
+        let ceilings = policy.managed.ceilings
+        let offersMetro = ceilings.refusal(.allowMetroReverse) == nil
         // A device already allowed is being changed: each step starts on what it has now, since saving replaces the whole entry.
         var current: DeviceAllowance?
         if case .allowed(let entry) = policy.decision(platform: row.platform, key: key, now: context.now()) { current = entry }
@@ -663,13 +681,16 @@ struct DeviceAccessAllow: AsyncParsableCommand {
         }
         let chosenPrefix = row.platform == .ios ? try Self.runnerPrefix(flag: flagPrefix, environment: context.environment(), current: current?.runnerPrefix) : nil
         var teams: [SigningTeam] = []
+        var teamsHidden = false
         if row.platform == .ios, team == nil {
-            teams = try await TerminalSpinner.run("Reading your signing teams", terminal: prompt.terminalDescriptor) { context.signingTeams() }
+            let found = try await TerminalSpinner.run("Reading your signing teams", terminal: prompt.terminalDescriptor) { context.signingTeams() }
+            teams = found.filter { ceilings.permits(team: $0.id) }
+            teamsHidden = teams.isEmpty && !found.isEmpty
         }
         // One team has nothing to choose, unless it would replace the one this device already has.
         let onlyTeam = teams.count == 1 && (current?.team == nil || current?.team == teams[0].id) ? teams[0] : nil
         let offersTest = policy.managed.testDeviceRefusal == nil
-        var steps = stepNames(platform: row.platform, askDevice: askedDevice, askTeam: onlyTeam == nil, askUse: offersTest)
+        var steps = stepNames(platform: row.platform, askDevice: askedDevice, askTeam: onlyTeam == nil, askUse: offersTest, askMetro: offersMetro)
         /// Runs the step with its `2/4` marker, then leaves one receipt line in place of everything it drew.
         func step<T>(_ name: String, _ body: (String?) async throws -> (value: T, shown: String)) async throws -> (value: T, shown: String) {
             let start = prompt.mark
@@ -691,7 +712,7 @@ struct DeviceAccessAllow: AsyncParsableCommand {
             shownTeam = Self.teamShown(onlyTeam, among: teams)
             prompt.lines([TerminalUI.receipt("Team", Self.teamShown(onlyTeam, among: teams), style: prompt.style)])
         } else if row.platform == .ios, team == nil {
-            let picked = try await step("Team") { try await pickTeam(on: prompt, teams: teams, current: current?.team, step: $0) }
+            let picked = try await step("Team") { try await pickTeam(on: prompt, teams: teams, current: current?.team.flatMap { ceilings.permits(team: $0) ? $0 : nil }, step: $0, ceilings: ceilings, hidden: teamsHidden) }
             chosenTeam = picked.value
             shownTeam = picked.value == nil ? nil : picked.shown
         }
@@ -701,14 +722,14 @@ struct DeviceAccessAllow: AsyncParsableCommand {
         }
         // A use decided by flag or the test device row needs no more questions: the rest take their defaults.
         let settled = chosenWhole || !apps.isEmpty
-        var chosenPorts = metroPorts ?? (settled ? current?.metroPorts ?? [] : [])
-        if row.platform == .android, metroPorts == nil, !settled {
+        var chosenPorts = offersMetro ? metroPorts ?? (settled ? current?.metroPorts ?? [] : []) : []
+        if row.platform == .android, metroPorts == nil, !settled, offersMetro {
             chosenPorts = try await step("Metro") { try pickMetroPorts(on: prompt, current: current?.metroPorts ?? [], step: $0) }.value
         }
-        let lifetime: TimeInterval?
+        var lifetime: TimeInterval?
         var keptExpiry: Date?
-        if let expires {
-            lifetime = try DeviceAccess.expiry(expires)
+        if expires != nil {
+            lifetime = asked ?? nil
         } else if settled {
             if let current, current.testDevice == chosenWhole {
                 lifetime = current.expires?.timeIntervalSince(context.now())
@@ -718,9 +739,17 @@ struct DeviceAccessAllow: AsyncParsableCommand {
             }
         } else {
             let kept = current.map { entry in (entry.expires?.timeIntervalSince(context.now()), AllowScreen.until(entry.expires, now: context.now(), timeZone: context.timeZone)) }
-            let picked = try await step("How long") { try pickExpiry(on: prompt, current: kept, step: $0, apps: chosenApps) }
+            let picked = try await step("How long") { try pickExpiry(on: prompt, current: kept, step: $0, apps: chosenApps, ceilings: ceilings) }
             lifetime = picked.value
             if picked.shown == kept?.1 { keptExpiry = current?.expires }
+        }
+        // A default or kept length the organisation's cap cuts short is saved at the cap; one a person asked for was refused above.
+        if let cap = ceilings.allowanceCap, lifetime ?? .infinity > cap {
+            lifetime = cap
+            keptExpiry = nil
+        }
+        if let why = policy.addRefusal(apps: chosenWhole ? nil : chosenApps, team: chosenTeam, metroPorts: chosenPorts) {
+            throw CLIError.managedPolicy(why, outcome: Self.nothingSaved)
         }
         let name = AllowScreen.name(row)
         let start = prompt.mark
@@ -730,7 +759,7 @@ struct DeviceAccessAllow: AsyncParsableCommand {
         prompt.lines([prompt.style.dim(AllowScreen.confirm)])
         let reach = chosenPorts.isEmpty ? "" : " and let its apps reach \(AllowScreen.metro(chosenPorts))"
         let whole = chosenWhole ? " as a \(AllowScreen.wholeDevice) with nothing personal on it" : ""
-        let register = row.platform == .ios && chosenTeam != nil ? " and register it with your Apple team" : ""
+        let register = row.platform == .ios && chosenTeam != nil && ceilings.refusal(.allowRunnerRegistration) == nil ? " and register it with your Apple team" : ""
         // The prefix creates App IDs in the person's team, so the Touch ID that records it names it.
         let named = chosenPrefix.map { " and build its runner as \(PromptScreen.visible($0)).runner" } ?? ""
         try await PersonPresence.confirm(reason: "allow Offsider to drive \(name) (\(PromptScreen.visible(key)))\(whole)\(reach)\(register)\(named)")
@@ -756,14 +785,14 @@ struct DeviceAccessAllow: AsyncParsableCommand {
     }
 
     /// The steps this run shows, in order; a flag given on the command line skips its step, and a use settled by flag skips the rest.
-    func stepNames(platform: DevicePlatform, askDevice: Bool = true, askTeam: Bool = true, askUse: Bool = true) -> [String] {
+    func stepNames(platform: DevicePlatform, askDevice: Bool = true, askTeam: Bool = true, askUse: Bool = true, askMetro: Bool = true) -> [String] {
         let settled = testDevice || !apps.isEmpty
         var names: [String] = []
         if device == nil, askDevice { names.append("Device") }
         if !settled, askUse { names.append("Use") }
         if platform == .ios, team == nil, askTeam { names.append("Team") }
         if !settled { names.append("App") }
-        if platform == .android, metroPortArguments.isEmpty, !settled { names.append("Metro") }
+        if platform == .android, metroPortArguments.isEmpty, !settled, askMetro { names.append("Metro") }
         if expires == nil, !settled { names.append("How long") }
         return names
     }
@@ -831,13 +860,17 @@ struct DeviceAccessAllow: AsyncParsableCommand {
     }
 
     @MainActor
-    private func pickTeam(on prompt: TerminalPrompt, teams: [SigningTeam], current: String?, step: String?) async throws -> (value: String?, shown: String) {
+    private func pickTeam(on prompt: TerminalPrompt, teams: [SigningTeam], current: String?, step: String?, ceilings: ManagedCeilings = .none, hidden: Bool = false) async throws -> (value: String?, shown: String) {
         let problem = "A team ID is 10 letters and digits, such as ABCDE12345."
+        func typedProblem(_ answer: String) -> String? {
+            let text = answer.trimmingCharacters(in: .whitespaces)
+            guard DeviceAllowance.isTeamID(text) else { return problem }
+            return ceilings.teamRefusal(text.uppercased()).map(ManagedRefusalText.sentence)
+        }
         guard !teams.isEmpty else {
-            prompt.lines(TerminalUI.warning(AllowScreen.noTeam, width: prompt.width, style: prompt.style))
+            prompt.lines(TerminalUI.warning(hidden ? Self.noListedTeam : AllowScreen.noTeam, width: prompt.width, style: prompt.style))
             let typed = try prompt.ask("  Team ID: ") { answer in
-                let text = answer.trimmingCharacters(in: .whitespaces)
-                return text.isEmpty || DeviceAllowance.isTeamID(text) ? nil : problem
+                answer.trimmingCharacters(in: .whitespaces).isEmpty ? nil : typedProblem(answer)
             }.trimmingCharacters(in: .whitespaces).uppercased()
             return typed.isEmpty ? (current, current ?? "none") : (typed, typed)
         }
@@ -846,8 +879,7 @@ struct DeviceAccessAllow: AsyncParsableCommand {
         let index = try prompt.choose(AllowScreen.teamQuestion, step: step, rows: (kept.map { [$0] } ?? []) + rows, keepsChoice: false) - (kept == nil ? 0 : 1)
         if index < 0, let current { return (current, PromptScreen.label(current)) }
         if index < teams.count { return (teams[index].id, Self.teamShown(teams[index], among: teams)) }
-        let typed = try prompt.ask("  Team ID: ") { DeviceAllowance.isTeamID($0.trimmingCharacters(in: .whitespaces)) ? nil : problem }
-            .trimmingCharacters(in: .whitespaces).uppercased()
+        let typed = try prompt.ask("  Team ID: ", check: typedProblem).trimmingCharacters(in: .whitespaces).uppercased()
         return (typed, typed)
     }
 
@@ -903,7 +935,7 @@ struct DeviceAccessAllow: AsyncParsableCommand {
                 let answer = try typeApp(on: prompt, platform: row.platform, policy: policy, label: lead + "App ID (Return to keep \(keep(kept).shown)): ")
                 return answer.value.isEmpty ? keep(kept) : answer
             }
-            return try typeApp(on: prompt, platform: row.platform, policy: policy, label: lead + "App ID (Return for any app): ")
+            return try typeApp(on: prompt, platform: row.platform, policy: policy, label: lead + (policy.managed.ceilings.refusal(.requirePinnedApps) == nil ? "App ID (Return for any app): " : "App ID: "))
         }
         let menu = Self.appMenu(listed, platform: row.platform, policy: policy, profile: context.profile(), front: front)
         let rows = (kept.map { [AllowScreen.keepRow(keep($0).shown)] } ?? []) + menu.rows()
@@ -977,8 +1009,10 @@ struct DeviceAccessAllow: AsyncParsableCommand {
         let pick = [profileApp, front].compactMap { $0 }.first { id in offered.contains { $0.id == id } }
         let first = offered.filter { $0.id == pick }
         var choices: [AppMenu.Choice] = (first + offered.filter { $0.id != pick }).map { .app($0) }
-        choices.append(.any)
-        if platform == .android { choices.append(.wholeDevice) }
+        if policy.managed.ceilings.refusal(.requirePinnedApps) == nil {
+            choices.append(.any)
+            if platform == .android { choices.append(.wholeDevice) }
+        }
         choices.append(.type)
         return AppMenu(choices: choices, recommended: first.isEmpty ? nil : 0)
     }
@@ -987,7 +1021,7 @@ struct DeviceAccessAllow: AsyncParsableCommand {
     private func typeApp(on prompt: TerminalPrompt, platform: DevicePlatform, policy: PhysicalDevicePolicy, label: String) throws -> (value: [String], shown: String) {
         let answer = try prompt.ask(label) { answer in
             let text = answer.trimmingCharacters(in: .whitespaces)
-            if text.isEmpty { return nil }
+            if text.isEmpty { return policy.managed.ceilings.refusal(.requirePinnedApps).map(ManagedRefusalText.sentence) }
             guard DeviceAllowance.isAppID(text) else { return "Type an app ID, such as com.example.app." }
             return Self.appProblem(text, platform: platform, policy: policy)
         }.trimmingCharacters(in: .whitespaces)
@@ -1027,9 +1061,12 @@ struct DeviceAccessAllow: AsyncParsableCommand {
     }
 
     @MainActor
-    private func pickExpiry(on prompt: TerminalPrompt, current: (lifetime: TimeInterval?, shown: String)?, step: String?, apps: [String]) throws -> (value: TimeInterval?, shown: String) {
-        let options = Self.expiryOptions
-        let recommended = Self.expiryRecommended(apps: apps)
+    private func pickExpiry(
+        on prompt: TerminalPrompt, current: (lifetime: TimeInterval?, shown: String)?, step: String?, apps: [String], ceilings: ManagedCeilings = .none
+    ) throws -> (value: TimeInterval?, shown: String) {
+        let options = Self.expiryOptions(within: ceilings.allowanceCap)
+        let wanted = Self.expiryOptions[Self.expiryRecommended(apps: apps)].value
+        let recommended = options.firstIndex { $0.value == wanted } ?? 0
         let rows = options.enumerated().map { MenuRow($1.mark, [$1.label], recommended: $0 == recommended) }
         let kept = current.map { [AllowScreen.keepRow($0.shown)] } ?? []
         let index = try prompt.choose(AllowScreen.expiryQuestion, step: step, rows: kept + rows, selected: kept.isEmpty ? recommended : 0, keepsChoice: false) - kept.count
@@ -1040,7 +1077,10 @@ struct DeviceAccessAllow: AsyncParsableCommand {
         }
         let typed = try prompt.ask("  How long (like 45m, 2h, 7d or never): ") { answer in
             do {
-                _ = try DeviceAccess.expiry(answer)
+                let asked = try DeviceAccess.expiry(answer)
+                if let cap = ceilings.allowanceCap, let days = ceilings.maxAllowanceDays, asked ?? .infinity > cap {
+                    return ManagedRefusalText.sentence(ManagedRefusalText.allowanceCapped(days: days))
+                }
                 return nil
             } catch let error as ValidationError {
                 return error.message.replacingOccurrences(of: "--expires", with: "A duration")

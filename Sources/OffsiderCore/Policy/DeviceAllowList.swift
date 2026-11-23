@@ -42,6 +42,13 @@ public struct DeviceAllowance: Equatable, Sendable {
         expires.map { $0 > now } ?? true
     }
 
+    func expiring(_ date: Date) -> DeviceAllowance {
+        DeviceAllowance(
+            platform: platform, key: key, name: name, added: added, expires: date, apps: apps, team: team, runnerPrefix: runnerPrefix, metroPorts: metroPorts,
+            testDevice: testDevice
+        )
+    }
+
     /// The pin a person chooses for "Any app and all logs" on an Android phone: whole-device logs, and any app named on each command.
     public static let wholeDevicePin = "*"
 

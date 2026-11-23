@@ -20,6 +20,10 @@ public enum DeviceRefusal: Equatable, Sendable {
     case listChanged
     /// A newer Offsider wrote this device's entry, with a key this build does not know and so cannot honour.
     case newerEntry(String)
+    /// The entry is older than the managed `maxAllowanceDays`; a person may allow the device again.
+    case cappedExpired(Date, days: Int)
+    /// Managed `requirePinnedApps` is forced and the entry names no app, or pins every app; a person may allow it again with one.
+    case pinsRequired
 
     /// True when only an administrator can lift it; `devices add` cannot.
     public var isManaged: Bool {
@@ -46,6 +50,8 @@ public enum DeviceRefusal: Equatable, Sendable {
         case .managedOff: return ManagedDevicePolicy.allowPhysicalDevicesKey
         case .managedNotListed: return ManagedDevicePolicy.allowedDeviceIDsKey
         case .managedUnreadable(let key), .managedUnknownKey(let key): return key
+        case .cappedExpired: return ManagedCeilings.maxAllowanceDaysKey
+        case .pinsRequired: return ManagedCeilings.Switch.requirePinnedApps.key
         default: return nil
         }
     }
@@ -62,6 +68,8 @@ public enum DeviceRefusal: Equatable, Sendable {
         case .listUnreadable(let detail): return "the allow-list could not be read (\(detail))"
         case .listChanged: return "the allow-list was changed outside Offsider"
         case .newerEntry(let key): return "a newer Offsider wrote its allow-list entry, with a setting this one cannot read (\(TerminalText.quoted(key)))"
+        case .cappedExpired(let date, let days): return "\(ManagedRefusalText.allowanceCapped(days: days)), which its allow-list entry passed at \(ProcessStamp.timestamp(date))"
+        case .pinsRequired: return "\(ManagedCeilings.Switch.requirePinnedApps.refusal), and its allow-list entry names none"
         }
     }
 
@@ -77,6 +85,8 @@ public enum DeviceRefusal: Equatable, Sendable {
         case .listUnreadable: return "list_unreadable"
         case .listChanged: return "list_changed"
         case .newerEntry: return "newer_entry"
+        case .cappedExpired: return "expired_by_policy"
+        case .pinsRequired: return "pins_required"
         }
     }
 }
@@ -110,9 +120,40 @@ public struct PhysicalDevicePolicy: Equatable, Sendable {
         if let listProblem { return .refused(.listUnreadable(listProblem)) }
         if !sealIntact { return .refused(.listChanged) }
         if let held = list.newerEntry(platform: platform, key: key) { return .refused(.newerEntry(held.unknownKeys[0])) }
-        guard let entry = list.entry(platform: platform, key: key) else { return .refused(.notAllowed) }
-        guard entry.isActive(now: now) else { return .refused(.expired(entry.expires ?? now)) }
+        guard let listed = list.entry(platform: platform, key: key) else { return .refused(.notAllowed) }
+        guard listed.isActive(now: now) else { return .refused(.expired(listed.expires ?? now)) }
+        let entry = capped(listed)
+        if let days = managed.ceilings.maxAllowanceDays, let end = entry.expires, end <= now { return .refused(.cappedExpired(end, days: days)) }
+        if managed.ceilings.refusal(.requirePinnedApps) != nil, entry.pinnedApps.isEmpty || entry.apps.contains(DeviceAllowance.wholeDevicePin) {
+            return .refused(.pinsRequired)
+        }
         return .allowed(entry)
+    }
+
+    /// The entry as it holds under managed `maxAllowanceDays`: it ends that many days after it was added, or sooner.
+    public func capped(_ entry: DeviceAllowance) -> DeviceAllowance {
+        guard let cap = managed.ceilings.allowanceCap else { return entry }
+        let limit = entry.added.addingTimeInterval(cap)
+        return entry.expires.map { $0 <= limit } ?? false ? entry : entry.expiring(limit)
+    }
+
+    /// Why a managed ceiling refuses the allowance a person is about to save, as a clause naming the key; nil when none does.
+    /// `lifetime` is nil when nothing was chosen yet, and holds nil for "until removed".
+    public func addRefusal(apps: [String]? = nil, lifetime: TimeInterval?? = nil, team: String? = nil, metroPorts: [Int] = []) -> String? {
+        let ceilings = managed.ceilings
+        if let team, let why = ceilings.teamRefusal(team) { return why }
+        if !metroPorts.isEmpty, let why = ceilings.refusal(.allowMetroReverse) { return why }
+        if let apps, let why = ceilings.refusal(.requirePinnedApps), apps.isEmpty || apps.contains(DeviceAllowance.wholeDevicePin) { return why }
+        if let lifetime, let days = ceilings.maxAllowanceDays, let cap = ceilings.allowanceCap, lifetime ?? .infinity > cap {
+            return ManagedRefusalText.allowanceCapped(days: days)
+        }
+        return nil
+    }
+
+    /// Whether the device may be driven now.
+    public func isActive(_ entry: DeviceAllowance, now: Date) -> Bool {
+        if case .allowed = decision(platform: entry.platform, key: entry.key, now: now) { return true }
+        return false
     }
 
     /// Whether agents may drive all of this device: a person chose a test device, and managed policy leaves it so.
@@ -175,7 +216,7 @@ public struct PhysicalDevicePolicy: Equatable, Sendable {
                 ("id", .string(entry.key)),
                 ("name", .string(entry.name)),
                 ("added", .string(ProcessStamp.timestamp(entry.added))),
-                ("expires", .optional(entry.expires) { .string(ProcessStamp.timestamp($0)) }),
+                ("expires", .optional(capped(entry).expires) { .string(ProcessStamp.timestamp($0)) }),
                 ("apps", .array(entry.apps.map { .string($0) })),
             ]
             if let team = entry.team { fields.append(("team", .string(team))) }
@@ -185,7 +226,7 @@ public struct PhysicalDevicePolicy: Equatable, Sendable {
                 fields.append(("testDevice", .bool(true)))
                 if let off = managed.testDeviceRefusal { fields.append(("testDeviceOff", .string(off))) }
             }
-            fields.append(("active", .bool(decision(platform: entry.platform, key: entry.key, now: now) == .allowed(entry))))
+            fields.append(("active", .bool(isActive(entry, now: now))))
             return .object(fields)
         }
         let held = list.newer.filter { entry in only.map { $0.platform == entry.platform && $0.key == entry.key } ?? true }.map { entry -> OrderedJSON in
@@ -210,6 +251,7 @@ public struct PhysicalDevicePolicy: Equatable, Sendable {
                 ("allowedBundleIDs", .optional(managed.allowedBundleIDs) { .array($0.map { .string($0) }) }),
                 ("deniedBundleIDs", .optional(managed.deniedBundleIDs) { .array($0.map { .string($0) }) }),
                 ("allowTestDevices", .optional(managed.allowTestDevices) { .bool($0) }),
+            ] + managed.ceilings.json + [
                 ("unreadable", .bool(managed.unreadable)),
                 ("unreadableKeys", .array(managed.unreadableKeys.map { .string($0) })),
                 ("unknownKeys", .array(managed.unknownKeys.map { .string($0) })),

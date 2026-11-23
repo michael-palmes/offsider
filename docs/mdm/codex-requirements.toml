@@ -1,0 +1,19 @@
+[rules]
+prefix_rules = [
+  { pattern = [{ token = "adb" }], decision = "prompt", justification = "Raw adb reaches any attached phone without Offsider's checks." },
+  { pattern = [{ token = "devicectl" }], decision = "prompt", justification = "Raw devicectl reaches any attached iPhone without Offsider's checks." },
+  { pattern = [{ token = "offsider" }, { token = "batch" }, { token = "--no-mask-secure" }], decision = "prompt", justification = "Captures password fields unmasked." },
+  { pattern = [{ token = "offsider" }, { token = "credential" }, { token = "add" }], decision = "prompt", justification = "Saves a test password." },
+  { pattern = [{ token = "offsider" }, { token = "credential" }, { token = "describe" }], decision = "prompt", justification = "Changes what a saved test login is for." },
+  { pattern = [{ token = "offsider" }, { token = "credential" }, { token = "remove" }], decision = "prompt", justification = "Removes a saved test password." },
+  { pattern = [{ token = "offsider" }, { token = "credential" }, { token = "set" }], decision = "prompt", justification = "Saves a test password." },
+  { pattern = [{ token = "offsider" }, { token = "credential" }, { token = "signed-out" }], decision = "prompt", justification = "Clears the record of who is signed in." },
+  { pattern = [{ token = "offsider" }, { token = "logs" }, { token = "--no-redact" }], decision = "prompt", justification = "Prints passwords and tokens from the device's log." },
+  { pattern = [{ token = "offsider" }, { token = "permission" }], decision = "prompt", justification = "Grants or revokes app permissions that outlive the command." },
+  { pattern = [{ token = "offsider" }, { token = "record-video" }, { token = "--unmasked" }], decision = "prompt", justification = "Records with no check for password fields or masked text." },
+  { pattern = [{ token = "offsider" }, { token = "screenshot" }, { token = "--no-mask-secure" }], decision = "prompt", justification = "Captures password fields unmasked." },
+  { pattern = [{ token = "offsider" }, { token = "stream-video" }, { token = "--unmasked" }], decision = "prompt", justification = "Streams with no check for password fields or masked text." },
+  { pattern = [{ token = "offsider" }, { token = "type" }, { token = "--file" }], decision = "prompt", justification = "Types a file's contents, which may hold a secret." },
+  { pattern = [{ token = "offsider" }, { token = "unlock-code" }, { token = "remove" }], decision = "prompt", justification = "Removes a saved unlock code." },
+  { pattern = [{ token = "xcrun" }, { token = "devicectl" }], decision = "prompt", justification = "Raw devicectl reaches any attached iPhone without Offsider's checks." },
+]

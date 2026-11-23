@@ -29,6 +29,8 @@ check "the last path counts without a trailing newline" macos=true "$(classify $
 check "one source file among docs needs the macOS jobs" macos=true "$(classify $'README.md\nSources/Offsider/main.swift\n')"
 check "docs/errors.md is read by the error contract tests" macos=true "$(classify 'docs/errors.md')"
 check "docs/commands.md is read by the guide tests" macos=true "$(classify 'docs/commands.md')"
+check "the schema and fragments under docs/mdm are read by the managed tests" macos=true \
+    "$(classify $'docs/mdm/com.mpalmes.offsider.schema.json\ndocs/mdm/codex-requirements.toml\n')"
 check "the bundled skill is a release resource" macos=true "$(classify 'Sources/Offsider/Resources/skills/offsider/SKILL.md')"
 check "Markdown under Tests is a fixture" macos=true "$(classify 'Tests/Fixtures/notes.md')"
 check "a workflow change runs everything" macos=true "$(classify '.github/workflows/ci.yml')"

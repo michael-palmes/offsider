@@ -359,4 +359,30 @@ struct AgentPermissionRulesTests {
         #expect(try Data(contentsOf: claude.appendingPathComponent("settings.json")) == original)
         #expect(Init.rulesDoctorVerdict(home: home.path).status == .warn)
     }
+
+    @Test("removing takes out exactly what merging added, an older rule too, and leaves a rule the person moved")
+    func removeUndoesMerge() throws {
+        let person = Data(#"{"permissions":{"allow":["Bash(offsider login*)","Bash(git status)"],"ask":["Bash(offsider credential*)"]},"theme":"dark"}"#.utf8)
+        let merged = try #require(try AgentPermissionRules.merge(.claudeCode, existing: person).content)
+        let removal = try AgentPermissionRules.remove(.claudeCode, existing: merged)
+        let left = String(decoding: try #require(removal.content), as: UTF8.self)
+        #expect(left.contains("Bash(offsider login*)") && left.contains("Bash(git status)") && left.contains("\"theme\""))
+        #expect(!left.contains("Bash(offsider credential*)"))
+        #expect(!AgentPermissionRules.rules.contains { left.contains($0.claudePattern) })
+        #expect(try AgentPermissionRules.remove(.claudeCode, existing: Data(left.utf8)).removed == 0)
+    }
+
+    @Test("a Codex rules file holding only Offsider's rules goes; one with the person's own lines keeps them")
+    func removeCodexRules() throws {
+        let ours = try #require(try AgentPermissionRules.merge(.codex, existing: nil).content)
+        let removal = try AgentPermissionRules.remove(.codex, existing: ours)
+        #expect(removal.deletesFile && removal.removed == AgentPermissionRules.codexRules.count)
+
+        let mine = #"prefix_rule(pattern=["adb", "shell"], decision="prompt", justification="mine")"#
+        let shared = Data((String(decoding: ours, as: UTF8.self) + mine + "\n").utf8)
+        let kept = try AgentPermissionRules.remove(.codex, existing: shared)
+        #expect(!kept.deletesFile)
+        #expect(String(decoding: try #require(kept.content), as: UTF8.self).contains(mine))
+        #expect(try AgentPermissionRules.remove(.codex, existing: nil).removed == 0)
+    }
 }

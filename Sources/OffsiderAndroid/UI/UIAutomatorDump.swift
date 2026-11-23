@@ -81,7 +81,7 @@ enum UIAutomatorDump {
     static func parse(_ xml: String) throws -> UIAutomatorHierarchy {
         let delegate = HierarchyBuilder()
         let parser = XMLParser(data: Data(xml.utf8))
-        parser.delegate = delegate
+        unsafe parser.delegate = delegate
         guard parser.parse(), let hierarchy = delegate.hierarchy else {
             throw ParseFailure(detail: parser.parserError?.localizedDescription ?? "no <hierarchy> element")
         }

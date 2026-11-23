@@ -10,7 +10,7 @@ enum AdbWire {
         guard payload.count <= maxRequestLength else {
             throw AndroidError.adbProtocol("request of \(payload.count) bytes is longer than \(maxRequestLength)")
         }
-        return Data(String(format: "%04x", payload.count).utf8) + payload
+        return unsafe Data(String(format: "%04x", payload.count).utf8) + payload
     }
 
     enum Status: Equatable, Sendable {

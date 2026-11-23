@@ -42,9 +42,16 @@ public enum AndroidDoctorRules {
     }
 
     /// An idle Mac without an adb server is normal, so it only warns when an Android device was named.
-    public static func adbServer(_ fact: AdbServerFact, deviceNamed: Bool = true) -> Verdict {
+    public static func adbServer(_ fact: AdbServerFact, deviceNamed: Bool = true, owner: AdbServerOwnerFact? = nil) -> Verdict {
         switch fact {
         case .answering(let endpoint, _):
+            if case .other(let executable, let pid, let sdkAdb)? = owner {
+                return (
+                    .warn,
+                    "Answering on \(endpoint), but from \(executable) (pid \(pid)), not this SDK's \(sdkAdb)",
+                    "Offsider never stops a running server. If you did not start that program, stop it; the next Offsider command starts the SDK's adb."
+                )
+            }
             return (.pass, "Answering on \(endpoint)", nil)
         case .notRunning(let endpoint) where !deviceNamed:
             return (.skip, "no adb server on \(endpoint); Android commands start one with ADB_MDNS=0", nil)
@@ -386,7 +393,7 @@ public enum AndroidDoctorRules {
             checks.append(.skipped(.androidAdb, "requires android.sdk"))
         }
         if let server = facts.server {
-            let verdict = adbServer(server, deviceNamed: deviceNamed)
+            let verdict = adbServer(server, deviceNamed: deviceNamed, owner: facts.serverOwner)
             checks.append(DoctorCheckResult(id: .androidAdbServer, verdict: verdict, fixable: verdict.status == .warn && isAdbServerFixable(server)))
         } else {
             checks.append(.skipped(.androidAdbServer, "requires android.sdk"))

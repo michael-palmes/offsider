@@ -15,7 +15,7 @@ enum IOSDeviceScreenshot {
     static func capture(udid: String, directory: IOSDeviceDirectory, root: String) async throws -> Data {
         let captures = try IOSDevicePaths.subdirectory(directoryName, of: udid, root: root)
         let destination = (captures as NSString).appendingPathComponent("\(UUID().uuidString).png")
-        defer { unlink(destination) }
+        defer { unsafe unlink(destination) }
         _ = try await directory.run(arguments(udid: udid, destination: destination), label: "device capture screenshot", udid: udid, timeout: timeout)
         guard let data = FileManager.default.contents(atPath: destination), !data.isEmpty else {
             throw IOSDeviceError.devicectlFailed("device capture screenshot", udid: udid, detail: "it wrote no image")

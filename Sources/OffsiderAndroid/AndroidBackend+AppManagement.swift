@@ -37,8 +37,13 @@ extension AndroidBackend: AppManaging {
     public func appPreferences(_ app: String, on id: DeviceID) async throws -> AppPreferences {
         let package = try ExpoDevClient.validate(appID: app)
         try await prepare()
-        let result = try await requireClient().shell(AndroidAppPackage.prefsScript(package: package), on: id.rawValue, timeout: .seconds(30), label: "run-as \(package)")
-        if let preferences = AndroidAppPackage.preferences(result.stdoutText, package: package) { return preferences }
+        let result = try await requireClient().shell(AndroidAppPackage.prefsScript(package: package, then: AndroidAsyncStorage.probe), on: id.rawValue, timeout: .seconds(30), label: "run-as \(package)")
+        if var preferences = AndroidAppPackage.preferences(result.stdoutText, package: package) {
+            preferences.asyncStorage = await AndroidAsyncStorage.read(found: AndroidAsyncStorage.stamps(afterPreferences: result.stdoutText), package: package) { script in
+                try await self.requireClient().shell(script, on: id.rawValue, timeout: .seconds(30), label: "run-as \(package)").stdoutText
+            }
+            return preferences
+        }
         let refusal = AndroidAppPackage.runAsLine(result.stderrText) ?? AndroidAppPackage.runAsLine(result.stdoutText)
         if refusal?.contains("not debuggable") == true {
             throw AppLifecycleError(

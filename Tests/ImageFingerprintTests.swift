@@ -232,4 +232,16 @@ struct ImageFingerprintTests {
         let fromPNG = try #require(ImageFingerprint(pngData: try ScreenImage.encode(image, as: .png)))
         #expect(fromImage == fromPNG)
     }
+
+    @Test("A buffer shorter than its rows claim is never read past its end", arguments: [0, 6])
+    func shortBufferReadsNothingPastItsEnd(tolerance: Int) {
+        let width = 4, height = 4
+        func print(tail: UInt8) -> ImageFingerprint {
+            let bytes = [UInt8](repeating: 90, count: width * (height - 1) * 4) + [UInt8](repeating: tail, count: width * 4)
+            return bytes.withUnsafeBytes {
+                ImageFingerprint(rgba: UnsafeRawBufferPointer(rebasing: $0[0..<(width * (height - 1) * 4)]), width: width, height: height, bytesPerRow: width * 4, columns: 1, rows: 4, tolerance: tolerance)
+            }
+        }
+        #expect(print(tail: 0).changedTiles(comparedTo: print(tail: 255)) == [])
+    }
 }

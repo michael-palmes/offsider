@@ -8,9 +8,9 @@ Usage: git diff --name-only --no-renames <base> <head> | scripts/ci-changes.sh
 
 Prints macos=true when any changed path needs the macOS build and tests, and
 macos=false when the change is docs alone: Markdown at the repository root,
-docs/ (except docs/errors.md, docs/commands.md, docs/input.md and docs/mdm.md,
-which tests read), project skills under .agents/skills/ and the issue and pull
-request templates.
+docs/ (except docs/errors.md, docs/commands.md, docs/input.md, docs/mdm.md,
+docs/device-state.md and the files under docs/mdm/, which tests read), project skills under
+.agents/skills/ and the issue and pull request templates.
 
 Anything else, an empty list or a path git quoted needs the macOS jobs.
 EOF
@@ -30,7 +30,7 @@ esac
 
 needs_macos() {
   case "$1" in
-    docs/errors.md | docs/commands.md | docs/input.md | docs/mdm.md) return 0 ;;
+    docs/errors.md | docs/commands.md | docs/input.md | docs/mdm.md | docs/device-state.md | docs/mdm/*) return 0 ;;
     docs/* | .agents/skills/*.md | .github/ISSUE_TEMPLATE/* | .github/PULL_REQUEST_TEMPLATE.md) return 1 ;;
     */* | \"*) return 0 ;;
     *.md) return 1 ;;

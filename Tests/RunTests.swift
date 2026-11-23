@@ -476,6 +476,81 @@ struct RunTests {
         #expect(!FileManager.default.fileExists(atPath: (existing as NSString).appendingPathComponent(".gitignore")))
     }
 
+    @Test("a run records when it expires, 7 days by default or as --expires says, in its record, run.json and run status")
+    func runRecordsExpiry() throws {
+        let fixture = try RunFixture()
+        let started = try RunRegistry.start(fixture.folder(), label: nil, masks: RunMasks(), lasting: 2 * 86_400, in: fixture.environment())
+        let expected = fixture.now.addingTimeInterval(2 * 86_400)
+        #expect(started.state.expires == expected)
+        #expect(try RunFolder(path: fixture.folder()).readState()?.expires == expected)
+        #expect(try RunRegistry.allRecords(in: fixture.environment()).map(\.expires) == [expected])
+        let status = try RunRegistry.status(all: false, in: fixture.environment())
+        #expect(status.runs.map(\.expires) == [expected])
+        #expect(RunStatusEntry.jsonLine(runs: status.runs, ended: [], timeZone: RunFixture.timeZone).contains("\"expires\":\"\(RunClock.iso(expected, timeZone: RunFixture.timeZone))\""))
+        #expect(status.runs.first?.text(timeZone: RunFixture.timeZone).hasSuffix("expires \(RunClock.iso(expected, timeZone: RunFixture.timeZone))") == true)
+
+        let other = try RunFixture()
+        #expect(try other.start().state.expires == other.now.addingTimeInterval(7 * 86_400))
+    }
+
+    @Test("--expires takes 1 to 30 days and nothing else", arguments: [("1d", true), ("7d", true), ("30D", true), ("0d", false), ("31d", false), ("12h", false), ("7", false), ("never", false)])
+    func expiresOption(text: String, valid: Bool) {
+        #expect((RunExpiry.seconds(text) != nil) == valid)
+        #expect((try? RunStart.parse(["/tmp/run", "--expires", text])) != nil || !valid)
+    }
+
+    @Test("an OFFSIDER_RUN folder records no expiry, since nothing would end it")
+    func variableFolderHasNoExpiry() throws {
+        let fixture = try RunFixture()
+        let started = try fixture.start(variables: [EvidenceRunEnvironment.variable: fixture.folder()])
+        #expect(started.state.expires == nil)
+        #expect(try RunFolder(path: fixture.folder()).readState()?.expires == nil)
+    }
+
+    @Test("a run past its expiry stops recording and is ended as expired, its folder and files kept, and a capture says so once")
+    func expiredRunEnds() async throws {
+        let fixture = try RunFixture()
+        _ = try fixture.start(label: "PR 123")
+        let backend = try Self.screenshotBackend()
+        try await fixture.command(fixture.recorder("screenshot")) { _ = try await Self.screenshot([], on: backend) }
+        #expect(fixture.manifest().count == 1)
+
+        fixture.now = fixture.now.addingTimeInterval(7 * 86_400)
+        #expect(try RunRegistry.active(in: fixture.environment()) == nil)
+        #expect(try RunFolder(path: fixture.folder()).readState()?.endedBy == "expired")
+        #expect(try RunRegistry.allRecords(in: fixture.environment()).isEmpty)
+        #expect(fixture.manifest().count == 1)
+        #expect(FileManager.default.fileExists(atPath: fixture.folder()))
+        #expect(RunRegistry.endedRun(in: fixture.environment())?.expired == true)
+        #expect(EvidenceRecorder.endedRunNotice(dir: fixture.folder(), expired: true).agentText?.contains("expired, so this capture is not in it") == true)
+    }
+
+    @Test("run status ends a run past its expiry and lists it as expired, while its session still runs")
+    func statusEndsExpiredRun() throws {
+        let fixture = try RunFixture()
+        _ = try fixture.start()
+        fixture.now = fixture.now.addingTimeInterval(8 * 86_400)
+        let status = try RunRegistry.status(all: true, in: fixture.environment())
+        #expect(status.runs.isEmpty)
+        #expect(status.ended.map(\.endedBy) == ["expired"])
+        #expect(status.ended.first?.text().hasSuffix("ended: it expired; its folder is kept.") == true)
+        #expect(try fixture.start().continued)
+    }
+
+    @Test("a folder run start creates is kept out of Spotlight by .metadata_never_index, which no timeline lists; an existing folder gets none")
+    func neverIndexed() throws {
+        let fixture = try RunFixture()
+        _ = try fixture.start()
+        let marker = (fixture.folder() as NSString).appendingPathComponent(RunFolder.neverIndexName)
+        #expect(FileManager.default.fileExists(atPath: marker))
+        let folder = RunFolder(path: fixture.folder())
+        #expect(folder.unrecorded(given: folder.manifest()).isEmpty)
+        let existing = fixture.folder("existing")
+        try FileManager.default.createDirectory(atPath: existing, withIntermediateDirectories: true)
+        _ = try RunFolder.prepare(existing)
+        #expect(!FileManager.default.fileExists(atPath: (existing as NSString).appendingPathComponent(RunFolder.neverIndexName)))
+    }
+
     @Test("stopping with no run active says so")
     func stopWithNone() throws {
         let fixture = try RunFixture()

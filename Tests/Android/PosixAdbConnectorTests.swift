@@ -1,5 +1,7 @@
 import Darwin
 import Foundation
+import OffsiderCore
+import Synchronization
 import Testing
 @testable import OffsiderAndroid
 
@@ -38,6 +40,23 @@ private final class OneShotListener: @unchecked Sendable {
         endpoint = .tcp(.ipv4, port: UInt16(bigEndian: address.sin_port))
     }
 
+    init(ipv6Loopback: Void) throws {
+        let fd = socket(AF_INET6, SOCK_STREAM, 0)
+        var address = sockaddr_in6()
+        address.sin6_family = sa_family_t(AF_INET6)
+        address.sin6_addr = in6addr_loopback
+        var length = socklen_t(MemoryLayout<sockaddr_in6>.size)
+        let bound = withUnsafeMutablePointer(to: &address) {
+            $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { pointer -> Int32 in
+                guard bind(fd, pointer, length) == 0 else { return -1 }
+                return getsockname(fd, pointer, &length)
+            }
+        }
+        guard bound == 0, listen(fd, 1) == 0 else { throw POSIXError(.EADDRINUSE) }
+        self.fd = fd
+        endpoint = .tcp(.ipv6, port: UInt16(bigEndian: address.sin6_port))
+    }
+
     /// Accepts one client, reads one request, writes `reply`, then closes.
     func serveOnce(reply: String) {
         Thread.detachNewThread { [fd] in
@@ -65,7 +84,7 @@ struct PosixAdbConnectorTests {
         let listener = try OneShotListener(unixPath: path)
         listener.serveOnce(reply: "OKAY00040029")
 
-        let version = try await AdbClient(endpoint: listener.endpoint, connector: PosixAdbConnector(), connectTimeout: .seconds(60), hostTimeout: .seconds(60)).serverVersion()
+        let version = try await AdbClient(endpoint: listener.endpoint, connector: PosixAdbConnector(ownerProbe: AdbServerOwnership.plainProbe), connectTimeout: .seconds(60), hostTimeout: .seconds(60)).serverVersion()
         #expect(version == 41)
         withExtendedLifetime(listener) {}
     }
@@ -90,7 +109,7 @@ struct PosixAdbConnectorTests {
         let listener = try OneShotListener(ipv4Loopback: ())
         listener.serveOnce(reply: "OKAY00040029")
 
-        let version = try await AdbClient(endpoint: listener.endpoint, connector: PosixAdbConnector(), connectTimeout: .seconds(60), hostTimeout: .seconds(60)).serverVersion()
+        let version = try await AdbClient(endpoint: listener.endpoint, connector: PosixAdbConnector(ownerProbe: AdbServerOwnership.plainProbe), connectTimeout: .seconds(60), hostTimeout: .seconds(60)).serverVersion()
         #expect(version == 41)
         withExtendedLifetime(listener) {}
     }
@@ -116,5 +135,69 @@ struct PosixAdbConnectorTests {
             try await AdbClient(endpoint: .tcp(.ipv4, port: port), connector: PosixAdbConnector(), connectTimeout: .seconds(60)).serverVersion()
         }
         #expect(error?.kind == .adbServerNotRunning, "\(String(describing: error))")
+    }
+
+    @Test("host:version round-trips over IPv6 loopback, the accepting process checked as this user's")
+    func ipv6Loopback() async throws {
+        let listener = try OneShotListener(ipv6Loopback: ())
+        listener.serveOnce(reply: "OKAY00040029")
+
+        let version = try await AdbClient(endpoint: listener.endpoint, connector: PosixAdbConnector(ownerProbe: AdbServerOwnership.plainProbe), connectTimeout: .seconds(60), hostTimeout: .seconds(60)).serverVersion()
+        #expect(version == 41)
+        #expect(AdbServerOwnership.server(for: listener.endpoint) == getpid())
+        withExtendedLifetime(listener) {}
+    }
+
+    @Test("a TCP port whose connection no process of this user accepted is refused as another user's server, before any request")
+    func foreignTCPListener() async throws {
+        let listener = try OneShotListener(ipv4Loopback: ())
+        listener.serveOnce(reply: "OKAY00040029")
+
+        let connector = PosixAdbConnector(ownerUID: getuid() + 1, ownerProbe: AdbServerOwnership.plainProbe)
+        let error = await #expect(throws: AndroidError.self) {
+            try await AdbClient(endpoint: listener.endpoint, connector: connector, connectTimeout: .seconds(60), hostTimeout: .seconds(60)).serverVersion()
+        }
+        #expect(error?.kind == .foreignAdbServer)
+        #expect(error?.reason == .adbServerMisconfigured)
+        #expect(error?.message.hasPrefix("Another user's process answers on \(listener.endpoint), or your adb server did not accept within 2 s, so Offsider did not use it.") == true)
+        withExtendedLifetime(listener) {}
+    }
+
+    @Test("the server's owner is checked on the first connection only, then remembered for the process")
+    func ownerCheckedOncePerProcess() async throws {
+        let first = try OneShotListener(ipv4Loopback: ())
+        let calls = Mutex(0)
+        let connector = PosixAdbConnector(ownerProbe: { descriptor, uid, wait in
+            calls.withLock { $0 += 1 }
+            return LoopbackOwner.acceptingProcess(of: descriptor, uid: uid, wait: wait)
+        })
+        let client = AdbClient(endpoint: first.endpoint, connector: connector, connectTimeout: .seconds(60), hostTimeout: .seconds(60))
+        first.serveOnce(reply: "OKAY00040029")
+        #expect(try await client.serverVersion() == 41)
+        first.serveOnce(reply: "OKAY00040029")
+        #expect(try await client.serverVersion() == 41)
+        #expect(calls.withLock { $0 } == 1)
+        withExtendedLifetime(first) {}
+    }
+
+    @Test("once the server the process checked has gone, the next connection is checked again")
+    func ownerCheckedAgainAfterServerGoes() throws {
+        let endpoint = LoopbackEndpoint.tcp(.ipv4, port: UInt16.random(in: 40000...59999))
+        let server = Process()
+        server.executableURL = URL(fileURLWithPath: "/bin/sleep")
+        server.arguments = ["30"]
+        try server.run()
+        let calls = Mutex(0)
+        let probe: AdbServerOwnership.Probe = { _, _, _ in
+            calls.withLock { $0 += 1 }
+            return server.isRunning ? server.processIdentifier : getpid()
+        }
+        #expect(AdbServerOwnership.verify(-1, endpoint: endpoint, uid: getuid(), wait: .zero, probe: probe) == server.processIdentifier)
+        #expect(AdbServerOwnership.verify(-1, endpoint: endpoint, uid: getuid(), wait: .zero, probe: probe) == server.processIdentifier)
+        #expect(calls.withLock { $0 } == 1)
+        server.terminate()
+        server.waitUntilExit()
+        #expect(AdbServerOwnership.verify(-1, endpoint: endpoint, uid: getuid(), wait: .zero, probe: probe) == getpid())
+        #expect(calls.withLock { $0 } == 2)
     }
 }

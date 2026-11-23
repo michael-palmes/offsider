@@ -45,6 +45,8 @@ public struct ExpoDevClientError: Error, CustomStringConvertible, LocalizedError
         case noRoute
         /// A reverse on the phone's port maps to another port on the Mac.
         case reverseMismatch
+        /// A ceiling the organisation forced refuses the reverse.
+        case managedPolicy
     }
 
     public let kind: Kind

@@ -31,7 +31,7 @@ struct AndroidDisplayCacheEntry: Equatable, Sendable {
     /// `<first 16 hex of SHA-256 of "android:serial">.json`, so a serial never reaches a file name.
     static func fileName(serial: String) -> String {
         let digest = SHA256.hash(data: Data("android:\(serial)".utf8))
-        return digest.prefix(8).map { String(format: "%02x", $0) }.joined() + ".json"
+        return digest.prefix(8).map { unsafe String(format: "%02x", $0) }.joined() + ".json"
     }
 
     func encoded() -> Data {

@@ -41,6 +41,9 @@ struct Init: AsyncParsableCommand {
     @Flag(name: .customLong("print-rules"), help: "Print the permission rules as JSON, to apply by hand.")
     var printRules: Bool = false
 
+    @Flag(name: .customLong("print-managed"), help: "Print the same rules as a Claude Code managed-settings fragment and a Codex requirements.toml snippet, for an administrator to deploy. Writes nothing.")
+    var printManaged: Bool = false
+
     func validate() throws {
         if printSkill, uninstall {
             throw ValidationError("--print cannot be used with --uninstall")
@@ -62,6 +65,10 @@ struct Init: AsyncParsableCommand {
             throw ValidationError("--print-rules cannot be used with other options")
         }
 
+        if printManaged, printRules || printSkill || uninstall || force || dest != nil || client != .auto || noRules || rulesOnly {
+            throw ValidationError("--print-managed cannot be used with other options")
+        }
+
         if rulesOnly, noRules || uninstall || force || dest != nil || printSkill {
             throw ValidationError("--rules-only cannot be used with --no-rules, --uninstall, --force, --dest or --print")
         }
@@ -70,6 +77,10 @@ struct Init: AsyncParsableCommand {
     func run() async throws {
         if printRules {
             Swift.print(AgentPermissionRules.printedJSON(), terminator: "")
+            return
+        }
+        if printManaged {
+            Swift.print(ManagedHarness.printed(), terminator: "")
             return
         }
 
@@ -99,6 +110,7 @@ struct Init: AsyncParsableCommand {
             }
             let (steps, failures) = Self.applyRules(agents, home: home)
             Console.current.show(InitScreen.page(steps))
+            Self.noteManagedHarness(rules: agents, skill: false)
             try Self.throwFirst(failures)
             return
         }
@@ -109,7 +121,7 @@ struct Init: AsyncParsableCommand {
         }
 
         if uninstall {
-            try uninstallSkill(from: targets)
+            try uninstallSkill(from: targets, rules: noRules || dest != nil ? [] : Self.rulesAgents(for: client, home: home), home: home)
             return
         }
 
@@ -120,7 +132,14 @@ struct Init: AsyncParsableCommand {
         let (ruleSteps, failures) = Self.applyRules(agents, home: home)
         steps += ruleSteps
         Console.current.show(InitScreen.page(steps, next: "offsider doctor"))
+        Self.noteManagedHarness(rules: agents, skill: targets.contains { $0.id == .claude })
         try Self.throwFirst(failures)
+    }
+
+    /// One line for each thing this run installed that an administrator's lock on Claude Code or Codex ignores.
+    static func noteManagedHarness(rules: [AgentPermissionRules.Agent], skill: Bool, harness: ManagedHarness.Probe = .live(home: homeDirectoryPath())) {
+        guard !rules.isEmpty || skill else { return }
+        for ask in ManagedHarness.read(harness).asks(rules: rules, skill: skill) { Console.current.line(ask, person: .warning(ask)) }
     }
 
     /// With more than one skills folder detected, a person ticks which to install into; every one starts ticked.
@@ -343,7 +362,7 @@ struct Init: AsyncParsableCommand {
         return UntrustedRead.contents(atPath: path, maxBytes: 4096).map { .file(String(decoding: $0, as: UTF8.self)) }
     }
 
-    private func uninstallSkill(from targets: [ClientInfo]) throws {
+    private func uninstallSkill(from targets: [ClientInfo], rules agents: [AgentPermissionRules.Agent], home: String) throws {
         var removed: [InitScreen.Step] = []
 
         for target in targets {
@@ -364,7 +383,36 @@ struct Init: AsyncParsableCommand {
             }
         }
 
+        let (ruleSteps, failures) = Self.removeRules(agents, home: home)
+        removed += ruleSteps
         Console.current.show(removed.isEmpty ? InitScreen.nothingToRemove : InitScreen.page(removed))
+        try Self.throwFirst(failures)
+    }
+
+    /// Takes init's rules out of each agent's file; a Codex rules file left with nothing but Offsider's header is deleted, unless it is a link.
+    static func removeRules(_ agents: [AgentPermissionRules.Agent], home: String) -> (steps: [InitScreen.Step], failures: [String]) {
+        var steps: [InitScreen.Step] = []
+        var failures: [String] = []
+        for agent in agents {
+            let file = URL(fileURLWithPath: home).appendingPathComponent(agent.rulesFile)
+            let shown = "~/" + agent.rulesFile
+            do {
+                let removal = try AgentPermissionRules.remove(agent, existing: try readCapped(file))
+                guard removal.removed > 0 else { continue }
+                let isLink = (try? FileManager.default.destinationOfSymbolicLink(atPath: file.path)) != nil
+                if removal.deletesFile, !isLink {
+                    try FileManager.default.removeItem(at: file)
+                } else {
+                    try writeAtomically(removal.content ?? Data(AgentPermissionRules.codexHeader.utf8), to: file)
+                }
+                steps.append(InitScreen.Step(.rulesRemoved(removal.removed), who: agent.name, path: shown, line: "Removed \(removal.removed) Offsider rules from \(shown)"))
+            } catch let error as AgentPermissionRules.MergeError {
+                failures.append(AgentPermissionRules.failureLine(path: shown, error: error, fix: "offsider init --uninstall"))
+            } catch {
+                failures.append("Could not remove rules from \(shown): \(error.localizedDescription)")
+            }
+        }
+        return (steps, failures)
     }
 
     private func resolveTargets(for operation: Operation) throws -> [ClientInfo] {

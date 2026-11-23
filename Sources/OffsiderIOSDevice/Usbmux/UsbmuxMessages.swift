@@ -62,7 +62,7 @@ public enum UsbmuxRequest: Equatable, Sendable {
 
 public enum UsbmuxReply {
     public static func dictionary(_ payload: Data) throws -> [String: Any] {
-        guard let object = try? PropertyListSerialization.propertyList(from: payload, options: [], format: nil),
+        guard let object = try? unsafe PropertyListSerialization.propertyList(from: payload, options: [], format: nil),
               let dictionary = object as? [String: Any] else {
             throw UsbmuxError.malformed("a reply that is not a plist dictionary")
         }

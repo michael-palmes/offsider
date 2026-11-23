@@ -25,7 +25,7 @@ final class IOSDeviceStartLock: @unchecked Sendable {
                 try await Task.sleep(for: poll)
             }
             let owner = Array(Self.owner(getpid()).utf8)
-            guard ftruncate(descriptor, 0) == 0, pwrite(descriptor, owner, owner.count, 0) == owner.count else {
+            guard ftruncate(descriptor, 0) == 0, unsafe pwrite(descriptor, owner, owner.count, 0) == owner.count else {
                 throw PrivateDirectoryError(.system(operation: "write", code: errno), path: path)
             }
         } catch {

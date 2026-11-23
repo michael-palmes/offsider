@@ -16,13 +16,13 @@ public struct UserConfigDirectory: Sendable {
 
     /// The account's home from `getpwuid_r`; nil when the password database has no entry.
     public static func home(uid: uid_t = getuid()) -> String? {
-        var entry = passwd()
+        var entry = unsafe passwd()
         var result: UnsafeMutablePointer<passwd>?
         var size = sysconf(_SC_GETPW_R_SIZE_MAX)
         if size <= 0 { size = 16_384 }
         var buffer = [CChar](repeating: 0, count: size)
-        guard getpwuid_r(uid, &entry, &buffer, buffer.count, &result) == 0, result != nil, let directory = entry.pw_dir else { return nil }
-        let path = String(cString: directory)
+        guard unsafe getpwuid_r(uid, &entry, &buffer, buffer.count, &result) == 0, unsafe result != nil, let directory = unsafe entry.pw_dir else { return nil }
+        let path = unsafe String(cString: directory)
         return path.isEmpty ? nil : path
     }
 
@@ -36,7 +36,7 @@ public struct UserConfigDirectory: Sendable {
         guard let config = try configFolder(create: false) else { return nil }
         let path = (config as NSString).appendingPathComponent(Self.offsiderName)
         var info = stat()
-        guard lstat(path, &info) == 0 else {
+        guard unsafe lstat(path, &info) == 0 else {
             if errno == ENOENT { return nil }
             throw PrivateDirectoryError(.system(operation: "lstat", code: errno), path: path)
         }
@@ -51,9 +51,9 @@ public struct UserConfigDirectory: Sendable {
         }
         let path = (config as NSString).appendingPathComponent(Self.offsiderName)
         var info = stat()
-        if lstat(path, &info) == 0 {
+        if unsafe lstat(path, &info) == 0 {
             guard (info.st_mode & S_IFMT) == S_IFDIR, info.st_uid == uid else { throw PrivateDirectoryError(.unsafeDirectory, path: path) }
-            guard chmod(path, S_IRWXU) == 0 else { throw PrivateDirectoryError(.system(operation: "chmod", code: errno), path: path) }
+            guard unsafe chmod(path, S_IRWXU) == 0 else { throw PrivateDirectoryError(.system(operation: "chmod", code: errno), path: path) }
         }
         try OffsiderPrivateDirectory.ensurePrivateDirectory(path, uid: uid)
         return path
@@ -63,16 +63,16 @@ public struct UserConfigDirectory: Sendable {
     private func configFolder(create: Bool) throws -> String? {
         let path = (home as NSString).appendingPathComponent(Self.configName)
         var info = stat()
-        if lstat(path, &info) != 0 {
+        if unsafe lstat(path, &info) != 0 {
             guard errno == ENOENT else { throw PrivateDirectoryError(.system(operation: "lstat", code: errno), path: path) }
             guard create else { return nil }
-            guard mkdir(path, S_IRWXU) == 0 || errno == EEXIST else { throw PrivateDirectoryError(.system(operation: "mkdir", code: errno), path: path) }
-            guard lstat(path, &info) == 0 else { throw PrivateDirectoryError(.system(operation: "lstat", code: errno), path: path) }
+            guard unsafe mkdir(path, S_IRWXU) == 0 || errno == EEXIST else { throw PrivateDirectoryError(.system(operation: "mkdir", code: errno), path: path) }
+            guard unsafe lstat(path, &info) == 0 else { throw PrivateDirectoryError(.system(operation: "lstat", code: errno), path: path) }
         }
         var folder = path
         if (info.st_mode & S_IFMT) == S_IFLNK {
             guard info.st_uid == uid, let target = Self.resolveOnce(path) else { throw PrivateDirectoryError(.unsafeDirectory, path: path) }
-            guard lstat(target, &info) == 0 else {
+            guard unsafe lstat(target, &info) == 0 else {
                 if errno == ENOENT, !create { return nil }
                 throw PrivateDirectoryError(.unsafeDirectory, path: path)
             }
@@ -90,7 +90,7 @@ public struct UserConfigDirectory: Sendable {
     /// The link's target, made absolute against the link's folder; nil when it cannot be read.
     private static func resolveOnce(_ link: String) -> String? {
         var buffer = [CChar](repeating: 0, count: Int(PATH_MAX) + 1)
-        let count = readlink(link, &buffer, buffer.count - 1)
+        let count = unsafe readlink(link, &buffer, buffer.count - 1)
         guard count > 0 else { return nil }
         let target = String(decoding: buffer.prefix(count).map { UInt8(bitPattern: $0) }, as: UTF8.self)
         return target.hasPrefix("/") ? target : ((link as NSString).deletingLastPathComponent as NSString).appendingPathComponent(target)

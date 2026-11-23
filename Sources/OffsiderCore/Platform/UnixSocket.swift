@@ -17,7 +17,7 @@ public enum UnixSocket {
         address.sun_len = UInt8(MemoryLayout<sockaddr_un>.size)
         let bytes = Array(path.utf8) + [0]
         guard bytes.count <= MemoryLayout.size(ofValue: address.sun_path) else { throw UnixSocketError.pathTooLong(path) }
-        unsafe withUnsafeMutableBytes(of: &address.sun_path) { $0.copyBytes(from: bytes) }
+        withUnsafeMutableBytes(of: &address.sun_path) { unsafe $0.copyBytes(from: bytes) }
         return address
     }
 
@@ -37,7 +37,7 @@ public enum UnixSocket {
         unsafe setsockopt(descriptor, SOL_SOCKET, SO_NOSIGPIPE, &on, socklen_t(MemoryLayout<Int32>.size))
         do {
             var address = try address(path)
-            let bound = unsafe withUnsafePointer(to: &address) {
+            let bound = withUnsafePointer(to: &address) {
                 unsafe $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { unsafe bind(descriptor, $0, socklen_t(MemoryLayout<sockaddr_un>.size)) }
             }
             guard bound == 0 else { throw UnixSocketError.system(operation: "bind", path: path, code: errno) }
@@ -56,7 +56,7 @@ public enum UnixSocket {
         let probe = CloseOnExecSocket.make(AF_UNIX, SOCK_STREAM)
         guard probe >= 0 else { return false }
         defer { Darwin.close(probe) }
-        let result = unsafe withUnsafePointer(to: &address) {
+        let result = withUnsafePointer(to: &address) {
             unsafe $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { unsafe Darwin.connect(probe, $0, socklen_t(MemoryLayout<sockaddr_un>.size)) }
         }
         return result == 0

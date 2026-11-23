@@ -88,8 +88,8 @@ enum AndroidScreenCapture {
             throw ImageFailure(detail: "a \(width) x \(height) image is larger than \(PixelMath.maxSide) pixels a side")
         }
         var bytes = Data(count: count)
-        let drawn = bytes.withUnsafeMutableBytes { buffer -> Bool in
-            guard let context = CGContext(
+        let drawn = unsafe bytes.withUnsafeMutableBytes { buffer -> Bool in
+            guard let context = unsafe CGContext(
                 data: buffer.baseAddress, width: width, height: height, bitsPerComponent: 8, bytesPerRow: width * 4,
                 space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
             ) else { return false }
@@ -103,16 +103,16 @@ enum AndroidScreenCapture {
     /// Whole-pixel quarter turns, so no pixel is resampled.
     static func rotated(_ pixels: Pixels, quarterTurnsCounterclockwise turns: Int) -> Pixels {
         let turns = ((turns % 4) + 4) % 4
-        guard turns != 0 else { return pixels }
         let width = pixels.width
         let height = pixels.height
+        guard turns != 0, width > 0, height > 0, pixels.bytes.count == width * height * 4 else { return pixels }
         let newWidth = turns == 2 ? width : height
         let newHeight = turns == 2 ? height : width
         var output = Data(count: pixels.bytes.count)
-        pixels.bytes.withUnsafeBytes { (source: UnsafeRawBufferPointer) in
-            output.withUnsafeMutableBytes { (target: UnsafeMutableRawBufferPointer) in
-                let from = source.bindMemory(to: UInt32.self)
-                let to = target.bindMemory(to: UInt32.self)
+        unsafe pixels.bytes.withUnsafeBytes { (source: UnsafeRawBufferPointer) in
+            unsafe output.withUnsafeMutableBytes { (target: UnsafeMutableRawBufferPointer) in
+                let from = unsafe source.bindMemory(to: UInt32.self)
+                let to = unsafe target.bindMemory(to: UInt32.self)
                 for y in 0..<height {
                     for x in 0..<width {
                         let destination: (Int, Int)
@@ -121,7 +121,7 @@ enum AndroidScreenCapture {
                         case 2: destination = (width - 1 - x, height - 1 - y)
                         default: destination = (height - 1 - y, x)
                         }
-                        to[destination.1 * newWidth + destination.0] = from[y * width + x]
+                        unsafe to[destination.1 * newWidth + destination.0] = unsafe from[y * width + x]
                     }
                 }
             }
@@ -131,12 +131,12 @@ enum AndroidScreenCapture {
 
     static func swapRedAndBlue(_ pixels: Pixels) -> Pixels {
         var bytes = pixels.bytes
-        bytes.withUnsafeMutableBytes { buffer in
+        unsafe bytes.withUnsafeMutableBytes { buffer in
             var index = 0
             while index + 3 < buffer.count {
-                let red = buffer[index]
-                buffer[index] = buffer[index + 2]
-                buffer[index + 2] = red
+                let red = unsafe buffer[index]
+                unsafe buffer[index] = unsafe buffer[index + 2]
+                unsafe buffer[index + 2] = red
                 index += 4
             }
         }
@@ -146,7 +146,7 @@ enum AndroidScreenCapture {
     /// Alpha is ignored: the emulator's frames are opaque.
     static func cgImage(_ pixels: Pixels) throws -> CGImage {
         guard let provider = CGDataProvider(data: pixels.bytes as CFData),
-              let image = CGImage(
+              let image = unsafe CGImage(
                   width: pixels.width, height: pixels.height, bitsPerComponent: 8, bitsPerPixel: 32, bytesPerRow: pixels.width * 4,
                   space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.noneSkipLast.rawValue),
                   provider: provider, decode: nil, shouldInterpolate: false, intent: .defaultIntent
@@ -161,7 +161,7 @@ enum AndroidScreenCapture {
         guard scale < 1 else { return image }
         let width = max(1, Int((Double(image.width) * scale).rounded()))
         let height = max(1, Int((Double(image.height) * scale).rounded()))
-        guard let context = CGContext(
+        guard let context = unsafe CGContext(
             data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: width * 4,
             space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
         ) else { throw ImageFailure(detail: "could not scale to \(width) x \(height)") }

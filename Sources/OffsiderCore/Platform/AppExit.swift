@@ -85,15 +85,20 @@ public struct AppExitCheck {
         tree.flatMap { reader.shownApp(in: $0) }
     }
 
-    /// Throws when `latest` shows another app than `first`, or none, and `first`'s process is gone on two reads 1 s apart; a running app changes nothing.
-    public func check(_ first: ShownApp?, latest: UITree?) async throws {
+    /// Throws when `latest` shows another app than `first`, or none, and `first`'s process is gone on two reads 1 s apart; `exiting` asks once more 1 s after an iOS read that still finds it, as a quitting app empties its screen first.
+    public func check(_ first: ShownApp?, latest: UITree?, exiting: Bool = false) async throws {
         guard let first, first.differs(from: latest.flatMap(ShownApp.of)) else { return }
         let id = first.appID ?? ""
         let seen = first.pid.map { AppProcess(pid: $0) }
         func read() async -> AppLiveness {
             await reader.appLiveness(id, seen: seen, tree: latest, mayList: false, on: device)
         }
-        guard case .notRunning = await read() else { return }
+        var reading = await read()
+        if exiting, device.platform == .ios, reading != .notRunning {
+            try await sleep(.seconds(AppLivenessWatch.confirmAfter))
+            reading = await read()
+        }
+        guard case .notRunning = reading else { return }
         try await sleep(.seconds(AppLivenessWatch.confirmAfter))
         guard case .notRunning = await read() else { return }
         let report: AppCrashReport?

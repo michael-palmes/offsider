@@ -15,10 +15,17 @@ public enum BrokerLimits {
     /// Applies `limits` to this process; false when either could not be set.
     @discardableResult
     public static func apply() -> Bool {
+        let coreSet = disableCoreDumps()
         var current = rlimit()
         guard unsafe getrlimit(RLIMIT_NOFILE, &current) == 0 else { return false }
-        var (core, files) = limits(currentFiles: current)
-        let coreSet = unsafe setrlimit(RLIMIT_CORE, &core) == 0
+        var files = limits(currentFiles: current).files
         return unsafe setrlimit(RLIMIT_NOFILE, &files) == 0 && coreSet
+    }
+
+    /// Every command starts here: one may hold a password, a code or a frame, so none may ever write a core file, nor any child it starts.
+    @discardableResult
+    public static func disableCoreDumps() -> Bool {
+        var none = rlimit(rlim_cur: 0, rlim_max: 0)
+        return unsafe setrlimit(RLIMIT_CORE, &none) == 0
     }
 }

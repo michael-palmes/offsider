@@ -44,7 +44,7 @@ public struct IOSDeviceDoctorProbe {
         let builder = host.runnerSource.map { source in
             XcodeRunnerBuilder(
                 source: source, cacheRoot: XcodeRunnerBuilder.defaultCacheRoot(home: host.homeDirectory), xcode: xcode, environment: host.environment,
-                signedInTeams: xcodeTeams, notice: { _ in }, allowance: allowance, expectedSource: host.runnerSourceDigests
+                signedInTeams: xcodeTeams, notice: { _ in }, prefixSeal: KeychainRunnerPrefixSeal(), allowance: allowance, expectedSource: host.runnerSourceDigests
             )
         }
         let build = builder?.cacheStatus(udid: udid)

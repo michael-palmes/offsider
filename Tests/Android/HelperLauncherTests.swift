@@ -34,12 +34,25 @@ struct HelperLauncherTests {
     func startScript() {
         let script = HelperLauncher.startScript(FakeHelperDevice.dex, pushedFrom: nil)
         #expect(script == """
-        f='\(Self.devicePath)'; [ -f "$f" ] && [ ! -L "$f" ] || exit 90; \
-        if command -v sha256sum >/dev/null 2>&1; then case "$(sha256sum "$f" 2>/dev/null)" in \(FakeHelperDevice.dex.sha256)\\ *) ;; *) exit 90;; esac; \
-        else [ "$(stat -c %s "$f" 2>/dev/null)" = 3 ] || exit 90; fi; \
-        CLASSPATH="$f" exec app_process /data/local/tmp --nice-name=offsider-helper com.mpalmes.offsider.helper.OffsiderHelper serve \
-        --idle-timeout-ms 10000 --accept-timeout-ms 10000
+        f='\(Self.devicePath)'; [ -f "$f" ] && [ ! -L "$f" ] && [ -r "$f" ] && exec 3<"$f" || exit 90; d=/proc/$$/fd/3; \
+        if command -v sha256sum >/dev/null 2>&1; then case "$(sha256sum "$d" 2>/dev/null)" in \(FakeHelperDevice.dex.sha256)\\ *) ;; *) exit 90;; esac; \
+        else [ "$(stat -L -c %s "$d" 2>/dev/null)" = 3 ] || exit 90; fi; \
+        CLASSPATH=/proc/self/fd/3 exec app_process /data/local/tmp --nice-name=offsider-helper com.mpalmes.offsider.helper.OffsiderHelper serve \
+        --idle-timeout-ms 10000 --accept-timeout-ms 10000 3<&3
         """)
+    }
+
+    @Test("after the dex is opened, the script hashes and loads only that descriptor, so a file swapped in after the check never runs")
+    func startScriptRunsTheBytesItHashed() throws {
+        for pushed in [nil, "/data/local/tmp/offsider-push-777"] {
+            let script = HelperLauncher.startScript(FakeHelperDevice.dex, pushedFrom: pushed)
+            let opened = try #require(script.range(of: "exec 3<\"$f\""))
+            let after = script[opened.upperBound...]
+            #expect(!after.contains("$f"))
+            #expect(after.contains("sha256sum \"$d\"") && after.contains("d=/proc/$$/fd/3"))
+            #expect(after.contains("CLASSPATH=/proc/self/fd/3 exec app_process"))
+            #expect(after.hasSuffix(" 3<&3"))
+        }
     }
 
     @Test("after a push the script moves the copy out of the private push folder, makes it 644, removes the folder and every other copy before the digest check")

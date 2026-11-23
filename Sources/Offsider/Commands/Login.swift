@@ -85,6 +85,7 @@ struct LoginCommand: AsyncParsableCommand {
     func run() async throws {
         // A sign-in is one intent: a reader that leaves must not stop it between the user name and the password.
         signal(SIGPIPE, SIG_IGN)
+        try CLIError.requireManaged(.allowSavedLogins, outcome: "Nothing was read or typed.")
         let logger = OffsiderLogger()
         let watchdog = DeviceWatchdog()
         let profile = try LoginProfiles.load(project: project)

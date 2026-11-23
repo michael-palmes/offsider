@@ -184,8 +184,16 @@ struct Doctor: AsyncParsableCommand {
     static func withHost(_ report: DoctorReport, _ host: HostFacts) -> DoctorReport {
         DoctorReport(
             offsiderVersion: report.offsiderVersion, udid: report.udid, device: report.device, xcode: report.xcode, booted: report.booted,
-            android: report.android, checks: report.checks + HostDoctorRules.checks(host) + auditChecks() + [BundleIntegrity.doctorCheck(), Init.doctorCheck(), DoctorCheckResult(id: .installRules, verdict: Init.rulesDoctorVerdict()), Init.denyRulesDoctorCheck()], fixes: report.fixes, host: host, policy: report.policy
+            android: report.android, checks: report.checks + HostDoctorRules.checks(host) + auditChecks() + [BundleIntegrity.doctorCheck(), Init.doctorCheck(), DoctorCheckResult(id: .installRules, verdict: Init.rulesDoctorVerdict()), Init.denyRulesDoctorCheck()] + Self.managedChecks(), fixes: report.fixes, host: host, policy: report.policy
         )
+    }
+
+    /// `managed.policy` reads the forced keys alone, never the allow-list or the Keychain; `harness.managed` reads the agents' managed settings.
+    static func managedChecks(harness: ManagedHarness.Probe = .live(home: Init.homeDirectoryPath())) -> [DoctorCheckResult] {
+        [
+            DoctorCheckResult(id: .managedPolicy, verdict: ManagedDevicePolicy.read(from: ManagedGate.source).doctorVerdict),
+            DoctorCheckResult(id: .harnessManaged, verdict: ManagedHarness.read(harness).doctorVerdict),
+        ]
     }
 
     /// A physical device's platform and stable key: any iPhone or iPad UDID, and any Android name that is not an AVD on this Mac, even when no adb server answers. Only the host-side device list and AVD folder are read.

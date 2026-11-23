@@ -52,6 +52,8 @@ public struct ImageFingerprint: Equatable, Sendable {
         let spans = (0..<columns).map { (max(columnStarts[$0], firstColumn), min(columnStarts[$0 + 1], endColumn)) }
         let comparedColumns = spans.filter { $0.1 > $0.0 }.count
         comparedTileCount = endRow > firstRow ? ((endRow - 1) * rows / height - firstRow * rows / height + 1) * comparedColumns : 0
+        let holdsRows = width > 0 && height > 0 && bytesPerRow >= width * 4 && rgba.count >= bytesPerRow * (height - 1) + width * 4
+        let base = holdsRows ? rgba.baseAddress : nil
         guard self.tolerance == 0 else {
             tiles = []
             var blocks: [UInt8] = []
@@ -62,9 +64,9 @@ public struct ImageFingerprint: Equatable, Sendable {
                 width: width, height: height, columns: columns, rows: rows,
                 excludingTop: firstRow, excludingBottom: height - endRow, excludingLeft: firstColumn, excludingRight: width - endColumn
             ) {
-                if let base = rgba.baseAddress {
+                if let base = unsafe base {
                     Self.forEachBlock(columns: tile.columns, rows: tile.rows) { columns, rows in
-                        let mean = Self.blockMean(base, bytesPerRow: bytesPerRow, columns: columns, rows: rows)
+                        let mean = unsafe Self.blockMean(base, bytesPerRow: bytesPerRow, columns: columns, rows: rows)
                         blocks.append(mean.red)
                         blocks.append(mean.green)
                         blocks.append(mean.blue)
@@ -79,17 +81,17 @@ public struct ImageFingerprint: Equatable, Sendable {
         blocks = []
         blockStarts = []
         var tiles = [UInt64](repeating: 0xcbf2_9ce4_8422_2325, count: columns * rows)
-        guard let base = rgba.baseAddress, width > 0 else {
+        guard let base = unsafe base else {
             self.tiles = tiles
             return
         }
         for y in firstRow..<endRow {
             let tileRow = y * rows / height
-            let rowStart = base + y * bytesPerRow
+            let rowStart = unsafe base + y * bytesPerRow
             for column in 0..<columns where spans[column].1 > spans[column].0 {
-                let start = rowStart + spans[column].0 * 4
+                let start = unsafe rowStart + spans[column].0 * 4
                 let count = (spans[column].1 - spans[column].0) * 4
-                tiles[tileRow * columns + column] = Self.hash(start, count: count, seed: tiles[tileRow * columns + column])
+                tiles[tileRow * columns + column] = unsafe Self.hash(start, count: count, seed: tiles[tileRow * columns + column])
             }
         }
         self.tiles = tiles
@@ -143,19 +145,19 @@ public struct ImageFingerprint: Equatable, Sendable {
         var red = 0, green = 0, blue = 0
         var y = rows.lowerBound
         while y < rows.upperBound {
-            let row = base + y * bytesPerRow + columns.lowerBound * 4
+            let row = unsafe base + y * bytesPerRow + columns.lowerBound * 4
             y += 1
             var offset = 0
             while offset + 8 <= bytes {
-                let word = UInt64(littleEndian: row.loadUnaligned(fromByteOffset: offset, as: UInt64.self))
+                let word = unsafe UInt64(littleEndian: row.loadUnaligned(fromByteOffset: offset, as: UInt64.self))
                 redBlue &+= word & lanes
                 greenAlpha &+= (word >> 8) & lanes
                 offset += 8
             }
             if offset < bytes {
-                red += Int(row.load(fromByteOffset: offset, as: UInt8.self))
-                green += Int(row.load(fromByteOffset: offset + 1, as: UInt8.self))
-                blue += Int(row.load(fromByteOffset: offset + 2, as: UInt8.self))
+                unsafe red += Int(row.load(fromByteOffset: offset, as: UInt8.self))
+                unsafe green += Int(row.load(fromByteOffset: offset + 1, as: UInt8.self))
+                unsafe blue += Int(row.load(fromByteOffset: offset + 2, as: UInt8.self))
             }
         }
         red += Int(redBlue & 0xFFFF) + Int((redBlue >> 32) & 0xFFFF)
@@ -170,12 +172,12 @@ public struct ImageFingerprint: Equatable, Sendable {
         var hash = seed
         var offset = 0
         while offset + 8 <= count {
-            hash ^= start.loadUnaligned(fromByteOffset: offset, as: UInt64.self)
+            unsafe hash ^= start.loadUnaligned(fromByteOffset: offset, as: UInt64.self)
             hash = hash &* 0x100_0000_01b3
             offset += 8
         }
         while offset < count {
-            hash ^= UInt64(start.load(fromByteOffset: offset, as: UInt8.self))
+            unsafe hash ^= UInt64(start.load(fromByteOffset: offset, as: UInt8.self))
             hash = hash &* 0x100_0000_01b3
             offset += 1
         }
@@ -214,7 +216,7 @@ public struct ImageFingerprint: Equatable, Sendable {
         let bytesPerRow = width * 4
         var pixels = [UInt8](repeating: 0, count: bytesPerRow * height)
         let drawn = pixels.withUnsafeMutableBytes { buffer -> Bool in
-            guard let context = ScreenImage.context(width: width, height: height, colourSpace: colourSpace, data: buffer.baseAddress) else {
+            guard let context = unsafe ScreenImage.context(width: width, height: height, colourSpace: colourSpace, data: buffer.baseAddress) else {
                 return false
             }
             context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
@@ -222,7 +224,7 @@ public struct ImageFingerprint: Equatable, Sendable {
         }
         guard drawn else { return nil }
         self = pixels.withUnsafeBytes { buffer in
-            ImageFingerprint(
+            unsafe ImageFingerprint(
                 rgba: buffer,
                 width: width,
                 height: height,
@@ -258,7 +260,7 @@ public struct ImageFingerprint: Equatable, Sendable {
                     }
                     var index = start
                     while index < end {
-                        let difference = Int(mine[index]) - Int(theirs[index + offset])
+                        let difference = unsafe Int(mine[index]) - Int(theirs[index + offset])
                         if difference > tolerance || difference < -tolerance {
                             changed.insert(tile)
                             break
