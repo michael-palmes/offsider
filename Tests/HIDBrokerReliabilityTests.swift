@@ -211,6 +211,31 @@ struct HIDBrokerReliabilityTests {
         #expect(BrokerLimits.limits(currentFiles: rlimit(rlim_cur: 128, rlim_max: 128)).files.rlim_cur == 128)
     }
 
+    @Test("Core dumps are off for good once a command starts: neither the process nor a child it starts can raise the limit")
+    func coreDumpsOffForGood() async {
+        await #expect(processExitsWith: .success) {
+            var generous = rlimit(rlim_cur: 0, rlim_max: 0)
+            guard getrlimit(RLIMIT_CORE, &generous) == 0 else { exit(2) }
+            generous.rlim_cur = generous.rlim_max
+            _ = setrlimit(RLIMIT_CORE, &generous)
+            guard BrokerLimits.disableCoreDumps() else { exit(3) }
+            var raised = rlimit(rlim_cur: rlim_t(1 << 20), rlim_max: rlim_t(1 << 20))
+            guard setrlimit(RLIMIT_CORE, &raised) != 0 else { exit(4) }
+            var now = rlimit()
+            guard getrlimit(RLIMIT_CORE, &now) == 0, now.rlim_cur == 0, now.rlim_max == 0 else { exit(5) }
+            exit(0)
+        }
+    }
+
+    @Test("The command line turns core dumps off before it parses anything")
+    func mainTurnsCoreDumpsOffFirst() throws {
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+        let source = try String(contentsOf: root.appendingPathComponent("Sources/Offsider/main.swift"), encoding: .utf8)
+        let body = try #require(source.range(of: "static func main() async {\n"))
+        let first = source[body.upperBound...].split(separator: "\n").first?.trimmingCharacters(in: .whitespaces)
+        #expect(first == "BrokerLimits.disableCoreDumps()")
+    }
+
     @Test("Handshake failures preserve diagnostics without exposing them to users")
     func handshakeDiagnosticsRemainInternal() throws {
         var descriptors = [Int32](repeating: -1, count: 2)

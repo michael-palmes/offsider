@@ -23,7 +23,7 @@ public struct HelperDex: Equatable, Sendable {
         guard bytes.count == manifest.dex.bytes else {
             throw HelperDexError.damaged("the dex has \(bytes.count) bytes, its manifest says \(manifest.dex.bytes)")
         }
-        let digest = SHA256.hash(data: bytes).map { String(format: "%02x", $0) }.joined()
+        let digest = SHA256.hash(data: bytes).map { unsafe String(format: "%02x", $0) }.joined()
         guard digest == manifest.dex.sha256.lowercased() else {
             throw HelperDexError.damaged("the dex has sha256 \(digest), its manifest says \(manifest.dex.sha256)")
         }

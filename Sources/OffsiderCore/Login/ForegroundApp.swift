@@ -26,7 +26,7 @@ public enum ForegroundApp {
             if directory.hasSuffix(".app") {
                 let plist = (directory as NSString).appendingPathComponent("Info.plist")
                 guard let data = UntrustedRead.contents(atPath: plist, maxBytes: 1 << 20),
-                      let object = try? PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any],
+                      let object = try? unsafe PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any],
                       let identifier = object["CFBundleIdentifier"] as? String,
                       !identifier.isEmpty
                 else { return nil }

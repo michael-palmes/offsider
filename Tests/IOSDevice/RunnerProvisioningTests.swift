@@ -69,6 +69,7 @@ struct RunnerProvisioningTests {
         let xcodebuild = FakeXcodebuild()
         let signatures = FakeSignatures()
         let notices = LineSink()
+        let prefixSeal = InMemoryRunnerPrefixSeal()
 
         init() throws {
             source = try RunnerBuilderTests.sourceDirectory()
@@ -81,9 +82,10 @@ struct RunnerProvisioningTests {
         ) -> XcodeRunnerBuilder {
             let xcodebuild = xcodebuild
             let signatures = signatures
+            let prefixSeal = prefixSeal
             return XcodeRunnerBuilder(
                 source: source, cacheRoot: cache, xcode: XcodeLocation(developerDirectory: "/Xcode.app/Contents/Developer", source: "test", version: "27.0", build: "27A266a"),
-                environment: environment, signedInTeams: { ["AAAAA11111"] }, notice: notices.append, allowance: allowance,
+                environment: environment, signedInTeams: { ["AAAAA11111"] }, notice: notices.append, prefixSeal: prefixSeal, allowance: allowance,
                 expectedSource: expected, registerDevice: registerDevice,
                 xcodebuild: { try xcodebuild.run($0, $1, $2) }, signatureValid: { signatures.check($0, $1) }, now: { now }
             )
@@ -143,6 +145,31 @@ struct RunnerProvisioningTests {
         }
         #expect(other is CancellationError)
         #expect(fixture.xcodebuild.calls.count == 1)
+    }
+
+    @Test("an approvals file written without its seal, or changed after it, counts as no approval and a build asks again")
+    func unsealedApprovalAsksAgain() async throws {
+        let fixture = try Fixture()
+        defer { fixture.remove() }
+        let environment = ["OFFSIDER_IOS_TEAM_ID": Self.team, "OFFSIDER_IOS_RUNNER_PREFIX": "com.example.qa"]
+        try FileManager.default.createDirectory(at: fixture.cache, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+        let file = fixture.cache.appendingPathComponent(XcodeRunnerBuilder.approvedPrefixesFile)
+        try Data("com.example.qa".utf8).write(to: file)
+        try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: file.path)
+
+        await #expect(throws: RunnerPrefixNeedsPerson.self) {
+            _ = try await fixture.builder(environment: environment).build(for: .device(udid: "U"), deviceName: "iPhone")
+        }
+        #expect(fixture.xcodebuild.calls.isEmpty)
+
+        _ = try await XcodeRunnerBuilder.$confirmNewPrefix.withValue({ _ in }) {
+            try await fixture.builder(environment: environment).build(for: .device(udid: "U"), deviceName: "iPhone")
+        }
+        #expect(fixture.builder(environment: environment).approvedPrefixes() == ["com.example.qa"])
+
+        try Data("com.example.qa\ncom.example.other".utf8).write(to: file)
+        #expect(fixture.builder(environment: environment).approvedPrefixes().isEmpty)
+        #expect(fixture.builder(environment: environment).needsApproval("com.example.qa"))
     }
 
     @Test("Offsider's own prefix never asks")

@@ -4,7 +4,7 @@ import OffsiderCore
 import XPC
 
 /// One device feature's RemoteXPC connection, opened through CoreDeviceService's `createservicesocket` action as ipb does.
-final class CoreDeviceServiceSocket: @unchecked Sendable {
+@safe final class CoreDeviceServiceSocket: @unchecked Sendable {
     enum Failure: Error {
         case symbolsUnavailable
         case refused(CoreDeviceErrorInfo)
@@ -23,9 +23,9 @@ final class CoreDeviceServiceSocket: @unchecked Sendable {
 
     private init(feature: String, connection: UnsafeMutableRawPointer, queue: DispatchQueue, symbols: RemoteXPC, traffic: ConnectionTraffic) {
         self.feature = feature
-        self.connection = connection
+        unsafe self.connection = unsafe connection
         self.queue = queue
-        self.symbols = symbols
+        unsafe self.symbols = unsafe symbols
         self.traffic = traffic
     }
 
@@ -41,51 +41,51 @@ final class CoreDeviceServiceSocket: @unchecked Sendable {
     static let openTimeoutSeconds: Double = 10
 
     static func open(deviceIdentifier: String, feature: String, version: CoreDeviceVersion) async throws -> CoreDeviceServiceSocket {
-        guard let symbols = RemoteXPC.shared else { throw Failure.symbolsUnavailable }
+        guard let symbols = unsafe RemoteXPC.shared else { throw Failure.symbolsUnavailable }
         let input = xpc_dictionary_create(nil, nil, 0)
-        xpc_dictionary_set_string(input, "featureIdentifier", feature)
+        unsafe xpc_dictionary_set_string(input, "featureIdentifier", feature)
         let request = envelope(action: action, deviceIdentifier: deviceIdentifier, version: version, input: input)
 
-        let service = symbols.serviceConnection()
+        let service = unsafe symbols.serviceConnection()
         defer { xpc_connection_cancel(service) }
         guard let reply = await reply(to: request, on: service) else {
             throw Failure.refused(CoreDeviceErrorInfo(domain: serviceName, code: 0, description: "CoreDeviceService did not answer within \(Int(openTimeoutSeconds)) s"))
         }
-        guard xpc_get_type(reply) == XPC_TYPE_DICTIONARY,
-              let output = xpc_dictionary_get_value(reply, "CoreDevice.output"),
-              xpc_get_type(output) == XPC_TYPE_DICTIONARY else {
-            let error = xpc_get_type(reply) == XPC_TYPE_DICTIONARY ? xpc_dictionary_get_value(reply, "CoreDevice.error").flatMap(CoreDeviceErrorInfo.init(xpc:)) : nil
-            let fallback = xpc_get_type(reply) == XPC_TYPE_ERROR
-                ? (xpc_dictionary_get_string(reply, XPC_ERROR_KEY_DESCRIPTION).map { String(cString: $0) } ?? "CoreDeviceService closed the connection")
+        guard unsafe xpc_get_type(reply) == XPC_TYPE_DICTIONARY,
+              let output = unsafe xpc_dictionary_get_value(reply, "CoreDevice.output"),
+              unsafe xpc_get_type(output) == XPC_TYPE_DICTIONARY else {
+            let error = unsafe xpc_get_type(reply) == XPC_TYPE_DICTIONARY ? xpc_dictionary_get_value(reply, "CoreDevice.error").flatMap(CoreDeviceErrorInfo.init(xpc:)) : nil
+            let fallback = unsafe xpc_get_type(reply) == XPC_TYPE_ERROR
+                ? (xpc_dictionary_get_string(reply, XPC_ERROR_KEY_DESCRIPTION).map { unsafe String(cString: $0) } ?? "CoreDeviceService closed the connection")
                 : "CoreDeviceService sent no socket"
             throw Failure.refused(error ?? CoreDeviceErrorInfo(domain: serviceName, code: 0, description: fallback))
         }
-        let descriptor = xpc_dictionary_dup_fd(output, "fileDescriptor")
+        let descriptor = unsafe xpc_dictionary_dup_fd(output, "fileDescriptor")
         guard descriptor >= 0 else { throw Failure.noDescriptor }
-        let flags = xpc_dictionary_get_uint64(output, "remoteXPCVersionFlags")
+        let flags = unsafe xpc_dictionary_get_uint64(output, "remoteXPCVersionFlags")
         let queue = DispatchQueue(label: "offsider.coredevice.\(feature)", qos: .userInitiated)
-        guard let connection = symbols.create(descriptor, Unmanaged.passUnretained(queue).toOpaque(), flags, 0) else {
+        guard let connection = unsafe symbols.create(descriptor, Unmanaged.passUnretained(queue).toOpaque(), flags, 0) else {
             close(descriptor)
             throw Failure.connectionFailed
         }
         let traffic = ConnectionTraffic()
         // The only events a feature socket sends unasked are XPC errors; only an invalidation is known to carry nothing after it.
-        symbols.setEventHandler(connection) { event in
-            if xpc_get_type(event) == XPC_TYPE_ERROR { traffic.noteError(invalidated: xpc_equal(event, XPC_ERROR_CONNECTION_INVALID)) }
+        unsafe symbols.setEventHandler(connection) { event in
+            if unsafe xpc_get_type(event) == XPC_TYPE_ERROR { traffic.noteError(invalidated: xpc_equal(event, XPC_ERROR_CONNECTION_INVALID)) }
         }
-        symbols.activate(connection)
-        return CoreDeviceServiceSocket(feature: feature, connection: connection, queue: queue, symbols: symbols, traffic: traffic)
+        unsafe symbols.activate(connection)
+        return unsafe CoreDeviceServiceSocket(feature: feature, connection: connection, queue: queue, symbols: symbols, traffic: traffic)
     }
 
     /// The `CoreDevice.*` action envelope that CoreDeviceService and the device's feature services both decode.
     static func envelope(action: String, deviceIdentifier: String, version: CoreDeviceVersion, input: xpc_object_t) -> xpc_object_t {
         let request = xpc_dictionary_create(nil, nil, 0)
-        xpc_dictionary_set_string(request, "CoreDevice.actionIdentifier", action)
-        xpc_dictionary_set_string(request, "CoreDevice.deviceIdentifier", deviceIdentifier)
-        xpc_dictionary_set_value(request, "CoreDevice.coreDeviceVersion", version.xpcObject)
-        xpc_dictionary_set_int64(request, "CoreDevice.CoreDeviceDDIProtocolVersion", 1)
-        xpc_dictionary_set_string(request, "CoreDevice.invocationIdentifier", UUID().uuidString)
-        xpc_dictionary_set_value(request, "CoreDevice.input", input)
+        unsafe xpc_dictionary_set_string(request, "CoreDevice.actionIdentifier", action)
+        unsafe xpc_dictionary_set_string(request, "CoreDevice.deviceIdentifier", deviceIdentifier)
+        unsafe xpc_dictionary_set_value(request, "CoreDevice.coreDeviceVersion", version.xpcObject)
+        unsafe xpc_dictionary_set_int64(request, "CoreDevice.CoreDeviceDDIProtocolVersion", 1)
+        unsafe xpc_dictionary_set_string(request, "CoreDevice.invocationIdentifier", UUID().uuidString)
+        unsafe xpc_dictionary_set_value(request, "CoreDevice.input", input)
         return request
     }
 
@@ -99,17 +99,17 @@ final class CoreDeviceServiceSocket: @unchecked Sendable {
 
     func send(_ message: xpc_object_t) {
         traffic.noteSend()
-        symbols.send(connection, message)
+        unsafe symbols.send(connection, message)
     }
 
     /// `handler` runs once on the socket's queue, with an XPC error if the connection dies first.
     func send(_ message: xpc_object_t, reply handler: @escaping @Sendable (xpc_object_t) -> Void) {
         traffic.noteSend()
-        symbols.sendWithReply(connection, message, Unmanaged.passUnretained(queue).toOpaque()) { reply in handler(reply) }
+        unsafe symbols.sendWithReply(connection, message, Unmanaged.passUnretained(queue).toOpaque()) { reply in handler(reply) }
     }
 
     func cancel() {
-        symbols.cancel(connection)
+        unsafe symbols.cancel(connection)
     }
 }
 
@@ -136,7 +136,7 @@ final class ConnectionTraffic: @unchecked Sendable {
 }
 
 /// The private libxpc RemoteXPC calls and CoreDevice's XPC service registration, resolved at run time and never linked.
-struct RemoteXPC: @unchecked Sendable {
+@unsafe struct RemoteXPC: @unchecked Sendable {
     typealias Create = @convention(c) (Int32, UnsafeMutableRawPointer, UInt64, UInt64) -> UnsafeMutableRawPointer?
     typealias SetEventHandler = @convention(c) (UnsafeMutableRawPointer, @escaping @convention(block) (xpc_object_t) -> Void) -> Void
     typealias Activate = @convention(c) (UnsafeMutableRawPointer) -> Void
@@ -155,11 +155,11 @@ struct RemoteXPC: @unchecked Sendable {
     /// CoreDeviceService is an XPC service inside CoreDevice.framework, found once the bundle is registered.
     let registered: Bool
 
-    static let shared: RemoteXPC? = load()
+    static let shared: RemoteXPC? = unsafe load()
 
     func serviceConnection() -> xpc_connection_t {
         let queue = DispatchQueue(label: "offsider.coredevice.service")
-        let connection = registered
+        let connection = unsafe registered
             ? xpc_connection_create(CoreDeviceServiceSocket.serviceName, queue)
             : xpc_connection_create_mach_service(CoreDeviceServiceSocket.serviceName, queue, 0)
         xpc_connection_set_event_handler(connection) { _ in }
@@ -168,16 +168,16 @@ struct RemoteXPC: @unchecked Sendable {
     }
 
     private static func load() -> RemoteXPC? {
-        guard let handle = dlopen(nil, RTLD_NOW),
-              let create = dlsym(handle, "xpc_remote_connection_create_with_connected_fd"),
-              let setEventHandler = dlsym(handle, "xpc_remote_connection_set_event_handler"),
-              let activate = dlsym(handle, "xpc_remote_connection_activate"),
-              let send = dlsym(handle, "xpc_remote_connection_send_message"),
-              let sendWithReply = dlsym(handle, "xpc_remote_connection_send_message_with_reply"),
-              let cancel = dlsym(handle, "xpc_remote_connection_cancel") else {
+        guard let handle = unsafe dlopen(nil, RTLD_NOW),
+              let create = unsafe dlsym(handle, "xpc_remote_connection_create_with_connected_fd"),
+              let setEventHandler = unsafe dlsym(handle, "xpc_remote_connection_set_event_handler"),
+              let activate = unsafe dlsym(handle, "xpc_remote_connection_activate"),
+              let send = unsafe dlsym(handle, "xpc_remote_connection_send_message"),
+              let sendWithReply = unsafe dlsym(handle, "xpc_remote_connection_send_message_with_reply"),
+              let cancel = unsafe dlsym(handle, "xpc_remote_connection_cancel") else {
             return nil
         }
-        return RemoteXPC(
+        return unsafe RemoteXPC(
             create: unsafeBitCast(create, to: Create.self),
             setEventHandler: unsafeBitCast(setEventHandler, to: SetEventHandler.self),
             activate: unsafeBitCast(activate, to: Activate.self),
@@ -191,13 +191,13 @@ struct RemoteXPC: @unchecked Sendable {
     private static func registerCoreDevice() -> Bool {
         let path = CoreDeviceVersion.frameworkPath
         guard let bundle = Bundle(path: path),
-              let framework = dlopen(path + "/CoreDevice", RTLD_NOW),
-              let addBundle = dlsym(framework, "_coredevice_xpc_add_bundle"),
-              let initServices = dlsym(framework, "_coredevice_xpc_init_services") else {
+              let framework = unsafe dlopen(path + "/CoreDevice", RTLD_NOW),
+              let addBundle = unsafe dlsym(framework, "_coredevice_xpc_add_bundle"),
+              let initServices = unsafe dlsym(framework, "_coredevice_xpc_init_services") else {
             return false
         }
-        unsafeBitCast(addBundle, to: AddBundle.self)(bundle)
-        unsafeBitCast(initServices, to: InitServices.self)()
+        unsafe unsafeBitCast(addBundle, to: AddBundle.self)(bundle)
+        unsafe unsafeBitCast(initServices, to: InitServices.self)()
         return true
     }
 }

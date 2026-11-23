@@ -58,6 +58,7 @@ public struct AndroidDoctorProbe {
         let client = AdbClient(endpoint: endpoint, connector: host.adbConnector, timing: host.timing)
         do {
             facts.server = .answering(endpoint: endpoint.description, version: try await client.serverVersion())
+            facts.serverOwner = Self.serverOwner(endpoint, sdkAdb: sdk.adb)
         } catch let error as AndroidError where error.kind == .adbServerNotRunning {
             facts.server = .notRunning(endpoint: endpoint.description)
             return (facts, nil)
@@ -81,6 +82,14 @@ public struct AndroidDoctorProbe {
         case .defaultLocation: return "default location"
         case .adbOnPath: return "adb on PATH"
         }
+    }
+
+    /// Whose program answered doctor's own connection, once the connector has checked it belongs to this user.
+    nonisolated static func serverOwner(_ endpoint: LoopbackEndpoint, sdkAdb: URL, server: (LoopbackEndpoint) -> pid_t? = { AdbServerOwnership.server(for: $0) }) -> AdbServerOwnerFact? {
+        guard let pid = server(endpoint), let executable = LoopbackOwner.executablePath(of: pid) else { return nil }
+        let running = URL(fileURLWithPath: executable).resolvingSymlinksInPath().path
+        let expected = sdkAdb.resolvingSymlinksInPath().path
+        return running == expected ? .sdkAdb(running) : .other(executable: running, pid: pid, sdkAdb: expected)
     }
 
     private func adbBinary(_ adb: URL) async -> AdbBinaryFact {

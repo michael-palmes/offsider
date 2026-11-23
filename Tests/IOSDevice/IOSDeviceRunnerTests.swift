@@ -355,7 +355,7 @@ struct RunnerSessionTests {
         #expect(manager.idleSeconds == seconds)
     }
 
-    @Test("xcodebuild for the runner sees only the allowed environment, never the caller's secrets")
+    @Test("xcodebuild for the runner sees only the allowed environment, never the caller's secrets or TEST_RUNNER_ settings")
     func runnerEnvironment() async throws {
         let root = RunnerTestPaths.temporaryRoot()
         defer { try? FileManager.default.removeItem(atPath: root) }
@@ -367,7 +367,8 @@ struct RunnerSessionTests {
         #expect(launch.environment["AWS_SECRET_ACCESS_KEY"] == nil)
         #expect(launch.environment["HOME"] == "/Users/me")
         #expect(launch.environment["HTTPS_PROXY"] == "http://127.0.0.1:3128")
-        #expect(launch.environment["TEST_RUNNER_EXTRA"] == "1")
+        #expect(launch.environment["TEST_RUNNER_EXTRA"] == nil)
+        #expect(launch.environment["TEST_RUNNER_OFFSIDER_RUNNER_BUILD_KEY"] == "key")
     }
 
     @Test("a runner that accepts the connection but is slow to answer is busy, so it is reused and never stopped")
@@ -698,7 +699,7 @@ struct RunnerBuilderTests {
         let notices = LineSink()
         let builder = XcodeRunnerBuilder(
             source: source, cacheRoot: cache, xcode: xcode, environment: ["OFFSIDER_IOS_TEAM_ID": "ABCDE12345"],
-            signedInTeams: { [] }, notice: notices.append
+            signedInTeams: { [] }, notice: notices.append, prefixSeal: InMemoryRunnerPrefixSeal()
         )
 
         let build = try await builder.build(for: .device(udid: "U"), deviceName: "iPhone")
@@ -715,7 +716,7 @@ struct RunnerBuilderTests {
         let notices = LineSink()
         let builder = XcodeRunnerBuilder(
             source: source, cacheRoot: URL(fileURLWithPath: "/nonexistent"), xcode: XcodeLocation(developerDirectory: "/x", source: "t", version: "27.0", build: "27A"),
-            environment: [:], signedInTeams: { ["AAAAA11111", "BBBBB22222"] }, notice: notices.append
+            environment: [:], signedInTeams: { ["AAAAA11111", "BBBBB22222"] }, notice: notices.append, prefixSeal: InMemoryRunnerPrefixSeal()
         )
         let error = await #expect(throws: IOSDeviceError.self) { _ = try await builder.build(for: .device(udid: "U"), deviceName: "iPhone") }
         #expect(error?.reason == .teamMissing)
@@ -733,7 +734,7 @@ struct RunnerBuilderTests {
         try Data("not a folder".utf8).write(to: blocker)
         let builder = XcodeRunnerBuilder(
             source: source, cacheRoot: blocker.appendingPathComponent("runner"), xcode: XcodeLocation(developerDirectory: "/x", source: "t", version: "27.0", build: "27A"),
-            environment: ["OFFSIDER_IOS_TEAM_ID": "ABCDE12345"], signedInTeams: { [] }, notice: { _ in }
+            environment: ["OFFSIDER_IOS_TEAM_ID": "ABCDE12345"], signedInTeams: { [] }, notice: { _ in }, prefixSeal: InMemoryRunnerPrefixSeal()
         )
         let error = await #expect(throws: IOSDeviceError.self) { _ = try await builder.build(for: .device(udid: "U"), deviceName: "iPhone") }
         #expect(error?.reason == .runnerBuildFailed)

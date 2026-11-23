@@ -90,9 +90,9 @@ extension AndroidToastTests {
     @Test("the start script passes the held packages to the helper, sorted and quoted, and nothing when every package is held")
     func startScriptCarriesPackages() {
         let held = HelperLauncher.startScript(FakeHelperDevice.dex, pushedFrom: nil, toastPackages: ["com.example.two", "com.example.one"])
-        #expect(held.hasSuffix(" --toast-packages 'com.example.one,com.example.two'"))
+        #expect(held.hasSuffix(" --toast-packages 'com.example.one,com.example.two' 3<&3"))
         #expect(!HelperLauncher.startScript(FakeHelperDevice.dex, pushedFrom: nil).contains("--toast-packages"))
-        #expect(HelperLauncher.startScript(FakeHelperDevice.dex, pushedFrom: nil, toastPackages: []).hasSuffix(" --toast-packages ''"))
+        #expect(HelperLauncher.startScript(FakeHelperDevice.dex, pushedFrom: nil, toastPackages: []).hasSuffix(" --toast-packages '' 3<&3"))
     }
 
     @Test("a toast entry that does not decode is dropped and the tree still reads")

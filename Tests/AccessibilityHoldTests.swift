@@ -9,7 +9,8 @@ import Testing
 private final class FakeSession: HeldAccessibilitySession, @unchecked Sendable {
     private let lock = NSLock()
     private var alive = true
-    private(set) var invalidations = 0
+    private var invalidated = 0
+    var invalidations: Int { lock.withLock { invalidated } }
 
     var isValid: Bool { lock.withLock { alive } }
 
@@ -18,7 +19,7 @@ private final class FakeSession: HeldAccessibilitySession, @unchecked Sendable {
     func invalidate() {
         lock.withLock {
             alive = false
-            invalidations += 1
+            invalidated += 1
         }
     }
 }
@@ -26,19 +27,24 @@ private final class FakeSession: HeldAccessibilitySession, @unchecked Sendable {
 /// Hands out the next fake session for each open, counting opens.
 private final class Opener: @unchecked Sendable {
     private let lock = NSLock()
-    private(set) var opened: [FakeSession] = []
-    var fails = false
+    private var sessions: [FakeSession] = []
+    private var failing = false
+    var opened: [FakeSession] { lock.withLock { sessions } }
+    var fails: Bool {
+        get { lock.withLock { failing } }
+        set { lock.withLock { failing = newValue } }
+    }
 
     func open() -> (any HeldAccessibilitySession)? {
         lock.withLock {
-            guard !fails else { return nil }
+            guard !failing else { return nil }
             let session = FakeSession()
-            opened.append(session)
+            sessions.append(session)
             return session
         }
     }
 
-    var count: Int { lock.withLock { opened.count } }
+    var count: Int { lock.withLock { sessions.count } }
 }
 
 private func waitUntil(_ condition: () -> Bool) async {

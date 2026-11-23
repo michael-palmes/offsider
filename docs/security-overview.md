@@ -60,7 +60,7 @@ A test device is a phone a person marked as holding nothing personal. On one, an
 | `~/.config/offsider/guards.json` | The app guard rules a person approved | No command yet: delete it and its Keychain seal together |
 | The login Keychain, never synced | Test logins, unlock codes, and the seals of the allow-list and the guard approvals | `offsider credential remove`, `offsider unlock-code remove` |
 | `~/Library/Caches/offsider/runner/` | The iPhone runner's build | `offsider session stop --device <UDID> --clean` |
-| The agent's skill folder and permission rules | What `offsider init` installed | `offsider init --uninstall` (the rules stay until you delete them) |
+| The agent's skill folder and permission rules | What `offsider init` installed | `offsider init --uninstall` |
 
 Every store, with where it lives and how long it lasts: [Privacy, What Offsider keeps](privacy.md#what-offsider-keeps-on-your-mac).
 

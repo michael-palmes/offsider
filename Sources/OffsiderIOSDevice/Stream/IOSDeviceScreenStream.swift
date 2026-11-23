@@ -205,8 +205,8 @@ public final class IOSDeviceScreenStream {
     nonisolated static func displays() -> Displays {
         var active: UInt32 = 0
         var online: UInt32 = 0
-        let activeRead = CGGetActiveDisplayList(0, nil, &active) == .success
-        let onlineRead = CGGetOnlineDisplayList(0, nil, &online) == .success
+        let activeRead = unsafe CGGetActiveDisplayList(0, nil, &active) == .success
+        let onlineRead = unsafe CGGetOnlineDisplayList(0, nil, &online) == .success
         return Displays(active: activeRead ? active : nil, online: onlineRead ? online : nil)
     }
 
@@ -237,14 +237,14 @@ public final class IOSDeviceScreenStream {
         guard let reply else {
             throw IOSDeviceError.streamFailed(target.name, udid: target.udid, detail: "the device did not answer the stream start within \(Int(replyTimeoutSeconds)) s")
         }
-        if xpc_get_type(reply) == XPC_TYPE_ERROR {
-            let description = xpc_dictionary_get_string(reply, XPC_ERROR_KEY_DESCRIPTION).map { String(cString: $0) } ?? "the connection closed"
+        if unsafe xpc_get_type(reply) == XPC_TYPE_ERROR {
+            let description = unsafe xpc_dictionary_get_string(reply, XPC_ERROR_KEY_DESCRIPTION).map { unsafe String(cString: $0) } ?? "the connection closed"
             throw IOSDeviceError.streamFailed(target.name, udid: target.udid, detail: description)
         }
-        if let error = xpc_dictionary_get_value(reply, "CoreDevice.error").flatMap(CoreDeviceErrorInfo.init(xpc:)) {
+        if let error = unsafe xpc_dictionary_get_value(reply, "CoreDevice.error").flatMap(CoreDeviceErrorInfo.init(xpc:)) {
             throw IOSDeviceError.streamRefused(error, name: target.name, udid: target.udid)
         }
-        guard let output = xpc_dictionary_get_value(reply, "CoreDevice.output").flatMap(MediaStreamValue.init(xpc:)) else {
+        guard let output = unsafe xpc_dictionary_get_value(reply, "CoreDevice.output").flatMap(MediaStreamValue.init(xpc:)) else {
             throw IOSDeviceError.streamFailed(target.name, udid: target.udid, detail: "the device sent no stream answer")
         }
         do {
@@ -267,17 +267,17 @@ public final class IOSDeviceScreenStream {
     /// A UDP socket on the Mac's tunnel address only, scoped to its `utun` interface.
     private static func bindReceiver(_ host: TunnelEndpoint.Interface) throws -> (Int32, UInt16) {
         let descriptor = CloseOnExecSocket.make(AF_INET6, SOCK_DGRAM)
-        guard descriptor >= 0 else { throw SocketError(description: "no UDP socket: \(String(cString: strerror(errno)))") }
+        guard descriptor >= 0 else { throw SocketError(description: unsafe "no UDP socket: \(String(cString: strerror(errno)))") }
         var address = sockaddr_in6()
         address.sin6_len = UInt8(MemoryLayout<sockaddr_in6>.size)
         address.sin6_family = sa_family_t(AF_INET6)
-        address.sin6_scope_id = if_nametoindex(host.name)
+        address.sin6_scope_id = unsafe if_nametoindex(host.name)
         var length = socklen_t(MemoryLayout<sockaddr_in6>.size)
-        let bound = inet_pton(AF_INET6, host.address, &address.sin6_addr) == 1 && withUnsafeMutablePointer(to: &address) {
-            $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { bind(descriptor, $0, length) == 0 && getsockname(descriptor, $0, &length) == 0 }
+        let bound = unsafe inet_pton(AF_INET6, host.address, &address.sin6_addr) == 1 && withUnsafeMutablePointer(to: &address) {
+            unsafe $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { unsafe bind(descriptor, $0, length) == 0 && getsockname(descriptor, $0, &length) == 0 }
         }
         guard bound, address.sin6_port != 0 else {
-            let detail = String(cString: strerror(errno))
+            let detail = unsafe String(cString: strerror(errno))
             Darwin.close(descriptor)
             throw SocketError(description: "the tunnel address on \(host.name) could not be bound: \(detail)")
         }
@@ -297,12 +297,12 @@ public final class IOSDeviceScreenStream {
                     let remaining = deadline.timeIntervalSinceNow
                     guard remaining > 0 else { break }
                     var timeout = timeval(tv_sec: Int(remaining), tv_usec: Int32((remaining - remaining.rounded(.down)) * 1_000_000))
-                    setsockopt(descriptor, SOL_SOCKET, SO_RCVTIMEO, &timeout, socklen_t(MemoryLayout<timeval>.size))
+                    unsafe setsockopt(descriptor, SOL_SOCKET, SO_RCVTIMEO, &timeout, socklen_t(MemoryLayout<timeval>.size))
                     var peer = sockaddr_in6()
                     var length = socklen_t(MemoryLayout<sockaddr_in6>.size)
                     var probe = [UInt8](repeating: 0, count: 4)
                     let received = withUnsafeMutablePointer(to: &peer) {
-                        $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { recvfrom(descriptor, &probe, probe.count, MSG_PEEK, $0, &length) }
+                        unsafe $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { unsafe recvfrom(descriptor, &probe, probe.count, MSG_PEEK, $0, &length) }
                     }
                     guard received >= 0 else {
                         if errno == EINTR { continue }
@@ -310,22 +310,22 @@ public final class IOSDeviceScreenStream {
                         break
                     }
                     guard isSender(peer, device) else {
-                        _ = recv(descriptor, &probe, probe.count, 0)
+                        _ = unsafe recv(descriptor, &probe, probe.count, 0)
                         continue
                     }
                     let connected = withUnsafeMutablePointer(to: &peer) {
-                        $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { connect(descriptor, $0, length) == 0 }
+                        unsafe $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { unsafe connect(descriptor, $0, length) == 0 }
                     }
                     code = connected ? 0 : errno
                     break
                 }
                 var none = timeval()
-                setsockopt(descriptor, SOL_SOCKET, SO_RCVTIMEO, &none, socklen_t(MemoryLayout<timeval>.size))
+                unsafe setsockopt(descriptor, SOL_SOCKET, SO_RCVTIMEO, &none, socklen_t(MemoryLayout<timeval>.size))
                 continuation.resume(returning: code)
             }
         }
         guard result == 0 else {
-            throw SocketError(description: "no video packet arrived within \(rtpTimeoutSeconds) s (\(String(cString: strerror(result))))")
+            throw SocketError(description: unsafe "no video packet arrived within \(rtpTimeoutSeconds) s (\(String(cString: strerror(result))))")
         }
     }
 
@@ -333,14 +333,14 @@ public final class IOSDeviceScreenStream {
     nonisolated static func ipv6Address(_ literal: String) -> in6_addr? {
         var address = in6_addr()
         let bare = literal.split(separator: "%", maxSplits: 1).first.map(String.init) ?? literal
-        return inet_pton(AF_INET6, bare, &address) == 1 ? address : nil
+        return unsafe inet_pton(AF_INET6, bare, &address) == 1 ? address : nil
     }
 
     /// True when a datagram came from the device's tunnel address.
     nonisolated static func isSender(_ peer: sockaddr_in6, _ device: in6_addr) -> Bool {
         var source = peer.sin6_addr
         var expected = device
-        return peer.sin6_family == sa_family_t(AF_INET6) && memcmp(&source, &expected, MemoryLayout<in6_addr>.size) == 0
+        return unsafe peer.sin6_family == sa_family_t(AF_INET6) && memcmp(&source, &expected, MemoryLayout<in6_addr>.size) == 0
     }
 
     private static let images = CIContext(options: [.cacheIntermediates: false])
@@ -374,8 +374,8 @@ public final class IOSDeviceScreenStream {
         case .bgra:
             guard let count = DeviceSessionLimits.bgraByteCount(width: width, height: height) else { return nil }
             var bytes = Data(count: count)
-            bytes.withUnsafeMutableBytes { buffer in
-                images.render(image, toBitmap: buffer.baseAddress!, rowBytes: width * 4, bounds: bounds, format: .BGRA8, colorSpace: space)
+            unsafe bytes.withUnsafeMutableBytes { buffer in
+                unsafe images.render(image, toBitmap: buffer.baseAddress!, rowBytes: width * 4, bounds: bounds, format: .BGRA8, colorSpace: space)
             }
             data = bytes
         }

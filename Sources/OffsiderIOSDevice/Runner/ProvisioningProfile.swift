@@ -28,13 +28,13 @@ enum ProvisioningProfile {
     private static func content(of data: Data) -> Data? {
         guard !data.isEmpty, data.count <= maxBytes else { return nil }
         var made: CMSDecoder?
-        guard CMSDecoderCreate(&made) == errSecSuccess, let decoder = made else { return nil }
-        let updated = data.withUnsafeBytes { bytes in
-            bytes.baseAddress.map { CMSDecoderUpdateMessage(decoder, $0, bytes.count) } ?? errSecParam
+        guard unsafe CMSDecoderCreate(&made) == errSecSuccess, let decoder = made else { return nil }
+        let updated = unsafe data.withUnsafeBytes { bytes in
+            unsafe bytes.baseAddress.map { unsafe CMSDecoderUpdateMessage(decoder, $0, bytes.count) } ?? errSecParam
         }
         guard updated == errSecSuccess, CMSDecoderFinalizeMessage(decoder) == errSecSuccess else { return nil }
         var content: CFData?
-        guard CMSDecoderCopyContent(decoder, &content) == errSecSuccess, let content else { return nil }
+        guard unsafe CMSDecoderCopyContent(decoder, &content) == errSecSuccess, let content else { return nil }
         return content as Data
     }
 }

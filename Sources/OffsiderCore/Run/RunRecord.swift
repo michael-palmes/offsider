@@ -50,13 +50,20 @@ public struct RunRecord: Codable, Equatable, Sendable {
     public var startedAt: Date
     public var masks: RunMasks
     public var owner: ProcessIdentity
+    /// When the run ends on its own; nil in a record an older Offsider wrote.
+    public var expires: Date?
 
-    public init(dir: String, label: String?, startedAt: Date, masks: RunMasks, owner: ProcessIdentity) {
+    public init(dir: String, label: String?, startedAt: Date, masks: RunMasks, owner: ProcessIdentity, expires: Date? = nil) {
         self.dir = dir
         self.label = label
         self.startedAt = startedAt
         self.masks = masks
         self.owner = owner
+        self.expires = expires
+    }
+
+    public func isExpired(at now: Date) -> Bool {
+        expires.map { $0 <= now } ?? false
     }
 
     public static func fileName(for owner: ProcessIdentity) -> String {
@@ -85,14 +92,16 @@ public struct RunState: Codable, Equatable, Sendable {
     /// `run-stop`, or `owner-exited` when the session that started it went away first.
     public var endedBy: String?
     public var masks: RunMasks
+    public var expires: Date?
 
-    public init(label: String?, startedAt: Date, stoppedAt: Date? = nil, next: Int = 1, endedBy: String? = nil, masks: RunMasks = RunMasks()) {
+    public init(label: String?, startedAt: Date, stoppedAt: Date? = nil, next: Int = 1, endedBy: String? = nil, masks: RunMasks = RunMasks(), expires: Date? = nil) {
         self.label = label
         self.startedAt = startedAt
         self.stoppedAt = stoppedAt
         self.next = next
         self.endedBy = endedBy
         self.masks = masks
+        self.expires = expires
     }
 }
 
@@ -121,6 +130,19 @@ enum RunCoding {
 }
 
 /// Local times for run files and summaries.
+/// How long a run records before it ends on its own; its folder is never deleted.
+public enum RunExpiry {
+    public static let defaultDays = 7
+    public static let maximumDays = 30
+
+    /// `<n>d`, 1 to 30 days, in seconds; nil for anything else.
+    public static func seconds(_ text: String) -> TimeInterval? {
+        let value = text.trimmingCharacters(in: .whitespaces).lowercased()
+        guard value.hasSuffix("d"), let days = Int(value.dropLast()), (1...maximumDays).contains(days) else { return nil }
+        return TimeInterval(days) * 86_400
+    }
+}
+
 public enum RunClock {
     /// `2026-10-05T14:03:22.125+10:30`.
     public static func iso(_ date: Date, timeZone: TimeZone = .current) -> String {

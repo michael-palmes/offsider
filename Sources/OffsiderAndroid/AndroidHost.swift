@@ -43,7 +43,7 @@ struct LocalFileSystem: FileSystemProbe {
 
     func isExecutableFile(atPath path: String) -> Bool {
         var isDirectory: ObjCBool = false
-        return FileManager.default.fileExists(atPath: path, isDirectory: &isDirectory)
+        return unsafe FileManager.default.fileExists(atPath: path, isDirectory: &isDirectory)
             && !isDirectory.boolValue
             && FileManager.default.isExecutableFile(atPath: path)
     }

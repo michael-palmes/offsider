@@ -61,9 +61,37 @@ struct SystemAppDenyListTests {
         #expect(SystemAppDenyList.refusal(app, platform: platform)?.hasPrefix("\(app) is ") == true)
     }
 
+    @Test("common messaging and password manager apps are denied, with their business and beta builds by prefix", arguments: [
+        ("net.whatsapp.WhatsApp", DevicePlatform.ios), ("net.whatsapp.WhatsAppSMB", .ios), ("org.whispersystems.signal", .ios),
+        ("ph.telegra.Telegraph", .ios), ("com.tinyspeck.chatlyio", .ios), ("com.microsoft.skype.teams", .ios),
+        ("com.lastpass.ilastpass", .ios), ("com.dashlane.dashlanephonefinal", .ios), ("D4D2433BGC", .ios),
+        ("me.proton.pass.ios", .ios), ("in.sinew.Walletx", .ios),
+        ("com.whatsapp", .android), ("com.whatsapp.w4b", .android), ("org.thoughtcrime.securesms", .android),
+        ("org.telegram.messenger", .android), ("org.telegram.messenger.web", .android), ("com.Slack", .android), ("com.microsoft.teams", .android),
+        ("com.lastpass.lpandroid", .android), ("com.dashlane", .android), ("com.callpod.android_apps.keeper", .android),
+        ("proton.android.pass", .android), ("io.enpass.app", .android),
+    ])
+    func messagingAndPasswordApps(app: String, platform: DevicePlatform) {
+        #expect(SystemAppDenyList.isDenied(app, platform: platform))
+        #expect(SystemAppDenyList.refusal(app, platform: platform)?.hasPrefix("\(app) is ") == true)
+    }
+
+    @Test("built-in iOS rules match without case, as managed entries do, so a differently cased id is still refused", arguments: [
+        "COM.APPLE.MOBILESAFARI", "com.apple.mobilesms", "Com.Apple.Preferences", "ORG.MOZILLA.IOS.FOCUS", "NET.WHATSAPP.WHATSAPP",
+    ])
+    func iosRulesIgnoreCase(app: String) {
+        #expect(SystemAppDenyList.isDenied(app, platform: .ios))
+    }
+
+    @Test("Android package names stay case sensitive, as Android compares them")
+    func androidRulesKeepCase() {
+        #expect(!SystemAppDenyList.isDenied("COM.ANDROID.SETTINGS", platform: .android))
+    }
+
     @Test("a prefix rule never catches an app that only shares a word with it", arguments: [
         ("com.chromecast.example", DevicePlatform.android), ("org.mozillafan.app", .android), ("com.example.app", .android),
-        ("com.samsung.android.example", .android), ("com.example.chrome", .ios),
+        ("com.samsung.android.example", .android), ("com.example.chrome", .ios), ("com.whatsappfan.app", .android), ("org.telegramfan.app", .android),
+        ("net.whatsappfan.app", .ios), ("com.tinyspeckfan.app", .ios),
     ])
     func prefixesStayNarrow(app: String, platform: DevicePlatform) {
         #expect(!SystemAppDenyList.isDenied(app, platform: platform))

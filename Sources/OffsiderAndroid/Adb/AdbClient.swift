@@ -240,6 +240,8 @@ actor AdbClient {
             return .adbServerNoAnswer(endpoint: endpoint.description, seconds: seconds, adb: adb)
         case .foreignPeer(let uid):
             return .foreignAdbServer(endpoint: endpoint.description, uid: uid)
+        case .foreignListener:
+            return .foreignAdbServerPort(endpoint: endpoint.description)
         }
     }
 

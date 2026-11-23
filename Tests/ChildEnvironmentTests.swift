@@ -12,7 +12,7 @@ struct ChildEnvironmentTests {
         "ADB_MDNS": "1", "ADB_TRACE": "all", "ADB_SERVER_SOCKET": "tcp:5037", "ADB_LIBUSB": "1", "ADB_VENDOR_KEYS": "/keys",
         "ANDROID_EMU_ENABLE_CRASH_REPORTING": "1", "ANDROID_EMU_CRASH_REPORTING_DATABASE": "/tmp/db",
         "DEVELOPER_DIR": "/Xcode.app/Contents/Developer", "OFFSIDER_IOS_SESSION_IDLE": "60",
-        "TEST_RUNNER_OFFSIDER_RUNNER_PORT": "1", "HTTPS_PROXY": "http://proxy:3128", "NO_PROXY": "localhost",
+        "TEST_RUNNER_OFFSIDER_RUNNER_PORT": "1", "TEST_RUNNER_DYLD_INSERT_LIBRARIES": "/tmp/evil.dylib", "TEST_RUNNER_OTHER": "1", "HTTPS_PROXY": "http://proxy:3128", "NO_PROXY": "localhost",
     ]
 
     static let base: Set<String> = ["HOME", "PATH", "TMPDIR", "USER", "LOGNAME", "SHELL", "LANG", "LC_ALL", "__CF_USER_TEXT_ENCODING"]
@@ -41,6 +41,14 @@ struct ChildEnvironmentTests {
     func xcodeProfiles() {
         #expect(Set(ChildEnvironment.make(.offsiderBroker, from: Self.caller).keys) == Self.base.union(["DEVELOPER_DIR", "OFFSIDER_IOS_SESSION_IDLE"]))
         #expect(Set(ChildEnvironment.make(.xcodebuild, from: Self.caller).keys) == Self.base.union(["DEVELOPER_DIR", "TEST_RUNNER_OFFSIDER_RUNNER_PORT", "HTTPS_PROXY", "NO_PROXY"]))
+    }
+
+    @Test("xcodebuild never passes the caller's own TEST_RUNNER_ settings on to the runner app")
+    func xcodebuildDropsCallerRunnerSettings() {
+        let environment = ChildEnvironment.make(.xcodebuild, from: Self.caller)
+        #expect(environment["TEST_RUNNER_DYLD_INSERT_LIBRARIES"] == nil)
+        #expect(environment["TEST_RUNNER_OTHER"] == nil)
+        #expect(environment["TEST_RUNNER_OFFSIDER_RUNNER_PORT"] == "1")
     }
 
     @Test("a short-lived Apple tool keeps Xcode's location and nothing else beyond the basics")

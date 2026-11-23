@@ -35,6 +35,7 @@ struct OffsiderCommand: AsyncParsableCommand {
     )
 
     static func main() async {
+        BrokerLimits.disableCoreDumps()
         await withCLIDefaults(runCommandLine)
     }
 

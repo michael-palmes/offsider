@@ -26,6 +26,14 @@ struct AndroidScreenCaptureTests {
         #expect(try AndroidScreenCapture.png(from: frame, guestRotation: 3) == png)
     }
 
+    @Test("a frame with fewer bytes than its size claims is never turned, so no pixel is read past its end")
+    func shortFrameNotTurned() {
+        let short = AndroidScreenCapture.Pixels(width: 3, height: 2, bytes: Self.rgba(Array("ABCDE".utf8)))
+        for turns in 1...3 {
+            #expect(AndroidScreenCapture.rotated(short, quarterTurnsCounterclockwise: turns) == short)
+        }
+    }
+
     @Test("guest rotation 1 with the emulator upright turns the frame a quarter counterclockwise")
     func rgbaTurnedCounterclockwise() throws {
         let result = try Self.labels(ofPNG: AndroidScreenCapture.png(from: Self.sample, guestRotation: 1))

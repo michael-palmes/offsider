@@ -23,7 +23,7 @@ public enum CodeSignatureCheck {
     public static func validatedTeam(path: String, requirement: String, resources: Bool) throws -> String? {
         let code = try checkedCode(path: path, requirement: requirement, resources: resources)
         var information: CFDictionary?
-        guard SecCodeCopySigningInformation(code, SecCSFlags(rawValue: kSecCSSigningInformation), &information) == errSecSuccess else { return nil }
+        guard unsafe SecCodeCopySigningInformation(code, SecCSFlags(rawValue: kSecCSSigningInformation), &information) == errSecSuccess else { return nil }
         return (information as NSDictionary?)?[kSecCodeInfoTeamIdentifier] as? String
     }
 

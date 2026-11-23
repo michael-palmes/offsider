@@ -37,7 +37,7 @@ public struct LiveManagedPreferences: ManagedPreferenceSource {
     /// A plist value as a managed preference: a boolean, a whole number or strings; a real number, a string or a mixed array is unreadable.
     static func value(of value: CFPropertyList) -> ManagedPreferenceValue {
         if CFGetTypeID(value) == CFBooleanGetTypeID() {
-            return .bool(CFBooleanGetValue(unsafeBitCast(value, to: CFBoolean.self)))
+            return unsafe .bool(CFBooleanGetValue(unsafeBitCast(value, to: CFBoolean.self)))
         }
         if CFGetTypeID(value) == CFArrayGetTypeID(), let items = value as? [Any] {
             let strings = items.compactMap { $0 as? String }

@@ -57,6 +57,8 @@ struct EndedRunMarker: Codable, Equatable {
     var dir: String
     var startedAt: Date
     var endedAt: Date
+    /// `expired` for a run that ended at its expiry; nil when its session exited.
+    var endedBy: String?
 
     static func fileName(for owner: ProcessIdentity) -> String {
         "\(owner.pid)-\(owner.startTime)\(suffix)"
@@ -66,10 +68,11 @@ struct EndedRunMarker: Codable, Equatable {
         try? JSONEncoder().encode(self)
     }
 
-    init(dir: String, startedAt: Date, endedAt: Date) {
+    init(dir: String, startedAt: Date, endedAt: Date, endedBy: String? = nil) {
         self.dir = dir
         self.startedAt = startedAt
         self.endedAt = endedAt
+        self.endedBy = endedBy
     }
 
     init?(data: Data) {
@@ -112,6 +115,10 @@ enum RunRegistry {
                 throw unavailable("Could not check for this session's evidence run: \(OffsiderCommand.message(for: error)) Make that folder yours alone (`chmod 700`), or remove it so Offsider makes it again.")
             }
             guard let found else { return nil }
+            if found.isExpired(at: environment.now()) {
+                expire(found, in: environment)
+                return nil
+            }
             return ActiveRun(folder: try trusted(found), masks: found.masks, record: found)
         }
     }
@@ -152,7 +159,10 @@ enum RunRegistry {
     }
 
     /// `masks` start a new or stopped run; `explicit`, the masks the flags named (default `masks`), are all a restart of the active run adds.
-    static func start(_ path: String, label: String?, masks: RunMasks, explicit: RunMasks? = nil, in environment: EvidenceRunEnvironment) throws -> Started {
+    static func start(
+        _ path: String, label: String?, masks: RunMasks, explicit: RunMasks? = nil, lasting: TimeInterval = TimeInterval(RunExpiry.defaultDays) * 86_400,
+        in environment: EvidenceRunEnvironment
+    ) throws -> Started {
         let dir = absolute(path)
         let explicit = explicit ?? masks
         var owner: ProcessIdentity?
@@ -165,7 +175,7 @@ enum RunRegistry {
             }
         case .none:
             _ = try endStale(in: environment)
-            if let existing = try record(of: environment) {
+            if let existing = try record(of: environment), !existing.isExpired(at: environment.now()) {
                 guard existing.dir == dir else {
                     throw CLIError(
                         errorDescription: "A run is already active in \(existing.dir) for this session. Run `offsider run stop` first, then start the new one.",
@@ -192,6 +202,7 @@ enum RunRegistry {
         }
         let folder = prepared.folder
         let now = environment.now()
+        let expires = owner == nil ? nil : now.addingTimeInterval(lasting)
         var addedMasks = false
         let (state, continued, unchanged) = try folder.locked { () throws -> (RunState, Bool, Bool) in
             if var state = try folder.readState() {
@@ -208,16 +219,17 @@ enum RunRegistry {
                 state.endedBy = nil
                 state.label = label ?? state.label
                 state.masks = masks
+                state.expires = expires
                 try folder.writeState(state)
                 return (state, true, false)
             }
-            let state = RunState(label: label, startedAt: now, masks: masks)
+            let state = RunState(label: label, startedAt: now, masks: masks, expires: expires)
             try folder.writeState(state)
             return (state, false, false)
         }
         forgetEnded(dir, in: environment)
         if let owner {
-            let record = RunRecord(dir: dir, label: state.label, startedAt: now, masks: masks, owner: owner)
+            let record = RunRecord(dir: dir, label: state.label, startedAt: now, masks: masks, owner: owner, expires: expires)
             try OffsiderPrivateDirectory.writeAtomically(try record.encoded(), named: RunRecord.fileName(for: owner), in: try environment.runsDirectory())
         }
         return Started(folder: folder, state: state, continued: continued, unchanged: unchanged, writableByOthers: prepared.writableByOthers, addedMasks: addedMasks)
@@ -287,29 +299,52 @@ enum RunRegistry {
         }
     }
 
-    /// Records whose session has exited are replaced by a marker kept a day, and their folders marked `owner-exited`.
+    /// Records whose session exited or that expired give way to a marker kept a day, their folders marked and never deleted.
     static func endStale(in environment: EvidenceRunEnvironment) throws -> [RunStatusEntry] {
         var ended: [RunStatusEntry] = []
-        let directory = try environment.runsDirectory()
-        for record in try allRecords(in: environment) where !environment.processes.isAlive(record.owner) {
-            let marker = EndedRunMarker(dir: record.dir, startedAt: record.startedAt, endedAt: environment.now())
-            if let data = marker.encoded() {
-                try? OffsiderPrivateDirectory.writeAtomically(data, named: EndedRunMarker.fileName(for: record.owner), in: directory)
+        let now = environment.now()
+        for record in try allRecords(in: environment) {
+            let reason: String
+            if !environment.processes.isAlive(record.owner) {
+                reason = "owner-exited"
+            } else if record.isExpired(at: now) {
+                reason = "expired"
+            } else {
+                continue
             }
-            OffsiderPrivateDirectory.removeFile(named: RunRecord.fileName(for: record.owner), in: directory)
-            let folder = RunFolder(path: record.dir)
-            if (try? trusted(record)) != nil { try? end(folder, by: "owner-exited", at: environment.now()) }
-            ended.append(RunStatusEntry(dir: record.dir, label: record.label, startedAt: record.startedAt, owner: record.owner, files: files(in: folder), endedBy: "owner-exited"))
+            end(record, by: reason, in: environment)
+            ended.append(RunStatusEntry(dir: record.dir, label: record.label, startedAt: record.startedAt, owner: record.owner, files: files(in: RunFolder(path: record.dir)), endedBy: reason, expires: record.expires))
         }
         return ended
     }
 
+    /// A run past its expiry stops recording: its record goes, its folder is marked `expired` and kept.
+    static func expire(_ record: RunRecord, in environment: EvidenceRunEnvironment) {
+        end(record, by: "expired", in: environment)
+    }
+
+    private static func end(_ record: RunRecord, by reason: String, in environment: EvidenceRunEnvironment) {
+        guard let directory = try? environment.runsDirectory() else { return }
+        let marker = EndedRunMarker(dir: record.dir, startedAt: record.startedAt, endedAt: environment.now(), endedBy: reason == "expired" ? reason : nil)
+        if let data = marker.encoded() {
+            try? OffsiderPrivateDirectory.writeAtomically(data, named: EndedRunMarker.fileName(for: record.owner), in: directory)
+        }
+        OffsiderPrivateDirectory.removeFile(named: RunRecord.fileName(for: record.owner), in: directory)
+        if (try? trusted(record)) != nil { try? end(RunFolder(path: record.dir), by: reason, at: environment.now()) }
+    }
+
     /// The folder of the latest run whose session has exited, until a `run start` there or a day after it was ended; nil under `OFFSIDER_RUN`.
     static func endedWithSession(in environment: EvidenceRunEnvironment) -> String? {
+        endedRun(in: environment)?.dir
+    }
+
+    /// The latest ended run's folder, and whether it ended at its expiry rather than with its session.
+    static func endedRun(in environment: EvidenceRunEnvironment) -> (dir: String, expired: Bool)? {
         guard case .none = environment.override else { return nil }
-        let waiting = ((try? allRecords(in: environment)) ?? []).filter { !environment.processes.isAlive($0.owner) }.map { (dir: $0.dir, startedAt: $0.startedAt) }
-        let ended = endedMarkers(in: environment).map { (dir: $0.marker.dir, startedAt: $0.marker.startedAt) }
-        return (waiting + ended).max { $0.startedAt < $1.startedAt }?.dir
+        let waiting = ((try? allRecords(in: environment)) ?? []).filter { !environment.processes.isAlive($0.owner) }
+            .map { (dir: $0.dir, startedAt: $0.startedAt, expired: false) }
+        let ended = endedMarkers(in: environment).map { (dir: $0.marker.dir, startedAt: $0.marker.startedAt, expired: $0.marker.endedBy == "expired") }
+        return (waiting + ended).max { $0.startedAt < $1.startedAt }.map { ($0.dir, $0.expired) }
     }
 
     /// The markers still inside their day; an older or unreadable one is removed.
@@ -355,10 +390,10 @@ enum RunRegistry {
         let ended = try endStale(in: environment)
         var runs: [RunStatusEntry] = []
         if case .folder(let path) = environment.override, let state = (try? RunFolder(path: path).readState()) ?? nil, state.stoppedAt == nil {
-            runs.append(RunStatusEntry(dir: path, label: state.label, startedAt: state.startedAt, owner: nil, files: files(in: RunFolder(path: path))))
+            runs.append(RunStatusEntry(dir: path, label: state.label, startedAt: state.startedAt, owner: nil, files: files(in: RunFolder(path: path)), expires: state.expires))
         }
         let records = all ? try allRecords(in: environment) : (try record(of: environment)).map { [$0] } ?? []
-        runs += records.map { RunStatusEntry(dir: $0.dir, label: $0.label, startedAt: $0.startedAt, owner: $0.owner, files: files(in: RunFolder(path: $0.dir))) }
+        runs += records.map { RunStatusEntry(dir: $0.dir, label: $0.label, startedAt: $0.startedAt, owner: $0.owner, files: files(in: RunFolder(path: $0.dir)), expires: $0.expires) }
         return (runs, ended)
     }
 

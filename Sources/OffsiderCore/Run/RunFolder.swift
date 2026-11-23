@@ -8,6 +8,8 @@ public struct RunFolder: Equatable, Sendable {
     public static let lockName = ".offsider-run.lock"
     /// Written into a folder `prepare` creates, so git never picks up a run's captures.
     public static let gitignoreName = ".gitignore"
+    /// Spotlight skips a folder holding this file, so screenshots of unreleased screens stay out of its index.
+    public static let neverIndexName = ".metadata_never_index"
 
     public let path: String
 
@@ -43,6 +45,7 @@ public struct RunFolder: Equatable, Sendable {
             guard unsafe chmod(path, S_IRWXU) == 0 else { throw PrivateDirectoryError(.system(operation: "chmod", code: errno), path: path) }
             let folder = RunFolder(path: path)
             try writeNew(Data("*\n".utf8), toPath: folder.file(gitignoreName))
+            try writeNew(Data(), toPath: folder.file(neverIndexName))
             return Prepared(folder: folder, writableByOthers: false)
         }
         return Prepared(folder: RunFolder(path: path), writableByOthers: info.st_mode & (S_IWGRP | S_IWOTH) != 0)

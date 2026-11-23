@@ -78,7 +78,7 @@ A `--verify --json` report also carries `ignored` (`{node, reason}` entries left
 | `xcode_unusable` | 9 | The selected Xcode cannot load simulator support, `DEVELOPER_DIR` points outside an Apple-signed Xcode, or a private method Offsider calls has changed | Select an Apple-signed Xcode 26 or later as for `xcode_missing`, or update Offsider |
 | `android_sdk_missing` | 9 | No Android SDK or adb was found | Install Platform-Tools or set `ANDROID_HOME` |
 | `adb_server_unavailable` | 9 | The adb server is not running or not answering | Run the command again: Offsider starts one with `ADB_MDNS=0`. When one runs but does not answer, stop it first with the `hint` (the SDK's `adb kill-server`) |
-| `adb_server_misconfigured` | 9 | The adb server settings point off this Mac or cannot be read, or its Unix socket belongs to another user | Fix or unset the adb server variables |
+| `adb_server_misconfigured` | 9 | The adb server settings point off this Mac or cannot be read, or its Unix socket or TCP port belongs to another user | Fix or unset the adb server variables, or stop the other user's server |
 | `emulator_missing` | 9 | The Android Emulator is not installed | Run the `hint`: the SDK's `cmdline-tools/latest/bin/sdkmanager emulator` |
 | `emulator_grpc_required` | 9 | The command needs the emulator's gRPC endpoint and it is not reachable | Restart the emulator with `offsider boot` |
 | `helper_unavailable` | 9 | The UiAutomation helper cannot run on this device, including when a password or unlock code needs it; nothing was typed | Unset `OFFSIDER_ANDROID_TREE` or `OFFSIDER_ANDROID_INPUT`, or use another image |

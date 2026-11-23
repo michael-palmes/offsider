@@ -1,12 +1,12 @@
 import Foundation
 
-enum LoopbackHost: String, Sendable {
+enum LoopbackHost: String, Hashable, Sendable {
     case ipv4 = "127.0.0.1"
     case ipv6 = "::1"
 }
 
 /// Where the adb server listens; only numeric loopback addresses or a Unix path, so no name is ever resolved.
-enum LoopbackEndpoint: Equatable, Sendable, CustomStringConvertible {
+enum LoopbackEndpoint: Hashable, Sendable, CustomStringConvertible {
     case tcp(LoopbackHost, port: UInt16)
     case unix(path: String)
 

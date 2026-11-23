@@ -61,18 +61,18 @@ public struct CoreDeviceErrorInfo: Equatable, Sendable {
 
     /// Nil when `object` is not an error dictionary.
     public init?(xpc object: xpc_object_t) {
-        guard xpc_get_type(object) == XPC_TYPE_DICTIONARY, let domain = xpc_dictionary_get_string(object, "domain") else { return nil }
-        self.domain = String(cString: domain)
-        code = Int(Self.integer(xpc_dictionary_get_value(object, "code")) ?? 0)
+        guard unsafe xpc_get_type(object) == XPC_TYPE_DICTIONARY, let domain = unsafe xpc_dictionary_get_string(object, "domain") else { return nil }
+        self.domain = unsafe String(cString: domain)
+        code = unsafe Int(Self.integer(xpc_dictionary_get_value(object, "code")) ?? 0)
         var description: String?
         var underlying: [CoreDeviceErrorInfo] = []
-        if let info = xpc_dictionary_get_value(object, "userInfo"), xpc_get_type(info) == XPC_TYPE_DICTIONARY {
+        if let info = unsafe xpc_dictionary_get_value(object, "userInfo"), unsafe xpc_get_type(info) == XPC_TYPE_DICTIONARY {
             description = Self.string(info, "NSLocalizedDescription") ?? Self.string(info, "NSDebugDescription")
                 ?? Self.string(info, "NSLocalizedFailureReason")
-            if let nested = xpc_dictionary_get_value(info, "NSUnderlyingError"), let error = CoreDeviceErrorInfo(xpc: nested) {
+            if let nested = unsafe xpc_dictionary_get_value(info, "NSUnderlyingError"), let error = CoreDeviceErrorInfo(xpc: nested) {
                 underlying.append(error)
             }
-            if let many = xpc_dictionary_get_value(info, "NSMultipleUnderlyingErrorsKey"), xpc_get_type(many) == XPC_TYPE_ARRAY {
+            if let many = unsafe xpc_dictionary_get_value(info, "NSMultipleUnderlyingErrorsKey"), unsafe xpc_get_type(many) == XPC_TYPE_ARRAY {
                 for index in 0..<xpc_array_get_count(many) {
                     if let error = CoreDeviceErrorInfo(xpc: xpc_array_get_value(many, index)) { underlying.append(error) }
                 }
@@ -83,14 +83,14 @@ public struct CoreDeviceErrorInfo: Equatable, Sendable {
     }
 
     private static func string(_ dictionary: xpc_object_t, _ key: String) -> String? {
-        xpc_dictionary_get_string(dictionary, key).map { String(cString: $0) }
+        unsafe xpc_dictionary_get_string(dictionary, key).map { unsafe String(cString: $0) }
     }
 
     private static func integer(_ value: xpc_object_t?) -> Int64? {
         guard let value else { return nil }
-        let type = xpc_get_type(value)
-        if type == XPC_TYPE_INT64 { return xpc_int64_get_value(value) }
-        if type == XPC_TYPE_UINT64 { return Int64(truncatingIfNeeded: xpc_uint64_get_value(value)) }
+        let type = unsafe xpc_get_type(value)
+        if unsafe type == XPC_TYPE_INT64 { return xpc_int64_get_value(value) }
+        if unsafe type == XPC_TYPE_UINT64 { return Int64(truncatingIfNeeded: xpc_uint64_get_value(value)) }
         return nil
     }
 }
@@ -104,24 +104,24 @@ public enum DTUHIDReply: Equatable, Sendable {
 
     /// A dictionary reply with an error under any key containing "error" is a refusal; XPC errors mean the connection died.
     public init(xpc reply: xpc_object_t) {
-        let type = xpc_get_type(reply)
-        if type == XPC_TYPE_ERROR {
-            let description = xpc_dictionary_get_string(reply, XPC_ERROR_KEY_DESCRIPTION).map { String(cString: $0) }
+        let type = unsafe xpc_get_type(reply)
+        if unsafe type == XPC_TYPE_ERROR {
+            let description = unsafe xpc_dictionary_get_string(reply, XPC_ERROR_KEY_DESCRIPTION).map { unsafe String(cString: $0) }
             self = .connectionLost(description ?? "the connection closed")
             return
         }
-        guard type == XPC_TYPE_DICTIONARY else {
+        guard unsafe type == XPC_TYPE_DICTIONARY else {
             self = .answered
             return
         }
         var refusal: CoreDeviceErrorInfo?
-        xpc_dictionary_apply(reply) { key, value in
-            let name = String(cString: key)
+        unsafe xpc_dictionary_apply(reply) { key, value in
+            let name = unsafe String(cString: key)
             guard name.localizedCaseInsensitiveContains("error") else { return true }
             if let error = CoreDeviceErrorInfo(xpc: value) {
                 refusal = error
-            } else if xpc_get_type(value) == XPC_TYPE_STRING, let text = xpc_string_get_string_ptr(value) {
-                refusal = CoreDeviceErrorInfo(domain: name, code: 0, description: String(cString: text))
+            } else if unsafe xpc_get_type(value) == XPC_TYPE_STRING, let text = unsafe xpc_string_get_string_ptr(value) {
+                refusal = unsafe CoreDeviceErrorInfo(domain: name, code: 0, description: String(cString: text))
             } else {
                 return true
             }

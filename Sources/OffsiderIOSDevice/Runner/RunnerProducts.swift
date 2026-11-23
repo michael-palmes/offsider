@@ -44,7 +44,7 @@ enum RunnerProducts {
                 digests[relative] = "symlink:" + ((try? FileManager.default.destinationOfSymbolicLink(atPath: url.path)) ?? "")
             } else if values.isRegularFile == true {
                 let data = try Data(contentsOf: url, options: .mappedIfSafe)
-                digests[relative] = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+                digests[relative] = SHA256.hash(data: data).map { unsafe String(format: "%02x", $0) }.joined()
             }
         }
         return digests
@@ -83,7 +83,7 @@ enum RunnerProducts {
     /// Replaces any record with a new 0600 file.
     static func write(_ record: RunnerProductsRecord, in directory: URL) throws {
         let path = directory.appendingPathComponent(fileName).path
-        unlink(path)
+        unsafe unlink(path)
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys]
         try RunFolder.writeNew(try encoder.encode(record), toPath: path)

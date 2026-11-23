@@ -258,7 +258,7 @@ final class DeviceSessionChannel: @unchecked Sendable {
     init(descriptor: Int32) {
         self.descriptor = descriptor
         var on: Int32 = 1
-        setsockopt(descriptor, SOL_SOCKET, SO_NOSIGPIPE, &on, socklen_t(MemoryLayout<Int32>.size))
+        unsafe setsockopt(descriptor, SOL_SOCKET, SO_NOSIGPIPE, &on, socklen_t(MemoryLayout<Int32>.size))
     }
 
     deinit { close() }
@@ -278,13 +278,13 @@ final class DeviceSessionChannel: @unchecked Sendable {
 
     func write(_ data: Data, timeout: Duration? = .seconds(5)) throws {
         setTimeout(SO_SNDTIMEO, timeout)
-        try data.withUnsafeBytes { bytes in
+        try unsafe data.withUnsafeBytes { bytes in
             var offset = 0
             while offset < bytes.count {
-                let count = Darwin.write(descriptor, bytes.baseAddress!.advanced(by: offset), bytes.count - offset)
+                let count = unsafe Darwin.write(descriptor, bytes.baseAddress!.advanced(by: offset), bytes.count - offset)
                 if count < 0 {
                     if errno == EINTR { continue }
-                    throw DeviceSessionWireError(detail: errno == EAGAIN ? "the write timed out" : "the write failed: \(String(cString: strerror(errno)))")
+                    throw DeviceSessionWireError(detail: errno == EAGAIN ? "the write timed out" : unsafe "the write failed: \(String(cString: strerror(errno)))")
                 }
                 offset += count
             }
@@ -313,10 +313,10 @@ final class DeviceSessionChannel: @unchecked Sendable {
             } else {
                 setTimeout(SO_RCVTIMEO, nil)
             }
-            let read = data.withUnsafeMutableBytes { Darwin.read(descriptor, $0.baseAddress!.advanced(by: offset), count - offset) }
+            let read = unsafe data.withUnsafeMutableBytes { unsafe Darwin.read(descriptor, $0.baseAddress!.advanced(by: offset), count - offset) }
             if read < 0 {
                 if errno == EINTR { continue }
-                throw DeviceSessionWireError(detail: errno == EAGAIN ? "the reply timed out" : "the read failed: \(String(cString: strerror(errno)))")
+                throw DeviceSessionWireError(detail: errno == EAGAIN ? "the reply timed out" : unsafe "the read failed: \(String(cString: strerror(errno)))")
             }
             if read == 0 {
                 if offset == 0, allowEOF { return nil }
@@ -333,16 +333,16 @@ final class DeviceSessionChannel: @unchecked Sendable {
             let (seconds, attoseconds) = timeout.components
             value = timeval(tv_sec: Int(max(seconds, 0)), tv_usec: Int32(max(attoseconds / 1_000_000_000_000, seconds == 0 ? 1000 : 0)))
         }
-        setsockopt(descriptor, SOL_SOCKET, option, &value, socklen_t(MemoryLayout<timeval>.size))
+        unsafe setsockopt(descriptor, SOL_SOCKET, option, &value, socklen_t(MemoryLayout<timeval>.size))
     }
 
     /// A connected Unix stream socket to `path`.
     static func connect(to path: String) throws -> DeviceSessionChannel {
         let descriptor = CloseOnExecSocket.make(AF_UNIX, SOCK_STREAM)
-        guard descriptor >= 0 else { throw DeviceSessionWireError(detail: "no socket: \(String(cString: strerror(errno)))") }
+        guard descriptor >= 0 else { throw DeviceSessionWireError(detail: unsafe "no socket: \(String(cString: strerror(errno)))") }
         var address = try unixAddress(path)
         let result = withUnsafePointer(to: &address) {
-            $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { Darwin.connect(descriptor, $0, socklen_t(MemoryLayout<sockaddr_un>.size)) }
+            unsafe $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { unsafe Darwin.connect(descriptor, $0, socklen_t(MemoryLayout<sockaddr_un>.size)) }
         }
         guard result == 0 else {
             let code = errno

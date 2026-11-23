@@ -184,6 +184,43 @@ struct InitTests {
         #expect(!FileManager.default.fileExists(atPath: nowhere.appendingPathComponent(".claude").path))
     }
 
+    @Test("--uninstall removes the rules init added as well as the skill, and keeps the person's own settings and rules")
+    func uninstallRemovesRules() async throws {
+        let home = try temporaryHome([".claude", ".codex/rules"])
+        defer { try? FileManager.default.removeItem(at: home) }
+        let settings = home.appendingPathComponent(".claude/settings.json")
+        try #"{"model":"opus","permissions":{"allow":["Bash(ls)"],"deny":["Bash(rm -rf*)"]}}"#.write(to: settings, atomically: true, encoding: .utf8)
+        _ = try await TestHelpers.runOffsiderCommand("init --client claude", environment: ["HOME": home.path])
+        _ = try await TestHelpers.runOffsiderCommand("init --client agents", environment: ["HOME": home.path])
+        let codex = home.appendingPathComponent(".codex/rules/offsider.rules")
+        #expect(FileManager.default.fileExists(atPath: codex.path))
+
+        let claude = try await TestHelpers.runOffsiderCommand("init --client claude --uninstall", environment: ["HOME": home.path])
+        #expect(claude.output.contains("Removed \(AgentPermissionRules.rules.count) Offsider rules from ~/.claude/settings.json"))
+        #expect(FileManager.default.fileExists(atPath: codex.path), "only the chosen client's rules go")
+        let agents = try await TestHelpers.runOffsiderCommand("init --client agents --uninstall", environment: ["HOME": home.path])
+        #expect(agents.output.contains("Removed \(AgentPermissionRules.codexRules.count) Offsider rules from ~/.codex/rules/offsider.rules"))
+        #expect(!FileManager.default.fileExists(atPath: codex.path))
+        #expect(!FileManager.default.fileExists(atPath: home.appendingPathComponent(".claude/skills/offsider").path))
+        let left = try String(contentsOf: settings, encoding: .utf8)
+        #expect(left.contains("\"model\": \"opus\"") || left.contains("\"model\":\"opus\""))
+        #expect(left.contains("Bash(ls)") && left.contains("Bash(rm -rf*)"))
+        #expect(!AgentPermissionRules.rules.contains { left.contains($0.claudePattern) })
+
+        let again = try await TestHelpers.runOffsiderCommand("init --client claude --uninstall", environment: ["HOME": home.path])
+        #expect(!again.output.contains("Removed"))
+    }
+
+    @Test("--uninstall --no-rules leaves the rules in place")
+    func uninstallNoRulesKeepsRules() async throws {
+        let home = try temporaryHome([".claude"])
+        defer { try? FileManager.default.removeItem(at: home) }
+        _ = try await TestHelpers.runOffsiderCommand("init --client claude", environment: ["HOME": home.path])
+        _ = try await TestHelpers.runOffsiderCommand("init --client claude --uninstall --no-rules", environment: ["HOME": home.path])
+        let left = try String(contentsOf: home.appendingPathComponent(".claude/settings.json"), encoding: .utf8)
+        #expect(AgentPermissionRules.rules.allSatisfy { left.contains($0.claudePattern) })
+    }
+
     @Test("a malformed settings file fails the run, names the file and stays as it was")
     func malformedSettingsFails() async throws {
         let home = try temporaryHome([".claude"])

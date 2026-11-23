@@ -80,7 +80,7 @@ public struct SignInLedger: Sendable {
     /// `<first 16 hex of SHA-256 of "platform:device:app">.json`, so no id reaches a file name.
     public static func fileName(platform: DevicePlatform, device: String, app: String) -> String {
         let digest = SHA256.hash(data: Data("\(platform.rawValue):\(device):\(app)".utf8))
-        return digest.prefix(8).map { String(format: "%02x", $0) }.joined() + suffix
+        return digest.prefix(8).map { unsafe String(format: "%02x", $0) }.joined() + suffix
     }
 
     /// Replaces the record for its device and app.
