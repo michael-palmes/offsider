@@ -91,6 +91,8 @@ struct ContentView: View {
             EnvironmentTestView()
         case "device-state":
             DeviceStateTestView()
+        case "reader-test":
+            ReaderTestView()
         case "permission-prompt":
             PermissionPromptTestView()
             
@@ -179,6 +181,7 @@ struct MainMenuView: View {
             ("toolbar-picker-test", "Toolbar Picker Test", "Toolbar segmented picker targeting"),
             ("environment-test", "Environment Test", "Colour scheme, content size and orientation"),
             ("device-state", "Device State Test", "Permissions and biometric authentication"),
+            ("reader-test", "Reader Test", "What the app is told about VoiceOver"),
             ("permission-prompt", "Permission Prompt Test", "System prompts for notifications, camera, location and tracking")
         ]),
         ("Presentation", [

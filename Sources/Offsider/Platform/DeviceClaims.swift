@@ -126,6 +126,7 @@ extension RNLogBoxStatus: DeviceOptionCommand {}
 extension RNLogBoxDismiss: DeviceOptionCommand {}
 extension RNLogBoxOpen: DeviceOptionCommand {}
 extension Screenshot: DeviceOptionCommand {}
+extension ScreenReaderCommand: DeviceOptionCommand {}
 extension Shake: DeviceOptionCommand {}
 extension Keyboard: DeviceOptionCommand {}
 extension Slider: DeviceOptionCommand {}

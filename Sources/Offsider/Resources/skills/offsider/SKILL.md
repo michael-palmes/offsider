@@ -10,7 +10,7 @@ Offsider drives iOS Simulators, Android Emulators and USB phones and iPads: it r
 
 1. `offsider devices` finds it: simulators, iPhones and iPads by UDID, emulators and Android phones by serial, shut-down AVDs by name; `--json` adds `kind` and `connection` (`guide android`). Add a `physical` one: `offsider devices add --plan --json` has the user's command. Drive an added test device freely (ask if several); any other only when they name it, in words (`guide ios-device`). `devices status --audit`: what ran on one.
 2. Boot with `DEVICE=$(offsider boot <AVD, simulator name or UDID>)` (`--headless` hides an emulator): it waits, then prints the ID. `offsider shutdown <name>` stops it. Never run `emulator -port` or `-grpc`.
-3. Run `offsider doctor --device <DEVICE_ID> --json` at the start and when input seems ignored. Exit 0 is clean, 3 means warnings and 4 means failures; follow each check's `status` and `hint` (`guide errors`).
+3. Run `offsider doctor --device <DEVICE_ID> --json` at the start and when input is ignored. Exit 0 is clean, 3 means warnings and 4 means failures; follow each check's `status` and `hint` (`guide errors`).
 4. Pass `--device <DEVICE_ID>` to every device command: `export` may not reach your next shell.
 5. If the repository has an `OFFSIDER.md`, read `offsider guide --project .` first.
 
@@ -38,14 +38,14 @@ offsider assert --id <id> --has-value <text> --device <DEVICE_ID>
 - `type` adds to the focused field. Tap the field (or pass `--into-id <id>`, `--nth` for twins), then `type --replace 'text'` sets it exactly (`''` clears it); a trailing newline presses Return; single quotes inline, `--stdin` or `--file` for shell-sensitive text (`guide selectors`).
 - Secure fields read as bullets, one per character: find them by `--id` or `--label`, not `--value`. Secrets use `login` (sign-up: `--fill password`) or `type --stdin`, never arguments; screenshots mask password fields, keyboard text and what `offsider.mask.json` names (`guide screenshots`).
 - `run start <dir>` numbers screenshots and logs in one folder, masking password fields and emails (`guide evidence`).
-- `tap --verify` on a button, link or menu item sends once: a late effect plus a retry would act twice.
-- One agent per device: input commands lock it; exit 8 (`device_busy`): wait, or rerun with `--wait-lock <seconds>`; never resend in a loop or kill the holder (`guide errors`).
+- `tap --verify` on a button, link or menu item sends once: a late effect plus a retry acts twice.
+- One agent per device: input commands lock it; exit 8 (`device_busy`): wait, or rerun with `--wait-lock <s>`; never resend in a loop or kill the holder (`guide errors`).
 - Screenshots are in pixels; taps and frames in points (dp on Android). `screenshot --scale points` matches them.
-- `appearance`, `content-size`, `orientation`, `permission`, `status-bar`, `biometric`, `stay-awake`, `posture` and `airplane` stay changed: read first, set back when done; permission prompt: `alert show|accept|deny --app <id>` (`guide device-state`).
-- A physical iPhone or iPad works over USB only, unlocked, with UI Automation on, inside one app: pass `--app` to every screen command (not on a test device). Input starts a session: `session stop --device <UDID>` after each check, `--clean` when done for good (`guide ios-device`).
+- `appearance`, `content-size`, `orientation`, `permission`, `status-bar`, `biometric`, `stay-awake`, `posture`, `airplane` and `screen-reader` stay changed: read first, set back after; permission prompt: `alert show|accept|deny --app <id>` (`guide device-state`).
+- A physical iPhone or iPad works over USB only, unlocked, with UI Automation on, inside one app: pass `--app` to every screen command (not on a test device). Input starts a session: `session stop --device <UDID>` after each check, `--clean` when done (`guide ios-device`).
 - React Native debug builds: `rn open` (Metro, `--restart`), `rn logbox status|open|dismiss` (`--index n`), `rn devmenu` (also a batch step), `logs --rn --app <id>` (`guide react-native`). `logs` reads the project's app, `--all` every app.
 - Keyboard in the way: `keyboard hide` (`guide selectors`).
-- Screen off or locked: `wake --device <DEVICE_ID>`; exit 7 `device_locked` means a passcode or PIN: ask the user to unlock.
+- Screen off or locked: `wake --device <DEVICE_ID>`; exit 7 `device_locked` means a passcode: ask the user to unlock.
 
 ## Exit codes
 
@@ -55,7 +55,7 @@ Input commands take `--json` (`guide verify`); a failure prints `exitCode` and `
 
 ## Commands
 
-`doctor`, `init`, `guide`, `boot`, `shutdown`, `devices` (`add`, `remove`, `status`), `describe-ui`, `tap`, `turnstile`, `login`, `credential`, `guard`, `slider`, `swipe`, `drag`, `gesture`, `touch`, `type`, `button`, `key`, `key-sequence`, `key-combo`, `keyboard`, `wait`, `assert`, `batch`, `run`, `screenshot`, `logs`, `notifications`, `appearance`, `content-size`, `permission`, `alert`, `app`, `status-bar`, `biometric`, `stay-awake`, `airplane`, `wake`, `sleep`, `unlock-code`, `lease`, `orientation`, `displays`, `posture`, `shake`, `rn` (`prepare`, `open`, `logbox`, `devmenu`, `tools off`), `record-video`, `stream-video`, `runner`, `session`. `offsider <command> --help` lists every option.
+`doctor`, `init`, `guide`, `boot`, `shutdown`, `devices` (`add`, `remove`, `status`), `describe-ui`, `tap`, `turnstile`, `login`, `credential`, `guard`, `slider`, `swipe`, `drag`, `gesture`, `touch`, `type`, `button`, `key`, `key-sequence`, `key-combo`, `keyboard`, `wait`, `assert`, `batch`, `run`, `screenshot`, `logs`, `notifications`, `appearance`, `content-size`, `permission`, `alert`, `app`, `status-bar`, `biometric`, `stay-awake`, `airplane`, `screen-reader`, `wake`, `sleep`, `unlock-code`, `lease`, `orientation`, `displays`, `posture`, `shake`, `rn` (`prepare`, `open`, `logbox`, `devmenu`, `tools off`), `record-video`, `stream-video`, `runner`, `session`. `offsider <command> --help` lists every option.
 
 ## Topics
 

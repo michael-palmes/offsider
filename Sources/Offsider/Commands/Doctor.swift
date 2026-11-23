@@ -73,6 +73,7 @@ struct Doctor: AsyncParsableCommand {
             logger: OffsiderLogger()
         )
         let android = AndroidDoctorProbe(host: host)
+        async let screenReader = Self.screenReaderCheck(udid: udid)
         var result = await runner.run()
         var facts = await android.run(deviceID: nil).host
         var fixes: [DoctorFixResult] = []
@@ -88,6 +89,10 @@ struct Doctor: AsyncParsableCommand {
         let device = udid.map { udid in
             DoctorDevice(id: udid, platform: "ios", name: result.booted.first { $0.udid == udid }?.name, kind: "simulator", source: deviceOption.source?.rawValue)
         }
+        var deviceChecks: [DoctorCheckResult] = []
+        if let udid {
+            deviceChecks = [Self.leaseCheck(platform: .ios, key: udid.uppercased(), lockID: udid)] + Self.recordingCheck(platform: .ios, lockID: udid) + (await screenReader)
+        }
         return DoctorReport(
             offsiderVersion: VERSION,
             udid: udid,
@@ -95,7 +100,7 @@ struct Doctor: AsyncParsableCommand {
             xcode: result.xcode,
             booted: result.booted,
             android: AndroidDoctorRules.summary(facts, device: nil),
-            checks: result.checks + AndroidDoctorRules.hostChecks(facts, deviceNamed: false) + (udid.map { [Self.leaseCheck(platform: .ios, key: $0.uppercased(), lockID: $0)] + Self.recordingCheck(platform: .ios, lockID: $0) } ?? []),
+            checks: result.checks + AndroidDoctorRules.hostChecks(facts, deviceNamed: false) + deviceChecks,
             fixes: fixes
         )
     }
@@ -315,6 +320,24 @@ struct Doctor: AsyncParsableCommand {
             id: .deviceRecording, status: .warn,
             detail: "A recording is running\(pids.isEmpty ? "" : " (pid \(pids))"). Logins and typed passwords wait until it stops.",
             hint: "offsider session stop --device \(lockID)"
+        )]
+    }
+
+    /// `device.screen-reader`, only while one is on for a simulator, as apps then show what they show a screen reader user; one that is off cannot be read, so its record speaks.
+    static func screenReaderCheck(
+        udid: String?,
+        recorded: @Sendable (String) -> Bool = { ScreenReaderRecordStore.privateStore(create: false)?.load(udid: $0) != nil },
+        read: @Sendable (String) async -> Bool? = { try? await SimulatorScreenReaders.live(udid: $0, timeout: 5).setting().enabled }
+    ) async -> [DoctorCheckResult] {
+        guard let udid else { return [] }
+        let record = recorded(udid)
+        let live = await read(udid)
+        guard live ?? record else { return [] }
+        let undo = "Offsider \(record ? "turned it on, so `session stop` turns it off" : "did not turn it on, so `session stop` leaves it")."
+        return [DoctorCheckResult(
+            id: .deviceScreenReader, status: .warn,
+            detail: live == true ? "Apps are told VoiceOver is on. \(undo)" : "Offsider turned VoiceOver on for apps and has not turned it off. It could not be read now.",
+            hint: live == true ? "offsider screen-reader off --device \(udid)" : "offsider session stop --device \(udid)"
         )]
     }
 
