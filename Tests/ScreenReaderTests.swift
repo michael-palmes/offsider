@@ -297,21 +297,80 @@ struct ScreenReaderTests {
 
     // MARK: The command
 
-    @Test("a phone, iPhone, iPad or emulator is refused before routing, with nothing sent", arguments: [IOSDeviceFixtures.phone, "emulator-5554", "Offsider_E2E", "R58M123ABC", "192.168.1.20:5555", "MySimulator"])
+    @Test("an iPhone, an iPad and a network adb connection are refused before routing, with nothing sent", arguments: [IOSDeviceFixtures.phone, "192.168.1.20:5555"])
     func refusedBeforeRouting(device: String) {
-        let error = #expect(throws: CLIError.self) { try ScreenReaderCommand.requireSimulator(device) }
+        let error = #expect(throws: CLIError.self) { try ScreenReaderCommand.requireSupported(device, gate: Self.gate(testDevice: true)) }
         #expect(error?.reason == .notSupported)
-        #expect(error?.errorDescription?.contains("iOS simulators only") == true)
         #expect(error?.errorDescription?.contains("Nothing was sent.") == true)
     }
 
-    @Test("a simulator UDID passes, and the value is on, off or nothing")
+    static let phoneSerial = "R58M123ABC"
+
+    static func gate(testDevice: Bool, managed: ManagedDevicePolicy = .none) -> DevicePolicyGate {
+        .fixed(PhysicalDevicePolicy(managed: managed, list: DeviceAllowList(entries: [
+            DeviceAllowance(platform: .android, key: phoneSerial, name: "Test phone", added: PolicyFixtures.added, expires: nil, apps: [], testDevice: testDevice),
+        ])), now: PolicyFixtures.now)
+    }
+
+    @Test("a phone in personal use is refused before routing, and a test device, an emulator, a simulator and a name the router must look up pass")
+    func testDevicesOnly() throws {
+        let error = #expect(throws: CLIError.self) { try ScreenReaderCommand.requireSupported(Self.phoneSerial, gate: Self.gate(testDevice: false)) }
+        #expect(error?.reason == .notSupported)
+        #expect(error?.errorDescription?.contains("in personal use, not a test device") == true)
+        #expect(error?.errorDescription?.contains("Nothing was sent.") == true)
+        try ScreenReaderCommand.requireSupported(Self.phoneSerial, gate: Self.gate(testDevice: true))
+        for device in [Self.udid, "emulator-5554", "Offsider_E2E"] {
+            try ScreenReaderCommand.requireSupported(device, gate: Self.gate(testDevice: false))
+        }
+    }
+
+    @Test("the value is on, off or nothing")
     func arguments() throws {
-        try ScreenReaderCommand.requireSimulator(Self.udid)
         #expect(try ScreenReaderCommand.parse(["on", "--device", Self.udid]).target() == true)
         #expect(try ScreenReaderCommand.parse(["OFF", "--device", Self.udid]).target() == false)
         #expect(try ScreenReaderCommand.parse(["--device", Self.udid]).target() == nil)
         #expect(throws: (any Error).self) { try ScreenReaderCommand.parse(["loud", "--device", Self.udid]) }
+    }
+
+    @Test("on Android, turning it on says who turns it off, and that input still works as usual")
+    func androidNotices() {
+        let id = DeviceID(rawValue: "emulator-5554", platform: .android)
+        let set = ScreenReaderCommand.notices(ScreenReaderChange(previous: false, current: true, resetBySessionStop: true), set: true, on: id)
+        #expect(set.first?.agentText?.contains("`offsider session stop --device emulator-5554`") == true)
+        #expect(set.first?.agentText?.contains("TalkBack is on") == true)
+        #expect(set.first?.agentText?.contains("input goes past TalkBack, so tap, swipe and the rest work as usual") == true)
+        let byHand = ScreenReaderCommand.notices(ScreenReaderChange(previous: true, current: true, resetBySessionStop: false), set: true, on: id)
+        #expect(byHand.first?.agentText?.contains("session stop leaves it on") == true)
+    }
+
+    @Test("session stop names an Android reader it could not turn off, one on a device that is away and one no longer allowed, and status lists one recorded")
+    func androidSessionRows() throws {
+        let left = DeviceSessionRow.left(reverses: [], postures: RecordResetOutcome(), talkBacks: RecordResetOutcome(failed: ["emulator-5554"], notConnected: ["Offsider_E2E_Fold"], skipped: [Self.phoneSerial]))
+        #expect(left.map(\.why) == [.failed, .notConnected, .notAllowed])
+        #expect(left.map(\.screenReader) == [true, true, true])
+        #expect(left[1].sentence == "The screen reader on Offsider_E2E_Fold stays until it is connected and you run `offsider session stop --device Offsider_E2E_Fold`.")
+        let rows = DeviceSessionRow.rows(runners: [], brokers: [], recorded: [RecordedPhoneState(serial: "emulator-5554", reverses: [], posture: false, screenReader: true)])
+        #expect(DeviceSessionRow.text(rows) == "emulator-5554\n  screen reader  recorded, may be gone\n")
+        let status = try #require(try JSONSerialization.jsonObject(with: Data(DeviceSessionRow.json(rows).utf8)) as? [String: Any])
+        let recorded = try #require((status["sessions"] as? [[String: Any]])?.first?["recorded"] as? [String: Any])
+        #expect(recorded["screenReader"] as? Bool == true)
+    }
+
+    @Test("doctor warns while TalkBack is enabled, says who turns it off and how to make input reach the app, and is quiet for any other service")
+    func androidDoctor() {
+        let talkBack = AndroidBackend.screenReaderComponents[0]
+        let ours = Doctor.talkBackCheck(serial: "emulator-5554", enabledServices: ["com.example/com.example.Service", talkBack], note: true)
+        #expect(ours.map(\.id) == [.deviceScreenReader])
+        #expect(ours.first?.status == .warn)
+        #expect(ours.first?.detail.contains("`session stop` turns it off") == true)
+        #expect(ours.first?.hint == "offsider screen-reader off --device emulator-5554")
+        let noted = Doctor.talkBackCheck(serial: "emulator-5554", enabledServices: [talkBack], note: false)
+        #expect(noted.first?.detail.contains("`session stop` leaves it.") == true && noted.first?.detail.contains("only select") == false)
+        let theirs = Doctor.talkBackCheck(serial: "emulator-5554", enabledServices: [talkBack], note: nil)
+        #expect(theirs.first?.detail.contains("`session stop` leaves it and an emulator's taps only select") == true)
+        #expect(theirs.first?.detail.contains("offsider screen-reader on --device emulator-5554") == true)
+        #expect(Doctor.talkBackCheck(serial: "emulator-5554", enabledServices: ["com.example/com.example.Service"], note: nil).isEmpty)
+        #expect(Doctor.talkBackCheck(serial: "emulator-5554", enabledServices: [], note: true).isEmpty)
     }
 
     @Test("turning it on says who turns it off, and that a simulator's input is unchanged")

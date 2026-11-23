@@ -69,7 +69,7 @@ Every store, with where it lives and how long it lasts: [Privacy, What Offsider 
 | Where | What | Removed by |
 | --- | --- | --- |
 | Android device | A helper dex in `/data/local/tmp`, Offsider's own code, checked by SHA-256 on every start | A newer helper replaces it; `adb -s <serial> shell rm /data/local/tmp/offsider-helper-*.dex` removes it |
-| Android device | Settings a command changed (status bar, stay awake, permissions, airplane mode, posture) | Each command's reset; `session stop` and `devices remove` undo the airplane mode and posture Offsider set |
+| Android device | Settings a command changed (status bar, stay awake, permissions, airplane mode, screen reader, posture) | Each command's reset; `session stop` and `devices remove` undo the airplane mode, screen reader and posture Offsider set |
 | Android phone | An `adb reverse` for a Metro port a person chose | `session stop`, `devices remove`, or unplugging it |
 | iPhone or iPad | Two runner apps, `<prefix>.runner` and `<prefix>.runner.uitests.xctrunner` | `offsider session stop --device <UDID> --clean` |
 | iPhone or iPad | A developer disk image mount, as Xcode makes | The device, when it restarts |

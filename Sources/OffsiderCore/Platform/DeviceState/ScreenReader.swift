@@ -3,7 +3,11 @@ import Foundation
 /// Optional capability: the device's screen reader. A change Offsider made is recorded, so `session stop` undoes that and nothing else.
 @MainActor
 public protocol ScreenReaderControlling: DeviceBackend {
+    /// `VoiceOver` or `TalkBack`.
+    var screenReaderService: String { get }
     func screenReader(on id: DeviceID) async throws -> Bool
+    /// Whether Offsider recorded turning it on for this device, so `session stop` turns it off.
+    func screenReaderIsRecorded(on id: DeviceID) -> Bool
     func setScreenReader(_ enabled: Bool, on id: DeviceID) async throws -> ScreenReaderChange
 }
 
@@ -22,9 +26,13 @@ public struct ScreenReaderChange: Equatable, Sendable {
 
 public struct ScreenReaderError: Error, Equatable, Sendable, CustomStringConvertible, LocalizedError {
     public let message: String
+    public let reason: FailureReason
+    public let hint: String?
 
-    public init(_ message: String) {
+    public init(_ message: String, reason: FailureReason = .commandFailed, hint: String? = nil) {
         self.message = message
+        self.reason = reason
+        self.hint = hint
     }
 
     public var description: String { message }
@@ -32,7 +40,6 @@ public struct ScreenReaderError: Error, Equatable, Sendable, CustomStringConvert
 }
 
 extension ScreenReaderError: OffsiderFailure {
-    public var reason: FailureReason { .commandFailed }
     public var failureMessage: String { message }
 }
 

@@ -55,7 +55,7 @@ Most of it lives in a private folder, `offsider-<uid>/` in your per-user temp fo
 | Evidence run records | `runs/` | While the run lasts | `offsider run stop` |
 | Sign-in records, never a username or password | `signins/` | Until the next `login` | `offsider credential signed-out` |
 | An Android device's auto-rotate before Offsider turned it | `orientation/` | Until it is turned back | `offsider orientation portrait --device <ID>` |
-| A fold, Metro reverse, airplane mode or screen reader Offsider set on a device | `postures/`, `reverses/`, `airplane/`, `screen-reader/` | Until it is undone | `offsider session stop` |
+| A fold, Metro reverse, airplane mode or screen reader Offsider set on a device | `postures/`, `reverses/`, `airplane/`, `screen-reader/`, `screen-reader-android/` | Until it is undone | `offsider session stop` |
 | The pid of the adb server last found to be yours | `adb/` | Until another server answers | Delete the folder |
 | A foldable phone's active panel and size | `displays/` | While the phone's state matches | `OFFSIDER_DISPLAY_CACHE=off` stops it |
 | A failed unlock code marker, never the code | `unlock/` | Until the device is unlocked or the code saved again | `offsider unlock-code set` or `offsider unlock-code remove` |

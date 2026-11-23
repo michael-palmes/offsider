@@ -50,7 +50,8 @@ struct AndroidGrpcInputTests {
         uiautomatorDump: String? = nil,
         typedDump: String? = nil,
         avdHardware: String? = nil,
-        keyBacklog: (@Sendable () -> FakeAdbServer.Reply)? = nil
+        keyBacklog: (@Sendable () -> FakeAdbServer.Reply)? = nil,
+        screenReaderRecords: String? = nil
     ) throws -> Rig {
         let typed = TypedFlag()
         let server = FakeAdbServer(handler: FakeAdbServer.devices(
@@ -86,7 +87,8 @@ struct AndroidGrpcInputTests {
         let connector = FakeEmulatorConnector(.success(emulator))
         let logs = LogRecorder()
         let sleeps = SleepRecorder()
-        let host = AndroidTestHost.make(home: home, environment: environment, adb: server, emulator: connector, liveProcesses: [50144], sleeps: sleeps)
+        var host = AndroidTestHost.make(home: home, environment: environment, adb: server, emulator: connector, liveProcesses: [50144], sleeps: sleeps)
+        host.screenReaderRecordDirectory = { _ in screenReaderRecords }
         return Rig(backend: AndroidBackend(host: host, log: logs.log), server: server, emulator: emulator, connector: connector, logs: logs, sleeps: sleeps)
     }
 
@@ -192,6 +194,26 @@ struct AndroidGrpcInputTests {
         #expect(rig.adbScripts == ["input tap 525 1050", "input tap 525 1050"])
         #expect(rig.emulator.calls.isEmpty)
         #expect(rig.logs.warnings == ["The display of emulator-5556 is resized (`wm size` reports an override), so its input goes over adb in this command."])
+    }
+
+    @Test("with TalkBack noted on, taps, swipes and detached touches are injected over adb, where TalkBack does not take them; without the note they stay on gRPC")
+    func talkBackNoted() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("offsider-talkback-route-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+        let store = AndroidScreenReaderRecordStore(directory: directory.path)
+        try store.save(AndroidScreenReaderRecord(serial: "emulator-5556", avd: "Offsider_E2E", component: AndroidScreenReader.components[0], turnedOn: true))
+        let noted = try Self.rig(screenReaderRecords: directory.path)
+        try await noted.backend.perform(.tapAt(x: 525, y: 1050), on: Self.device)
+        try await noted.backend.sendDetachedTouch([.down(x: 10, y: 20), .hold(0.1), .up(x: 10, y: 20)], to: Self.device)
+        #expect(noted.adbScripts.first == "input tap 525 1050")
+        #expect(noted.adbScripts.count == 2)
+        #expect(noted.emulator.calls.isEmpty)
+
+        store.remove(serial: "emulator-5556")
+        let plain = try Self.rig(screenReaderRecords: directory.path)
+        try await plain.backend.perform(.tapAt(x: 525, y: 1050), on: Self.device)
+        #expect(plain.emulator.calls == [plain.touch(525, 1050, 1), plain.touch(525, 1050, 0)])
+        #expect(plain.adbScripts.isEmpty)
     }
 
     @Test("OFFSIDER_ANDROID_TRANSPORT=adb keeps input on adb without connecting")

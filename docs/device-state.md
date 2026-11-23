@@ -110,7 +110,7 @@ offsider session stop --device <DEVICE_ID>
 
 ## Screen reader
 
-`offsider screen-reader` reads whether an iOS simulator tells its apps that VoiceOver is running, and `on` or `off` sets it, checking the setting took. Use it for an app that changes its screen for a screen reader: it shows, hides or regroups views only while `UIAccessibility.isVoiceOverRunning` (React Native's `AccessibilityInfo.isScreenReaderEnabled`) is true, so the tree `describe-ui` reads with it off is not the one a screen reader user gets.
+`offsider screen-reader` reads whether a screen reader is on, and `on` or `off` sets it, checking the setting took: VoiceOver's setting on an iOS simulator, and TalkBack on an Android emulator or test device. Use it for an app that changes its screen for a screen reader: it shows, hides or regroups views only while `UIAccessibility.isVoiceOverRunning` or Android's touch exploration (React Native's `AccessibilityInfo.isScreenReaderEnabled` on both) is true, so the tree `describe-ui` reads with it off is not the one a screen reader user gets.
 
 ```bash
 offsider screen-reader on --device <DEVICE_ID>
@@ -118,12 +118,26 @@ offsider screen-reader --device <DEVICE_ID> --json
 offsider session stop --device <DEVICE_ID>
 ```
 
-- A running app hears the change at once, and one launched later starts with it. `--json` prints `{"version":1,"action":"on","device":"<DEVICE_ID>","platform":"ios","screenReader":"on","previous":"off","service":"VoiceOver","resetBySessionStop":true}`; `action` is `show` for a read, where `previous` is null.
-- A simulator never starts VoiceOver itself, so nothing is spoken on the Mac, no element is selected and nothing is read out. `tap`, `swipe`, `type` and every other input and read work exactly as they do with it off: an app's own response to a screen reader is what you are testing, not VoiceOver's gestures or focus.
-- It outlives the command and a reboot, so Offsider records that it turned it on, in the private directory's `screen-reader/`, before changing it. `session stop` and `shutdown` turn it off only then, and `screen-reader off` drops the record. Already on when you ran it, it stays on: `resetBySessionStop` says which. A simulator shut down some other way with a recorded reader still on is put right by the next `session stop`, in its preference file, and one that was deleted only loses its record. `session status` lists the record, and `session stop` names a simulator it could not change with the command that retries it.
-- `on` also sets VoiceOver's volume to zero, and `off` puts back what it was, so a simulator that did start VoiceOver would stay silent.
+- A running app hears the change at once, and one launched later starts with it. `--json` prints `{"version":1,"action":"on","device":"<DEVICE_ID>","platform":"ios","screenReader":"on","previous":"off","service":"VoiceOver","resetBySessionStop":true}`; `action` is `show` for a read, where `previous` is null, and `service` is `TalkBack` on Android.
+- It outlives the command and a reboot, so Offsider records that it turned it on, in the private directory's `screen-reader/` (simulators) or `screen-reader-android/`, before changing it. `session stop` and `shutdown` turn it off only then, and `screen-reader off` drops the record. Already on when you ran it, it stays on: `resetBySessionStop` says which. `session status` lists the record, and `session stop` names a device it could not change with the command that retries it.
 - `doctor --device <DEVICE_ID>` warns `device.screen-reader` while it is on.
-- iOS simulators only. An iPhone, iPad, Android emulator or phone is refused with `not_supported` before anything is sent to it.
+- Refused with `not_supported`, before anything is sent: an iPhone or iPad, and an Android phone that is not a test device, since a screen reader changes what its owner's own touches do and stays on after the cable is pulled.
+
+**An iOS simulator** tells its apps VoiceOver is running without starting it:
+
+- Nothing is spoken on the Mac, no element is selected and nothing is read out. `tap`, `swipe`, `type` and every other input and read work exactly as they do with it off: an app's own response to a screen reader is what you are testing, not VoiceOver's gestures or focus.
+- `on` also sets VoiceOver's volume to zero, and `off` puts back what it was, so a simulator that did start VoiceOver would stay silent.
+- A simulator shut down some other way with a recorded reader still on is put right by the next `session stop`, in its preference file, and one that was deleted only loses its record.
+
+**An Android emulator or test device** runs the real TalkBack:
+
+- `on` adds TalkBack to Android's enabled accessibility services, keeping any that were there, and waits until Android explores by touch (well under a second). `off` takes out only TalkBack.
+- Offsider's input is unchanged. TalkBack takes over a finger on the glass, where a tap only selects and a swipe moves to the next element, but Android delivers an injected touch straight to the app. A phone's input is always injected; an emulator's normally goes through the emulator's own touch screen, so while TalkBack is noted as on Offsider injects it there too. `tap`, `swipe`, `drag`, `gesture`, `touch`, `type` and every read then act as they do with TalkBack off. As on a simulator, you are testing the app's own response to a screen reader, not TalkBack's gestures or focus.
+- TalkBack asks to send notifications each time it starts, over the app under test. `on` grants that permission first when it is not granted, and `off` or `session stop` revokes it again. TalkBack shows no tutorial when it is started this way.
+- An emulator must have been started without sound, as `offsider boot` starts it: one started with `boot --audio`, or by another tool without `-no-audio`, is refused (`not_supported`), so TalkBack never speaks on the Mac. On a test device TalkBack speaks through the phone itself, and Android lets nothing but an accessibility service change that volume.
+- TalkBack must be on the device (`not_supported` otherwise): Google APIs and Google Play emulator images ship it.
+- TalkBack a person turned on is left alone. On an emulator run `screen-reader on` once anyway: it changes nothing but notes that TalkBack is on, so Offsider's input goes past it. Without that, an emulator's tap only selects, as `doctor` warns.
+- A phone that is unplugged with a recorded reader on keeps its record: `session stop` names it, and turns TalkBack off once it is back.
 
 ## Orientation
 

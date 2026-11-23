@@ -185,9 +185,11 @@ extension DeviceAccess {
             let reverses = await AndroidBackend.removeMetroReverses(host: .cli(), serial: udid)
             let postures = await AndroidBackend.resetRecordedPostures(host: .cli(), serial: udid)
             let airplanes = await AndroidBackend.resetRecordedAirplaneModes(host: .cli(), serial: udid)
+            let talkBacks = await AndroidBackend.resetRecordedScreenReaders(host: .cli(), serial: udid)
             return StoppedSessions(
-                stopped: helper + reverses.removed.flatMap(\.ports).map(MetroReverse.label) + (postures.reset.isEmpty ? [] : ["posture override"]) + (airplanes.reset.isEmpty ? [] : ["airplane mode"]),
-                left: DeviceSessionRow.left(reverses: reverses.failed, postures: postures, airplanes: airplanes)
+                stopped: helper + reverses.removed.flatMap(\.ports).map(MetroReverse.label) + (postures.reset.isEmpty ? [] : ["posture override"]) + (airplanes.reset.isEmpty ? [] : ["airplane mode"])
+                    + (talkBacks.reset.isEmpty ? [] : ["screen reader"]),
+                left: DeviceSessionRow.left(reverses: reverses.failed, postures: postures, airplanes: airplanes, talkBacks: talkBacks)
             )
         }
         var stopped: [String] = []

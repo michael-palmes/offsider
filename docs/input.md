@@ -88,7 +88,7 @@ offsider tap --id row-3 --hold 800 --device <DEVICE_ID>
 
 ## Selectors and taps
 
-`offsider screen-reader on` changes nothing here: a simulator tells its apps VoiceOver is running without starting it, so a tap still activates what it lands on and a swipe still scrolls ([Screen reader](device-state.md#screen-reader)).
+On an iOS simulator `offsider screen-reader on` changes nothing here: a simulator tells its apps VoiceOver is running without starting it, so a tap still activates what it lands on and a swipe still scrolls. On Android it starts TalkBack, and Offsider's touches are injected past it, so there too a tap activates and a swipe scrolls; TalkBack someone else turned on makes an emulator's tap only select until `offsider screen-reader on` is run once ([Screen reader](device-state.md#screen-reader)).
 
 ![Four phones: a target on screen is tapped, while a target parked below the screen, one covered by a pushed page and one under the keyboard are each refused and nothing is tapped.](assets/tap-guard.png)
 

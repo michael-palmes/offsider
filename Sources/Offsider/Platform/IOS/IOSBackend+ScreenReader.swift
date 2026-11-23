@@ -2,6 +2,12 @@ import Foundation
 import OffsiderCore
 
 extension IOSBackend: ScreenReaderControlling {
+    var screenReaderService: String { SimulatorScreenReader.service }
+
+    func screenReaderIsRecorded(on id: DeviceID) -> Bool {
+        ScreenReaderRecordStore.privateStore(create: false)?.load(udid: id.rawValue) != nil
+    }
+
     func screenReader(on id: DeviceID) async throws -> Bool {
         try await SimulatorScreenReaders.live(udid: id.rawValue).setting().enabled
     }

@@ -18,7 +18,7 @@ struct SessionCommand: AsyncParsableCommand {
         A USB Android phone keeps each adb reverse rn open set for Metro until stop removes it; stop leaves every other reverse alone. \
         stop also resets a USB foldable phone's posture override that `posture` set, while it is still the one set, \
         and turns off airplane mode only where `offsider airplane on` turned it on; without --device, only on \
-        phones still allowed. It turns off a simulator's screen reader only where `offsider screen-reader on` turned it on. status lists what is recorded for these, sending the phone nothing, so a row can be out of date. \
+        phones still allowed. It turns off a screen reader (a simulator's VoiceOver setting, or TalkBack on Android) only where `offsider screen-reader on` turned it on. status lists what is recorded for these, sending the phone nothing, so a row can be out of date. \
         What stop leaves is named with the command that clears it, and a removal that fails exits non-zero.
         """,
         subcommands: [SessionStatus.self, SessionStop.self]
@@ -123,14 +123,17 @@ struct SessionStop: AsyncParsableCommand {
             !DeviceID(rawValue: phone, platform: .android).isPhysicalAndroidDevice || mayReset(named: serial != nil, gate: DevicePolicyGate.current)(phone)
         })
         let readers = await SimulatorScreenReaders.resetRecorded(device: device)
+        let talkBacks = await AndroidBackend.resetRecordedScreenReaders(host: .cli(), serial: serial, permits: { phone in
+            !DeviceID(rawValue: phone, platform: .android).isPhysicalAndroidDevice || mayReset(named: serial != nil, gate: DevicePolicyGate.current)(phone)
+        })
         let inputs = await SimulatorInputSessions.stop(device: device)
         var recording: (key: DeviceLockKey, ended: Bool, pids: [Int32])?
         if let device { recording = await stopRecording(device: device, serial: serial) }
         let stopped = DeviceSessionRow.stopped(
             runners: runners.map(\.udid), brokers: brokers.map(\.udid), helpers: helpers, inputs: inputs, reverses: reverses.removed, postures: postures.reset, airplanes: airplanes.reset,
-            recordings: recording.flatMap { $0.ended ? [$0.key.id] : nil } ?? [], readers: readers.reset
+            recordings: recording.flatMap { $0.ended ? [$0.key.id] : nil } ?? [], readers: readers.reset + talkBacks.reset
         )
-        let left = DeviceSessionRow.left(reverses: reverses.failed, postures: postures, airplanes: airplanes, readers: readers.failed)
+        let left = DeviceSessionRow.left(reverses: reverses.failed, postures: postures, airplanes: airplanes, readers: readers.failed, talkBacks: talkBacks)
         return (stopped, left, recording.flatMap { $0.ended ? nil : recordingKept($0.key, pids: $0.pids) })
     }
 
@@ -341,7 +344,7 @@ struct DeviceSessionRow: Equatable {
     var screenReader = false
 
     /// `adb reverse tcp:8081`, `posture override`, `airplane mode` and `screen reader`, those recorded.
-    var recordedParts: [String] { (recorded?.parts ?? []) + (screenReader ? ["screen reader"] : []) }
+    var recordedParts: [String] { (recorded?.parts ?? []) + (screenReader && recorded?.screenReader != true ? ["screen reader"] : []) }
 
     static func rows(
         runners: [RunnerSessionRow], brokers: [DeviceSessionStatus], helpers: [WarmHelperStatus] = [], inputs: [HIDBrokerStatus] = [], recorded: [RecordedPhoneState] = [], readers: [String] = []
@@ -424,7 +427,7 @@ struct DeviceSessionRow: Equatable {
                 "broker": row.broker.map { brokerFields($0, formatter) as Any } ?? NSNull(),
                 "helper": row.helper.map { helperFields($0, formatter) as Any } ?? NSNull(),
                 "input": row.input.map { inputFields($0, formatter) as Any } ?? NSNull(),
-                "recorded": row.recordedParts.isEmpty ? NSNull() : ["reverses": row.recorded?.reverses ?? [], "posture": row.recorded?.posture ?? false, "airplane": row.recorded?.airplane ?? false, "screenReader": row.screenReader] as Any,
+                "recorded": row.recordedParts.isEmpty ? NSNull() : ["reverses": row.recorded?.reverses ?? [], "posture": row.recorded?.posture ?? false, "airplane": row.recorded?.airplane ?? false, "screenReader": row.screenReader || row.recorded?.screenReader == true] as Any,
             ]
         }
         let data = (try? JSONSerialization.data(withJSONObject: ["sessions": sessions], options: [.sortedKeys])) ?? Data("{}".utf8)
@@ -561,17 +564,21 @@ struct DeviceSessionRow: Equatable {
         }
     }
 
-    static func left(reverses: [MetroReverseRemoval], postures: RecordResetOutcome, airplanes: RecordResetOutcome = RecordResetOutcome(), readers: [String] = []) -> [Left] {
-        let failing = Set(reverses.map(\.serial) + postures.failed + airplanes.failed + readers).sorted().map { serial in
+    /// `readers` are the simulators whose screen reader stayed on; `talkBacks` is the same for Android, where a device may also be away or no longer allowed.
+    static func left(
+        reverses: [MetroReverseRemoval], postures: RecordResetOutcome, airplanes: RecordResetOutcome = RecordResetOutcome(), readers: [String] = [], talkBacks: RecordResetOutcome = RecordResetOutcome()
+    ) -> [Left] {
+        let failedReaders = readers + talkBacks.failed
+        let failing = Set(reverses.map(\.serial) + postures.failed + airplanes.failed + failedReaders).sorted().map { serial in
             Left(
                 device: serial, reverses: reverses.filter { $0.serial == serial }.flatMap(\.ports), posture: postures.failed.contains(serial), airplane: airplanes.failed.contains(serial),
-                screenReader: readers.contains(serial), why: .failed
+                screenReader: failedReaders.contains(serial), why: .failed
             )
         }
-        func staying(_ posture: [String], _ airplane: [String], _ why: Left.Why) -> [Left] {
-            Set(posture + airplane).sorted().map { Left(device: $0, posture: posture.contains($0), airplane: airplane.contains($0), why: why) }
+        func staying(_ posture: [String], _ airplane: [String], _ reader: [String], _ why: Left.Why) -> [Left] {
+            Set(posture + airplane + reader).sorted().map { Left(device: $0, posture: posture.contains($0), airplane: airplane.contains($0), screenReader: reader.contains($0), why: why) }
         }
-        return failing + staying(postures.notConnected, airplanes.notConnected, .notConnected) + staying(postures.skipped, airplanes.skipped, .notAllowed)
+        return failing + staying(postures.notConnected, airplanes.notConnected, talkBacks.notConnected, .notConnected) + staying(postures.skipped, airplanes.skipped, talkBacks.skipped, .notAllowed)
     }
 
     static func stoppedJSON(_ stopped: [Stopped], clean: [String: Any]? = nil, left: [Left] = [], recordingRunning: Bool = false) -> String {
@@ -592,6 +599,6 @@ struct DeviceSessionRow: Equatable {
 extension RecordedPhoneState {
     /// `adb reverse tcp:8081`, `posture override` and `airplane mode`, as `session status` lists them.
     var parts: [String] {
-        reverses.map(MetroReverse.label) + (posture ? ["posture override"] : []) + (airplane ? ["airplane mode"] : [])
+        reverses.map(MetroReverse.label) + (posture ? ["posture override"] : []) + (airplane ? ["airplane mode"] : []) + (screenReader ? ["screen reader"] : [])
     }
 }

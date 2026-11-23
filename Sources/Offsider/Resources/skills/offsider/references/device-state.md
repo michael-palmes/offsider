@@ -50,11 +50,14 @@ offsider alert choose "Only this time" --app <id> --device <DEVICE_ID>
 - `offsider biometric enrol|unenrol|match|no-match`. Send `match` or `no-match` only while the app shows its Face ID, Touch ID or fingerprint prompt, then check the screen: nothing confirms the app saw it.
 - On iOS enrol first, and `unenrol` afterwards. On Android enrolment is manual (it needs a screen lock), and `biometric` is refused on a phone.
 
-## Screen reader (iOS simulators)
+## Screen reader
 
-- `offsider screen-reader on --device <DEVICE_ID>` tells every app on the simulator that VoiceOver is running, for an app that shows, hides or regroups views for a screen reader; `off` puts it back, and no value reads it (`--json`: `screenReader`, `previous`, `resetBySessionStop`). Read the screen with `describe-ui` after turning it on: the tree can differ.
-- A simulator never starts VoiceOver itself: nothing is spoken, and `tap`, `swipe`, `type` and every read work as usual. Do not double-tap to activate.
-- It stays on across reboots. `session stop --device <DEVICE_ID>` and `shutdown` turn it off only if this command turned it on; `doctor --device` warns `device.screen-reader` while it is on. An iPhone, iPad or Android device is refused (`not_supported`), with nothing sent.
+- `offsider screen-reader on --device <DEVICE_ID>` turns a screen reader on for an app that shows, hides or regroups views for one; `off` puts it back, and no value reads it (`--json`: `screenReader`, `previous`, `service`, `resetBySessionStop`). Read the screen with `describe-ui` after turning it on: the tree can differ.
+- It stays on across reboots. `session stop --device <DEVICE_ID>` and `shutdown` turn it off only if this command turned it on; `doctor --device` warns `device.screen-reader` while it is on.
+- iOS simulator: apps are told VoiceOver is running, but a simulator never starts it. Nothing is spoken, and `tap`, `swipe`, `type` and every read work as usual. Do not double-tap to activate.
+- Android emulator or test device: the real TalkBack runs, and Offsider's touches are injected past it, so `tap`, `swipe`, `type` and every read work as usual. Do not double-tap to activate.
+- If TalkBack was already on, run `screen-reader on` once anyway, or an emulator's tap only selects.
+- Refused (`not_supported`), with nothing sent: an iPhone or iPad, an Android phone that is not a test device, an emulator started with sound (start it with `offsider boot <AVD>`), and a device without TalkBack.
 
 ## Screen, stay awake and unlocking (Android)
 

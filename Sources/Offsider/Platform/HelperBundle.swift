@@ -37,6 +37,7 @@ extension AndroidHost {
         host.displayCacheDirectory = AndroidHost.privateDisplayCache(environment: host.environment)
         host.postureRecordDirectory = AndroidHost.privatePostureRecords
         host.airplaneRecordDirectory = AndroidHost.privateAirplaneRecords
+        host.screenReaderRecordDirectory = AndroidHost.privateScreenReaderRecords
         host.metroReverseDirectory = AndroidHost.privateMetroReverses()
         host.helperBroker = AndroidHost.detachedHelperBroker(environment: host.environment)
         return host
