@@ -7,17 +7,17 @@ import OffsiderCore
 @MainActor
 final class SurfacePixels: TargetPixels {
     private let framebuffer: FBFramebuffer
-    private let holder: SurfaceHolder
+    private let holder: FramebufferSurfaceHolder
     private let pointWidth: Double
 
-    private init(framebuffer: FBFramebuffer, holder: SurfaceHolder, pointWidth: Double) {
+    private init(framebuffer: FBFramebuffer, holder: FramebufferSurfaceHolder, pointWidth: Double) {
         self.framebuffer = framebuffer
         self.holder = holder
         self.pointWidth = pointWidth
     }
 
     static func attach(to framebuffer: FBFramebuffer, pointWidth: Double) -> SurfacePixels? {
-        let holder = SurfaceHolder()
+        let holder = FramebufferSurfaceHolder()
         guard let surface = framebuffer.attach(holder, on: holder.queue) else {
             framebuffer.detach(holder)
             return nil
@@ -47,7 +47,7 @@ final class SurfacePixels: TargetPixels {
     }
 }
 
-private final class SurfaceHolder: NSObject, FBFramebufferConsumer, @unchecked Sendable {
+final class FramebufferSurfaceHolder: NSObject, FBFramebufferConsumer, @unchecked Sendable {
     let queue = DispatchQueue(label: "com.mpalmes.offsider.surface-pixels")
     private let lock = NSLock()
     private var current: IOSurface?
