@@ -461,7 +461,7 @@ struct Type: AsyncParsableCommand, VerifiableCommand {
     @MainActor
     static func confirmLanded(
         _ typed: TypedExpectation, before: String?, target: String, device: DeviceID, clock: PollClock, adb: String? = nil, keys: Bool = false,
-        readTree: @MainActor () async throws -> UITree
+        screenMoved: ((UITree) -> Bool)? = nil, readTree: @MainActor () async throws -> UITree
     ) async throws {
         // Tab alone moves focus, and a field may trim spaces.
         guard typed.judged, typed.text.contains(where: { !$0.isWhitespace }) else { return }
@@ -478,6 +478,7 @@ struct Type: AsyncParsableCommand, VerifiableCommand {
             let keyboard = TextFocus.keyboardHoldingFocus(in: tree)
             let unchanged = !retyped && (field.value ?? "") == (before ?? "")
             let partial = keyboard != nil && TypedExpectation.lacksText(typed.text, before: before, after: field.value)
+            if unchanged, keyboard == nil, screenMoved?(tree) == true { return }
             guard unchanged || partial else { return }
             guard clock.now() < deadline else { throw textNotLandedRefusal(keyboard: keyboard, target: target, device: device, adb: adb, keys: keys) }
             try await clock.sleep(landingPoll)

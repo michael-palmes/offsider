@@ -348,6 +348,7 @@ final class IOSBackend: DeviceBackend {
 
     func openInputSession(for id: DeviceID) async throws -> any InputSession {
         if let session = try await displayInputSession(for: id) {
+            if try Self.keepsInputWarm() { session.onClose = { HIDBroker.startInBackground(simulatorUDID: id.rawValue) } }
             return session
         }
         var startsBroker = false

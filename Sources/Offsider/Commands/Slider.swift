@@ -43,7 +43,7 @@ struct Slider: AsyncParsableCommand {
     @Flag(name: .customLong("allow-offscreen"), help: "Resolve elements whose frame is outside the screen (off by default: selectors prefer on-screen matches).")
     var allowOffscreen: Bool = false
 
-    @Flag(name: .customLong("no-settle"), help: "Set the slider at once, without waiting out a transition an input under 500 ms ago may have started.")
+    @Flag(name: .customLong("no-settle"), help: "Set the slider at once, without waiting out a transition an input, or the slider coming up, under 500 ms ago may have started.")
     var noSettle: Bool = false
 
     @Flag(name: .customLong("allow-covered"), help: "Set the slider even when a hit-test or Android's drawing order finds another element over the point the drag starts from, with a warning; the keyboard still refuses.")

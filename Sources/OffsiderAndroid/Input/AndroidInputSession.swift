@@ -476,14 +476,23 @@ final class AndroidInputSession: InputSession, TextInputSession {
         let total = sends.reduce(0) { $0 + $1.characters }
         var sent = 0
         for send in sends {
-            if send.afterDrain { try await waitForKeys(sent: sent, of: total) }
+            if send.afterDrain { try await waitForKeys(typed: (sent, total)) }
             try await emulator.sendKey(send.event)
             sent += send.characters
         }
     }
 
-    /// Until the guest's dispatcher has taken every key sent, so the next run neither overruns the kernel buffer nor waits long enough to be dropped.
-    private func waitForKeys(sent: Int, of total: Int) async throws {
+    /// Keys sent faster than the guest reads them go in bursts its kernel buffer holds, each once the guest has taken the last.
+    private func sendInBursts(_ steps: [AndroidInputStep], through driver: GrpcInputDriver) async throws {
+        let bursts = AndroidInputStep.keyBursts(steps)
+        for (index, burst) in bursts.enumerated() {
+            if index > 0 { try await waitForKeys(typed: nil) }
+            try await driver.run(burst)
+        }
+    }
+
+    /// Until the guest's dispatcher has taken every key sent, so the next run neither overruns the kernel buffer nor waits to be dropped; `typed` is nil for pressed keys, which are never counted.
+    private func waitForKeys(typed: (sent: Int, total: Int)?) async throws {
         let started = ContinuousClock.now
         var waited = Duration.zero
         var last: (queued: Int, pause: Duration)?
@@ -493,7 +502,9 @@ final class AndroidInputSession: InputSession, TextInputSession {
                 return
             }
             if queued == 0 { return }
-            guard waited < AndroidKeyBacklog.limit, ContinuousClock.now - started < AndroidKeyBacklog.limit else { throw AndroidError.keysNotTaken(device.rawValue, sent: sent, of: total) }
+            guard waited < AndroidKeyBacklog.limit, ContinuousClock.now - started < AndroidKeyBacklog.limit else {
+                throw typed.map { AndroidError.keysNotTaken(device.rawValue, sent: $0.sent, of: $0.total) } ?? AndroidError.pressedKeysNotTaken(device.rawValue)
+            }
             let pause = AndroidKeyBacklog.pause(queued: queued, since: last)
             try await sleep(pause)
             waited += pause
@@ -591,7 +602,7 @@ final class AndroidInputSession: InputSession, TextInputSession {
                         try await shell.run(script, waiting: wait)
                     }
                 case .grpc(let driver):
-                    try await driver.run(part.steps)
+                    try await sendInBursts(part.steps, through: driver)
                 case .helper(let driver):
                     try await driver.run(part.steps)
                 }
@@ -648,6 +659,34 @@ extension AndroidInputStep {
             }
         }
         return runs
+    }
+
+    /// Key events a step sends: a down and an up for a press.
+    var keyEvents: Int {
+        switch self {
+        case .key(.press, _), .button(.press, _): return 2
+        case .key, .button: return 1
+        default: return 0
+        }
+    }
+
+    /// A pause this long lets the guest read each key as it comes.
+    static let drainingPause: TimeInterval = 0.05
+
+    /// Steps cut so keys between pauses shorter than `drainingPause` stay within `AndroidTextPlan.maxEmulatorKeyEvents` a burst.
+    static func keyBursts(_ steps: [AndroidInputStep]) -> [[AndroidInputStep]] {
+        var bursts: [[AndroidInputStep]] = [[]]
+        var events = 0
+        for step in steps {
+            if case .pause(let seconds) = step, seconds >= drainingPause { events = 0 }
+            if step.keyEvents > 0, events + step.keyEvents > AndroidTextPlan.maxEmulatorKeyEvents, !bursts[bursts.count - 1].isEmpty {
+                bursts.append([])
+                events = 0
+            }
+            bursts[bursts.count - 1].append(step)
+            events += step.keyEvents
+        }
+        return bursts
     }
 
     var isMultiTouch: Bool {

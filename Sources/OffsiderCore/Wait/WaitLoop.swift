@@ -330,7 +330,7 @@ public enum WaitLoop {
                 succeededOnce = true
                 otherApp = nil
                 if step.met {
-                    if gone { try await checkApp(state, latest: state.lastTree, sources: sources) }
+                    if gone { try await checkApp(state, latest: state.lastTree, exiting: true, sources: sources) }
                     var outcome = WaitOutcome(met: true, elapsed: sources.now() - start, reason: step.reason, match: step.match, matched: step.matched)
                     outcome.goneBecause = state.goneBecause
                     outcome.sparse = state.sparse
@@ -680,10 +680,10 @@ public enum WaitLoop {
     }
 
     /// Throws when the app the wait began on stopped; see `AppExitCheck`.
-    private static func checkApp(_ state: State, latest: UITree?, sources: WaitSources) async throws {
+    private static func checkApp(_ state: State, latest: UITree?, exiting: Bool = false, sources: WaitSources) async throws {
         guard let check = sources.appExit else { return }
         let first = if let before = sources.appBefore { await before() } else { state.firstApp }
-        try await check.check(first, latest: latest)
+        try await check.check(first, latest: latest, exiting: exiting)
     }
 
     /// One frame for the draw hold; nil when it cannot be read, since pixels never fail a tree wait. Another app in front still counts as that.

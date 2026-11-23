@@ -46,6 +46,134 @@ struct TransitionGuardTests {
         #expect(TransitionGuard.decide(target: Self.apply(y: 650), record: Self.record(applyY: nil, inputAge: -3), now: Self.now) == .recheck(after: .milliseconds(500)))
     }
 
+    /// A read `readAge` ago with no input since, holding Open alone or Open and Apply.
+    static func readRecord(readAge: TimeInterval, withApply: Bool) -> TreeCacheRecord {
+        let open = FakeUI.node(.button, id: "open", label: "Open", frame: FakeUI.frame(20, 100, 350, 44))
+        let roots = FakeUI.tree(withApply ? [open, apply(y: 600)] : [open]).roots
+        return TreeCacheRecord(
+            platform: .ios, device: device.rawValue, command: "tap", writtenAt: now - readAge, treeReadAt: now - readAge, lastInputAt: now - 3, treeRole: .read,
+            appFrame: UITree.applicationFrame(in: roots), roots: roots
+        )
+    }
+
+    @Test("a target a read under 500 ms ago lacked waits out the rest of 500 ms, with no recent input, as its window may still slide in with final frames")
+    func newlyShownTargetWaits() {
+        #expect(TransitionGuard.decide(target: Self.apply(y: 600), record: Self.readRecord(readAge: 0.2, withApply: false), now: Self.now) == .recheck(after: .milliseconds(300)))
+        #expect(TransitionGuard.decide(target: Self.apply(y: 600), record: Self.readRecord(readAge: 0.6, withApply: false), now: Self.now) == .actNow(.noRecentInput))
+        #expect(TransitionGuard.decide(target: Self.apply(y: 600), record: Self.readRecord(readAge: 0.2, withApply: true), now: Self.now) == .actNow(.noRecentInput))
+        var cut = Self.readRecord(readAge: 0.2, withApply: false)
+        cut.truncated = true
+        #expect(TransitionGuard.decide(target: Self.apply(y: 600), record: cut, now: Self.now) == .actNow(.noRecentInput), "a cut read may have stopped short of it")
+    }
+
+    @Test("a target no read since an input under 1.5 s ago listed is unproven; one a read since it held is not")
+    func unprovenSinceInput() {
+        #expect(TransitionGuard.unproven(Self.apply(y: 600), since: Self.record(applyY: nil, inputAge: 0.7), now: Self.now))
+        #expect(!TransitionGuard.unproven(Self.apply(y: 600), since: Self.record(applyY: nil, inputAge: 2), now: Self.now), "an input long ago started nothing still moving")
+        #expect(!TransitionGuard.unproven(Self.apply(y: 600), since: Self.record(applyY: nil, inputAge: nil), now: Self.now))
+        var held = Self.readRecord(readAge: 0.1, withApply: true)
+        held.lastInputAt = Self.now - 0.7
+        #expect(!TransitionGuard.unproven(Self.apply(y: 600), since: held, now: Self.now))
+        var lacked = Self.readRecord(readAge: 0.1, withApply: false)
+        lacked.lastInputAt = Self.now - 0.7
+        #expect(TransitionGuard.unproven(Self.apply(y: 600), since: lacked, now: Self.now))
+    }
+
+    static func pixels(_ shade: UInt8) -> ImageFingerprint {
+        let bytes = [UInt8](repeating: shade, count: 8 * 8 * 4)
+        return bytes.withUnsafeBytes { ImageFingerprint(rgba: $0, width: 8, height: 8, bytesPerRow: 32, columns: 4, rows: 4) }
+    }
+
+    @Test("pixels settle on the first two samples that match, give up at the limit, and fail when they cannot be read")
+    func pixelsStill() async throws {
+        func run(_ shades: [UInt8?]) async throws -> (still: Bool, samples: Int) {
+            var taken = 0, slept = Duration.zero
+            let still = try await TransitionGuard.pixelsStill(elapsed: { slept }, sleep: { slept += $0 }) {
+                defer { taken += 1 }
+                return shades[min(taken, shades.count - 1)].map(Self.pixels)
+            }
+            return (still, taken)
+        }
+        #expect(try await run([1, 1]) == (true, 2))
+        #expect(try await run([1, 2, 3, 3]) == (true, 4))
+        let sliding = try await run(Array(0...40).map { UInt8($0) })
+        #expect(!sliding.still && sliding.samples == 17, "500 ms of 33 ms gaps")
+        #expect(try await run([nil]) == (false, 1))
+    }
+
+    final class ScriptedPixels: TargetPixels {
+        var shades: [UInt8]
+        private(set) var samples = 0
+        private(set) var closed = false
+        init(_ shades: [UInt8]) { self.shades = shades }
+        func fingerprint(of frame: UIFrame) -> ImageFingerprint? {
+            defer { samples += 1 }
+            return TransitionGuardTests.pixels(shades[min(samples, shades.count - 1)])
+        }
+        func close() { closed = true }
+    }
+
+    static func settle(_ record: TreeCacheRecord, pixels: ScriptedPixels) async throws -> (opened: Bool, decision: TransitionDecision?) {
+        var opened = false
+        let environment = TreeCacheEnvironment(directory: { nil }, cacheOn: true, now: { TransitionGuardTests.now }, sleep: { _ in })
+        let target = apply(y: 600)
+        let polled = try await AccessibilityPoller.settled(
+            Polled(value: target, tree: FakeUI.tree([target])), policy: .guarded(record: record), target: { $0 },
+            pixels: { opened = true; return pixels }, logger: OffsiderLogger(), environment: environment, treeFetcher: { FakeUI.tree([target]) }
+        ) { tree, _ in tree.roots.flatMap { $0.flattened() }.first { $0.normalizedID == "apply" }! }
+        return (opened, polled.settledBy)
+    }
+
+    @Test("a target that came up with an input over 500 ms ago waits for its pixels to hold still; one a read since the input held reads no pixels")
+    func pixelSettleOnlyWhenUnproven() async throws {
+        let sliding = ScriptedPixels([1, 2, 3, 3])
+        let unproven = try await Self.settle(Self.record(applyY: nil, inputAge: 0.7), pixels: sliding)
+        #expect(unproven.opened && sliding.samples == 4 && sliding.closed)
+        #expect(unproven.decision == .actNow(.noRecentInput))
+
+        var held = Self.readRecord(readAge: 0.1, withApply: true)
+        held.lastInputAt = Self.now - 0.7
+        let untouched = ScriptedPixels([1])
+        #expect(try await Self.settle(held, pixels: untouched).opened == false)
+        #expect(try await Self.settle(Self.record(applyY: 600, inputAge: 0.1), pixels: untouched).opened == false, "a recent input's own recheck covers it")
+        #expect(untouched.samples == 0)
+    }
+
+    final class PixelBackend: FakeDeviceBackend, TargetPixelReading {
+        let pixels: ScriptedPixels
+        private(set) var asked = 0
+        init(_ tree: UITree, pixels: ScriptedPixels) {
+            self.pixels = pixels
+            super.init(platform: .ios, trees: [tree])
+        }
+        func targetPixels(for id: DeviceID) async -> (any TargetPixels)? {
+            asked += 1
+            return pixels
+        }
+    }
+
+    static func batch(_ steps: [String], on backend: PixelBackend, cachedRecord: TreeCacheRecord) async throws {
+        let context = BatchContext(backend: backend, device: device, axCachePolicy: .perStep, typeSubmissionMode: .chunked, typeChunkSize: 200, cachedRecord: cachedRecord)
+        let output = BatchOutput(json: true, write: { _ in }, writeError: { _ in })
+        let environment = TreeCacheEnvironment(directory: { nil }, cacheOn: true, now: { TransitionGuardTests.now }, sleep: { _ in })
+        try await DispatchTracker.$current.withValue(DispatchTracker()) {
+            try await TreeCacheEnvironment.$current.withValue(environment) {
+                _ = try await Batch.runSteps(steps, context: context, session: backend.session, continueOnError: false, output: output, logger: OffsiderLogger())
+            }
+        }
+    }
+
+    @Test("a batch tap step whose target came up with an input over 500 ms ago reads its pixels; after a batch read that held it, none")
+    func batchPixelSettle() async throws {
+        let unproven = PixelBackend(FakeUI.tree([Self.apply(y: 600)]), pixels: ScriptedPixels([1, 1]))
+        try await Self.batch(["tap --id apply"], on: unproven, cachedRecord: Self.record(applyY: nil, inputAge: 0.7))
+        #expect(unproven.asked == 1 && unproven.pixels.samples == 2)
+
+        let read = PixelBackend(FakeUI.tree([Self.apply(y: 600)]), pixels: ScriptedPixels([1, 1]))
+        try await Self.batch(["describe-ui --summary", "tap --id apply"], on: read, cachedRecord: Self.record(applyY: nil, inputAge: 0.7))
+        #expect(read.asked == 0)
+    }
+
     @Test("no record waits 150 ms")
     func noRecord() {
         #expect(TransitionGuard.decide(target: Self.apply(y: 600), record: nil, now: Self.now) == .recheck(after: .milliseconds(150)))

@@ -450,7 +450,7 @@ struct Wait: AsyncParsableCommand {
     /// Each `--any` selector that matched nothing, with what it came closest to.
     static func explainAny(_ queries: [AccessibilityQuery]) -> (UITree) -> WaitNearMiss? {
         { tree in
-            let misses = queries.compactMap { query in AccessibilityTargetResolver.nearMiss(roots: tree.roots, query: query).map { (query, $0) } }
+            let misses = queries.compactMap { query in (HiddenBranchMiss.nearMiss(query: query, tree: tree) ?? AccessibilityTargetResolver.nearMiss(roots: tree.roots, query: query)).map { (query, $0) } }
             guard !misses.isEmpty else { return nil }
             return WaitNearMiss(
                 summary: misses.map { "\($0.0.selectorDescription): \($0.1.summary)" }.joined(separator: "; "),

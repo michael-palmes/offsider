@@ -49,7 +49,8 @@ Devices: an emulator-<port> whose AVD is one of: ${ALLOWED_AVDS}
          already be installed on the phone (bench-ab never installs).
 Scenarios: ${KNOWN_SCENARIOS}
 Base: --base defaults to the merge base of origin/main and HEAD, built once (release) in a
-      detached worktree under \$TMPDIR/offsider-bench/worktrees. Head is this checkout (release).
+      detached worktree under \$TMPDIR/offsider-bench/worktrees, against frameworks of its own idb pin
+      (this checkout's when the pins match, else its own scripts/build.sh dev). Head is this checkout (release).
 Records: \${OFFSIDER_BENCH_DIR:-\$TMPDIR/offsider-bench}/<UTC timestamp>/ (0700): runs.tsv,
          summary.txt and result.json. Only hashes of stdout are kept, never the output.
 EOF
@@ -181,6 +182,16 @@ release_build() {
 }
 
 IDB_DIR="${IDB_CHECKOUT_DIR:-$REPO/idb_checkout}"
+
+# The idb commit a revision's build script pins; empty when it names none.
+pin_at() {
+  git -C "$REPO" show "$1:scripts/build.sh" 2>/dev/null | sed -n 's/^DEFAULT_IDB_GIT_REF="\([0-9a-f]\{40\}\)"$/\1/p' | head -n 1
+}
+
+# The idb commit a build_products folder was built from, by its evidence file; empty without one.
+built_pin() {
+  sed -n 's/^IDB_SHA=//p' "$1/XCFrameworks/IDB_BUILD_EVIDENCE.txt" 2>/dev/null | head -n 1
+}
 HEAD_SHA="$(git -C "$REPO" rev-parse --short HEAD)"
 DIRTY=false
 [[ -z "$(git -C "$REPO" status --porcelain)" ]] || DIRTY=true
@@ -198,7 +209,10 @@ else
   fi
   BASE_SHA="$(git -C "$REPO" rev-parse --short "$BASE_REF^{commit}")"
   WORKTREE="$BENCH_ROOT/worktrees/$BASE_SHA"
-  if [[ ! -f "$WORKTREE/.bench-built" ]]; then
+  BASE_PIN="$(pin_at "$BASE_SHA")"
+  [[ -n "$BASE_PIN" ]] || die "cannot read the idb pin of the base ($BASE_SHA) from its scripts/build.sh; pass a base build with --base-bin" 2
+  # A base built before its frameworks were checked may have linked this checkout's idb.
+  if [[ ! -f "$WORKTREE/.bench-built" || "$(built_pin "$WORKTREE/build_products")" != "$BASE_PIN" ]]; then
     echo "bench-ab: building base ($BASE_SHA) in release in $WORKTREE" >&2
     if [[ ! -d "$WORKTREE" ]]; then
       (umask 077 && mkdir -p "$BENCH_ROOT/worktrees")
@@ -206,10 +220,19 @@ else
       git -C "$REPO" worktree prune
       git -C "$REPO" worktree add --detach "$WORKTREE" "$BASE_SHA" >&2
     fi
-    if [[ ! -d "$WORKTREE/build_products" ]]; then
-      cp -Rc "$REPO/build_products" "$WORKTREE/build_products" 2>/dev/null || cp -R "$REPO/build_products" "$WORKTREE/build_products"
+    BASE_IDB_DIR="$IDB_DIR"
+    if [[ "$(built_pin "$REPO/build_products")" == "$BASE_PIN" ]]; then
+      if [[ "$(built_pin "$WORKTREE/build_products")" != "$BASE_PIN" ]]; then
+        rm -rf "$WORKTREE/build_products"
+        cp -Rc "$REPO/build_products" "$WORKTREE/build_products" 2>/dev/null || cp -R "$REPO/build_products" "$WORKTREE/build_products"
+      fi
+    else
+      echo "bench-ab: the base pins idb ${BASE_PIN:0:7}, so it gets its own frameworks (scripts/build.sh dev in $WORKTREE)" >&2
+      (cd "$WORKTREE" && scripts/build.sh dev >&2) || die "could not build the base's idb frameworks; run: (cd $WORKTREE && scripts/build.sh dev --verbose)" 1
+      [[ "$(built_pin "$WORKTREE/build_products")" == "$BASE_PIN" ]] || die "the base's frameworks in $WORKTREE/build_products are not idb ${BASE_PIN:0:7}; run: (cd $WORKTREE && scripts/build.sh dev --rebuild)" 1
+      BASE_IDB_DIR="$WORKTREE/idb_checkout"
     fi
-    IDB_CHECKOUT_DIR="$IDB_DIR" release_build "$WORKTREE" >/dev/null
+    IDB_CHECKOUT_DIR="$BASE_IDB_DIR" release_build "$WORKTREE" >/dev/null
     touch "$WORKTREE/.bench-built"
   fi
   BASE_BIN="$(cd "$WORKTREE" && swift build -c release --show-bin-path)/offsider"

@@ -17,7 +17,7 @@ struct KeySequence: AsyncParsableCommand {
         no_focused_field), since keys that reach no field can act as app shortcuts. With a password field focused they are
         refused (exit 64, secure_field_argument), since keycodes stay in shell history; use login or type --stdin. A
         sequence holding a modifier (224 to 231), Return, Tab, arrows and other keys skip that refusal, and Return, Tab,
-        arrows and other keys skip the focus check too. On Android a sequence of only letters, digits, space and
+        arrows and other keys skip the focus check too. On Android and an iOS simulator a sequence of only letters, digits, space and
         punctuation (not the keypad's) is read back from the focused field after the keys: unchanged, it exits 5 (text_not_accepted).
         """
     )
@@ -146,15 +146,26 @@ struct KeySequence: AsyncParsableCommand {
         return text
     }
 
-    /// Keys that spell text on Android, read back from the focused field as `type`'s are; with Return, Delete, arrows or any other key in the sequence, no text can be expected.
+    /// Keys that spell text on Android or an iOS simulator, read back from the focused field as `type`'s are; with Return, Delete, arrows or any other key in the sequence, no text can be expected.
     @MainActor
     static func confirmLanded(_ keycodes: [Int], focus: Type.FocusCheck, backend: any DeviceBackend, device: DeviceID, clock: PollClock = .live) async throws {
-        guard device.platform == .android, let text = spelledText(keycodes), let target = Type.focusedTarget(focus.field) else { return }
+        guard !device.isPhysicalIOSDevice, let text = spelledText(keycodes), let target = Type.focusedTarget(focus.field) else { return }
         let typed = TypedExpectation(
             text: text, replacing: false, field: focus.field, query: nil, secure: focus.secure == .secure || focus.field?.isSecure == true, ignoringText: false
         )
-        try await Type.confirmLanded(typed, before: focus.field?.value, target: target, device: device, clock: clock, adb: Type.adbPath(of: backend), keys: true) {
+        let typedCharacters = Set(text.lowercased().filter { !$0.isWhitespace })
+        let moved = focus.tree.map { Set(shownText($0)) }.map { before in
+            { (tree: UITree) in shownText(tree).contains { !before.contains($0) && $0.lowercased().contains(where: typedCharacters.contains) } }
+        }
+        try await Type.confirmLanded(
+            typed, before: focus.field?.value, target: target, device: device, clock: clock, adb: Type.adbPath(of: backend), keys: true, screenMoved: moved
+        ) {
             try await backend.accessibilityTree(for: device)
         }
+    }
+
+    /// The app's labels and values outside its text fields and the keyboard: new text there holding a typed character shows keys a field took and cleared.
+    static func shownText(_ tree: UITree) -> [String] {
+        tree.roots.filter { $0.role != .keyboard }.flatMap { $0.flattened() }.filter { !$0.role.isTextInput }.map { "\($0.label ?? "")\u{1F}\($0.value ?? "")" }
     }
 } 

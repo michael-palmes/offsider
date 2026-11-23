@@ -146,6 +146,86 @@ struct BenchScriptTests {
         #expect(object["device"] as? String == "SM_F000B (USB phone)")
     }
 
+    /// A throwaway repository whose base pins idb `basePin` and head `headPin`, with head's frameworks built; the base's `build.sh dev` records its call and builds its own pin.
+    static func pinnedRepo(basePin: String, headPin: String) throws -> (root: URL, base: String) {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("offsider-bench-repo-\(UUID().uuidString)")
+        let scripts = root.appendingPathComponent("scripts")
+        try FileManager.default.createDirectory(at: scripts.appendingPathComponent("lib"), withIntermediateDirectories: true)
+        try FileManager.default.copyItem(atPath: script, toPath: scripts.appendingPathComponent("bench-ab.sh").path)
+        try FileManager.default.copyItem(at: repo.appendingPathComponent("scripts/lib/adb.sh"), to: scripts.appendingPathComponent("lib/adb.sh"))
+        func git(_ arguments: [String]) throws -> String { try Self.git(arguments, in: root) }
+        func writeBuildScript(pin: String) throws {
+            let body = """
+            #!/bin/bash
+            DEFAULT_IDB_GIT_REF="\(pin)"
+            echo "$@" >> "$(pwd)/build-calls"
+            mkdir -p build_products/XCFrameworks idb_checkout
+            echo "IDB_SHA=\(pin)" > build_products/XCFrameworks/IDB_BUILD_EVIDENCE.txt
+            """
+            let path = scripts.appendingPathComponent("build.sh")
+            try Data(body.utf8).write(to: path)
+            try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: path.path)
+        }
+        try Data("build_products/\nidb_checkout/\nbuild-calls\n".utf8).write(to: root.appendingPathComponent(".gitignore"))
+        _ = try git(["init", "-q"])
+        try writeBuildScript(pin: basePin)
+        _ = try git(["add", "-A"])
+        _ = try git(["commit", "-q", "-m", "base"])
+        let base = try git(["rev-parse", "--short", "HEAD"])
+        try writeBuildScript(pin: headPin)
+        _ = try git(["commit", "-q", "-am", "head"])
+        try FileManager.default.createDirectory(at: root.appendingPathComponent("build_products/XCFrameworks"), withIntermediateDirectories: true)
+        try Data("IDB_SHA=\(headPin)\n".utf8).write(to: root.appendingPathComponent("build_products/XCFrameworks/IDB_BUILD_EVIDENCE.txt"))
+        return (root, base)
+    }
+
+    @discardableResult
+    static func git(_ arguments: [String], in root: URL) throws -> String {
+        let process = Process()
+        let pipe = Pipe()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
+        process.arguments = ["-C", root.path, "-c", "user.name=Bench", "-c", "user.email=bench@example.invalid", "-c", "commit.gpgsign=false"] + arguments
+        process.standardOutput = pipe
+        try process.run()
+        process.waitUntilExit()
+        return String(decoding: pipe.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    static func runBase(in repo: URL, base: String, sdk: URL, benchDir: URL) async throws -> ProcessCaptureResult {
+        var environment = ProcessInfo.processInfo.environment
+        environment["ANDROID_HOME"] = sdk.path
+        environment["OFFSIDER_BENCH_DIR"] = benchDir.path
+        return try await ProcessCapture.run(
+            executable: "/bin/bash",
+            arguments: [repo.appendingPathComponent("scripts/bench-ab.sh").path, "--device", "emulator-5556", "--scenario", "android-describe",
+                        "--base", base, "--head-bin", "/usr/bin/true", "--pairs", "1", "--warmup", "0"],
+            environment: environment,
+            timeout: 120
+        )
+    }
+
+    static let pinA = String(repeating: "a", count: 40)
+    static let pinB = String(repeating: "b", count: 40)
+
+    @Test("a base that pins another idb builds its own frameworks in its worktree, never this checkout's", arguments: [true, false])
+    func baseGetsItsOwnFrameworks(samePin: Bool) async throws {
+        let sdk = try Self.fakeSDK(avd: "Offsider_E2E")
+        let (repo, base) = try Self.pinnedRepo(basePin: samePin ? Self.pinB : Self.pinA, headPin: Self.pinB)
+        let bench = FileManager.default.temporaryDirectory.appendingPathComponent("offsider-bench-pins-\(UUID().uuidString)")
+        defer {
+            for url in [sdk, repo, bench] { try? FileManager.default.removeItem(at: url) }
+        }
+
+        let result = try await Self.runBase(in: repo, base: base, sdk: sdk, benchDir: bench)
+
+        let worktree = bench.appendingPathComponent("worktrees/\(base)")
+        let evidence = try String(contentsOf: worktree.appendingPathComponent("build_products/XCFrameworks/IDB_BUILD_EVIDENCE.txt"), encoding: .utf8)
+        let calls = (try? String(contentsOf: worktree.appendingPathComponent("build-calls"), encoding: .utf8)) ?? ""
+        #expect(evidence.contains("IDB_SHA=\(samePin ? Self.pinB : Self.pinA)"), "stderr: \(result.stderr)")
+        #expect(calls.contains("dev") == !samePin, "build calls: \(calls)")
+        #expect(result.stderr.contains("gets its own frameworks") == !samePin)
+    }
+
     @Test("every scenario the script knows has a command")
     func scenariosHaveCommands() throws {
         let source = try String(contentsOfFile: Self.script, encoding: .utf8)

@@ -313,8 +313,8 @@ struct TypeKeyboardFocusTests {
         try await Self.type(["abc"], on: StagedBackend([tree]))
     }
 
-    static func batch(_ steps: [String], on backend: StagedBackend) async throws -> [String] {
-        let context = BatchContext(backend: backend, device: Self.android, axCachePolicy: .perStep, typeSubmissionMode: .chunked, typeChunkSize: 200)
+    static func batch(_ steps: [String], on backend: StagedBackend, device: DeviceID = android) async throws -> [String] {
+        let context = BatchContext(backend: backend, device: device, axCachePolicy: .perStep, typeSubmissionMode: .chunked, typeChunkSize: 200)
         var lines: [String] = []
         let output = BatchOutput(json: true, write: { lines.append($0) }, writeError: { _ in })
         do {
@@ -344,11 +344,51 @@ struct TypeKeyboardFocusTests {
         #expect(landed.text.calls.last == .typeText("abc"))
     }
 
-    static func keySequence(_ keycodes: String, on backend: StagedBackend) async throws {
+    static func keySequence(_ keycodes: String, on backend: StagedBackend, device: DeviceID = android) async throws {
         try await TypeIntoTests.quiet {
-            try await KeySequence.parse(["--keycodes", keycodes, "--delay", "0", "--device", Self.android.rawValue])
-                .perform(on: DeviceRouter.Route(backend: backend, device: Self.android), logger: OffsiderLogger())
+            try await KeySequence.parse(["--keycodes", keycodes, "--delay", "0", "--device", device.rawValue])
+                .perform(on: DeviceRouter.Route(backend: backend, device: device), logger: OffsiderLogger())
         }
+    }
+
+    @Test("a key-sequence that spells text on an iOS simulator is read back too: keys the field never showed are exit 5 text_not_accepted")
+    func keySequenceReadBackOnSimulator() async throws {
+        let unchanged = StagedBackend([Self.form(focused: "second-field", platform: .ios)], platform: .ios)
+        let error = await #expect(throws: CLIError.self) { try await Self.keySequence("11,8,15,15,18", on: unchanged, device: Self.simulator) }
+        #expect(error?.reason == .textNotAccepted)
+        #expect(error?.userFacingDescription.contains("Pressed the keys into id=second-field") == true && error?.userFacingDescription.contains("hello") == false)
+
+        let landed = StagedBackend([Self.form(focused: "second-field", platform: .ios), Self.form(focused: "second-field", value: "hello", platform: .ios)], platform: .ios)
+        try await Self.keySequence("11,8,15,15,18", on: landed, device: Self.simulator)
+    }
+
+    @Test("keys into a field that clears itself pass when new text on the screen shows them, not when a clock ticks, on an iOS simulator and Android alike", arguments: [DevicePlatform.ios, .android])
+    func keySequenceIntoClearingField(platform: DevicePlatform) async throws {
+        var shown = Self.form(focused: "second-field", platform: platform)
+        shown.roots.append(FakeUI.node(.text, label: "Keys: h e l l o", frame: FakeUI.frame(20, 400, 360, 30), platform: platform))
+        let backend = StagedBackend([Self.form(focused: "second-field", platform: platform), shown], platform: platform)
+        try await Self.keySequence("11,8,15,15,18", on: backend, device: platform == .ios ? Self.simulator : Self.android)
+
+        var ticking = Self.form(focused: "second-field", platform: platform)
+        ticking.roots.append(FakeUI.node(.text, label: "00:01", frame: FakeUI.frame(20, 400, 360, 30), platform: platform))
+        var ticked = Self.form(focused: "second-field", platform: platform)
+        ticked.roots.append(FakeUI.node(.text, label: "00:02", frame: FakeUI.frame(20, 400, 360, 30), platform: platform))
+        let clock = StagedBackend([ticking, ticked], platform: platform)
+        let error = await #expect(throws: CLIError.self, "a clock that ticked shows none of the keys") {
+            try await Self.keySequence("11,8,15,15,18", on: clock, device: platform == .ios ? Self.simulator : Self.android)
+        }
+        #expect(error?.reason == .textNotAccepted)
+    }
+
+    @Test("a batch key-sequence step that spells text on an iOS simulator is read back, and fails when the field never showed the keys")
+    func batchKeySequenceOnSimulator() async throws {
+        let unchanged = StagedBackend([Self.form(focused: "second-field", platform: .ios)], platform: .ios)
+        let failed = try await Self.batch(["key-sequence --keycodes 11,8,15,15,18 --delay 0"], on: unchanged, device: Self.simulator)
+        #expect(failed.contains("threw") && failed.joined().contains("text_not_accepted"), "\(failed)")
+
+        let landed = StagedBackend([Self.form(focused: "second-field", platform: .ios), Self.form(focused: "second-field", value: "hello", platform: .ios)], platform: .ios)
+        let passed = try await Self.batch(["key-sequence --keycodes 11,8,15,15,18 --delay 0"], on: landed, device: Self.simulator)
+        #expect(!passed.contains("threw"), "\(passed)")
     }
 
     @Test("a key-sequence that spells text is read back as type is: keys the tutorial took are exit 5 text_not_accepted")
