@@ -245,7 +245,7 @@ struct AuditTrailTests {
                 samples.append(clock_gettime_nsec_np(CLOCK_UPTIME_RAW) - start)
             }
             let median = samples.sorted()[samples.count / 2]
-            #expect(median < 1_000_000, "the median record took \(median / 1000) µs")
+            #expect(median < AuditFixtures.costBudget, "the median record took \(median / 1000) µs")
         }
     }
 }

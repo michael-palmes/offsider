@@ -252,7 +252,7 @@ struct AuditHookTests {
     func liveStampCost() throws {
         let home = try makePolicyHome()
         defer { try? FileManager.default.removeItem(atPath: home) }
-        let trail = AuditTrail(directory: UserConfigDirectory(home: home), stamp: AuditTrail.live.stamp)
+        let trail = AuditTrail(directory: UserConfigDirectory(home: home), stamp: { AuditTrail.liveStamp(command: "tap") })
         let event = AuditEvent(.ran, platform: .android, key: PolicyFixtures.serial, app: Self.pin, exit: 0)
         trail.record([event])
         var samples: [UInt64] = []
@@ -262,9 +262,13 @@ struct AuditHookTests {
             samples.append(clock_gettime_nsec_np(CLOCK_UPTIME_RAW) - start)
         }
         let median = samples.sorted()[samples.count / 2]
-        #expect(median < 1_000_000, "the median record took \(median / 1000) µs")
+        #expect(median < AuditFixtures.costBudget, "the median record took \(median / 1000) µs")
         let stamped = try #require(try AuditFixtures.objects(home).first)
-        #expect(stamped["version"] as? String == VERSION && stamped["pid"] as? Int == Int(getpid()) && stamped["command"] as? String == "unknown")
+        let version = stamped["version"] as? String
+        #expect(version == VERSION || version == "unknown", "a build from a checkout with no tags has no version to record")
+        #expect(stamped["pid"] as? Int == Int(getpid()))
+        #expect(stamped["command"] as? String == "tap")
+        #expect(AuditTrail.liveStamp(command: "typed words").command == nil)
     }
 
     @Test("the session is the owner a lease would record, found without walking past it")

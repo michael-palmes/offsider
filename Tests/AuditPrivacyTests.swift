@@ -22,6 +22,9 @@ final class AuditCapture: @unchecked Sendable {
 enum AuditFixtures {
     static let playground = "com.mpalmes.offsider.playground.rn"
 
+    /// One millisecond in nanoseconds, with room for a sanitizer's slower runtime.
+    static let costBudget: UInt64 = 1_000_000 * (["__asan_init", "__tsan_init"].contains { (symbol: String) in dlsym(UnsafeMutableRawPointer(bitPattern: -2), symbol) != nil } ? 50 : 1)
+
     /// A trail in a temporary home, with a fixed clock and no unified log.
     static func trail(
         home: String, now: Date = PolicyFixtures.now, command: String? = "tap", version: String = "0.18.0", session: AuditRecord.Session? = AuditRecord.Session(pid: 77, name: "node"),
