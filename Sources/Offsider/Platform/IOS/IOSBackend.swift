@@ -19,6 +19,8 @@ final class IOSBackend: DeviceBackend {
     private var bootMarkers: [String: String] = [:]
     /// Kept for the command, so a resend or a turn back pays no second activation floor.
     private var vendorLinks: [String: SimulatorDTUHID] = [:]
+    /// How video frames are taken, per device, settled at the first frame.
+    let videoState = SimulatorVideoState()
     private static var isPrepared = false
 
     init(logger: OffsiderLogger) {

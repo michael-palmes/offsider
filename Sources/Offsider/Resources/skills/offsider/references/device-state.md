@@ -50,6 +50,12 @@ offsider alert choose "Only this time" --app <id> --device <DEVICE_ID>
 - `offsider biometric enrol|unenrol|match|no-match`. Send `match` or `no-match` only while the app shows its Face ID, Touch ID or fingerprint prompt, then check the screen: nothing confirms the app saw it.
 - On iOS enrol first, and `unenrol` afterwards. On Android enrolment is manual (it needs a screen lock), and `biometric` is refused on a phone.
 
+## Screen reader (iOS simulators)
+
+- `offsider screen-reader on --device <DEVICE_ID>` tells every app on the simulator that VoiceOver is running, for an app that shows, hides or regroups views for a screen reader; `off` puts it back, and no value reads it (`--json`: `screenReader`, `previous`, `resetBySessionStop`). Read the screen with `describe-ui` after turning it on: the tree can differ.
+- A simulator never starts VoiceOver itself: nothing is spoken, and `tap`, `swipe`, `type` and every read work as usual. Do not double-tap to activate.
+- It stays on across reboots. `session stop --device <DEVICE_ID>` and `shutdown` turn it off only if this command turned it on; `doctor --device` warns `device.screen-reader` while it is on. An iPhone, iPad or Android device is refused (`not_supported`), with nothing sent.
+
 ## Screen, stay awake and unlocking (Android)
 
 `sleep` turns a screen off and `wake` turns it back on, on an Android device or an allowed iPhone or iPad (`guide ios-device`). `stay-awake`, `wake --unlock` and `unlock-code` refuse an iOS simulator or iPhone as `not_supported`, and `sleep` refuses a simulator: simulators never sleep or lock by themselves, and an iPhone or iPad is unlocked by hand. After `button lock` on a simulator, `offsider wake --device <UDID>` clears its lock screen: it reads SpringBoard's lock state, presses Home at most twice only while the lock screen is up, and checks it has gone. Never swipe up to unlock a simulator: that can freeze its display.

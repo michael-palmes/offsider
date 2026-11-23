@@ -45,6 +45,7 @@ struct Doctor: AsyncParsableCommand {
                 managed: DevicePolicyGate.current.policy().managed.present
             )
         }
+        if let target, let policy { Self.noteAudit(policy, target: target, fromEnvironment: deviceOption.source == .environment) }
         if let target, let policy, !policy.allowed {
             report = Self.policyReport(policy, target: target, source: deviceOption.source)
         } else if let id = deviceOption.id, case .androidSerial(let port) = DeviceIDClassifier.classify(id),
@@ -72,6 +73,7 @@ struct Doctor: AsyncParsableCommand {
             logger: OffsiderLogger()
         )
         let android = AndroidDoctorProbe(host: host)
+        async let screenReader = Self.screenReaderCheck(udid: udid)
         var result = await runner.run()
         var facts = await android.run(deviceID: nil).host
         var fixes: [DoctorFixResult] = []
@@ -87,6 +89,10 @@ struct Doctor: AsyncParsableCommand {
         let device = udid.map { udid in
             DoctorDevice(id: udid, platform: "ios", name: result.booted.first { $0.udid == udid }?.name, kind: "simulator", source: deviceOption.source?.rawValue)
         }
+        var deviceChecks: [DoctorCheckResult] = []
+        if let udid {
+            deviceChecks = [Self.leaseCheck(platform: .ios, key: udid.uppercased(), lockID: udid)] + Self.recordingCheck(platform: .ios, lockID: udid) + (await screenReader)
+        }
         return DoctorReport(
             offsiderVersion: VERSION,
             udid: udid,
@@ -94,7 +100,7 @@ struct Doctor: AsyncParsableCommand {
             xcode: result.xcode,
             booted: result.booted,
             android: AndroidDoctorRules.summary(facts, device: nil),
-            checks: result.checks + AndroidDoctorRules.hostChecks(facts, deviceNamed: false) + (udid.map { [Self.leaseCheck(platform: .ios, key: $0.uppercased(), lockID: $0)] + Self.recordingCheck(platform: .ios, lockID: $0) } ?? []),
+            checks: result.checks + AndroidDoctorRules.hostChecks(facts, deviceNamed: false) + deviceChecks,
             fixes: fixes
         )
     }
@@ -155,11 +161,35 @@ struct Doctor: AsyncParsableCommand {
         )
     }
 
+    /// `doctor --device` on a physical device reads it, or is refused, so it leaves an audit record like any other command.
+    static func noteAudit(
+        _ policy: DoctorPolicy, target: (platform: DevicePlatform, key: String), fromEnvironment: Bool = false, gate: DevicePolicyGate = .current,
+        audit: CommandAudit = CommandScope.current.audit
+    ) {
+        let current = gate.policy()
+        let whole = current.list.entry(platform: target.platform, key: target.key).map(current.drivesWhole) ?? false
+        if let refusal = policy.refusal {
+            var named = true
+            if fromEnvironment, case .allowed = gate.decision(platform: target.platform, key: target.key) { named = false }
+            audit.noteRefusal(platform: target.platform, key: target.key, code: named ? refusal : SessionAudit.notNamed, testDevice: whole, managed: policy.managed)
+        } else {
+            audit.note(platform: target.platform, key: target.key, testDevice: whole, managed: policy.managed)
+        }
+    }
+
+    /// The trail `doctor` checks; tests point it at a temporary home.
+    @TaskLocal static var auditTrail: @Sendable () -> AuditTrail = { .live }
+
+    static func auditChecks() -> [DoctorCheckResult] {
+        let trail = auditTrail()
+        return AuditDoctorRules.checks(file: trail.fileState(), chain: trail.verify())
+    }
+
     /// Host facts and checks join every report, after its own checks.
     static func withHost(_ report: DoctorReport, _ host: HostFacts) -> DoctorReport {
         DoctorReport(
             offsiderVersion: report.offsiderVersion, udid: report.udid, device: report.device, xcode: report.xcode, booted: report.booted,
-            android: report.android, checks: report.checks + HostDoctorRules.checks(host) + [BundleIntegrity.doctorCheck(), Init.doctorCheck(), DoctorCheckResult(id: .installRules, verdict: Init.rulesDoctorVerdict()), Init.denyRulesDoctorCheck()] + Self.managedChecks(), fixes: report.fixes, host: host, policy: report.policy
+            android: report.android, checks: report.checks + HostDoctorRules.checks(host) + auditChecks() + [BundleIntegrity.doctorCheck(), Init.doctorCheck(), DoctorCheckResult(id: .installRules, verdict: Init.rulesDoctorVerdict()), Init.denyRulesDoctorCheck()] + Self.managedChecks(), fixes: report.fixes, host: host, policy: report.policy
         )
     }
 
@@ -290,6 +320,24 @@ struct Doctor: AsyncParsableCommand {
             id: .deviceRecording, status: .warn,
             detail: "A recording is running\(pids.isEmpty ? "" : " (pid \(pids))"). Logins and typed passwords wait until it stops.",
             hint: "offsider session stop --device \(lockID)"
+        )]
+    }
+
+    /// `device.screen-reader`, only while one is on for a simulator, as apps then show what they show a screen reader user; one that is off cannot be read, so its record speaks.
+    static func screenReaderCheck(
+        udid: String?,
+        recorded: @Sendable (String) -> Bool = { ScreenReaderRecordStore.privateStore(create: false)?.load(udid: $0) != nil },
+        read: @Sendable (String) async -> Bool? = { try? await SimulatorScreenReaders.live(udid: $0, timeout: 5).setting().enabled }
+    ) async -> [DoctorCheckResult] {
+        guard let udid else { return [] }
+        let record = recorded(udid)
+        let live = await read(udid)
+        guard live ?? record else { return [] }
+        let undo = "Offsider \(record ? "turned it on, so `session stop` turns it off" : "did not turn it on, so `session stop` leaves it")."
+        return [DoctorCheckResult(
+            id: .deviceScreenReader, status: .warn,
+            detail: live == true ? "Apps are told VoiceOver is on. \(undo)" : "Offsider turned VoiceOver on for apps and has not turned it off. It could not be read now.",
+            hint: live == true ? "offsider screen-reader off --device \(udid)" : "offsider session stop --device \(udid)"
         )]
     }
 

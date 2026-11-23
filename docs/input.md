@@ -88,6 +88,8 @@ offsider tap --id row-3 --hold 800 --device <DEVICE_ID>
 
 ## Selectors and taps
 
+`offsider screen-reader on` changes nothing here: a simulator tells its apps VoiceOver is running without starting it, so a tap still activates what it lands on and a swipe still scrolls ([Screen reader](device-state.md#screen-reader)).
+
 ![Four phones: a target on screen is tapped, while a target parked below the screen, one covered by a pushed page and one under the keyboard are each refused and nothing is tapped.](assets/tap-guard.png)
 
 `--id`, `--label` and `--value` match `id`, `label` and `value`. Selectors prefer matches that are on screen: apps often keep views mounted off screen (a closed bottom sheet parked below the screen, rows below the fold), and a match whose frame lies outside the screen fails with an error naming its frame instead of tapping nothing. `--wait-timeout` waits for it to come on screen, and `--allow-offscreen` resolves it anyway. A match inside the screen but above or below what its scroll view or list shows, such as a row below the fold under a footer pinned beneath the list, fails with `target_off_screen` ("below the fold of its scroll view; scroll first"); a scroll view's sides never clip, since a carousel may draw cards past them. An element that is only partly on screen, or partly showing in its scroll view, is tapped at the centre of its visible part. When a `wait` or `assert` selector misses on an iOS simulator, the reason adds what a read at the screen's centre found (a presented view or a likely stale frame).
