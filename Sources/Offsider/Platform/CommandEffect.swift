@@ -47,6 +47,7 @@ enum CommandEffect: String, Sendable {
         "app prefs": .none,
         "app broadcast": .input,
         "airplane": .input,
+        "screen-reader": .input,
         "status-bar": .input,
         "biometric": .input,
         "unlock-code": .none,

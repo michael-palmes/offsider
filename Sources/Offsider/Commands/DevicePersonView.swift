@@ -253,7 +253,7 @@ enum DevicePersonView {
             if let helper = row.helper { add("helper", warm(helper.state), idle(helper.idleFor, of: helper.idleSeconds, state: helper.state)) }
             if let runner = row.runner { add("runner", runnerStatus(runner), runnerDetail(runner, now: now)) }
             if let broker = row.broker { add("broker", brokerStatus(broker), brokerDetail(broker)) }
-            for part in row.recorded?.parts ?? [] { add(part, .skip, "recorded, may be gone") }
+            for part in row.recordedParts { add(part, .skip, "recorded, may be gone") }
         }
         guard !table.isEmpty else { return [.header(Header(.session, title, ["none running"])), .prose("Nothing is running.")] }
         let counts: [(RowStatus, String)] = [(.on, "running"), (.starting, "starting"), (.warn, "not answering"), (.off, "stopped"), (.skip, "recorded")]

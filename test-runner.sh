@@ -332,6 +332,7 @@ SIMULATOR_SUITES=(
     "PresentedSheetTests"
     "RecordVideoTests"
     "RunE2ETests"
+    "ScreenReaderE2ETests"
     "StreamVideoDebugTests"
     "StreamVideoTests"
     "SwipeTests"

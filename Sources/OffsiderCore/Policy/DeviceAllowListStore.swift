@@ -22,9 +22,12 @@ public struct DeviceAllowListStore: Sendable {
     public static let maximumBytes = 64 * 1024
 
     let directory: UserConfigDirectory
+    /// Where each allowance written or taken away is recorded; nil in tests that only read and write the list.
+    public let audit: AuditTrail?
 
-    public init(directory: UserConfigDirectory) {
+    public init(directory: UserConfigDirectory, audit: AuditTrail? = nil) {
         self.directory = directory
+        self.audit = audit
     }
 
     /// The file's path, for messages.
@@ -65,7 +68,30 @@ public struct DeviceAllowListStore: Sendable {
         let data = next.encoded()
         try OffsiderPrivateDirectory.writeAtomically(data, named: Self.fileName, in: folder, uid: directory.uid)
         try commit(data)
+        if let audit {
+            audit.record(Self.auditEvents(from: current.list, to: next, now: audit.now(), managed: audit.managed()))
+        }
         return DeviceAllowListSnapshot(list: next, data: data)
+    }
+
+    /// `allowed` for each entry that is new or changed and `withdrawn` for each that left; one pruned after it expired says so.
+    static func auditEvents(from old: DeviceAllowList, to new: DeviceAllowList, now: Date, managed: Bool) -> [AuditEvent] {
+        let allowed = new.entries.filter { old.entry(platform: $0.platform, key: $0.key) != $0 }.map { entry in
+            AuditEvent(
+                .allowed, platform: entry.platform, key: entry.key, app: entry.pinnedApps.count == 1 ? entry.pinnedApps[0] : nil,
+                testDevice: entry.testDevice, managed: managed, expires: entry.expires, pins: entry.pinnedApps.count
+            )
+        }
+        let withdrawn = old.entries.filter { new.entry(platform: $0.platform, key: $0.key) == nil }.map { entry in
+            AuditEvent(
+                .withdrawn, platform: entry.platform, key: entry.key, refusal: entry.isActive(now: now) ? nil : DeviceRefusal.expired(now).code,
+                testDevice: entry.testDevice, managed: managed, pins: entry.pinnedApps.count
+            )
+        }
+        let newer = old.newer.filter { new.newerEntry(platform: $0.platform, key: $0.key) == nil && new.entry(platform: $0.platform, key: $0.key) == nil }.map {
+            AuditEvent(.withdrawn, platform: $0.platform, key: $0.key, managed: managed)
+        }
+        return allowed + withdrawn + newer
     }
 
     private func read(in folder: String) throws -> DeviceAllowListSnapshot {

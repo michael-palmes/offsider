@@ -55,7 +55,7 @@ Most of it lives in a private folder, `offsider-<uid>/` in your per-user temp fo
 | Evidence run records | `runs/` | While the run lasts | `offsider run stop` |
 | Sign-in records, never a username or password | `signins/` | Until the next `login` | `offsider credential signed-out` |
 | An Android device's auto-rotate before Offsider turned it | `orientation/` | Until it is turned back | `offsider orientation portrait --device <ID>` |
-| A fold, Metro reverse or airplane mode Offsider set on a device | `postures/`, `reverses/`, `airplane/` | Until it is undone | `offsider session stop` |
+| A fold, Metro reverse, airplane mode or screen reader Offsider set on a device | `postures/`, `reverses/`, `airplane/`, `screen-reader/` | Until it is undone | `offsider session stop` |
 | The pid of the adb server last found to be yours | `adb/` | Until another server answers | Delete the folder |
 | A foldable phone's active panel and size | `displays/` | While the phone's state matches | `OFFSIDER_DISPLAY_CACHE=off` stops it |
 | A failed unlock code marker, never the code | `unlock/` | Until the device is unlocked or the code saved again | `offsider unlock-code set` or `offsider unlock-code remove` |
@@ -64,6 +64,8 @@ Most of it lives in a private folder, `offsider-<uid>/` in your per-user temp fo
 | Broker sockets and logs: the iPhone session broker, `android-<hash>.sock` and `.log` for the Android warm helper, `simulator-<hash>.log` for the simulator input broker | `sessions/` | While a broker runs; logs emptied past 5 MB | `offsider session stop` |
 | The simulator input broker's sockets | `$TMPDIR/offsider-hid-<uid>/` | While a broker runs | `offsider session stop` |
 | The phones you allowed, beside a lock file | `~/.config/offsider/allowed-devices.json` and `.allowed-devices.lock` | Each entry until it expires | `offsider devices remove` |
+| The audit trail of physical-device commands: which command, which device (hashed), which app, how it ended; never arguments, typed text or anything from the screen ([Audit trail](device-access.md#audit-trail)) | `~/.config/offsider/device-audit.log` and `device-audit.log.1` | Until you delete them; 5 MB each, the older one replaced | Delete both files |
+| The same records, with the app id hashed | The Mac's unified log (subsystem `com.mpalmes.offsider`, category `device-audit`) | As long as macOS keeps its log store | Nothing to do; it leaves the Mac only in a sysdiagnose you choose to send |
 | The allow-list's seal | Login Keychain (`com.mpalmes.offsider.devices`) | As long as the list | `offsider devices remove` rewrites it |
 | The app guard rules you approved, beside a lock file, and their seal | `~/.config/offsider/guards.json` and `.guards.lock`; the seal in the login Keychain (`com.mpalmes.offsider.guards`) | Until removed | No command yet: delete the files and the Keychain item together (the file alone holds its apps until you approve again) |
 | Test logins and their links between apps | Login Keychain, never synced | Until removed | `offsider credential remove` |
@@ -86,7 +88,7 @@ rm -rf "$(getconf DARWIN_USER_TEMP_DIR)offsider-$(id -u)"
 | --- | --- | --- | --- |
 | The Android helper, Offsider's own code | `/data/local/tmp/offsider-helper-<hash>.dex` on the device | Until a newer helper replaces it | `adb -s <serial> shell rm /data/local/tmp/offsider-helper-*.dex` |
 | The iPhone runner apps | The iPhone or iPad | Until removed | `offsider session stop --device <UDID> --clean` |
-| Settings a command changed: appearance, text size, permissions and permission prompt answers, status bar, stay awake, airplane mode, posture | The device | Until reset | Each command's reset ([Device state](device-state.md)) |
+| Settings a command changed: appearance, text size, permissions and permission prompt answers, status bar, stay awake, airplane mode, screen reader, posture | The device | Until reset | Each command's reset ([Device state](device-state.md)) |
 | The runner's App IDs and profiles, and a device registration if you chose a team in `devices add` or ran `--register-device` | Your Apple team | Until removed there | Certificates, Identifiers & Profiles on the Apple developer site |
 
 ## Phones and tablets
