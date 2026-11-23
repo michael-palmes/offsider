@@ -40,7 +40,7 @@ struct AppInstallE2ETests {
         do {
             let removed = try Self.object(try await Self.offsider("app uninstall --app \(Self.playground) --json"))
             #expect(removed["wasInstalled"] as? Bool == true)
-            let info = try await Self.offsider("app info --app \(Self.playground)")
+            let info = try await Self.offsider("app info --app \(Self.playground) --json")
             #expect(info.exitCode == 1 && (info.stdout + info.stderr).contains("app_not_installed"))
             let again = try Self.object(try await Self.offsider("app uninstall --app \(Self.playground) --json"))
             #expect(again["wasInstalled"] as? Bool == false)
@@ -67,19 +67,19 @@ struct AppInstallE2ETests {
         let copy = try await Self.playgroundCopy()
         defer { try? FileManager.default.removeItem(at: copy.deletingLastPathComponent()) }
 
-        let mismatch = try await Self.offsider("app install \(Self.quote(copy.path)) --app com.example.other")
+        let mismatch = try await Self.offsider("app install \(Self.quote(copy.path)) --app com.example.other --json")
         #expect(mismatch.exitCode == 1 && (mismatch.stdout + mismatch.stderr).contains("package_mismatch"))
 
         let plist = copy.appendingPathComponent("Info.plist")
         var values = try #require(try PropertyListSerialization.propertyList(from: Data(contentsOf: plist), format: nil) as? [String: Any])
         values["CFBundleSupportedPlatforms"] = ["iPhoneOS"]
         try PropertyListSerialization.data(fromPropertyList: values, format: .binary, options: 0).write(to: plist)
-        let device = try await Self.offsider("app install \(Self.quote(copy.path))")
+        let device = try await Self.offsider("app install \(Self.quote(copy.path)) --json")
         #expect(device.exitCode == 1 && (device.stdout + device.stderr).contains("bundle_unreadable") && (device.stdout + device.stderr).contains("device build"))
 
         let archive = copy.deletingLastPathComponent().appendingPathComponent("OffsiderPlayground.ipa")
         try Data("x".utf8).write(to: archive)
-        let ipa = try await Self.offsider("app install \(Self.quote(archive.path))")
+        let ipa = try await Self.offsider("app install \(Self.quote(archive.path)) --json")
         #expect(ipa.exitCode == 1 && (ipa.stdout + ipa.stderr).contains("bundle_unreadable"))
 
         #expect(try await Self.offsider("app info --app \(Self.playground)").exitCode == 0, "the playground is still installed")

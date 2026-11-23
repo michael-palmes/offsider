@@ -23,7 +23,7 @@ struct IOSDeviceAppInstallE2ETests {
     func simulatorBuild() async throws {
         let bundle = try Self.bundle(id: IOSDeviceE2E.playgroundBundleID, platform: "iPhoneSimulator")
         defer { try? FileManager.default.removeItem(at: bundle.deletingLastPathComponent()) }
-        let result = try await IOSDeviceE2E.offsider("app install \(IOSDeviceE2E.quote(bundle.path)) --app \(IOSDeviceE2E.playgroundBundleID)")
+        let result = try await IOSDeviceE2E.offsider("app install \(IOSDeviceE2E.quote(bundle.path)) --app \(IOSDeviceE2E.playgroundBundleID) --json")
         #expect(result.exitCode == 1 && (result.stdout + result.stderr).contains("bundle_unreadable"))
     }
 
@@ -31,7 +31,7 @@ struct IOSDeviceAppInstallE2ETests {
     func mismatch() async throws {
         let bundle = try Self.bundle(id: "com.example.other", platform: "iPhoneOS")
         defer { try? FileManager.default.removeItem(at: bundle.deletingLastPathComponent()) }
-        let result = try await IOSDeviceE2E.offsider("app install \(IOSDeviceE2E.quote(bundle.path)) --app \(IOSDeviceE2E.playgroundBundleID)")
+        let result = try await IOSDeviceE2E.offsider("app install \(IOSDeviceE2E.quote(bundle.path)) --app \(IOSDeviceE2E.playgroundBundleID) --json")
         #expect(result.exitCode == 1 && (result.stdout + result.stderr).contains("package_mismatch"))
     }
 }

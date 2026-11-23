@@ -140,13 +140,13 @@ public enum AppBundleStaging {
     /// The clone's size, after every nested `.app` and `.appex` proved to belong to `app`. A link may only point inside the clone, so nothing checked here can change afterwards.
     private static func contents(of path: String, app: String, shown: String) throws(AppLifecycleError) -> Int {
         let keys: [URLResourceKey] = [.isDirectoryKey, .isSymbolicLinkKey, .isRegularFileKey, .fileSizeKey]
-        guard let root = resolved(path), let walker = FileManager.default.enumerator(at: URL(fileURLWithPath: path, isDirectory: true), includingPropertiesForKeys: keys) else {
+        guard let root = resolved(path), let walker = FileManager.default.enumerator(at: URL(fileURLWithPath: root, isDirectory: true), includingPropertiesForKeys: keys) else {
             throw AppLifecycleError(.bundleUnreadable, "Offsider could not list its copy of \(shown), so nothing was sent.")
         }
         var bytes = 0
         for case let item as URL in walker {
             let values = try? item.resourceValues(forKeys: Set(keys))
-            let inner = TerminalText.field(String(item.path.dropFirst(path.count + 1)))
+            let inner = TerminalText.field(String(item.path.dropFirst(root.count + 1)))
             if values?.isSymbolicLink == true {
                 guard let target = resolved(item.path), target.hasPrefix(root + "/") else {
                     throw AppLifecycleError(.bundleUnreadable, "\(inner) in \(shown) is a link that leaves the app or points nowhere, so nothing was sent. Build the app again without it.")

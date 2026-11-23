@@ -13,8 +13,7 @@ extension AppTarget {
     }
 }
 
-/// An App Store or TestFlight copy on a phone in personal use holds a person's own data and saved logins. A development build installed
-/// over it takes those over, and removing it clears the way for one, so both wait for a person; a test device and a simulator hold nothing personal.
+/// An App Store or TestFlight copy on a phone in personal use holds a person's data and saved logins, so replacing or removing it waits for a person.
 enum AppStoreCopyGate {
     enum Step {
         case install

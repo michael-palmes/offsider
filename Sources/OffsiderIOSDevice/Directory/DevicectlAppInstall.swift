@@ -26,20 +26,21 @@ public enum DevicectlAppInstall {
         return ids.isEmpty ? nil : ids
     }
 
-    /// Why the device refused, in its own words first, with the fix for the reasons Offsider knows.
+    /// Why the device refused, in its own words first, with the fix for the reasons Offsider knows. Codes and whole phrases only, as the text can quote an app's name.
     public static func refusal(_ cause: CoreDeviceErrorInfo?, stderr: String, app: String, device: String) -> AppLifecycleError {
         let line = stderr.split(whereSeparator: \.isNewline).first.map { String($0).trimmingCharacters(in: .whitespaces) }
         let said = TerminalText.line(cause?.rootCause ?? line ?? "devicectl gave no reason", cap: 300)
         let words = ((cause?.chain.compactMap(\.description) ?? []) + [stderr]).joined(separator: " ").lowercased()
+        let has: ([String]) -> Bool = { $0.contains(where: words.contains) }
         let fix: String
-        if ["minimum", "newer version of ios", "newer version of ipados", "os version", "osversiontoolow"].contains(where: words.contains) {
-            fix = "Its iOS is older than the build's deployment target: lower the target, or update the device."
-        } else if ["not enough space", "no space", "storage", "disk space"].contains(where: words.contains) {
-            fix = "Free some space on the device, then run the same command again."
-        } else if ["provisioning profile", "0xe8008015", "0xe8008012", "0xe8008011"].contains(where: words.contains) {
+        if has(["0xe8008015", "0xe8008012", "0xe8008011", "provisioning profile"]) {
             fix = "No valid provisioning profile covers this device: a person adds it to the team in Xcode (Window > Devices and Simulators), then the app is built again."
-        } else if ["code signature", "codesign", "not signed", "entitlement", "integrity could not be verified", "0xe800801c", "0xe8008016", "0xe8008018"].contains(where: words.contains) {
+        } else if has(["0xe800801c", "0xe8008016", "0xe8008018", "code signature", "no code signature", "not signed", "integrity could not be verified"]) {
             fix = "Its code signature was refused: build and sign it again in Xcode for this device."
+        } else if has(["requires a newer version of ios", "requires a newer version of ipados", "minimum os version", "osversiontoolow"]) {
+            fix = "Its iOS is older than the build's deployment target: lower the target, or update the device."
+        } else if has(["not enough space", "no space left", "not enough storage", "insufficient storage", "disk space"]) {
+            fix = "Free some space on the device, then run the same command again."
         } else {
             fix = "Run `offsider doctor --device \(device)` to check the device."
         }

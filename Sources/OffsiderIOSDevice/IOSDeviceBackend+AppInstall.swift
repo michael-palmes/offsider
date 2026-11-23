@@ -8,7 +8,7 @@ extension IOSDeviceBackend: AppBundleManaging {
         let udid = id.rawValue
         try await requireWired(id)
         let root = host.privateRoot
-        let clone = try await host.timing.measure("install.clone") { try AppBundleStaging.clone(bundle, as: app, root: root) }
+        let clone = try await host.timing.measure("install.clone") { try await Task.detached { try AppBundleStaging.clone(bundle, as: app, root: root) }.value }
         defer { clone.remove() }
         if let refusal = AppProvisioning.refusal(ProvisioningProfile.coverage(inBundle: clone.path), udid: udid, bundle: TerminalText.field(bundle.name), now: Date()) {
             throw refusal
@@ -27,7 +27,7 @@ extension IOSDeviceBackend: AppBundleManaging {
             throw try refusal(result, label: "device install app", app: app, on: id)
         }
         let elapsed = ContinuousClock.now - started
-        try await requireInstalled(app, reported: DevicectlAppInstall.installedIDs(Data(result.stdout.utf8)), on: id)
+        try await requireInstalled(app, reported: DevicectlAppInstall.installedIDs(Data(result.stdout.utf8)), replaced: existing != nil, on: id)
         return AppInstall(
             app: app, replaced: existing != nil, bytes: clone.bytes,
             milliseconds: Int(elapsed.components.seconds * 1000 + elapsed.components.attoseconds / 1_000_000_000_000_000)
@@ -59,11 +59,15 @@ extension IOSDeviceBackend: AppBundleManaging {
         }
     }
 
-    /// The device's own word on what it installed. Anything but the allowed app is removed at once; a reply that names nothing is settled by reading the app back.
-    private func requireInstalled(_ app: String, reported: [String]?, on id: DeviceID) async throws {
+    /// The device's own word on what it installed. Anything but the allowed app is removed at once. A reply that names nothing is settled by reading the app back, which proves an install only where no copy was there before.
+    private func requireInstalled(_ app: String, reported: [String]?, replaced: Bool, on id: DeviceID) async throws {
         guard let reported else {
+            let check = "Check with `offsider app info --app \(app) --device \(id.rawValue)`."
+            guard !replaced else {
+                throw AppLifecycleError(.installFailed, "\(id.rawValue) took the app but did not say what it installed, so the copy of \(app) there may be the old one. \(check)")
+            }
             guard try await installedCopy(of: app, on: id) != nil else {
-                throw AppLifecycleError(.installFailed, "\(id.rawValue) took the app but gave no answer, and does not list \(app). Check with `offsider app info --app \(app) --device \(id.rawValue)`.")
+                throw AppLifecycleError(.installFailed, "\(id.rawValue) took the app but gave no answer, and does not list \(app). \(check)")
             }
             return
         }

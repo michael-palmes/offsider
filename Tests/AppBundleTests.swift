@@ -160,6 +160,7 @@ struct AppBundleTests {
         let error = #expect(throws: AppLifecycleError.self) { _ = try AppBundleStaging.clone(bundle, as: Self.app, root: fixture.privateRoot) }
         #expect(error?.kind == .packageMismatch)
         #expect(error?.message.contains(id) == true && error?.message.contains("Nothing was sent") == true)
+        #expect(error?.message.contains("\"\(nestedPath)\" in ") == true, "\(error?.message ?? "")")
         #expect(fixture.clones.isEmpty)
     }
 

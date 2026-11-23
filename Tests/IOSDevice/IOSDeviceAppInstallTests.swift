@@ -136,7 +136,7 @@ struct IOSDeviceAppInstallTests {
         #expect(setup.fixture.clones.isEmpty)
     }
 
-    @Test("an install whose reply names no app is settled by reading the app back")
+    @Test("an install whose reply names no app is settled by reading the app back, which proves nothing when a copy was already there")
     func replyNamesNothing() async throws {
         let listed = try Setup([:], queued: ["apps": [Self.noCopy, Self.copy(developer: true)], "install app": [Self.reply("{}")]])
         defer { listed.fixture.remove() }
@@ -149,6 +149,13 @@ struct IOSDeviceAppInstallTests {
         }
         #expect(error?.kind == .installFailed && error?.message.contains("offsider app info --app \(Self.app)") == true)
         #expect(missing.uninstalls.isEmpty)
+
+        let replaced = try Setup(["apps": Self.copy(developer: true), "install app": Self.reply("{}")])
+        defer { replaced.fixture.remove() }
+        let unsure = await #expect(throws: AppLifecycleError.self) {
+            _ = try await replaced.backend.installBundle(try replaced.bundle(), as: Self.app, on: Self.phone) { _ in }
+        }
+        #expect(unsure?.kind == .installFailed && unsure?.message.contains("may be the old one") == true)
     }
 
     @Test("a refusal from the device is install_failed in its own words, with the fix for the reasons Offsider knows", arguments: [
@@ -157,6 +164,8 @@ struct IOSDeviceAppInstallTests {
         ("There is not enough space on the device to install this app.", "Free some space"),
         ("The app requires a newer version of iOS than this device has.", "older than the build's deployment target"),
         ("The device made up a reason nobody has seen.", "offsider doctor --device"),
+        ("Unable to install Cloud Storage Minimum: 0xe800801c (No code signature found.)", "code signature was refused"),
+        ("Unable to install Cloud Storage Minimum.", "offsider doctor --device"),
     ])
     func mappedRefusals(reason: String, fix: String) async throws {
         let setup = try Setup(["apps": Self.noCopy, "install app": Self.refused(reason)])

@@ -7,7 +7,7 @@ extension IOSBackend: AppBundleManaging {
 
     func installBundle(_ bundle: AppBundle, as app: String, on id: DeviceID, replacing: (InstalledAppCopy) async throws -> Void) async throws -> AppInstall {
         let bundleID = try ExpoDevClient.validate(appID: app)
-        let clone = try AppBundleStaging.clone(bundle, as: bundleID)
+        let clone = try await Task.detached { try AppBundleStaging.clone(bundle, as: bundleID) }.value
         defer { clone.remove() }
         let existing = try await installedCopy(of: bundleID, on: id)
         if let existing { try await replacing(existing) }
@@ -38,13 +38,14 @@ extension IOSBackend: AppBundleManaging {
         return AppUninstall(app: bundleID, wasInstalled: true)
     }
 
+    /// `simctl get_app_container` fails with "No such file" for an app that is not installed, whatever `appinfo` prints for one.
     private func installedCopy(of bundleID: String, on id: DeviceID) async throws -> InstalledAppCopy? {
-        do {
-            _ = try await appInfo(bundleID, on: id)
-            return InstalledAppCopy(app: bundleID, builtByDeveloper: true)
-        } catch let error as AppLifecycleError where error.kind == .notInstalled {
-            return nil
+        let result = try await Self.simctl(ExpoDevClient.iosAppContainerArguments(udid: id.rawValue, bundleID: bundleID, container: "app"))
+        if result.status == 0 { return InstalledAppCopy(app: bundleID, builtByDeveloper: true) }
+        guard SimulatorApps.notInstalled(stderr: result.stderr) else {
+            throw AppLifecycleError(.failed, "Simulator \(id.rawValue) did not say whether \(bundleID) is installed: \(Self.reason(result)).")
         }
+        return nil
     }
 
     private static func reason(_ result: ProcessCaptureResult) -> String {

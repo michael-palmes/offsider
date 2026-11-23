@@ -51,7 +51,7 @@ Most of it lives in a private folder, `offsider-<uid>/` in your per-user temp fo
 | Screenshots taken with no `--output` inside a git checkout | `captures/` | Until you delete them | Delete them |
 | The last Cloudflare Turnstile state per device, never page content | `turnstile/` | A day | It sweeps itself |
 | Device locks | `locks/` | While a command runs | Nothing to do |
-| The checked copy of an iOS app `app install` is sending (a clone, so it takes no extra disk) | `installs/` | While the install runs; one a killed command left goes within the hour, at the next install | Nothing to do |
+| The checked copy of an iOS app `app install` is sending (a clone that takes no extra disk on the same APFS volume, else a full copy) | `installs/` | While the install runs; one a killed command left goes within the hour, at the next install | Nothing to do |
 | Leases | `leases/` | Until the lease expires | `offsider lease release --device <ID>` |
 | Evidence run records | `runs/` | While the run lasts | `offsider run stop` |
 | Sign-in records, never a username or password | `signins/` | Until the next `login` | `offsider credential signed-out` |
