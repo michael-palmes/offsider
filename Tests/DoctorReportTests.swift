@@ -135,6 +135,8 @@ struct DoctorReportTests {
             "device.recording",
             "device.screen-reader",
             "device.policy",
+            "audit.file",
+            "audit.chain",
             "host.load",
             "host.disk",
             "host.sessions",

@@ -56,9 +56,9 @@ struct DevicePolicyGate: Sendable {
 }
 
 enum DevicePolicySources {
-    /// `~/.config/offsider/allowed-devices.json` from the password database's home; nil when there is none.
+    /// `~/.config/offsider/allowed-devices.json` from the password database's home; nil when there is none. Each change it writes reaches the audit trail.
     static func store() -> DeviceAllowListStore? {
-        UserConfigDirectory.live().map(DeviceAllowListStore.init(directory:))
+        UserConfigDirectory.live().map { DeviceAllowListStore(directory: $0, audit: .live) }
     }
 }
 

@@ -25,6 +25,7 @@ struct AndroidSessionServe: AsyncParsableCommand {
         // Read before anything else, while the executable on disk is still the one running.
         let requirement = try PeerCodeIdentity.ownRequirement()
         let serial = device.trimmingCharacters(in: .whitespaces)
+        var allowance: DeviceAllowance?
         // Gated again here, before anything reaches the device, since anything can start this entry point directly.
         switch DeviceIDClassifier.classify(serial) {
         case .androidSerial:
@@ -33,7 +34,7 @@ struct AndroidSessionServe: AsyncParsableCommand {
             guard ProcessInfo.processInfo.environment["OFFSIDER_ANDROID_SESSION"]?.lowercased() == "on" else {
                 throw CLIError(errorDescription: "A USB phone keeps its helper warm only with OFFSIDER_ANDROID_SESSION=on.", reason: .usage)
             }
-            _ = try DeviceRouter.requireAllowed(platform: .android, key: serial, rawID: serial, gate: DevicePolicyGate.current)
+            allowance = try DeviceRouter.requireAllowed(platform: .android, key: serial, rawID: serial, gate: DevicePolicyGate.current)
         default:
             throw CLIError(errorDescription: "\(serial) is not an Android emulator or USB phone serial.", reason: .invalidDeviceID)
         }
@@ -62,7 +63,39 @@ struct AndroidSessionServe: AsyncParsableCommand {
             return source
         }
         defer { signals.forEach { $0.cancel() } }
+        var watch: Task<Void, Never>?
+        if let allowance {
+            let audit = CommandScope.current.audit
+            SessionAudit.noteBroker(allowance, policy: DevicePolicyGate.current.policy(), audit: audit)
+            watch = Task { @MainActor in
+                await Self.watchAllowance(serial: serial, gate: DeviceSessionServe.freshGate, audit: audit) { code in
+                    log(.info, "Stopping: \(serial) is no longer allowed (\(code))")
+                    broker.requestStop()
+                }
+            }
+        }
+        defer { watch?.cancel() }
         try await broker.run()
         await backend.close()
+    }
+
+    /// How often a phone's warm helper asks whether the phone is still allowed, as the iPhone broker does.
+    static let recheckInterval: Duration = .seconds(30)
+
+    /// Reads the allow-list, its seal and managed policy afresh every `interval`; the first refusal is noted for the audit trail and stops the helper.
+    @MainActor
+    static func watchAllowance(
+        serial: String, gate: DevicePolicyGate, interval: Duration = recheckInterval, audit: CommandAudit,
+        sleep: @Sendable (Duration) async -> Void = { try? await Task.sleep(for: $0) }, stop: @MainActor (String) -> Void
+    ) async {
+        while !Task.isCancelled {
+            await sleep(interval)
+            guard !Task.isCancelled else { return }
+            let refusal = await Task.detached { SessionAudit.noteLapse(platform: .android, key: serial, gate: gate, audit: audit) }.value
+            if let refusal {
+                stop(refusal.code)
+                return
+            }
+        }
     }
 }

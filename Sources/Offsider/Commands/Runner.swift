@@ -57,6 +57,7 @@ struct RunnerBuildCommand: AsyncParsableCommand {
             try await PersonPresence.confirm(reason: "register the iPhone or iPad \(udid) with your Apple developer team")
         }
         let route = try await DeviceRouter.route(udid, logger: OffsiderLogger())
+        if registerDevice, let allowance = route.allowance { CommandScope.current.audit.mark(.registration, platform: .ios, key: allowance.key) }
         guard let backend = route.backend as? IOSDeviceBackend else {
             throw CLIError(errorDescription: "runner build is for a physical iPhone or iPad, and \(udid) is not one.", reason: .usage)
         }
@@ -146,6 +147,7 @@ struct RunnerStop: AsyncParsableCommand {
             }
             return (records.map(\.udid), cleaned)
         }
+        SessionAudit.noteStopped(stopped + [cleanUDID].compactMap { $0 })
         if json {
             var object: [String: Any] = ["stopped": stopped]
             if let cleaned { object["clean"] = RunnerSessions.cleanFields(cleaned) }
