@@ -71,7 +71,7 @@ enum EmulatorKeyRegistry {
             return Array(chosen)
         }
         for path in paths {
-            unlink(path)
+            unsafe unlink(path)
         }
     }
 }
@@ -124,7 +124,7 @@ final class EmulatorJWTSigner: Sendable {
 
     /// Idempotent.
     func remove() {
-        unlink(keyPath)
+        unsafe unlink(keyPath)
         EmulatorKeyRegistry.unregister(keyPath)
     }
 
@@ -135,7 +135,7 @@ final class EmulatorJWTSigner: Sendable {
             let digits = name.dropFirst("offsider-".count).prefix { $0.isASCII && $0.isNumber }
             guard let pid = Int32(digits), name.dropFirst("offsider-".count + digits.count).hasPrefix("-"),
                   !host.isProcessAlive(pid) else { continue }
-            unlink((directory as NSString).appendingPathComponent(name))
+            unsafe unlink((directory as NSString).appendingPathComponent(name))
         }
     }
 }

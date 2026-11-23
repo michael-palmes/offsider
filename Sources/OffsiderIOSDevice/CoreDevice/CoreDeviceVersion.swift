@@ -53,9 +53,9 @@ public struct CoreDeviceVersion: Comparable, CustomStringConvertible, Sendable {
         for component in components {
             xpc_array_append_value(array, xpc_uint64_create(UInt64(max(component, 0))))
         }
-        xpc_dictionary_set_value(version, "components", array)
-        xpc_dictionary_set_int64(version, "originalComponentsCount", Int64(components.count))
-        xpc_dictionary_set_string(version, "stringValue", description)
+        unsafe xpc_dictionary_set_value(version, "components", array)
+        unsafe xpc_dictionary_set_int64(version, "originalComponentsCount", Int64(components.count))
+        unsafe xpc_dictionary_set_string(version, "stringValue", description)
         return version
     }
 }

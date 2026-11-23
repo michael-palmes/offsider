@@ -316,7 +316,7 @@ public enum LogRedactor {
                 let close = closingQuote(first, in: source, from: valueStart + 1)
                 let inner = source.substring(with: NSRange(location: valueStart + 1, length: close - valueStart - 1))
                 if !inner.isEmpty, !isMarker(inner) { count += 1 }
-                output.append(String(utf16CodeUnits: [first], count: 1))
+                unsafe output.append(String(utf16CodeUnits: [first], count: 1))
                 output.append(inner.isEmpty || isMarker(inner) ? inner : marker)
                 cursor = close
                 continue

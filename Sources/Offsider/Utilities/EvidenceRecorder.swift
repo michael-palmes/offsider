@@ -124,15 +124,16 @@ final class EvidenceRecorder {
     private func noteEndedRun(in environment: EvidenceRunEnvironment) {
         guard !notedEndedRun else { return }
         notedEndedRun = true
-        guard let dir = RunRegistry.endedWithSession(in: environment) else { return }
-        Console.current.notice(Self.endedRunNotice(dir: dir))
+        guard let ended = RunRegistry.endedRun(in: environment) else { return }
+        Console.current.notice(Self.endedRunNotice(dir: ended.dir, expired: ended.expired))
     }
 
-    nonisolated static func endedRunNotice(dir: String) -> Notice {
+    nonisolated static func endedRunNotice(dir: String, expired: Bool = false) -> Notice {
         let start = RunRegistry.startCommand(dir)
+        let how = expired ? "expired" : "ended with its session"
         return .note(
-            "Not recorded: the run in \(TerminalText.homePath(dir)) ended with its session",
-            agent: "The run in \(dir) ended with its session, so this capture is not in it; `\(start)` carries on its numbering.",
+            "Not recorded: the run in \(TerminalText.homePath(dir)) \(how)",
+            agent: "The run in \(dir) \(how), so this capture is not in it; `\(start)` carries on its numbering.",
             see: start, label: "Try"
         )
     }

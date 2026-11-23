@@ -50,11 +50,11 @@ struct RunnerLogWatch {
     }
 
     private mutating func readAppended(maxBytes: Int) -> Data {
-        let descriptor = Darwin.open(path, O_RDONLY | O_CLOEXEC | O_NOFOLLOW)
+        let descriptor = unsafe Darwin.open(path, O_RDONLY | O_CLOEXEC | O_NOFOLLOW)
         guard descriptor >= 0 else { return Data() }
         defer { Darwin.close(descriptor) }
         var info = stat()
-        guard fstat(descriptor, &info) == 0, (info.st_mode & S_IFMT) == S_IFREG, info.st_uid == getuid() else { return Data() }
+        guard unsafe fstat(descriptor, &info) == 0, (info.st_mode & S_IFMT) == S_IFREG, info.st_uid == getuid() else { return Data() }
         if info.st_size < offset {
             offset = 0
             carry = Data()
@@ -62,7 +62,7 @@ struct RunnerLogWatch {
         let count = Int(min(info.st_size - offset, off_t(maxBytes)))
         guard count > 0 else { return Data() }
         var data = Data(count: count)
-        let read = data.withUnsafeMutableBytes { pread(descriptor, $0.baseAddress, count, offset) }
+        let read = unsafe data.withUnsafeMutableBytes { unsafe pread(descriptor, $0.baseAddress, count, offset) }
         guard read > 0 else { return Data() }
         offset += off_t(read)
         return data.prefix(read)

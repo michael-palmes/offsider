@@ -43,10 +43,10 @@ public struct LoopbackRunnerTransport: RunnerTransport {
 
     public func exchange(method: String, path: String, token: String, body: Data?, timeout: TimeInterval) throws -> UsbmuxHTTPResponse {
         let descriptor = CloseOnExecSocket.make(AF_INET, SOCK_STREAM)
-        guard descriptor >= 0 else { throw UsbmuxError.socketUnavailable(String(cString: strerror(errno))) }
+        guard descriptor >= 0 else { throw unsafe UsbmuxError.socketUnavailable(String(cString: strerror(errno))) }
         defer { Darwin.close(descriptor) }
         var noSigPipe: Int32 = 1
-        setsockopt(descriptor, SOL_SOCKET, SO_NOSIGPIPE, &noSigPipe, socklen_t(MemoryLayout<Int32>.size))
+        unsafe setsockopt(descriptor, SOL_SOCKET, SO_NOSIGPIPE, &noSigPipe, socklen_t(MemoryLayout<Int32>.size))
         UsbmuxHTTP.setTimeout(descriptor, seconds: timeout)
         var address = sockaddr_in()
         address.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)
@@ -54,7 +54,7 @@ public struct LoopbackRunnerTransport: RunnerTransport {
         address.sin_port = port.bigEndian
         address.sin_addr.s_addr = in_addr_t(INADDR_LOOPBACK).bigEndian
         let status = withUnsafePointer(to: &address) {
-            $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { Darwin.connect(descriptor, $0, socklen_t(MemoryLayout<sockaddr_in>.size)) }
+            unsafe $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { unsafe Darwin.connect(descriptor, $0, socklen_t(MemoryLayout<sockaddr_in>.size)) }
         }
         guard status == 0 else { throw UsbmuxError.result(3) }
         return try UsbmuxHTTP.exchange(on: descriptor, method: method, path: path, token: token, body: body)

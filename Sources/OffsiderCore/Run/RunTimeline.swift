@@ -91,16 +91,18 @@ public struct RunStatusEntry: Equatable, Sendable {
     public let startedAt: Date
     public let owner: ProcessIdentity?
     public let files: Int
-    /// `owner-exited` for a run ended because its session went away.
+    /// `owner-exited` for a run ended because its session went away, `expired` for one past its expiry.
     public let endedBy: String?
+    public let expires: Date?
 
-    public init(dir: String, label: String?, startedAt: Date, owner: ProcessIdentity?, files: Int, endedBy: String? = nil) {
+    public init(dir: String, label: String?, startedAt: Date, owner: ProcessIdentity?, files: Int, endedBy: String? = nil, expires: Date? = nil) {
         self.dir = dir
         self.label = label
         self.startedAt = startedAt
         self.owner = owner
         self.files = files
         self.endedBy = endedBy
+        self.expires = expires
     }
 
     func json(timeZone: TimeZone) -> OrderedJSON {
@@ -111,6 +113,7 @@ public struct RunStatusEntry: Equatable, Sendable {
             ("owner", .optional(owner) { .object([("pid", .integer(Int($0.pid))), ("name", .string($0.name))]) }),
             ("files", .integer(files)),
             ("endedBy", .optional(endedBy, OrderedJSON.string)),
+            ("expires", .optional(expires) { .string(RunClock.iso($0, timeZone: timeZone)) }),
         ])
     }
 
@@ -127,10 +130,19 @@ public struct RunStatusEntry: Equatable, Sendable {
     public func text(timeZone: TimeZone = .current) -> String {
         let name = label.map { "Run \"\($0)\"" } ?? "Run"
         if let endedBy {
-            return "\(name) in \(dir) ended: \(endedBy == "owner-exited" ? "the session that started it has exited" : endedBy)."
+            return "\(name) in \(dir) ended: \(Self.reason(endedBy))."
         }
         let owner = self.owner.map { " (\($0.name) \($0.pid))" } ?? ""
-        return "\(name) in \(dir) since \(RunClock.clock(startedAt, separator: ":", timeZone: timeZone)): \(RunTimeline.count(files, "file"))\(owner)"
+        let until = expires.map { ", expires \(RunClock.iso($0, timeZone: timeZone))" } ?? ""
+        return "\(name) in \(dir) since \(RunClock.clock(startedAt, separator: ":", timeZone: timeZone)): \(RunTimeline.count(files, "file"))\(owner)\(until)"
+    }
+
+    static func reason(_ endedBy: String) -> String {
+        switch endedBy {
+        case "owner-exited": return "the session that started it has exited"
+        case "expired": return "it expired; its folder is kept"
+        default: return endedBy
+        }
     }
 }
 
@@ -144,6 +156,7 @@ extension RunState {
             ("startedAt", .string(RunClock.iso(startedAt, timeZone: timeZone))),
             ("next", .integer(next)),
             ("continued", .bool(continued)),
+            ("expires", .optional(expires) { .string(RunClock.iso($0, timeZone: timeZone)) }),
             ("masks", .object([
                 ("secure", .bool(masks.secure)),
                 ("emails", .bool(masks.emails)),

@@ -22,6 +22,12 @@ public enum AdbServerFact: Equatable, Sendable {
     case badSetting(String)
 }
 
+/// The program behind the adb server's TCP port, found from the process that accepted doctor's own connection; paths resolved.
+public enum AdbServerOwnerFact: Equatable, Sendable {
+    case sdkAdb(String)
+    case other(executable: String, pid: Int32, sdkAdb: String)
+}
+
 public enum AdbMDNSFact: Equatable, Sendable {
     case disabled(String)
     case active(String)
@@ -64,6 +70,8 @@ public struct AndroidHostFacts: Equatable, Sendable {
     public var sdk: AndroidSDKFact
     public var adb: AdbBinaryFact?
     public var server: AdbServerFact?
+    /// Nil for a Unix socket, or when the owner could not be read.
+    public var serverOwner: AdbServerOwnerFact?
     public var mdns: AdbMDNSFact?
     /// `Pkg.Revision` of the emulator package; nil when it is not installed.
     public var emulatorRevision: String?

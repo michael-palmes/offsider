@@ -56,14 +56,29 @@ public enum SystemAppDenyList {
         "com.8bit.bitwarden": .passwords,
         "com.authy": .passwords,
         "com.microsoft.azureauthenticator": .passwords,
-        "com.google.Authenticator": .passwords
+        "com.google.Authenticator": .passwords,
+        "com.microsoft.skype.teams": .messages,
+        "D4D2433BGC": .passwords
     ]
 
-    /// Every id that starts with one of these is denied too: browser channels (Beta, Dev, Canary, Nightly, Focus, Klar).
+    /// Every id that starts with one of these is denied too: browser channels (Beta, Dev, Canary, Nightly, Focus, Klar),
+    /// WhatsApp and WhatsApp Business, Signal, Telegram, Slack, LastPass, Dashlane, Proton Pass and Enpass.
     static let iosPrefixes: [(String, Category)] = [
         ("org.mozilla.ios.", .browser),
         ("com.google.chrome.ios", .browser),
+        ("net.whatsapp.", .messages),
+        ("org.whispersystems.", .messages),
+        ("ph.telegra.", .messages),
+        ("com.tinyspeck.", .messages),
+        ("com.lastpass.", .passwords),
+        ("com.dashlane.", .passwords),
+        ("me.proton.pass.", .passwords),
+        ("in.sinew.", .passwords),
     ]
+
+    /// The iOS rules lowercased once, since iOS bundle ids compare without case.
+    static let iosLowercased: [String: Category] = Dictionary(ios.map { ($0.key.lowercased(), $0.value) }) { first, _ in first }
+    static let iosPrefixesLowercased: [(String, Category)] = iosPrefixes.map { ($0.0.lowercased(), $0.1) }
 
     static let android: [String: Category] = [
         "com.android.chrome": .browser,
@@ -104,7 +119,14 @@ public enum SystemAppDenyList {
         "com.x8bit.bitwarden": .passwords,
         "com.authy.authy": .passwords,
         "com.azure.authenticator": .passwords,
-        "com.google.android.apps.adm": .findMy
+        "com.google.android.apps.adm": .findMy,
+        "com.whatsapp": .messages,
+        "org.thoughtcrime.securesms": .messages,
+        "com.Slack": .messages,
+        "com.microsoft.teams": .messages,
+        "com.dashlane": .passwords,
+        "com.callpod.android_apps.keeper": .passwords,
+        "io.enpass.app": .passwords
     ]
 
     /// What draws Android's runtime permission dialog.
@@ -115,13 +137,17 @@ public enum SystemAppDenyList {
     }
 
     /// Chrome's Beta, Dev and Canary (`com.chrome.`), every Firefox channel including Nightly, Focus and Klar (`org.mozilla.`),
-    /// Samsung Internet and Samsung's system apps (`com.sec.android.app.`) and Samsung Messages.
+    /// Samsung Internet and Samsung's system apps (`com.sec.android.app.`), Samsung Messages, WhatsApp Business, Telegram, LastPass and Proton Pass.
     static let androidPrefixes: [(String, Category)] = [
         ("com.android.chrome", .browser),
         ("com.chrome.", .browser),
         ("org.mozilla.", .browser),
         ("com.sec.android.app.", .systemUI),
         ("com.samsung.android.messaging", .messages),
+        ("com.whatsapp.", .messages),
+        ("org.telegram.", .messages),
+        ("com.lastpass.", .passwords),
+        ("proton.android.pass", .passwords),
     ]
 
     /// The managed `deniedBundleIDs` list, read once per process and only that key; tests inject one. An entry ending in `.` is a prefix.
@@ -131,10 +157,11 @@ public enum SystemAppDenyList {
 
     /// The category that keeps `appID` off limits on `platform`, or nil when the app may be driven.
     public static func category(of appID: String, platform: DevicePlatform) -> Category? {
-        let exact = platform == .ios ? ios : android
-        if let category = exact[appID] { return category }
-        let prefixes = platform == .ios ? iosPrefixes : androidPrefixes
-        if let match = prefixes.first(where: { appID.hasPrefix($0.0) }) { return match.1 }
+        let id = platform == .ios ? appID.lowercased() : appID
+        let exact = platform == .ios ? iosLowercased : android
+        if let category = exact[id] { return category }
+        let prefixes = platform == .ios ? iosPrefixesLowercased : androidPrefixes
+        if let match = prefixes.first(where: { id.hasPrefix($0.0) }) { return match.1 }
         switch managed {
         case .unreadable: return .managedUnreadable
         case .entries(let entries): return entries.contains { matches(appID, entry: $0, platform: platform) } ? .managed : nil
@@ -164,7 +191,7 @@ public enum SystemAppDenyList {
         case .browser: what = "a browser"
         case .systemUI: what = "part of the system UI"
         case .mail: what = "the mail app"
-        case .messages: what = "the messages app"
+        case .messages: what = "a messages app"
         case .passwords: what = "a password or authenticator app"
         case .settings: what = "the settings app"
         case .wallet: what = "a wallet or payments app"

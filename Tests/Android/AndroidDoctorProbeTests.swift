@@ -238,4 +238,19 @@ struct AndroidDoctorProbeTests {
         #expect(AndroidDoctorProbe.adbVersion(Self.adbVersion) == .version("37.0.0-14910828", protocolVersion: 41))
         if case .failed = AndroidDoctorProbe.adbVersion("garbage") {} else { Issue.record("expected a failure") }
     }
+
+    @Test("the server's owner is named from the process the connector checked, with symlinks resolved, and nothing without a check")
+    nonisolated func serverOwnerFromCheckedProcess() throws {
+        let me = try #require(LoopbackOwner.executablePath(of: getpid()))
+        let endpoint = LoopbackEndpoint.tcp(.ipv4, port: 5037)
+        let link = FileManager.default.temporaryDirectory.appendingPathComponent("oa-adb-\(getpid())-\(UInt32.random(in: 0...UInt32.max))")
+        try FileManager.default.createSymbolicLink(atPath: link.path, withDestinationPath: me)
+        defer { try? FileManager.default.removeItem(at: link) }
+        let resolved = URL(fileURLWithPath: me).resolvingSymlinksInPath().path
+
+        #expect(AndroidDoctorProbe.serverOwner(endpoint, sdkAdb: link, server: { _ in getpid() }) == .sdkAdb(resolved))
+        #expect(AndroidDoctorProbe.serverOwner(endpoint, sdkAdb: URL(fileURLWithPath: "/sdk/platform-tools/adb"), server: { _ in getpid() })
+            == .other(executable: resolved, pid: getpid(), sdkAdb: "/sdk/platform-tools/adb"))
+        #expect(AndroidDoctorProbe.serverOwner(endpoint, sdkAdb: link, server: { _ in nil }) == nil)
+    }
 }

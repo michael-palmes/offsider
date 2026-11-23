@@ -14,7 +14,7 @@ public enum ChildEnvironment {
         case offsiderBroker
         /// `offsider` started detached as an Android device's broker: the SDK, the adb server's address, Offsider's settings, mDNS off.
         case androidBroker
-        /// `xcodebuild`: Xcode's location, the runner's `TEST_RUNNER_*` settings and a proxy for provisioning.
+        /// `xcodebuild`: Xcode's location, the runner's `TEST_RUNNER_OFFSIDER_*` settings and a proxy for provisioning.
         case xcodebuild
     }
 
@@ -29,6 +29,9 @@ public enum ChildEnvironment {
         "ANDROID_HOME", "ANDROID_SDK_ROOT", "ANDROID_USER_HOME", "ANDROID_EMULATOR_HOME", "ANDROID_PREFS_ROOT", "ANDROID_VENDOR_KEYS", "ADB_VENDOR_KEYS",
         "ANDROID_ADB_SERVER_PORT", "ANDROID_ADB_SERVER_ADDRESS", "ADB_SERVER_SOCKET", "ADB_LIBUSB",
     ]
+
+    /// xcodebuild hands every `TEST_RUNNER_<name>` to the app under test as `<name>`, so only Offsider's own pass.
+    static let runnerSettingPrefix = "TEST_RUNNER_OFFSIDER_"
 
     static let proxyNames: Set<String> = ["HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY", "http_proxy", "https_proxy", "no_proxy"]
 
@@ -59,7 +62,7 @@ public enum ChildEnvironment {
         case .adbServer: return adbServerNames.contains(name)
         case .offsiderBroker: return name == "DEVELOPER_DIR" || name.hasPrefix("OFFSIDER_")
         case .androidBroker: return adbServerNames.contains(name) || androidSDKNames.contains(name) || name.hasPrefix("OFFSIDER_")
-        case .xcodebuild: return name == "DEVELOPER_DIR" || name.hasPrefix("TEST_RUNNER_") || proxyNames.contains(name)
+        case .xcodebuild: return name == "DEVELOPER_DIR" || name.hasPrefix(runnerSettingPrefix) || proxyNames.contains(name)
         }
     }
 }

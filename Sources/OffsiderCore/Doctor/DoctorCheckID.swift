@@ -68,6 +68,8 @@ public enum DoctorCheckID: String, Codable, Sendable, CaseIterable {
     case installSkill = "install.skill"
     case installRules = "install.rules"
     case installDenyRules = "install.deny-rules"
+    case managedPolicy = "managed.policy"
+    case harnessManaged = "harness.managed"
 
     public var isPerSimulator: Bool {
         rawValue.hasPrefix("simulator.")
@@ -153,6 +155,8 @@ public enum DoctorCheckID: String, Codable, Sendable, CaseIterable {
         case .installSkill: return "Agent skill"
         case .installRules: return "Agent permission rules"
         case .installDenyRules: return "Agent deny rules"
+        case .managedPolicy: return "Managed policy"
+        case .harnessManaged: return "Managed agent settings"
         }
     }
 }

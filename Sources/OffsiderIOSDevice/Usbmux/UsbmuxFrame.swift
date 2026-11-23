@@ -26,7 +26,7 @@ public struct UsbmuxFrame: Equatable, Sendable {
     public func encoded() -> Data {
         var data = Data(capacity: Self.headerSize + payload.count)
         for field in [UInt32(Self.headerSize + payload.count), Self.version, Self.plistType, tag] {
-            withUnsafeBytes(of: field.littleEndian) { data.append(contentsOf: $0) }
+            withUnsafeBytes(of: field.littleEndian) { unsafe data.append(contentsOf: $0) }
         }
         data.append(payload)
         return data

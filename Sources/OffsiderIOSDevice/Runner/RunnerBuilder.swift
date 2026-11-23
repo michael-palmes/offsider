@@ -88,6 +88,8 @@ public struct XcodeRunnerBuilder: RunnerBuilding {
     /// Whether the bundle at a path is validly signed and satisfies a requirement, sealed resources included.
     let signatureValid: @Sendable (_ path: String, _ requirement: String) -> Bool
     let now: @Sendable () -> Date
+    /// Seals `approved-prefixes`; an approval whose file does not match the seal counts as none.
+    let prefixSeal: any RunnerPrefixSealing
 
     public init(
         source: URL,
@@ -96,6 +98,7 @@ public struct XcodeRunnerBuilder: RunnerBuilding {
         environment: [String: String],
         signedInTeams: @escaping @Sendable () -> [String],
         notice: @escaping @Sendable (String) -> Void,
+        prefixSeal: any RunnerPrefixSealing,
         allowance: DeviceAllowance? = nil,
         expectedSource: [String: String]? = nil,
         registerDevice: Bool = false,
@@ -109,6 +112,7 @@ public struct XcodeRunnerBuilder: RunnerBuilding {
         self.environment = environment
         self.signedInTeams = signedInTeams
         self.notice = notice
+        self.prefixSeal = prefixSeal
         self.allowance = allowance
         self.expectedSource = expectedSource
         self.registerDevice = registerDevice
@@ -186,7 +190,7 @@ public struct XcodeRunnerBuilder: RunnerBuilding {
         case .simulator: destinationText = "iphonesimulator"
         }
         let text = [sourceDigest, xcodeBuild ?? "unknown", team ?? "", prefix, destinationText].joined(separator: "\n")
-        return SHA256.hash(data: Data(text.utf8)).map { String(format: "%02x", $0) }.joined()
+        return SHA256.hash(data: Data(text.utf8)).map { unsafe String(format: "%02x", $0) }.joined()
     }
 
     /// One digest over `path\0digest\0` for each file, in path order.
@@ -282,7 +286,11 @@ public struct XcodeRunnerBuilder: RunnerBuilding {
     func signing(for destination: RunnerDestination) throws -> Signing {
         let prefix = try Self.resolvePrefix(environment: environment, allowancePrefix: allowancePrefix)
         guard case .device = destination else { return Signing(team: nil, prefix: prefix) }
-        return Signing(team: try Self.resolveTeam(environment: environment, allowanceTeam: allowanceTeam, signedInTeams: signedInTeams()), prefix: prefix)
+        let team = try Self.resolveTeam(environment: environment, allowanceTeam: allowanceTeam, signedInTeams: signedInTeams())
+        if let why = ManagedGate.teamRefusal(team) {
+            throw IOSDeviceError(.managedPolicy, "\(ManagedRefusalText.sentence(why)) The runner was not built. Ask the administrator of this Mac.")
+        }
+        return Signing(team: team, prefix: prefix)
     }
 
     func cacheKey(for destination: RunnerDestination, signing: Signing) throws -> String {
@@ -328,10 +336,11 @@ public struct XcodeRunnerBuilder: RunnerBuilding {
     @TaskLocal public static var confirmNewPrefix: (@Sendable (String) async throws -> Void)?
     static let approvedPrefixesFile = "approved-prefixes"
 
-    /// The prefixes a person approved at `runner build`, recorded beside the cached builds.
+    /// The prefixes a person approved at `runner build`, recorded beside the cached builds; none unless the file matches its seal.
     func approvedPrefixes() -> [String] {
-        let recorded = (try? OffsiderPrivateDirectory.readOwnedFile(named: Self.approvedPrefixesFile, in: cacheRoot.path, maxBytes: 64 * 1024)) ?? nil
-        return recorded.map { String(decoding: $0, as: UTF8.self).split(separator: "\n").map(String.init) } ?? []
+        guard let recorded = (try? OffsiderPrivateDirectory.readOwnedFile(named: Self.approvedPrefixesFile, in: cacheRoot.path, maxBytes: 64 * 1024)) ?? nil,
+              prefixSeal.seals(recorded) else { return [] }
+        return String(decoding: recorded, as: UTF8.self).split(separator: "\n").map(String.init)
     }
 
     /// Offsider's own prefix and the one a person sealed into the device's allowance under Touch ID need no approval; the environment's alone never counts.
@@ -351,12 +360,14 @@ public struct XcodeRunnerBuilder: RunnerBuilding {
             throw PrefixApproval(underlying: error)
         }
         approved.append(prefix)
-        try OffsiderPrivateDirectory.writeAtomically(Data(approved.joined(separator: "\n").utf8), named: Self.approvedPrefixesFile, in: directory)
+        let recorded = Data(approved.joined(separator: "\n").utf8)
+        try OffsiderPrivateDirectory.writeAtomically(recorded, named: Self.approvedPrefixesFile, in: directory)
+        try prefixSeal.seal(recorded)
     }
 
     /// `flock` on `<key>.lock`, polled so the task stays cancellable; the kernel drops it if this process dies.
     static func withBuildLock<T: Sendable>(_ path: URL, _ body: () async throws -> T) async throws -> T {
-        let descriptor = open(path.path, O_CREAT | O_RDWR | O_CLOEXEC | O_NOFOLLOW, S_IRUSR | S_IWUSR)
+        let descriptor = unsafe open(path.path, O_CREAT | O_RDWR | O_CLOEXEC | O_NOFOLLOW, S_IRUSR | S_IWUSR)
         guard descriptor >= 0 else { throw PrivateDirectoryError(.system(operation: "open", code: errno), path: path.path) }
         defer { close(descriptor) }
         let deadline = Date().addingTimeInterval(buildTimeout + 60)
@@ -382,8 +393,12 @@ public struct XcodeRunnerBuilder: RunnerBuilding {
             "OFFSIDER_RUNNER_BUNDLE_PREFIX=\(signing.prefix)",
         ]
         if let team = signing.team {
-            arguments += ["DEVELOPMENT_TEAM=\(team)", "-allowProvisioningUpdates"]
-            if registerDevice { arguments.append("-allowProvisioningDeviceRegistration") }
+            arguments.append("DEVELOPMENT_TEAM=\(team)")
+            // Without the flag xcodebuild signs only with profiles already on this Mac: it creates no App ID, profile or device record.
+            if ManagedGate.refusal(.allowRunnerRegistration) == nil {
+                arguments.append("-allowProvisioningUpdates")
+                if registerDevice { arguments.append("-allowProvisioningDeviceRegistration") }
+            }
         }
         return arguments
     }
@@ -415,7 +430,9 @@ public struct XcodeRunnerBuilder: RunnerBuilding {
                 }
                 // With no account, xcodebuild also says it found no profiles, which reads as a registration failure.
                 if let renewing, Self.accountMissing(output) { throw profileExpired(udid: udid, team: team, expiry: renewing, output: output) }
-                if Self.needsRegistration(output) { throw Self.registrationFailure(udid: udid, team: team, output: output, log: log) }
+                if Self.needsRegistration(output) {
+                    throw Self.registrationFailure(udid: udid, team: team, output: output, log: log, managed: ManagedGate.refusal(.allowRunnerRegistration))
+                }
                 if let renewing { throw profileExpired(udid: udid, team: team, expiry: renewing, output: output) }
             }
             throw Self.failure(detail: "xcodebuild exited \(result.status)", output: output, log: log)
@@ -549,7 +566,7 @@ public struct XcodeRunnerBuilder: RunnerBuilding {
         let signing: Signing
         do {
             signing = try self.signing(for: destination)
-        } catch let error as IOSDeviceError where error.kind == .invalidSetting {
+        } catch let error as IOSDeviceError where error.kind == .invalidSetting || error.kind == .managedPolicy {
             return .unsettled(message: error.message, hint: error.hint)
         } catch {
             return nil
@@ -580,8 +597,14 @@ public struct XcodeRunnerBuilder: RunnerBuilding {
             .contains { text.contains($0) }
     }
 
-    static func registrationFailure(udid: String, team: String, output: String, log: URL) -> IOSDeviceError {
-        IOSDeviceError(
+    static func registrationFailure(udid: String, team: String, output: String, log: URL, managed: String? = nil) -> IOSDeviceError {
+        if let managed {
+            return IOSDeviceError(
+                .managedPolicy,
+                "Building the Offsider runner app failed: \(udid) is not registered with team \(team), or no provisioning profile covers it, and \(managed). Register it in Xcode > Window > Devices and Simulators, or ask the administrator of this Mac.\(tail(output))"
+            )
+        }
+        return IOSDeviceError(
             .runnerBuildFailed,
             "Building the Offsider runner app failed: \(udid) is not registered with team \(team), or no provisioning profile covers it. A person registers it by running `offsider runner build --register-device --device \(udid)` in their own terminal, or in Xcode > Window > Devices and Simulators.\(tail(output))",
             hint: "offsider runner build --register-device --device \(udid)"
@@ -605,11 +628,11 @@ public struct XcodeRunnerBuilder: RunnerBuilding {
     static func makePrivateDirectories(_ directory: URL) throws {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
         for url in [directory.deletingLastPathComponent(), directory] {
-            chmod(url.path, S_IRWXU)
+            unsafe chmod(url.path, S_IRWXU)
         }
     }
 
     static func hex(_ digest: some Sequence<UInt8>) -> String {
-        digest.map { String(format: "%02x", $0) }.joined()
+        digest.map { unsafe String(format: "%02x", $0) }.joined()
     }
 }

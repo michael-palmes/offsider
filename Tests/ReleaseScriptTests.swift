@@ -62,6 +62,87 @@ struct ReleaseScriptTests {
         #expect(result.stderr.contains("64 lowercase hex"))
     }
 
+    /// A payload tarball of `entries` made by bsdtar in a fresh folder, with its digest; `rename` rewrites every name as tar's `-s` does.
+    private static func craftedPayload(rename: String? = nil, absoluteNames: Bool = false, _ entries: (URL) throws -> [String]) throws -> (dist: URL, digest: String) {
+        let dist = FileManager.default.temporaryDirectory.appendingPathComponent("offsider-release-\(UUID().uuidString)")
+        let source = dist.appendingPathComponent("source")
+        try FileManager.default.createDirectory(at: source, withIntermediateDirectories: true)
+        let names = try entries(source)
+        let tarball = dist.appendingPathComponent("offsider-0.0.0-arm64-unsigned.tar.gz")
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/tar")
+        process.arguments = ["-czf", tarball.path] + (absoluteNames ? ["-P"] : []) + (rename.map { ["-s", $0] } ?? []) + ["-C", source.path] + names
+        process.environment = ["COPYFILE_DISABLE": "1"]
+        process.standardError = Pipe()
+        try process.run()
+        process.waitUntilExit()
+        #expect(process.terminationStatus == 0)
+        let digest = SHA256.hash(data: try Data(contentsOf: tarball)).map { String(format: "%02x", $0) }.joined()
+        return (dist, digest)
+    }
+
+    private static func touch(_ url: URL, _ text: String = "x") throws {
+        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Data(text.utf8).write(to: url)
+    }
+
+    static let unsafePayloads: [(String, String)] = [
+        ("absolute", "absolute path"), ("dotdot", "path with .."), ("absolute-link", "link to an absolute path"), ("dotdot-link", "link with .."),
+        ("hard-link", "not a plain file, folder or link"), ("fifo", "not a plain file, folder or link"), ("huge", "unpacks to more than"),
+    ]
+
+    @Test("unpack-payload lists the payload first and unpacks nothing with an absolute path, .., a link out, a hard link, a FIFO or over the size cap", arguments: unsafePayloads)
+    func unpackPayloadRefusesUnsafeEntries(kind: String, message: String) throws {
+        let (dist, digest) = try Self.craftedPayload(rename: kind == "absolute" ? "|^|/tmp/offsider-vet-|" : kind == "dotdot" ? "|^|../|" : nil, absoluteNames: kind == "absolute") { source in
+            switch kind {
+            case "absolute", "dotdot":
+                try Self.touch(source.appendingPathComponent("escape"))
+                return ["escape"]
+            case "absolute-link":
+                try FileManager.default.createSymbolicLink(atPath: source.appendingPathComponent("hosts").path, withDestinationPath: "/etc/hosts")
+                return ["hosts"]
+            case "dotdot-link":
+                try FileManager.default.createSymbolicLink(atPath: source.appendingPathComponent("up").path, withDestinationPath: "../outside")
+                return ["up"]
+            case "hard-link":
+                try Self.touch(source.appendingPathComponent("a"))
+                try FileManager.default.linkItem(at: source.appendingPathComponent("a"), to: source.appendingPathComponent("b"))
+                return ["a", "b"]
+            case "fifo":
+                #expect(mkfifo(source.appendingPathComponent("pipe").path, 0o600) == 0)
+                return ["pipe"]
+            default:
+                let big = source.appendingPathComponent("big")
+                FileManager.default.createFile(atPath: big.path, contents: nil)
+                let handle = try FileHandle(forWritingTo: big)
+                try handle.truncate(atOffset: 2 << 30)
+                try handle.close()
+                return ["big"]
+            }
+        }
+        defer { try? FileManager.default.removeItem(at: dist) }
+        let result = try Self.run(["unpack-payload", "--version", "0.0.0", "--dist", dist.path, "--sha256", digest])
+        #expect(result.status == 1)
+        #expect(result.stderr.contains(message), "\(result.stderr)")
+        #expect(!FileManager.default.fileExists(atPath: dist.appendingPathComponent("offsider-0.0.0-arm64").path))
+        #expect(!FileManager.default.fileExists(atPath: "/tmp/offsider-vet-escape"))
+    }
+
+    @Test("a payload of plain files, folders and links inside the tree, as a framework has, passes the listing and is unpacked")
+    func unpackPayloadAcceptsFrameworkLinks() throws {
+        let (dist, digest) = try Self.craftedPayload { source in
+            let framework = source.appendingPathComponent("Frameworks/Example.framework")
+            try Self.touch(framework.appendingPathComponent("Versions/A/Example"))
+            try FileManager.default.createSymbolicLink(atPath: framework.appendingPathComponent("Versions/Current").path, withDestinationPath: "A")
+            try FileManager.default.createSymbolicLink(atPath: framework.appendingPathComponent("Example").path, withDestinationPath: "Versions/Current/Example")
+            return ["Frameworks"]
+        }
+        defer { try? FileManager.default.removeItem(at: dist) }
+        let result = try Self.run(["unpack-payload", "--version", "0.0.0", "--dist", dist.path, "--sha256", digest])
+        #expect(!result.stderr.contains("cannot be listed") && !result.stderr.contains("not a plain file") && !result.stderr.contains("link"), "\(result.stderr)")
+        #expect(FileManager.default.fileExists(atPath: dist.appendingPathComponent("offsider-0.0.0-arm64/Frameworks/Example.framework/Versions/A/Example").path))
+    }
+
     @Test("release builds carry no entitlements, so library validation stays on; ad-hoc builds carry the opt-out")
     func entitlementFiles() throws {
         let release = try Self.plist("entitlements.plist")
@@ -262,7 +343,7 @@ struct ReleaseScriptTests {
         var origin: URL { base.appendingPathComponent("origin.git") }
         var script: URL { work.appendingPathComponent("scripts/release.sh") }
 
-        init(securityLine: String = "**As of version 1.2.3.**\n") throws {
+        init(securityLine: String = "**As of version 1.2.3.**\n", trustsItsKey: Bool = true) throws {
             base = FileManager.default.temporaryDirectory.appendingPathComponent("offsider-release-tag-\(UUID().uuidString)")
             try FileManager.default.createDirectory(at: work.appendingPathComponent("scripts"), withIntermediateDirectories: true)
             try FileManager.default.copyItem(at: ReleaseScriptTests.root.appendingPathComponent("scripts/release.sh"), to: script)
@@ -275,6 +356,20 @@ struct ReleaseScriptTests {
             try keygen.run()
             keygen.waitUntilExit()
             try #require(keygen.terminationStatus == 0)
+
+            let trusted = trustsItsKey ? "key" : "other-key"
+            if !trustsItsKey {
+                let other = Process()
+                other.executableURL = URL(fileURLWithPath: "/usr/bin/ssh-keygen")
+                other.arguments = ["-q", "-t", "ed25519", "-N", "", "-C", "someone-else", "-f", base.appendingPathComponent("other-key").path]
+                other.standardOutput = Pipe()
+                try other.run()
+                other.waitUntilExit()
+                try #require(other.terminationStatus == 0)
+            }
+            let publicKey = try String(contentsOf: base.appendingPathComponent("\(trusted).pub"), encoding: .utf8)
+            try FileManager.default.createDirectory(at: work.appendingPathComponent(".github"), withIntermediateDirectories: true)
+            try Data("release-test@localhost namespaces=\"git\" \(publicKey)".utf8).write(to: work.appendingPathComponent(".github/allowed_signers"))
 
             try FileManager.default.createDirectory(at: origin, withIntermediateDirectories: true)
             try ReleaseScriptTests.git(origin, "init", "-q", "--bare", "-b", "main")
@@ -324,6 +419,18 @@ struct ReleaseScriptTests {
         let signers = fixture.base.appendingPathComponent("allowed_signers")
         try Data("release-test@localhost namespaces=\"git\" \(publicKey)".utf8).write(to: signers)
         try Self.git(fixture.work, "-c", "gpg.ssh.allowedSignersFile=\(signers.path)", "verify-tag", "v1.2.3")
+        #expect(try fixture.tags(in: fixture.origin).isEmpty)
+    }
+
+    @Test("tag deletes a tag whose key main's allowed_signers does not list, and says how to fix the signing key")
+    func tagRefusesAnUnlistedKey() throws {
+        let fixture = try TagFixture(trustsItsKey: false)
+        defer { fixture.remove() }
+        let result = try fixture.tag()
+        #expect(result.status == 1)
+        #expect(result.stderr.contains("tag v1.2.3 is not signed by a key in main's .github/allowed_signers, so it was deleted; set git's user.signingkey to that key"))
+        #expect(result.stdout.isEmpty)
+        #expect(try fixture.tags(in: fixture.work).isEmpty)
         #expect(try fixture.tags(in: fixture.origin).isEmpty)
     }
 

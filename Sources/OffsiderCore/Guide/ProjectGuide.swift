@@ -24,7 +24,7 @@ public enum ProjectGuide {
         let absolute = expanded.hasPrefix("/") ? expanded : (fileManager.currentDirectoryPath as NSString).appendingPathComponent(expanded)
         var start = URL(fileURLWithPath: absolute).standardizedFileURL.path
         var isDirectory: ObjCBool = false
-        guard fileManager.fileExists(atPath: start, isDirectory: &isDirectory) else { throw Failure.missingPath(start) }
+        guard unsafe fileManager.fileExists(atPath: start, isDirectory: &isDirectory) else { throw Failure.missingPath(start) }
         if !isDirectory.boolValue { start = (start as NSString).deletingLastPathComponent }
         let home = URL(fileURLWithPath: home).standardizedFileURL.path
 

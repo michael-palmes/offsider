@@ -78,6 +78,8 @@ public struct IOSDeviceError: LocalizedError, CustomStringConvertible, Equatable
         case appRequired
         /// The device's allowance lapsed while a session broker ran (expired, removed or its seal broken).
         case notAllowed
+        /// A ceiling the organisation forced refuses this.
+        case managedPolicy
         /// An Offsider environment variable holds a value it cannot use.
         case invalidSetting
     }
@@ -304,6 +306,7 @@ extension IOSDeviceError: OffsiderFailure {
         case .sessionLost: return .inputOutcomeUnknown
         case .appNotAllowed, .otherAppInFront: return .appNotAllowed
         case .notAllowed: return .deviceNotAllowed
+        case .managedPolicy: return .managedPolicy
         case .appRequired, .invalidSetting: return .usage
         }
     }

@@ -124,6 +124,13 @@ public struct AndroidError: LocalizedError, CustomStringConvertible, Equatable, 
         )
     }
 
+    static func foreignAdbServerPort(endpoint: String) -> AndroidError {
+        AndroidError(
+            .foreignAdbServer,
+            "Another user's process answers on \(endpoint), or your adb server did not accept within 2 s, so Offsider did not use it. Stop the other user's server, or set ANDROID_ADB_SERVER_PORT to a free port so Offsider starts its own there; if the Mac is busy, run the command again."
+        )
+    }
+
     static func adbServerNotRunning(endpoint: String) -> AndroidError {
         AndroidError(.adbServerNotRunning, "No adb server is running on \(endpoint). Run the command again and Offsider starts one.")
     }

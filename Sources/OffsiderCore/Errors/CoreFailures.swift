@@ -37,7 +37,7 @@ extension ProcessCaptureTimeoutError: OffsiderFailure {
 }
 
 extension ExpoDevClientError: OffsiderFailure {
-    public var reason: FailureReason { .expoDevClientFailed }
+    public var reason: FailureReason { kind == .managedPolicy ? .managedPolicy : .expoDevClientFailed }
     public var failureMessage: String { description }
 }
 

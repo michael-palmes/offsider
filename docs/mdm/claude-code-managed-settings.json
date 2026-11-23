@@ -1,0 +1,27 @@
+{
+  "permissions": {
+    "ask": [
+      "Bash(*/adb *)",
+      "Bash(*/devicectl *)",
+      "Bash(*/xcrun devicectl *)",
+      "Bash(adb *)",
+      "Bash(devicectl *)",
+      "Bash(offsider batch *type --file*)",
+      "Bash(offsider batch --no-mask-secure*)",
+      "Bash(offsider credential add*)",
+      "Bash(offsider credential describe*)",
+      "Bash(offsider credential remove*)",
+      "Bash(offsider credential set*)",
+      "Bash(offsider credential signed-out*)",
+      "Bash(offsider logs --no-redact*)",
+      "Bash(offsider permission*)",
+      "Bash(offsider record-video --unmasked*)",
+      "Bash(offsider rn logbox * --no-redact*)",
+      "Bash(offsider screenshot --no-mask-secure*)",
+      "Bash(offsider stream-video --unmasked*)",
+      "Bash(offsider type --file*)",
+      "Bash(offsider unlock-code remove*)",
+      "Bash(xcrun devicectl *)"
+    ]
+  }
+}

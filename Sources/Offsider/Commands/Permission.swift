@@ -111,6 +111,7 @@ struct PermissionCommand: AsyncParsableCommand {
         let logger = OffsiderLogger()
         let isChange = if case .change = plan { true } else { false }
         let route = try await DeviceRouter.routeForInput(device ?? "", logger: logger, locking: isChange)
+        try Self.requirePhoneChangesAllowed(plan, allowance: route.allowance)
         try Self.requireAppScope(plan, allowance: route.allowance)
         let (result, id) = try await console.progress(Self.progressLabel(plan)) {
             try await route.backend.prepare()
@@ -125,6 +126,12 @@ struct PermissionCommand: AsyncParsableCommand {
             notices = Self.notices(change, app: app, on: id)
         }
         DevicePersonView.emit(result.text, json: json, person: result.person, notices: notices, console: console)
+    }
+
+    /// A grant, revoke or reset on a phone, iPhone or iPad is refused while the organisation turns those off; `show` and virtual devices never read the key.
+    static func requirePhoneChangesAllowed(_ plan: Plan, allowance: DeviceAllowance?) throws {
+        guard case .change = plan, let allowance else { return }
+        try CLIError.requireManaged(.allowPhonePermissionChanges, outcome: "Nothing was changed on \(allowance.name) (\(allowance.key)).")
     }
 
     /// The change's notes, which an agent reads on stdout, and how a person resets a grant or revoke, which outlives the command.

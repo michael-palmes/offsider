@@ -129,7 +129,7 @@ public enum StartPersonView {
     public static let noRun = Page([.person([.prose("No run is active.")]), .agent("No run is active.\n")])
 
     /// `run status`: a person's table of runs; an agent's lines as they were.
-    public static func runStatus(runs: [RunStatusEntry], ended: [RunStatusEntry], timeZone: TimeZone = .current, home: String = NSHomeDirectory()) -> Page {
+    public static func runStatus(runs: [RunStatusEntry], ended: [RunStatusEntry], now: Date = Date(), timeZone: TimeZone = .current, home: String = NSHomeDirectory()) -> Page {
         let lines = (ended + runs).map { $0.text(timeZone: timeZone) }
         let agent = (lines.isEmpty ? "No run is active." : lines.joined(separator: "\n")) + "\n"
         guard !lines.isEmpty else { return Page([.person([.prose("No run is active.")]), .agent(agent)]) }
@@ -140,15 +140,24 @@ public enum StartPersonView {
             Table.Column(agent: nil, person: 3, fit: .optional(priority: 1), tone: .dim),
         ]
         let rows = ended.map { run in
-            Table.Row([runName(run), Table.Cell(TerminalText.homePath(run.dir, home: home), untrusted: true), Table.Cell(run.endedBy == "owner-exited" ? "its session exited" : (run.endedBy ?? "ended")), nil], status: .off)
+            Table.Row([runName(run), Table.Cell(TerminalText.homePath(run.dir, home: home), untrusted: true), Table.Cell(Self.endedReason(run.endedBy)), nil], status: .off)
         } + runs.map { run in
             Table.Row([
                 runName(run), Table.Cell(TerminalText.homePath(run.dir, home: home), untrusted: true),
-                Table.Cell("since \(RunClock.clock(run.startedAt, separator: ":", timeZone: timeZone))"), Table.Cell(RunTimeline.count(run.files, "file")),
+                Table.Cell("since \(RunClock.clock(run.startedAt, separator: ":", timeZone: timeZone))" + (run.expires.map { ", " + AllowScreen.until($0, now: now, timeZone: timeZone) } ?? "")),
+                Table.Cell(RunTimeline.count(run.files, "file")),
             ], status: .on)
         }
         let summary = [runs.isEmpty ? nil : "\(runs.count) active", ended.isEmpty ? nil : "\(ended.count) ended"].compactMap { $0 }
         return Page([.person([.header(Header(.run, runs.count + ended.count == 1 ? "Run" : "Runs", summary)), .table(Table(columns: columns, rows: rows))]), .agent(agent)])
+    }
+
+    private static func endedReason(_ endedBy: String?) -> String {
+        switch endedBy {
+        case "owner-exited": return "its session exited"
+        case "expired": return "expired"
+        default: return endedBy ?? "ended"
+        }
     }
 
     private static func runName(_ run: RunStatusEntry) -> Table.Cell {

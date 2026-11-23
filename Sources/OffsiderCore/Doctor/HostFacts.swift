@@ -68,10 +68,10 @@ public struct HostFacts: Codable, Equatable, Sendable {
     public var summary: String {
         var parts: [String] = []
         if let load = loadAverage.first {
-            parts.append(String(format: "load %.1f", load) + (cpuCount.map { " on \($0) CPUs" } ?? ""))
+            unsafe parts.append(String(format: "load %.1f", load) + (cpuCount.map { " on \($0) CPUs" } ?? ""))
         }
-        if let memoryGB { parts.append(String(format: "%.0f GB RAM", memoryGB)) }
-        if let diskFreeGB { parts.append(String(format: "%.0f GB free on %@", diskFreeGB, diskPath)) }
+        if let memoryGB { unsafe parts.append(String(format: "%.0f GB RAM", memoryGB)) }
+        if let diskFreeGB { unsafe parts.append(String(format: "%.0f GB free on %@", diskFreeGB, diskPath)) }
         parts.append(sessions.count == 1 ? "1 other Offsider command" : "\(sessions.count) other Offsider commands")
         return parts.joined(separator: ", ")
     }
@@ -165,7 +165,7 @@ public enum HostDoctorRules {
 
     public static func load(_ facts: HostFacts) -> DoctorRules.Verdict {
         guard let load = facts.loadAverage.first, let cpus = facts.cpuCount, cpus > 0 else { return (.skip, "could not read the load average", nil) }
-        let detail = String(format: "%.1f over the last minute on %d CPUs", load, cpus)
+        let detail = unsafe String(format: "%.1f over the last minute on %d CPUs", load, cpus)
         guard load > loadPerCPU * Double(cpus) else { return (.pass, detail, nil) }
         return (
             .warn,
@@ -176,7 +176,7 @@ public enum HostDoctorRules {
 
     public static func disk(_ facts: HostFacts) -> DoctorRules.Verdict {
         guard let free = facts.diskFreeGB else { return (.skip, "could not read the free space on \(facts.diskPath)", nil) }
-        let detail = String(format: "%.1f GB free on %@", free, facts.diskPath)
+        let detail = unsafe String(format: "%.1f GB free on %@", free, facts.diskPath)
         let hint = "Free space: emulator snapshots, simulators and builds fail when the disk fills."
         if free < diskFailGB { return (.fail, detail, hint) }
         if free < diskWarnGB { return (.warn, detail, hint) }

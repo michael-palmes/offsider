@@ -660,11 +660,14 @@ extension Screenshot {
 enum UnmaskedConsent {
     nonisolated(unsafe) static var confirmed = false
 
+    static let managedOutcome = "Nothing was captured or read."
+
     static let refusal = "Password fields stay masked when an agent runs this. Nothing was captured. "
         + "Run it from your own terminal, or keep the mask and hide other fields with --mask-id."
 
     /// Refuses for an agent unless a person confirmed in this process; a person at a terminal is never asked.
     static func require(profile: OutputProfile = .gated) throws {
+        try CLIError.requireManaged(.forceMasks, outcome: managedOutcome)
         guard profile == .agent, !confirmed else { return }
         throw CLIError.personRequired(refusal)
     }
@@ -676,6 +679,7 @@ enum UnmaskedConsent {
 
     /// `reason` completes macOS's sentence "offsider is trying to ..."; `refusal` is the agent's answer with no terminal.
     static func confirm(reason: String, refusal: String, profile: OutputProfile = .gated) async throws {
+        try CLIError.requireManaged(.forceMasks, outcome: managedOutcome)
         guard profile == .agent, !confirmed else { return }
         guard PersonPresence.terminal() else { throw CLIError.personRequired(refusal) }
         try await PersonPresence.confirm(reason: reason)

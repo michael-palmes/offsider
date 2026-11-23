@@ -190,7 +190,7 @@ enum AdbInputScript {
     }
 
     private static func decimal(_ seconds: TimeInterval) -> String {
-        var text = String(format: "%.3f", seconds)
+        var text = unsafe String(format: "%.3f", seconds)
         while text.hasSuffix("0") { text.removeLast() }
         if text.hasSuffix(".") { text.removeLast() }
         return text

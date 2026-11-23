@@ -28,6 +28,9 @@ LICENCE_FILES="LICENSE THIRD_PARTY_LICENSES"
 EXE_RPATHS="/usr/lib/swift @executable_path/Frameworks"
 # CoreSimulator ships with Xcode outside the SDK; FBSimulatorControl links it by absolute path.
 LINKAGE_ALLOWED='^(@rpath/|/usr/lib/|/System/Library/|/Library/Developer/PrivateFrameworks/CoreSimulator\.framework/)'
+# What a tarball may unpack to: far above a release (about 100 MB in a few hundred entries), far below what fills a runner's disk.
+UNPACK_MAX_BYTES=$((1024 * 1024 * 1024))
+UNPACK_MAX_ENTRIES=20000
 
 VERSION=""
 DIST="${REPO_ROOT}/dist"
@@ -410,9 +413,41 @@ cmd_pack_payload() {
   log "packed $(cat "${DIST}/PAYLOAD.sha256")"
 }
 
+# Before anything is unpacked: only plain files, folders and links inside the tree, within the entry and byte caps.
+vet_tarball() {
+  local tarball="$1" names listing line path mode size target total=0 count=0
+  names="$(mktemp)"; listing="$(mktemp)"
+  add_cleanup "rm -f $(printf %q "$names") $(printf %q "$listing")"
+  /usr/bin/tar -tzf "$tarball" > "$names" 2>/dev/null || die "${tarball}: cannot be listed"
+  /usr/bin/tar -tvzf "$tarball" --numeric-owner > "$listing" 2>/dev/null || die "${tarball}: cannot be listed"
+  [ "$(wc -l < "$names")" = "$(wc -l < "$listing")" ] || die "${tarball}: its two listings disagree"
+  while IFS= read -r path; do
+    case "$path" in /*) die "${tarball}: absolute path ${path}" ;; esac
+    case "/${path}/" in */../*) die "${tarball}: path with .. ${path}" ;; esac
+  done < "$names"
+  while IFS= read -r line; do
+    mode="${line%% *}"
+    read -r _ _ _ _ size _ <<< "$line"
+    case "$mode" in
+      -*|d*) ;;
+      l*)
+        target="${line##* -> }"
+        case "$target" in /*) die "${tarball}: link to an absolute path: ${line}" ;; esac
+        case "/${target}/" in */../*) die "${tarball}: link with ..: ${line}" ;; esac
+        ;;
+      *) die "${tarball}: not a plain file, folder or link: ${line}" ;;
+    esac
+    [[ "$size" =~ ^[0-9]+$ ]] || die "${tarball}: unreadable size: ${line}"
+    total=$((total + size)); count=$((count + 1))
+    [ "$total" -le "$UNPACK_MAX_BYTES" ] || die "${tarball}: unpacks to more than ${UNPACK_MAX_BYTES} bytes"
+    [ "$count" -le "$UNPACK_MAX_ENTRIES" ] || die "${tarball}: more than ${UNPACK_MAX_ENTRIES} entries"
+  done < "$listing"
+}
+
 unpack_into_stage() {
   local tarball="$1"
   [ -f "$tarball" ] || die "tarball not found: ${tarball}"
+  vet_tarball "$tarball"
   rm -rf "$STAGE"
   mkdir -p "$STAGE"
   /usr/bin/tar -xzf "$tarball" -C "$STAGE"
@@ -527,6 +562,7 @@ cmd_verify() {
   (cd "$(dirname "$ARCHIVE")" && shasum -a 256 -c SHA256SUMS)
   /usr/bin/tar -tzf "$ARCHIVE" > "$listing"
   if grep -Eq '(^|/)\._' "$listing"; then die "archive contains AppleDouble entries"; fi
+  vet_tarball "$ARCHIVE"
   /usr/bin/tar -xzf "$ARCHIVE" -C "$x"
   verify_tree "$x"
   verify_helper "$x"
@@ -648,7 +684,7 @@ cmd_rehearse() {
 # The release starts when the tag is pushed, and a person pushes it: this stops at the signed tag.
 cmd_tag() {
   check_version
-  local tag="v${VERSION}" head remote
+  local tag="v${VERSION}" head remote signers
   git_repo() { git -C "$REPO_ROOT" "$@"; }
   [ "$(git_repo symbolic-ref --quiet --short HEAD 2>/dev/null || true)" = main ] \
     || die "check out main first: a release is tagged on main"
@@ -662,7 +698,15 @@ cmd_tag() {
   ! git_repo rev-parse --quiet --verify "refs/tags/${tag}" >/dev/null || die "tag ${tag} already exists here"
   remote="$(git_repo ls-remote --tags origin "refs/tags/${tag}")" || die "could not ask origin whether ${tag} exists"
   [ -z "$remote" ] || die "tag ${tag} already exists on origin"
+  signers="$(mktemp)"
+  add_cleanup "rm -f $(printf %q "$signers")"
+  git_repo show "${head}:.github/allowed_signers" > "$signers" 2>/dev/null || die "main has no .github/allowed_signers, so the tag's signer cannot be checked"
   git_repo tag -s "$tag" -m "Offsider ${VERSION}" || die "could not make the signed tag ${tag}; check git's signing key"
+  # The release build checks the same way, against main's allowed_signers, so a tag that fails here would fail there.
+  if ! git_repo -c gpg.ssh.allowedSignersFile="$signers" -c gpg.minTrustLevel=fully verify-tag "$tag" >/dev/null 2>&1; then
+    git_repo tag -d "$tag" >/dev/null 2>&1 || true
+    die "tag ${tag} is not signed by a key in main's .github/allowed_signers, so it was deleted; set git's user.signingkey to that key (or add yours there in a signed pull request), then tag again"
+  fi
   log "tagged ${tag} at ${head}; nothing was pushed. Push it to start the release:"
   echo "git push origin ${tag}"
 }

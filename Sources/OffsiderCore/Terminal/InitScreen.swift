@@ -12,6 +12,7 @@ public enum InitScreen {
             case installed, updated, upToDate, removed
             case rulesAdded(Int)
             case rulesPresent
+            case rulesRemoved(Int)
         }
 
         public var kind: Kind
@@ -31,7 +32,7 @@ public enum InitScreen {
 
         fileprivate var what: String {
             switch kind {
-            case .rulesAdded, .rulesPresent: return "Rules"
+            case .rulesAdded, .rulesPresent, .rulesRemoved: return "Rules"
             default: return "Skill"
             }
         }
@@ -43,6 +44,7 @@ public enum InitScreen {
             case .upToDate, .rulesPresent: return "up to date"
             case .removed: return "removed"
             case .rulesAdded(let count): return count == 0 ? "updated" : "\(count) new"
+            case .rulesRemoved(let count): return "\(count) removed"
             }
         }
     }
@@ -58,8 +60,9 @@ public enum InitScreen {
             Table.Row([Table.Cell(step.what), Table.Cell(step.who), Table.Cell(TerminalText.homePath(step.path, home: home), tag: step.state)], status: step.changed ? .ok : .skip)
         })
         let headline: String
-        if steps.allSatisfy({ $0.kind == .removed }) {
-            headline = "Offsider skill removed"
+        let rulesRemoved = steps.contains { if case .rulesRemoved = $0.kind { return true } else { return false } }
+        if steps.allSatisfy({ if case .rulesRemoved = $0.kind { return true } else { return $0.kind == .removed } }) {
+            headline = steps.contains { $0.kind == .removed } ? (rulesRemoved ? "Offsider skill and rules removed" : "Offsider skill removed") : "Offsider rules removed"
         } else if steps.contains(where: \.changed) {
             headline = "Ready for your agents"
         } else {
