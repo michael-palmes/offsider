@@ -178,6 +178,8 @@ struct VideoMaskOptions: ParsableArguments {
 struct VideoFrame {
     let image: CGImage
     let held: Bool
+    /// The screen has not changed since the last frame, so `image` repeats it.
+    var unchanged = false
 }
 
 /// How one bounded capture ended.
@@ -217,9 +219,12 @@ final class VideoFrameSource {
     let scale: Double
     let regions: [PointRegion]
     private let capturer: (any FrameCapturing)?
+    private let fullRate: (any FullRateFrameCapturing)?
     private var screen: UIScreenInfo?
     private var gate: VideoFrameGate?
     private var lastGood: CGImage?
+    private var last: VideoFrame?
+    private var retakes = false
     /// Rectangles painted on each frame.
     private(set) var painted = 0
 
@@ -229,6 +234,12 @@ final class VideoFrameSource {
         self.scale = scale
         self.regions = regions
         self.capturer = backend as? any FrameCapturing
+        self.fullRate = backend as? any FullRateFrameCapturing
+    }
+
+    /// The next frame is taken even when the screen has not changed, as when the last one could not be written.
+    func retakeNext() {
+        retakes = true
     }
 
     /// True when `scale` was applied by the device, so the writer must not scale again.
@@ -238,7 +249,9 @@ final class VideoFrameSource {
     func start() async throws -> CGImage {
         guard !regions.isEmpty else {
             screen = try? await backend.screenInfo(for: device)
-            let image = try await capture().image
+            fullRate?.useScreen(screen, for: device)
+            let image = try await freshCapture().image
+            last = VideoFrame(image: image, held: false)
             return image
         }
         guard let turner = backend as? any OrientationControlling else {
@@ -248,7 +261,8 @@ final class VideoFrameSource {
             let before = try? await turner.orientation(of: device)
             // Between two equal reads, so the points every frame is mapped with match the reference orientation.
             screen = try? await backend.screenInfo(for: device)
-            let capture = try await capture()
+            fullRate?.useScreen(screen, for: device)
+            let capture = try await freshCapture()
             let after = try? await turner.orientation(of: device)
             guard let before, before == after else { continue }
             let masked: ScreenCapture.MaskResult
@@ -260,6 +274,7 @@ final class VideoFrameSource {
             gate = VideoFrameGate(orientation: before, width: capture.image.width, height: capture.image.height)
             painted = masked.painted[.region] ?? 0
             lastGood = masked.capture.image
+            last = VideoFrame(image: masked.capture.image, held: false)
             return masked.capture.image
         }
         throw Self.unplaceable("the screen's orientation could not be read steadily")
@@ -277,14 +292,21 @@ final class VideoFrameSource {
 
     /// The next frame; a frame not proven in the first frame's orientation and size is replaced by the last good one.
     func next() async throws -> VideoFrame {
+        let skipUnchanged = !retakes && last != nil
+        retakes = false
         guard let turner = backend as? any OrientationControlling, var gate, let lastGood else {
-            let image = try await capture().image
-                return VideoFrame(image: image, held: false)
+            guard let image = try await capture(skipUnchanged: skipUnchanged)?.image else {
+                return repeated()
+            }
+            last = VideoFrame(image: image, held: false)
+            return VideoFrame(image: image, held: false)
         }
         let captured: Result<CapturedScreen, any Error>
         do {
-            captured = .success(try await capture())
+            guard let capture = try await capture(skipUnchanged: skipUnchanged) else { return repeated() }
+            captured = .success(capture)
         } catch {
+            retakes = true
             captured = .failure(error)
         }
         let after = try? await turner.orientation(of: device)
@@ -301,11 +323,19 @@ final class VideoFrameSource {
                     person: .warning("The screen turned, so --mask-region holds the last masked frame until it turns back")
                 )
             }
+            last = VideoFrame(image: lastGood, held: true)
             return VideoFrame(image: lastGood, held: true)
         }
         holding = false
         self.lastGood = masked.capture.image
+        last = VideoFrame(image: masked.capture.image, held: false)
         return VideoFrame(image: masked.capture.image, held: false)
+    }
+
+    /// The last frame again, for a screen that has not changed since.
+    private func repeated() -> VideoFrame {
+        guard let last else { preconditionFailure("an unchanged frame needs one before it") }
+        return VideoFrame(image: last.image, held: last.held, unchanged: true)
     }
 
     /// How long a capture in flight has to finish once the video is ending, so a healthy last frame is kept.
@@ -351,10 +381,21 @@ final class VideoFrameSource {
         CLIError(errorDescription: "A --mask-region cannot be placed: \(why). Nothing was recorded. Retry when the screen is still, or record without --mask-region.", reason: .maskUnproven)
     }
 
-    /// The device's frame with the screen read at the start, turned upright as `screenshot` does.
-    private func capture() async throws -> CapturedScreen {
+    private func freshCapture() async throws -> CapturedScreen {
+        guard let capture = try await capture(skipUnchanged: false) else { throw ImageFailure(detail: "the device gave no frame") }
+        return capture
+    }
+
+    /// The device's frame with the screen read at the start, turned upright as `screenshot` does; nil when `skipUnchanged` and the screen has not changed.
+    private func capture(skipUnchanged: Bool) async throws -> CapturedScreen? {
         if let capturer {
-            let image = try await capturer.captureFrame(for: device, scale: scale)
+            let taken: CGImage?
+            if let fullRate {
+                taken = try await fullRate.changedFrame(for: device, scale: scale, skipUnchanged: skipUnchanged)
+            } else {
+                taken = try await capturer.captureFrame(for: device, scale: scale)
+            }
+            guard let image = taken else { return nil }
             let pixelsPerPoint = screen.flatMap {
                 ScreenGeometry.pixelsPerPoint(imageWidth: image.width, imageHeight: image.height, screenWidth: $0.width, screenHeight: $0.height)
             }

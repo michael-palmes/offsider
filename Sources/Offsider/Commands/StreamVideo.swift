@@ -15,7 +15,8 @@ struct StreamVideo: AsyncParsableCommand {
         commandName: "stream-video",
         abstract: "Stream device frames to stdout using screenshot capture",
         discussion: """
-        mjpeg, raw and ffmpeg send one JPEG per screenshot, upright as `screenshot` takes it; --mask-region paints \
+        mjpeg, raw and ffmpeg send one JPEG per frame, upright as `screenshot` takes it, up to 60 a second on an iOS \
+        simulator with one display, whose framebuffer is read in place; --mask-region paints \
         a rectangle in points black on every one of them, and a frame that may have been taken in another orientation \
         or size than the first is replaced by the last masked frame. bgra passes the device's own video stream through \
         and takes no --mask-region. Video cannot be masked by the accessibility tree: --mask-secure, --mask-id, \
@@ -38,7 +39,7 @@ struct StreamVideo: AsyncParsableCommand {
     @Option(help: "Output format: mjpeg, raw, ffmpeg, bgra (default: mjpeg)")
     var format: OutputFormat = .mjpeg
 
-    @Option(help: "Frames per second (1-30, default: 10)")
+    @Option(help: VideoFrameRate.help)
     var fps: Int = 10
 
     @Option(help: "JPEG quality (1-100, default: 80)")
@@ -51,9 +52,7 @@ struct StreamVideo: AsyncParsableCommand {
     var masks: VideoMaskOptions
 
     func validate() throws {
-        guard fps >= 1 && fps <= 30 else {
-            throw ValidationError("FPS must be between 1 and 30")
-        }
+        try VideoFrameRate.validate(fps, device: deviceOption.id)
 
         guard quality >= 1 && quality <= 100 else {
             throw ValidationError("Quality must be between 1 and 100")
@@ -94,6 +93,8 @@ struct StreamVideo: AsyncParsableCommand {
             stop.finished()
             marker.remove()
         }
+        defer { (backend as? any FullRateFrameCapturing)?.endFrames(for: device) }
+        if format != .bgra { try await VideoFrameRate.require(fps, backend: backend, device: device) }
 
         switch format {
         case .bgra:
@@ -136,7 +137,10 @@ struct StreamVideo: AsyncParsableCommand {
                 RecordVideo.frameFailed(error)
             }
         }
-        let frameInterval = 1.0 / Double(fps)
+        var pacer = FramePacer(fps: fps)
+        let encode = { (image: CGImage) throws -> Data in
+            try VideoFrameUtilities.jpegData(from: image, scale: source.scalesItself ? 1 : scale, quality: quality)
+        }
         let mjpegBoundary = "--mjpegstream"
         var begun = false
 
@@ -158,6 +162,7 @@ struct StreamVideo: AsyncParsableCommand {
         let clock = ContinuousClock()
         var lastFrameAt = clock.now
         var hung = false
+        var lastSent: Data?
 
         streaming: while true {
             if Task.isCancelled {
@@ -167,13 +172,6 @@ struct StreamVideo: AsyncParsableCommand {
                 break
             }
 
-            let frameStartTime = Date()
-            let pace = {
-                let sleepTime = frameInterval - Date().timeIntervalSince(frameStartTime)
-                if sleepTime > 0 {
-                    try? await Task.sleep(nanoseconds: UInt64(sleepTime * 1_000_000_000))
-                }
-            }
 
             let frame: VideoFrame
             if let first = pending {
@@ -189,7 +187,7 @@ struct StreamVideo: AsyncParsableCommand {
                         hung = true
                         break streaming
                     }
-                    await pace()
+                    try? await pacer.wait()
                     continue streaming
                 case .ended:
                     break streaming
@@ -202,7 +200,8 @@ struct StreamVideo: AsyncParsableCommand {
             try begin()
 
             do {
-                let processedData = try VideoFrameUtilities.jpegData(from: frame.image, scale: source.scalesItself ? 1 : scale, quality: quality)
+                let processedData = try frame.unchanged ? lastSent ?? encode(frame.image) : encode(frame.image)
+                lastSent = processedData
 
                 switch format {
                 case .mjpeg:
@@ -234,7 +233,7 @@ struct StreamVideo: AsyncParsableCommand {
                 RecordVideo.frameFailed(error)
             }
 
-            await pace()
+            try? await pacer.wait()
         }
 
         guard begun else {

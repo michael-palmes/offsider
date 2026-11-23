@@ -10,6 +10,14 @@ public enum SimulatorApps {
         ["simctl", "launch"] + (restart ? ["--terminate-running-process"] : []) + [udid, bundleID]
     }
 
+    public static func installArguments(udid: String, path: String) -> [String] {
+        ["simctl", "install", udid, path]
+    }
+
+    public static func uninstallArguments(udid: String, bundleID: String) -> [String] {
+        ["simctl", "uninstall", udid, bundleID]
+    }
+
     public static func launchctlListArguments(udid: String) -> [String] {
         ["simctl", "spawn", udid, "launchctl", "list"]
     }
