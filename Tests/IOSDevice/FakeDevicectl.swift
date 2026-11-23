@@ -16,7 +16,7 @@ enum IOSDeviceFixtures {
     }
 }
 
-/// Scripted `devicectl` replies keyed by the subcommand (`list`, `details`, `ddiServices`, ...); records every call.
+/// Scripted `devicectl` replies keyed by the subcommand (`list`, `details`, `ddiServices`, `install app`, ...); records every call.
 final class FakeDevicectl: DevicectlRunning, @unchecked Sendable {
     private let lock = NSLock()
     private var recorded: [[String]] = []
@@ -52,15 +52,19 @@ final class FakeDevicectl: DevicectlRunning, @unchecked Sendable {
 
     func run(_ arguments: [String], timeout: TimeInterval) async throws -> ProcessCaptureResult {
         effect?(arguments)
-        let key = arguments.first == "list" ? "list" : (arguments.count > 2 ? arguments[2] : arguments.joined(separator: " "))
+        let word = arguments.first == "list" ? "list" : (arguments.count > 2 ? arguments[2] : arguments.joined(separator: " "))
+        // `device install app` and `device uninstall app` share their third word, so two words name one of them.
+        let keys = arguments.count > 2 ? ["\(arguments[1]) \(word)", word] : [word]
         let reply: ProcessCaptureResult? = lock.withLock {
             recorded.append(arguments)
-            if var pending = queued[key], !pending.isEmpty {
-                let next = pending.removeFirst()
-                queued[key] = pending
-                return next
+            for key in keys {
+                if var pending = queued[key], !pending.isEmpty {
+                    let next = pending.removeFirst()
+                    queued[key] = pending
+                    return next
+                }
             }
-            return replies[key]
+            return keys.lazy.compactMap { self.replies[$0] }.first
         }
         return reply ?? ProcessCaptureResult(status: 0, stdout: "{\"info\": {\"outcome\": \"success\"}, \"result\": {}}", stderr: "")
     }

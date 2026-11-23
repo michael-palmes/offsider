@@ -79,7 +79,7 @@ public enum AgentPermissionRules {
 
     /// Commands a person may allow once rather than approve per call, as each reaches only allowed apps; `init` never adds them by itself.
     public static let allowOnce: [(command: [String], reason: String)] = [
-        (["offsider", "app", "install"], "Installs an APK checked against the allowed app."),
+        (["offsider", "app", "install"], "Installs a build checked against the allowed app."),
         (["offsider", "app", "uninstall"], "Removes an allowed app and its data."),
         (["offsider", "app", "prefs"], "Lists an allowed app's preference names, never values."),
         (["offsider", "app", "broadcast"], "Sends a broadcast to an allowed app's own receivers."),

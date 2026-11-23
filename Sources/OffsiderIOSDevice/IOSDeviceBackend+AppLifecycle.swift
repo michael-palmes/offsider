@@ -56,7 +56,7 @@ extension IOSDeviceBackend: AppLifecycleControlling {
             throw IOSDeviceError.devicectlFailed("device info apps", udid: id.rawValue, detail: error.detail)
         }
         guard let found else {
-            throw AppLifecycleError(.notInstalled, "\(app) is not installed on \(id.rawValue). Install it from Xcode, TestFlight or the App Store, then retry.")
+            throw AppLifecycleError(.notInstalled, "\(app) is not installed on \(id.rawValue). Install a build with `offsider app install <path/to/App.app> --app \(app) --device \(id.rawValue)`, or from TestFlight or the App Store, then retry.")
         }
         return found
     }
@@ -79,7 +79,7 @@ extension IOSDeviceBackend: AppLifecycleControlling {
     }
 
     /// A locked device refuses a launch; that is `device_locked`, never a prompt Offsider answers.
-    private func devicectl(_ arguments: [String], label: String, on id: DeviceID, app: String) async throws -> String {
+    func devicectl(_ arguments: [String], label: String, on id: DeviceID, app: String) async throws -> String {
         do {
             return try await directory.run(arguments, label: label, udid: id.rawValue, timeout: IOSDeviceDirectory.infoTimeout + 10)
         } catch let error as IOSDeviceError where error.kind == .devicectlFailed && Self.saysLocked(error.message) {

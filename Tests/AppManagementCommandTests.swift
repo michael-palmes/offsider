@@ -135,12 +135,137 @@ struct AppManagementCommandTests {
         #expect(texts.count == 2 && texts[0].contains("RKStorage") && texts[1].contains("1 key name"))
     }
 
-    @Test("a simulator or an iPhone is told these are Android only, before any stack starts")
+    @Test("a simulator or an iPhone is told prefs and broadcast are Android only, before any stack starts")
     func androidOnly() {
         let simulator = #expect(throws: CLIError.self) { try AppManagementSupport.requireAndroid("00000000-0000-0000-0000-000000000001", command: "app prefs") }
         #expect(simulator?.reason == .notSupported)
         #expect(simulator?.errorDescription?.contains("app prefs is Android only") == true)
         #expect(simulator?.errorDescription?.contains("sleep") == false)
+    }
+
+    static let simulator = "00000000-0000-0000-0000-000000000001"
+    static let iPhone = DeviceID(rawValue: PolicyFixtures.phone, platform: .ios)
+
+    @Test("install on a simulator or an iPhone reads the file as an iOS bundle before any stack starts, and is no longer Android only", arguments: [
+        simulator, PolicyFixtures.phone,
+    ])
+    func installReadsABundle(device: String) async throws {
+        let apk = FileManager.default.temporaryDirectory.appendingPathComponent("offsider-\(UUID().uuidString).apk")
+        try Data("plain text".utf8).write(to: apk)
+        defer { try? FileManager.default.removeItem(at: apk) }
+        let command = try #require(try OffsiderCommand.parseAsRoot(["app", "install", apk.path, "--device", device]) as? AppInstallCommand)
+
+        let error = await #expect(throws: AppLifecycleError.self) { try await command.run() }
+
+        #expect(error?.kind == .bundleUnreadable)
+        #expect(error?.message.contains("Android file") == true && error?.message.contains("Android only") == false)
+    }
+
+    @Test("an iOS app handed to an Android device is named as one, with nothing sent")
+    func bundleOnAndroid() throws {
+        let fixture = try AppBundleFixture()
+        defer { fixture.remove() }
+        let error = #expect(throws: AppLifecycleError.self) { _ = try AppManagementSupport.open(try fixture.app()) }
+        #expect(error?.kind == .apkUnreadable && error?.message.contains("is an iOS app") == true)
+    }
+
+    @Test("a file that names another app is package_mismatch on either platform, with the same two ways out")
+    func mismatchMessage() {
+        let error = AppManagementSupport.mismatch("build/Example.app", declared: "com.example.other", app: Self.pinned)
+        #expect(error.kind == .packageMismatch)
+        #expect(error.message == "build/Example.app is com.example.other, not com.example.pinned, so nothing was sent. Build com.example.pinned, or pass --app com.example.other if that app is allowed here.")
+    }
+
+    static func iPhoneRoute(apps: [String], testDevice: Bool = false) -> (DeviceRouter.Route, DeviceAllowance) {
+        let allowance = DeviceAllowance(platform: .ios, key: PolicyFixtures.phone, name: "Test iPhone", added: PolicyFixtures.added, expires: nil, apps: apps, team: "ABCDE12345", testDevice: testDevice)
+        return (DeviceRouter.Route(backend: FakeDeviceBackend(platform: .ios, trees: []), device: iPhone, allowance: allowance), allowance)
+    }
+
+    static let storeCopy = InstalledAppCopy(app: pinned, builtByDeveloper: false)
+
+    @Test("over an App Store or TestFlight copy on a phone in personal use, an agent is refused with the whole command to hand over", arguments: [
+        (AppStoreCopyGate.Step.install, "offsider app install '/tmp/Build/My App.app' --app com.example.pinned --device \(PolicyFixtures.phone)"),
+        (AppStoreCopyGate.Step.uninstall, "offsider app uninstall --app com.example.pinned --device \(PolicyFixtures.phone)"),
+    ])
+    func storeCopyNeedsAPerson(step: AppStoreCopyGate.Step, command: String) async {
+        let (route, allowance) = Self.iPhoneRoute(apps: [Self.pinned])
+        let bundle = AppBundle(path: "/tmp/Build/My App.app", bundleID: Self.pinned, destination: .device)
+        let built = step == .install ? AppStoreCopyGate.installCommand(bundle, app: Self.pinned, device: Self.iPhone) : AppStoreCopyGate.uninstallCommand(app: Self.pinned, device: Self.iPhone)
+        #expect(built == command)
+        let presence = FakePresence()
+
+        let error = await #expect(throws: CLIError.self) {
+            try await PersonPresence.$terminal.withValue({ false }) {
+                try await PersonPresence.$current.withValue(presence) {
+                    try await AppStoreCopyGate.confirm(Self.storeCopy, step: step, route: route, command: command, gate: AppArgumentTests.gate(allowance))
+                }
+            }
+        }
+
+        #expect(error?.reason == .personRequired)
+        #expect(error?.hint == command)
+        #expect(error?.errorDescription?.contains("App Store or TestFlight") == true && error?.errorDescription?.contains("Nothing was sent") == true)
+        #expect(error?.errorDescription?.contains("`\(command)`") == true, "an agent reads the command in the message")
+        #expect(presence.reasons.isEmpty)
+    }
+
+    @Test("a person at a terminal confirms once with Touch ID, and a refused confirmation stops the install")
+    func storeCopyAsksThePerson() async throws {
+        let (route, allowance) = Self.iPhoneRoute(apps: [Self.pinned])
+        let gate = AppArgumentTests.gate(allowance)
+        let presence = FakePresence()
+        try await PersonPresence.$terminal.withValue({ true }) {
+            try await PersonPresence.$current.withValue(presence) {
+                try await AppStoreCopyGate.confirm(Self.storeCopy, step: .install, route: route, command: "x", gate: gate)
+            }
+        }
+        #expect(presence.reasons == ["install a development build over the App Store or TestFlight copy of com.example.pinned on Test iPhone"])
+
+        let cancelled = FakePresence(failure: PersonPresence.error(for: .userCancel))
+        let error = await #expect(throws: CLIError.self) {
+            try await PersonPresence.$terminal.withValue({ true }) {
+                try await PersonPresence.$current.withValue(cancelled) {
+                    try await AppStoreCopyGate.confirm(Self.storeCopy, step: .uninstall, route: route, command: "x", gate: gate)
+                }
+            }
+        }
+        #expect(error?.reason == .personRequired)
+    }
+
+    @Test("a developer-built copy, a test device and a simulator ask nobody")
+    func noGateWhereNothingPersonalIs() async throws {
+        let presence = FakePresence()
+        try await PersonPresence.$terminal.withValue({ false }) {
+            try await PersonPresence.$current.withValue(presence) {
+                let (personal, pin) = Self.iPhoneRoute(apps: [Self.pinned])
+                try await AppStoreCopyGate.confirm(InstalledAppCopy(app: Self.pinned, builtByDeveloper: true), step: .install, route: personal, command: "x", gate: AppArgumentTests.gate(pin))
+                let (test, whole) = Self.iPhoneRoute(apps: [], testDevice: true)
+                try await AppStoreCopyGate.confirm(Self.storeCopy, step: .install, route: test, command: "x", gate: AppArgumentTests.gate(whole))
+                let simulator = DeviceRouter.Route(backend: FakeDeviceBackend(platform: .ios, trees: []), device: DeviceID(rawValue: Self.simulator, platform: .ios))
+                try await AppStoreCopyGate.confirm(Self.storeCopy, step: .uninstall, route: simulator, command: "x", gate: AppArgumentTests.gate(pin))
+            }
+        }
+        #expect(presence.reasons.isEmpty)
+    }
+
+    @Test("a test device that managed policy turns off gets the store-copy gate back")
+    func managedTestDeviceIsGated() async {
+        let (route, whole) = Self.iPhoneRoute(apps: [Self.pinned], testDevice: true)
+        let gate = DevicePolicyGate.fixed(PhysicalDevicePolicy(managed: ManagedDevicePolicy(allowTestDevices: false), list: DeviceAllowList(entries: [whole])))
+        let error = await #expect(throws: CLIError.self) {
+            try await PersonPresence.$terminal.withValue({ false }) {
+                try await AppStoreCopyGate.confirm(Self.storeCopy, step: .install, route: route, command: "x", gate: gate)
+            }
+        }
+        #expect(error?.reason == .personRequired)
+    }
+
+    @Test("no install or uninstall option skips a check, builds, signs or registers a device")
+    func noLooseningOption() {
+        for help in [AppInstallCommand.helpMessage(columns: 200), AppUninstallCommand.helpMessage(columns: 200)] {
+            let options = Set(help.matches(of: #/--([a-z-]+)/#).map { String($0.1) })
+            #expect(options.isSubset(of: ["app", "json", "device", "wait-lock", "help", "pkg"]), "\(options.sorted())")
+        }
     }
 
     @Test("--cold is another name for --restart")

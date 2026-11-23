@@ -92,6 +92,8 @@ public struct AppLifecycleError: Error, Equatable, Sendable, CustomStringConvert
         case apkUnreadable
         case packageMismatch
         case installFailed
+        case bundleUnreadable
+        case notProvisioned
         case notDebuggable
         case broadcastRefused
         case receiverNotFound

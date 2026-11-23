@@ -40,6 +40,8 @@ public enum FailureReason: String, CaseIterable, Sendable {
     case apkUnreadable = "apk_unreadable"
     case packageMismatch = "package_mismatch"
     case installFailed = "install_failed"
+    case bundleUnreadable = "bundle_unreadable"
+    case notProvisioned = "not_provisioned"
     case notDebuggable = "not_debuggable"
     case broadcastRefused = "broadcast_refused"
     case receiverNotFound = "receiver_not_found"

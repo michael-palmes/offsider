@@ -114,13 +114,13 @@ extension IOSBackend: AppLifecycleControlling {
         return SimulatorApps.runningPID(result.stdout, bundleID: bundleID)
     }
 
-    private static func simctl(_ arguments: [String], timeout: TimeInterval = 15) async throws -> ProcessCaptureResult {
+    static func simctl(_ arguments: [String], timeout: TimeInterval = 15) async throws -> ProcessCaptureResult {
         try await ProcessCapture.run(executable: "/usr/bin/xcrun", arguments: arguments, timeout: timeout)
     }
 
     private static func failure(_ result: ProcessCaptureResult, bundleID: String, on id: DeviceID, doing: String) -> AppLifecycleError {
         if SimulatorApps.notInstalled(stderr: result.stderr) {
-            return AppLifecycleError(.notInstalled, "\(bundleID) is not installed on simulator \(id.rawValue). Install it (xcrun simctl install \(id.rawValue) <path/to/App.app>), then retry.")
+            return AppLifecycleError(.notInstalled, "\(bundleID) is not installed on simulator \(id.rawValue). Install it with `offsider app install <path/to/App.app> --device \(id.rawValue)`, then retry.")
         }
         let line = result.stderr.split(whereSeparator: \.isNewline).first.map(String.init) ?? "exit status \(result.status)"
         return AppLifecycleError(.failed, "Could not \(doing) \(bundleID) on simulator \(id.rawValue): \(TerminalText.line(line, cap: 300))")

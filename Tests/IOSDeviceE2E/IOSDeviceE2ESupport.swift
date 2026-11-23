@@ -84,7 +84,7 @@ enum IOSDeviceE2EGuard {
     /// Whether a playground build or install failed for signing or a locked device, which the suites skip rather than fail.
     static func isSigningOrLock(_ output: String) -> Bool {
         let lowered = output.lowercased()
-        return ["provisioning profile", "no accounts", "signing", "integrity could not be verified", "0xe8008012", "locked", "no signing certificate"]
+        return ["provisioning profile", "no accounts", "signing", "code signature", "integrity could not be verified", "0xe8008012", "locked", "no signing certificate"]
             .contains { lowered.contains($0) }
     }
 
@@ -280,7 +280,7 @@ enum IOSDeviceE2E {
 }
 
 extension IOSDeviceE2E {
-    /// Builds, signs and installs the playground unless this device already has this exact build (a source digest in a marker);
+    /// Builds and signs the playground, then installs it with `offsider app install`, unless this device already has this exact build (a source digest in a marker);
     /// a signing or lock failure ends the test as skipped with the exact error on stderr.
     static func ensurePlaygroundInstalled() async throws {
         let result = await GuardedIOSDevice.shared.installOnce {
@@ -291,10 +291,7 @@ extension IOSDeviceE2E {
             let marker = workspace.appendingPathComponent("\(udid)-playground.sha256")
             if (try? String(contentsOf: marker, encoding: .utf8)) == digest { return }
             let app = try await buildPlayground(team: team, derivedData: workspace.appendingPathComponent("DerivedData"))
-            let install = try await CommandRunner.runSeparated("xcrun devicectl device install app --device \(udid) \(quote(app))", timeout: 300)
-            guard install.exitCode == 0 else {
-                throw IOSDeviceE2EError(description: "devicectl device install app exited \(install.exitCode): \(install.stderr)\(install.stdout)")
-            }
+            try await run("app install \(quote(app)) --app \(playgroundBundleID)", timeout: 400)
             try FileManager.default.createDirectory(at: workspace, withIntermediateDirectories: true)
             try digest.write(to: marker, atomically: true, encoding: .utf8)
         }
@@ -309,14 +306,10 @@ extension IOSDeviceE2E {
     /// Removes the playground and installs it again, which clears every permission iOS holds for it and for no other app.
     static func reinstallPlayground() async throws {
         try await ensurePlaygroundInstalled()
-        let udid = try await udid()
         let workspace = FileManager.default.temporaryDirectory.appendingPathComponent("offsider-ios-device-e2e")
         let app = try await buildPlayground(team: try team(), derivedData: workspace.appendingPathComponent("DerivedData"))
-        try await devicectl("device uninstall app \(playgroundBundleID)")
-        let install = try await CommandRunner.runSeparated("xcrun devicectl device install app --device \(udid) \(quote(app))", timeout: 300)
-        guard install.exitCode == 0 else {
-            throw IOSDeviceE2EError(description: "devicectl device install app exited \(install.exitCode): \(install.stderr)\(install.stdout)")
-        }
+        try await run("app uninstall --app \(playgroundBundleID)")
+        try await run("app install \(quote(app)) --app \(playgroundBundleID)", timeout: 400)
     }
 
     /// Restarts the playground on one screen and waits until describe-ui shows a node labelled `label`.
