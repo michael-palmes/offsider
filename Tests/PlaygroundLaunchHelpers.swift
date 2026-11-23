@@ -155,6 +155,7 @@ extension TestHelpers {
         case "presented-sheet-test": return .identifier("presented-sheet-test-open")
         case "environment-test": return .identifier("environment-test-scheme")
         case "device-state": return .identifier("device-state-contacts")
+        case "reader-test": return .identifier("reader-test-status")
         case "permission-prompt": return .identifier("permission-prompt-notifications")
         case "text-input": return .identifier("text-input-screen")
         case "key-press": return .identifier("key-press-screen")

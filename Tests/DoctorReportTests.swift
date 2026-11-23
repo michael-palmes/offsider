@@ -133,6 +133,7 @@ struct DoctorReportTests {
             "ios-device.runner-trust",
             "device.lease",
             "device.recording",
+            "device.screen-reader",
             "device.policy",
             "host.load",
             "host.disk",

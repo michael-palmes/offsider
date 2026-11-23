@@ -108,6 +108,23 @@ offsider session stop --device <DEVICE_ID>
 - USB stays connected. An emulator loses its route to the Mac at `10.0.2.2`, so a React Native debug build cannot reach Metro until it is off.
 - This is the way to test an app offline: on API 36 an app's connections fail at once with no route, and they work again about 10 s after `session stop`, so wait before you read the result. An iOS simulator shares the Mac's network, so it cannot go offline alone; fake the failure in the app there.
 
+## Screen reader
+
+`offsider screen-reader` reads whether an iOS simulator tells its apps that VoiceOver is running, and `on` or `off` sets it, checking the setting took. Use it for an app that changes its screen for a screen reader: it shows, hides or regroups views only while `UIAccessibility.isVoiceOverRunning` (React Native's `AccessibilityInfo.isScreenReaderEnabled`) is true, so the tree `describe-ui` reads with it off is not the one a screen reader user gets.
+
+```bash
+offsider screen-reader on --device <DEVICE_ID>
+offsider screen-reader --device <DEVICE_ID> --json
+offsider session stop --device <DEVICE_ID>
+```
+
+- A running app hears the change at once, and one launched later starts with it. `--json` prints `{"version":1,"action":"on","device":"<DEVICE_ID>","platform":"ios","screenReader":"on","previous":"off","service":"VoiceOver","resetBySessionStop":true}`; `action` is `show` for a read, where `previous` is null.
+- A simulator never starts VoiceOver itself, so nothing is spoken on the Mac, no element is selected and nothing is read out. `tap`, `swipe`, `type` and every other input and read work exactly as they do with it off: an app's own response to a screen reader is what you are testing, not VoiceOver's gestures or focus.
+- It outlives the command and a reboot, so Offsider records that it turned it on, in the private directory's `screen-reader/`, before changing it. `session stop` and `shutdown` turn it off only then, and `screen-reader off` drops the record. Already on when you ran it, it stays on: `resetBySessionStop` says which. A simulator shut down some other way with a recorded reader still on is put right by the next `session stop`, in its preference file, and one that was deleted only loses its record. `session status` lists the record, and `session stop` names a simulator it could not change with the command that retries it.
+- `on` also sets VoiceOver's volume to zero, and `off` puts back what it was, so a simulator that did start VoiceOver would stay silent.
+- `doctor --device <DEVICE_ID>` warns `device.screen-reader` while it is on.
+- iOS simulators only. An iPhone, iPad, Android emulator or phone is refused with `not_supported` before anything is sent to it.
+
 ## Orientation
 
 `orientation` reads or sets the device orientation, waiting until the device has turned: `portrait`, `landscape-left`, `landscape-right`, `portrait-upside-down`, or `--rotation 0|90|180|270` in degrees anticlockwise. The names say how the device is turned, as Maestro and devicectl name them: `landscape-left` is turned 90 degrees anticlockwise, home edge on the right, which React Native's and UIKit's interface orientation call `landscape-right`. `describe-ui` and `screenshot --json` report the shape as `orientation` and the turn as `rotation`. An iOS simulator can hold a turn its screen never showed, which a later app or fold takes, so Offsider tells it the orientation even when its screen already shows it, and turns back a turn that times out. When a simulator's turn times out, the error also says what to try next: press Home, turn to portrait and launch the app again, which clears an app that has stopped following turns.
