@@ -22,12 +22,21 @@ struct RecordVideoTests {
 
     @Test("Record video honours FPS, scale, and quality settings")
     func recordVideoCustomOptions() async throws {
-        let result = try await invokeRecordVideo(fps: 5, quality: 60, scale: 0.5, duration: 2.0)
-        defer { try? FileManager.default.removeItem(at: result.outputURL) }
+        let clip = FileManager.default.temporaryDirectory.appendingPathComponent("offsider-record-options-\(UUID().uuidString).mp4")
+        defer { try? FileManager.default.removeItem(at: clip) }
+        let result = try await invokeRecordVideo(fps: 5, quality: 60, scale: 0.5, duration: 2.0, outputPath: clip.path, extraArguments: ["--json"])
 
-        #expect(result.exitCode == 0)
-        #expect(result.fileSize > 10_000)
+        #expect(result.exitCode == 0, "\(result.stderr)")
         #expect(result.stderr.contains("Press Ctrl+C"))
+        let summary = try #require(try JSONSerialization.jsonObject(with: Data(result.stdout.utf8)) as? [String: Any])
+        #expect(try await VideoRecordingFileTests.samples(in: clip) == summary["frames"] as? Int)
+        let track = try #require(try await AVURLAsset(url: clip).loadTracks(withMediaType: .video).first)
+        let size = try await track.load(.naturalSize)
+        let shot = FileManager.default.temporaryDirectory.appendingPathComponent("offsider-record-options-\(UUID().uuidString).png")
+        defer { try? FileManager.default.removeItem(at: shot) }
+        _ = try await TestHelpers.runOffsiderCommandSeparated("screenshot --output '\(shot.path)'", simulatorUDID: try TestHelpers.requireSimulatorUDID())
+        let screen = try ScreenImage.decode(try Data(contentsOf: shot))
+        #expect(abs(Int(size.width) - screen.width / 2) <= 2 && abs(Int(size.height) - screen.height / 2) <= 2, "\(size) from \(screen.width) x \(screen.height)")
     }
 
     @Test("Record video uses provided directory without deleting its contents")
@@ -59,7 +68,7 @@ struct RecordVideoTests {
         process.arguments = [
             "record-video",
             "--device", udid,
-            "--fps", "40"
+            "--fps", "61"
         ]
         let errorPipe = Pipe()
         process.standardError = errorPipe
@@ -71,11 +80,39 @@ struct RecordVideoTests {
         let errorOutput = String(data: errorPipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
 
         #expect(process.terminationStatus != 0)
-        #expect(errorOutput.contains("FPS must be between 1 and 30"))
+        #expect(errorOutput.contains("FPS must be between 1 and 30, or up to 60 on an iOS simulator"))
     }
 
-    @Test("--mask-region paints the rectangle black on the recorded frames and reports it")
-    func recordVideoMaskRegion() async throws {
+    @Test("--fps 60 on a moving screen beats the old 30 limit, keeps every frame in the MP4, and keeps the display's square corners")
+    func recordVideoFullRate() async throws {
+        try await Self.screenWithoutKeyboard.value
+        let udid = try TestHelpers.requireSimulatorUDID()
+        try await TestHelpers.launchPlaygroundApp(to: "motion-test")
+        try await TestHelpers.runOffsiderCommand("tap --id motion-toggle", simulatorUDID: udid)
+        let shot = FileManager.default.temporaryDirectory.appendingPathComponent("offsider-record-corners-\(UUID().uuidString).png")
+        defer { try? FileManager.default.removeItem(at: shot) }
+        _ = try await TestHelpers.runOffsiderCommandSeparated("screenshot --output '\(shot.path)'", simulatorUDID: udid)
+        let screen = try ScreenImage.decode(try Data(contentsOf: shot))
+
+        let clip = FileManager.default.temporaryDirectory.appendingPathComponent("offsider-record-full-rate-\(UUID().uuidString).mp4")
+        defer { try? FileManager.default.removeItem(at: clip) }
+        let result = try await invokeRecordVideo(fps: 60, duration: 3, outputPath: clip.path, extraArguments: ["--json"])
+
+        #expect(result.exitCode == 0, "\(result.stderr)")
+        let summary = try #require(try JSONSerialization.jsonObject(with: Data(result.stdout.utf8)) as? [String: Any])
+        let fps = try #require(summary["fps"] as? Double)
+        #expect(fps > 30, "reached \(fps) fps")
+        #expect(try await VideoRecordingFileTests.samples(in: result.outputURL) == summary["frames"] as? Int)
+        let frame = try await AVAssetImageGenerator(asset: AVURLAsset(url: result.outputURL)).image(at: CMTime(seconds: 1.5, preferredTimescale: 600)).image
+        #expect((frame.width, frame.height) == (screen.width, screen.height))
+        for (x, y) in [(1, 1), (frame.width - 2, 1), (1, frame.height - 2), (frame.width - 2, frame.height - 2)] {
+            let recorded = ScreenshotMaskTests.pixel(frame, x, y), expected = ScreenshotMaskTests.pixel(screen, x, y)
+            #expect(zip(recorded, expected).allSatisfy { abs(Int($0) - Int($1)) <= 24 }, "corner \(x),\(y) is \(recorded), the screen \(expected)")
+        }
+    }
+
+    @Test("--mask-region paints the rectangle black on every sampled frame and reports it, at the default rate and at 60", arguments: [10, 60])
+    func recordVideoMaskRegion(fps: Int) async throws {
         let udid = try TestHelpers.requireSimulatorUDID()
         let shot = FileManager.default.temporaryDirectory.appendingPathComponent("offsider-record-scale-\(UUID().uuidString).png")
         defer { try? FileManager.default.removeItem(at: shot) }
@@ -84,7 +121,7 @@ struct RecordVideoTests {
 
         let clip = FileManager.default.temporaryDirectory.appendingPathComponent("offsider-record-region-\(UUID().uuidString).mp4")
         defer { try? FileManager.default.removeItem(at: clip) }
-        let result = try await invokeRecordVideo(duration: 2.5, outputPath: clip.path, extraArguments: ["--mask-region", "20,120,200,150", "--json"])
+        let result = try await invokeRecordVideo(fps: fps, duration: 2.5, outputPath: clip.path, extraArguments: ["--mask-region", "20,120,200,150", "--json"])
 
         #expect(result.exitCode == 0, "\(result.stderr)")
         let summary = try #require(try JSONSerialization.jsonObject(with: Data(result.stdout.utf8)) as? [String: Any])
@@ -93,7 +130,9 @@ struct RecordVideoTests {
         #expect(summary["unmasked"] as? Bool == false)
 
         let generator = AVAssetImageGenerator(asset: AVURLAsset(url: result.outputURL))
-        for seconds in [0.2, 1.5] {
+        generator.requestedTimeToleranceBefore = .zero
+        generator.requestedTimeToleranceAfter = .zero
+        for seconds in stride(from: 0.1, through: 2.3, by: 0.2) {
             let frame = try await generator.image(at: CMTime(seconds: seconds, preferredTimescale: 600)).image
             for (x, y) in [(25.0, 125.0), (120.0, 195.0), (215.0, 265.0)] {
                 let pixel = ScreenshotMaskTests.pixel(frame, Int(x * pixelsPerPoint), Int(y * pixelsPerPoint))

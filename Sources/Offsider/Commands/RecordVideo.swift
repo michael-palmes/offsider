@@ -8,7 +8,8 @@ struct RecordVideo: AsyncParsableCommand {
         commandName: "record-video",
         abstract: "Record the device display to an MP4 file using H.264 encoding",
         discussion: """
-        Each frame is a screenshot, upright as `screenshot` takes it. --mask-region paints a rectangle in points \
+        Each frame is upright, as `screenshot` takes it; an iOS simulator with one display is read straight from its \
+        framebuffer, so --fps goes up to 60 there and a still screen adds no frames. --mask-region paints a rectangle in points \
         black on every frame; Offsider reads the screen's orientation after every capture, and a frame that may have \
         been taken in another orientation or size than the first is replaced by the last masked frame (heldFrames). \
         Video cannot be masked by the accessibility tree: --mask-secure, --mask-id, --mask-label, \
@@ -33,7 +34,7 @@ struct RecordVideo: AsyncParsableCommand {
     @OptionGroup
     var appOption: AppOption
 
-    @Option(help: "Frames per second (1-30, default: 10)")
+    @Option(help: VideoFrameRate.help)
     var fps: Int = 10
 
     @Option(help: "Quality factor (1-100) controlling bitrate (default: 80)")
@@ -55,9 +56,7 @@ struct RecordVideo: AsyncParsableCommand {
     var json = false
 
     func validate() throws {
-        guard fps >= 1 && fps <= 30 else {
-            throw ValidationError("FPS must be between 1 and 30")
-        }
+        try VideoFrameRate.validate(fps, device: deviceOption.id)
 
         guard quality >= 1 && quality <= 100 else {
             throw ValidationError("Quality must be between 1 and 100")
@@ -119,6 +118,8 @@ struct RecordVideo: AsyncParsableCommand {
         let (booted, marker) = try await Self.start(command: "record-video", backend: backend, device: route.device, checksSecureField: checksSecureField)
         let device = booted.id
         defer { marker.remove() }
+        defer { (backend as? any FullRateFrameCapturing)?.endFrames(for: device) }
+        try await VideoFrameRate.require(fps, backend: backend, device: device)
 
         let target = try prepareOutputURL()
         let console = Console.current
@@ -244,7 +245,6 @@ struct RecordVideo: AsyncParsableCommand {
         )
         defer { recorder.invalidate() }
 
-        let frameInterval = 1.0 / Double(fps)
         var frameCount: Int64 = 1
         var heldCount = 0
         var lastLogFrame: Int64 = 0
@@ -259,6 +259,9 @@ struct RecordVideo: AsyncParsableCommand {
         var lastFrameAt = clock.now
         var appendFailures = 0
         var hung = false
+        var pacer = FramePacer(fps: fps)
+        var lastWritten = initialImage
+        var skipped = false
 
         capturing: while true {
             if Task.isCancelled {
@@ -271,9 +274,10 @@ struct RecordVideo: AsyncParsableCommand {
                 break
             }
 
-            let frameStart = Date()
-
             switch await watchdog.guardingRead(of: source.device, extra: Self.watchdogExtra, { await source.next(stop: stop, endsAt: endsAt, readLimit: readLimit) }) {
+            case .frame(let frame) where frame.unchanged:
+                lastFrameAt = clock.now
+                skipped = true
             case .frame(let frame):
                 lastFrameAt = clock.now
                 let now = Date()
@@ -283,15 +287,18 @@ struct RecordVideo: AsyncParsableCommand {
                 }
 
                 do {
-                    try recorder.append(image: frame.image, presentationTime: presentationTime)
+                    try Timings.measure("encode") { try recorder.append(image: frame.image, presentationTime: presentationTime) }
                 } catch {
                     appendFailures += 1
                     guard recorder.isWriting, appendFailures < Self.maximumAppendFailures else { throw error }
                     Self.frameFailed(error)
+                    source.retakeNext()
                     break
                 }
                 appendFailures = 0
                 lastPresentationTime = presentationTime
+                lastWritten = frame.image
+                skipped = false
                 frameCount += 1
                 if frame.held { heldCount += 1 }
                 Console.current.relabel(StartPersonView.recordingLabel(device: source.device.rawValue, elapsed: now.timeIntervalSince(startTime)))
@@ -318,16 +325,16 @@ struct RecordVideo: AsyncParsableCommand {
                 break capturing
             }
 
-            let elapsed = Date().timeIntervalSince(frameStart)
-            var sleepTime = frameInterval - elapsed
-            if let duration {
-                sleepTime = min(sleepTime, duration - Date().timeIntervalSince(writerStartTime))
-            }
-            if sleepTime > 0 {
-                try await Task.sleep(nanoseconds: UInt64(sleepTime * 1_000_000_000))
-            }
+            try await pacer.wait(until: endsAt)
         }
 
+        if skipped, !hung, recorder.isWriting {
+            let end = CMTime(seconds: Date().timeIntervalSince(writerStartTime), preferredTimescale: 600)
+            if end > lastPresentationTime, (try? recorder.append(image: lastWritten, presentationTime: end)) != nil {
+                lastPresentationTime = end
+                frameCount += 1
+            }
+        }
         stop.saving()
         Console.current.relabel("Saving the video")
         try await recorder.finish()
