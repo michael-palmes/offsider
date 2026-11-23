@@ -107,6 +107,8 @@ enum ErrorReporter {
     @Sendable static func exitFromTimer(reason: FailureReason, message: String, hint: String?) {
         writeEnvelopeIfWanted(ErrorPayload(reason: reason, message: message, hint: hint))
         writeErrorLine(message, hint: hint)
+        // The command's own end never runs from here, so its audit record is written now.
+        CommandScope.current.audit.finish(exit: reason.exitCode.rawValue, reason: reason.rawValue)
         Darwin.exit(reason.exitCode.rawValue)
     }
 

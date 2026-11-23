@@ -28,7 +28,8 @@ struct DeviceSessionServe: AsyncParsableCommand {
             throw CLIError(errorDescription: "\(udid) is not a physical iPhone or iPad UDID.", reason: .invalidDeviceID)
         }
         let key = canonical.uppercased()
-        _ = try DeviceRouter.requireAllowed(platform: .ios, key: key, rawID: udid, gate: DevicePolicyGate.current)
+        let allowance = try DeviceRouter.requireAllowed(platform: .ios, key: key, rawID: udid, gate: DevicePolicyGate.current)
+        let audit = CommandScope.current.audit
         let store = DeviceSessionStore(root: OffsiderPrivateDirectory.root)
         let socket = try store.socketPath(udid: udid)
         let log: IOSDeviceLog = { level, message in
@@ -42,7 +43,13 @@ struct DeviceSessionServe: AsyncParsableCommand {
         }
         let usbmux = host.usbmux
         let recheck: DeviceSessionRecheck = {
-            Self.allowanceRefusal(key: key, gate: Self.freshGate) ?? DeviceSessionServer.usbRefusal(udid: udid, usbmux: usbmux)
+            if let refusal = Self.allowanceRefusal(key: key, gate: Self.freshGate) {
+                SessionAudit.noteLapse(platform: .ios, key: key, gate: Self.freshGate, audit: audit)
+                return refusal
+            }
+            guard let refusal = DeviceSessionServer.usbRefusal(udid: udid, usbmux: usbmux) else { return nil }
+            audit.noteRefusal(platform: .ios, key: key, code: SessionAudit.notWired, managed: false)
+            return refusal
         }
         let server = DeviceSessionServer(
             udid: udid,
@@ -62,6 +69,7 @@ struct DeviceSessionServe: AsyncParsableCommand {
             return source
         }
         defer { signals.forEach { $0.cancel() } }
+        SessionAudit.noteBroker(allowance, policy: DevicePolicyGate.current.policy(), audit: audit)
         try await server.run()
     }
 

@@ -69,6 +69,9 @@ struct OffsiderCommand: AsyncParsableCommand {
             ErrorReporter.prepare(command: command, arguments: arguments)
             let path = CommandPath.of(command)
             await CommandScope.current.configure(command: path, namedApp: (command as? any AppNaming)?.namedApp)
+            CommandScope.current.audit.attach { .live }
+            // `Darwin.exit` from an interrupted command skips the scope's end; its record is written on the way out.
+            atexit { CommandScope.current.audit.finishEarly() }
             await DeviceClaims.current.configure(
                 command: path,
                 waitOption: (command as? any LockingCommand)?.waitLock

@@ -45,6 +45,7 @@ struct Doctor: AsyncParsableCommand {
                 managed: DevicePolicyGate.current.policy().managed.present
             )
         }
+        if let target, let policy { Self.noteAudit(policy, target: target, fromEnvironment: deviceOption.source == .environment) }
         if let target, let policy, !policy.allowed {
             report = Self.policyReport(policy, target: target, source: deviceOption.source)
         } else if let id = deviceOption.id, case .androidSerial(let port) = DeviceIDClassifier.classify(id),
@@ -155,11 +156,35 @@ struct Doctor: AsyncParsableCommand {
         )
     }
 
+    /// `doctor --device` on a physical device reads it, or is refused, so it leaves an audit record like any other command.
+    static func noteAudit(
+        _ policy: DoctorPolicy, target: (platform: DevicePlatform, key: String), fromEnvironment: Bool = false, gate: DevicePolicyGate = .current,
+        audit: CommandAudit = CommandScope.current.audit
+    ) {
+        let current = gate.policy()
+        let whole = current.list.entry(platform: target.platform, key: target.key).map(current.drivesWhole) ?? false
+        if let refusal = policy.refusal {
+            var named = true
+            if fromEnvironment, case .allowed = gate.decision(platform: target.platform, key: target.key) { named = false }
+            audit.noteRefusal(platform: target.platform, key: target.key, code: named ? refusal : SessionAudit.notNamed, testDevice: whole, managed: policy.managed)
+        } else {
+            audit.note(platform: target.platform, key: target.key, testDevice: whole, managed: policy.managed)
+        }
+    }
+
+    /// The trail `doctor` checks; tests point it at a temporary home.
+    @TaskLocal static var auditTrail: @Sendable () -> AuditTrail = { .live }
+
+    static func auditChecks() -> [DoctorCheckResult] {
+        let trail = auditTrail()
+        return AuditDoctorRules.checks(file: trail.fileState(), chain: trail.verify())
+    }
+
     /// Host facts and checks join every report, after its own checks.
     static func withHost(_ report: DoctorReport, _ host: HostFacts) -> DoctorReport {
         DoctorReport(
             offsiderVersion: report.offsiderVersion, udid: report.udid, device: report.device, xcode: report.xcode, booted: report.booted,
-            android: report.android, checks: report.checks + HostDoctorRules.checks(host) + [BundleIntegrity.doctorCheck(), Init.doctorCheck(), DoctorCheckResult(id: .installRules, verdict: Init.rulesDoctorVerdict()), Init.denyRulesDoctorCheck()] + Self.managedChecks(), fixes: report.fixes, host: host, policy: report.policy
+            android: report.android, checks: report.checks + HostDoctorRules.checks(host) + auditChecks() + [BundleIntegrity.doctorCheck(), Init.doctorCheck(), DoctorCheckResult(id: .installRules, verdict: Init.rulesDoctorVerdict()), Init.denyRulesDoctorCheck()] + Self.managedChecks(), fixes: report.fixes, host: host, policy: report.policy
         )
     }
 

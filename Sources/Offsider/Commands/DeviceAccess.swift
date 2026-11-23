@@ -99,6 +99,7 @@ struct DeviceAccessContext: Sendable {
         return try await DevicePolicyGate.$current.withValue(.fixed(policy)) {
             let route = try await DeviceRouter.route(udid, logger: OffsiderLogger())
             guard let backend = route.backend as? IOSDeviceBackend else { return false }
+            if let allowance = route.allowance, allowance.team != nil { CommandScope.current.audit.mark(.registration, platform: .ios, key: allowance.key) }
             _ = try await XcodeRunnerBuilder.$confirmNewPrefix.withValue(RunnerBuildCommand.confirmPrefix(udid: udid)) {
                 try await backend.buildRunner(for: route.device, registerDevice: route.allowance?.team != nil)
             }
@@ -1120,6 +1121,8 @@ struct DeviceAccessStatus: AsyncParsableCommand {
 
     @OptionGroup var output: DeviceJSONOption
 
+    @OptionGroup var audit: DeviceAuditOptions
+
     var json: Bool { output.json }
 
     @OptionGroup(visibility: .private) var listFilters: DeviceListFilters
@@ -1131,6 +1134,10 @@ struct DeviceAccessStatus: AsyncParsableCommand {
     func run() async throws {
         let console = Console.current
         let context = DeviceAccessContext.current
+        if audit.audit {
+            try showAudit(context: context, console: console)
+            return
+        }
         if !json, device == nil {
             let page = screen(context: context)
             console.show(Page(page.blocks, notices: console.out.profile == .person ? page.notices : []))
