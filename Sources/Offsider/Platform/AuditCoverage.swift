@@ -47,6 +47,7 @@ enum AuditCoverage: String, Sendable {
         "app prefs": .routed,
         "app broadcast": .routed,
         "airplane": .routed,
+        "screen-reader": .routed,
         "status-bar": .routed,
         "biometric": .routed,
         "unlock-code": .own,
