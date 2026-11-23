@@ -141,7 +141,7 @@ public struct AuditTrail: Sendable {
         }
         let data = Data(text.utf8)
         if size > 0, size + data.count > maximumBytes {
-            guard rename(target, rotated) == 0 else { throw PrivateDirectoryError(.system(operation: "rename", code: errno), path: target) }
+            guard unsafe rename(target, rotated) == 0 else { throw PrivateDirectoryError(.system(operation: "rename", code: errno), path: target) }
             return false
         }
         let written = unsafe data.withUnsafeBytes { unsafe Darwin.write(descriptor, $0.baseAddress, $0.count) }
@@ -158,7 +158,7 @@ public struct AuditTrail: Sendable {
     private static func tail(of descriptor: Int32, size: Int, path: String) throws -> Data {
         let count = min(size, tailBytes)
         var buffer = [UInt8](repeating: 0, count: count)
-        let read = unsafe buffer.withUnsafeMutableBytes { unsafe pread(descriptor, $0.baseAddress, count, off_t(size - count)) }
+        let read = buffer.withUnsafeMutableBytes { unsafe pread(descriptor, $0.baseAddress, count, off_t(size - count)) }
         guard read == count else { throw PrivateDirectoryError(.system(operation: "pread", code: errno), path: path) }
         return Data(buffer)
     }

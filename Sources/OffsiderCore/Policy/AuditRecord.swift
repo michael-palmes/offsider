@@ -133,12 +133,12 @@ public struct AuditRecord: Equatable, Sendable {
     /// `2026-10-05T03:12:44Z`, as `ProcessStamp.timestamp` writes it, from `gmtime_r` so a record never pays for a date formatter's first use.
     static func stamp(_ date: Date) -> String {
         var seconds = time_t(date.timeIntervalSince1970.rounded(.down))
-        var parts = tm()
+        var parts = unsafe tm()
         unsafe gmtime_r(&seconds, &parts)
         func two(_ value: Int32) -> String { value < 10 ? "0\(value)" : "\(value)" }
-        let year = Int(parts.tm_year) + 1900
+        let year = unsafe Int(parts.tm_year) + 1900
         guard (1000...9999).contains(year) else { return ProcessStamp.timestamp(date) }
-        return "\(year)-\(two(parts.tm_mon + 1))-\(two(parts.tm_mday))T\(two(parts.tm_hour)):\(two(parts.tm_min)):\(two(parts.tm_sec))Z"
+        return unsafe "\(year)-\(two(parts.tm_mon + 1))-\(two(parts.tm_mday))T\(two(parts.tm_hour)):\(two(parts.tm_min)):\(two(parts.tm_sec))Z"
     }
 
     /// The keys a line may hold, in the order they are written.

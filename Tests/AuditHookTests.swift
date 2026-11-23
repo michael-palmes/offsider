@@ -282,7 +282,7 @@ struct AuditHookTests {
         #expect(AuditTrail.session(from: 1, in: table) == nil && AuditTrail.session(from: 4242, in: table) == nil)
         let shells = ProcessTable { pid in pid == 9 ? (ProcessIdentity(pid: 9, startTime: 1, name: "zsh"), 1) : nil }
         #expect(AuditTrail.session(from: 9, in: shells) == nil && ProcessAncestry.owner(from: 9, in: shells) == nil)
-        let mine = try? #require(ProcessTable.quick.lookup(getpid()))
+        let mine = ProcessTable.quick.lookup(getpid())
         let live = ProcessTable.live.lookup(getpid())
         #expect(mine?.identity == live?.identity && mine?.parent == live?.parent)
         #expect(ProcessTable.quick.lookup(1)?.identity.name == "launchd")

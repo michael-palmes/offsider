@@ -47,8 +47,8 @@ extension ProcessTable {
         let size = Int32(MemoryLayout<proc_bsdinfo>.size)
         guard unsafe proc_pidinfo(pid, PROC_PIDTBSDINFO, 0, &info, size) == size, info.pbi_status != UInt32(SZOMB) else { return ProcessTable.live.lookup(pid) }
         // `pbi_comm` drops the sixteenth character `sysctl` keeps, so the longer name is cut to match.
-        let long = unsafe withUnsafeBytes(of: info.pbi_name) { unsafe String(decoding: $0.prefix { $0 != 0 }.prefix(16), as: UTF8.self) }
-        let name = long.isEmpty ? unsafe withUnsafeBytes(of: info.pbi_comm) { unsafe String(decoding: $0.prefix { $0 != 0 }, as: UTF8.self) } : long
+        let long = withUnsafeBytes(of: info.pbi_name) { unsafe String(decoding: $0.prefix { $0 != 0 }.prefix(16), as: UTF8.self) }
+        let name = long.isEmpty ? withUnsafeBytes(of: info.pbi_comm) { unsafe String(decoding: $0.prefix { $0 != 0 }, as: UTF8.self) } : long
         let identity = ProcessIdentity(pid: pid, startTime: info.pbi_start_tvsec * 1_000_000 + info.pbi_start_tvusec, name: name)
         return (identity, Int32(info.pbi_ppid))
     }

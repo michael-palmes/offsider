@@ -197,7 +197,7 @@ struct AuditPrivacyTests {
         try store.update { _ in DeviceAllowList(entries: [entry]) }
 
         let gate = DevicePolicyGate.fixed(PhysicalDevicePolicy(managed: .none, list: DeviceAllowList(entries: [entry])), now: PolicyFixtures.now)
-        try await DevicePolicyGate.$current.withValue(gate) {
+        await DevicePolicyGate.$current.withValue(gate) {
             let scope = CommandScope()
             scope.audit.attach { trail }
             scope.configure(command: "type", namedApp: AuditFixtures.playground)
