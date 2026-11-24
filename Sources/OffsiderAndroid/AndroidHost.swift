@@ -104,6 +104,8 @@ public struct AndroidHost: Sendable {
     public var postureRecordDirectory: @Sendable (Bool) -> String? = { _ in nil }
     /// Where the airplane mode Offsider turned on is recorded; `true` creates it. Nil records none, so turning it on is refused.
     public var airplaneRecordDirectory: @Sendable (Bool) -> String? = { _ in nil }
+    /// Where the TalkBack Offsider turned on is recorded; `true` creates it. Nil records none, so turning it on is refused.
+    public var screenReaderRecordDirectory: @Sendable (Bool) -> String? = { _ in nil }
     /// How a command reaches or starts the broker that keeps the helper warm; nil keeps one helper per command, the default.
     public var helperBroker: HelperBrokerHost?
     /// The private `reverses/` directory recording each adb reverse Offsider set, made only when `create`; nil sets none, the default.
@@ -164,6 +166,12 @@ public struct AndroidHost: Sendable {
     /// The private directory's `airplane/`, made 0700 when `create`; nil when it is missing or not private.
     public static let privateAirplaneRecords: @Sendable (Bool) -> String? = { create in
         let name = AndroidAirplaneRecord.directoryName
+        return create ? try? OffsiderPrivateDirectory.ensureSubdirectory(name) : (try? OffsiderPrivateDirectory.existingSubdirectory(name)) ?? nil
+    }
+
+    /// The private directory's `screen-reader-android/`, made 0700 when `create`; nil when it is missing or not private.
+    public static let privateScreenReaderRecords: @Sendable (Bool) -> String? = { create in
+        let name = AndroidScreenReaderRecord.directoryName
         return create ? try? OffsiderPrivateDirectory.ensureSubdirectory(name) : (try? OffsiderPrivateDirectory.existingSubdirectory(name)) ?? nil
     }
 

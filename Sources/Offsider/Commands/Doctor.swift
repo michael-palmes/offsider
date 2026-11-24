@@ -116,6 +116,7 @@ struct Doctor: AsyncParsableCommand {
         }
         facts.device = facts.device.map { Self.withUnlockCode($0, store: KeychainUnlockCodeStore(), ledger: UnlockAttemptLedger()) }
         let serial = facts.device?.serial ?? id
+        let readerNote = await AndroidBackend.screenReaderNote(host: host, serial: serial)
         let kind: String? = facts.device.flatMap { device in
             device.isPhysical ? "physical" : device.serial.map { DeviceIDClassifier.classify($0).platform == .android ? "emulator" : "other" }
         }
@@ -132,7 +133,8 @@ struct Doctor: AsyncParsableCommand {
             checks: AndroidDoctorRules.hostChecks(facts.host, deviceNamed: true)
                 + AndroidDoctorRules.deviceChecks(facts.device, hostBlocker: AndroidDoctorRules.hostBlocker(facts.host))
                 + [Self.leaseCheck(platform: .android, key: Self.leaseKey(facts.device, id: id), lockID: serial)]
-                + Self.recordingCheck(platform: .android, lockID: serial),
+                + Self.recordingCheck(platform: .android, lockID: serial)
+                + Self.talkBackCheck(serial: serial, enabledServices: facts.device?.uiAutomation?.enabledServices ?? [], note: readerNote),
             fixes: fixes
         )
     }
@@ -339,6 +341,18 @@ struct Doctor: AsyncParsableCommand {
             detail: live == true ? "Apps are told VoiceOver is on. \(undo)" : "Offsider turned VoiceOver on for apps and has not turned it off. It could not be read now.",
             hint: live == true ? "offsider screen-reader off --device \(udid)" : "offsider session stop --device \(udid)"
         )]
+    }
+
+    /// `device.screen-reader` on Android, only while TalkBack is enabled, from the list doctor already read. `note` is nil when Offsider was never told of it, true when it turned it on, false when a person had.
+    static func talkBackCheck(serial: String, enabledServices: [String], note: Bool?) -> [DoctorCheckResult] {
+        guard enabledServices.contains(where: AndroidBackend.screenReaderComponents.contains) else { return [] }
+        let detail: String
+        switch note {
+        case true?: detail = "TalkBack is on, so apps show what they show a screen reader user. Offsider turned it on, so `session stop` turns it off."
+        case false?: detail = "TalkBack is on, so apps show what they show a screen reader user. Offsider did not turn it on, so `session stop` leaves it."
+        case nil: detail = "TalkBack is on, and Offsider did not turn it on, so `session stop` leaves it and an emulator's taps only select. Run `offsider screen-reader on --device \(serial)` once and Offsider's input reaches the app as usual."
+        }
+        return [DoctorCheckResult(id: .deviceScreenReader, status: .warn, detail: detail, hint: "offsider screen-reader off --device \(serial)")]
     }
 
     /// The Keychain is read (attributes only) only for a device with a credential; an emulator's code is saved under its AVD name.

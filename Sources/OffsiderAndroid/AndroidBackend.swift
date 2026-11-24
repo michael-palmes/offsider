@@ -511,6 +511,11 @@ public final class AndroidBackend: DeviceBackend, AccessibilityActionPerforming,
         guard case .grpc(let emulator) = try await transport(for: serial) else {
             return (allowingHelper ? try await shellExecutor(serial, shell: shell, policy: policy) : .adb(shell), geometry)
         }
+        // TalkBack takes a gRPC touch as its own, where a tap only selects; an injected one reaches the app, as on a phone.
+        if screenReaderIsNoted(serial) {
+            log(.debug, "\(serial) has TalkBack on, which takes gRPC touches as its own, so its input goes as without gRPC")
+            return (allowingHelper ? try await shellExecutor(serial, shell: shell, policy: policy) : .adb(shell), geometry)
+        }
         let posture = await postureIfFoldable(serial)
         if posture != nil {
             geometry = try await settledGeometry(serial)

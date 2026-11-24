@@ -184,13 +184,21 @@ extension AndroidBackend: AirplaneControlling {
 
     /// Whether `device`, a serial or AVD name, names this record's device: an AVD running elsewhere is not the one now on its old serial.
     static func isRecord(_ record: AndroidAirplaneRecord, of device: String, host: AndroidHost) -> Bool {
-        if record.avd == device { return true }
-        return (currentSerial(of: record, host: host) ?? record.serial) == device
+        isRecord(serial: record.serial, avd: record.avd, of: device, host: host)
+    }
+
+    static func isRecord(serial: String, avd: String?, of device: String, host: AndroidHost) -> Bool {
+        if avd == device { return true }
+        return (currentSerial(serial: serial, avd: avd, host: host) ?? serial) == device
     }
 
     /// A phone keeps its serial; an AVD takes whichever port is free, so it is found by name and never assumed from the serial.
     static func currentSerial(of record: AndroidAirplaneRecord, host: AndroidHost) -> String? {
-        guard let avd = record.avd else { return record.serial }
+        currentSerial(serial: record.serial, avd: record.avd, host: host)
+    }
+
+    static func currentSerial(serial: String, avd: String?, host: AndroidHost) -> String? {
+        guard let avd else { return serial }
         return EmulatorDiscovery.live(host: host).first { $0.avdID == avd }.flatMap(\.consolePort).map { "emulator-\($0)" }
     }
 }

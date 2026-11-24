@@ -29,12 +29,14 @@ public struct RecordedPhoneState: Equatable, Sendable {
     public let reverses: [Int]
     public let posture: Bool
     public let airplane: Bool
+    public let screenReader: Bool
 
-    public init(serial: String, reverses: [Int], posture: Bool, airplane: Bool = false) {
+    public init(serial: String, reverses: [Int], posture: Bool, airplane: Bool = false, screenReader: Bool = false) {
         self.serial = serial
         self.reverses = reverses
         self.posture = posture
         self.airplane = airplane
+        self.screenReader = screenReader
     }
 }
 
@@ -134,7 +136,7 @@ extension AndroidBackend: MetroReverseSetting {
         return outcome
     }
 
-    /// The reverses, overrides and airplane modes Offsider recorded, on `serial` or on every device, without reaching adb.
+    /// The reverses, overrides, airplane modes and screen readers Offsider recorded, on `serial` or on every device, without reaching adb.
     public static func recordedPhoneState(host: AndroidHost, serial: String? = nil) -> [RecordedPhoneState] {
         let reverses = host.metroReverseDirectory(false).map { directory -> [MetroReverseRecord] in
             let store = MetroReverseStore(directory: directory)
@@ -147,8 +149,15 @@ extension AndroidBackend: MetroReverseSetting {
         let airplanes = host.airplaneRecordDirectory(false).map { directory in
             AndroidAirplaneRecordStore(directory: directory).all().filter { serial == nil || isRecord($0, of: serial!, host: host) }.map { currentSerial(of: $0, host: host) ?? $0.name }
         } ?? []
-        return Set(reverses.map(\.serial) + postures + airplanes).sorted().map { phone in
-            RecordedPhoneState(serial: phone, reverses: reverses.first { $0.serial == phone }?.ports ?? [], posture: postures.contains(phone), airplane: airplanes.contains(phone))
+        let readers = host.screenReaderRecordDirectory(false).map { directory in
+            AndroidScreenReaderRecordStore(directory: directory).all().filter { $0.turnedOn && (serial == nil || isRecord(serial: $0.serial, avd: $0.avd, of: serial!, host: host)) }
+                .map { currentSerial(serial: $0.serial, avd: $0.avd, host: host) ?? $0.name }
+        } ?? []
+        return Set(reverses.map(\.serial) + postures + airplanes + readers).sorted().map { phone in
+            RecordedPhoneState(
+                serial: phone, reverses: reverses.first { $0.serial == phone }?.ports ?? [], posture: postures.contains(phone), airplane: airplanes.contains(phone),
+                screenReader: readers.contains(phone)
+            )
         }
     }
 
