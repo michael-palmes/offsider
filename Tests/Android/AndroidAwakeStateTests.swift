@@ -142,6 +142,32 @@ struct AndroidAwakeStateTests {
         #expect(named.hasCredential)
     }
 
+    @Test("Android 17 prints no keyguard secure line: the lock settings credential makes a PIN lock screen secure")
+    func android17PINLockScreen() throws {
+        let reading = try #require(AndroidAwakeState.parse(Android17Fixtures.awakeLocked))
+        #expect(reading.lockScreen == .secure)
+        #expect(reading.credential == "pin")
+        #expect(reading.keyguardSecure == nil)
+        #expect(reading.screenSummary == "on, PIN lock screen showing")
+        #expect(AndroidAwakeState.parse(Android17Fixtures.awake(credential: "Password"))?.lockScreen == .secure)
+    }
+
+    @Test("Android 17 with no credential is a swipe, unlocked is hidden, and unreadable lock settings never read as secure")
+    func android17OtherLockScreens() throws {
+        #expect(AndroidAwakeState.parse(Android17Fixtures.awake(credential: "NONE"))?.lockScreen == .swipe)
+        #expect(AndroidAwakeState.parse(Android17Fixtures.awakeUnlocked)?.isUsable == true)
+        let unread = try #require(AndroidAwakeState.parse(Android17Fixtures.awakeLocked.replacingOccurrences(of: "  CredentialType: PIN\n", with: "")))
+        #expect(unread.lockScreen == .swipe)
+        #expect(unread.credential == nil)
+        #expect(unread.keyguardSecure == nil)
+    }
+
+    @Test("on Android 17 a SIM PIN pad reads as a secure lock screen even with no device credential, which Android 16 said with secure=")
+    func simLockScreen() throws {
+        #expect(AndroidAwakeState.parse(Android17Fixtures.awake(credential: "NONE", simSecure: true))?.lockScreen == .secure)
+        #expect(AndroidAwakeState.readScript.contains("|secure|simSecure)="))
+    }
+
     @Test("states map from mWakefulness, and output without it or the keyguard is unreadable")
     func parseStates() {
         #expect(["Awake", "Asleep", "Dozing", "Dreaming"].compactMap { AndroidAwakeState.parse(Self.state($0))?.screen } == [.on, .off, .dozing, .dreaming])
@@ -279,6 +305,32 @@ struct AndroidAwakeStateTests {
         #expect(rig.device.injected == ["text 2580", "key press 66 meta 0"])
         #expect(!Self.shellCommands(rig).contains { $0.contains("input ") })
         #expect(!rig.server.services.contains { $0.contains("2580") })
+    }
+
+    @Test("on Android 17 wake stops at the PIN lock screen and the code is typed once, then the device reads unlocked")
+    func android17EnterCode() async throws {
+        let server = Self.server(states: ScriptedOutputs([Android17Fixtures.awakeLocked]))
+        let outcome = try await Self.backend(server).wake(on: Self.device)
+        #expect(outcome.current.lockScreen == .secure)
+
+        let rig = try Self.helperRig(states: ScriptedOutputs([Android17Fixtures.awakeLocked, Android17Fixtures.awakeUnlocked]))
+        let attempt = try await rig.backend.enterUnlockCode(try #require(UnlockCode("2580")), on: Self.device) {}
+        #expect(attempt.typed)
+        #expect(attempt.reading.isUsable)
+        #expect(rig.device.injected == ["text 2580", "key press 66 meta 0"])
+    }
+
+    @Test("a focused SIM PIN or PUK field gets nothing typed and nothing marked, and says the device is locked", arguments: ["simPinEntry", "pukEntry"])
+    func simCodeFieldTypesNothing(field: String) async throws {
+        let dump = Self.keyguardDump().replacingOccurrences(of: ":id/pinEntry", with: ":id/\(field)")
+        let rig = try Self.helperRig(states: ScriptedOutputs([Android17Fixtures.awake(simSecure: true)]), dump: dump)
+        var marked = false
+        let error = await #expect(throws: AndroidError.self) {
+            _ = try await rig.backend.enterUnlockCode(try #require(UnlockCode("2580")), on: Self.device) { marked = true }
+        }
+        #expect(error?.reason == .deviceLocked)
+        #expect(!marked)
+        #expect(rig.device.injected.isEmpty)
     }
 
     @Test("a right code on a slow phone is not called wrong: the check waits for a lock screen that goes after 12 s")

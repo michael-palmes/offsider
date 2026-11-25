@@ -37,6 +37,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Fixed
 
+- `wake --unlock` types the saved PIN or password on Android 17 again. Android 17's keyguard dump has no `secure=` line, so a PIN lock screen read as a swipe lock and `wake` said to swipe it away; the lock settings' credential type now decides when that line is missing. `wake --unlock` also types nothing into a focused SIM PIN or PUK field, so the device's code never spends a SIM try, and a lock screen whose type cannot be read names `offsider doctor` instead of a swipe.
 - `scripts/release.sh tag` checks the tag it made against main's `.github/allowed_signers`, as the release build does, and deletes it with the fix to name when git signed it with another key, so a wrongly signed tag never reaches the release build.
 - `init --uninstall` removes the permission rules `init` added to Claude Code's settings and Codex's rules file, as well as the skill. A rule you moved, and every other setting, stays; `~/.codex/rules/offsider.rules` is deleted once nothing else is in it, and `--no-rules` leaves the rules.
 - `scripts/release.sh` lists a payload or archive before unpacking it and refuses an absolute path, a `..`, a link that leaves the tree, a hard link, a device, FIFO or socket, more than 20,000 entries or more than 1 GiB in all, so the signing and verify jobs never unpack what the build job could not have packed.

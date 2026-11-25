@@ -213,6 +213,14 @@ struct Wake: AsyncParsableCommand {
             if attempt.typed { sent.append("code") }
         }
         if current.lockScreen == .swipe {
+            guard current.credential != nil || current.keyguardSecure != nil else {
+                let doctor = "offsider doctor --device \(serial)"
+                throw CLIError(
+                    errorDescription: "The lock screen of \(name) stayed up after `wm dismiss-keyguard`, and Offsider could not read whether it needs a code. Run `\(doctor)`, or unlock it on the device.",
+                    reason: .deviceLocked,
+                    hint: doctor
+                )
+            }
             throw CLIError(errorDescription: "The lock screen of \(name) stayed up after `wm dismiss-keyguard`. Swipe it away on the device.", reason: .deviceLocked)
         }
         if let unlockKey { ledger.clearUnfinished(unlockKey) }

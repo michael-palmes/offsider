@@ -3,9 +3,9 @@ import OffsiderCore
 
 /// Shell scripts and parsers for the screen's power and lock state, stay awake and the lock screen code.
 enum AndroidAwakeState {
-    /// The maker, `dumpsys power` with the display's own power state, the keyguard lines of `dumpsys window policy`, then the credential type, which some releases do not print: about 0.2 s on a phone.
+    /// The maker, `dumpsys power` with the display's own power state, the keyguard lines of `dumpsys window policy` (Android 17 prints no `secure=`, only `simSecure=`), then the credential type, which Android 9 does not print: about 0.2 s on a phone.
     static let readScript = "echo maker=$(getprop ro.product.manufacturer); dumpsys power | grep -E '^  m(Wakefulness|IsPowered|PlugType|StayOnWhilePluggedInSetting|ScreenOffTimeoutSetting|MaximumScreenOffTimeoutFromDeviceAdmin)=|^ *Display Power: state='; "
-        + "dumpsys window policy | grep -E '^ +(showing|occluded|secure)='; "
+        + "dumpsys window policy | grep -E '^ +(showing|occluded|secure|simSecure)='; "
         + "dumpsys lock_settings | grep -m1 -E '^ +CredentialType:'; true"
 
     /// For `boot` and `doctor` only: whether the user has unlocked since boot, and the RAM the device sees.
@@ -69,10 +69,12 @@ enum AndroidAwakeState {
         guard let wakefulness = values["mWakefulness"].flatMap(screenPower), let showing = values["showing"].flatMap(Bool.init) else { return nil }
         let screen = screenPower(wakefulness, display: values["Display Power: state"])
         let keyguardSecure = values["secure"].flatMap(Bool.init)
-        let lockScreen: LockScreen = showing && values["occluded"] != "true" ? (keyguardSecure == true ? .secure : .swipe) : .hidden
-        let powered = values["mIsPowered"] == "true"
+        let simLocked = values["simSecure"].flatMap(Bool.init)
         // Android 9 prints no CredentialType; the keyguard still says whether one is set.
         let named = values["CredentialType"].flatMap(credential)
+        let secure = keyguardSecure ?? (simLocked == true ? true : named.map { $0 != "none" })
+        let lockScreen: LockScreen = showing && values["occluded"] != "true" ? (secure == true ? .secure : .swipe) : .hidden
+        let powered = values["mIsPowered"] == "true"
         return AwakeReading(
             screen: screen,
             lockScreen: lockScreen,
@@ -144,12 +146,17 @@ enum AndroidAwakeState {
         }
     }
 
+    /// The SIM card's PIN and PUK fields, which the device's code must never reach.
+    static let simCodeFieldIDs: Set<String> = ["com.android.systemui:id/simPinEntry", "com.android.systemui:id/pukEntry"]
+
     /// The focused password field inside System UI, which shows the lock screen; a code is typed nowhere else.
     static func lockScreenCodeField(in roots: [UINode]) -> UINode? {
         func search(_ node: UINode, insideSystemUI: Bool) -> UINode? {
             let inside = insideSystemUI || node.id?.hasPrefix("com.android.systemui:") == true
             // A field disabled while the lock screen counts down after wrong codes would take no keys, and a right code would read as wrong.
-            if inside, node.role == .secureTextField, node.state.focused == true, node.enabled != false { return node }
+            if inside, node.role == .secureTextField, node.state.focused == true, node.enabled != false {
+                return node.id.map(simCodeFieldIDs.contains) == true ? nil : node
+            }
             for child in node.children {
                 if let found = search(child, insideSystemUI: inside) { return found }
             }
