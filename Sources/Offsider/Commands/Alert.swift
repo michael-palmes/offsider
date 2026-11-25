@@ -24,8 +24,9 @@ struct AlertCommand: AsyncParsableCommand {
         by name and uid; on an iOS simulator a SpringBoard alert over that app alone, whose title names the app \
         first; on an iPhone or iPad, SpringBoard's alert with that app's process in front beneath it and no other \
         app active, whose title names the app first. Anything else the system drew in front exits 7 \
-        (system_prompt_in_front), naming it; no prompt exits 2 (alert_not_shown). A crash dialog, an update prompt, \
-        a lock screen and a save-password sheet are never answered.
+        (system_prompt_in_front), naming it; no prompt exits 2 (alert_not_shown). A crash dialog, an update prompt \
+        and a lock screen are never answered. `deny` also declines a save-password sheet over --app, by its decline \
+        alone (Not Now, Not now, No thanks, or Android's own Never), never Save.
 
         `accept` and `choose` are held to the app's guard rules (offsider.guard.json): a `never` rule refuses, an \
         `ask` rule waits for a person at the Mac, and a rule that makes a screen look-only holds too, since the \
@@ -68,6 +69,7 @@ struct AlertCommand: AsyncParsableCommand {
     /// How long after the answer an app's next prompt may take to show; a prompt gone for less is not yet "none follows".
     static let followWait: TimeInterval = 1
     static let leavePoll: Duration = .milliseconds(250)
+    static let androidSystemPackages: Set<String> = ["android", "com.android.systemui"]
 
     func validate() throws {
         _ = try plan()
@@ -110,7 +112,11 @@ struct AlertCommand: AsyncParsableCommand {
         let device = route.device
         let text = json ? outcome.jsonLine(device: device) : outcome.textLines.joined(separator: "\n")
         var notices: [Notice] = []
-        if outcome.chosen != nil, device.isPhysicalIOSDevice {
+        if outcome.savePrompt {
+            if let chosen = outcome.chosen, SavePrompts.isLasting(chosen.label) {
+                notices.append(.note("Stays after this command", agent: "Never stays after this command: the device's autofill service stops offering to save passwords for \(app) until it is cleared in that service's settings.", mark: .keep))
+            }
+        } else if outcome.chosen != nil, device.isPhysicalIOSDevice {
             // `permission` cannot change an iPhone's privacy settings, and a reinstall resets only this app's.
             notices.append(.note("Stays after this command", agent: "The answer stays after this command; change it in Settings on the device, or reinstall \(app) to make it ask again.", mark: .keep))
         } else if outcome.chosen != nil {
@@ -162,6 +168,7 @@ struct AlertCommand: AsyncParsableCommand {
             guard let choice else { return AlertReport(prompt: read.prompt) }
             read = try await settled(read, choice: choice, on: backend, device: device, watchdog: watchdog, clock: clock)
         } catch let refusal as AppPromptRefusal {
+            if choice == .deny, let declined = try await declineSavePrompt(app: app, on: route, watchdog: watchdog, clock: clock) { return declined }
             throw failure(refusal, app: app, device: device)
         }
         guard let choice else { return AlertReport(prompt: read.prompt) }
@@ -195,6 +202,62 @@ struct AlertCommand: AsyncParsableCommand {
         recorder.update(token) { $0.button = SelectorText.truncated(button.label, limit: 80) }
         let next = try await Self.afterAnswer(read.prompt, on: backend, device: device, watchdog: watchdog, clock: clock)
         return AlertReport(prompt: read.prompt, action: choice.word, chosen: button, next: next)
+    }
+
+    @MainActor
+    static func declineSavePrompt(app: String, on route: DeviceRouter.Route, watchdog: DeviceWatchdog, clock: PollClock) async throws -> AlertReport? {
+        let device = route.device
+        guard let found = try await savePrompt(over: app, on: route, watchdog: watchdog) else { return nil }
+        guard let point = found.prompt.decline, let label = found.prompt.declineLabel else {
+            throw CLIError(
+                errorDescription: "\(InputPersonView.sentence(found.prompt.summary)) is over \(app) on \(device.rawValue), and Offsider found no decline control on it, and never taps Save. Nothing was sent.",
+                reason: .systemPromptInFront, ask: found.prompt.ask
+            )
+        }
+        let title = found.prompt.title ?? "Save password"
+        let button = AppPrompt.Button(label: label, role: .deny, frame: found.prompt.declineFrame ?? UIFrame(x: point.x, y: point.y, width: 0, height: 0))
+        let prompt = AppPrompt(app: app, title: title, buttons: [button], frame: found.tree.viewport ?? button.frame, source: device.platform == .android ? "android" : nil)
+        let recorder = EvidenceRecorder.current
+        let token = try recorder.begin(device: device, kind: "alert")
+        recorder.update(token) { $0.prompt = SelectorText.truncated(title, limit: 200) }
+        let show = "offsider describe-ui --summary --device \(device.rawValue)"
+        guard let again = try await savePrompt(over: app, on: route, watchdog: watchdog), again.prompt == found.prompt else {
+            throw CLIError(
+                errorDescription: "The save-password prompt over \(app) left or changed on \(device.rawValue) before Offsider declined it, so nothing was sent. Run `\(show)` to see what is there now.",
+                reason: .foregroundChanged, hint: show
+            )
+        }
+        let physical = try await route.backend.deviceCoordinates(for: [(x: point.x, y: point.y)], tree: again.tree, on: device)[0]
+        try await route.backend.performTracked(.tapAt(x: physical.x, y: physical.y), on: device)
+        recorder.update(token) { $0.button = SelectorText.truncated(label, limit: 80) }
+        let tapped = clock.now()
+        repeat {
+            try await clock.sleep(leavePoll)
+            do {
+                if try await savePrompt(over: app, on: route, watchdog: watchdog) == nil {
+                    return AlertReport(prompt: prompt, action: AppPrompt.Choice.deny.word, chosen: button, savePrompt: true)
+                }
+            } catch let error where error is CancellationError {
+                throw error
+            } catch {}
+        } while clock.now() - tapped < leaveWait
+        throw CLIError(
+            errorDescription: "Offsider tapped \(TerminalText.quoted(label)), but the save-password prompt over \(app) is still on \(device.rawValue) after \(WaitLoop.seconds(leaveWait)). Check it with `\(show)`.",
+            reason: .notVerified, hint: show
+        )
+    }
+
+    /// A save-password prompt over `app`, which must have an element on screen beneath it; Android's own dialog may offer its lasting Never here, as `deny` runs only where no person's saved passwords are at stake.
+    @MainActor
+    static func savePrompt(over app: String, on route: DeviceRouter.Route, watchdog: DeviceWatchdog) async throws -> (prompt: SavePrompt, tree: UITree)? {
+        let tree = try await watchdog.guardingRead(of: route.device) { try await route.backend.accessibilityTree(for: route.device) }
+        guard let present = AppGuard.appsOnScreen(tree), present.contains(app) else { return nil }
+        if route.device.platform == .android, !present.subtracting(androidSystemPackages).subtracting([app]).isEmpty { return nil }
+        let found = route.device.platform == .android
+            ? SavePrompts.android(in: tree, app: app, lastingDecline: true)
+            : await LoginCommand.savePrompt(in: tree, app: app, on: route)
+        guard let found, found.savesPassword else { return nil }
+        return (found, tree)
     }
 
     /// The prompt, read once more after `lateWait` when none was up: one can take a moment to show, as on a screen just woken.

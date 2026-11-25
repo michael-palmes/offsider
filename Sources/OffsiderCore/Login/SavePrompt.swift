@@ -10,12 +10,14 @@ public struct SavePrompt: Equatable, Sendable {
     public var declineLabel: String?
     /// The middle of the decline control; nil when none was found.
     public var decline: UIPoint?
+    public var declineFrame: UIFrame?
 
-    public init(savesPassword: Bool = true, title: String?, declineLabel: String? = nil, decline: UIPoint? = nil) {
+    public init(savesPassword: Bool = true, title: String?, declineLabel: String? = nil, decline: UIPoint? = nil, declineFrame: UIFrame? = nil) {
         self.savesPassword = savesPassword
         self.title = title
         self.declineLabel = declineLabel
         self.decline = decline
+        self.declineFrame = declineFrame
     }
 
     /// `the "Save Password?" prompt`, for a sentence.
@@ -44,8 +46,9 @@ public enum SavePromptOutcome: String, Equatable, Sendable {
 
 /// Finds a save-password prompt and its decline control. Nothing here names a Save, Update or Allow control.
 public enum SavePrompts {
-    /// The only labels Offsider taps: each closes the prompt and changes nothing that lasts.
+    /// The labels `login` taps: each closes the prompt and changes nothing that lasts; only `alert deny` also takes Android's own Never.
     static let declineLabels: Set<String> = ["not now", "no thanks"]
+    static let lastingDeclineLabels: Set<String> = ["never"]
     static let iosTitles: Set<String> = ["save password?", "update password?"]
     static let androidDeclineID = "android:id/autofill_save_no"
     static let androidSaveID = "android:id/autofill_save_yes"
@@ -54,6 +57,10 @@ public enum SavePrompts {
     /// True for the title iOS gives its own prompt.
     public static func isIOSTitle(_ title: String?) -> Bool {
         title.map { iosTitles.contains(plain($0)) } ?? false
+    }
+
+    public static func isLasting(_ label: String) -> Bool {
+        lastingDeclineLabels.contains(plain(label))
     }
 
     /// True for a button whose whole label is a decline.
@@ -70,13 +77,13 @@ public enum SavePrompts {
     }
 
     /// Android, in a tree that lists every window: the system's own save dialog by its ids, or a window from another package holding a password save offer, a Save button and a decline.
-    public static func android(in tree: UITree, app: String) -> SavePrompt? {
+    public static func android(in tree: UITree, app: String, lastingDecline: Bool = false) -> SavePrompt? {
         guard tree.platform == .android else { return nil }
         for root in tree.roots {
             let all = root.flattened()
             if all.contains(where: { resourceID(of: $0) == androidSaveID }), let no = all.first(where: { resourceID(of: $0) == androidDeclineID }) {
                 let title = all.first { resourceID(of: $0) == androidTitleID }?.normalizedLabel
-                return prompt(title: title, decline: declines(no) ? no : nil)
+                return prompt(title: title, decline: declines(no, lasting: lastingDecline) ? no : nil)
             }
             // A node that names no package could be the app's own, so only another package's window counts.
             let nodes = all.filter { package(of: $0).map { $0 != app } ?? false }
@@ -104,11 +111,12 @@ public enum SavePrompts {
     static let probeDepth: Double = 300
 
     private static func prompt(title: String?, decline: UINode?) -> SavePrompt {
-        SavePrompt(title: title, declineLabel: decline?.normalizedLabel, decline: decline?.frame?.center)
+        SavePrompt(title: title, declineLabel: decline?.normalizedLabel, decline: decline?.frame?.center, declineFrame: decline?.frame)
     }
 
-    private static func declines(_ node: UINode) -> Bool {
-        node.enabled != false && node.normalizedLabel.map { declineLabels.contains(plain($0)) } == true
+    private static func declines(_ node: UINode, lasting: Bool = false) -> Bool {
+        let labels = lasting ? declineLabels.union(lastingDeclineLabels) : declineLabels
+        return node.enabled != false && node.normalizedLabel.map { labels.contains(plain($0)) } == true
     }
 
     private static func package(of node: UINode) -> String? {
