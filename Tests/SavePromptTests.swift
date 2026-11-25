@@ -32,6 +32,26 @@ struct SavePromptTests {
         #expect(prompt.declineLabel == nil)
     }
 
+    @Test("alert deny's read offers Android's own Never, and still no other lasting decline")
+    func lastingDeclineForAlertDeny() throws {
+        let framework = androidTree([
+            android(.button, id: "android:id/autofill_save_no", label: "Never", frame: FakeUI.frame(500, 2100, 200, 120)),
+            android(.button, id: "android:id/autofill_save_yes", label: "Save", frame: FakeUI.frame(740, 2100, 200, 120)),
+        ])
+        let prompt = try #require(SavePrompts.android(in: framework, app: app, lastingDecline: true))
+        #expect(prompt.declineLabel == "Never")
+        #expect(prompt.decline == UIPoint(x: 600, y: 2160))
+        #expect(prompt.declineFrame == FakeUI.frame(500, 2100, 200, 120))
+        let manager = androidTree([
+            android(.header, id: "sheet-title", label: "Save password?", frame: FakeUI.frame(40, 1800, 900, 60), package: "com.example.passwords"),
+            android(.button, id: "never", label: "Never", frame: FakeUI.frame(40, 2100, 200, 120), package: "com.example.passwords"),
+            android(.button, id: "save", label: "Save", frame: FakeUI.frame(740, 2100, 200, 120), package: "com.example.passwords"),
+        ])
+        #expect(SavePrompts.android(in: manager, app: app, lastingDecline: true) == nil)
+        #expect(SavePrompts.isLasting("Never"))
+        #expect(!SavePrompts.isLasting("Not now"))
+    }
+
     @Test("a password manager's own sheet is found by its offer, its Save button and its Not now")
     func passwordManagerSheet() throws {
         let tree = androidTree([

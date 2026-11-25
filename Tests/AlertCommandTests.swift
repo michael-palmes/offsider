@@ -342,6 +342,89 @@ struct AlertCommandTests {
         #expect(followed.report?.textLines.contains("Another prompt followed:") == true)
     }
 
+    // MARK: Save-password prompts
+
+    static func saveNode(_ role: UIRole, id: String, label: String, frame: UIFrame, package: String = "android") -> UINode {
+        UINode(role: role, id: id, label: label, frame: frame, enabled: true, native: .android(AndroidNativeAttributes(resourceId: id, package: package)))
+    }
+
+    static func screen(over app: String = app, dialog: [UINode]) -> UITree {
+        let form = UINode(role: .application, frame: FakeUI.frame(0, 0, 1080, 2400), native: .android(AndroidNativeAttributes(package: app)), children: [
+            saveNode(.secureTextField, id: "password-field", label: "Password", frame: FakeUI.frame(40, 600, 1000, 120), package: app),
+        ])
+        let window = UINode(role: .window, frame: FakeUI.frame(0, 1700, 1080, 700), native: .android(AndroidNativeAttributes(package: "android")), children: dialog)
+        return UITree(platform: .android, device: "emulator-5554", roots: dialog.isEmpty ? [form] : [form, window])
+    }
+
+    static func saveDialog(decline: String) -> [UINode] {
+        [
+            saveNode(.text, id: "android:id/autofill_save_title", label: "Save password to Example?", frame: FakeUI.frame(40, 1900, 900, 60)),
+            saveNode(.button, id: "android:id/autofill_save_no", label: decline, frame: FakeUI.frame(500, 2100, 200, 120)),
+            saveNode(.button, id: "android:id/autofill_save_yes", label: "Save", frame: FakeUI.frame(740, 2100, 200, 120)),
+        ]
+    }
+
+    static func saveBackend(_ screens: [UITree]) -> PromptBackend {
+        let backend = PromptBackend(platform: .android, trees: screens, advanceTreeOnInput: true)
+        backend.answers = [.refusal(.notShown(front: app))]
+        return backend
+    }
+
+    @Test("deny with no permission prompt declines Android's own save dialog over the app by its decline alone, Never included", arguments: ["Not now", "Never"])
+    func declinesSaveDialog(decline: String) async {
+        let result = await Self.run(.deny, on: Self.saveBackend([Self.screen(dialog: Self.saveDialog(decline: decline)), Self.screen(dialog: [])]))
+        #expect(result.failure == nil, "\(result.failure?.userFacingDescription ?? "")")
+        #expect(result.sent == [.perform(.tapAt(x: 600, y: 2160))])
+        #expect(result.report?.savePrompt == true)
+        #expect(result.report?.chosen?.label == decline)
+        #expect(result.report?.action == "deny")
+        #expect(result.report?.prompt.title == "Save password to Example?")
+    }
+
+    @Test("show, accept and choose never answer a save dialog: no permission prompt is up, and nothing is sent", arguments: [
+        AppPrompt.Choice?.none, .accept, .label("Save"),
+    ])
+    func onlyDenyDeclines(choice: AppPrompt.Choice?) async {
+        let result = await Self.run(choice, on: Self.saveBackend([Self.screen(dialog: Self.saveDialog(decline: "Not now"))]))
+        #expect(result.failure?.reason == .alertNotShown)
+        #expect(result.sent.isEmpty)
+    }
+
+    @Test("a save dialog over another app is left alone, with nothing sent")
+    func saveDialogOverAnotherApp() async {
+        let result = await Self.run(.deny, on: Self.saveBackend([Self.screen(over: "com.example.other", dialog: Self.saveDialog(decline: "Not now"))]))
+        #expect(result.failure?.reason == .alertNotShown)
+        #expect(result.sent.isEmpty)
+    }
+
+    @Test("a save dialog with another app beside this one, as in split screen, is left alone")
+    func saveDialogBesideAnotherApp() async {
+        var screen = Self.screen(dialog: Self.saveDialog(decline: "Never"))
+        screen.roots.append(UINode(role: .application, frame: FakeUI.frame(0, 1200, 1080, 400), native: .android(AndroidNativeAttributes(package: "com.example.other")), children: [
+            Self.saveNode(.button, id: "other-button", label: "Sign in", frame: FakeUI.frame(40, 1300, 400, 120), package: "com.example.other"),
+        ]))
+        let result = await Self.run(.deny, on: Self.saveBackend([screen]))
+        #expect(result.failure?.reason == .alertNotShown)
+        #expect(result.sent.isEmpty)
+    }
+
+    @Test("a save dialog whose other button is not a decline is named for a person, and Save is never tapped")
+    func saveDialogWithNoDecline() async {
+        let result = await Self.run(.deny, on: Self.saveBackend([Self.screen(dialog: Self.saveDialog(decline: "Update"))]))
+        #expect(result.failure?.reason == .systemPromptInFront)
+        #expect(result.failure?.userFacingDescription.contains("never taps Save") == true)
+        #expect(result.failure?.ask?.contains("Save password to Example?") == true)
+        #expect(result.sent.isEmpty)
+    }
+
+    @Test("a save dialog still up after the decline is not_verified after one tap")
+    func saveDialogStays() async {
+        let stuck = Self.screen(dialog: Self.saveDialog(decline: "Not now"))
+        let result = await Self.run(.deny, on: Self.saveBackend([stuck, stuck]))
+        #expect(result.failure?.reason == .notVerified)
+        #expect(result.sent.count == 1)
+    }
+
     // MARK: The app guard
 
     static let never = GuardRule(name: "Camera access", action: .never, control: GuardMatcher(label: "While using the app"))

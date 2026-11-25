@@ -132,12 +132,14 @@ public struct AlertReport: Equatable, Sendable {
     public var chosen: AppPrompt.Button?
     /// The prompt that took its place, as an app asking for several permissions shows them in turn.
     public var next: AppPrompt?
+    public var savePrompt: Bool
 
-    public init(prompt: AppPrompt, action: String = "show", chosen: AppPrompt.Button? = nil, next: AppPrompt? = nil) {
+    public init(prompt: AppPrompt, action: String = "show", chosen: AppPrompt.Button? = nil, next: AppPrompt? = nil, savePrompt: Bool = false) {
         self.prompt = prompt
         self.action = action
         self.chosen = chosen
         self.next = next
+        self.savePrompt = savePrompt
     }
 
     public var textLines: [String] {

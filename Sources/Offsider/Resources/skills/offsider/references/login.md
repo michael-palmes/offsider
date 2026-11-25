@@ -79,7 +79,7 @@ Once login reaches the email field, a failure still prints that object, with `ok
 `login` reads the screen for up to 5 s after the tap, and ends sooner once the form has left.
 
 - **Turnstile box needs a tick.** `login --wait-turnstile 300 --device <DEVICE_ID>` asks for it and waits, then signs in in the same command; tell the user first, as you read its `Ask:` line only when it ends. Without it, `login` stops with `turnstile_required` before Touch ID is asked or the password read (`guide turnstile`).
-- **Save-password prompt.** On a simulator, an emulator or a test device `login` declines it itself (`savePrompt: declined`): one tap on Not Now, Not now or No thanks, never Save. Never tap Save or Allow yourself unless the user asked for it in words.
+- **Save-password prompt.** On a simulator, an emulator or a test device `login` declines it itself (`savePrompt: declined`): one tap on Not Now, Not now or No thanks, never Save. One that comes up later, after a sign-up form say: `alert deny --app <id>`. Never tap Save or Allow yourself unless the user asked for it in words.
 - **On a phone held to one app** the prompt is the person's. `login` taps nothing and waits up to `--timeout` for it to close (`savePrompt: closed`). Still up, it exits 7 (`system_prompt_in_front`) with `submitted: true`: pass on `error.ask` ("Can you tap Not now on the \"Save password?\" prompt on <device name>?") and never run `login` again for it, as the sign-in went ahead.
 
 ## Sign-up forms
