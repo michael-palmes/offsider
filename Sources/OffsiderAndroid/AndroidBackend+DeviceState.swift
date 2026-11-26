@@ -95,10 +95,9 @@ extension AndroidBackend: StatusBarControlling {
 }
 
 extension AndroidBackend: BiometricControlling {
+    /// Read only, so it runs on an allowed phone as on an emulator.
     public func biometricEnrolled(on id: DeviceID) async throws -> Bool? {
-        try requireEmulatorForBiometrics(id.rawValue)
-        let output = try await settingsShell("dumpsys fingerprint", on: id.rawValue)
-        return BiometricControl.parseAndroidEnrolled(output)
+        BiometricControl.parseAndroidEnrolled(try await settingsShell(BiometricControl.androidStatusScript, on: id.rawValue))
     }
 
     /// Enrolling needs a screen lock PIN, a security change Offsider does not make; removal is left to Settings.

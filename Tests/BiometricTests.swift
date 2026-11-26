@@ -1,5 +1,5 @@
 import Foundation
-import OffsiderCore
+@testable import OffsiderCore
 import Testing
 
 @Suite("Biometric")
@@ -43,5 +43,58 @@ struct BiometricTests {
         #expect(BiometricControl.parseAndroidEnrolled(#"{"service":"FingerprintProvider/default","prints":[{"id":0,"count":0,"accept":0}]}"#) == false)
         #expect(BiometricControl.parseAndroidEnrolled(#"{"prints":[{"id":0,"count":2}]}"#) == true)
         #expect(BiometricControl.parseAndroidEnrolled("Can't find service: fingerprint") == nil)
+    }
+
+    @Test("each dump shape reads its current user's prints", arguments: [
+        ("one sensor with prints", FingerprintDumpFixtures.oneSensorEnrolled, true as Bool?),
+        ("one sensor, none", FingerprintDumpFixtures.oneSensorEmpty, false),
+        ("a second sensor with the print", FingerprintDumpFixtures.twoSensors, true),
+        ("profiles with no prints of their own", FingerprintDumpFixtures.profileUsers, true),
+        ("before sensor headers", FingerprintDumpFixtures.legacy, true),
+        ("the owner, by the status script", FingerprintDumpFixtures.status(user: "0", FingerprintDumpFixtures.twoUsers), true),
+        ("a second user in front", FingerprintDumpFixtures.status(user: "10", FingerprintDumpFixtures.twoUsers), false),
+        ("a current user the dump leaves out", FingerprintDumpFixtures.status(user: "11", FingerprintDumpFixtures.twoUsers), nil),
+        ("no current user and two users listed", FingerprintDumpFixtures.status(user: "Unknown command: get-current-user", FingerprintDumpFixtures.twoUsers), nil),
+        ("no current user and one user listed", FingerprintDumpFixtures.status(user: "", FingerprintDumpFixtures.oneSensorEnrolled), true),
+    ])
+    func androidShapes(name: String, dump: String, expected: Bool?) {
+        #expect(BiometricControl.parseAndroidEnrolled(dump) == expected, "\(name)")
+    }
+
+    @Test("anything the parser cannot read is unknown, never not enrolled", arguments: [
+        "",
+        "Permission Denial: can't dump fingerprint from pid=1234, uid=2000",
+        "Dumping for sensorId: 0, provider: FingerprintProvider\nFps state: 0\n",
+        #"{"service":"FingerprintProvider","prints":[{"id":0,"count":0"#,
+        #"{"service":"FingerprintProvider","prints":[]}"#,
+        #"{"service":"FingerprintProvider","prints":[{"id":0}]}"#,
+        #"{"service":"FingerprintProvider","prints":[{"id":0,"count":true}]}"#,
+        #"{"service":"FingerprintProvider","prints":[{"id":0,"count":-1}]}"#,
+        #"{"service":"FingerprintProvider","prints":[{"id":0,"count":1.5}]}"#,
+        #"{"service":"FingerprintProvider","prints":[{"id":0,"count":0},{"id":0,"count":0}]}"#,
+        #"{"service":"FingerprintProvider","prints":[{"id":"0","count":"2"}]}"#,
+        "No \"prints\" recorded",
+    ])
+    func androidUnreadable(dump: String) {
+        #expect(BiometricControl.parseAndroidEnrolled(dump) == nil)
+    }
+
+    @Test("an unreadable sensor makes none read as unknown, while a print on another still counts")
+    func androidMixedSensors() {
+        let broken = "Dumping for sensorId: 1, provider: FingerprintProvider\n{\"service\":\"x\",\"prints\":[{\"id\":0,\"count\"\n"
+        #expect(BiometricControl.parseAndroidEnrolled(FingerprintDumpFixtures.oneSensorEmpty + broken) == nil)
+        #expect(BiometricControl.parseAndroidEnrolled(broken + FingerprintDumpFixtures.oneSensorEnrolled) == true)
+    }
+
+    @Test("a sensor line past the size cap is left unread")
+    func androidOversizedLine() {
+        let padding = String(repeating: "x", count: BiometricControl.maximumSensorLineBytes)
+        let line = #"{"service":"\#(padding)","prints":[{"id":0,"count":0}]}"#
+        #expect(BiometricControl.parseAndroidEnrolled(line) == nil)
+    }
+
+    @Test("the status script reads the current user and the dump in one shell, changing nothing")
+    func androidStatusScript() {
+        #expect(BiometricControl.androidStatusScript == "cmd activity get-current-user 2>/dev/null; echo __offsider_fingerprint__; dumpsys fingerprint; true")
     }
 }

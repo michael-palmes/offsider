@@ -1,0 +1,10 @@
+0
+__offsider_fingerprint__
+Dumping for sensorId: 0, provider: FingerprintProvider
+Fps state: 0
+{"service":"FingerprintProvider\/default","prints":[{"id":0,"count":2,"accept":17,"reject":3},{"id":10,"count":0,"accept":0,"reject":0}]}
+HAL deaths since last reboot: 0
+Dump of BiometricScheduler FingerprintProvider/0
+Type: 2
+Current operation: null
+Pending operations: 0

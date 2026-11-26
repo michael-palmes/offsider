@@ -18,6 +18,9 @@ final class CommandScope {
     /// The app the command line names, which routing checks against a phone's allowance.
     private(set) var namedApp: String?
 
+    /// Nil uses the command path's.
+    private(set) var effect: CommandEffect?
+
     /// Each device the router chose, for the screen check after a failure.
     private(set) var routes: [DeviceRouter.Route] = []
 
@@ -31,9 +34,10 @@ final class CommandScope {
         self.claims = claims
     }
 
-    func configure(command: String, namedApp: String? = nil) {
+    func configure(command: String, namedApp: String? = nil, effect: CommandEffect? = nil) {
         self.command = command
         self.namedApp = namedApp
+        self.effect = effect
     }
 
     /// Adopting the same backend twice keeps one entry, so it is closed once.
@@ -154,7 +158,7 @@ final class CommandScope {
     func commitTreeCache(failed: Bool = false) async {
         guard let command else { return }
         let sentNothing = failed && DispatchTracker.current.state == .no
-        await TreeCache.commit(command: command, effect: CommandEffect.of(command), claimed: claims.heldKeys, backends: adopted, sentNothing: sentNothing)
+        await TreeCache.commit(command: command, effect: effect ?? CommandEffect.of(command), claimed: claims.heldKeys, backends: adopted, sentNothing: sentNothing)
     }
 
     /// Idempotent: each backend leaves the list before its close starts, so a slow close never skips or repeats another.
