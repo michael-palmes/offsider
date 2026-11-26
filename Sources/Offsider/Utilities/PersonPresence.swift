@@ -22,13 +22,23 @@ enum PersonPresence {
         return true
     }
 
-    /// `reason` completes macOS's sentence "offsider is trying to ...", and never names a username.
-    static func confirm(reason: String) async throws {
+    /// `reason` completes macOS's sentence "offsider is trying to ...", and never names a username. Unattended, it refuses at once with `ask`, else a rerun at the Mac.
+    static func confirm(reason: String, ask: String? = nil) async throws {
+        if Unattended.isOn { throw unattendedRefusal(reason: reason, ask: ask) }
         try await current.confirm(reason: reason)
+    }
+
+    static func unattendedRefusal(reason: String, ask: String? = nil) -> CLIError {
+        CLIError(
+            errorDescription: "\(UnattendedMode.because), so Offsider did not ask a person to \(reason). Nothing was typed or saved.",
+            reason: .personRequired,
+            ask: ask ?? Unattended.runAsk(then: "confirm with Touch ID")
+        )
     }
 
     /// Refuses with `person_required` when standard input is not a terminal. `instead` names the command a person runs.
     static func requireTerminal(instead: String) throws {
+        if Unattended.isOn { throw CLIError.personRequired("\(UnattendedMode.because), so this step waits for a person at a terminal. Nothing was changed. \(instead)") }
         guard terminal() else {
             throw CLIError.personRequired("This step needs a person at a terminal, and standard input is not one. Nothing was changed. \(instead)")
         }
@@ -36,6 +46,7 @@ enum PersonPresence {
 
     /// Refuses with `person_required` when there is no controlling terminal to ask on, as when piped from another program with no terminal.
     static func requireControllingTerminal(instead: String) throws {
+        if Unattended.isOn { throw CLIError.personRequired("\(UnattendedMode.because), so this step waits for a person at a terminal. Nothing was changed. \(instead)") }
         guard controllingTerminal() else {
             throw CLIError.personRequired("This step needs a person at a terminal, and this process has none. Nothing was changed. \(instead)")
         }

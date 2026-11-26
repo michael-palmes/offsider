@@ -169,12 +169,23 @@ struct GuardCommand: AsyncParsableCommand, AppNaming {
             prompt.lines(lines)
             guard try prompt.choose("Approve these rules?", options: ["🔐  Approve", "❌  Cancel"]) == 0 else { throw PromptCancelled() }
         }
+        try Self.requireReadableSeal(loaded)
         try await PersonPresence.confirm(reason: "approve the guard rules for \(config.apps.joined(separator: ", "))")
         try store.update({ current in
             // Approvals edited outside Offsider are dropped: only what a person approves here is kept.
             (loaded.sealIntact ? current : .empty).approving(config, source: file.path, now: Date(timeIntervalSince1970: context.now().timeIntervalSince1970.rounded(.down)))
         }, commit: { data, apps in try context.seal.store(GuardSealRecord(data: data, apps: apps)) })
         return GuardReport.approved(config, file: file.path, json: json)
+    }
+
+    /// A seal the Keychain will not read stops an approval, which would otherwise start from nothing and drop every other app's rules.
+    static func requireReadableSeal(_ loaded: GuardSources.Loaded) throws {
+        guard let detail = loaded.sealUnreadable else { return }
+        let block = KeychainAccess.block(describedBy: detail)
+        throw CLIError(
+            errorDescription: "The app guard seal could not be read from the login Keychain (\(detail)), so nothing was approved and every app's rules stay as they were. Run this again once the Keychain can be read.",
+            reason: KeychainAccess.reason(block), ask: KeychainAccess.ask(block)
+        )
     }
 
     /// For `devices add`, whose person has just confirmed with Touch ID: shows this repository's unapproved guard rules, approves on a yes and returns the receipt lines.
@@ -190,6 +201,7 @@ struct GuardCommand: AsyncParsableCommand, AppNaming {
             return ["Guard rules not approved. Later: \(GuardReport.approveCommand)"]
         }
         do {
+            try Self.requireReadableSeal(loaded)
             try store.update({ current in
                 (loaded.sealIntact ? current : .empty).approving(file.config, source: file.path, now: Date(timeIntervalSince1970: context.now().timeIntervalSince1970.rounded(.down)))
             }, commit: { data, apps in try context.seal.store(GuardSealRecord(data: data, apps: apps)) })

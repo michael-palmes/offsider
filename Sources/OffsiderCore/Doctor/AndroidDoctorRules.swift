@@ -280,22 +280,28 @@ public enum AndroidDoctorRules {
         )
     }
 
+    static let keychainHint = "Unlock the login Keychain on this Mac, then run doctor again."
+
     /// Apps cannot start on a device set up with a credential until it is unlocked once after boot; a saved code Offsider will not type warns even when it is unlocked.
     public static func lock(_ reading: AwakeReading, unlockCode: UnlockCodeFact?, deviceID: String, codeKey: String, timeZone: TimeZone = .current) -> Verdict {
         guard reading.hasCredential else { return (.pass, "No PIN, pattern or password", nil) }
         let lock = LockReport(reading, savedCode: unlockCode?.saved ?? false, lastAttempt: unlockCode?.lastAttempt)
         let attempt = lock.blockingAttempt
-        let saved = attempt.map { ". " + $0.problem(name: "the device", timeZone: timeZone) } ?? "; code saved: \(lock.savedCode ? "yes" : "no")"
+        let unreadable = attempt == nil ? unlockCode?.unreadable : nil
+        let saved = attempt.map { ". " + $0.problem(name: "the device", timeZone: timeZone) }
+            ?? unreadable.map { "; code saved: unknown, as \($0)" }
+            ?? "; code saved: \(lock.savedCode ? "yes" : "no")"
         let set = reading.credential == nil ? "\(reading.credentialName) set (Android does not say which here; unlock-code takes a PIN or password only)" : "\(reading.credentialName) set"
         let state: String
         switch reading.userUnlocked {
         case false?:
-            return (.fail, "\(set); waiting for its first unlock since boot, so apps cannot start\(saved)", lock.unlockHint(deviceID: deviceID, codeKey: codeKey))
+            return (.fail, "\(set); waiting for its first unlock since boot, so apps cannot start\(saved)", unreadable == nil ? lock.unlockHint(deviceID: deviceID, codeKey: codeKey) : keychainHint)
         case true?:
             state = "\(set); unlocked since boot\(saved)"
         case nil:
             state = "\(set)\(saved)"
         }
+        if unreadable != nil { return (.warn, state, keychainHint) }
         guard attempt != nil else { return (.pass, state, nil) }
         return (.warn, state, lock.unlockHint(deviceID: deviceID, codeKey: codeKey))
     }

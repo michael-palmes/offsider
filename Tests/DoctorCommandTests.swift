@@ -146,7 +146,7 @@ struct DoctorUnlockCodeTests {
         phone.isPhysical = true
         phone.awake = AwakeReading(screen: .on, lockScreen: .hidden, credential: "pin", userUnlocked: true)
 
-        #expect(Doctor.withUnlockCode(phone, store: store, ledger: ledger).unlockCode == UnlockCodeFact(saved: false, lastAttempt: nil))
+        #expect(Doctor.withUnlockCode(phone, store: store, ledger: ledger).unlockCode == UnlockCodeFact(saved: false, lastAttempt: nil, unreadable: "The Keychain is locked."))
         try ledger.record(rejected, for: "ZY22FAKE01")
         let facts = Doctor.withUnlockCode(phone, store: store, ledger: ledger)
         #expect(AndroidDoctorRules.lock(try #require(facts.awake), unlockCode: facts.unlockCode, deviceID: "ZY22FAKE01", codeKey: "ZY22FAKE01").status == .warn)
