@@ -191,6 +191,39 @@ struct UnattendedTests {
         #expect(throws: Never.self) { try DeviceAccess.requireReadableSeal(.missing, seal: unreadable) }
     }
 
+    @Test("an iPhone broker stopped by an unreadable seal names the Keychain, never devices add")
+    func iPhoneBrokerHint() {
+        let entry = PolicyFixtures.entry()
+        let gate = DevicePolicyGate(policy: {
+            PhysicalDevicePolicy(managed: .none, list: DeviceAllowList(entries: [entry]), sealUnreadable: "the login Keychain is locked")
+        }, now: { PolicyFixtures.now })
+        let refusal = DeviceSessionServe.allowanceRefusal(key: entry.key, gate: gate)
+        #expect(refusal?.hint == nil)
+        #expect(refusal?.message.contains("could not be read from the login Keychain") == true)
+    }
+
+    @Test("devices status under an unreadable seal shows the Keychain warning and never suggests allowing again")
+    func statusPage() {
+        let entry = PolicyFixtures.entry()
+        let policy = PhysicalDevicePolicy(managed: .none, list: DeviceAllowList(entries: [entry]), sealUnreadable: "the login Keychain is locked")
+        let page = AccessStatusScreen.page(policy, now: PolicyFixtures.now, timeZone: TimeZone(identifier: "UTC")!)
+        #expect(page.notices.contains { $0.text == AccessStatusScreen.sealUnreadable })
+        #expect(!page.notices.contains { $0.command == AccessStatusScreen.allowCommand })
+    }
+
+    @Test("guard approve refuses under an unreadable seal rather than dropping every other app's rules")
+    func guardApproveRefuses() {
+        var loaded = GuardSources.Loaded()
+        loaded.sealUnreadable = "the login Keychain is locked"
+        #expect(throws: CLIError.self) { try GuardCommand.requireReadableSeal(loaded) }
+        #expect(throws: Never.self) { try GuardCommand.requireReadableSeal(GuardSources.Loaded()) }
+    }
+
+    @Test("a Keychain refusal is audited as refused, since nothing was sent")
+    func auditRefused() {
+        #expect(CommandAudit.refusedReasons.contains(FailureReason.keychainLocked.rawValue))
+    }
+
     @Test("a phone's warm helper stops at the first recheck that cannot read the seal, naming it")
     func brokerStopsOnUnreadableSeal() async {
         let entry = PolicyFixtures.entry(.android, key: PolicyFixtures.serial)

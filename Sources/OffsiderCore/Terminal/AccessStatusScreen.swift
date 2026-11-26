@@ -87,8 +87,9 @@ public enum AccessStatusScreen {
         }
         let entries = allowed(policy, now: now)
         guard !entries.isEmpty else {
-            let person: [Block] = [.header(Header(.lock, title, ["none allowed"])), .prose(nothingAllowed)]
-            return Page([.person(person), .agent(agent)], notices: notices + (notices.contains { $0.command == allowCommand } ? [] : [.next(allowCommand)]))
+            let unreadable = policy.sealUnreadable != nil && !policy.list.isEmpty
+            let person: [Block] = [.header(Header(.lock, title, ["none allowed"])), .prose(unreadable ? sealUnreadable : nothingAllowed)]
+            return Page([.person(person), .agent(agent)], notices: notices + (unreadable || notices.contains { $0.command == allowCommand } ? [] : [.next(allowCommand)]))
         }
         let rows = entries.map { entry in
             Table.Row([

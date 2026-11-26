@@ -11,7 +11,7 @@ enum KeychainAccess {
         case needsPerson
     }
 
-    /// Whether the default (login) Keychain is locked; tests bind the answer.
+    /// Whether the user domain's Keychain, the login Keychain Offsider's items live in, is locked; tests bind the answer.
     @TaskLocal static var isLocked: @Sendable () -> Bool = { liveIsLocked() }
 
     /// Unattended, a Keychain item this build may not read fails at once instead of raising a prompt nobody answers.
@@ -61,7 +61,7 @@ enum KeychainAccess {
 
     private static func liveIsLocked() -> Bool {
         var keychain: SecKeychain?
-        guard SecKeychainCopyDefault(&keychain) == errSecSuccess, let keychain else { return false }
+        guard SecKeychainCopyDomainDefault(.user, &keychain) == errSecSuccess, let keychain else { return false }
         var status = SecKeychainStatus()
         guard SecKeychainGetStatus(keychain, &status) == errSecSuccess else { return false }
         return status & SecKeychainStatus(kSecUnlockStateStatus) == 0

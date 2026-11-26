@@ -200,12 +200,12 @@ final class EvidenceRecorder {
         }
     }
 
-    /// Every entry still open when the command ends; true when a line was written, which then carries `ask`.
+    /// Every entry still open when the command ends; true when a line was written, and the first carries `ask`.
     @discardableResult
     func finishAll(exit: Int32, reason: String?, ask: String? = nil) -> Bool {
         var wrote = false
         for id in pending.keys.sorted() {
-            if finish(Token(id: id), exit: exit, reason: reason, ask: ask) { wrote = true }
+            if finish(Token(id: id), exit: exit, reason: reason, ask: wrote ? nil : ask) { wrote = true }
         }
         return wrote
     }

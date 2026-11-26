@@ -105,7 +105,8 @@ struct DeviceSessionServe: AsyncParsableCommand {
             try gate.require(platform: .ios, key: key)
             return nil
         } catch let error as CLIError {
-            return IOSDeviceError(.notAllowed, error.userFacingDescription, hint: error.hint ?? "offsider devices add")
+            let keychain = [.keychainLocked, .personRequired].contains(error.reason)
+            return IOSDeviceError(.notAllowed, error.userFacingDescription, hint: keychain ? error.hint : error.hint ?? "offsider devices add")
         } catch {
             return IOSDeviceError(.notAllowed, "\(key) could not be checked against the allow-list (\(error)), so its device session stopped.", hint: "offsider devices add")
         }
