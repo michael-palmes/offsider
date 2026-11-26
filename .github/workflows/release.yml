@@ -139,6 +139,18 @@ jobs:
             scripts/build.sh "$step"
           done
 
+      # A fresh runner's first fetch of every package at once has been refused ("could not read Username"); a later try works.
+      - name: Fetch Swift packages (pinned, up to three tries)
+        run: |
+          set -euo pipefail
+          for attempt in 1 2 3; do
+            if swift package --force-resolved-versions resolve; then exit 0; fi
+            echo "::warning::fetching Swift packages failed (try ${attempt} of 3)"
+            [ "$attempt" -lt 3 ] && sleep $((attempt * 30))
+          done
+          echo "::error::fetching Swift packages failed three times"
+          exit 1
+
       - name: Build Offsider (release, arm64)
         env:
           OFFSIDER_VERSION: ${{ steps.meta.outputs.version }}
