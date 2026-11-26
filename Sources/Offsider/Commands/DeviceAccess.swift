@@ -124,6 +124,17 @@ struct DeviceAccessContext: Sendable {
 enum DeviceAccess {}
 
 extension DeviceAccess {
+    /// A seal the Keychain will not read stops the change, rather than counting as tampered and dropping the other devices.
+    static func requireReadableSeal(_ snapshot: DeviceAllowListSnapshot, seal: any DeviceAllowListSealing) throws {
+        guard case .unreadable(let detail) = seal.reading(snapshot) else { return }
+        let block = KeychainAccess.block(describedBy: detail)
+        throw CLIError(
+            errorDescription: "The allow-list's seal could not be read from the login Keychain (\(detail)), so nothing was changed and the other devices stay allowed. Run this again once the Keychain can be read.",
+            reason: KeychainAccess.reason(block),
+            ask: KeychainAccess.ask(block)
+        )
+    }
+
     /// What a one-app allowance lasts when no one chose; any app on a phone in use is recommended less, a test device stays until removed.
     static let oneAppExpiry = "7d"
     static let longestExpiry: TimeInterval = 30 * 86_400
@@ -455,6 +466,7 @@ struct DeviceAccessAllow: AsyncParsableCommand {
         var droppedTampered = false
         let snapshot = try store.update({ current in
             var list = current.list
+            try DeviceAccess.requireReadableSeal(current, seal: context.seal)
             if !context.seal.isIntact(current) {
                 droppedTampered = true
                 list = .empty
@@ -1231,6 +1243,7 @@ struct DeviceAccessRemove: AsyncParsableCommand {
         let store = try context.requireStore()
         let existing = try? store.load()
         let listed = existing.map { $0.list.entry(platform: target.platform, key: target.key) != nil || $0.list.newerEntry(platform: target.platform, key: target.key) != nil } ?? false
+        if let existing { try DeviceAccess.requireReadableSeal(existing, seal: context.seal) }
         let tampered = existing.map { !context.seal.isIntact($0) } ?? true
         var removed: DeviceAllowance?
         var removedNewer: NewerDeviceEntry?

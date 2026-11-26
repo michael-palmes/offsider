@@ -76,14 +76,22 @@ struct KeychainFailure: LocalizedError, UserFacingError, OffsiderFailure {
     let operation: String
     let device: String
     let detail: String
+    let reason: FailureReason
+    let ask: String?
 
-    init(operation: String, device: String, detail: String) {
+    init(operation: String, device: String, detail: String, reason: FailureReason = .commandFailed, ask: String? = nil) {
         self.operation = operation
         self.device = device
         self.detail = detail
+        self.reason = reason
+        self.ask = ask
     }
 
     init(operation: String, device: String, status: OSStatus) {
+        if let block = KeychainAccess.block(for: status) {
+            self.init(operation: operation, device: device, detail: KeychainAccess.clause(block), reason: KeychainAccess.reason(block), ask: KeychainAccess.ask(block))
+            return
+        }
         let message = SecCopyErrorMessageString(status, nil).map { $0 as String } ?? "OSStatus \(status)"
         let detail = status == errSecUserCanceled || status == errSecAuthFailed
             ? "Keychain access was declined (\(message)); allow it when macOS asks"
@@ -91,7 +99,6 @@ struct KeychainFailure: LocalizedError, UserFacingError, OffsiderFailure {
         self.init(operation: operation, device: device, detail: detail)
     }
 
-    var reason: FailureReason { .commandFailed }
     var failureMessage: String { "Could not \(operation) the unlock code for \(device) in the login Keychain: \(detail)." }
     var userFacingDescription: String { failureMessage }
     var errorDescription: String? { failureMessage }

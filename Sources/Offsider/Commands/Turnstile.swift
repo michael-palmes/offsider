@@ -104,6 +104,16 @@ struct Turnstile: AsyncParsableCommand {
             return status
         }
         guard let waitSeconds else { return try await readOnce() }
+        if Unattended.isOn {
+            let status = try await readOnce()
+            guard status.state.awaitsPerson else { return status }
+            await route.noteNameForAsk()
+            let open = Self.stepStillOpen(status.state, seconds: 0, app: appOption.bundleID)
+            throw CLIError(
+                errorDescription: "Turnstile needs a person, and \(UnattendedMode.because), so Offsider did not wait for one. Nothing was sent.",
+                reason: .personRequired, ask: open.ask
+            )
+        }
         let device = route.device.rawValue
         var status = try await Self.waitForPerson(seconds: waitSeconds, clock: clock, onOtherApp: { Wait.noteOtherApp(limit: waitSeconds, device: device) }, read: readOnce)
         status.changes = changes
