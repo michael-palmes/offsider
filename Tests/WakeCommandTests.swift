@@ -558,6 +558,23 @@ struct WakeCommandTests {
         }
     }
 
+    @Test("a lock screen that stays up with no readable lock type names doctor, never a swipe; one known to have no code still says swipe")
+    func wakeUnknownLockType() async throws {
+        try await Self.withLedger { (ledger: UnlockAttemptLedger) async throws in
+            let unknown = Self.backend(Self.locked, afterWake: AwakeReading(screen: .on, lockScreen: .swipe))
+            let error = await #expect(throws: CLIError.self) { try await Self.wake(unknown, unlock: true, store: try Self.store("2580"), ledger: ledger) }
+            #expect(error?.reason == .deviceLocked)
+            #expect(error?.hint == "offsider doctor --device ZY22FAKE01")
+            #expect(error?.userFacingDescription.contains("could not read whether it needs a code") == true)
+            #expect(error?.userFacingDescription.contains("Swipe") == false)
+            #expect(unknown.enteredCodes.isEmpty)
+
+            let swipe = Self.backend(Self.locked, afterWake: AwakeReading(screen: .on, lockScreen: .swipe, credential: "none"))
+            let swipeError = await #expect(throws: CLIError.self) { try await Self.wake(swipe, ledger: ledger) }
+            #expect(swipeError?.userFacingDescription.contains("Swipe it away on the device.") == true)
+        }
+    }
+
     @Test("--unlock with no saved code names the command that saves one")
     func wakeNoCode() async throws {
         try await Self.withLedger { (ledger: UnlockAttemptLedger) async throws in

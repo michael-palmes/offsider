@@ -59,7 +59,7 @@ public struct AwakeReading: Equatable, Sendable {
     public var lockScreen: LockScreen
     /// `pin`, `pattern` or `password` when a credential is set and lock settings name it, `none` when they or the keyguard say there is none.
     public var credential: String?
-    /// The keyguard's `secure` line: a credential is set, whatever its type; nil when not read.
+    /// The keyguard's `secure` line: a credential is set, whatever its type; nil when not read (Android 17 prints none).
     public var keyguardSecure: Bool?
     /// The stay-awake setting: the sources that keep the screen on while charging.
     public var stayAwake: PowerSources
