@@ -19,7 +19,7 @@ Each command reads the policy once, so a profile installed or removed takes effe
 | `allowPhysicalDevices` | boolean | `false` refuses every phone, iPhone and iPad. `true` sets no limit beyond each person's allow-list. |
 | `allowedDeviceIDs` | array of strings | Only these devices: iPhone and iPad UDIDs (any case) and Android serials (exact). An empty array allows none. |
 | `allowedBundleIDs` | array of strings | Apps on a physical device are limited to these exact ids: `devices add` offers no other, pins outside the list do nothing, and an "Any app" allowance reaches only these. An empty array allows none. |
-| `deniedBundleIDs` | array of strings | Apps Offsider never signs in to on any platform (`login`, `credential`), and never drives on a phone, iPhone or iPad. An entry ending in `.` is a prefix (`com.example.vault.`). iOS ids match without case, Android ids exactly. |
+| `deniedBundleIDs` | array of strings | Apps Offsider never signs in to on any platform (`login`, `credential`), and never drives on a phone, iPhone or iPad. An entry ending in `.` is a prefix (`com.example.vault.`). iOS ids match without case, Android ids exactly. The built-in deny-list names common apps, not categories: list any other messaging, banking or password manager app here. |
 | `allowTestDevices` | boolean | While any key is forced, a test device is a plain "Any app" allowance unless this is `true`, and even then only while neither app list nor `requirePinnedApps` is forced. |
 | `forceMasks` | boolean | `true` refuses, for a person and an agent alike, every way to drop a mask or redaction: `--no-mask-secure` and `OFFSIDER_MASK_SECURE=0` on `screenshot`, `batch` and a held touch's captures, `--unmasked` on `record-video` and `stream-video`, `describe-ui --raw-source`, and `--no-redact` on `logs` and `rn logbox`. |
 | `maxAllowanceDays` | integer, 1 to 3650 | The longest an allowance lasts. `devices add` refuses a longer `--expires` and `never`, offers nothing longer, and saves a default at the cap. An allowance already saved ends that many days after it was added. |
@@ -77,6 +77,7 @@ Your organisation limits the apps on this Mac (allowedBundleIDs).
 - **The agent itself.** Its permission rules and its harness's managed settings stay with your agent's vendor. [Managed harnesses](agents.md#managed-harnesses) has the fragments that keep Offsider's rules in a locked-down Claude Code or Codex.
 - **Installing Offsider.** Use your endpoint tool to allow or block the `offsider` binary.
 - **`alert` on a test device.** It answers a system permission prompt whatever `allowPhonePermissionChanges` says; leave `allowTestDevices` unset to keep test devices off.
+- **`screen-reader on` on a test device.** It grants TalkBack its notification permission whatever `allowPhonePermissionChanges` says, and `off` puts it back; leave `allowTestDevices` unset to keep test devices off.
 - **A reverse or login from before the profile.** `offsider session stop --device <ID>` removes a reverse Offsider set, and `offsider credential remove` a saved login; the ceiling stops new ones and stops Offsider using the old.
 
 ## A sample profile

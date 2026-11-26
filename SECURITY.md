@@ -209,6 +209,7 @@ An administrator sets a ceiling with a configuration profile in the domain `com.
 ## Release integrity
 
 - Releases are built by `.github/workflows/release.yml` in separate jobs, each on a fresh GitHub-hosted runner (the v0.17.0 run's jobs report the runner group `GitHub Actions`). The build job holds no secrets: it checks the tag's signature against `main`'s `.github/allowed_signers` and that the tag is on `main`, builds the binary, the idb frameworks and the runner check, and packs an unsigned payload with its SHA-256. A signing job in the protected `release` environment checks out the tag commit, verifies the payload's digest, lists it before unpacking (only plain files, folders and links inside the tree, no absolute path, `..`, hard link or device, at most 1 GiB), signs and notarises it, and never builds or runs it; the signing keychain and the notary key are removed as soon as each is used. A verify job with no environment lists the signed archive the same way, unpacks it, verifies the signatures and notarisation, runs the signed binary through commands that load CoreSimulator and SimulatorKit and fails on any library validation rejection in the system log, and runs the Homebrew gate. Only then is the release published, immutable, with its `SHA256SUMS` and a GitHub build provenance attestation.
+- On a `v*` tag the build job stops before building unless line 1 of this file names that version, and `scripts/release.sh tag` will not make the tag without it. From 0.18.0 the build job also writes `build-info.txt` (runner, Xcode, Swift, the idb pin, the helper's digest, the commit and the workflow ref), the CycloneDX 1.6 SBOM `offsider-<version>.cdx.json` (`scripts/sbom.sh`) and a copy of this file, and the publish job refuses them unless they match what the build job saw. The release attaches all three and the provenance bundle (`offsider-<version>-arm64.tar.gz.intoto.jsonl`), lists them in `SHA256SUMS` and attests them; the SBOM is also attested on the tarball.
 - The `release` environment's one required reviewer is the maintainer, who can approve their own run. Tags are signed with an SSH key listed in `allowed_signers`, which is not yet hardware-backed.
 - Release binaries are signed with a Developer ID certificate (its team is in [Verify an install](#verify-an-install)), use the hardened runtime and are notarised by Apple. Their entitlements, in [entitlements.plist](entitlements.plist), are empty: library validation is on, so the binary loads only frameworks signed by the same team or by Apple. Ad-hoc builds for local rehearsals use [entitlements-adhoc.plist](entitlements-adhoc.plist), which disables library validation because an ad-hoc signature has no team; `scripts/release.sh` refuses to sign a release with a file that disables it.
 - The SHA-256 of every file in Offsider's resource bundle (the Android helper's dex and manifest, the skill, the guide topics and the runner's source) is compiled into the binary at build time. A file that differs is refused with `install_damaged` when it is read (`Sources/Offsider/Platform/BundleIntegrity.swift`). A replaced binary loses its Developer ID signature, but nothing refuses to run it: a Homebrew install carries no quarantine flag, so Gatekeeper does not look again, and only macOS's Keychain access check and the brokers' signature check (a replaced binary is not the build a running broker serves) notice. `codesign --verify` ([Verify an install](#verify-an-install)) is what catches it.
@@ -242,6 +243,21 @@ gh attestation verify "offsider-$VERSION-arm64.tar.gz" --repo michael-palmes/off
   --source-ref "refs/tags/v$VERSION" --deny-self-hosted-runners
 ```
 
+From 0.18.0, each release attaches its provenance bundle, so you can verify the tarball without asking GitHub for the attestation (add `--custom-trusted-root` with a file from `gh attestation trusted-root` to verify with no network at all), and check the SBOM attested on it:
+
+```bash
+gh release download "v$VERSION" --repo michael-palmes/offsider \
+  --pattern "offsider-$VERSION-arm64.tar.gz.intoto.jsonl" --pattern "offsider-$VERSION.cdx.json"
+gh attestation verify "offsider-$VERSION-arm64.tar.gz" --bundle "offsider-$VERSION-arm64.tar.gz.intoto.jsonl" \
+  --repo michael-palmes/offsider --signer-workflow michael-palmes/offsider/.github/workflows/release.yml \
+  --source-ref "refs/tags/v$VERSION" --deny-self-hosted-runners
+gh attestation verify "offsider-$VERSION-arm64.tar.gz" --repo michael-palmes/offsider \
+  --signer-workflow michael-palmes/offsider/.github/workflows/release.yml \
+  --source-ref "refs/tags/v$VERSION" --deny-self-hosted-runners --predicate-type https://cyclonedx.org/bom
+```
+
+The SBOM lists the Swift packages, the idb fork with its upstream, the bundled frameworks, the Android helper, and the Xcode and macOS frameworks loaded at run time and never shipped.
+
 [Install](docs/install.md#verified-tarball) unpacks it and puts it on your `PATH`.
 
 ## Build hardening
@@ -257,7 +273,8 @@ gh attestation verify "offsider-$VERSION-arm64.tar.gz" --repo michael-palmes/off
 - **An AI review before each pull request.** The maintainer runs `/code-review high` (Claude Code's review) on the branch and works through each finding for speed, security, privacy and an easy secure path, writing a reason for any left in the pull request (`CLAUDE.md`, "Pull requests"). It is not a human review.
 - **After each merge and weekly,** the unit tests run under AddressSanitizer, and **weekly** under ThreadSanitizer (one test of a signal handler's timing left out, as TSan defers handlers); a failure of either opens an issue on `main` (`ci.yml`, "Unit tests (AddressSanitizer)" and "Unit tests (ThreadSanitizer)").
 - **Weekly fuzzing** of the parsers for device, daemon and file bytes, under AddressSanitizer (`.github/workflows/fuzz.yml`).
-- **Workflow hygiene.** Every workflow starts from `permissions: {}` or `contents: read`, pins each action to a full commit SHA, and checks out with `persist-credentials: false`; Dependabot proposes action updates weekly after a 7-day cooldown (`.github/dependabot.yml`).
+- **Workflow hygiene.** Every workflow starts from `permissions: {}` or `contents: read`, pins each action to a full commit SHA, and checks out with `persist-credentials: false`; Dependabot proposes action and Swift package updates weekly after a 7-day cooldown, the Swift ones through a copy of the manifest's remote requirements in `swiftpm-watch/`, which a unit test keeps in step with the root's (`.github/dependabot.yml`, `Tests/SwiftPMWatchTests.swift`).
+- **Scans.** OpenSSF Scorecard runs weekly and on each push to `main`, with its results published (`.github/workflows/scorecard.yml`); CodeQL scans the workflows, the Java Android helper and the TypeScript test fixture on pull requests, pushes to `main` and weekly (`codeql.yml`); dependency review runs on every pull request (`dependency-review.yml`). CodeQL does not scan the Swift code, because it cannot analyse Swift 6.4 yet.
 - **Releases** come only from a signed tag on `main`, through the jobs in [Release integrity](#release-integrity), and the Homebrew tap updates only through its own checked pull request.
 - **Reviews.** In October 2026 a read-only security review of the code produced the change list that 0.12.0 to 0.14.0 shipped. There has been no third-party audit.
 
@@ -287,10 +304,8 @@ Deferred work, recorded so nobody mistakes it for done.
 - Coverage-guided fuzzing (mutation only today: Xcode's toolchain ships no libFuzzer).
 - A hardware-backed tag signing key.
 - A second reviewer on the `release` environment.
-- Dependency scanning for Swift packages (Dependabot watches Actions only).
-- OpenSSF Scorecard, CodeQL and dependency review on pull requests.
-- CodeQL for Swift, which CodeQL cannot analyse at Swift 6.4 yet.
-- An SBOM, a build record, a copy of this file and an offline attestation bundle in each release's assets.
+- CodeQL for the Swift code, which CodeQL cannot analyse at Swift 6.4 yet. It scans the workflows, the Java Android helper and the TypeScript test fixture.
+- Strict memory safety for the command target, which calls idb's frameworks; the three library targets have it ([Build hardening](#build-hardening)).
 - Checking the iPhone runner's log and XCTest's result bundle for typed text.
 - Checking whether the emulator's clipboard sharing copies a paste to the Mac.
 - Checking whether the developer disk image mount reaches Apple.

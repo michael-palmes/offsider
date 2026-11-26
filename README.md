@@ -5,6 +5,8 @@
 A hand for your agent on iOS and Android, simulated or real.
 
 [![CI](https://github.com/michael-palmes/offsider/actions/workflows/ci.yml/badge.svg)](https://github.com/michael-palmes/offsider/actions/workflows/ci.yml)
+[![CodeQL](https://github.com/michael-palmes/offsider/actions/workflows/codeql.yml/badge.svg)](https://github.com/michael-palmes/offsider/actions/workflows/codeql.yml)
+[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/michael-palmes/offsider/badge)](https://scorecard.dev/viewer/?uri=github.com/michael-palmes/offsider)
 [![Release](https://img.shields.io/github/v/release/michael-palmes/offsider?sort=semver)](https://github.com/michael-palmes/offsider/releases/latest)
 [![Licence: MIT](https://img.shields.io/badge/licence-MIT-blue.svg)](LICENSE)
 
@@ -116,10 +118,11 @@ Built for the question your security team will ask: what can an agent do with th
 | [Screen text gives the agent orders](SECURITY.md#what-reaches-your-agent) | Screen, log and notification text is escaped, cut at 500 characters a string and marked `untrusted` in JSON, and the skill tells the agent it is data and to stop and ask. |
 | [Secrets end up in output](SECURITY.md#saved-secrets) | Password fields read as bullets and are masked in screenshots, logs are redacted by pattern, and Offsider never echoes typed text. Test logins live in the login Keychain, never synced. |
 | [Local tampering](SECURITY.md#on-the-mac) | A private 0700 folder whose files Offsider writes 0600 and opens without following symlinks, and sockets that refuse other users and other builds. |
-| [A tampered release](SECURITY.md#release-integrity) | Signed tags, a build job with no secrets, Developer ID signing with library validation, notarisation, `SHA256SUMS` and a provenance attestation. Bundled files are checked against digests in the binary, and `codesign --verify` below catches a replaced binary. |
+| [A tampered release](SECURITY.md#release-integrity) | Signed tags, a build job with no secrets, Developer ID signing with library validation, notarisation, `SHA256SUMS` and a provenance attestation, and from 0.18.0 an attested SBOM and build record. Bundled files are checked against digests in the binary, and `codesign --verify` below catches a replaced binary. |
 | [Data leaves the Mac](SECURITY.md#network) | No telemetry, accounts or update checks. Only Unix sockets and loopback to the adb server, the emulator, usbmuxd and Metro, and an iPhone's CoreDevice tunnel over USB. Apple's `xcodebuild` reaches Apple to build the iPhone runner. |
 | [An agent taps something costly](SECURITY.md#app-guard) | An approved `offsider.guard.json` names the controls an agent asks you about, with Touch ID at the Mac, or never taps; an agent can tighten those rules but never loosen them. |
-| [Your organisation needs a ceiling](docs/mdm.md) | A configuration profile turns phones off, or limits them to listed devices and apps, and no one's allow-list goes past it. |
+| [Your organisation needs a ceiling](docs/mdm.md) | A configuration profile turns phones off, or limits them to listed devices and apps, and caps what anyone may loosen, such as masks, saved logins and unlock codes. No one's allow-list goes past it. |
+| [You need to know what it did on a phone](docs/device-access.md#audit-trail) | Every command that drives, is refused on, or changes access to a physical device leaves one record on the Mac and in the unified log, never arguments or screen text: `offsider devices status --audit`. |
 
 ![A signed tag is built in CI, signed with a Developer ID, notarised, hashed in SHA256SUMS and attested, then installed by Homebrew on your Mac.](docs/assets/release.png)
 
