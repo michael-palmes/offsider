@@ -392,7 +392,7 @@ jobs:
           # 9 is tool_missing: no Android SDK on the runner.
           case "$rc" in 0) jq -e 'type == "array" or type == "object"' "$RUNNER_TEMP/devices.json" > /dev/null || { echo "::error::list-devices printed no JSON"; exit 1; } ;; 9) ;; *) echo "::error::offsider list-devices --json exited $rc"; exit 1 ;; esac
           hits="$(log show --start "$since" --style compact \
-            --predicate '(eventMessage CONTAINS[c] "library validation" OR eventMessage CONTAINS[c] "different Team IDs") AND (process == "offsider" OR eventMessage CONTAINS[c] "offsider")' \
+            --predicate '(eventMessage CONTAINS[c] "library validation" OR eventMessage CONTAINS[c] "different Team IDs") AND (process == "offsider" OR eventMessage CONTAINS[c] "offsider") AND process != "log"' \
             | grep -Ei 'library validation|different Team IDs' || true)"
           if [ -n "$hits" ]; then
             echo "$hits"
