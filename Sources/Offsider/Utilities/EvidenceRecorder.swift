@@ -169,24 +169,27 @@ final class EvidenceRecorder {
     }
 
     /// Writes the entry's manifest line; a manifest that cannot be written is a warning, since the capture itself succeeded or failed already.
-    func finish(_ token: Token, exit: Int32, reason: String?, step: Int? = nil, line: String? = nil) {
-        guard let environment, let entry = pending.removeValue(forKey: token.id), let run = try? run() else { return }
+    @discardableResult
+    func finish(_ token: Token, exit: Int32, reason: String?, step: Int? = nil, line: String? = nil, ask: String? = nil) -> Bool {
+        guard let environment, let entry = pending.removeValue(forKey: token.id), let run = try? run() else { return false }
         let now = environment.now()
         let manifestLine = RunManifestLine(
             n: entry.number, file: entry.file, command: command, step: step, line: line, device: entry.device, platform: entry.platform,
             time: entry.reservedAt ?? entry.start, ms: Int((now.timeIntervalSince(entry.start) * 1000).rounded()), exit: Int(exit), reason: reason,
             args: step == nil ? SelectorRedaction.redacted(arguments).map { LogRedactor.redact($0).text } : nil,
             output: entry.output, diff: entry.diff, masked: entry.masked, skippedBeneath: entry.skippedBeneath, maskUnproven: entry.maskUnproven, changed: entry.changed, expect: entry.expect, entries: entry.entries, redacted: entry.redacted,
-            prompt: entry.prompt, button: entry.button, fields: entry.fields
+            prompt: entry.prompt, button: entry.button, fields: entry.fields, ask: ask
         )
         do {
             try run.folder.append(manifestLine)
+            return true
         } catch {
             let message = TerminalText.line(OffsiderCommand.message(for: error), cap: TerminalText.maxErrorCharacters)
             Console.current.line(
                 "Warning: could not add to \(run.folder.file(RunFolder.manifestName)): \(message)",
                 person: .warning("This capture is missing from the run's manifest: \(message)")
             )
+            return false
         }
     }
 
@@ -197,10 +200,13 @@ final class EvidenceRecorder {
         }
     }
 
-    /// Every entry still open when the command ends.
-    func finishAll(exit: Int32, reason: String?) {
+    /// Every entry still open when the command ends; true when a line was written, which then carries `ask`.
+    @discardableResult
+    func finishAll(exit: Int32, reason: String?, ask: String? = nil) -> Bool {
+        var wrote = false
         for id in pending.keys.sorted() {
-            finish(Token(id: id), exit: exit, reason: reason)
+            if finish(Token(id: id), exit: exit, reason: reason, ask: ask) { wrote = true }
         }
+        return wrote
     }
 }

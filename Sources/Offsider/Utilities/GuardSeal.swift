@@ -34,11 +34,17 @@ protocol GuardSealing: Sendable {
 }
 
 extension GuardSealing {
-    /// Intact when the file matches the seal, or when there is neither. `apps` are those a broken seal still covers.
-    func check(_ snapshot: GuardApprovalsSnapshot) -> (intact: Bool, apps: [String]) {
-        guard let record = try? stored() else { return (snapshot.approvals.isEmpty, snapshot.approvals.apps) }
-        if record.digest == GuardSealRecord(data: snapshot.data, apps: []).digest { return (true, []) }
-        return (false, Array(Set(record.apps + snapshot.approvals.apps)).sorted())
+    /// Intact when the file matches the seal, or when there is neither. `apps` are those a broken seal still covers; `unreadable` says why the seal could not be read.
+    func check(_ snapshot: GuardApprovalsSnapshot) -> (intact: Bool, apps: [String], unreadable: String?) {
+        let record: GuardSealRecord?
+        do {
+            record = try stored()
+        } catch {
+            return (snapshot.approvals.isEmpty, snapshot.approvals.apps, snapshot.approvals.isEmpty ? nil : SealReading.detail(of: error))
+        }
+        guard let record else { return (snapshot.approvals.isEmpty, snapshot.approvals.apps, nil) }
+        if record.digest == GuardSealRecord(data: snapshot.data, apps: []).digest { return (true, [], nil) }
+        return (false, Array(Set(record.apps + snapshot.approvals.apps)).sorted(), nil)
     }
 }
 
@@ -80,8 +86,7 @@ struct KeychainGuardSeal: GuardSealing {
         ]
     }
 
-    private static func failure(_ operation: String, _ status: OSStatus) -> CLIError {
-        let message = SecCopyErrorMessageString(status, nil).map { $0 as String } ?? "OSStatus \(status)"
-        return CLIError(errorDescription: "Could not \(operation) the app guard seal in the login Keychain: \(message).", reason: .commandFailed)
+    private static func failure(_ operation: String, _ status: OSStatus) -> SealKeychainFailure {
+        SealKeychainFailure(what: "the app guard seal", operation: operation, status: status)
     }
 }

@@ -94,8 +94,10 @@ public struct RunStatusEntry: Equatable, Sendable {
     /// `owner-exited` for a run ended because its session went away, `expired` for one past its expiry.
     public let endedBy: String?
     public let expires: Date?
+    /// Manifest lines that wait on a person, each with its `ask`.
+    public let personSteps: Int
 
-    public init(dir: String, label: String?, startedAt: Date, owner: ProcessIdentity?, files: Int, endedBy: String? = nil, expires: Date? = nil) {
+    public init(dir: String, label: String?, startedAt: Date, owner: ProcessIdentity?, files: Int, endedBy: String? = nil, expires: Date? = nil, personSteps: Int = 0) {
         self.dir = dir
         self.label = label
         self.startedAt = startedAt
@@ -103,6 +105,7 @@ public struct RunStatusEntry: Equatable, Sendable {
         self.files = files
         self.endedBy = endedBy
         self.expires = expires
+        self.personSteps = personSteps
     }
 
     func json(timeZone: TimeZone) -> OrderedJSON {
@@ -114,6 +117,7 @@ public struct RunStatusEntry: Equatable, Sendable {
             ("files", .integer(files)),
             ("endedBy", .optional(endedBy, OrderedJSON.string)),
             ("expires", .optional(expires) { .string(RunClock.iso($0, timeZone: timeZone)) }),
+            ("personSteps", .integer(personSteps)),
         ])
     }
 
@@ -129,12 +133,13 @@ public struct RunStatusEntry: Equatable, Sendable {
     /// `Run "PR 123" in /tmp/run since 14:01:07: 4 files (node 812)`.
     public func text(timeZone: TimeZone = .current) -> String {
         let name = label.map { "Run \"\($0)\"" } ?? "Run"
+        let queued = personSteps == 0 ? "" : ", \(RunTimeline.count(personSteps, "step")) waiting for a person"
         if let endedBy {
-            return "\(name) in \(dir) ended: \(Self.reason(endedBy))."
+            return "\(name) in \(dir) ended: \(Self.reason(endedBy))\(queued)."
         }
         let owner = self.owner.map { " (\($0.name) \($0.pid))" } ?? ""
         let until = expires.map { ", expires \(RunClock.iso($0, timeZone: timeZone))" } ?? ""
-        return "\(name) in \(dir) since \(RunClock.clock(startedAt, separator: ":", timeZone: timeZone)): \(RunTimeline.count(files, "file"))\(owner)\(until)"
+        return "\(name) in \(dir) since \(RunClock.clock(startedAt, separator: ":", timeZone: timeZone)): \(RunTimeline.count(files, "file"))\(queued)\(owner)\(until)"
     }
 
     static func reason(_ endedBy: String) -> String {

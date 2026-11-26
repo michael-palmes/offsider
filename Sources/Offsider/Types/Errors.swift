@@ -122,6 +122,14 @@ struct CLIError: LocalizedError, UserFacingError, OffsiderFailure {
                 reason: .deviceNotAllowed
             )
         }
+        if case .sealUnreadable(let detail) = refusal {
+            let block = KeychainAccess.block(describedBy: detail)
+            return CLIError(
+                errorDescription: "\(device) is a physical device and \(refusal.explanation), so nothing was sent to it. The allowance itself need not change: run this again once the Keychain can be read.",
+                reason: KeychainAccess.reason(block),
+                ask: KeychainAccess.ask(block)
+            )
+        }
         if case .newerEntry = refusal {
             let update = NewerDeviceEntry.updateCommand
             let step = audience.personStep(update)

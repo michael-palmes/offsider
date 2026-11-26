@@ -361,8 +361,12 @@ struct Doctor: AsyncParsableCommand {
         let key = facts.unlockCodeKey
         let attempt = ledger.lastAttempt(key)
         var facts = facts
-        // A Keychain that cannot be read must not hide a code known to be wrong.
-        facts.unlockCode = UnlockCodeFact(saved: (try? store.hasCode(for: key)) ?? (attempt != nil), lastAttempt: attempt)
+        // A Keychain that cannot be read must not hide a code known to be wrong, nor pass for no code saved.
+        do {
+            facts.unlockCode = UnlockCodeFact(saved: try store.hasCode(for: key), lastAttempt: attempt)
+        } catch {
+            facts.unlockCode = UnlockCodeFact(saved: attempt != nil, lastAttempt: attempt, unreadable: (error as? KeychainFailure)?.detail ?? OffsiderCommand.message(for: error))
+        }
         return facts
     }
 

@@ -412,7 +412,7 @@ enum LoginFlow {
     private static func handToPerson(_ phase: TurnstilePhase, stage: TurnstileStage, wait: TurnstileWait?, services: Services) async throws {
         await services.noteDevice()
         let refusal = turnstileRequired(phase, stage: stage, watch: services.turnstileWatch)
-        guard stage != .afterSubmit, let wait else { throw refusal }
+        guard stage != .afterSubmit, let wait, !Unattended.isOn else { throw refusal }
         let left = wait.remaining(now: services.clock.now())
         guard left > 0 else { throw turnstileNotDone(TurnstileStatus(phase: phase, source: .tree)?.state ?? .checkbox, stage: stage, after: wait.seconds, watch: services.turnstileWatch) }
         wait.begin(now: services.clock.now())

@@ -140,16 +140,23 @@ public enum StartPersonView {
             Table.Column(agent: nil, person: 3, fit: .optional(priority: 1), tone: .dim),
         ]
         let rows = ended.map { run in
-            Table.Row([runName(run), Table.Cell(TerminalText.homePath(run.dir, home: home), untrusted: true), Table.Cell(Self.endedReason(run.endedBy)), nil], status: .off)
+            Table.Row([
+                runName(run), Table.Cell(TerminalText.homePath(run.dir, home: home), untrusted: true), Table.Cell(Self.endedReason(run.endedBy)),
+                run.personSteps == 0 ? nil : Table.Cell(personSteps(run)),
+            ], status: .off)
         } + runs.map { run in
             Table.Row([
                 runName(run), Table.Cell(TerminalText.homePath(run.dir, home: home), untrusted: true),
                 Table.Cell("since \(RunClock.clock(run.startedAt, separator: ":", timeZone: timeZone))" + (run.expires.map { ", " + AllowScreen.until($0, now: now, timeZone: timeZone) } ?? "")),
-                Table.Cell(RunTimeline.count(run.files, "file")),
+                Table.Cell(RunTimeline.count(run.files, "file") + (run.personSteps == 0 ? "" : ", " + personSteps(run))),
             ], status: .on)
         }
         let summary = [runs.isEmpty ? nil : "\(runs.count) active", ended.isEmpty ? nil : "\(ended.count) ended"].compactMap { $0 }
         return Page([.person([.header(Header(.run, runs.count + ended.count == 1 ? "Run" : "Runs", summary)), .table(Table(columns: columns, rows: rows))]), .agent(agent)])
+    }
+
+    private static func personSteps(_ run: RunStatusEntry) -> String {
+        "\(run.personSteps) for a person"
     }
 
     private static func endedReason(_ endedBy: String?) -> String {

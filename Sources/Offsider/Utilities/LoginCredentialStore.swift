@@ -284,15 +284,23 @@ struct LoginKeychainFailure: LocalizedError, UserFacingError, OffsiderFailure {
     let app: String
     let key: String
     let detail: String
+    let reason: FailureReason
+    let ask: String?
 
-    init(operation: String, app: String, key: String, detail: String) {
+    init(operation: String, app: String, key: String, detail: String, reason: FailureReason = .commandFailed, ask: String? = nil) {
         self.operation = operation
         self.app = app
         self.key = key
         self.detail = detail
+        self.reason = reason
+        self.ask = ask
     }
 
     init(operation: String, app: String, key: String, status: OSStatus) {
+        if let block = KeychainAccess.block(for: status) {
+            self.init(operation: operation, app: app, key: key, detail: KeychainAccess.clause(block), reason: KeychainAccess.reason(block), ask: KeychainAccess.ask(block))
+            return
+        }
         let message = SecCopyErrorMessageString(status, nil).map { $0 as String } ?? "OSStatus \(status)"
         let detail = Self.declined.contains(status)
             ? "Keychain access was declined (\(message)); allow it when macOS asks"
@@ -302,8 +310,6 @@ struct LoginKeychainFailure: LocalizedError, UserFacingError, OffsiderFailure {
 
     /// errAuthorizationInternal (-60008) arrives while another Keychain prompt is still waiting.
     static let declined: Set<OSStatus> = [errSecUserCanceled, errSecAuthFailed, -60008]
-
-    var reason: FailureReason { .commandFailed }
 
     var failureMessage: String {
         if app.isEmpty, key.isEmpty {
