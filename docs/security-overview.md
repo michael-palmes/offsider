@@ -9,8 +9,9 @@ One page to forward. It describes the version on the first line of [SECURITY.md]
 | What is it? | A command-line tool on a developer's Mac that reads and drives iOS Simulators, Android Emulators and USB iPhones, iPads and Android phones for an AI agent. No service, no account, MIT licence. | [README](../README.md), [LICENSE](../LICENSE) |
 | What leaves the Mac? | Nothing from Offsider. Apple's `xcodebuild` reaches Apple to build the iPhone runner, and your agent sends what it reads to its model provider. | [What leaves the Mac](#what-leaves-the-mac); `lsof -nP -i -a -c offsider` while a command runs |
 | Can an agent reach a real phone? | Not until a person adds it in their own terminal and confirms with Touch ID. Then USB only, for the apps and time that person chose. | `offsider devices add < /dev/null` exits 1, `person_required` |
-| Can we lock it down? | Yes. A configuration profile turns phones off, or limits them to listed devices and apps. | [Managed Macs](mdm.md) |
-| Is the release what is on GitHub? | Built from a signed tag with no secrets in reach, signed with Developer ID, notarised, attested and published as an immutable release. | [Verify an install](../SECURITY.md#verify-an-install) |
+| Can we lock it down? | Yes. A configuration profile turns phones off, limits them to listed devices and apps, and caps what anyone may loosen, such as masks, saved logins and unlock codes. | [Managed Macs](mdm.md) |
+| Can we see what it did on a phone? | Yes. Every command that drives, is refused on, or changes access to a physical device leaves one record on the Mac, never arguments or screen text. | `offsider devices status --audit`; [Audit trail](device-access.md#audit-trail) |
+| Is the release what is on GitHub? | Built from a signed tag with no secrets in reach, signed with Developer ID, notarised, attested and published as an immutable release; from 0.18.0 with an attested SBOM and build record. | [Verify an install](../SECURITY.md#verify-an-install) |
 | Who maintains it? | One maintainer. Private reports through GitHub's Security tab, acknowledged within 7 days. Fixes go to the latest release only. | [Report a problem](#report-a-problem) |
 
 ## What leaves the Mac
@@ -58,6 +59,7 @@ A test device is a phone a person marked as holding nothing personal. On one, an
 | A private 0700 folder in the per-user temp directory | Device locks, the last screen tree (masked, deleted by the next command once 10 minutes old), broker records and logs | `offsider session stop`, then delete the folder |
 | `~/.config/offsider/allowed-devices.json` | The devices a person allowed, each with its expiry | `offsider devices remove` |
 | `~/.config/offsider/guards.json` | The app guard rules a person approved | No command yet: delete it and its Keychain seal together |
+| `~/.config/offsider/device-audit.log` | The audit trail of physical-device commands: command, hashed device, app and outcome; a copy goes to the unified log | Delete it and `device-audit.log.1` |
 | The login Keychain, never synced | Test logins, unlock codes, and the seals of the allow-list and the guard approvals | `offsider credential remove`, `offsider unlock-code remove` |
 | `~/Library/Caches/offsider/runner/` | The iPhone runner's build | `offsider session stop --device <UDID> --clean` |
 | The agent's skill folder and permission rules | What `offsider init` installed | `offsider init --uninstall` |
@@ -88,6 +90,7 @@ A configuration profile in the domain `com.mpalmes.offsider` sets a ceiling over
 - A signing job in the protected `release` environment signs it with Developer ID and notarises it, and never builds or runs it.
 - A verify job on a fresh runner checks the signatures, notarisation and library validation, and runs the Homebrew gate.
 - The release is published immutable with `SHA256SUMS` and a GitHub build provenance attestation; the Homebrew tap updates only through its own checked pull request.
+- From 0.18.0 it also attaches the provenance bundle for offline checks, a CycloneDX SBOM attested on the tarball, its build record and the `SECURITY.md` it shipped with, and a tag is refused unless that file names its version.
 
 Every job of the 0.17.0 release ran on a GitHub-hosted runner. To check a copy yourself: [Verify an install](../SECURITY.md#verify-an-install).
 
@@ -101,7 +104,7 @@ Every job of the 0.17.0 release ran on a GitHub-hosted runner. To check a copy y
 | Xcode's private frameworks | Never shipped: loaded at run time from the user's own Xcode, which must be Apple-signed | `xcode.trust` in `offsider doctor` |
 | adb and the Android Emulator | Never bundled: the user's own Android SDK | `offsider doctor` |
 
-Licences: [NOTICE.md](../NOTICE.md) and [THIRD_PARTY_LICENSES](../THIRD_PARTY_LICENSES). An SBOM is not published yet.
+Licences: [NOTICE.md](../NOTICE.md) and [THIRD_PARTY_LICENSES](../THIRD_PARTY_LICENSES). From 0.18.0 each release attaches `offsider-<version>.cdx.json`, a CycloneDX 1.6 SBOM of all of the above, attested on the tarball ([Verify an install](../SECURITY.md#verify-an-install)). Dependabot watches the Swift packages and the workflows' actions; OpenSSF Scorecard, CodeQL and dependency review run on the repository ([Process](../SECURITY.md#process)).
 
 ## Known limits and Not yet
 
@@ -115,11 +118,9 @@ Accepted by design (all of them: [Known limits](../SECURITY.md#known-limits)):
 
 Deferred work (all of it: [Not yet](../SECURITY.md#not-yet)):
 
-- An SBOM and build record in each release.
 - A second reviewer on releases, and a hardware-backed tag signing key.
-- Dependency scanning for Swift packages, OpenSSF Scorecard and CodeQL.
-- Strict memory safety beyond the core module, and coverage-guided fuzzing.
-- An audit trail of device commands.
+- CodeQL for the Swift code, which CodeQL cannot analyse at Swift 6.4 yet.
+- Strict memory safety for the command target (the core and both device backends have it), and coverage-guided fuzzing.
 
 ## For your intake ticket
 
@@ -128,15 +129,15 @@ Deferred work (all of it: [Not yet](../SECURITY.md#not-yet)):
 | Item | Offsider's control | Gap |
 | --- | --- | --- |
 | ASI01 Agent Goal Hijack | Screen, log and notification text is escaped, capped and marked `untrusted` in JSON; the skill tells the agent to stop and ask when it asks for anything | Offsider cannot stop an agent obeying screen text; it limits what that agent can reach |
-| ASI02 Tool Misuse and Exploitation | A real device needs a person's allowance, pinned to apps and a time; selector taps refuse covered targets; device locks stop two agents interleaving input; an approved `offsider.guard.json` asks before, or refuses, a costly control | No audit trail of device commands yet; no rate limit; raw `adb` or `devicectl` goes around the guard |
+| ASI02 Tool Misuse and Exploitation | A real device needs a person's allowance, pinned to apps and a time; selector taps refuse covered targets; device locks stop two agents interleaving input; an approved `offsider.guard.json` asks before, or refuses, a costly control; each physical-device command leaves an audit record | Simulator and emulator commands leave no audit record; no rate limit; raw `adb` or `devicectl` goes around the guard |
 | ASI03 Identity and Privilege Abuse | Allowances are narrow and expire (one app for 7 days by default); widening any of them needs Touch ID; test logins stay in the login Keychain, never synced | A test device lifts the per-app limits, by a person's choice |
-| ASI04 Agentic Supply Chain Vulnerabilities | Signed tags, a build with no secrets, Developer ID, notarisation, attestation, immutable releases; pinned idb fork and Swift packages; bundled files checked by digest | No SBOM yet; Swift packages are not watched for advisories |
+| ASI04 Agentic Supply Chain Vulnerabilities | Signed tags, a build with no secrets, Developer ID, notarisation, attestation, immutable releases; pinned idb fork and Swift packages, watched by Dependabot; an attested SBOM from 0.18.0; bundled files checked by digest | CodeQL cannot scan the Swift code yet |
 | ASI05 Unexpected Code Execution | Offsider runs nothing a device or app sends it: no plug-ins, and `batch` files are steps, not scripts; child processes get an allow-listed environment | The agent's own shell is its harness's to limit |
 | ASI06 Memory and Context Poisoning | Notes saved with test users are marked `untrusted` and refuse control and bidi characters; the screen cache is masked and swept after 10 minutes | Notes an agent writes reach later sessions, as data |
 | ASI07 Insecure Inter-Agent Communication | Its brokers admit only the same user and the same Offsider build, checked by code signature; the Android helper takes one connection, with a random token | A release admits older releases signed by the same team |
 | ASI08 Cascading Failures | Device locks and leases; every failure has a reason and an exit code; brokers cap request sizes and times | No circuit breaker after repeated refusals |
 | ASI09 Human-Agent Trust Exploitation | The Touch ID box names the device, a whole-device reach and any team registration; `devices add` shows a summary first and never preselects "Any app" | The terminal check is a speed bump a pseudo-terminal passes; Touch ID is the gate |
-| ASI10 Rogue Agents | `devices remove`, `session stop` and a profile's `allowPhysicalDevices` set to false end access; the iPhone session re-reads policy every 30 s | No signed audit trail yet |
+| ASI10 Rogue Agents | `devices remove`, `session stop` and a profile's `allowPhysicalDevices` set to false end access; the iPhone session re-reads policy every 30 s; the audit trail records each physical-device command and allowance change | The trail is hash-chained, not signed: a process running as you can delete the file, though not its copy in the unified log |
 
 ### Questionnaire answers
 
@@ -150,8 +151,9 @@ Third-party security audit: none. A read-only review of the code in October 2026
 Maintainers: one.
 Licence: MIT.
 Vulnerability reports: GitHub private reporting, acknowledged within 7 days; fixes for the latest release only.
-Release integrity: signed tag, Developer ID signature, Apple notarisation, GitHub build provenance attestation, SHA256SUMS, immutable release.
-Administrator controls: a configuration profile (domain com.mpalmes.offsider) turns phones off or limits devices and apps.
+Release integrity: signed tag, Developer ID signature, Apple notarisation, GitHub build provenance attestation, SHA256SUMS, immutable release; from 0.18.0 an attested CycloneDX SBOM and build record.
+Administrator controls: a configuration profile (domain com.mpalmes.offsider) turns phones off, limits devices and apps, and caps what anyone may loosen.
+Audit: every physical-device command, refusal and allowance change is recorded in ~/.config/offsider/device-audit.log (0600, hash-chained) and the unified log, never arguments or screen text.
 ```
 
 ## Report a problem
