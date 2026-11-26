@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.18.0] - 2026-11-26
+
 ### Added
 
 - `OFFSIDER_UNATTENDED=1` for a Mac nobody sits at: every person gate (Touch ID and password confirms, terminal steps, an `ask` guard rule, `wake --unlock` on a phone that is not a test device, `login`'s Keychain wait and `--wait-turnstile`, `turnstile --wait`) refuses at once with `person_required` and an `ask` naming the step, instead of a sheet or a wait of up to 5 minutes, and a Keychain item this build may not read fails at once rather than raise a prompt. It only tightens, so an agent may set it. In an evidence run each refusal writes a manifest line with `ask`, and `run status` counts the steps waiting for a person (`personSteps` in `--json`).
@@ -1265,7 +1267,8 @@ First release of Offsider, forked from [AXe](https://github.com/cameroncooke/axe
 - Shortened HID broker socket names so they stay within the Unix socket path limit.
 - Builds now honour an explicit `OFFSIDER_VERSION` when generating the version string.
 
-[Unreleased]: https://github.com/michael-palmes/offsider/compare/v0.17.0...HEAD
+[Unreleased]: https://github.com/michael-palmes/offsider/compare/v0.18.0...HEAD
+[0.18.0]: https://github.com/michael-palmes/offsider/compare/v0.17.0...v0.18.0
 [0.17.0]: https://github.com/michael-palmes/offsider/compare/v0.16.0...v0.17.0
 [0.16.0]: https://github.com/michael-palmes/offsider/compare/v0.15.0...v0.16.0
 [0.15.0]: https://github.com/michael-palmes/offsider/compare/v0.14.0...v0.15.0

@@ -1,4 +1,4 @@
-**As of version 0.17.0.**
+**As of version 0.18.0.**
 
 # Security policy
 
