@@ -48,7 +48,11 @@ struct DevicePolicyGate: Sendable {
         }
         do {
             let snapshot = try store.load()
-            return PhysicalDevicePolicy(managed: managedPolicy, list: snapshot.list, sealIntact: seal.isIntact(snapshot))
+            let reading = seal.reading(snapshot)
+            if case .unreadable(let detail) = reading {
+                return PhysicalDevicePolicy(managed: managedPolicy, list: snapshot.list, sealUnreadable: detail)
+            }
+            return PhysicalDevicePolicy(managed: managedPolicy, list: snapshot.list, sealIntact: reading == .intact)
         } catch {
             return PhysicalDevicePolicy(managed: managedPolicy, list: .empty, listProblem: "\(store.path): \(error)")
         }

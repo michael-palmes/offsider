@@ -47,6 +47,7 @@ struct OffsiderCommand: AsyncParsableCommand {
     @MainActor
     private static func runCommandLine() async {
         Timings.installTotal()
+        KeychainAccess.configureForProcess()
         var arguments = Array(CommandLine.arguments.dropFirst())
         // ArgumentParser names only `--version`, so a leading `-v` stands in for it.
         if arguments.first == "-v" { arguments[0] = "--version" }
@@ -79,13 +80,16 @@ struct OffsiderCommand: AsyncParsableCommand {
             let recorder = EvidenceRecorder.records(path)
                 ? EvidenceRecorder(environment: .live(), command: path, arguments: Self.arguments(after: path, in: arguments))
                 : EvidenceRecorder.current
-            try await EvidenceRecorder.$current.withValue(recorder) {
-                try await OutputMasks.$current.withValue(OutputMasks { AmbientMasks.outputMask() }) {
-                    try await CommandScope.current.run {
-                        if var asyncCommand = command as? any AsyncParsableCommand {
-                            try await asyncCommand.run()
-                        } else {
-                            try command.run()
+            let queue = PersonStepQueue(environment: .live(), command: path, arguments: Self.arguments(after: path, in: arguments))
+            try await PersonStepQueue.$current.withValue(queue) {
+                try await EvidenceRecorder.$current.withValue(recorder) {
+                    try await OutputMasks.$current.withValue(OutputMasks { AmbientMasks.outputMask() }) {
+                        try await CommandScope.current.run {
+                            if var asyncCommand = command as? any AsyncParsableCommand {
+                                try await asyncCommand.run()
+                            } else {
+                                try command.run()
+                            }
                         }
                     }
                 }

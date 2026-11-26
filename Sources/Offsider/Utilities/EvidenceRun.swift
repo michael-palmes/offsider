@@ -313,7 +313,10 @@ enum RunRegistry {
                 continue
             }
             end(record, by: reason, in: environment)
-            ended.append(RunStatusEntry(dir: record.dir, label: record.label, startedAt: record.startedAt, owner: record.owner, files: files(in: RunFolder(path: record.dir)), endedBy: reason, expires: record.expires))
+            let counts = counts(in: RunFolder(path: record.dir))
+            ended.append(RunStatusEntry(
+                dir: record.dir, label: record.label, startedAt: record.startedAt, owner: record.owner, files: counts.files, endedBy: reason, expires: record.expires, personSteps: counts.personSteps
+            ))
         }
         return ended
     }
@@ -390,14 +393,26 @@ enum RunRegistry {
         let ended = try endStale(in: environment)
         var runs: [RunStatusEntry] = []
         if case .folder(let path) = environment.override, let state = (try? RunFolder(path: path).readState()) ?? nil, state.stoppedAt == nil {
-            runs.append(RunStatusEntry(dir: path, label: state.label, startedAt: state.startedAt, owner: nil, files: files(in: RunFolder(path: path)), expires: state.expires))
+            let counts = counts(in: RunFolder(path: path))
+            runs.append(RunStatusEntry(dir: path, label: state.label, startedAt: state.startedAt, owner: nil, files: counts.files, expires: state.expires, personSteps: counts.personSteps))
         }
         let records = all ? try allRecords(in: environment) : (try record(of: environment)).map { [$0] } ?? []
-        runs += records.map { RunStatusEntry(dir: $0.dir, label: $0.label, startedAt: $0.startedAt, owner: $0.owner, files: files(in: RunFolder(path: $0.dir)), expires: $0.expires) }
+        runs += records.map { record in
+            let counts = counts(in: RunFolder(path: record.dir))
+            return RunStatusEntry(
+                dir: record.dir, label: record.label, startedAt: record.startedAt, owner: record.owner, files: counts.files, expires: record.expires, personSteps: counts.personSteps
+            )
+        }
         return (runs, ended)
     }
 
     static func files(in folder: RunFolder) -> Int {
         folder.manifest().filter { $0.file != nil }.count
+    }
+
+    /// The numbered files and the steps waiting for a person, from one read of the manifest.
+    static func counts(in folder: RunFolder) -> (files: Int, personSteps: Int) {
+        let lines = folder.manifest()
+        return (lines.filter { $0.file != nil }.count, lines.filter { $0.ask != nil }.count)
     }
 }

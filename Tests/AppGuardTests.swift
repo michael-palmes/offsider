@@ -251,6 +251,32 @@ struct AppGuardTests {
         #expect(result.failure?.hint == "offsider guard approve --app \(Self.app)")
     }
 
+    @Test("unattended, an ask control refuses at once naming the control and the rule, and nobody is asked")
+    func askUnattended() async {
+        let asks = Asks(approves: true)
+        let result = await Unattended.$isOn.withValue(true) { await send(.tapAt(x: 100, y: 620), loaded: Self.rules(), asks: asks) }
+        #expect(result.sent.isEmpty)
+        #expect(result.dispatched == .no)
+        #expect(asks.reasons.isEmpty)
+        #expect(result.failure?.reason == .personRequired)
+        #expect(result.failure?.userFacingDescription.contains("Place an order") == true)
+        #expect(result.failure?.userFacingDescription.contains("OFFSIDER_UNATTENDED is on, so nobody was asked") == true)
+        #expect(result.failure?.ask?.hasPrefix("Can you tap ") == true)
+        #expect(result.failure?.ask?.contains("Buy now") == true)
+    }
+
+    @Test("an approvals seal the Keychain would not read stops input as unreadable, never as rules changed outside Offsider")
+    func unreadableSealStopsInput() async {
+        var loaded = Self.rules(sealIntact: false)
+        loaded.sealUnreadable = "the login Keychain is locked"
+        let result = await send(.tapAt(x: 100, y: 320), loaded: loaded)
+        #expect(result.sent.isEmpty)
+        #expect(result.failure?.reason == .keychainLocked)
+        #expect(result.failure?.userFacingDescription.contains("could not be read from the login Keychain (the login Keychain is locked)") == true)
+        #expect(result.failure?.userFacingDescription.contains("changed outside Offsider") == false)
+        #expect(result.failure?.hint == nil)
+    }
+
     @Test("a guard file that cannot be read stops input, naming the file")
     func brokenFileStopsInput() async {
         var loaded = GuardSources.Loaded()

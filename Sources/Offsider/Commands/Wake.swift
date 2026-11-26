@@ -170,7 +170,9 @@ struct Wake: AsyncParsableCommand {
     /// Nothing to ask on an emulator or test device; a phone someone may use needs Touch ID or the password before its code is read.
     static func unlockConsent(whole: Bool) -> @Sendable (String) async throws -> Void {
         guard !whole else { return { _ in } }
-        return { name in try await PersonPresence.confirm(reason: "type the saved unlock code on \(PromptScreen.label(name))") }
+        return { name in
+            try await PersonPresence.confirm(reason: "type the saved unlock code on \(PromptScreen.label(name))", ask: "Can you unlock \(PromptScreen.label(name))?")
+        }
     }
 
     /// The agent's text or JSON, and what a person sees.

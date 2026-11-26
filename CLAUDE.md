@@ -128,6 +128,7 @@ Agents building in parallel use `swift build --scratch-path <dir>` and `swift te
 | `OFFSIDER_LEASE` | The label of this session's `lease set`; when set, `doctor`'s `device.lease` passes only when it matches. Unset, a lease passes for any later command of the session that set it |
 | `OFFSIDER_RUN` | `off` keeps captures out of any evidence run (`test-runner.sh`, `bench-ab.sh` and test helpers set it); `<dir>` records into that folder whatever the session |
 | `OFFSIDER_WAIT_LOCK` | Default seconds to wait for a device another Offsider command holds (`--wait-lock` wins; `test-runner.sh` sets 30) |
+| `OFFSIDER_UNATTENDED` | `1` (any value but `0`, `false`, `no`, `off`) makes every person gate refuse at once with `person_required` and the step in `ask`, queued in an evidence run's manifest; Keychain items fail rather than prompt. It only tightens, so an agent may set it |
 | `OFFSIDER_TIMINGS=1` | Prints iOS and Android phase timings to stderr (`offsider timing: <phase> <n> ms`) |
 | `OFFSIDER_MASK_SECURE` | `screenshot` and `batch` mask password fields by default; `0`, `false`, `no` or `off` turns that default off (and the video password check outside a run), `1`, `true`, `yes` or `on` keeps it; a capture's or batch's `--mask-secure` or `--no-mask-secure` wins, and a run's mask is never dropped |
 | `OFFSIDER_BENCH_DIR` | Where `scripts/bench-ab.sh` writes its records (default `$TMPDIR/offsider-bench`) |

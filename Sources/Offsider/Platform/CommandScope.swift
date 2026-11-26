@@ -139,7 +139,9 @@ final class CommandScope {
             try await body()
         } catch {
             let status = ErrorReporter.status(for: error)
-            EvidenceRecorder.current.finishAll(exit: status.exit, reason: status.reason)
+            let ask = ErrorReporter.payload(for: error).ask.map { LogRedactor.redact($0).text }
+            let recorded = EvidenceRecorder.current.finishAll(exit: status.exit, reason: status.reason, ask: ask)
+            if let ask, !recorded { PersonStepQueue.current.record(ask: ask, exit: status.exit, reason: status.reason, device: routes.last?.device) }
             finishAudit(exit: status.exit, reason: status.reason)
             let error = await screenHint(for: error)
             await commitTreeCache(failed: true)

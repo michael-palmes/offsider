@@ -15,7 +15,7 @@ To install the signed release tarball by hand instead, see [Verified tarball](#v
 
 ## Verified tarball
 
-Each release publishes `offsider-<version>-arm64.tar.gz`, a `SHA256SUMS` file and a GitHub build provenance attestation from `.github/workflows/release.yml`, whose build job holds no secrets: a separate job signs and notarises the payload it built ([Release integrity](../SECURITY.md#release-integrity)). The binary is signed with a Developer ID certificate, runs with library validation on (it loads only frameworks signed by the same team or by Apple) and is notarised. `--signer-workflow` and `--source-ref` check that the attestation came from the release workflow building that tag.
+Each release publishes `offsider-<version>-arm64.tar.gz`, a `SHA256SUMS` file and a GitHub build provenance attestation from `.github/workflows/release.yml`, whose build job holds no secrets: a separate job signs and notarises the payload it built ([Release integrity](../SECURITY.md#release-integrity)). From 0.18.0 it also attaches the provenance bundle (`offsider-<version>-arm64.tar.gz.intoto.jsonl`), the SBOM (`offsider-<version>.cdx.json`), `SECURITY.md` as of that version and `build-info.txt` (runner, Xcode, Swift, the idb pin, the helper's digest and the commit), each listed in `SHA256SUMS` and attested. The binary is signed with a Developer ID certificate, runs with library validation on (it loads only frameworks signed by the same team or by Apple) and is notarised. `--signer-workflow` and `--source-ref` check that the attestation came from the release workflow building that tag.
 
 ```bash
 VERSION=$(gh release view --repo michael-palmes/offsider --json tagName -q .tagName | sed 's/^v//')   # the latest release
@@ -28,6 +28,17 @@ gh attestation verify "offsider-${VERSION}-arm64.tar.gz" --repo michael-palmes/o
 mkdir -p ~/.local/offsider && tar -xzf "offsider-${VERSION}-arm64.tar.gz" -C ~/.local/offsider
 codesign -dv --verbose=4 ~/.local/offsider/offsider
 ```
+
+To verify without asking GitHub for the attestation, download the bundle too and check the tarball against it:
+
+```bash
+gh release download "v${VERSION}" --repo michael-palmes/offsider --pattern "offsider-${VERSION}-arm64.tar.gz.intoto.jsonl"
+gh attestation verify "offsider-${VERSION}-arm64.tar.gz" --bundle "offsider-${VERSION}-arm64.tar.gz.intoto.jsonl" \
+  --repo michael-palmes/offsider --signer-workflow michael-palmes/offsider/.github/workflows/release.yml \
+  --source-ref "refs/tags/v${VERSION}" --deny-self-hosted-runners
+```
+
+Add `--custom-trusted-root` with a file from `gh attestation trusted-root` to verify with no network at all. The SBOM is CycloneDX 1.6: the Swift packages, the idb fork with its upstream, the bundled frameworks, the Android helper, and the Xcode and macOS frameworks loaded at run time and never shipped. It is attested on the tarball; check it with the first `gh attestation verify` above plus `--predicate-type https://cyclonedx.org/bom`.
 
 [Verify an install](../SECURITY.md#verify-an-install) also checks the signing team and the entitlements.
 

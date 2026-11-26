@@ -6,8 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Changed
+
+- `biometric status` reads fingerprint enrolment on an allowed Android phone as on an emulator: one read-only shell, no device lock, an audit record that names the action (`biometric status`). `enrol`, `unenrol`, `match` and `no-match` stay emulator only and are refused on a phone before anything is sent. Enrolment is read for the user in front, enrolled when any sensor holds a print, and `enrolment unknown` (`enrolled: null`) for a dump it cannot read, where it used to take the first count it found. Every `biometric` action, on every platform, adds a line with no file to an active evidence run, with `enrolled` when it read or set it.
+
+## [0.18.0] - 2026-11-26
+
 ### Added
 
+- `OFFSIDER_UNATTENDED=1` for a Mac nobody sits at: every person gate (Touch ID and password confirms, terminal steps, an `ask` guard rule, `wake --unlock` on a phone that is not a test device, `login`'s Keychain wait and `--wait-turnstile`, `turnstile --wait`) refuses at once with `person_required` and an `ask` naming the step, instead of a sheet or a wait of up to 5 minutes, and a Keychain item this build may not read fails at once rather than raise a prompt. It only tightens, so an agent may set it. In an evidence run each refusal writes a manifest line with `ask`, and `run status` counts the steps waiting for a person (`personSteps` in `--json`).
+- A new reason, `keychain_locked`: a locked login Keychain is named with the unlock step, never `command_failed` with macOS's text. A device allow-list or app guard seal that cannot be read refuses as `seal_unreadable`, told apart from a list changed outside Offsider, so the device need not be allowed again; the iPhone and phone brokers stop with it at their next 30 s recheck, and `devices add` and `remove` change nothing until the seal can be read, where they used to drop the other devices. `doctor` reports an unlock code it cannot check as unknown, never as not saved.
 - A weekly `Unit tests (ThreadSanitizer)` CI job beside the AddressSanitizer one, which opens an issue on `main` when it fails. It leaves out the one test of the SIGCONT echo handler, since ThreadSanitizer runs a signal handler only at the thread's next safe point.
 - `run start --expires <n>d` (1 to 30, default 7): a run records when it expires in its record and `run.json`, `run status` shows it, and a run past it stops recording and is listed as `expired`, its folder kept. Nothing deletes a run folder. A folder `run start` creates also gets a `.metadata_never_index`, so Spotlight leaves screenshots of unreleased screens out of its index.
 - An audit trail of physical-device commands. Every command that drives an iPhone, iPad or USB phone, is refused on one, or changes who may drive one (`devices add`, `devices remove`, a session broker starting or stopping, `session stop`, a runner build that registers a device, `unlock-code set`) appends one JSON line to `~/.config/offsider/device-audit.log` and writes the same fields to the unified log (subsystem `com.mpalmes.offsider`, category `device-audit`). A record names the command path, the device as a 16-digit hash, the app id, the outcome, the exit code and the reason; it never holds an argument, typed text, a device name or anything read from a screen. Each line carries the SHA-256 of the line before it, the file rotates at 5 MB keeping one older file, and there is no switch. Simulators and emulators write nothing and pay nothing. `offsider devices status --audit [--last <n>] [--device <ID>]` shows the newest records (`--json` adds them as `audit`), and `doctor` gains `audit.file` and `audit.chain`, which pass on a Mac with no trail ([Audit trail](docs/device-access.md#audit-trail)).
@@ -29,7 +37,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Changed
 
-- `biometric status` reads fingerprint enrolment on an allowed Android phone as on an emulator: one read-only shell, no device lock, an audit record that names the action (`biometric status`). `enrol`, `unenrol`, `match` and `no-match` stay emulator only and are refused on a phone before anything is sent. Enrolment is read for the user in front, enrolled when any sensor holds a print, and `enrolment unknown` (`enrolled: null`) for a dump it cannot read, where it used to take the first count it found. Every `biometric` action, on every platform, adds a line with no file to an active evidence run, with `enrolled` when it read or set it.
 - `test-runner.sh --unit-tests` reruns alone only the tests a stalled parallel run did not finish, read from Swift Testing's event stream, instead of every test; a stream it cannot read still reruns everything. CI pull requests restore the newest debug build main saved and recompile only the files whose contents changed, and the release rehearsal reuses fetched package repositories.
 - `OffsiderAndroid` and `OffsiderIOSDevice` now build with Swift's strict memory safety checking, as `OffsiderCore` does, with each unsafe pointer, C string and C call marked where it happens. An Android frame with fewer bytes than its size claims is no longer turned, and a screen fingerprint never reads a buffer past its end.
 - Every command turns off core dumps (soft and hard limit 0) before it parses its arguments, so no command that holds a password, a code or a frame, nor any child it starts, can write a core file. Only the brokers did before.
@@ -1264,7 +1271,8 @@ First release of Offsider, forked from [AXe](https://github.com/cameroncooke/axe
 - Shortened HID broker socket names so they stay within the Unix socket path limit.
 - Builds now honour an explicit `OFFSIDER_VERSION` when generating the version string.
 
-[Unreleased]: https://github.com/michael-palmes/offsider/compare/v0.17.0...HEAD
+[Unreleased]: https://github.com/michael-palmes/offsider/compare/v0.18.0...HEAD
+[0.18.0]: https://github.com/michael-palmes/offsider/compare/v0.17.0...v0.18.0
 [0.17.0]: https://github.com/michael-palmes/offsider/compare/v0.16.0...v0.17.0
 [0.16.0]: https://github.com/michael-palmes/offsider/compare/v0.15.0...v0.16.0
 [0.15.0]: https://github.com/michael-palmes/offsider/compare/v0.14.0...v0.15.0

@@ -15,10 +15,20 @@ extension DeviceAllowListSealing {
         Data(SHA256.hash(data: data))
     }
 
-    /// Intact when the file matches the seal; a file with no devices needs none.
+    /// Intact when the file matches the seal; a file with no devices needs none. A seal that cannot be read is never intact.
     func isIntact(_ snapshot: DeviceAllowListSnapshot) -> Bool {
-        guard let stored = try? storedDigest() else { return snapshot.list.isEmpty }
-        return stored == Self.digest(of: snapshot.data) || snapshot.list.isEmpty
+        reading(snapshot) == .intact
+    }
+
+    /// Tells a seal that cannot be read from one that no longer matches; both refuse.
+    func reading(_ snapshot: DeviceAllowListSnapshot) -> SealReading {
+        guard !snapshot.list.isEmpty else { return .intact }
+        do {
+            guard let stored = try storedDigest() else { return .changed }
+            return stored == Self.digest(of: snapshot.data) ? .intact : .changed
+        } catch {
+            return .unreadable(SealReading.detail(of: error))
+        }
     }
 
     func seal(_ data: Data) throws {
@@ -65,8 +75,46 @@ struct KeychainDeviceAllowListSeal: DeviceAllowListSealing {
         ]
     }
 
-    private static func failure(_ operation: String, _ status: OSStatus) -> CLIError {
-        let message = SecCopyErrorMessageString(status, nil).map { $0 as String } ?? "OSStatus \(status)"
-        return CLIError(errorDescription: "Could not \(operation) the device allow-list seal in the login Keychain: \(message).", reason: .commandFailed)
+    private static func failure(_ operation: String, _ status: OSStatus) -> SealKeychainFailure {
+        SealKeychainFailure(what: "the device allow-list seal", operation: operation, status: status)
     }
+}
+
+/// What a seal read found.
+enum SealReading: Equatable {
+    case intact
+    case changed
+    /// The Keychain did not answer; the detail says why, such as `the login Keychain is locked`.
+    case unreadable(String)
+
+    static func detail(of error: any Error) -> String {
+        (error as? SealKeychainFailure)?.detail ?? OffsiderCommand.message(for: error)
+    }
+}
+
+/// A seal the login Keychain would not read or write, named when it is locked or needs a person.
+struct SealKeychainFailure: LocalizedError, UserFacingError, OffsiderFailure {
+    let what: String
+    let operation: String
+    let detail: String
+    let reason: FailureReason
+    let ask: String?
+
+    init(what: String, operation: String, status: OSStatus) {
+        self.what = what
+        self.operation = operation
+        if let block = KeychainAccess.block(for: status) {
+            detail = KeychainAccess.clause(block)
+            reason = KeychainAccess.reason(block)
+            ask = KeychainAccess.ask(block)
+        } else {
+            detail = SecCopyErrorMessageString(status, nil).map { $0 as String } ?? "OSStatus \(status)"
+            reason = .commandFailed
+            ask = nil
+        }
+    }
+
+    var failureMessage: String { "Could not \(operation) \(what) in the login Keychain: \(detail)." }
+    var userFacingDescription: String { failureMessage }
+    var errorDescription: String? { failureMessage }
 }

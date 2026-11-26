@@ -13,6 +13,8 @@ enum GuardSources {
     struct Loaded: Sendable {
         var approvals: GuardApprovals = .empty
         var sealIntact = true
+        /// Why the seal could not be read; nil when it was, or there is none.
+        var sealUnreadable: String?
         /// The apps a broken seal still covers.
         var sealedApps: [String] = []
         var file: File?
@@ -47,7 +49,7 @@ enum GuardSources {
             do {
                 let snapshot = try store.load()
                 loaded.approvals = snapshot.approvals
-                (loaded.sealIntact, loaded.sealedApps) = seal.check(snapshot)
+                (loaded.sealIntact, loaded.sealedApps, loaded.sealUnreadable) = seal.check(snapshot)
             } catch {
                 loaded.sealIntact = false
                 loaded.sealedApps = ((try? seal.stored()) ?? nil)?.apps ?? []
@@ -169,7 +171,7 @@ enum AppGuard {
             }
             var found: [(GuardHit, GuardSet)] = []
             for set in sets {
-                if set.state == .changed { throw rulesChanged(set.app) }
+                if set.state == .changed { throw rulesUntrusted(set.app, loaded: loaded) }
                 for input in points {
                     guard var hit = GuardJudge.verdict(rules: set.rules, tree: tree, input: input) else { continue }
                     if hit.unsure, case .press(let point) = input, let texts = await textNear(point, tree: tree, backend: backend, device: device) {
@@ -192,7 +194,7 @@ enum AppGuard {
         }
         let set = loaded.set(for: prompt.app)
         guard set.state != .missing else { return }
-        if set.state == .changed { throw rulesChanged(set.app) }
+        if set.state == .changed { throw rulesUntrusted(set.app, loaded: loaded) }
         let rules = set.rules.map { rule -> GuardRule in
             var open = rule
             open.screen = nil
@@ -200,6 +202,16 @@ enum AppGuard {
         }
         guard let hit = GuardJudge.verdict(rules: rules, tree: tree, input: .press(button.frame.center)) else { return }
         try await settle(hit, set: set, device: device)
+    }
+
+    /// Changed rules need a person to approve them again; a seal the Keychain would not read needs only the Keychain back.
+    private static func rulesUntrusted(_ app: String, loaded: GuardSources.Loaded) -> CLIError {
+        guard let detail = loaded.sealUnreadable else { return rulesChanged(app) }
+        let block = KeychainAccess.block(describedBy: detail)
+        return CLIError(
+            errorDescription: "The app guard seal for \(app) could not be read from the login Keychain (\(detail)), so its approved rules are not trusted and Offsider sent nothing. Run this again once the Keychain can be read; the rules need no new approval.",
+            reason: KeychainAccess.reason(block), ask: KeychainAccess.ask(block)
+        )
     }
 
     private static func rulesChanged(_ app: String) -> CLIError {
@@ -294,6 +306,12 @@ enum AppGuard {
             throw CLIError(
                 errorDescription: "\(what), which asks a person first, and \(why), so the tap is theirs. Offsider sent nothing.",
                 reason: .guardedControl, ask: yours
+            )
+        }
+        if Unattended.isOn {
+            throw CLIError(
+                errorDescription: "\(what), which asks a person first, and \(UnattendedMode.because), so nobody was asked. Offsider sent nothing.",
+                reason: .personRequired, ask: yours
             )
         }
         let reason = "tap \(label.map { "“\(PromptScreen.label($0, cap: 40))”" } ?? "an unreadable spot") (\(hit.rule.name)) in \(set.app), signed in as \(user ?? "a saved login")"

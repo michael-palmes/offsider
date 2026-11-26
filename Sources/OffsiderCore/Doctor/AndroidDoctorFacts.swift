@@ -151,10 +151,13 @@ public enum HelperProbeFact: Equatable, Sendable {
 public struct UnlockCodeFact: Equatable, Sendable {
     public var saved: Bool
     public var lastAttempt: UnlockAttemptRecord?
+    /// Why the login Keychain could not say whether a code is saved, such as `the login Keychain is locked`; nil when it answered.
+    public var unreadable: String?
 
-    public init(saved: Bool, lastAttempt: UnlockAttemptRecord?) {
+    public init(saved: Bool, lastAttempt: UnlockAttemptRecord?, unreadable: String? = nil) {
         self.saved = saved
         self.lastAttempt = lastAttempt
+        self.unreadable = unreadable
     }
 }
 

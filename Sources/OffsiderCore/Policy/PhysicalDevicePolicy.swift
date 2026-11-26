@@ -18,6 +18,8 @@ public enum DeviceRefusal: Equatable, Sendable {
     case listUnreadable(String)
     /// The file no longer matches the seal `devices add` stored in the login Keychain.
     case listChanged
+    /// The seal could not be read from the login Keychain, so the file cannot be trusted until it can.
+    case sealUnreadable(String)
     /// A newer Offsider wrote this device's entry, with a key this build does not know and so cannot honour.
     case newerEntry(String)
     /// The entry is older than the managed `maxAllowanceDays`; a person may allow the device again.
@@ -67,6 +69,7 @@ public enum DeviceRefusal: Equatable, Sendable {
         case .expired(let date): return "its allow-list entry expired at \(ProcessStamp.timestamp(date))"
         case .listUnreadable(let detail): return "the allow-list could not be read (\(detail))"
         case .listChanged: return "the allow-list was changed outside Offsider"
+        case .sealUnreadable(let detail): return "the allow-list's seal could not be read from the login Keychain (\(detail)), so the list is not trusted until it can be"
         case .newerEntry(let key): return "a newer Offsider wrote its allow-list entry, with a setting this one cannot read (\(TerminalText.quoted(key)))"
         case .cappedExpired(let date, let days): return "\(ManagedRefusalText.allowanceCapped(days: days)), which its allow-list entry passed at \(ProcessStamp.timestamp(date))"
         case .pinsRequired: return "\(ManagedCeilings.Switch.requirePinnedApps.refusal), and its allow-list entry names none"
@@ -84,6 +87,7 @@ public enum DeviceRefusal: Equatable, Sendable {
         case .expired: return "expired"
         case .listUnreadable: return "list_unreadable"
         case .listChanged: return "list_changed"
+        case .sealUnreadable: return "seal_unreadable"
         case .newerEntry: return "newer_entry"
         case .cappedExpired: return "expired_by_policy"
         case .pinsRequired: return "pins_required"
@@ -102,14 +106,17 @@ public struct PhysicalDevicePolicy: Equatable, Sendable {
     public let list: DeviceAllowList
     /// Set when the file could not be read or parsed; the list is then empty.
     public let listProblem: String?
-    /// False when the file does not match its Keychain seal.
+    /// False when the file does not match its Keychain seal, or the seal could not be read.
     public let sealIntact: Bool
+    /// Why the seal could not be read, such as `the login Keychain is locked`; nil when it was read.
+    public let sealUnreadable: String?
 
-    public init(managed: ManagedDevicePolicy, list: DeviceAllowList, listProblem: String? = nil, sealIntact: Bool = true) {
+    public init(managed: ManagedDevicePolicy, list: DeviceAllowList, listProblem: String? = nil, sealIntact: Bool = true, sealUnreadable: String? = nil) {
         self.managed = managed
         self.list = listProblem == nil ? list : .empty
         self.listProblem = listProblem
-        self.sealIntact = sealIntact
+        self.sealIntact = sealIntact && sealUnreadable == nil
+        self.sealUnreadable = sealUnreadable
     }
 
     public func decision(platform: DevicePlatform, key: String, now: Date = Date()) -> DeviceDecision {
@@ -118,6 +125,7 @@ public struct PhysicalDevicePolicy: Equatable, Sendable {
         if managed.allowPhysicalDevices == false { return .refused(.managedOff) }
         if !managed.lists(platform: platform, key: key) { return .refused(.managedNotListed) }
         if let listProblem { return .refused(.listUnreadable(listProblem)) }
+        if let sealUnreadable { return .refused(.sealUnreadable(sealUnreadable)) }
         if !sealIntact { return .refused(.listChanged) }
         if let held = list.newerEntry(platform: platform, key: key) { return .refused(.newerEntry(held.unknownKeys[0])) }
         guard let listed = list.entry(platform: platform, key: key) else { return .refused(.notAllowed) }

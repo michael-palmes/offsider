@@ -327,7 +327,7 @@ public struct AuditTrail: Sendable {
 /// The physical devices one command reached, gathered as it runs and written once when it ends, from whichever thread ends it.
 public final class CommandAudit: @unchecked Sendable {
     /// Failures that mean Offsider's own rules stopped the command on a device it had already routed to.
-    public static let refusedReasons: Set<String> = [FailureReason.appNotAllowed.rawValue, FailureReason.guardedControl.rawValue, FailureReason.personRequired.rawValue]
+    public static let refusedReasons: Set<String> = [FailureReason.appNotAllowed.rawValue, FailureReason.guardedControl.rawValue, FailureReason.personRequired.rawValue, FailureReason.keychainLocked.rawValue]
 
     private struct Entry {
         var event: AuditEvent

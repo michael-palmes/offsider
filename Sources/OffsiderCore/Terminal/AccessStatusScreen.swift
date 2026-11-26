@@ -10,6 +10,7 @@ public enum AccessStatusScreen {
     public static let managedEndedSome = "Managed policy ended an allowance. Allow again."
     public static let listChanged = "List changed outside Offsider. Allow again."
     public static let listUnreadable = "List unreadable. Allow again."
+    public static let sealUnreadable = "Keychain unreadable. Unlock it, then retry."
     public static let allowCommand = "offsider devices add"
 
     /// With one device, the command that withdraws it; with several, the bare command whose menu picks one.
@@ -64,6 +65,7 @@ public enum AccessStatusScreen {
     public static func warning(_ policy: PhysicalDevicePolicy, now: Date) -> String? {
         if policy.managed.unreadable || !policy.managed.unknownKeys.isEmpty || policy.managed.allowPhysicalDevices == false { return managedBlocksAll }
         if policy.listProblem != nil { return listUnreadable }
+        if policy.sealUnreadable != nil, !policy.list.isEmpty { return sealUnreadable }
         if !policy.sealIntact, !policy.list.isEmpty { return listChanged }
         let refusals = policy.list.entries.compactMap { entry -> DeviceRefusal? in
             if case .refused(let refusal) = policy.decision(platform: entry.platform, key: entry.key, now: now) { return refusal }
@@ -85,8 +87,9 @@ public enum AccessStatusScreen {
         }
         let entries = allowed(policy, now: now)
         guard !entries.isEmpty else {
-            let person: [Block] = [.header(Header(.lock, title, ["none allowed"])), .prose(nothingAllowed)]
-            return Page([.person(person), .agent(agent)], notices: notices + (notices.contains { $0.command == allowCommand } ? [] : [.next(allowCommand)]))
+            let unreadable = policy.sealUnreadable != nil && !policy.list.isEmpty
+            let person: [Block] = [.header(Header(.lock, title, ["none allowed"])), .prose(unreadable ? sealUnreadable : nothingAllowed)]
+            return Page([.person(person), .agent(agent)], notices: notices + (unreadable || notices.contains { $0.command == allowCommand } ? [] : [.next(allowCommand)]))
         }
         let rows = entries.map { entry in
             Table.Row([
