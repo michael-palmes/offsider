@@ -38,12 +38,14 @@ public struct RunManifestLine: Codable, Equatable, Sendable {
     public var fields: [RunFieldOutcome]?
     /// The step a person must take before this can go on, as the failure's `ask` put it; set only on such a failure.
     public var ask: String?
+    /// What `biometric` read or set; nil when it could not tell, or for any other command.
+    public var enrolled: Bool?
 
     public init(
         n: Int? = nil, file: String? = nil, command: String, step: Int? = nil, line: String? = nil, device: String? = nil, platform: String? = nil,
         time: Date, ms: Int, exit: Int, reason: String? = nil, args: [String]? = nil, output: String? = nil, diff: String? = nil,
         masked: Int? = nil, skippedBeneath: Int? = nil, maskUnproven: String? = nil, changed: Bool? = nil, expect: String? = nil, entries: Int? = nil, redacted: Int? = nil,
-        prompt: String? = nil, button: String? = nil, fields: [RunFieldOutcome]? = nil, ask: String? = nil
+        prompt: String? = nil, button: String? = nil, fields: [RunFieldOutcome]? = nil, ask: String? = nil, enrolled: Bool? = nil
     ) {
         self.n = n
         self.file = file
@@ -70,6 +72,7 @@ public struct RunManifestLine: Codable, Equatable, Sendable {
         self.button = button
         self.fields = fields
         self.ask = ask
+        self.enrolled = enrolled
     }
 
     public func jsonLine(timeZone: TimeZone = .current) -> String {
@@ -101,7 +104,8 @@ public struct RunManifestLine: Codable, Equatable, Sendable {
             ("redacted", .optional(redacted, OrderedJSON.integer)),
         ] + (prompt == nil && button == nil ? [] : [("prompt", .optional(prompt, OrderedJSON.string)), ("button", .optional(button, OrderedJSON.string))])
             + (fields.map { [("fields", .array($0.map { .object([("field", .string($0.field)), ("state", .string($0.state))]) }))] } ?? [])
-            + (ask.map { [("ask", .string($0))] } ?? []))
+            + (ask.map { [("ask", .string($0))] } ?? [])
+            + (enrolled.map { [("enrolled", .bool($0))] } ?? []))
     }
 
     public init(jsonLine: String) throws {

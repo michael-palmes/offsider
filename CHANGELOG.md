@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Changed
+
+- `biometric status` reads fingerprint enrolment on an allowed Android phone as on an emulator: one read-only shell, no device lock, an audit record that names the action (`biometric status`). `enrol`, `unenrol`, `match` and `no-match` stay emulator only and are refused on a phone before anything is sent. Enrolment is read for the user in front, enrolled when any sensor holds a print, and `enrolment unknown` (`enrolled: null`) for a dump it cannot read, where it used to take the first count it found. Every `biometric` action, on every platform, adds a line with no file to an active evidence run, with `enrolled` when it read or set it.
+
 ## [0.18.0] - 2026-11-26
 
 ### Added

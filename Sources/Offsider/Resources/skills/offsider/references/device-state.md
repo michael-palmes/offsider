@@ -48,7 +48,7 @@ offsider alert choose "Only this time" --app <id> --device <DEVICE_ID>
 ## Biometrics
 
 - `offsider biometric enrol|unenrol|match|no-match`. Send `match` or `no-match` only while the app shows its Face ID, Touch ID or fingerprint prompt, then check the screen: nothing confirms the app saw it.
-- On iOS enrol first, and `unenrol` afterwards. On Android enrolment is manual (it needs a screen lock), and `biometric` is refused on a phone.
+- On iOS enrol first, and `unenrol` afterwards. On Android enrolment is manual (it needs a screen lock). On an allowed phone only `biometric status --device <serial>` works: read only, no lock. Never read `dumpsys fingerprint` yourself.
 
 ## Screen reader
 

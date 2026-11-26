@@ -6,7 +6,7 @@ extension AuditTrail {
     /// The trail this process writes: the file beside the allow-list and the unified log, stamped with this build, command and calling session.
     static let live = AuditTrail(
         directory: UserConfigDirectory.live(),
-        stamp: { liveStamp(command: ErrorReporter.context.command) },
+        stamp: { liveStamp(command: ErrorReporter.context.command, action: ErrorReporter.context.action) },
         mirror: AuditTrail.unifiedLog,
         managed: { ManagedDevicePolicy.read(from: LiveManagedPreferences()).present },
         problem: { detail in
@@ -14,10 +14,10 @@ extension AuditTrail {
         }
     )
 
-    static func liveStamp(command name: String?) -> Stamp {
+    static func liveStamp(command name: String?, action: String? = nil) -> Stamp {
         let session = AuditTrail.session(from: getppid())
         let started = ProcessStartTime.date(of: getpid())
-        return Stamp(version: VERSION, pid: getpid(), session: session, command: command(name), milliseconds: started.map { Int(Date().timeIntervalSince($0) * 1000) })
+        return Stamp(version: VERSION, pid: getpid(), session: session, command: command(name, action: action), milliseconds: started.map { Int(Date().timeIntervalSince($0) * 1000) })
     }
 
     /// The first ancestor that is not a shell or wrapper, as a lease records its owner, stopping there instead of walking on to launchd.
@@ -32,10 +32,16 @@ extension AuditTrail {
         return nil
     }
 
-    /// Only a path from the command tree is recorded; a word that failed to parse never is.
-    static func command(_ name: String?) -> String? {
-        name.flatMap { CommandEffect.table[$0] == nil ? nil : $0 }
+    /// Only a path from the command tree is recorded, with the action word its command picked from a fixed list; a word that failed to parse never is.
+    static func command(_ name: String?, action: String? = nil) -> String? {
+        guard let name, CommandEffect.table[name] != nil else { return nil }
+        return action.map { "\(name) \($0)" } ?? name
     }
+}
+
+/// A command whose audit record names its action too, such as `biometric status`; the word is one of the command's own, never free text.
+protocol AuditsAction {
+    var auditedAction: String? { get }
 }
 
 extension ProcessTable {

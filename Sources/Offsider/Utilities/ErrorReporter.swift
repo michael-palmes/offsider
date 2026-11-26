@@ -22,6 +22,8 @@ enum ErrorReporter {
         var command: String?
         var wantsJSON: Bool
         var device: String?
+        /// The action word an `AuditsAction` command adds to its audit record.
+        var action: String? = nil
     }
 
     /// Set once on the main thread before the command runs; the watchdog reads it from its own queue.
@@ -37,7 +39,10 @@ enum ErrorReporter {
     static func prepare(command: (any ParsableCommand)?, arguments: [String]) {
         let name = command.map { CommandPath.of($0) } ?? arguments.first { !$0.hasPrefix("-") }
         let wantsJSON = (command as? any JSONReportingCommand)?.wantsJSON ?? arguments.contains("--json")
-        context = Context(command: name, wantsJSON: wantsJSON, device: deviceArgument(in: arguments) ?? DeviceDefault.resolve(explicit: nil)?.id)
+        context = Context(
+            command: name, wantsJSON: wantsJSON, device: deviceArgument(in: arguments) ?? DeviceDefault.resolve(explicit: nil)?.id,
+            action: (command as? any AuditsAction)?.auditedAction
+        )
         ErrorAudience.configure(jsonOutput: wantsJSON)
     }
 

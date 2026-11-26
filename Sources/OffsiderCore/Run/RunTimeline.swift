@@ -61,6 +61,8 @@ public struct RunTimeline: Equatable, Sendable {
             notes.append(entry.button.map { "\(TerminalText.quoted(TerminalText.line($0, cap: 80))) on \(title)" } ?? "left \(title)")
         }
         if let fields = entry.fields, !fields.isEmpty { notes.append(fields.map { "\($0.field) \($0.state == "filled" ? "filled" : "not filled")" }.joined(separator: ", ")) }
+        if entry.command == "biometric", let action = entry.args?.lazy.compactMap(BiometricAction.parse).first { notes.append(action.rawValue) }
+        if let enrolled = entry.enrolled { notes.append(enrolled ? "enrolled" : "not enrolled") }
         return notes
     }
 

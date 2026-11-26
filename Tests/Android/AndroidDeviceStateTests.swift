@@ -181,6 +181,20 @@ struct AndroidDeviceStateTests {
         #expect(processes.calls.allSatisfy { !$0.arguments.contains("emu") })
     }
 
+    @Test("biometric status on an allowed phone is one read-only shell, parsed per user and sensor")
+    func phoneStatusReads() async throws {
+        let server = Self.server(devicesList: "R58M123ABC device usb:1-1 model:Pixel_9 transport_id:2\n") { command in
+            command == BiometricControl.androidStatusScript
+                ? FakeAdbServer.shell(stdout: FingerprintDumpFixtures.status(user: "0", FingerprintDumpFixtures.twoSensors))
+                : FakeAdbServer.shell()
+        }
+        let backend = try AndroidBackendTests.backend(server)
+        let phone = DeviceID(rawValue: "R58M123ABC", platform: .android)
+        _ = try await backend.requireBootedDevice(phone)
+        #expect(try await backend.biometricEnrolled(on: phone) == true)
+        #expect(Self.shellCommands(server) == [BiometricControl.androidStatusScript])
+    }
+
     @Test("the overlay app op decides, and its default falls back to a permission granted at install")
     func overlayPermission() throws {
         #expect(AndroidOverlayPermission.parse("SYSTEM_ALERT_WINDOW: allow; time=+1h ago\n") == true)

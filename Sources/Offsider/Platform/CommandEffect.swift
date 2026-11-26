@@ -1,4 +1,10 @@
+import ArgumentParser
 import Foundation
+
+/// A command whose effect depends on its arguments, as `biometric status` reads where `biometric match` sends input.
+protocol DeclaresEffect {
+    var effect: CommandEffect { get }
+}
 
 /// What a command may do to a device, which decides how it updates the tree cache.
 enum CommandEffect: String, Sendable {
@@ -101,5 +107,10 @@ enum CommandEffect: String, Sendable {
     /// Unknown commands count as input, the cautious choice.
     static func of(_ command: String) -> CommandEffect {
         table[command] ?? .input
+    }
+
+    /// The parsed command's own effect when it declares one, else its path's.
+    static func of(_ command: any ParsableCommand, path: String) -> CommandEffect {
+        (command as? any DeclaresEffect)?.effect ?? of(path)
     }
 }
